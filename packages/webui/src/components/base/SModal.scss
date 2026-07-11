@@ -1,0 +1,102 @@
+.s-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 60%);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+}
+
+.s-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.s-modal {
+  pointer-events: auto;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 20%);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid rgb(var(--color-border) / 15%);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  &__close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    font-size: var(--text-sm);
+    line-height: 1;
+    border-radius: var(--radius-sm);
+    &:hover { background: rgb(var(--color-primary) / 10%); color: rgb(var(--color-text)); }
+  }
+
+  &__body {
+    flex: 1;
+    overflow: auto;
+    padding: 1.25rem;
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+  }
+}
+
+/* Transition: overlay fade */
+.s-modal-overlay-enter-active,
+.s-modal-overlay-leave-active {
+  transition: opacity var(--duration-normal) var(--ease-standard);
+}
+.s-modal-overlay-enter-from,
+.s-modal-overlay-leave-to {
+  opacity: 0;
+}
+
+/* Transition: content scale + fade */
+.s-modal-content-enter-active {
+  transition:
+    transform var(--duration-normal) var(--ease-out-expo),
+    opacity var(--duration-normal) var(--ease-standard);
+}
+.s-modal-content-leave-active {
+  transition:
+    transform var(--duration-short) var(--ease-standard),
+    opacity var(--duration-short) var(--ease-standard);
+}
+.s-modal-content-enter-from {
+  transform: scale(0.95) translateY(10px);
+  opacity: 0;
+}
+.s-modal-content-leave-to {
+  transform: scale(0.98);
+  opacity: 0;
+}
