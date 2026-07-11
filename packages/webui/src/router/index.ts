@@ -16,12 +16,9 @@ export const router = createRouter({
       name: "replay",
       component: () => import("@/views/replay/ReplayView"),
     },
-    {
-      // In-game overlay mode: transparent window showing both teams.
-      path: "/overlay",
-      name: "overlay",
-      component: () => import("@/views/overlay/OverlayView"),
-    },
+    // NOTE: the overlay (Mode 2) is NOT a route here — it's a separate window
+    // created on demand by the Rust side, loading the same index.html with
+    // ?window=overlay. main.ts mounts OverlayApp for that window.
   ],
 });
 

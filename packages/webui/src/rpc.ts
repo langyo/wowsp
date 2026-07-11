@@ -17,6 +17,8 @@ export const RPC = {
   start_arena_watcher: "start_arena_watcher",
   stop_arena_watcher: "stop_arena_watcher",
   capture_game_window: "capture_game_window",
+  create_overlay_window: "create_overlay_window",
+  destroy_overlay_window: "destroy_overlay_window",
   set_overlay_visible: "set_overlay_visible",
   lookup_player_stats: "lookup_player_stats",
   install_overlay_mod: "install_overlay_mod",

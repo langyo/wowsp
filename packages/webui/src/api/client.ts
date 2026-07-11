@@ -112,6 +112,8 @@ export const api = {
   captureGameWindow: () => transport.invoke<CaptureResult>(RPC.capture_game_window),
   setOverlayVisible: (visible: boolean) =>
     transport.invoke<null>(RPC.set_overlay_visible, { visible }),
+  createOverlayWindow: () => transport.invoke<null>(RPC.create_overlay_window),
+  destroyOverlayWindow: () => transport.invoke<null>(RPC.destroy_overlay_window),
   lookupPlayerStats: (name: string, realm: string) =>
     transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
   installOverlayMod: (gameRoot: string) =>

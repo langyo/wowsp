@@ -97,6 +97,8 @@ fn main() {
             commands::arena_info::start_arena_watcher,
             commands::arena_info::stop_arena_watcher,
             commands::overlay::capture_game_window,
+            commands::overlay::create_overlay_window,
+            commands::overlay::destroy_overlay_window,
             commands::overlay::set_overlay_visible,
             commands::wg_api::lookup_player_stats,
             commands::mod_install::install_overlay_mod,

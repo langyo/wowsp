@@ -98,6 +98,17 @@
       transform: translateY(-2px);
       box-shadow: 0 8px 20px rgb(var(--color-primary) / 12%);
     }
+
+    &--disabled {
+      cursor: default;
+      opacity: 0.6;
+
+      &:hover {
+        border-color: rgb(var(--color-border) / 20%);
+        transform: none;
+        box-shadow: none;
+      }
+    }
   }
 
   &__mode-name {

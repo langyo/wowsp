@@ -1,23 +1,71 @@
 //! In-game overlay commands (milestones M6/M8).
 //!
-//! Overlay mode (Mode 2 in PLAN.md): a transparent always-on-top window sits
-//! over the game. While the user holds `Tab`, WoWSP captures the screen, runs a
-//! lightweight detector to find the central team-list region, and re-anchors
-//! the rendered roster to sit on top of it. Release `Tab` and the overlay hides.
+//! Overlay mode (Mode 2 in PLAN.md): a SEPARATE transparent, always-on-top,
+//! click-through, decoration-less window is created on top of the game. It
+//! loads the same index.html with `?window=overlay`, which makes main.ts mount
+//! OverlayApp (no router, no title bar, transparent background). While the user
+//! holds `Tab`, WoWSP captures the screen + re-anchors the roster.
 //!
-//! Status:
-//!   - `set_overlay_visible` toggles the main window's visibility via the Tauri
-//!     webview API. M6 will split this into a SEPARATE transparent click-through
-//!     overlay window so the main shell can keep running underneath.
-//!   - `capture_game_window` returns a placeholder PNG. The real Win32 BitBlt
-//!     capture + team-list detector are TODO(M8): they need a live game frame
-//!     to calibrate the template match against, so they land when the overlay
-//!     mode is exercised against a running game. The Win32 GDI capture path is
-//!     sketched in `capture_primary_screen` behind a TODO so the API surface is
-//!     ready.
+//! The overlay window is created lazily by `create_overlay_window` (called once
+//! when overlay mode starts) and shown/hidden by `set_overlay_visible` (called
+//! on each Tab press/release). The main shell window keeps running underneath.
 
 use base64::Engine;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use wowsp_tauri_shared::CaptureResult;
+
+/// Label of the dedicated overlay window (distinct from "main").
+const OVERLAY_LABEL: &str = "overlay";
+
+/// Create the transparent overlay window if it doesn't exist yet. Idempotent —
+/// a second call just returns without recreating. The window starts hidden;
+/// show it with `set_overlay_visible(true)`.
+#[tauri::command]
+pub fn create_overlay_window(app: tauri::AppHandle) -> Result<(), String> {
+    if app.get_webview_window(OVERLAY_LABEL).is_some() {
+        return Ok(()); // already exists
+    }
+    let url = WebviewUrl::App("/?window=overlay".into());
+    let win = WebviewWindowBuilder::new(&app, OVERLAY_LABEL, url)
+        .title("WoWSP Overlay")
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .visible(false) // start hidden; shown on first Tab press
+        .inner_size(420.0, 320.0)
+        .build()
+        .map_err(|e| format!("create overlay window: {e}"))?;
+    // Center it for now; M8 will reposition based on the detected team-list rect.
+    let _ = win.center();
+    Ok(())
+}
+
+/// Destroy the overlay window (when overlay mode ends).
+#[tauri::command]
+pub fn destroy_overlay_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
+        win.close().map_err(|e| format!("close overlay: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Show or hide the overlay window. Requires `create_overlay_window` to have
+/// been called first.
+#[tauri::command]
+pub fn set_overlay_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
+        return Err("overlay window not created — call create_overlay_window first".into());
+    };
+    if visible {
+        win.show().map_err(|e| format!("show overlay: {e}"))?;
+        let _ = win.set_focus();
+    } else {
+        win.hide().map_err(|e| format!("hide overlay: {e}"))?;
+    }
+    Ok(())
+}
 
 /// Capture the game window and return it as base64 PNG, plus (TODO) the
 /// detected roster rectangle in screen coordinates.
@@ -35,23 +83,6 @@ pub fn capture_game_window() -> Result<CaptureResult, String> {
         image_base64: b64,
         roster_rect: None,
     })
-}
-
-/// Show or hide the overlay. Toggles the main window's visibility; M6 will
-/// create a separate transparent click-through overlay window and toggle that
-/// here so the main shell can stay running underneath.
-#[tauri::command]
-pub fn set_overlay_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
-    use tauri::Manager;
-    let Some(win) = app.get_webview_window("main") else {
-        return Err("main window not found".into());
-    };
-    if visible {
-        win.show().map_err(|e| format!("show: {e}"))?;
-    } else {
-        win.hide().map_err(|e| format!("hide: {e}"))?;
-    }
-    Ok(())
 }
 
 /// A minimal valid 1×1 transparent PNG placeholder (until the real BitBlt
