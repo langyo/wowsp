@@ -1,0 +1,101 @@
+[workspace]
+resolver = "2"
+
+default-members = [
+    "packages/app/tauri",
+]
+
+members = [
+    "packages/app/tauri",
+    "packages/app/tauri_shared",
+]
+
+exclude = [
+    "packages/webui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["langyo <langyo.china@gmail.com>"]
+license = "BUSL-1.1"
+description = "World of WarShip Panel — replay review & in-game overlay"
+repository = "https://github.com/celestia-island/wowsp"
+
+[workspace.dependencies]
+
+# Workspace internal crate aliases
+wowsp_tauri_shared = { path = "packages/app/tauri_shared" }
+
+# Core language and utilities
+anyhow = "^1"
+async-trait = "^0.1"
+thiserror = "^2"
+# Data and serialization
+chrono = { version = "^0.4", features = ["serde", "clock"] }
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
+toml = "^0.8"
+uuid = { version = "^1", features = ["v4", "serde"] }
+
+# Logging and tracing
+tracing = { version = "^0.1", features = ["log"] }
+tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
+
+# Async / concurrent runtime
+futures = "^0.3"
+tokio = { version = "^1", features = ["rt", "rt-multi-thread", "macros", "time", "net", "io-util", "fs", "sync", "signal"] }
+
+# Networking (optional WG API lookups)
+reqwest = { version = "^0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "stream",
+    "charset",
+    "http2",
+] }
+
+# File system watching (poll tempArenaInfo.json, replay dir)
+notify = "^7"
+
+# Windows registry scanning for game install detection (official / Lesta / 360)
+winreg = "^0.55"
+
+# Windows screen capture for overlay roster positioning
+windows = { version = "^0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# Image handling for capture analysis
+image = { version = "^0.25", default-features = false, features = ["png"] }
+
+# Encoding helpers
+base64 = "^0.22"
+hex = "^0.4"
+
+# Tauri desktop shell
+tauri = "^2"
+tauri-build = "^2"
+
+# ── Build profiles ──────────────────────────────────────────
+
+[profile.dev]
+debug = 1
+opt-level = 0
+strip = "none"
+
+[profile.dev.package."*"]
+debug = 0
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+debug = 0
+
+[profile.bench]
+debug = 0

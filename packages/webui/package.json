@@ -1,0 +1,38 @@
+{
+  "name": "@wowsp/webui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .vue,.ts,.tsx --fix",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@vueuse/core": "^14",
+    "echarts": "^6.1.0",
+    "lucide-vue-next": "^1",
+    "pinia": "^3",
+    "three": "^0.184",
+    "vue": "^3",
+    "vue-i18n": "^11",
+    "vue-router": "^4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5",
+    "@vitejs/plugin-vue-jsx": "^4",
+    "@vue/test-utils": "^2.4.11",
+    "esbuild": "^0.28.1",
+    "happy-dom": "^20.10.2",
+    "sass": "^1.100.0",
+    "typescript": "^5",
+    "vite": "^6",
+    "vitest": "^4.1.8",
+    "vue-tsc": "^2"
+  }
+}

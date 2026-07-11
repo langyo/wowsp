@@ -1,0 +1,43 @@
+.overlay-roster {
+  display: none;
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px;
+  background: rgb(var(--color-background) / 80%);
+  backdrop-filter: blur(var(--blur-md));
+  border-radius: var(--radius-md);
+  border: 1px solid rgb(var(--color-primary) / 30%);
+  color: rgb(var(--color-text));
+  pointer-events: none;
+
+  &.is-visible {
+    display: flex;
+  }
+
+  &__team {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 200px;
+  }
+
+  &__divider {
+    width: 1px;
+    background: rgb(var(--color-border) / 40%);
+  }
+
+  &__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: var(--text-sm);
+
+    &.ally .overlay-roster__name { color: rgb(var(--color-success)); }
+    &.enemy .overlay-roster__name { color: rgb(var(--color-error)); }
+  }
+
+  &__ship {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+  }
+}

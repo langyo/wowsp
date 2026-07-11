@@ -1,0 +1,13 @@
+{
+  "app": {
+    "name": "WoWSP",
+    "tagline": "World of Warship Panel — replay review & in-game overlay"
+  },
+  "detect": {
+    "title": "Game installation",
+    "scanning": "Scanning registry and Steam libraries…",
+    "found": "Found",
+    "none": "No World of Warships install detected — set a path manually.",
+    "rescan": "Rescan"
+  }
+}

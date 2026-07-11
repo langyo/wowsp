@@ -1,0 +1,21 @@
+# WoWSP dev compose — spins up the FastAPI mock backend for browser development.
+# Usage: docker compose -f scripts/deploy/docker-compose.dev.yml up
+#
+# This is NOT a production compose (WoWSP is a desktop app, not a service).
+# It exists so `just dev --mock` can run inside a clean container if the host
+# Python environment is unavailable.
+
+services:
+  wowsp-mock:
+    build:
+      context: ../..
+      dockerfile: scripts/mock/Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      WOWSP_MOCK_PORT: "8787"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/detect_game_install')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

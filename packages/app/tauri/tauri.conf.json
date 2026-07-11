@@ -1,0 +1,36 @@
+{
+  "productName": "WoWSP",
+  "version": "0.1.0",
+  "identifier": "com.celestia-island.wowsp",
+  "build": {
+    "beforeBuildCommand": "pnpm --filter @wowsp/webui build",
+    "beforeDevCommand": "pnpm --filter @wowsp/webui dev",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../../dist/webui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "WoWSP",
+        "width": 1280,
+        "height": 820,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "visible": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "minimizable": true,
+        "maximizable": true,
+        "closable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://api.worldofwarships.* https://vortex.worldofwarships.*; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'"
+    }
+  },
+  "plugins": {}
+}

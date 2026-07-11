@@ -1,0 +1,18 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Tooling configs — exclude from git stats / linguist
+/eslint.config.*     linguist-generated
+/vite.config.*       linguist-generated
+/uno.config.*        linguist-generated
+**/vitest.config.*   linguist-generated
+/tsconfig*.json      linguist-generated
+/package.json        linguist-generated
+/pnpm-lock.yaml      linguist-generated
+/*.lock              linguist-generated
+
+# Environment type declarations (Vite auto-generated)
+**/env.d.ts          linguist-generated
+
+# Static template loaded by index.html (CSP forbids inline scripts)
+/packages/webui/src/res/*.js  linguist-generated

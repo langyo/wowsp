@@ -1,0 +1,7 @@
+[site]
+title = "WoWSP"
+description = "World of Warship Panel — replay review & in-game overlay"
+
+[languages]
+default = "en"
+order = ["en", "zhs"]

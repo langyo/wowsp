@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+    branches: [dev, master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+      - name: Generate shader bundle
+        run: python scripts/glsl_bundle.py --verbose
+      - name: Generate Tauri icons
+        run: python scripts/ensure_tauri_icons.py
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --lib --bins -- -D warnings
+      - name: Check
+        run: cargo check --workspace
+      - name: Test (backend)
+        run: cargo test --workspace
+      - name: Frontend typecheck
+        run: pnpm -r typecheck
+      - name: Frontend lint
+        run: pnpm -r lint
+      - name: i18n parity
+        run: python scripts/check_i18n.py --no-fail
+      - name: cargo-deny (advisories)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+      - name: cargo-deny (licenses)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses
+      - name: npm audit
+        run: pnpm audit --audit-level=high

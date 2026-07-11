@@ -1,0 +1,8 @@
+{
+  "list": {
+    "title": "Replays",
+    "empty": "No replays found in the configured folder."
+  },
+  "loading": "Parsing replay…",
+  "select": "Select a replay from the list to load it."
+}

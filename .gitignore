@@ -1,0 +1,63 @@
+# Rust
+/target/
+**/*.rs.bk
+# IDE
+.idea/
+.vscode/
+.opencode/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# Node.js
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+/logs/
+/tmp/
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Stray downloads / packages
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Test coverage
+/coverage/
+**/__pycache__/
+packages/app/tauri/gen/
+.cache/
+
+# Python venvs
+.venv/
+scripts/mock/.venv/
+
+# Tauri icons are generated from docs/logo.svg by scripts/ensure_tauri_icons.py
+# (via `cargo tauri icon`). They are build artifacts, not source — never commit.
+packages/app/tauri/icons/*
+
+# Transpiled shaders (generated from res/shaders/**/*.glsl + *.theme.toml by scripts/glsl_bundle.py)
+packages/webui/.generated/
+
+# WoWSP runtime data (detected game paths, parsed replays cache)
+.wowsp-cache/
+
+# Cargo lockfile — COMMITTED for this workspace (it produces binaries).
+# See https://doc.rust-lang.org/cargo/faq.html#why-do-binaries-have-cargo-lock-in-version-control-but-not-libraries
+
+# ZCode agent working dir
+.zcode/
