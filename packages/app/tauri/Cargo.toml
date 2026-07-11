@@ -30,6 +30,11 @@ tracing-subscriber.workspace = true
 # File watching (poll tempArenaInfo.json, replay dir)
 notify.workspace = true
 
+# Replay packet-stream decryption (Blowfish ECB + XOR chain + zlib)
+blowfish.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+
 # Service supervision — graceful shutdown / signal handling
 malkuth.workspace = true
 

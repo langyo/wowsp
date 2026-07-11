@@ -53,11 +53,31 @@ export interface CaptureResult {
   rosterRect?: { x: number; y: number; width: number; height: number } | null;
 }
 
+/** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
+ * maps are planar: x = east, z = north, y ≈ 0 (sea level). */
+export interface PositionSample {
+  time: number;
+  entityId: number;
+  vehicleId: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
+/** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */
+export interface EntityTrajectory {
+  entityId: number;
+  samples: PositionSample[];
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
+  readReplayPositions: (path: string) =>
+    transport.invoke<EntityTrajectory[]>(RPC.read_replay_positions, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
   readTempArenaInfo: (dir?: string) =>

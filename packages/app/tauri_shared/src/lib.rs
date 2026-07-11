@@ -115,3 +115,29 @@ pub struct Rect {
     pub width: i32,
     pub height: i32,
 }
+
+/// One position sample for one entity at one instant — the raw output of M3's
+/// packet-stream decoder. WoWS maps are planar: x = east, z = north, y ≈ 0.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PositionSample {
+    /// Seconds since match start.
+    pub time: f32,
+    /// BigWorld entity id (map to a player via ReplayMeta.vehicles shipId/id).
+    pub entity_id: i32,
+    pub vehicle_id: i32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Heading (radians) about the vertical axis.
+    pub yaw: f32,
+}
+
+/// A per-entity trajectory: the full position timeline for one ship, ready for
+/// the holographic map to scrub.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityTrajectory {
+    pub entity_id: i32,
+    pub samples: Vec<PositionSample>,
+}

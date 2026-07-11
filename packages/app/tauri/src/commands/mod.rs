@@ -7,6 +7,7 @@
 pub mod arena_info;
 pub mod game_detect;
 pub mod overlay;
+pub mod packets;
 pub mod replay;
 
 use crate::os_prefs::OsPreferences;

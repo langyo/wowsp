@@ -91,6 +91,7 @@ fn main() {
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
             commands::replay::read_replay_header,
+            commands::replay::read_replay_positions,
             commands::replay::list_replays,
             commands::arena_info::read_temp_arena_info,
             commands::arena_info::start_arena_watcher,

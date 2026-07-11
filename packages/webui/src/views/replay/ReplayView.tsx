@@ -1,8 +1,10 @@
-import { computed, defineComponent, onMounted } from "vue";
+import { computed, defineComponent, onMounted, ref, watch } from "vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
+import { api } from "@/api";
+import type { EntityTrajectory } from "@/api";
 import { t } from "@/i18n";
 import SButton from "@/components/base/SButton";
 import type { VehicleEntry } from "@/api";
@@ -28,6 +30,24 @@ export default defineComponent({
     );
     const enemies = computed<VehicleEntry[]>(
       () => parser.current.value?.vehicles.filter((v) => v.relation > 1) ?? [],
+    );
+
+    // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
+    // open so the header parse stays fast; the decode is the expensive step.
+    const trajectories = ref<EntityTrajectory[]>([]);
+    const trajectoryError = ref<string | null>(null);
+    watch(
+      () => parser.current.value?.path,
+      async (path) => {
+        trajectories.value = [];
+        trajectoryError.value = null;
+        if (!path) return;
+        try {
+          trajectories.value = await api.readReplayPositions(path);
+        } catch (e) {
+          trajectoryError.value = (e as Error).message;
+        }
+      },
     );
 
     return () => (
@@ -86,7 +106,17 @@ export default defineComponent({
 
               <div class="replay-view__body">
                 <div class="replay-view__map-wrap">
-                  <HolographicMap replayPath={parser.current.value.path} />
+                  {trajectoryError.value ? (
+                    <div class="replay-view__placeholder replay-view__placeholder--error">
+                      trajectory decode failed: {trajectoryError.value}
+                    </div>
+                  ) : (
+                    <HolographicMap
+                      replayPath={parser.current.value.path}
+                      trajectories={trajectories.value}
+                      vehicles={parser.current.value.vehicles}
+                    />
+                  )}
                 </div>
                 <div class="replay-view__roster">
                   <RosterColumn title="Allies" rows={allies.value} kind="ally" />

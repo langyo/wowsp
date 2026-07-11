@@ -36,6 +36,67 @@ pub fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
     Ok(meta_from_raw(path, raw))
 }
 
+/// Decode the packet stream of one `.wowsreplay` and return per-entity
+/// position trajectories (milestone M3). This is the data the holographic map
+/// scrubs: each entry is one entity's full (time, x, z, yaw) timeline.
+#[tauri::command]
+pub fn read_replay_positions(
+    path: String,
+) -> Result<Vec<wowsp_tauri_shared::EntityTrajectory>, String> {
+    let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+    let stream = packet_stream_after_blocks(&bytes)
+        .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
+    let samples = super::packets::extract_positions(stream)?;
+    Ok(group_by_entity(samples))
+}
+
+/// Skip the magic + JSON header blocks and return a slice over the encrypted
+/// packet stream. Shared by header parsing and position decoding.
+fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
+    if bytes.len() < 8 || !bytes.starts_with(&REPLAY_MAGIC) {
+        return None;
+    }
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().ok()?) as usize;
+    let mut cur = 8;
+    for _ in 0..block_count {
+        if cur + 4 > bytes.len() {
+            return None;
+        }
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().ok()?) as usize;
+        cur += 4 + bl;
+        if cur > bytes.len() {
+            return None;
+        }
+    }
+    Some(&bytes[cur..])
+}
+
+/// Group raw position samples into one trajectory per entity, sorted by time.
+fn group_by_entity(
+    samples: Vec<wowsp_tauri_shared::PositionSample>,
+) -> Vec<wowsp_tauri_shared::EntityTrajectory> {
+    use std::collections::BTreeMap;
+    let mut by_entity: BTreeMap<i32, Vec<wowsp_tauri_shared::PositionSample>> = BTreeMap::new();
+    for s in samples {
+        by_entity.entry(s.entity_id).or_default().push(s);
+    }
+    let mut out: Vec<_> = by_entity
+        .into_iter()
+        .map(|(entity_id, mut samples)| {
+            samples.sort_by(|a, b| {
+                a.time
+                    .partial_cmp(&b.time)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            wowsp_tauri_shared::EntityTrajectory { entity_id, samples }
+        })
+        .collect();
+    // Largest trajectory first — usually the ships, not transient entities.
+    use std::cmp::Reverse;
+    out.sort_by_key(|t| Reverse(t.samples.len()));
+    out
+}
+
 /// List `.wowsreplay` files under a directory (defaults to the detected game's
 /// `replays/` folder). Returns at most `limit` paths sorted newest-first.
 #[tauri::command]

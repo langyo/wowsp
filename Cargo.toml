@@ -59,6 +59,15 @@ reqwest = { version = "^0.12", default-features = false, features = [
 # File system watching (poll tempArenaInfo.json, replay dir, dev hot-reload)
 notify = "^7"
 
+# Replay packet-stream decryption (Blowfish ECB + zlib). The WoWS replay
+# payload is Blowfish-encrypted with a hardcoded 16-byte game key, XOR-chained
+# across 8-byte blocks, then zlib-compressed — see Monstrofil/replays_unpack.
+# blowfish 0.10 carries a ByteOrder type param (PyCryptodome uses big-endian,
+# the crate default); pin byteorder so we can name `BigEndian` explicitly.
+blowfish = "^0.10"
+byteorder = "^1"
+flate2 = "^1"
+
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
 # window-close lifecycle). Published to crates.io.

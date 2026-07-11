@@ -26,6 +26,19 @@
     pointer-events: none;
   }
 
+  &__hint,
+  &__overlay-info,
+  &__controls {
+    position: absolute;
+    left: 12px;
+    padding: 4px 8px;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-primary));
+    background: rgb(0 0 0 / 50%);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+  }
+
   &__hint {
     bottom: 12px;
   }
@@ -35,6 +48,43 @@
     max-width: calc(100% - 24px);
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__controls {
+    right: 12px;
+    left: auto;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 6px 10px;
+    pointer-events: auto;
+  }
+
+  &__play {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-primary));
+    color: rgb(var(--color-on-solid));
+    cursor: pointer;
+    font-size: var(--text-xs);
+    line-height: 1;
+  }
+
+  &__scrub {
+    width: 200px;
+    accent-color: rgb(var(--color-primary));
+  }
+
+  &__time,
+  &__count {
+    color: rgb(var(--color-text) / 70%);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     white-space: nowrap;
   }
 }
