@@ -56,8 +56,13 @@ reqwest = { version = "^0.12", default-features = false, features = [
     "http2",
 ] }
 
-# File system watching (poll tempArenaInfo.json, replay dir)
+# File system watching (poll tempArenaInfo.json, replay dir, dev hot-reload)
 notify = "^7"
+
+# Service supervision — graceful shutdown / signal handling (same usage as
+# shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
+# window-close lifecycle). Published to crates.io.
+malkuth = { version = "^0.1", default-features = false, features = ["signals"] }
 
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.55"

@@ -1,0 +1,29 @@
+.overlay-view {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+
+  &__stage {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 2rem;
+    background: rgb(var(--color-surface) / 30%);
+    border: 1px dashed rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-md);
+  }
+
+  &__hint {
+    padding: 0.4rem 1rem;
+    background: rgb(var(--color-primary) / 12%);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-primary));
+    font-size: var(--text-sm);
+  }
+}

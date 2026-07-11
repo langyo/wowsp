@@ -69,10 +69,15 @@ clean target='all':
 # ── Run ──────────────────────────────────────────────────────────────
 
 # Dev server — dispatch by target:
-#   just dev              → native desktop (Vite + Tauri)
-#   just dev webui        → native browser (Vite only)
-#   just dev --mock       → WoWSP mock backend (FastAPI) + Vite
-#   just dev watch --mock → mock stack + auto-rebuild
+#   just dev              → cargo tauri dev (native desktop; tauri-cli watches
+#                           Rust src + Vite HMR for the webui; malkuth drains
+#                           gracefully on each restart)
+#   just dev --watch      → same, plus an explicit config-file watcher that
+#                           restarts the whole dev tree when Cargo.toml /
+#                           tauri.conf.json / justfile / .env change
+#   just dev webui        → browser-only Vite (no Tauri shell)
+#   just dev --mock       → cargo tauri dev + FastAPI mock backend on :8787
+#   just dev webui --mock → browser Vite + mock backend (no Tauri)
 [script('bash')]
 dev target='' *FLAGS=''):
     set -euo pipefail
@@ -86,14 +91,13 @@ dev target='' *FLAGS=''):
     done
     if [ -z "$PY" ]; then echo "error: no working python found"; exit 1; fi
     case "{{target}}" in
-      tauri) "$PY" scripts/dev.py --native tauri {{FLAGS}} ;;
-      webui) "$PY" scripts/dev.py --native {{FLAGS}} ;;
+      webui) "$PY" scripts/dev.py webui {{FLAGS}} ;;
       "")    "$PY" scripts/dev.py {{FLAGS}} ;;
-      *) echo "Usage: just dev [tauri|webui] [--mock|--clean]"; exit 1 ;;
+      *) echo "Usage: just dev [webui] [--mock|--watch]"; exit 1 ;;
     esac
 
 watch *FLAGS:
-    just dev {{FLAGS}}
+    just dev --watch {{FLAGS}}
 
 # Run a specific target
 [script('bash')]

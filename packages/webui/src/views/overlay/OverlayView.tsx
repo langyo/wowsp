@@ -3,6 +3,7 @@ import { defineComponent, onMounted } from "vue";
 import OverlayRoster from "@/features/overlay/OverlayRoster";
 import { useOverlay } from "@/features/overlay/useOverlay";
 import { t } from "@/i18n";
+import "./OverlayView.scss";
 
 /**
  * In-game overlay view (Mode 2). Transparent-window content: while Tab is held
@@ -15,8 +16,10 @@ export default defineComponent({
     onMounted(() => void overlay.refresh());
     return () => (
       <main class="overlay-view">
-        <div class="overlay-view__hint">{t("overlay.hint")}</div>
-        <OverlayRoster />
+        <div class="overlay-view__stage">
+          <div class="overlay-view__hint">{t("overlay.hint")}</div>
+          <OverlayRoster />
+        </div>
       </main>
     );
   },

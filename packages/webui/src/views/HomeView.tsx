@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import { t } from "@/i18n";
 import SButton from "@/components/base/SButton";
+import "./HomeView.scss";
 
 /**
  * Landing view. Runs game-install detection on mount and links to the two
@@ -18,31 +19,44 @@ export default defineComponent({
 
     return () => (
       <main class="home">
-        <h1 class="home__title">{t("common.app.name")}</h1>
-        <p class="home__subtitle">{t("common.app.tagline")}</p>
+        <header class="home__hero">
+          <h1 class="home__title">{t("common.app.name")}</h1>
+            <p class="home__subtitle">{t("common.app.tagline")}</p>
+        </header>
 
-        <section class="home__detect">
-          <h2>{t("common.detect.title")}</h2>
+        <section class="home__card">
+          <h2 class="home__card-title">{t("common.detect.title")}</h2>
           {gd.detecting.value ? (
-            <p>{t("common.detect.scanning")}</p>
+            <p class="home__card-state home__card-state--loading">
+              {t("common.detect.scanning")}
+            </p>
           ) : gd.active.value ? (
-            <p>
-              {t("common.detect.found")}: <code>{gd.active.value.path}</code>
-              {gd.active.value.realm ? ` (${gd.active.value.realm})` : null}
+            <p class="home__card-state home__card-state--ok">
+              <span>{t("common.detect.found")}</span>
+              <code class="home__path">{gd.active.value.path}</code>
+              {gd.active.value.realm ? (
+                <span class="home__realm">{gd.active.value.realm}</span>
+              ) : null}
             </p>
           ) : (
-            <p>{t("common.detect.none")}</p>
+            <p class="home__card-state home__card-state--empty">{t("common.detect.none")}</p>
           )}
-          <SButton variant="secondary" onClick={() => gd.detect()}>
-            {t("common.detect.rescan")}
-          </SButton>
+          <div class="home__card-actions">
+            <SButton variant="secondary" size="sm" onClick={() => gd.detect()}>
+              {t("common.detect.rescan")}
+            </SButton>
+          </div>
         </section>
 
         <section class="home__modes">
-          <SButton onClick={() => router.push("/replay")}>{t("nav.replay")}</SButton>
-          <SButton variant="secondary" onClick={() => router.push("/overlay")}>
-            {t("nav.overlay")}
-          </SButton>
+          <button class="home__mode" onClick={() => router.push("/replay")}>
+            <div class="home__mode-name">{t("nav.replay")}</div>
+            <div class="home__mode-desc">Open a .wowsreplay and replay the match on the holographic map.</div>
+          </button>
+          <button class="home__mode" onClick={() => router.push("/overlay")}>
+            <div class="home__mode-name">{t("nav.overlay")}</div>
+            <div class="home__mode-desc">Transparent in-game roster overlay, shown while Tab is held.</div>
+          </button>
         </section>
       </main>
     );

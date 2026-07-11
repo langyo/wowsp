@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
 """WoWSP development orchestrator.
 
-Adapted from shittim-chest's `scripts/dev.py` (heavily trimmed). WoWSP has no
-backend database / Docker stack / scepter, so the orchestrator only needs to:
+Adapted from shittim-chest's `scripts/dev.py` (heavily trimmed). WoWSP is a
+single-process Tauri desktop app — there is no scepter/backend database — so the
+orchestrator only needs to:
 
-* `--mock`   — start the FastAPI mock backend + the Vite dev server
-* `--native` — start the Vite dev server (+ optionally `cargo tauri dev`)
-* (default)  — alias for `--native tauri`
+* (default)  run `cargo tauri dev`, which itself watches both the Rust sources
+  (auto recompile + restart the window) and the webui (Vite HMR). Malkuth's
+  DrainController inside the app gives each restart a graceful wind-down.
+* `--mock`   additionally start the FastAPI mock backend on :8787 so the webui
+  can develop in a browser without the game.
+* `webui`    run only the Vite dev server (browser-only, no Tauri shell).
+* `--watch`  wrap the dev process in an explicit notify-based file watcher that
+  restarts the whole subprocess tree on changes to config files tauri-cli does
+  not watch itself (Cargo.toml, tauri.conf.json, justfile, .env). This is the
+  same `notify` crate mechanism malkuth's own CLI uses internally.
 
 Usage:
-    python scripts/dev.py                # native tauri (Vite + cargo tauri dev)
-    python scripts/dev.py --native       # browser only (Vite)
+    python scripts/dev.py                # cargo tauri dev (native desktop, full hot reload)
+    python scripts/dev.py webui          # browser-only Vite
     python scripts/dev.py --mock         # mock backend + Vite (no Tauri)
-    python scripts/dev.py watch          # file watcher: rebuild on change
+    python scripts/dev.py --watch        # cargo tauri dev + explicit config watcher
 """
 from __future__ import annotations
 
@@ -33,6 +41,24 @@ _log.configure(source="wowsp", module="dev")
 
 MOCK_PORT = int(os.environ.get("WOWSP_MOCK_PORT", "8787"))
 VITE_PORT = 5173
+
+# Files whose changes tauri-cli does NOT watch but should trigger a full dev
+# restart. Source files (Rust + webui) are handled by tauri-cli's own watcher
+# and Vite HMR respectively, so they are intentionally excluded here.
+WATCH_CONFIG_GLOBS = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/app/tauri/Cargo.toml",
+    "packages/app/tauri/tauri.conf.json",
+    "packages/app/tauri/capabilities/*.json",
+    "packages/app/tauri_shared/Cargo.toml",
+    "packages/webui/package.json",
+    "packages/webui/vite.config.ts",
+    "packages/webui/tsconfig*.json",
+    "pnpm-workspace.yaml",
+    "justfile",
+    ".env",
+]
 
 
 def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subprocess.Popen:
@@ -82,9 +108,108 @@ def start_vite(procs: list[subprocess.Popen], extra_env: dict | None = None) -> 
         _log.warn(f"Vite did not bind :{VITE_PORT} in time", module="vite")
 
 
-def start_tauri(procs: list[subprocess.Popen]) -> None:
-    p = _run(["cargo", "tauri", "dev"])
-    procs.append(p)
+def _watch_configs(stop_event: threading.Event, on_change: threading.Event) -> None:
+    """Poll-based config watcher (no `notify` Python dep required).
+
+    tauri-cli already watches Rust/webui source; this only covers the handful of
+    config files whose edits would otherwise need a manual restart. Fires
+    `on_change` once per modification (debounced 1s).
+    """
+    snapshots: dict[Path, float] = {}
+    paths: list[Path] = []
+    for pat in WATCH_CONFIG_GLOBS:
+        paths.extend(sorted((ROOT).glob(pat)))
+    for p in paths:
+        try:
+            snapshots[p] = p.stat().st_mtime
+        except OSError:
+            pass
+    _log.info(f"watching {len(snapshots)} config files for restart-triggering changes", module="watch")
+
+    last_fire = 0.0
+    while not stop_event.wait(1.0):
+        now = time.monotonic()
+        changed = False
+        for p, mtime in list(snapshots.items()):
+            try:
+                cur = p.stat().st_mtime
+            except OSError:
+                continue
+            if cur != mtime:
+                snapshots[p] = cur
+                changed = True
+        # Also detect newly-created config files matching the globs.
+        for pat in WATCH_CONFIG_GLOBS:
+            for p in (ROOT).glob(pat):
+                if p not in snapshots:
+                    try:
+                        snapshots[p] = p.stat().st_mtime
+                    except OSError:
+                        continue
+        if changed and now - last_fire > 1.0:
+            last_fire = now
+            on_change.set()
+
+
+def run_with_watcher(cmd: list[str], env: dict | None = None) -> int:
+    """Run `cmd`; restart it whenever a watched config file changes.
+
+    On restart the old subprocess receives SIGTERM (Ctrl-C on Windows), which
+    the app's malkuth DrainController turns into a graceful drain before exit.
+    Ctrl-C in this script tears everything down.
+    """
+    stop_event = threading.Event()
+    on_change = threading.Event()
+    watcher = threading.Thread(
+        target=_watch_configs, args=(stop_event, on_change), name="wowsp-config-watch", daemon=True
+    )
+    watcher.start()
+
+    while not stop_event.is_set():
+        _log.info("starting dev subprocess (malkuth will graceful-drain on restart)", module="dev")
+        proc = _run(cmd, env=env)
+        # Wait for either: subprocess exit, config change, or Ctrl-C.
+        while proc.poll() is None:
+            if on_change.wait(0.5):
+                on_change.clear()
+                _log.warn("config changed → restarting dev subprocess", module="watch")
+                _terminate(proc)
+                break
+        if proc.poll() is None:
+            # We broke out via config change; loop to respawn.
+            continue
+        # Subprocess exited on its own.
+        rc = proc.returncode
+        if rc in (0, -2, 130):  # clean exit / Ctrl-C
+            break
+        _log.warn(f"dev subprocess exited ({rc}) — restarting in 1s", module="dev")
+        time.sleep(1.0)
+
+    stop_event.set()
+    return 0
+
+
+def _terminate(proc: subprocess.Popen) -> None:
+    """Politely terminate a subprocess: SIGTERM first, SIGKILL on Windows via
+    taskkill on the whole tree (Tauri spawns children)."""
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            # taskkill the tree so Vite/cargo children don't linger.
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=10,
+            )
+        else:
+            proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=10)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 def run_mock(args: argparse.Namespace) -> int:
@@ -99,53 +224,48 @@ def run_mock(args: argparse.Namespace) -> int:
         _log.info("shutting down...", module="dev")
     finally:
         for p in procs:
-            if p.poll() is None:
-                p.terminate()
+            _terminate(p)
         return 0
 
 
 def run_native(args: argparse.Namespace) -> int:
-    procs: list[subprocess.Popen] = []
     try:
-        if args.tauri:
-            # Vite is launched by tauri's beforeDevCommand; just run cargo tauri dev.
-            start_tauri(procs)
-            procs[0].wait()
-        else:
+        if args.webui_only:
+            procs: list[subprocess.Popen] = []
             start_vite(procs)
             procs[0].wait()
+            return 0
+        cmd = ["cargo", "tauri", "dev"]
+        env = None
+        if args.mock:
+            # Run mock backend alongside, point Vite at it via env.
+            procs = []
+            start_mock(procs)
+            env = {"WOWSP_MOCK_URL": f"http://localhost:{MOCK_PORT}"}
+        if args.watch:
+            rc = run_with_watcher(cmd, env=env)
+            return rc
+        # Default: plain cargo tauri dev (tauri-cli's own watcher handles hot reload).
+        proc = _run(cmd, env=env)
+        proc.wait()
+        return proc.returncode or 0
     except KeyboardInterrupt:
         _log.info("shutting down...", module="dev")
-    finally:
-        for p in procs:
-            if p.poll() is None:
-                p.terminate()
         return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="WoWSP dev orchestrator")
-    parser.add_argument("mode", nargs="?", default=None, help="watch | tauri (positional, optional)")
-    parser.add_argument("--mock", action="store_true", help="start the FastAPI mock backend + Vite")
-    parser.add_argument("--native", action="store_true", help="host-process dev (Vite, +Tauri if 'tauri' given)")
+    parser.add_argument("mode", nargs="?", default=None, help="(positional) 'webui' for browser-only")
+    parser.add_argument("--mock", action="store_true", help="start the FastAPI mock backend")
+    parser.add_argument("--watch", action="store_true", help="wrap dev in a config-file watcher that restarts on change")
     parser.add_argument("--clean", action="store_true", help="reserved for compatibility")
     args, _unknown = parser.parse_known_args()
 
-    # Normalize: a bare `tauri` positional implies --native tauri.
-    if args.mode == "tauri":
-        args.tauri = True
-        args.native = True
-    else:
-        args.tauri = False
-    if args.mode == "watch":
-        # watch mode is the same as default native for WoWSP.
-        args.native = True
+    args.webui_only = args.mode == "webui"
 
-    if args.mock:
+    if args.mock and args.webui_only:
         return run_mock(args)
-    if not args.native and not args.mock:
-        args.native = True
-        args.tauri = True
     return run_native(args)
 
 
