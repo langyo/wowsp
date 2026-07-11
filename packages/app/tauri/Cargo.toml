@@ -47,6 +47,9 @@ winreg.workspace = true
 # Windows screen capture for overlay roster positioning
 windows.workspace = true
 
+# AppData directory resolution
+dirs-next.workspace = true
+
 # Image handling for capture analysis
 image.workspace = true
 

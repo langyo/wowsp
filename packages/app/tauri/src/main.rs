@@ -88,6 +88,10 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_os_preferences,
+            commands::appdata::appdata_read,
+            commands::appdata::appdata_write,
+            commands::appdata::appdata_delete,
+            commands::appdata::is_game_running,
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
             commands::replay::read_replay_header,

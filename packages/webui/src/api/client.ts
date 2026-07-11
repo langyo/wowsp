@@ -96,6 +96,10 @@ export interface PlayerStats {
 
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
+  appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
+  appdataWrite: (file: string, content: string) => transport.invoke<null>(RPC.appdata_write, { file, content }),
+  appdataDelete: (file: string) => transport.invoke<null>(RPC.appdata_delete, { file }),
+  isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),

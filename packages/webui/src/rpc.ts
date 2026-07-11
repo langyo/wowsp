@@ -8,6 +8,10 @@
  */
 export const RPC = {
   get_os_preferences: "get_os_preferences",
+  appdata_read: "appdata_read",
+  appdata_write: "appdata_write",
+  appdata_delete: "appdata_delete",
+  is_game_running: "is_game_running",
   detect_game_install: "detect_game_install",
   set_game_path: "set_game_path",
   read_replay_header: "read_replay_header",

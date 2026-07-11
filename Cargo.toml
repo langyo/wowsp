@@ -82,6 +82,7 @@ windows = { version = "^0.61", features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Diagnostics_ToolHelp",
 ] }
 
 # Image handling for capture analysis
@@ -94,6 +95,9 @@ hex = "^0.4"
 # Tauri desktop shell
 tauri = "^2"
 tauri-build = "^2"
+
+# AppData directory resolution (cross-platform %APPDATA%)
+dirs-next = "^2"
 
 # ── Build profiles ──────────────────────────────────────────
 
