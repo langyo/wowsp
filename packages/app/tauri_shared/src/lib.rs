@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// (mirroring ApeRadar's `ConfigWindow.AutoDetectGamePath`) and additionally
 /// walks Steam library folders for `appmanifest_552990.acf` — the Steam variant
 /// ApeRadar does not cover.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GameInstallKind {
     /// Official Wargaming Game Center install.
@@ -43,25 +43,25 @@ pub struct GameInstall {
 ///
 /// A replay file is laid out as:
 ///   4 bytes  magic        = `{0x12, 0x32, 0x34, 0x11}`
-///   4 bytes  json_len     = little-endian u32, length of the JSON block
-///   N bytes  json_block   = the match descriptor (this struct's source)
-///   4 bytes  meta_count   = number of trailing metadata blocks
-///   ...      metadata     = extra metadata (usually empty for live replays)
+///   4 bytes  block_count  = little-endian u32, number of data blocks
+///   ...      blocks       = `block_count` × (4-byte length + payload)
 ///   ...      packets      = encrypted/zlib packet stream (Phase 2 decode)
 ///
-/// Phase 1 (this struct) reads only the JSON block. The packet stream decode
-/// is milestone M3 in PLAN.md.
+/// The FIRST data block is the match-descriptor JSON. Subsequent blocks are
+/// extra metadata (usually empty for live replays). Phase 1 reads only the
+/// first JSON block; the packet stream decode is milestone M3 in PLAN.md.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplayMeta {
     pub path: String,
-    /// Raw match group, e.g. `"pvp"`, `"ranked"`, `"clan"`.
+    /// e.g. `"pvp"`, `"ranked"`, `"clan"`, `"event"`.
     pub match_group: Option<String>,
-    /// Game-client-formatted timestamp, e.g. `"12.07.2026 21:45:00"`.
+    /// Parsed from the replay filename (the JSON descriptor has no timestamp),
+    /// e.g. `"20250622_152405"`.
     pub date_time: Option<String>,
-    /// Internal map id (resolved to a name via the maps DB in M4).
-    pub map_id: Option<String>,
-    /// Display name when the client embeds one.
+    /// Internal numeric map id (the client JSON sends `mapId` as a number).
+    pub map_id: Option<i64>,
+    /// Client display name, e.g. `"15_NE_north"`.
     pub map_name: Option<String>,
     /// Per-player roster.
     pub vehicles: Vec<VehicleEntry>,
@@ -75,9 +75,10 @@ pub struct ReplayMeta {
 pub struct VehicleEntry {
     pub id: i64,
     pub name: String,
-    /// `"0"`/`"1"` = ally (self + division); higher = enemy.
-    pub relation: String,
-    pub ship_id: String,
+    /// `0`/`1` = ally (self + division); `2`+ = enemy. Numeric in the client.
+    pub relation: i64,
+    /// Client ship id (numeric, sent as JSON number).
+    pub ship_id: i64,
     /// Pre-resolved ship display name (looked up from the ships DB), if known.
     pub ship_name: Option<String>,
 }
@@ -113,4 +114,72 @@ pub struct Rect {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+/// One position sample for one entity at one instant — the raw output of M3's
+/// packet-stream decoder. WoWS maps are planar: x = east, z = north, y ≈ 0.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PositionSample {
+    /// Seconds since match start.
+    pub time: f32,
+    /// BigWorld entity id (map to a player via ReplayMeta.vehicles shipId/id).
+    pub entity_id: i32,
+    pub vehicle_id: i32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Heading (radians) about the vertical axis.
+    pub yaw: f32,
+}
+
+/// A per-entity trajectory: the full position timeline for one ship, ready for
+/// the holographic map to scrub.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityTrajectory {
+    pub entity_id: i32,
+    /// Metadata from the EntityCreate (0x05) packet: type, vehicleId, initial
+    /// position. `None` when the replay never created the entity (rare).
+    pub kind: Option<EntityKind>,
+    pub samples: Vec<PositionSample>,
+}
+
+/// Player stats from the Wargaming public API (milestone M9). All fields are
+/// optional because hidden profiles return nulls and some game modes are
+/// absent for casual accounts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerStats {
+    pub account_id: i64,
+    pub name: String,
+    /// Realm the lookup hit: ru / eu / na / asia / cn.
+    pub realm: String,
+    pub battles: Option<i64>,
+    /// Account-level overall winrate, percent (0–100).
+    pub winrate: Option<f32>,
+    /// Hidden profile (no detail stats available).
+    pub hidden: bool,
+    /// Clan tag, if any.
+    pub clan_tag: Option<String>,
+}
+
+/// Entity metadata from an EntityCreate (0x05) packet. The fixed header is
+/// readable without the per-version entity DB; the trailing `state` BinaryStream
+/// (entity properties) is skipped.
+///
+/// `entity_type` semantics (empirically observed on WoWS 14.5):
+///   2 = vehicle (ships, planes, projectiles — ships have the most position
+///       updates, so the frontend filters by sample count to keep only ships)
+///   4 = aircraft / squadron
+///  11 = player avatar (the camera follower; position 0,0,0)
+///  14 = capture zone (static)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityKind {
+    pub entity_type: i16,
+    pub vehicle_id: i32,
+    pub initial_x: f32,
+    pub initial_y: f32,
+    pub initial_z: f32,
 }

@@ -1,0 +1,115 @@
+.home {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+
+  &__hero {
+    text-align: center;
+  }
+
+  &__title {
+    margin: 0 0 0.5rem;
+    font-size: var(--text-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: rgb(var(--color-primary));
+  }
+
+  &__subtitle {
+    margin: 0;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-md);
+  }
+
+  &__card {
+    padding: 1.25rem 1.5rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-md);
+  }
+
+  &__card-title {
+    margin: 0 0 0.75rem;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  &__card-state {
+    margin: 0 0 0.75rem;
+    font-size: var(--text-sm);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+
+    &--loading { color: rgb(var(--color-info)); }
+    &--ok { color: rgb(var(--color-success)); }
+    &--empty { color: rgb(var(--color-warning)); }
+  }
+
+  &__path {
+    padding: 0.1rem 0.4rem;
+    background: rgb(var(--color-primary) / 10%);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    word-break: break-all;
+  }
+
+  &__realm {
+    padding: 0.1rem 0.5rem;
+    background: rgb(var(--color-accent) / 20%);
+    border-radius: var(--radius-full);
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    color: rgb(var(--color-accent));
+  }
+
+  &__card-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  &__modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+
+  &__mode {
+    text-align: left;
+    padding: 1.25rem 1.5rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: inherit;
+    font-family: inherit;
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      transform var(--duration-short) var(--ease-standard),
+      box-shadow var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 50%);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgb(var(--color-primary) / 12%);
+    }
+  }
+
+  &__mode-name {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: rgb(var(--color-primary));
+    margin-bottom: 0.35rem;
+  }
+
+  &__mode-desc {
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+    line-height: 1.45;
+  }
+}

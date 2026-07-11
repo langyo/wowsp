@@ -1,13 +1,12 @@
 /**
- * Three.js scene lifecycle composable. Encapsulates renderer/scene/camera setup,
- * a requestAnimationFrame render loop, resize handling, and clean disposal —
- * the boilerplate every three.js mount needs. The holographic map and the
- * overlay roster share this; feature code adds meshes/markers to the returned
- * scene.
+ * Three.js scene lifecycle composable for the holographic map. Encapsulates
+ * renderer/scene/camera setup, a requestAnimationFrame render loop, resize
+ * handling, and disposal. Returns the scene/camera/renderer so callers can add
+ * meshes (map plane, ship markers, trajectory lines).
  *
- * TODO(M4): the real map mesh + ship markers are loaded from GLB produced by
- * scripts/model_convert/. This skeleton just clears the scene to a neutral
- * holographic plane so the plumbing renders end-to-end.
+ * The render loop runs continuously; callers mutate the scene and the next
+ * frame picks it up. M4: ship markers + trajectories are added by
+ * `HolographicMap.tsx` from the decoded `EntityTrajectory[]`.
  */
 import { onBeforeUnmount, onMounted, ref, shallowRef, type Ref } from "vue";
 import * as THREE from "three";
@@ -33,8 +32,8 @@ export function useThreeScene(container: Ref<HTMLElement | null>) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b1220);
 
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 5000);
-    camera.position.set(0, 120, 180);
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 20000);
+    camera.position.set(0, 800, 800);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -42,17 +41,10 @@ export function useThreeScene(container: Ref<HTMLElement | null>) {
     renderer.setSize(width, height);
     el.appendChild(renderer.domElement);
 
-    // A flat sea-colored plane as a stand-in until the real map GLB loads.
-    const planeGeom = new THREE.PlaneGeometry(400, 400);
-    const planeMat = new THREE.MeshBasicMaterial({ color: 0x0a3050, transparent: true, opacity: 0.6 });
-    const plane = new THREE.Mesh(planeGeom, planeMat);
-    plane.rotation.x = -Math.PI / 2;
-    scene.add(plane);
-
-    // Holographic grid overlay.
-    const grid = new THREE.GridHelper(400, 40, 0x00aaff, 0x004466);
+    // Holographic grid + a faint sea plane.
+    const grid = new THREE.GridHelper(4000, 80, 0x00aaff, 0x004466);
     (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.4;
+    (grid.material as THREE.Material).opacity = 0.35;
     scene.add(grid);
 
     api.value = { scene, camera, renderer };

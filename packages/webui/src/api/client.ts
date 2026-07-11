@@ -17,8 +17,11 @@ export interface GameInstall {
 export interface VehicleEntry {
   id: number;
   name: string;
-  relation: string;
-  shipId: string;
+  /** 0/1 = ally (self + division); 2+ = enemy. Numeric in the client JSON. */
+  relation: number;
+  /** Client ship id (numeric, JSON number). */
+  shipId: number;
+  /** Pre-resolved ship display name, if known. */
   shipName?: string | null;
 }
 
@@ -26,8 +29,11 @@ export interface VehicleEntry {
 export interface ReplayMeta {
   path: string;
   matchGroup?: string | null;
+  /** Parsed from the replay filename (YYYYMMDD). */
   dateTime?: string | null;
-  mapId?: string | null;
+  /** Internal numeric map id. */
+  mapId?: number | null;
+  /** Client display name, e.g. "15_NE_north". */
   mapName?: string | null;
   vehicles: VehicleEntry[];
   raw: unknown;
@@ -47,18 +53,71 @@ export interface CaptureResult {
   rosterRect?: { x: number; y: number; width: number; height: number } | null;
 }
 
+/** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
+ * maps are planar: x = east, z = north, y ≈ 0 (sea level). */
+export interface PositionSample {
+  time: number;
+  entityId: number;
+  vehicleId: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
+/** Entity creation metadata (mirrors `wowsp_tauri_shared::EntityKind`). The
+ * fixed header of an EntityCreate (0x05) packet; the trailing state blob needs
+ * the entity DB and is skipped. `entityType` 2 = vehicle (ships). */
+export interface EntityKind {
+  entityType: number;
+  vehicleId: number;
+  initialX: number;
+  initialY: number;
+  initialZ: number;
+}
+
+/** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */
+export interface EntityTrajectory {
+  entityId: number;
+  kind?: EntityKind | null;
+  samples: PositionSample[];
+}
+
+/** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
+export interface PlayerStats {
+  accountId: number;
+  name: string;
+  realm: string;
+  battles?: number | null;
+  winrate?: number | null;
+  hidden: boolean;
+  clanTag?: string | null;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
+  readReplayPositions: (path: string) =>
+    transport.invoke<EntityTrajectory[]>(RPC.read_replay_positions, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
   readTempArenaInfo: (dir?: string) =>
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),
   stopArenaWatcher: () => transport.invoke<null>(RPC.stop_arena_watcher),
+  listenArenaInfo: (handler: (info: ArenaInfo) => void) =>
+    transport.listen?.<ArenaInfo>("wowsp://arena-info", handler),
   captureGameWindow: () => transport.invoke<CaptureResult>(RPC.capture_game_window),
   setOverlayVisible: (visible: boolean) =>
     transport.invoke<null>(RPC.set_overlay_visible, { visible }),
+  lookupPlayerStats: (name: string, realm: string) =>
+    transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
+  installOverlayMod: (gameRoot: string) =>
+    transport.invoke<string>(RPC.install_overlay_mod, { gameRoot }),
+  uninstallOverlayMod: (gameRoot: string) =>
+    transport.invoke<null>(RPC.uninstall_overlay_mod, { gameRoot }),
+  isOverlayModInstalled: (gameRoot: string) =>
+    transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
 };

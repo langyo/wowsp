@@ -30,6 +30,17 @@ tracing-subscriber.workspace = true
 # File watching (poll tempArenaInfo.json, replay dir)
 notify.workspace = true
 
+# Replay packet-stream decryption (Blowfish ECB + XOR chain + zlib)
+blowfish.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+
+# HTTP client for Wargaming public API lookups (M9)
+reqwest.workspace = true
+
+# Service supervision — graceful shutdown / signal handling
+malkuth.workspace = true
+
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg.workspace = true
 

@@ -4,7 +4,7 @@
  * regardless of host.
  *
  * Adapted from shittim-chest's transport layer, trimmed to WoWSP's needs
- * (no RPC streaming, no auth, no device channels — just command invoke).
+ * (invoke + optional event listen for the arena-info push).
  */
 export interface Transport {
   /**
@@ -12,6 +12,13 @@ export interface Transport {
    * `Result<T, String>` payload (unwrapped — rejections throw).
    */
   invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+
+  /**
+   * Subscribe to a Tauri backend event. Returns an unsubscribe function.
+   * Returns a no-op unsubscribe when running outside the Tauri shell (mock
+   * mode has no push source).
+   */
+  listen?<T = unknown>(event: string, handler: (payload: T) => void): Promise<() => void>;
 }
 
 export class RpcError extends Error {

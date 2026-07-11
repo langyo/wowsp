@@ -2,7 +2,61 @@
   width: 100%;
   height: 100%;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   color: rgb(var(--color-text));
   background: rgb(var(--color-background));
   font-family: var(--font-sans);
+}
+
+.wowsp-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  height: var(--s-header-height);
+  padding: 0 1.25rem;
+  background: rgb(var(--color-surface));
+  border-bottom: 1px solid rgb(var(--color-border) / 20%);
+  flex-shrink: 0;
+
+  &__brand {
+    font-weight: 600;
+    font-size: var(--text-md);
+    color: rgb(var(--color-primary));
+    text-decoration: none;
+    letter-spacing: 0.02em;
+  }
+
+  &__links {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  &__link {
+    padding: 0.35rem 0.85rem;
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-muted));
+    text-decoration: none;
+    font-size: var(--text-sm);
+    transition:
+      color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-text));
+      background: rgb(var(--color-primary) / 8%);
+    }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 12%);
+      font-weight: 500;
+    }
+  }
+}
+
+.wowsp-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
