@@ -59,7 +59,7 @@ visible only while `Tab` is held.
 - [x] Python model-conversion scripts (`scripts/model_convert/`) with README
 - [x] FastAPI mock backend (`scripts/mock/`) so the frontend can develop without the game
 - [x] Playwright e2e harness, lagrange docs (en + zhs), GitHub CI + community files
-- [x] BSL-1.1 → SySL-1.0 license (Change Date 2030-01-01), signed langyo
+- [x] Pure SySL-1.0 license (Synthetic Source License, no BSL/change-date), signed langyo
 
 ## Feature milestones (dev branch)
 

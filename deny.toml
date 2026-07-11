@@ -20,11 +20,24 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "AGPL-3.0",
-    "BUSL-1.1",
 ]
 copyleft = "warn"
 default = "deny"
 confidence-threshold = 0.8
+
+# WoWSP's own workspace crates are licensed under the Synthetic Source License
+# 1.0 (SySL-1.0), which is not yet a registered SPDX identifier. cargo-deny
+# cannot resolve it from the allow list, so we declare it explicitly here for
+# the path-dependency crates that carry `license = "SySL-1.0"`.
+[[licenses.exceptions]]
+allow = ["SySL-1.0"]
+name = "wowsp_tauri"
+version = "*"
+
+[[licenses.exceptions]]
+allow = ["SySL-1.0"]
+name = "wowsp_tauri_shared"
+version = "*"
 
 [[licenses.clarify]]
 name = "ring"

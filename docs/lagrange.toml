@@ -1,7 +1,8 @@
 [site]
 title = "WoWSP"
 description = "World of Warship Panel — replay review & in-game overlay"
+cname = "wowsp.docs.celestia.world"
 
 [languages]
 default = "en"
-order = ["en", "zhs"]
+order = ["en", "zhs", "zht", "ja", "ko", "fr", "es", "ru", "ar"]

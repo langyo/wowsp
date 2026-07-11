@@ -19,7 +19,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
-license = "BUSL-1.1"
+license = "SySL-1.0"
 description = "World of WarShip Panel — replay review & in-game overlay"
 repository = "https://github.com/celestia-island/wowsp"
 
