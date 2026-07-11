@@ -13,7 +13,10 @@ export default defineComponent({
   name: "OverlayView",
   setup() {
     const overlay = useOverlay();
-    onMounted(() => void overlay.refresh());
+    onMounted(() => {
+      void overlay.refresh();
+      void overlay.startWatching();
+    });
     return () => (
       <main class="overlay-view">
         <div class="overlay-view__stage">

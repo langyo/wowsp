@@ -6,9 +6,11 @@
 
 pub mod arena_info;
 pub mod game_detect;
+pub mod mod_install;
 pub mod overlay;
 pub mod packets;
 pub mod replay;
+pub mod wg_api;
 
 use crate::os_prefs::OsPreferences;
 

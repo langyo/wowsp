@@ -10,6 +10,9 @@ interface TauriGlobal {
   core?: {
     invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
   };
+  event?: {
+    listen: (event: string, handler: (e: { payload: unknown }) => void) => Promise<() => void>;
+  };
 }
 
 export class TauriTransport implements Transport {
@@ -25,10 +28,17 @@ export class TauriTransport implements Transport {
     try {
       return (await this.invokeFn(cmd, args)) as T;
     } catch (e) {
-      // Tauri rejection: the Rust side returned `Err(String)`, surfaced as a
-      // string (or object with a `message`). Normalize to RpcError.
       const msg = typeof e === "string" ? e : (e as { message?: string })?.message ?? String(e);
       throw new RpcError(msg, cmd);
     }
+  }
+
+  async listen<T = unknown>(event: string, handler: (payload: T) => void): Promise<() => void> {
+    const listenFn = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__?.event?.listen;
+    if (!listenFn) {
+      // Not in Tauri shell (mock/browser) — no backend push source.
+      return () => {};
+    }
+    return listenFn(event, (e) => handler(e.payload as T));
   }
 }

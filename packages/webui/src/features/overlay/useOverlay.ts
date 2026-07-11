@@ -37,6 +37,9 @@ export function useOverlay() {
     visible: store.visible,
     allies: store.allies,
     enemies: store.enemies,
+    watching: store.watching,
     refresh: (dir?: string) => store.refreshArenaInfo(dir),
+    startWatching: (dir?: string) => store.startWatching(dir),
+    stopWatching: () => store.stopWatching(),
   };
 }

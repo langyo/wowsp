@@ -35,6 +35,9 @@ blowfish.workspace = true
 byteorder.workspace = true
 flate2.workspace = true
 
+# HTTP client for Wargaming public API lookups (M9)
+reqwest.workspace = true
+
 # Service supervision — graceful shutdown / signal handling
 malkuth.workspace = true
 

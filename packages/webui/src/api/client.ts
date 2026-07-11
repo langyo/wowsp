@@ -83,6 +83,17 @@ export interface EntityTrajectory {
   samples: PositionSample[];
 }
 
+/** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
+export interface PlayerStats {
+  accountId: number;
+  name: string;
+  realm: string;
+  battles?: number | null;
+  winrate?: number | null;
+  hidden: boolean;
+  clanTag?: string | null;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
@@ -96,7 +107,17 @@ export const api = {
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),
   stopArenaWatcher: () => transport.invoke<null>(RPC.stop_arena_watcher),
+  listenArenaInfo: (handler: (info: ArenaInfo) => void) =>
+    transport.listen?.<ArenaInfo>("wowsp://arena-info", handler),
   captureGameWindow: () => transport.invoke<CaptureResult>(RPC.capture_game_window),
   setOverlayVisible: (visible: boolean) =>
     transport.invoke<null>(RPC.set_overlay_visible, { visible }),
+  lookupPlayerStats: (name: string, realm: string) =>
+    transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
+  installOverlayMod: (gameRoot: string) =>
+    transport.invoke<string>(RPC.install_overlay_mod, { gameRoot }),
+  uninstallOverlayMod: (gameRoot: string) =>
+    transport.invoke<null>(RPC.uninstall_overlay_mod, { gameRoot }),
+  isOverlayModInstalled: (gameRoot: string) =>
+    transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
 };

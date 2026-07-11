@@ -98,6 +98,10 @@ fn main() {
             commands::arena_info::stop_arena_watcher,
             commands::overlay::capture_game_window,
             commands::overlay::set_overlay_visible,
+            commands::wg_api::lookup_player_stats,
+            commands::mod_install::install_overlay_mod,
+            commands::mod_install::uninstall_overlay_mod,
+            commands::mod_install::is_overlay_mod_installed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP tauri application");

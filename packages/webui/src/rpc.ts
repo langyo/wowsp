@@ -18,6 +18,10 @@ export const RPC = {
   stop_arena_watcher: "stop_arena_watcher",
   capture_game_window: "capture_game_window",
   set_overlay_visible: "set_overlay_visible",
+  lookup_player_stats: "lookup_player_stats",
+  install_overlay_mod: "install_overlay_mod",
+  uninstall_overlay_mod: "uninstall_overlay_mod",
+  is_overlay_mod_installed: "is_overlay_mod_installed",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

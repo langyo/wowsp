@@ -145,6 +145,25 @@ pub struct EntityTrajectory {
     pub samples: Vec<PositionSample>,
 }
 
+/// Player stats from the Wargaming public API (milestone M9). All fields are
+/// optional because hidden profiles return nulls and some game modes are
+/// absent for casual accounts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerStats {
+    pub account_id: i64,
+    pub name: String,
+    /// Realm the lookup hit: ru / eu / na / asia / cn.
+    pub realm: String,
+    pub battles: Option<i64>,
+    /// Account-level overall winrate, percent (0–100).
+    pub winrate: Option<f32>,
+    /// Hidden profile (no detail stats available).
+    pub hidden: bool,
+    /// Clan tag, if any.
+    pub clan_tag: Option<String>,
+}
+
 /// Entity metadata from an EntityCreate (0x05) packet. The fixed header is
 /// readable without the per-version entity DB; the trailing `state` BinaryStream
 /// (entity properties) is skipped.

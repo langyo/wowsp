@@ -8,4 +8,5 @@ export type {
   PositionSample,
   EntityKind,
   EntityTrajectory,
+  PlayerStats,
 } from "./client";
