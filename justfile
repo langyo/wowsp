@@ -37,7 +37,7 @@ bootstrap: init
 
 # Build everything (release by default; --dev for debug; --clean to wipe)
 [script('bash')]
-build target='all' *FLAGS=''):
+build target='all' *FLAGS='':
     set -euo pipefail
     case "{{target}}" in
       all)
@@ -69,17 +69,17 @@ clean target='all':
 # ── Run ──────────────────────────────────────────────────────────────
 
 # Dev server — dispatch by target:
-#   just dev              → cargo tauri dev (native desktop; tauri-cli watches
-#                           Rust src + Vite HMR for the webui; malkuth drains
-#                           gracefully on each restart)
-#   just dev --watch      → same, plus an explicit config-file watcher that
-#                           restarts the whole dev tree when Cargo.toml /
+#   just dev              → cargo tauri dev (DEFAULT, same as `just dev tauri`).
+#                           Native desktop window; tauri-cli watches Rust src,
+#                           Vite HMRs the webui, malkuth drains on each restart.
+#   just dev tauri        → explicit form of the above
+#   just dev tauri --watch→ also restart the whole dev tree when Cargo.toml /
 #                           tauri.conf.json / justfile / .env change
+#   just dev tauri --mock → cargo tauri dev + FastAPI mock backend on :8787
 #   just dev webui        → browser-only Vite (no Tauri shell)
-#   just dev --mock       → cargo tauri dev + FastAPI mock backend on :8787
 #   just dev webui --mock → browser Vite + mock backend (no Tauri)
 [script('bash')]
-dev target='' *FLAGS=''):
+dev target='tauri' *FLAGS='':
     set -euo pipefail
     # Prefer plain `python` on Windows (python3 is often the broken
     # WindowsApps Store stub that exits 49). On Unix, `python3` is the norm.
@@ -91,17 +91,17 @@ dev target='' *FLAGS=''):
     done
     if [ -z "$PY" ]; then echo "error: no working python found"; exit 1; fi
     case "{{target}}" in
+      tauri) "$PY" scripts/dev.py tauri {{FLAGS}} ;;
       webui) "$PY" scripts/dev.py webui {{FLAGS}} ;;
-      "")    "$PY" scripts/dev.py {{FLAGS}} ;;
-      *) echo "Usage: just dev [webui] [--mock|--watch]"; exit 1 ;;
+      *) echo "Usage: just dev [tauri|webui] [--mock|--watch]"; exit 1 ;;
     esac
 
 watch *FLAGS:
-    just dev --watch {{FLAGS}}
+    just dev tauri --watch {{FLAGS}}
 
 # Run a specific target
 [script('bash')]
-run target='webui' *FLAGS=''):
+run target='webui' *FLAGS='':
     set -euo pipefail
     case "{{target}}" in
       webui) {{PM}} --filter @wowsp/webui dev ;;
@@ -135,7 +135,7 @@ check:
     cargo check --workspace
 
 [script('bash')]
-test target='all' *FLAGS=''):
+test target='all' *FLAGS='':
     set -euo pipefail
     case "{{target}}" in
       all)     if [ -z "{{FLAGS}}" ]; then cargo test --workspace; else python -m pytest scripts/e2e {{FLAGS}}; fi ;;
@@ -154,7 +154,7 @@ ci: gen fmt-check clippy test
 # ── Generate (codegen, bundles, icons) ───────────────────────────────
 
 [script('bash')]
-gen target='all' *FLAGS=''):
+gen target='all' *FLAGS='':
     set -euo pipefail
     case "{{target}}" in
       all)       just gen shaders; just gen icons ;;
@@ -166,7 +166,7 @@ gen target='all' *FLAGS=''):
 # ── Package ──────────────────────────────────────────────────────────
 
 [script('bash')]
-package target='tauri' *FLAGS=''):
+package target='tauri' *FLAGS='':
     set -euo pipefail
     case "{{target}}" in
       tauri)  cargo tauri build {{FLAGS}} ;;
@@ -181,7 +181,7 @@ e2e-setup:
 # ── Model conversion (WoWSP-specific: ship/map → GLB for three.js) ───
 
 [script('bash')]
-convert-model kind *ARGS=''):
+convert-model kind *ARGS='':
     set -euo pipefail
     case "{{kind}}" in
       ship) python scripts/model_convert/convert_ship.py {{ARGS}} ;;

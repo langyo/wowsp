@@ -62,7 +62,7 @@ windows-shell-check:
 
 # Shared build dispatcher: runs a prerequisite, then picks dev vs release cmd.
 [script('bash')]
-_build always_pre dcmd rcmd *FLAGS=''):
+_build always_pre dcmd rcmd *FLAGS='':
     set -euo pipefail
     profile=release
     for a in {{FLAGS}}; do
@@ -95,7 +95,7 @@ clean-incremental:
 
 # Format Markdown docs (stdlib-only; call inside your fmt/fmt-check recipe).
 # Does NOT touch Rust or JS — compose with cargo fmt / pnpm lint yourself.
-fmt-markdown *ARGS=''):
+fmt-markdown *ARGS='':
     {{ _devtools }} format-markdown . {{ARGS}}
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
