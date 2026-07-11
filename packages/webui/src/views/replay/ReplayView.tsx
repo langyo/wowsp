@@ -54,10 +54,10 @@ export default defineComponent({
       <main class="replay-view">
         <aside class="replay-view__list">
           <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
-          {gd.active.value ? (
-            <p class="replay-view__game-path" title={gd.active.value.path}>
-              {gd.active.value.path.split(/[\\/]/).pop()}
-              {gd.active.value.realm ? ` · ${gd.active.value.realm}` : null}
+          {gd.config.activeInstall ? (
+            <p class="replay-view__game-path" title={gd.config.activeInstall.path}>
+              {gd.config.activeInstall.path.split(/[\\/]/).pop()}
+              {gd.config.activeInstall.realm ? ` · ${gd.config.activeInstall.realm}` : null}
             </p>
           ) : null}
           {parser.list.value.length === 0 ? (

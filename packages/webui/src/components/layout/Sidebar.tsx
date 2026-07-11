@@ -1,8 +1,9 @@
-import { computed, defineComponent } from "vue";
+import { computed, defineComponent, ref } from "vue";
 import { RouterLink } from "vue-router";
 
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
 import { t } from "@/i18n";
 import "./Sidebar.scss";
 
@@ -15,6 +16,7 @@ export default defineComponent({
   setup() {
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
+    const showSwitcher = ref(false);
 
     const accountLabel = computed(() => {
       const a = accounts.activeAccount;
@@ -27,7 +29,7 @@ export default defineComponent({
         <div class="sidebar__brand">{t("common.app.name")}</div>
 
         <nav class="sidebar__nav">
-          <RouterLink to="/" class="sidebar__link" activeClass="is-active" exact>
+          <RouterLink to="/" class="sidebar__link" activeClass="is-active" end>
             <span class="sidebar__link-icon">📊</span>
             <span class="sidebar__link-text">{t("nav.dashboard")}</span>
           </RouterLink>
@@ -35,9 +37,17 @@ export default defineComponent({
             <span class="sidebar__link-icon">🔍</span>
             <span class="sidebar__link-text">{t("nav.lookup")}</span>
           </RouterLink>
+          <RouterLink to="/ships" class="sidebar__link" activeClass="is-active">
+            <span class="sidebar__link-icon">🚢</span>
+            <span class="sidebar__link-text">{t("nav.ships")}</span>
+          </RouterLink>
           <RouterLink to="/replay" class="sidebar__link" activeClass="is-active">
             <span class="sidebar__link-icon">🎬</span>
             <span class="sidebar__link-text">{t("nav.replay")}</span>
+          </RouterLink>
+          <RouterLink to="/settings" class="sidebar__link" activeClass="is-active">
+            <span class="sidebar__link-icon">⚙️</span>
+            <span class="sidebar__link-text">{t("nav.settings")}</span>
           </RouterLink>
         </nav>
 
@@ -55,10 +65,15 @@ export default defineComponent({
               {gameStatus.running ? t("common.game.online") : t("common.game.offline")}
             </span>
           </div>
-          <div class="sidebar__account">
+          <div class="sidebar__account" onClick={() => (showSwitcher.value = true)}>
             <span class="sidebar__account-name">{accountLabel.value}</span>
           </div>
         </div>
+
+        <AccountSwitcherModal
+          modelValue={showSwitcher.value}
+          onUpdate:modelValue={(v: boolean) => (showSwitcher.value = v)}
+        />
       </aside>
     );
   },

@@ -3,5 +3,18 @@
   "language": "Language",
   "theme": "Theme",
   "gamePath": "Game path",
-  "realm": "Realm"
+  "realm": "Realm",
+  "themeMode": "Appearance",
+  "themeModeSystem": "Auto (sun)",
+  "themeModeDark": "Dark",
+  "themeModeLight": "Light",
+  "themePreset": "Color preset",
+  "geolocation": "Location",
+  "geolocationHint": "Used for solar-based auto theme. Resolved via IP, cached 24h.",
+  "currentPeriod": "Sun period",
+  "periodDay": "Day",
+  "periodDusk": "Dusk",
+  "periodNight": "Night",
+  "about": "About",
+  "updater": "Updates"
 }

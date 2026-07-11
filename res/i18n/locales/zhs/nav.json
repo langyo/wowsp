@@ -1,6 +1,8 @@
 {
   "dashboard": "我的水表",
   "lookup": "水表查询",
+  "ships": "舰艇查询",
   "replay": "录像复盘",
+  "settings": "设置",
   "home": "首页"
 }

@@ -75,24 +75,8 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
             d.get(&key)
         })
         .and_then(|v| v.get("statistics"));
-    let (battles, winrate, hidden) = match stats_node {
-        Some(s) if !s.is_null() => {
-            let battles_pvp = s
-                .get("pvp")
-                .and_then(|p| p.get("battles"))
-                .and_then(|b| b.as_i64());
-            let wins = s
-                .get("pvp")
-                .and_then(|p| p.get("wins"))
-                .and_then(|w| w.as_i64());
-            let wr = match (wins, battles_pvp) {
-                (Some(w), Some(b)) if b > 0 => Some(100.0 * w as f32 / b as f32),
-                _ => None,
-            };
-            (battles_pvp, wr, false)
-        },
-        _ => (None, None, true),
-    };
+    let p = PvpStats::extract(stats_node);
+    let hidden = stats_node.map_or(true, |s| s.get("pvp").map_or(true, |p| p.is_null()));
 
     // 3. Optional clan tag lookup (best-effort — never fails the whole call).
     let clan_tag = match client
@@ -125,11 +109,164 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         account_id: entry.account_id,
         name: entry.nickname,
         realm,
-        battles,
-        winrate,
+        battles: p.battles,
+        winrate: p.winrate,
         hidden,
         clan_tag,
+        avg_damage: p.avg_damage,
+        avg_xp: p.avg_xp,
+        kd_ratio: p.kd_ratio,
+        survival_rate: p.survival_rate,
+        hit_rate: p.hit_rate,
+        pr: p.pr,
+        ships_played: p.ships_played,
+        solo_wr: p.solo_wr,
+        div2_wr: p.div2_wr,
+        div3_wr: p.div3_wr,
     })
+}
+
+/// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
+/// All fields are optional — hidden profiles yield null, and casual accounts
+/// may lack division splits. PR (Personal Rating) uses a community proxy
+/// derived from avg_damage and winrate (not WG's internal hidden score).
+struct PvpStats {
+    battles: Option<i64>,
+    winrate: Option<f32>,
+    avg_damage: Option<f32>,
+    avg_xp: Option<f32>,
+    kd_ratio: Option<f32>,
+    survival_rate: Option<f32>,
+    hit_rate: Option<f32>,
+    pr: Option<i64>,
+    ships_played: Option<i64>,
+    solo_wr: Option<f32>,
+    div2_wr: Option<f32>,
+    div3_wr: Option<f32>,
+}
+
+impl PvpStats {
+    fn extract(stats: Option<&serde_json::Value>) -> Self {
+        let pvp = stats.and_then(|s| s.get("pvp")).filter(|v| !v.is_null());
+        let pvp = match pvp {
+            Some(p) => p,
+            None => return Self::empty(),
+        };
+
+        let battles = get_i64(pvp, "battles");
+        let wins = get_i64(pvp, "wins");
+        let winrate = match (wins, battles) {
+            (Some(w), Some(b)) if b > 0 => Some(100.0 * w as f32 / b as f32),
+            _ => None,
+        };
+
+        let damage = get_i64(pvp, "damage_caused");
+        let avg_damage = match (damage, battles) {
+            (Some(d), Some(b)) if b > 0 => Some(d as f32 / b as f32),
+            _ => None,
+        };
+
+        let xp = get_i64(pvp, "xp");
+        let avg_xp = match (xp, battles) {
+            (Some(x), Some(b)) if b > 0 => Some(x as f32 / b as f32),
+            _ => None,
+        };
+
+        let frags = get_i64(pvp, "frags");
+        let survived = get_i64(pvp, "survived_battles");
+        let kd_ratio = match (frags, battles, survived) {
+            (Some(f), Some(b), Some(s)) if b > s => Some(f as f32 / (b - s) as f32),
+            _ => None,
+        };
+        let survival_rate = match (survived, battles) {
+            (Some(s), Some(b)) if b > 0 => Some(100.0 * s as f32 / b as f32),
+            _ => None,
+        };
+
+        let shots = get_i64(pvp, "main_battery_shots");
+        let hits = get_i64(pvp, "main_battery_hits");
+        let hit_rate = match (hits, shots) {
+            (Some(h), Some(s)) if s > 0 => Some(100.0 * h as f32 / s as f32),
+            _ => None,
+        };
+
+        let ships_played = get_i64(pvp, "battles").and_then(|_| {
+            // ships_played is approximated by counting ship entries — but
+            // account/info doesn't include per-ship; we leave it as battles
+            // count fallback (the ships/{shipId} endpoint gives the real count
+            // in a follow-up call). Set to None for now.
+            None::<i64>
+        });
+
+        let pr = compute_pr(avg_damage, winrate, battles);
+
+        Self {
+            battles,
+            winrate,
+            avg_damage,
+            avg_xp,
+            kd_ratio,
+            survival_rate,
+            hit_rate,
+            pr,
+            ships_played,
+            solo_wr: div_wr(pvp, "pvp_solo"),
+            div2_wr: div_wr(pvp, "pvp_div2"),
+            div3_wr: div_wr(pvp, "pvp_div3"),
+        }
+    }
+
+    fn empty() -> Self {
+        Self {
+            battles: None,
+            winrate: None,
+            avg_damage: None,
+            avg_xp: None,
+            kd_ratio: None,
+            survival_rate: None,
+            hit_rate: None,
+            pr: None,
+            ships_played: None,
+            solo_wr: None,
+            div2_wr: None,
+            div3_wr: None,
+        }
+    }
+}
+
+fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
+    v.get(key).and_then(|x| x.as_i64())
+}
+
+/// Extracts winrate from a per-division stats node (pvp_solo / pvp_div2 / pvp_div3).
+fn div_wr(pvp: &serde_json::Value, key: &str) -> Option<f32> {
+    let node = pvp.get(key)?;
+    if node.is_null() {
+        return None;
+    }
+    let b = node.get("battles")?.as_i64()?;
+    let w = node.get("wins")?.as_i64()?;
+    if b > 0 {
+        Some(100.0 * w as f32 / b as f32)
+    } else {
+        None
+    }
+}
+
+/// Community PR proxy (wows-numbers-style simplified). Returns None when the
+/// needed inputs are absent. The real PR weights expected-damage by ship tier
+/// — this is a coarse single-number approximation that's good enough for a
+/// tier badge.
+fn compute_pr(avg_damage: Option<f32>, winrate: Option<f32>, battles: Option<i64>) -> Option<i64> {
+    let dmg = avg_damage?;
+    let wr = winrate?;
+    let _ = battles?;
+    // Simplified weights (wows-numbers-inspired):
+    //   damage carries ~70%, winrate carries ~30%.
+    let damage_score = (dmg / 100.0).clamp(0.0, 40.0);
+    let wr_score = ((wr - 35.0) / 5.0).clamp(0.0, 12.0);
+    let pr = 200.0 + damage_score * 35.0 + wr_score * 30.0;
+    Some(pr.round() as i64)
 }
 
 fn realm_host(realm: &str) -> Result<&'static str, String> {
@@ -174,5 +311,59 @@ mod tests {
         assert_eq!(realm_host("asia").unwrap(), "asia");
         assert!(realm_host("cn").is_err());
         assert!(realm_host("xx").is_err());
+    }
+
+    #[test]
+    fn pvp_stats_extracts_all_fields() {
+        let raw = serde_json::json!({
+            "pvp": {
+                "battles": 1000,
+                "wins": 550,
+                "damage_caused": 1_500_000,
+                "xp": 1_200_000,
+                "frags": 800,
+                "survived_battles": 300,
+                "main_battery_shots": 5000,
+                "main_battery_hits": 1500,
+                "pvp_solo": { "battles": 600, "wins": 330 },
+                "pvp_div2": { "battles": 200, "wins": 110 },
+                "pvp_div3": { "battles": 200, "wins": 110 }
+            }
+        });
+        let p = PvpStats::extract(Some(&raw));
+        assert_eq!(p.battles, Some(1000));
+        assert_eq!(p.winrate, Some(55.0));
+        assert_eq!(p.avg_damage, Some(1500.0));
+        assert_eq!(p.avg_xp, Some(1200.0));
+        // 800 frags / 700 deaths ≈ 1.143
+        assert!((p.kd_ratio.unwrap() - 1.143).abs() < 0.01);
+        assert_eq!(p.survival_rate, Some(30.0));
+        assert_eq!(p.hit_rate, Some(30.0));
+        assert_eq!(p.solo_wr, Some(55.0));
+        assert_eq!(p.div2_wr, Some(55.0));
+        assert_eq!(p.div3_wr, Some(55.0));
+        assert!(p.pr.is_some());
+    }
+
+    #[test]
+    fn pvp_stats_empty_when_null() {
+        let raw = serde_json::json!({ "pvp": null });
+        let p = PvpStats::extract(Some(&raw));
+        assert_eq!(p.battles, None);
+        assert_eq!(p.winrate, None);
+        assert_eq!(p.pr, None);
+    }
+
+    #[test]
+    fn pvp_stats_empty_when_no_statistics_node() {
+        let p = PvpStats::extract(None);
+        assert_eq!(p.battles, None);
+    }
+
+    #[test]
+    fn compute_pr_returns_none_for_missing_inputs() {
+        assert_eq!(compute_pr(None, Some(55.0), Some(100)), None);
+        assert_eq!(compute_pr(Some(1500.0), None, Some(100)), None);
+        assert!(compute_pr(Some(1500.0), Some(55.0), Some(100)).is_some());
     }
 }

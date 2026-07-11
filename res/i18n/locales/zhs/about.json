@@ -1,0 +1,12 @@
+{
+  "title": "关于 WoWSP",
+  "subtitle": "World of WarShip Panel",
+  "description": "战舰世界桌面仪表板：独立录像复盘（全息 3D 地图）+ 游戏内透明覆盖层（实时水表查询）。",
+  "checkUpdate": "检查更新",
+  "updateAvailable": "有新版本 →",
+  "upToDate": "已是最新 ✓",
+  "checking": "检查中...",
+  "downloading": "下载中...",
+  "issues": "报告问题",
+  "license": "SySL-1.0 许可证 · © {author}"
+}

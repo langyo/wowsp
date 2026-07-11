@@ -1,5 +1,5 @@
 import { onUnmounted, ref, type Ref } from "vue";
-import { useOverlayStore } from "@/stores/overlay";
+import { usePopupRegistryStore } from "@/stores/popupRegistry";
 
 export interface UseOverlayOptions {
   name: string;
@@ -15,7 +15,7 @@ export interface OverlayHandle {
 }
 
 export function useOverlay(opts: UseOverlayOptions): OverlayHandle {
-  const store = useOverlayStore();
+  const store = usePopupRegistryStore();
   const isOpen = ref(false);
 
   function open(): void {

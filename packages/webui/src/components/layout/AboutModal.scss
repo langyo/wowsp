@@ -1,0 +1,121 @@
+.about-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 0.5rem 0;
+
+  &__logo {
+    font-size: 3rem;
+    line-height: 1;
+  }
+
+  &__name {
+    margin: 0;
+    font-size: var(--text-xl);
+    font-weight: 800;
+    color: rgb(var(--color-primary));
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__version {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+
+    strong {
+      color: rgb(var(--color-text));
+    }
+  }
+
+  &__update {
+    background: rgb(var(--color-success) / 15%);
+    border: 1px solid rgb(var(--color-success) / 40%);
+    color: rgb(var(--color-success));
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+
+    &:hover {
+      background: rgb(var(--color-success) / 25%);
+    }
+  }
+
+  &__up-to-date {
+    color: rgb(var(--color-success));
+    font-size: var(--text-2xs);
+  }
+
+  &__check {
+    background: transparent;
+    border: 1px solid rgb(var(--color-border) / 30%);
+    color: rgb(var(--color-muted));
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+
+    &:hover {
+      color: rgb(var(--color-text));
+      border-color: rgb(var(--color-primary) / 40%);
+    }
+  }
+
+  &__desc {
+    margin: 0.5rem 0 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
+    line-height: 1.5;
+    max-width: 22rem;
+  }
+
+  &__tech {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+  }
+
+  &__tech-tag {
+    font-size: var(--text-2xs);
+    padding: 0.15rem 0.45rem;
+    border-radius: var(--radius-xs);
+    background: rgb(var(--color-primary) / 10%);
+    color: rgb(var(--color-primary));
+  }
+
+  &__links {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.75rem;
+
+    a {
+      font-size: var(--text-xs);
+      color: rgb(var(--color-primary));
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  &__footer {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgb(var(--color-border) / 12%);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    width: 100%;
+  }
+}

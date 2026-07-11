@@ -32,6 +32,9 @@ export default defineComponent({
     const panelRef = ref<HTMLElement | null>(null);
 
     const style = computed(() => ({ maxWidth: props.width }));
+    // Track the popup-manager handle so we unregister with the correct id on
+    // close (previously passed "" which leaked the scroll-lock counter).
+    let popupId = "";
 
     function close() {
       if (props.closeable) emit("update:modelValue", false);
@@ -43,6 +46,7 @@ export default defineComponent({
         if (open) {
           previouslyFocused.value = document.activeElement as HTMLElement;
           const handle = manager.register("modal", true, props.title);
+          popupId = handle.id;
           animBus.run();
           (panelRef as unknown as { _z?: number })._z = handle.zIndex;
           shouldRender.value = true;
@@ -69,7 +73,8 @@ export default defineComponent({
     }
     function onAfterLeave() {
       animBus.cancel();
-      manager.unregister("");
+      manager.unregister(popupId);
+      popupId = "";
       shouldRender.value = false;
       previouslyFocused.value?.focus?.();
       emit("afterLeave");
@@ -90,7 +95,7 @@ export default defineComponent({
     }
 
     onBeforeUnmount(() => {
-      manager.unregister("");
+      if (popupId) manager.unregister(popupId);
     });
 
     return () => {

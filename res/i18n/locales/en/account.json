@@ -2,6 +2,7 @@
   "notBound": "No account bound",
   "bind": "Bind account",
   "switch": "Switch account",
+  "switcherTitle": "Account manager",
   "add": "Add account",
   "remove": "Remove",
   "nickname": "Nickname",
@@ -10,5 +11,6 @@
   "searching": "Searching...",
   "notFound": "No account found",
   "bound": "Bound",
-  "selectRealm": "Select realm"
+  "selectRealm": "Select realm",
+  "noAccounts": "No accounts bound yet. Search a nickname above to bind one."
 }

@@ -18,7 +18,8 @@ export const useStatsStore = defineStore("stats", () => {
     return `stats-cache/${cacheKey(realm, accountId)}.json`;
   }
 
-  /** Look up a player's stats. Uses cache when fresh (< 1 hour old). */
+  /** Look up a player's stats. Uses cache when fresh (< 1 hour old).
+   *  On success, appends a snapshot for trend tracking. */
   async function lookup(nickname: string, realm: string): Promise<PlayerStats> {
     loading.value = true;
     error.value = null;
@@ -26,8 +27,21 @@ export const useStatsStore = defineStore("stats", () => {
       const stats = await api.lookupPlayerStats(nickname, realm);
       const key = cacheKey(realm, stats.accountId);
       cache.value.set(key, stats);
-      // Persist to AppData (best-effort, don't block UI).
+      // Persist current snapshot to AppData (best-effort, don't block UI).
       void api.appdataWrite(cacheFile(realm, stats.accountId), JSON.stringify(stats)).catch(() => {});
+      // Append a versioned snapshot for trend tracking (best-effort).
+      void api.snapshotPlayerStats(
+        stats.accountId,
+        realm,
+        stats.battles ?? null,
+        // wins isn't in PlayerStats directly — derive from winrate * battles.
+        stats.battles != null && stats.winrate != null
+          ? Math.round((stats.winrate / 100) * stats.battles)
+          : null,
+        stats.winrate ?? null,
+        stats.avgDamage ?? null,
+        stats.pr ?? null,
+      ).catch(() => {});
       return stats;
     } catch (e) {
       error.value = (e as Error).message;

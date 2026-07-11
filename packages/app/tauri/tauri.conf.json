@@ -5,8 +5,20 @@
   "build": {
     "beforeBuildCommand": "pnpm --filter @wowsp/webui build",
     "beforeDevCommand": "pnpm --filter @wowsp/webui dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5173/?autoscreenshot=1",
     "frontendDist": "../../../dist/webui"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   },
   "app": {
     "withGlobalTauri": true,
@@ -29,8 +41,18 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://api.worldofwarships.* https://vortex.worldofwarships.*; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://api.ipapi.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'"
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/celestia-island/wowsp/releases/latest/download/latest.json",
+        "https://ghp.ci/https://github.com/celestia-island/wowsp/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "PLACEHOLDER_REPLACE_WITH_REAL_SIGNING_PUBKEY"
+    }
+  }
 }

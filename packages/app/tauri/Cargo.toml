@@ -58,6 +58,7 @@ base64.workspace = true
 
 # Tauri desktop shell
 tauri.workspace = true
+tauri-plugin-updater.workspace = true
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true

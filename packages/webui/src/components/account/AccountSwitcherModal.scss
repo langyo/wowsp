@@ -1,0 +1,118 @@
+.acct-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  &__search {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  &__realm {
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    color: rgb(var(--color-text));
+    padding: 0.35rem 0.4rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+
+  &__input {
+    flex: 1;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    color: rgb(var(--color-text));
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+
+    &:focus {
+      outline: none;
+      border-color: rgb(var(--color-primary) / 50%);
+    }
+  }
+
+  &__error {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(220 80 80);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  &__empty {
+    text-align: center;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+    padding: 1.5rem 0;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgb(var(--color-bg));
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+
+    &--active {
+      border-color: rgb(var(--color-primary) / 40%);
+      background: rgb(var(--color-primary) / 8%);
+    }
+  }
+
+  &__item-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: none;
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    text-align: left;
+    color: rgb(var(--color-text));
+
+    &:hover {
+      background: rgb(var(--color-primary) / 6%);
+    }
+  }
+
+  &__item-name {
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  &__item-realm {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+  }
+
+  &__item-check {
+    margin-left: auto;
+    color: rgb(var(--color-primary));
+    font-weight: 700;
+  }
+
+  &__item-remove {
+    background: transparent;
+    border: none;
+    color: rgb(var(--color-muted));
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    font-size: var(--text-xs);
+
+    &:hover {
+      color: rgb(220 80 80);
+    }
+  }
+}

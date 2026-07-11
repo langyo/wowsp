@@ -1,5 +1,7 @@
 .lookup-view {
-  padding: 2rem;
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+  height: 100%;
 
   &__title {
     margin: 0 0 1.5rem;
@@ -9,7 +11,7 @@
   &__search {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
   }
 
   &__realm {
@@ -36,4 +38,15 @@
       border-color: rgb(var(--color-primary) / 60%);
     }
   }
+
+  &__error {
+    color: rgb(220 80 80);
+    font-size: var(--text-sm);
+    margin-bottom: 1rem;
+  }
+
+  &__result {
+    max-width: 48rem;
+  }
 }
+

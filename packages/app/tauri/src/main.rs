@@ -61,18 +61,18 @@ fn main() {
             .expect("spawn signal thread");
     }
 
-    let drain_for_window = drain.clone();
-
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(drain)
         .on_window_event(move |window, event| {
-            // Close button → graceful drain. The arena watcher / overlay
-            // capture listen on the drain and wind down before the process
-            // exits, so we never leave the game's tempArenaInfo.json poller
-            // running or the overlay window stuck on screen.
-            if let WindowEvent::CloseRequested { .. } = event {
-                tracing::info!(window = %window.label(), "window close requested → graceful drain");
-                drain_for_window.begin_drain(malkuth::ShutdownKind::Graceful);
+            // Close button → minimize to tray (the tray's "Quit" is the real
+            // exit). The arena watcher / overlay capture wind down on the real
+            // drain triggered by the tray Quit item.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                tracing::info!(window = %window.label(), "window close requested → minimize to tray");
+                api.prevent_close();
+                let _ = window.minimize();
+                let _ = window.hide();
             }
         })
         .setup(|app| {
@@ -84,6 +84,58 @@ fn main() {
                 let _ = w.eval(&js);
                 let _ = w.center();
             }
+
+            // ── System tray ───────────────────────────────────────────────
+            // Menu: Show / Hide / Quit. Clicking the tray icon restores the
+            // main window. The close button (above) minimizes to tray instead
+            // of exiting, so users reach "Quit" here.
+            let show = tauri::menu::MenuItem::with_id(app, "show", "Show WoWSP", true, None::<&str>)?;
+            let hide = tauri::menu::MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit WoWSP", true, None::<&str>)?;
+            let menu = tauri::menu::Menu::with_items(app, &[&show, &hide, &quit])?;
+
+            let _tray = tauri::tray::TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().unwrap())
+                .tooltip("WoWSP — World of WarShip Panel")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    // Double-click (or click on some platforms) → show window.
+                    if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "hide" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.hide();
+                        }
+                    }
+                    "quit" => {
+                        tracing::info!("tray quit → graceful drain + exit");
+                        // Trigger graceful drain so background tasks wind down,
+                        // then exit.
+                        if let Some(d) = app.try_state::<malkuth::DrainController>() {
+                            d.begin_drain(malkuth::ShutdownKind::Graceful);
+                        }
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .build(app)?;
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -105,6 +157,15 @@ fn main() {
             commands::overlay::destroy_overlay_window,
             commands::overlay::set_overlay_visible,
             commands::wg_api::lookup_player_stats,
+            commands::encyclopedia::get_game_version,
+            commands::encyclopedia::get_ship_encyclopedia,
+            commands::ship_stats::lookup_player_ship_stats,
+            commands::ship_stats::snapshot_player_stats,
+            commands::gameparams::get_ship_gameparams,
+            commands::trends::get_player_trend,
+            commands::trends::get_patches,
+            commands::trends::get_community_ship_trend,
+            commands::screenshot::capture_main_window,
             commands::mod_install::install_overlay_mod,
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,

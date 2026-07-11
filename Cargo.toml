@@ -83,6 +83,7 @@ windows = { version = "^0.61", features = [
     "Win32_Graphics_Dwm",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Storage_Xps",
 ] }
 
 # Image handling for capture analysis
@@ -92,9 +93,10 @@ image = { version = "^0.25", default-features = false, features = ["png"] }
 base64 = "^0.22"
 hex = "^0.4"
 
-# Tauri desktop shell
-tauri = "^2"
+# Tauri desktop shell — with tray-icon + image-png for the system tray.
+tauri = { version = "^2", features = ["tray-icon", "image-png"] }
 tauri-build = "^2"
+tauri-plugin-updater = "^2"
 
 # AppData directory resolution (cross-platform %APPDATA%)
 dirs-next = "^2"
