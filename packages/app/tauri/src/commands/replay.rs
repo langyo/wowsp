@@ -37,8 +37,9 @@ pub fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
 }
 
 /// Decode the packet stream of one `.wowsreplay` and return per-entity
-/// position trajectories (milestone M3). This is the data the holographic map
-/// scrubs: each entry is one entity's full (time, x, z, yaw) timeline.
+/// position trajectories (milestone M3) annotated with each entity's creation
+/// metadata (entity-create: type / vehicleId / initial position) so the frontend
+/// can filter ships from capture zones / avatars.
 #[tauri::command]
 pub fn read_replay_positions(
     path: String,
@@ -46,8 +47,8 @@ pub fn read_replay_positions(
     let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
     let stream = packet_stream_after_blocks(&bytes)
         .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
-    let samples = super::packets::extract_positions(stream)?;
-    Ok(group_by_entity(samples))
+    let decoded = super::packets::decode_replay(stream)?;
+    Ok(group_by_entity(decoded))
 }
 
 /// Skip the magic + JSON header blocks and return a slice over the encrypted
@@ -71,27 +72,25 @@ fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
     Some(&bytes[cur..])
 }
 
-/// Group raw position samples into one trajectory per entity, sorted by time.
+/// Group the decoded per-entity positions into trajectories, attaching each
+/// entity's creation metadata (type / vehicleId / spawn position) from the
+/// EntityCreate packets. Ships (type 2 with many samples) sort first.
 fn group_by_entity(
-    samples: Vec<wowsp_tauri_shared::PositionSample>,
+    decoded: super::packets::DecodedReplay,
 ) -> Vec<wowsp_tauri_shared::EntityTrajectory> {
-    use std::collections::BTreeMap;
-    let mut by_entity: BTreeMap<i32, Vec<wowsp_tauri_shared::PositionSample>> = BTreeMap::new();
-    for s in samples {
-        by_entity.entry(s.entity_id).or_default().push(s);
-    }
-    let mut out: Vec<_> = by_entity
+    let super::packets::DecodedReplay { positions, kinds } = decoded;
+    let mut out: Vec<_> = positions
         .into_iter()
-        .map(|(entity_id, mut samples)| {
-            samples.sort_by(|a, b| {
-                a.time
-                    .partial_cmp(&b.time)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            wowsp_tauri_shared::EntityTrajectory { entity_id, samples }
-        })
+        .map(
+            |(entity_id, samples)| wowsp_tauri_shared::EntityTrajectory {
+                entity_id,
+                kind: kinds.get(&entity_id).cloned(),
+                samples,
+            },
+        )
         .collect();
-    // Largest trajectory first — usually the ships, not transient entities.
+    // Largest trajectory first — ships have hundreds/thousands of samples,
+    // transient entities (planes, torpedoes) have a few dozen.
     use std::cmp::Reverse;
     out.sort_by_key(|t| Reverse(t.samples.len()));
     out

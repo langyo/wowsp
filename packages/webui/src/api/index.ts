@@ -6,5 +6,6 @@ export type {
   ArenaInfo,
   CaptureResult,
   PositionSample,
+  EntityKind,
   EntityTrajectory,
 } from "./client";

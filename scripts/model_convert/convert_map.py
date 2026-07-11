@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Convert a World of Warships map (space) into a GLB for three.js.
+"""Convert one WoWS map (space) into a GLB by driving `wowsunpack export-map`.
 
-Status: **skeleton**. The CLI, path resolution, and output scaffolding are in
-place; the actual native-format reader (the game stores map geometry under
-`res/content/space/<space_id>/`) is TODO. When a concrete map is needed, fill in
-`read_native_map` + `build_glb`. Maps are usually simpler than ships (mostly
-static terrain + island meshes), so this is the easier of the two converters.
+Orchestrator only — wowsunpack reads the .pkg VFS and assembles terrain +
+water + vegetation + models into a single GLB. WoWSP handles game detection
+and output placement.
 
 Usage:
-    python scripts/model_convert/convert_map.py \
-        --input path/to/map_space \
-        --output packages/webui/src/res/models/maps/
+    python scripts/model_convert/convert_map.py --name 15_NE_north
+    python scripts/model_convert/convert_map.py --name spaces/15_NE_north --terrain-step 8 --no-vegetation
+    python scripts/model_convert/convert_map.py --name 15_NE_north --no-textures --max-texture-size 512
+
+    just convert-model map --name 15_NE_north
 """
 from __future__ import annotations
 
@@ -18,57 +18,66 @@ import argparse
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUT = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models" / "maps"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _common import find_game_path, run_wowsunpack  # noqa: E402
 
-
-def read_native_map(source: Path) -> dict:
-    """TODO: parse the game's native map/space format into a neutral mesh dict.
-
-    A space directory typically holds:
-      * terrain / island meshes
-      * a `spacePyObject` describing bounds + minimap projection
-      * static objects (capture zones are gameplay, not geometry — skip)
-
-    Return shape: {"name": str, "vertices": [...], "indices": [...],
-                   "bounds": {"min":[x,y,z],"max":[x,y,z]}}
-    """
-    raise NotImplementedError(
-        "native map reader not implemented yet — see README.md for how to add a map"
-    )
-
-
-def build_glb(mesh: dict) -> bytes:
-    """TODO: turn the neutral mesh dict into a binary GLB (glTF 2.0)."""
-    raise NotImplementedError("GLB writer not implemented yet")
-
-
-def convert(input_path: Path, output_dir: Path) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    mesh = read_native_map(input_path)
-    glb = build_glb(mesh)
-    out = output_dir / f"{mesh.get('name', input_path.stem)}.glb"
-    out.write_bytes(glb)
-    print(f"[convert_map] wrote {out.relative_to(REPO_ROOT)}")
-    return out
+DEFAULT_OUT = Path(__file__).resolve().parents[2] / "packages" / "webui" / "src" / "res" / "models" / "maps"
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Convert a WoW map (space) to GLB")
-    parser.add_argument("--input", required=True, help="path to the native map source")
-    parser.add_argument("--output", default=str(DEFAULT_OUT), help="output directory for the GLB")
+    parser = argparse.ArgumentParser(description="Convert a WoWS map (space) to GLB via wowsunpack")
+    parser.add_argument("--name", required=True, help="space id (e.g. 15_NE_north) or full path (spaces/15_NE_north)")
+    parser.add_argument("--output", "-o", default=str(DEFAULT_OUT), help="output GLB path or dir (default: maps/)")
+    parser.add_argument("--lod", type=int, default=0, help="level of detail (0=highest, default 0)")
+    parser.add_argument("--terrain-step", type=int, default=4, help="terrain decimation (1=full, 4=default, 8=coarse)")
+    parser.add_argument("--no-terrain", action="store_true", help="skip terrain mesh")
+    parser.add_argument("--no-water", action="store_true", help="skip water plane")
+    parser.add_argument("--no-vegetation", action="store_true", help="skip trees/bushes")
+    parser.add_argument("--vegetation-density", type=int, default=20, help="vegetation grid cell size in meters (0=none)")
+    parser.add_argument("--no-textures", action="store_true", help="skip textures")
+    parser.add_argument("--max-texture-size", type=int, default=None, help="downsample textures to this max edge (px)")
     args = parser.parse_args()
 
-    src = Path(args.input).resolve()
-    if not src.exists():
-        print(f"error: input not found: {src}", file=sys.stderr)
+    game = find_game_path()
+    if not game:
+        print("error: World of Warships install not found. Set WOWSP_GAME_PATH.", file=sys.stderr)
         return 1
-    try:
-        convert(src, Path(args.output))
-    except NotImplementedError as e:
-        print(f"[convert_map] {e}", file=sys.stderr)
-        return 2
-    return 0
+
+    # Normalize the space name: wowsunpack accepts both "15_NE_north" and
+    # "spaces/15_NE_north". Strip a leading spaces/ for a clean filename.
+    space = args.name.removeprefix("spaces/").removeprefix("spaces\\")
+    space_arg = args.name if args.name.startswith("spaces/") else f"spaces/{space}"
+
+    out = Path(args.output)
+    if out.is_dir() or not out.suffix:
+        out.mkdir(parents=True, exist_ok=True)
+        out = out / f"{space}.glb"
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "--game-dir", game, "export-map", space_arg,
+        "--output", str(out),
+        "--lod", str(args.lod),
+        "--terrain-step", str(args.terrain_step),
+    ]
+    if args.no_terrain:
+        cmd.append("--no-terrain")
+    if args.no_water:
+        cmd.append("--no-water")
+    if args.no_vegetation:
+        cmd.append("--no-vegetation")
+    else:
+        cmd += ["--vegetation-density", str(args.vegetation_density)]
+    if args.no_textures:
+        cmd.append("--no-textures")
+    if args.max_texture_size:
+        cmd += ["--max-texture-size", str(args.max_texture_size)]
+
+    rc = run_wowsunpack(cmd)
+    if rc == 0:
+        print(f"[convert_map] wrote {out}")
+    return rc
 
 
 if __name__ == "__main__":

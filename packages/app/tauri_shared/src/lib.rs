@@ -139,5 +139,28 @@ pub struct PositionSample {
 #[serde(rename_all = "camelCase")]
 pub struct EntityTrajectory {
     pub entity_id: i32,
+    /// Metadata from the EntityCreate (0x05) packet: type, vehicleId, initial
+    /// position. `None` when the replay never created the entity (rare).
+    pub kind: Option<EntityKind>,
     pub samples: Vec<PositionSample>,
+}
+
+/// Entity metadata from an EntityCreate (0x05) packet. The fixed header is
+/// readable without the per-version entity DB; the trailing `state` BinaryStream
+/// (entity properties) is skipped.
+///
+/// `entity_type` semantics (empirically observed on WoWS 14.5):
+///   2 = vehicle (ships, planes, projectiles — ships have the most position
+///       updates, so the frontend filters by sample count to keep only ships)
+///   4 = aircraft / squadron
+///  11 = player avatar (the camera follower; position 0,0,0)
+///  14 = capture zone (static)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityKind {
+    pub entity_type: i16,
+    pub vehicle_id: i32,
+    pub initial_x: f32,
+    pub initial_y: f32,
+    pub initial_z: f32,
 }

@@ -65,9 +65,21 @@ export interface PositionSample {
   yaw: number;
 }
 
+/** Entity creation metadata (mirrors `wowsp_tauri_shared::EntityKind`). The
+ * fixed header of an EntityCreate (0x05) packet; the trailing state blob needs
+ * the entity DB and is skipped. `entityType` 2 = vehicle (ships). */
+export interface EntityKind {
+  entityType: number;
+  vehicleId: number;
+  initialX: number;
+  initialY: number;
+  initialZ: number;
+}
+
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */
 export interface EntityTrajectory {
   entityId: number;
+  kind?: EntityKind | null;
   samples: PositionSample[];
 }
 

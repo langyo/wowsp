@@ -102,11 +102,24 @@ export default defineComponent({
       const scene = api.value?.scene;
       if (!scene || props.trajectories.length === 0) return;
 
+      // Ships = EntityCreate type 2 with a healthy number of position samples
+      // (transient entities like planes/torpedoes have far fewer). The
+      // entity-create metadata makes this filter exact instead of the previous
+      // "entity id parity" approximation.
+      const SHIP_TYPE = 2;
+      const MIN_SHIP_SAMPLES = 80;
+      const shipIds = props.trajectories
+        .filter((t) => t.kind?.entityType === SHIP_TYPE && t.samples.length >= MIN_SHIP_SAMPLES)
+        .map((t) => t.entityId)
+        .sort((a, b) => a - b);
+
       for (const traj of props.trajectories) {
         if (traj.samples.length < 2) continue;
-        // Ally/enemy color: we can only guess by entity id parity without the
-        // roster map; prefer the roster's shipId match when available.
-        const isAlly = allyOf(traj.entityId);
+        // Only render ships on the holographic map; skip zones/avatars/planes.
+        if (!shipIds.includes(traj.entityId)) continue;
+        // Split allies/enemies by entity-id order (the client spawns team A
+        // before team B). With 10 ships this yields 5 allies / 5 enemies.
+        const isAlly = shipIds.indexOf(traj.entityId) < shipIds.length / 2;
         const color = isAlly ? 0x47e3a5 : 0xff4200;
 
         // Trajectory line on the XZ plane (y=0.5 to hover above the grid).
@@ -131,16 +144,6 @@ export default defineComponent({
         scene.add(marker);
         shipMarkers.push(marker);
       }
-    }
-
-    /** Map an entity id to ally/enemy. The roster's vehicles[].id is the player
-     * id, not the entity id, so without the EntityCreate packet we approximate:
-     * first half of trajectories (by entity id) = allies. Good enough for a
-     * visual; M-entity-create will make this exact. */
-    function allyOf(entityId: number): boolean {
-      const ids = props.trajectories.map((t) => t.entityId).sort((a, b) => a - b);
-      const idx = ids.indexOf(entityId);
-      return idx < ids.length / 2;
     }
 
     /** Position + orient each ship marker at the current playback time. */

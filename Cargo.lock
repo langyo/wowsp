@@ -4746,12 +4746,368 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[patch.unused]]
-name = "shirabe"
+name = "evernight-common"
 version = "0.1.0"
+
+[[patch.unused]]
+name = "evernight-ota"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "align_ext"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-bigtcp"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-block"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-cmdline"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-console"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-framebuffer"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-fuse"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-i8042"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-input"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-kernel"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-logger"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-mlsdisk"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-network"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-nvme"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-pci"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-rights"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-rights-proc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-softirq"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-systree"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-time"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-uart"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-util"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "aster-virtio"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "atomic-integer-wrapper"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "bsp-bcm2711"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "bsp-jh7110"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "bsp-rk3566"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "cpio-decoder"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "device-id"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "id-alloc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "int-to-c-enum"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "int-to-c-enum-derive"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "io-util"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "jhash"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "keyable-arc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "linux-boot-params"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "linux-bzimage-builder"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "logo-ascii-art"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "osdk-frame-allocator"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "osdk-heap-allocator"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "osdk-test-kernel"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "ostd"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "ostd-macros"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "ostd-pod"
+version = "0.4.0"
+
+[[patch.unused]]
+name = "ostd-pod-macros"
+version = "0.4.0"
+
+[[patch.unused]]
+name = "ostd-test"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "padding-struct"
+version = "0.2.0"
+
+[[patch.unused]]
+name = "ring-buffer"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "typeflags"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "typeflags-util"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "xarray"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "ichika"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "ichika-macros"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "aoba"
+version = "0.2.0"
+
+[[patch.unused]]
+name = "core"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "dev-celestia-plugin"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "dev-celestia-server"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "libnoa"
+version = "0.3.2"
+
+[[patch.unused]]
+name = "e-celestia-world"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "kou"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "scriptum"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "lagrange-adapter"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "lagrange-edge"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "lagrange-exchange"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "lagrange-migrate"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "lagrange-protocol"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "lagrange-server"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "hifumi"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "hifumi-cli"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "hifumi-macros"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "tairitsu"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-browser"
+version = "0.5.13"
+
+[[patch.unused]]
+name = "tairitsu-browser-fetch"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-browser-test"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-browser-wit-resolver"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-browser-worlds"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-hooks"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-macros"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-mcp"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-packager"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-ssr"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-style"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-vdom"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "tairitsu-web"
+version = "0.5.16"
+
+[[patch.unused]]
+name = "entelecheia-cli"
+version = "0.2.0"
+
+[[patch.unused]]
+name = "scepter"
+version = "0.2.0"
 
 [[patch.unused]]
 name = "yuuka"
 version = "0.6.2"
+
+[[patch.unused]]
+name = "kirino"
+version = "0.5.0"
+
+[[patch.unused]]
+name = "ratatui-markdown"
+version = "0.3.6"
 
 [[patch.unused]]
 name = "hikari-animation"
@@ -4786,59 +5142,95 @@ name = "hikari-theme"
 version = "0.3.10"
 
 [[patch.unused]]
-name = "entelecheia-cli"
-version = "0.2.0"
-
-[[patch.unused]]
-name = "scepter"
-version = "0.2.0"
-
-[[patch.unused]]
-name = "scriptum"
+name = "shirabe"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "ichika"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "ichika-macros"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "e-celestia-world"
+name = "_config"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "hifumi"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "hifumi-cli"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "hifumi-macros"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "dev-celestia-plugin"
+name = "_container"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "dev-celestia-server"
+name = "_container_runtime"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "kou"
+name = "_core"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_custom_agent"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_domain_agent"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_domain_skills"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_domain_skills_permissions"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_infra_jsonrpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_infra_services"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_infra_utils"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_llm_provider"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_macros"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_prompt"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_res"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_state_sync"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_sync"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_text"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "_timeline"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "arona"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "seia"
 version = "0.1.0"
 
 [[patch.unused]]
 name = "shittim-chest-cli"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "core"
 version = "0.1.0"
 
 [[patch.unused]]
@@ -5328,395 +5720,3 @@ version = "0.1.0"
 [[patch.unused]]
 name = "yuuka"
 version = "0.6.2"
-
-[[patch.unused]]
-name = "lagrange-adapter"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "lagrange-edge"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "lagrange-exchange"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "lagrange-migrate"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "lagrange-protocol"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "lagrange-server"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_config"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_container"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_container_runtime"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_core"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_custom_agent"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_domain_agent"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_domain_skills"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_domain_skills_permissions"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_infra_jsonrpc"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_infra_services"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_infra_utils"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_llm_provider"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_macros"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_prompt"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_res"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_state_sync"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_sync"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_text"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "_timeline"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "arona"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "evernight-common"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "evernight-ota"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "seia"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "ratatui-markdown"
-version = "0.3.6"
-
-[[patch.unused]]
-name = "aoba"
-version = "0.2.0"
-
-[[patch.unused]]
-name = "align_ext"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-bigtcp"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-block"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-cmdline"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-console"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-framebuffer"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-fuse"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-i8042"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-input"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-kernel"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-logger"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-mlsdisk"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-network"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-nvme"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-pci"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-rights"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-rights-proc"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-softirq"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-systree"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-time"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-uart"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-util"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "aster-virtio"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "atomic-integer-wrapper"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "bsp-bcm2711"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "bsp-jh7110"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "bsp-rk3566"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "cpio-decoder"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "device-id"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "id-alloc"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "int-to-c-enum"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "int-to-c-enum-derive"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "io-util"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "jhash"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "keyable-arc"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "linux-boot-params"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "linux-bzimage-builder"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "logo-ascii-art"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "osdk-frame-allocator"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "osdk-heap-allocator"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "osdk-test-kernel"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "ostd"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "ostd-macros"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "ostd-pod"
-version = "0.4.0"
-
-[[patch.unused]]
-name = "ostd-pod-macros"
-version = "0.4.0"
-
-[[patch.unused]]
-name = "ostd-test"
-version = "0.18.0"
-
-[[patch.unused]]
-name = "padding-struct"
-version = "0.2.0"
-
-[[patch.unused]]
-name = "ring-buffer"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "typeflags"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "typeflags-util"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "xarray"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "kirino"
-version = "0.5.0"
-
-[[patch.unused]]
-name = "libnoa"
-version = "0.3.2"
-
-[[patch.unused]]
-name = "tairitsu"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-browser"
-version = "0.5.13"
-
-[[patch.unused]]
-name = "tairitsu-browser-fetch"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-browser-test"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-browser-wit-resolver"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-browser-worlds"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-hooks"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-macros"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-mcp"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-packager"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-ssr"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-style"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-vdom"
-version = "0.5.16"
-
-[[patch.unused]]
-name = "tairitsu-web"
-version = "0.5.16"
