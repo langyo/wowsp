@@ -1,0 +1,6 @@
+# Repo-local cargo config. Safe to commit — no machine-specific paths here.
+# For global overrides (e.g. a local registry mirror), use ~/.cargo/config.toml
+# or copy .cargo/config.toml.example as a starting point.
+
+[net]
+git-fetch-with-cli = true

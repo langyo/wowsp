@@ -1,0 +1,14 @@
+# Testing
+pytest~=9.1
+pytest-timeout~=2.4
+pytest-asyncio~=1.4
+playwright~=1.60
+pytest-playwright~=0.8
+
+# Mock backend
+fastapi~=0.115
+uvicorn~=0.34
+pydantic~=2.9
+
+# Data formats
+toml~=0.10

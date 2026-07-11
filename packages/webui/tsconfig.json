@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "@wowsp/shared_ui": ["./src"],
+      "@wowsp/shared_ui/*": ["./src/*"],
+      "@shaders/*": ["./.generated/shaders/*"]
+    }
+  },
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

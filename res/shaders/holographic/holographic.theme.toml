@@ -1,0 +1,6 @@
+id = "holographic"
+shader = "fragment.glsl"
+
+[overlay]
+dark = "rgb(0 0 0 / 35%)"
+light = "rgb(255 255 255 / 55%)"

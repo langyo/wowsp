@@ -1,0 +1,57 @@
+[package]
+name = "wowsp_tauri"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "WoWSP — Tauri desktop shell"
+
+[[bin]]
+name = "wowsp"
+path = "src/main.rs"
+
+[dependencies]
+# Data and serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# File watching (poll tempArenaInfo.json, replay dir)
+notify.workspace = true
+
+# Windows registry scanning for game install detection (official / Lesta / 360)
+winreg.workspace = true
+
+# Windows screen capture for overlay roster positioning
+windows.workspace = true
+
+# Image handling for capture analysis
+image.workspace = true
+
+# Encoding
+base64.workspace = true
+
+# Tauri desktop shell
+tauri.workspace = true
+
+# Workspace internal crates
+wowsp_tauri_shared.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[features]
+# This feature is required by `cargo tauri build` and is injected by default.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,127 @@
+/* WoWSP global theme tokens. Adapted from shittim-chest's theme.scss.
+   Structural tokens (radius, font, spacing, duration, motion, shadow,
+   z-index, scrollbar) live here; color RGB-channel tokens are seeded by
+   os_prefs + a future presets.ts. */
+
+/* === Theme Transition === */
+html.s-theme-transitioning,
+html.s-theme-transitioning *,
+html.s-theme-transitioning *::before,
+html.s-theme-transitioning *::after {
+  transition:
+    background-color var(--duration-normal) ease,
+    color var(--duration-normal) ease,
+    border-color var(--duration-normal) ease,
+    opacity var(--duration-normal) ease;
+}
+
+/* === Tokens === */
+:root {
+  /* Radius scale */
+  --radius: 12px;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --radius-sm: 4px;
+  --radius-xs: 4px;
+  --radius-full: 9999px;
+
+  /* Font sizes */
+  --text-2xs: 0.625rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-display: 2.5rem;
+
+  /* Font families */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, blinkmacsystemfont, "Segoe UI", roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", sfmono-regular, "Fira Code", Menlo, Consolas, monospace;
+
+  /* Opacity / blur */
+  --opacity-faded: 0.45;
+  --opacity-half: 0.92;
+  --blur-sm: 8px;
+  --blur-md: 16px;
+  --blur-lg: 24px;
+
+  /* Z-index hierarchy */
+  --z-base: 0;
+  --z-overlay: 2;
+  --z-header: 30;
+  --z-floating: 50;
+  --z-modal: 1000;
+  --z-toast: 9999;
+  --z-tooltip: 10000;
+
+  /* Sizing */
+  --s-header-height: 3rem;
+
+  /* Default color tokens (light) — overridden by presets/OS detection.
+     Values are space-separated RGB channels for `rgb(var(--color-x) / a%)`. */
+  --color-primary: 0 120 200;
+  --color-secondary: 110 200 240;
+  --color-accent: 255 180 60;
+  --color-text: 30 40 55;
+  --color-muted: 90 100 115;
+  --color-border: 200 210 220;
+  --color-focused-border: 0 120 200;
+  --color-background: 245 248 252;
+  --color-surface: 255 255 255;
+  --color-selected-bg: 0 120 200;
+  --color-selected-text: 255 255 255;
+  --color-on-solid: 255 255 255;
+  --color-success: 60 180 120;
+  --color-error: 220 80 80;
+  --color-warning: 230 170 50;
+  --color-info: 90 160 220;
+
+  /* Motion */
+  --duration-instant: 80ms;
+  --duration-short: 160ms;
+  --duration-normal: 240ms;
+  --duration-slow: 360ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-mode="dark"] {
+  --color-text: 220 228 238;
+  --color-muted: 150 160 175;
+  --color-border: 50 60 75;
+  --color-background: 12 18 30;
+  --color-surface: 22 30 46;
+}
+
+/* === Reset === */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+#app {
+  width: 100%;
+  height: 100%;
+}
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: rgb(var(--color-text));
+  background: rgb(var(--color-background));
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: rgb(var(--color-primary));
+}
+button {
+  font: inherit;
+}

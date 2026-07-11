@@ -1,0 +1,2 @@
+# Drop sample .wowsreplay files here for mock-backend development.
+# The mock `list_replays` endpoint enumerates `*.wowsreplay` in this folder.

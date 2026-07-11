@@ -1,0 +1,27 @@
+{
+  "name": "@wowsp/root",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "World of WarShip Panel — replay review & in-game overlay",
+  "scripts": {
+    "dev": "pnpm --filter @wowsp/webui dev",
+    "build": "pnpm --filter @wowsp/webui build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "rm -rf node_modules"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@unocss/preset-wind": "^66.7.0",
+    "eslint": "^9.0.0",
+    "sass": "^1.100.0",
+    "typescript-eslint": "^8.60.0",
+    "unocss": "^66.7.0"
+  }
+}

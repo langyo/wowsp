@@ -1,0 +1,24 @@
+// WoWSP SCSS mixins. Trimmed from shittim-chest's _mixins.scss to what the
+// current skeleton actually uses.
+
+/// A glassy floating panel surface (holographic panels, overlay roster).
+@mixin glass-panel {
+  background: rgb(var(--color-surface) / 85%);
+  backdrop-filter: blur(var(--blur-md));
+  border: 1px solid rgb(var(--color-border) / 20%);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 25%);
+}
+
+/// Truncate to one line with ellipsis.
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/// Holographic glow for the 3D map outline / accent text.
+@mixin holo-glow($color: var(--color-primary)) {
+  text-shadow: 0 0 8px rgb($color / 60%);
+  box-shadow: 0 0 16px rgb($color / 30%);
+}
