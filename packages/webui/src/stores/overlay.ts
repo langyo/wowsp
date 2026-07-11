@@ -13,8 +13,8 @@ export const useOverlayStore = defineStore("overlay", () => {
   const visible = ref(false);
   const lastCapture = ref<CaptureResult | null>(null);
 
-  const allies = computed(() => arenaInfo.value?.vehicles.filter((v) => Number(v.relation) <= 1) ?? []);
-  const enemies = computed(() => arenaInfo.value?.vehicles.filter((v) => Number(v.relation) > 1) ?? []);
+  const allies = computed(() => arenaInfo.value?.vehicles.filter((v) => v.relation <= 1) ?? []);
+  const enemies = computed(() => arenaInfo.value?.vehicles.filter((v) => v.relation > 1) ?? []);
 
   async function refreshArenaInfo(dir?: string) {
     arenaInfo.value = await api.readTempArenaInfo(dir);

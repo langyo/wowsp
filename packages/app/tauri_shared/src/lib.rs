@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// (mirroring ApeRadar's `ConfigWindow.AutoDetectGamePath`) and additionally
 /// walks Steam library folders for `appmanifest_552990.acf` — the Steam variant
 /// ApeRadar does not cover.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GameInstallKind {
     /// Official Wargaming Game Center install.
@@ -43,25 +43,25 @@ pub struct GameInstall {
 ///
 /// A replay file is laid out as:
 ///   4 bytes  magic        = `{0x12, 0x32, 0x34, 0x11}`
-///   4 bytes  json_len     = little-endian u32, length of the JSON block
-///   N bytes  json_block   = the match descriptor (this struct's source)
-///   4 bytes  meta_count   = number of trailing metadata blocks
-///   ...      metadata     = extra metadata (usually empty for live replays)
+///   4 bytes  block_count  = little-endian u32, number of data blocks
+///   ...      blocks       = `block_count` × (4-byte length + payload)
 ///   ...      packets      = encrypted/zlib packet stream (Phase 2 decode)
 ///
-/// Phase 1 (this struct) reads only the JSON block. The packet stream decode
-/// is milestone M3 in PLAN.md.
+/// The FIRST data block is the match-descriptor JSON. Subsequent blocks are
+/// extra metadata (usually empty for live replays). Phase 1 reads only the
+/// first JSON block; the packet stream decode is milestone M3 in PLAN.md.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplayMeta {
     pub path: String,
-    /// Raw match group, e.g. `"pvp"`, `"ranked"`, `"clan"`.
+    /// e.g. `"pvp"`, `"ranked"`, `"clan"`, `"event"`.
     pub match_group: Option<String>,
-    /// Game-client-formatted timestamp, e.g. `"12.07.2026 21:45:00"`.
+    /// Parsed from the replay filename (the JSON descriptor has no timestamp),
+    /// e.g. `"20250622_152405"`.
     pub date_time: Option<String>,
-    /// Internal map id (resolved to a name via the maps DB in M4).
-    pub map_id: Option<String>,
-    /// Display name when the client embeds one.
+    /// Internal numeric map id (the client JSON sends `mapId` as a number).
+    pub map_id: Option<i64>,
+    /// Client display name, e.g. `"15_NE_north"`.
     pub map_name: Option<String>,
     /// Per-player roster.
     pub vehicles: Vec<VehicleEntry>,
@@ -75,9 +75,10 @@ pub struct ReplayMeta {
 pub struct VehicleEntry {
     pub id: i64,
     pub name: String,
-    /// `"0"`/`"1"` = ally (self + division); higher = enemy.
-    pub relation: String,
-    pub ship_id: String,
+    /// `0`/`1` = ally (self + division); `2`+ = enemy. Numeric in the client.
+    pub relation: i64,
+    /// Client ship id (numeric, sent as JSON number).
+    pub ship_id: i64,
     /// Pre-resolved ship display name (looked up from the ships DB), if known.
     pub ship_name: Option<String>,
 }

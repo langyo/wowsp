@@ -67,9 +67,11 @@ pub fn meta_from_raw_pub(path: String, raw: serde_json::Value) -> ReplayMeta {
 /// Pull the descriptor JSON out of a replay byte slice. Handles both the
 /// binary-prefixed replay format and the bare-JSON `tempArenaInfo.json`
 /// variant — the same dual-format logic ApeRadar ships.
+///
+/// Replay layout: `magic(4) + block_count(4) + [len(4)+payload]×block_count`.
+/// The first payload is the match-descriptor JSON.
 fn extract_descriptor_json(bytes: &[u8]) -> Option<String> {
     if bytes.len() < 8 {
-        // Maybe bare JSON starting with '{'.
         if bytes.first().copied() == Some(b'{') {
             return Some(String::from_utf8_lossy(bytes).into_owned());
         }
@@ -81,33 +83,38 @@ fn extract_descriptor_json(bytes: &[u8]) -> Option<String> {
         }
         return None;
     }
-    // magic ok: next 4 bytes = little-endian JSON block length.
-    let json_len = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
-    let end = 8 + json_len;
+    // magic(4) + block_count(4); first block = len(4) + JSON payload.
+    let mut cur = 4;
+    let block_count = u32::from_le_bytes(bytes[cur..cur + 4].try_into().ok()?) as usize;
+    cur += 4;
+    if block_count == 0 {
+        return None;
+    }
+    // First block length.
+    if cur + 4 > bytes.len() {
+        return None;
+    }
+    let json_len = u32::from_le_bytes(bytes[cur..cur + 4].try_into().ok()?) as usize;
+    cur += 4;
+    let end = cur + json_len;
     if end > bytes.len() {
         return None;
     }
-    Some(String::from_utf8_lossy(&bytes[8..end]).into_owned())
+    Some(String::from_utf8_lossy(&bytes[cur..end]).into_owned())
 }
 
 /// Build a [`ReplayMeta`] from the raw descriptor JSON, pulling the common
-/// fields defensively (the client occasionally drops keys).
+/// fields defensively. `dateTime` is parsed from the replay filename (the
+/// descriptor has no timestamp).
 fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
     let obj = raw.as_object();
     let match_group = obj
         .and_then(|o| o.get("matchGroup"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
-    let date_time = obj
-        .and_then(|o| o.get("dateTime"))
-        .and_then(|v| v.as_str())
-        .map(str::to_owned);
-    let map_id = obj
-        .and_then(|o| o.get("mapId"))
-        .and_then(|v| v.as_str())
-        .map(str::to_owned);
+    let map_id = obj.and_then(|o| o.get("mapId")).and_then(|v| v.as_i64());
     let map_name = obj
-        .and_then(|o| o.get("mapName"))
+        .and_then(|o| o.get("mapDisplayName"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
@@ -122,9 +129,9 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         .unwrap_or_default();
 
     ReplayMeta {
+        date_time: parse_datetime_from_filename(&path),
         path,
         match_group,
-        date_time,
         map_id,
         map_name,
         vehicles,
@@ -132,29 +139,32 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
     }
 }
 
+/// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
+/// the leading `YYYYMMDD_HHMMSS` is the only timestamp source.
+fn parse_datetime_from_filename(path: &str) -> Option<String> {
+    let stem = std::path::Path::new(path)
+        .file_name()?
+        .to_str()?
+        .split('_')
+        .next()?;
+    if stem.len() == 8 && stem.chars().all(|c| c.is_ascii_digit()) {
+        Some(stem.to_owned())
+    } else {
+        None
+    }
+}
+
 fn parse_vehicle_entry(v: &serde_json::Value) -> Option<VehicleEntry> {
     let obj = v.as_object()?;
-    let id = obj.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
-    let name = obj
-        .get("name")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_owned();
-    let relation = obj
-        .get("relation")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_owned();
-    let ship_id = obj
-        .get("shipId")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_owned();
     Some(VehicleEntry {
-        id,
-        name,
-        relation,
-        ship_id,
+        id: obj.get("id").and_then(|x| x.as_i64()).unwrap_or(0),
+        name: obj
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_owned(),
+        relation: obj.get("relation").and_then(|x| x.as_i64()).unwrap_or(0),
+        ship_id: obj.get("shipId").and_then(|x| x.as_i64()).unwrap_or(0),
         ship_name: None,
     })
 }
@@ -186,5 +196,51 @@ fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) 
                 out.push((path, mtime));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Synthetic replay: magic + 1 block + a tiny JSON descriptor. Verifies the
+    /// block-count format is parsed correctly (the bug the skeleton had).
+    #[test]
+    fn parses_synthetic_replay_header() {
+        let json = r#"{"matchGroup":"pvp","mapDisplayName":"15_NE_north","mapId":8,"vehicles":[]}"#;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&REPLAY_MAGIC);
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // 1 block
+        bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(json.as_bytes());
+        let extracted = extract_descriptor_json(&bytes).expect("must extract JSON");
+        assert!(extracted.contains("15_NE_north"));
+        let raw: serde_json::Value = serde_json::from_str(&extracted).unwrap();
+        let meta = meta_from_raw("20250622_152405_x.wowsreplay".into(), raw);
+        assert_eq!(meta.map_name.as_deref(), Some("15_NE_north"));
+        assert_eq!(meta.map_id, Some(8));
+        assert_eq!(meta.match_group.as_deref(), Some("pvp"));
+        assert_eq!(meta.date_time.as_deref(), Some("20250622"));
+    }
+
+    /// If a real replay is available on this machine, parse it end-to-end.
+    #[test]
+    fn parses_real_replay_if_present() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            return; // no real replay on this machine — skip
+        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let json = extract_descriptor_json(&bytes)
+            .unwrap_or_else(|| panic!("no descriptor JSON in {path}"));
+        let raw: serde_json::Value = serde_json::from_str(&json).expect("descriptor must be JSON");
+        let meta = meta_from_raw(path.clone(), raw);
+        assert!(!meta.vehicles.is_empty(), "roster must not be empty");
+        assert!(meta.map_name.is_some(), "mapDisplayName must be present");
+        eprintln!(
+            "[real-replay] {} → map={}, {} players",
+            path,
+            meta.map_name.unwrap(),
+            meta.vehicles.len()
+        );
     }
 }

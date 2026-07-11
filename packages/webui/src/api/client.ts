@@ -17,8 +17,11 @@ export interface GameInstall {
 export interface VehicleEntry {
   id: number;
   name: string;
-  relation: string;
-  shipId: string;
+  /** 0/1 = ally (self + division); 2+ = enemy. Numeric in the client JSON. */
+  relation: number;
+  /** Client ship id (numeric, JSON number). */
+  shipId: number;
+  /** Pre-resolved ship display name, if known. */
   shipName?: string | null;
 }
 
@@ -26,8 +29,11 @@ export interface VehicleEntry {
 export interface ReplayMeta {
   path: string;
   matchGroup?: string | null;
+  /** Parsed from the replay filename (YYYYMMDD). */
   dateTime?: string | null;
-  mapId?: string | null;
+  /** Internal numeric map id. */
+  mapId?: number | null;
+  /** Client display name, e.g. "15_NE_north". */
   mapName?: string | null;
   vehicles: VehicleEntry[];
   raw: unknown;

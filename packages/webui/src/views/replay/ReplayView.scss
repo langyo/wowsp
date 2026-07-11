@@ -13,12 +13,25 @@
   }
 
   &__list-title {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.5rem;
     font-size: var(--text-sm);
     font-weight: 600;
     color: rgb(var(--color-muted));
     text-transform: uppercase;
     letter-spacing: 0.05em;
+  }
+
+  &__game-path {
+    margin: 0 0 0.75rem;
+    padding: 0.3rem 0.5rem;
+    background: rgb(var(--color-primary) / 8%);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-primary));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__empty {
@@ -62,6 +75,15 @@
     color: rgb(var(--color-muted));
   }
 
+  &__pill {
+    padding: 0.1rem 0.5rem;
+    background: rgb(var(--color-accent) / 20%);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-accent));
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+  }
+
   &__count {
     padding: 0.1rem 0.5rem;
     background: rgb(var(--color-primary) / 12%);
@@ -69,9 +91,24 @@
     color: rgb(var(--color-primary));
   }
 
-  &__map-wrap {
+  &__body {
     flex: 1;
-    min-height: 400px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  &__map-wrap {
+    min-height: 320px;
+    flex: 1 1 auto;
+  }
+
+  &__roster {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    flex-shrink: 0;
   }
 
   &__placeholder {
@@ -85,5 +122,75 @@
     &--error {
       color: rgb(var(--color-error));
     }
+  }
+}
+
+.roster-col {
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 20%);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.85rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &--ally .roster-col__head {
+    color: rgb(var(--color-success));
+    background: rgb(var(--color-success) / 8%);
+  }
+  &--enemy .roster-col__head {
+    color: rgb(var(--color-error));
+    background: rgb(var(--color-error) / 8%);
+  }
+
+  &__count {
+    padding: 0.05rem 0.45rem;
+    background: rgb(var(--color-border) / 25%);
+    border-radius: var(--radius-full);
+    font-size: var(--text-2xs);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0.35rem 0.5rem;
+    max-height: 280px;
+    overflow: auto;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-sm);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 6%);
+    }
+  }
+
+  &__name {
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__ship {
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    flex-shrink: 0;
   }
 }
