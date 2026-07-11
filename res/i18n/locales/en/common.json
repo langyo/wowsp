@@ -9,5 +9,9 @@
     "found": "Found",
     "none": "No World of Warships install detected — set a path manually.",
     "rescan": "Rescan"
+  },
+  "game": {
+    "online": "Game running",
+    "offline": "Game offline"
   }
 }

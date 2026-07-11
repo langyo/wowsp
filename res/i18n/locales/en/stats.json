@@ -1,0 +1,15 @@
+{
+  "winrate": "Win rate",
+  "battles": "Battles",
+  "avgDamage": "Avg damage",
+  "avgExp": "Avg exp",
+  "kdRatio": "K/D",
+  "clan": "Clan",
+  "hidden": "Hidden profile",
+  "solo": "Solo",
+  "div2": "Div2",
+  "div3": "Div3",
+  "weighted": "Weighted WR",
+  "ships": "Ships",
+  "rank": "Rank"
+}

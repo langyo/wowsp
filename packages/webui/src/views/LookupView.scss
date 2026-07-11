@@ -1,0 +1,39 @@
+.lookup-view {
+  padding: 2rem;
+
+  &__title {
+    margin: 0 0 1.5rem;
+    font-size: var(--text-xl);
+  }
+
+  &__search {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+
+  &__realm {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  &__input {
+    flex: 1;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    outline: none;
+
+    &:focus {
+      border-color: rgb(var(--color-primary) / 60%);
+    }
+  }
+}

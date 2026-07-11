@@ -1,0 +1,110 @@
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgb(var(--color-surface));
+  border-right: 1px solid rgb(var(--color-border) / 20%);
+  user-select: none;
+
+  &__brand {
+    padding: 1.25rem 1.25rem 1rem;
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: rgb(var(--color-primary));
+    letter-spacing: 0.02em;
+  }
+
+  &__nav {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  &__link {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+    transition: color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-text));
+      background: rgb(var(--color-primary) / 8%);
+    }
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 12%);
+      font-weight: 500;
+    }
+  }
+
+  &__link-icon {
+    font-size: var(--text-md);
+    width: 1.25rem;
+    text-align: center;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__footer {
+    padding: 0.75rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__game-status {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--color-muted));
+
+    &--on {
+      background: rgb(var(--color-success));
+      box-shadow: 0 0 6px rgb(var(--color-success));
+    }
+    &--off {
+      background: rgb(var(--color-border));
+    }
+  }
+
+  &__status-text {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__account {
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-primary) / 6%);
+    cursor: pointer;
+    transition: background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 12%);
+    }
+  }
+
+  &__account-name {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+}

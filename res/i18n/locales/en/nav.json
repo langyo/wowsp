@@ -1,5 +1,6 @@
 {
+  "dashboard": "My stats",
+  "lookup": "Stats lookup",
   "replay": "Replay review",
-  "overlay": "In-game overlay",
   "home": "Home"
 }

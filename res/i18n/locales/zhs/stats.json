@@ -1,0 +1,15 @@
+{
+  "winrate": "胜率",
+  "battles": "场次",
+  "avgDamage": "场均伤害",
+  "avgExp": "场均经验",
+  "kdRatio": "K/D",
+  "clan": "军团",
+  "hidden": "隐藏档案",
+  "solo": "单野",
+  "div2": "双野",
+  "div3": "三野",
+  "weighted": "加权胜率",
+  "ships": "船只",
+  "rank": "等级"
+}

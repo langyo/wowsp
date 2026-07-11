@@ -1,0 +1,14 @@
+{
+  "notBound": "No account bound",
+  "bind": "Bind account",
+  "switch": "Switch account",
+  "add": "Add account",
+  "remove": "Remove",
+  "nickname": "Nickname",
+  "realm": "Realm",
+  "search": "Search",
+  "searching": "Searching...",
+  "notFound": "No account found",
+  "bound": "Bound",
+  "selectRealm": "Select realm"
+}

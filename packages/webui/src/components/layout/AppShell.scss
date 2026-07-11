@@ -1,0 +1,13 @@
+.app-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: rgb(var(--color-background));
+  color: rgb(var(--color-text));
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+  }
+}
