@@ -227,29 +227,30 @@ export default defineComponent({
           </div>
         </div>
 
-        {/* ── card grid ── */}
-        {encyclopedia.loading ? (
-          <div class="ships-view__status">
-            <SSpinner center size="lg" text={t("ships.loading")} />
-          </div>
-        ) : encyclopedia.error ? (
-          <div class="ships-view__status ships-view__status--error">{encyclopedia.error}</div>
-        ) : filteredShips.value.length === 0 ? (
-          <div class="ships-view__status">{t("ships.empty")}</div>
-        ) : (
-          <div class="ships-view__grid">
-            {filteredShips.value.map((ship) => {
-              const battles = shipBattles(ship.shipId);
-              const wr = shipWr(ship.shipId);
-              return (
-                <div
-                  class={[
-                    "ship-card",
-                    `ship-card--${ship.type.toLowerCase()}`,
-                    ship.isPremium ? "ship-card--premium" : "",
-                    ship.isSpecial ? "ship-card--special" : "",
-                  ]}
-                  onClick={() => openDetail(ship)}
+        {/* ── card grid — cross-fade between loading/error/empty/grid ── */}
+        <Transition name="s-fade-slide" mode="out-in">
+          {encyclopedia.loading ? (
+            <div class="ships-view__status" key="loading">
+              <SSpinner center size="lg" text={t("ships.loading")} />
+            </div>
+          ) : encyclopedia.error ? (
+            <div class="ships-view__status ships-view__status--error" key="error">{encyclopedia.error}</div>
+          ) : filteredShips.value.length === 0 ? (
+            <div class="ships-view__status" key="empty">{t("ships.empty")}</div>
+          ) : (
+            <div class="ships-view__grid" key="grid">
+              {filteredShips.value.map((ship) => {
+                const battles = shipBattles(ship.shipId);
+                const wr = shipWr(ship.shipId);
+                return (
+                  <div
+                    class={[
+                      "ship-card",
+                      `ship-card--${ship.type.toLowerCase()}`,
+                      ship.isPremium ? "ship-card--premium" : "",
+                      ship.isSpecial ? "ship-card--special" : "",
+                    ]}
+                    onClick={() => openDetail(ship)}
                 >
                   <div class="ship-card__head">
                     <span class="ship-card__tier">T{ship.tier}</span>
@@ -300,8 +301,9 @@ export default defineComponent({
                 </div>
               );
             })}
-          </div>
-        )}
+            </div>
+          )}
+        </Transition>
 
         {/* ── detail modal ── */}
         <ShipDetailModal

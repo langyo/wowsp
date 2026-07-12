@@ -78,13 +78,29 @@ html.s-theme-transitioning *::after {
   --color-warning: 230 170 50;
   --color-info: 90 160 220;
 
-  /* Motion */
+  /* Motion — duration/easing scale. Ported from shittim-chest's token set
+     so transition CSS is interchangeable. Durations cover the full range
+     from micro-interactions (instant/short) to deliberate reveals
+     (normal/long). `--duration-fade` is motion-safe: it is NOT zeroed by
+     the reduced-motion rule below, so opacity/color fades still happen
+     for users who disable motion (a hard cut is jarring). */
   --duration-instant: 80ms;
   --duration-short: 160ms;
   --duration-normal: 240ms;
   --duration-slow: 360ms;
+  --duration-long: 450ms;
+  --duration-fade: 160ms;
+  /* Easing curves. out-expo for enters (smooth deceleration), in-expo for
+     leaves (quick retreat), spring for pop-ins/drawers (overshoot). */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Motion distance/scale — single source of truth for pop-in offsets so
+     every dropdown/popup/drawer animates the same amount. */
+  --motion-popup-scale: 0.98;
+  --motion-popup-offset: 4px;
+  --motion-drawer-offset: 0.5rem;
 }
 
 [data-mode="dark"] {
@@ -217,3 +233,64 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
   border: 2px solid rgb(var(--color-surface));
 }
+
+/* === Reduced motion ===
+   When the user prefers reduced motion (OS setting) OR the html element has
+   the `reduce-motion` class, we zero the motion-duration tokens. Every
+   transition that references --duration-short/normal/slow/long collapses to
+   instantaneous, so content swaps without sliding/scaling — but still shows
+   (opacity fades use --duration-fade, which is NOT zeroed here, so fades
+   survive). Continuous animations (spinner, skeleton) use their own hardcoded
+   durations in @keyframes and are unaffected by this token-zeroing. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-short: 0s;
+    --duration-normal: 0s;
+    --duration-slow: 0s;
+    --duration-long: 0s;
+  }
+}
+html.reduce-motion {
+  --duration-short: 0s;
+  --duration-normal: 0s;
+  --duration-slow: 0s;
+  --duration-long: 0s;
+}
+
+/* === Reusable transition classes ===
+   Named transitions for use with Vue's <Transition> / <TransitionGroup>.
+   These cover the most common content-swap patterns so every view animates
+   consistently without per-component SCSS. */
+
+/* fade-slide: gentle vertical fade for content swaps (loading→content,
+   route changes, tab switches). 8px offset, out-expo enter / in-expo leave. */
+.s-fade-slide-enter-active {
+  transition:
+    opacity var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-normal) var(--ease-out-expo);
+}
+.s-fade-slide-leave-active {
+  transition:
+    opacity var(--duration-short) var(--ease-in-expo),
+    transform var(--duration-short) var(--ease-in-expo);
+}
+.s-fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.s-fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* fade: pure opacity fade for overlays, backdrops, simple swaps. */
+.s-fade-enter-active,
+.s-fade-leave-active {
+  transition: opacity var(--duration-fade) var(--ease-standard);
+}
+.s-fade-enter-from,
+.s-fade-leave-to {
+  opacity: 0;
+}
+
+

@@ -53,8 +53,8 @@ export default defineComponent({
               if (e.key === "Enter") void search();
             }}
           />
-          <SButton size="md" onClick={() => void search()} disabled={stats.loading}>
-            {stats.loading ? <SSpinner size="sm" tone="current" /> : t("account.search")}
+          <SButton size="md" onClick={() => void search()} loading={stats.loading}>
+            {t("account.search")}
           </SButton>
         </div>
 
@@ -62,15 +62,17 @@ export default defineComponent({
           <div class="lookup-view__error">{stats.error}</div>
         ) : null}
 
-        {result.value ? (
-          <div class="lookup-view__result">
-            <StatsCard stats={result.value} />
-          </div>
-        ) : stats.loading ? (
-          <div class="lookup-view__loading">
-            <SSpinner center size="lg" text={t("account.searching")} />
-          </div>
-        ) : null}
+        <Transition name="s-fade-slide" mode="out-in">
+          {result.value ? (
+            <div class="lookup-view__result" key="result">
+              <StatsCard stats={result.value} />
+            </div>
+          ) : stats.loading ? (
+            <div class="lookup-view__loading" key="loading">
+              <SSpinner center size="lg" text={t("account.searching")} />
+            </div>
+          ) : null}
+        </Transition>
       </div>
     );
   },
