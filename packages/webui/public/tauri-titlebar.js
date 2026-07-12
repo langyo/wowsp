@@ -1,7 +1,8 @@
 "use strict";
 (() => {
   // scripts/tauri-titlebar.ts
-  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && __TAURI__?.window) {
+  var tauriGlobal = window.__TAURI__;
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && tauriGlobal?.window) {
     let resolveDarkMode2 = function() {
       const htmlMode = document.documentElement.getAttribute("data-mode");
       if (htmlMode === "dark") return true;
@@ -23,7 +24,7 @@
       });
     };
     resolveDarkMode = resolveDarkMode2, applyTitlebarTheme = applyTitlebarTheme2, refreshMaximized = refreshMaximized2;
-    const win = __TAURI__.window.getCurrentWindow();
+    const win = tauriGlobal.window.getCurrentWindow();
     const BAR_HEIGHT = 32;
     const style = document.createElement("style");
     style.id = "wowsp-titlebar-style";

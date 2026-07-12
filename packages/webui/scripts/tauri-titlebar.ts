@@ -7,22 +7,28 @@
  * Build: see package.json "build-titlebar" script.
  */
 
-// Polyfill — window.__TAURI__ is injected by Tauri's withGlobalTauri.
-declare const __TAURI__: {
+// Tauri injects window.__TAURI__ when withGlobalTauri is enabled. Access it
+// via window (not bare __TAURI__) so the guard doesn't ReferenceError in a
+// plain browser where the global doesn't exist.
+interface TauriGlobal {
   window: { getCurrentWindow: () => TauriWindow };
-};
-type TauriWindow = {
+}
+interface TauriWindow {
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<void>;
   close: () => Promise<void>;
   isMaximized: () => Promise<boolean>;
   onResized: (cb: () => void) => Promise<() => void>;
-};
+}
 
-// Self-guard: in a plain (non-Tauri) browser, exit silently. Using `return`
-// instead of `throw` avoids triggering fatal-fallback's window.onerror handler.
-if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && __TAURI__?.window) {
-  const win = __TAURI__.window.getCurrentWindow();
+// Self-guard: in a plain (non-Tauri) browser, exit silently.
+const tauriGlobal = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
+if (
+  typeof window !== "undefined"
+  && "__TAURI_INTERNALS__" in window
+  && tauriGlobal?.window
+) {
+  const win = tauriGlobal.window.getCurrentWindow();
   const BAR_HEIGHT = 32;
 
   // ── Theme detection ──────────────────────────────────────────────────
