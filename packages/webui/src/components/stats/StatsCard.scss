@@ -44,36 +44,114 @@
     flex-shrink: 0;
   }
 
-  &__pr-bar {
+  /* ── Hero bar: winrate + PR on the same row ──
+     Left: big winrate number + "win rate" label + total battles small text.
+     Right: PR number + tier label.
+     Both are click-to-copy with hover highlight. */
+  &__hero {
     display: flex;
-    align-items: baseline;
-    gap: 0.6rem;
-    padding: 0.6rem 0.75rem;
+    align-items: stretch;
+    gap: 1rem;
+    padding: 0.75rem;
     background: rgb(var(--color-bg));
     border-radius: var(--radius-sm);
   }
 
-  &__pr-num {
+  &__hero-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+  }
+
+  &__wr {
     font-size: var(--text-2xl);
     font-weight: 800;
-    line-height: 1;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover {
+      opacity: 0.7;
+    }
   }
 
-  &__pr-label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  &__pr-meta {
-    margin-left: auto;
-    font-size: var(--text-xs);
+  &__wr-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: rgb(var(--color-muted));
   }
 
+  &__battles-total {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    margin-top: 0.2rem;
+    cursor: pointer;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+  }
+
+  &__pr-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+    padding-left: 1rem;
+    border-left: 1px solid rgb(var(--color-border) / 20%);
+    cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover {
+      opacity: 0.7;
+    }
+  }
+
+  &__pr-num {
+    font-size: var(--text-xl);
+    font-weight: 800;
+    line-height: 1.1;
+  }
+
+  &__pr-label {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Division splits: 3 columns centered ──
+     Each column: winrate number on top, label below. */
+  &__divisions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  &__division {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  &__division-label {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__division-wr {
+    font-size: var(--text-md);
+    font-weight: 700;
+  }
+
+  /* ── KPI grid: 3 columns, no WR/PR (those are in the hero bar) ── */
   &__kpis {
     display: grid;
-    /* Fixed 3 columns for a clean, regular grid. The winrate KPI spans
-     * full width on the first row, then 3+3 on the next two rows. */
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
   }
@@ -87,13 +165,8 @@
     align-items: center;
     text-align: center;
     gap: 0.15rem;
-    min-width: 0; /* allow text to ellipsis instead of expanding */
+    min-width: 0;
     overflow: hidden;
-
-    &--big {
-      grid-column: 1 / -1;
-      background: rgb(var(--color-primary) / 8%);
-    }
 
     &--copyable {
       cursor: pointer;
@@ -120,34 +193,5 @@
     font-size: var(--text-lg);
     font-weight: 700;
     color: rgb(var(--color-text));
-
-    .stats-card__kpi--big & {
-      font-size: var(--text-2xl);
-    }
-  }
-
-  &__divisions {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgb(var(--color-border) / 12%);
-  }
-
-  &__division {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.15rem;
-  }
-
-  &__division-label {
-    font-size: var(--text-2xs);
-    color: rgb(var(--color-muted));
-  }
-
-  &__division-wr {
-    font-size: var(--text-md);
-    font-weight: 700;
   }
 }
