@@ -56,29 +56,117 @@ pub fn appdata_delete(file: String) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn is_game_running() -> bool {
+    find_game_pid().is_some()
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn is_game_running() -> bool {
+    false
+}
+
+/// Return rich information about the running World of Warships process: PID,
+/// the install it belongs to (kind/realm), and the exe path. The `installs`
+/// argument is the list of detected installs (from `detect_game_install`) —
+/// the process's exe path is matched against each install's path to decide
+/// *which* client is running (Steam vs Wargaming vs Lesta vs 360).
+///
+/// This mirrors Starward's approach: enumerate processes by name, then resolve
+/// the running client by matching the exe's directory against known installs.
+/// `is_game_running` is the boolean projection of this.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn get_game_process(installs: Vec<wowsp_tauri_shared::GameInstall>) -> wowsp_tauri_shared::GameProcessInfo {
+    use wowsp_tauri_shared::{GameInstallKind, GameProcessInfo};
+
+    let Some(pid) = find_game_pid() else {
+        return GameProcessInfo {
+            running: false,
+            pid: None,
+            kind: None,
+            realm: None,
+            exe_path: None,
+            matched_install: None,
+        };
+    };
+
+    // Resolve the exe's full path, then match it against the known installs to
+    // decide which client (Steam / Wargaming / ...) is running.
+    let exe_path = query_process_image_path(pid);
+    let matched = exe_path
+        .as_deref()
+        .and_then(|exe| match_install(&installs, exe));
+
+    let (kind, realm) = match &matched {
+        Some(m) => (Some(m.kind.clone()), m.realm.clone()),
+        None => {
+            // No install list / no match — still try to infer Steam from the path
+            // (the most common case where the install wasn't pre-detected).
+            let is_steam = exe_path
+                .as_deref()
+                .map(|p| {
+                    let lower = p.to_lowercase();
+                    lower.contains("steamapps") && lower.contains("common")
+                })
+                .unwrap_or(false);
+            (
+                Some(if is_steam { GameInstallKind::Steam } else { GameInstallKind::Wargaming }),
+                None,
+            )
+        }
+    };
+
+    GameProcessInfo {
+        running: true,
+        pid: Some(pid),
+        kind,
+        realm,
+        exe_path,
+        matched_install: matched.cloned(),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn get_game_process(_installs: Vec<wowsp_tauri_shared::GameInstall>) -> wowsp_tauri_shared::GameProcessInfo {
+    wowsp_tauri_shared::GameProcessInfo {
+        running: false,
+        pid: None,
+        kind: None,
+        realm: None,
+        exe_path: None,
+        matched_install: None,
+    }
+}
+
+/// Find the PID of any running `WorldOfWarships.exe` / `WorldOfWarships64.exe`.
+/// Returns the first match (matches Starward's "first process" semantics —
+/// running two clients simultaneously is rare and would share a replay dir
+/// only if they're the same install anyway).
+#[cfg(target_os = "windows")]
+fn find_game_pid() -> Option<u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,
     };
     unsafe {
-        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
-            return false;
-        };
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
         let mut entry = PROCESSENTRY32W {
             dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
             ..Default::default()
         };
         if Process32FirstW(snapshot, &mut entry).is_err() {
             let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-            return false;
+            return None;
         }
         loop {
             let name = String::from_utf16_lossy(&entry.szExeFile[..])
                 .trim_end_matches('\0')
                 .to_lowercase();
             if name == "worldofwarships.exe" || name == "worldofwarships64.exe" {
+                let pid = entry.th32ProcessID;
                 let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-                return true;
+                return Some(pid);
             }
             if Process32NextW(snapshot, &mut entry).is_err() {
                 break;
@@ -86,13 +174,57 @@ pub fn is_game_running() -> bool {
         }
         let _ = windows::Win32::Foundation::CloseHandle(snapshot);
     }
-    false
+    None
 }
 
-#[cfg(not(target_os = "windows"))]
-#[tauri::command]
-pub fn is_game_running() -> bool {
-    false
+/// Query the full image path of a process by PID. Uses
+/// `PROCESS_QUERY_LIMITED_INFORMATION` (available without elevation for
+/// processes owned by other users in the same session) + `QueryFullProcessImageNameW`.
+#[cfg(target_os = "windows")]
+fn query_process_image_path(pid: u32) -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32_EXE_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let result = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32_EXE_FORMAT,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        );
+        let _ = CloseHandle(handle);
+        if result.is_ok() {
+            Some(String::from_utf16_lossy(&buf[..len as usize]))
+        } else {
+            None
+        }
+    }
+}
+
+/// Match a running exe path against the known installs. An install matches
+/// when the exe path starts with the install's directory (case-insensitive,
+/// path-separator-agnostic) — i.e. the running game lives inside that install.
+#[cfg(target_os = "windows")]
+fn match_install<'a>(
+    installs: &'a [wowsp_tauri_shared::GameInstall],
+    exe_path: &str,
+) -> Option<&'a wowsp_tauri_shared::GameInstall> {
+    let normalize = |p: &str| p.to_lowercase().replace('/', r"\");
+    let exe_norm = normalize(exe_path);
+    // Prefer the longest matching prefix so a nested (more specific) install
+    // wins over a broader one.
+    installs
+        .iter()
+        .filter(|i| {
+            let dir = normalize(&i.path);
+            !dir.is_empty() && (exe_norm.starts_with(&dir) || exe_norm.starts_with(&format!("{dir}\\")))
+        })
+        .max_by_key(|i| i.path.len())
 }
 
 #[cfg(test)]

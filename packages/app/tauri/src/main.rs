@@ -214,6 +214,7 @@ fn main() {
             commands::appdata::appdata_write,
             commands::appdata::appdata_delete,
             commands::appdata::is_game_running,
+            commands::appdata::get_game_process,
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
             commands::replay::read_replay_header,

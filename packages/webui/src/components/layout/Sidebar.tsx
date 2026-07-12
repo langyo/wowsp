@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { BarChart3, Search, Ship, Film, Settings } from "lucide-vue-next";
+import { BarChart3, Search, Ship, Film, Settings, Package } from "lucide-vue-next";
 
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -9,8 +9,13 @@ import { t } from "@/i18n";
 import "./Sidebar.scss";
 
 /**
- * Left sidebar: brand + nav links + spacer + account/game-status footer.
- * 240px wide; the account area opens the switcher modal (wired next).
+ * Left sidebar: brand + nav links + spacer + footer.
+ *
+ * Nav links (top): Dashboard / Lookup / Ships / Replay / Resources.
+ * Footer (bottom): game-status dot + account button + settings icon button.
+ *
+ * "Resources" (资源配置) is a new page for managing game mods, custom skins,
+ * and voice packs. "Settings" moved to a bottom-left icon button.
  */
 export default defineComponent({
   name: "Sidebar",
@@ -49,9 +54,9 @@ export default defineComponent({
             <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
           </RouterLink>
-          <RouterLink to="/settings" class="sidebar__link" activeClass="is-active">
-            <Settings size={16} class="sidebar__link-icon" />
-            <span class="sidebar__link-text">{t("nav.settings")}</span>
+          <RouterLink to="/resources" class="sidebar__link" activeClass="is-active">
+            <Package size={16} class="sidebar__link-icon" />
+            <span class="sidebar__link-text">{t("nav.resources")}</span>
           </RouterLink>
         </nav>
 
@@ -69,8 +74,14 @@ export default defineComponent({
               {gameStatus.running ? t("common.game.online") : t("common.game.offline")}
             </span>
           </div>
-          <div class="sidebar__account" onClick={() => (showSwitcher.value = true)}>
-            <span class="sidebar__account-name">{accountLabel.value}</span>
+          <div class="sidebar__account-row">
+            <div class="sidebar__account" onClick={() => (showSwitcher.value = true)}>
+              <span class="sidebar__account-name">{accountLabel.value}</span>
+            </div>
+            {/* Settings as an icon button in the bottom-left */}
+            <RouterLink to="/settings" class="sidebar__settings-btn" activeClass="is-active" title={t("nav.settings")}>
+              <Settings size={18} />
+            </RouterLink>
           </div>
         </div>
 

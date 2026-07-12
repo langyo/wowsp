@@ -1,12 +1,24 @@
-import { onUnmounted, ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
 
+/**
+ * Promise-based confirm dialog composable. Ported from shittim-chest.
+ * Wire to a single <SConfirmDialog> in the view:
+ *
+ *   const confirm = useConfirm();
+ *   // In template:
+ *   <SConfirmDialog visible={confirm.visible.value} title={confirm.title.value}
+ *     message={confirm.message.value}
+ *     onConfirm={confirm.accept} onCancel={confirm.cancel} />
+ *   // In logic:
+ *   const ok = await confirm.confirm("Delete?", "Are you sure?");
+ */
 export function useConfirm() {
   const visible = ref(false);
   const title = ref("");
   const message = ref("");
   let resolvePromise: ((_value: boolean) => void) | null = null;
 
-  onUnmounted(() => {
+  onBeforeUnmount(() => {
     resolvePromise?.(false);
     resolvePromise = null;
     visible.value = false;
@@ -21,15 +33,18 @@ export function useConfirm() {
       resolvePromise = resolve;
     });
   }
+
   function accept() {
     visible.value = false;
     resolvePromise?.(true);
     resolvePromise = null;
   }
+
   function cancel() {
     visible.value = false;
     resolvePromise?.(false);
     resolvePromise = null;
   }
+
   return { visible, title, message, confirm, accept, cancel };
 }

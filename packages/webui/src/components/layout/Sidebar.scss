@@ -76,6 +76,13 @@
     gap: 0.5rem;
   }
 
+  /* Account + settings button on the same row */
+  &__account-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
   &__game-status {
     display: flex;
     align-items: center;
@@ -119,5 +126,28 @@
   &__account-name {
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
+  }
+
+  /* Settings icon button — sits in the footer next to account info. */
+  &__settings-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-muted));
+    transition: background var(--duration-short), color var(--duration-short);
+    flex-shrink: 0;
+
+    &:hover {
+      background: rgb(var(--color-primary) / 10%);
+      color: rgb(var(--color-primary));
+    }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+    }
   }
 }
