@@ -17,8 +17,12 @@
   }
 
   &__empty-icon {
-    font-size: 3rem;
-    opacity: 0.5;
+    img {
+      width: 72px;
+      height: 72px;
+      border-radius: var(--radius-md);
+      opacity: 0.7;
+    }
   }
 
   &__title {

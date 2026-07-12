@@ -1,5 +1,4 @@
 import { computed, defineComponent, ref, watch } from "vue";
-import { Anchor } from "lucide-vue-next";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
@@ -58,7 +57,9 @@ export default defineComponent({
       <div class="dashboard-view">
         {!activeAccount.value ? (
           <div class="dashboard-view__empty">
-            <div class="dashboard-view__empty-icon"><Anchor size={48} strokeWidth={1.5} /></div>
+            <div class="dashboard-view__empty-icon">
+              <img src="/logo.webp" alt="WoWSP" />
+            </div>
             <h2 class="dashboard-view__title">{t("dashboard.noAccount")}</h2>
             <p class="dashboard-view__hint">{t("dashboard.noAccountHint")}</p>
             <button class="dashboard-view__bind" onClick={() => (showModal.value = true)}>

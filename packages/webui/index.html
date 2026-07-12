@@ -12,18 +12,40 @@
     <title>WoWSP — World of WarShip Panel</title>
     <style>
       html, body, #app { margin: 0; height: 100%; }
+      /* Loading screen: background follows the user's color-scheme preference.
+         Uses prefers-color-scheme since the app's theme system hasn't loaded
+         yet (it runs after mount). Once the app mounts, the loading screen
+         is dismissed and the real theme takes over. */
       #loading-screen {
         position: fixed; inset: 0; display: flex;
-        align-items: center; justify-content: center;
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 1rem;
         background: #0b1220; color: #cfe3ff;
         font-family: system-ui, sans-serif; z-index: 9999;
         transition: opacity 0.3s ease;
       }
+      #loading-screen img {
+        width: 96px; height: 96px;
+        animation: wowsp-pulse 1.8s ease-in-out infinite;
+      }
+      #loading-screen span {
+        font-size: 0.8rem; letter-spacing: 0.05em; opacity: 0.7;
+      }
       #loading-screen.hidden { opacity: 0; pointer-events: none; }
+      @keyframes wowsp-pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(0.92); }
+      }
+      @media (prefers-color-scheme: light) {
+        #loading-screen { background: #f5f8fc; color: #1e2837; }
+      }
     </style>
   </head>
   <body>
-    <div id="loading-screen">WoWSP loading…</div>
+    <div id="loading-screen">
+      <img src="/logo.webp" alt="WoWSP" />
+      <span>WoWSP loading…</span>
+    </div>
     <div id="app"></div>
     <!-- Custom title bar (Tauri only; self-guards in a browser) -->
     <script src="/tauri-titlebar.js"></script>

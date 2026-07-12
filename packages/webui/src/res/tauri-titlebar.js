@@ -28,7 +28,8 @@
     "#wowsp-titlebar[data-theme-mode='light']{--tb-bg:rgba(245,248,252,0.75);--tb-border:rgba(0,0,0,0.08);--tb-fg:rgba(0,0,0,0.55);--tb-fg-strong:rgba(0,0,0,0.88);--tb-hover:rgba(0,0,0,0.06);--tb-active:rgba(0,0,0,0.10)}" +
     "#wowsp-titlebar{position:fixed;top:0;left:0;right:0;height:" + BAR_HEIGHT + "px;display:flex;align-items:center;z-index:100001;user-select:none;background:var(--tb-bg);backdrop-filter:blur(16px);border-bottom:1px solid var(--tb-border);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-app-region:drag;app-region:drag}" +
     "#wowsp-titlebar-right{-webkit-app-region:no-drag;app-region:no-drag;display:flex;align-items:center;height:100%}" +
-    "#wowsp-titlebar-title{font-size:11px;font-weight:600;letter-spacing:0.02em;color:var(--tb-fg);padding-left:12px;white-space:nowrap}" +
+    "#wowsp-titlebar-title{font-size:11px;font-weight:600;letter-spacing:0.02em;color:var(--tb-fg);padding-left:8px;white-space:nowrap;display:flex;align-items:center;gap:6px}" +
+    "#wowsp-titlebar-logo{width:18px;height:18px;border-radius:3px;flex-shrink:0}" +
     "#wowsp-titlebar-spacer{flex:1}" +
     ".wowsp-caption-btn{width:46px;height:" + BAR_HEIGHT + "px;border:none;background:transparent;color:var(--tb-fg);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background-color .12s ease,color .12s ease;outline:none}" +
     ".wowsp-caption-btn:hover{background:var(--tb-hover);color:var(--tb-fg-strong)}" +
@@ -48,7 +49,7 @@
   var bar = document.createElement("div");
   bar.id = "wowsp-titlebar";
   bar.innerHTML =
-    '<span id="wowsp-titlebar-title">WoWSP</span>' +
+    '<span id="wowsp-titlebar-title"><img id="wowsp-titlebar-logo" src="/logo.webp" alt="" />WoWSP</span>' +
     '<span id="wowsp-titlebar-spacer"></span>' +
     '<div id="wowsp-titlebar-right">' +
     '<button type="button" class="wowsp-caption-btn" data-act="minimize" title="Minimize" aria-label="Minimize">' + MIN_SVG + '</button>' +

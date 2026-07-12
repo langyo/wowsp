@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { BarChart3, Search, Ship, Film, Settings, Anchor, X } from "lucide-vue-next";
+import { BarChart3, Search, Ship, Film, Settings } from "lucide-vue-next";
 
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -28,7 +28,7 @@ export default defineComponent({
     return () => (
       <aside class="sidebar">
         <div class="sidebar__brand">
-          <Anchor size={18} strokeWidth={2} />
+          <img src="/logo.webp" alt="WoWSP" class="sidebar__brand-logo" />
           <span>{t("common.app.name")}</span>
         </div>
 

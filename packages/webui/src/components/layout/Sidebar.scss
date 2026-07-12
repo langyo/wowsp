@@ -18,6 +18,13 @@
     letter-spacing: 0.02em;
   }
 
+  &__brand-logo {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+
   &__nav {
     padding: 0.5rem 0.75rem;
     display: flex;

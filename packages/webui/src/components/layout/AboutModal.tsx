@@ -1,6 +1,6 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Anchor, Check, Download, RefreshCw } from "lucide-vue-next";
+import { Check, Download, RefreshCw } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import { t } from "@/i18n";
@@ -41,7 +41,9 @@ export default defineComponent({
         width="26rem"
       >
         <div class="about-modal">
-          <div class="about-modal__logo"><Anchor size={48} strokeWidth={1.5} /></div>
+          <div class="about-modal__logo">
+            <img src="/logo.webp" alt="WoWSP" />
+          </div>
           <h2 class="about-modal__name">WoWSP</h2>
           <p class="about-modal__subtitle">{t("about.subtitle")}</p>
           <div class="about-modal__version">
