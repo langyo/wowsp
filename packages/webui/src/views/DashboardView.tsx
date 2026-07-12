@@ -370,7 +370,6 @@ export default defineComponent({
                   ))
                 )}
               </section>
-              </section>
             </div>
           ) : stats.error ? (
             <div class="dashboard-view__error" key="error">{stats.error}</div>
