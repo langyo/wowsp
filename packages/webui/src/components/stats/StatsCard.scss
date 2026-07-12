@@ -94,6 +94,15 @@
       grid-column: 1 / -1;
       background: rgb(var(--color-primary) / 8%);
     }
+
+    &--copyable {
+      cursor: pointer;
+      transition: background var(--duration-short);
+
+      &:hover {
+        background: rgb(var(--color-primary) / 6%);
+      }
+    }
   }
 
   &__kpi-label {
