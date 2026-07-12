@@ -6,6 +6,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { initTheme } from "@/theme/useTheme";
 import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
+import SCheckbox from "@/components/base/SCheckbox";
 import SToast from "@/components/base/SToast";
 import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
@@ -90,8 +91,12 @@ export default defineComponent({
           title={t("tray.closeTitle")}
           width="24rem"
         >
-          {/* Default slot = body */}
           <p class="close-dialog__msg">{t("tray.closeMsg")}</p>
+          <SCheckbox
+            modelValue={rememberChoice.value}
+            onUpdate:modelValue={(v: boolean) => (rememberChoice.value = v)}
+            label={t("tray.remember")}
+          />
 
           {/* Footer slot = action buttons */}
           {{

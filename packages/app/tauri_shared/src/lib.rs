@@ -39,6 +39,30 @@ pub struct GameInstall {
     pub realm: Option<String>,
 }
 
+/// Snapshot of the currently-running World of Warships process, with the
+/// install (kind/realm) it belongs to resolved by matching the process's exe
+/// path against the known installs.
+///
+/// `is_game_running` (the legacy boolean command) derives from `running`. This
+/// richer view lets the sidebar show the PID + which client (Steam / Wargaming
+/// / Lesta / 360) is running, mirroring how Starward reports the active game
+/// process.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameProcessInfo {
+    pub running: bool,
+    /// OS process id of the matched `WorldOfWarships*.exe`, when running.
+    pub pid: Option<u32>,
+    /// The install kind of the matched install (Steam / Wargaming / ...).
+    pub kind: Option<GameInstallKind>,
+    /// Realm of the matched install, when known.
+    pub realm: Option<String>,
+    /// Full path to the running exe, when queryable.
+    pub exe_path: Option<String>,
+    /// The full install record the process was matched against, when any.
+    pub matched_install: Option<GameInstall>,
+}
+
 /// Top-level metadata extracted from a `.wowsreplay` header.
 ///
 /// A replay file is laid out as:

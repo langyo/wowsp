@@ -1,0 +1,67 @@
+/* SCheckbox / SRadio — unified selection control. Ported from shittim-chest,
+   tokenized for WoWSP's theme system (no --space-* / --border-input / --z-above
+   tokens; using literals instead). */
+.s-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.s-checkbox[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.s-checkbox-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid rgb(var(--color-border) / 40%);
+  background: rgb(var(--color-surface) / 92%);
+  transition:
+    border-color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.s-checkbox[data-type="radio"] .s-checkbox-box {
+  border-radius: 50%;
+}
+
+.s-checkbox-box[data-checked] {
+  background: rgb(var(--color-primary));
+  border-color: rgb(var(--color-primary));
+  color: rgb(var(--color-on-solid));
+}
+
+.s-checkbox-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.s-checkbox [data-el="icon"] {
+  position: relative;
+  z-index: 1;
+}
+
+.s-checkbox [data-el="dot"] {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--color-on-solid));
+  z-index: 1;
+}
+
+.s-checkbox [data-el="label"] {
+  font-size: var(--text-sm);
+  color: rgb(var(--color-text));
+}
