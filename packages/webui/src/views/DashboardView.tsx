@@ -89,26 +89,34 @@ export default defineComponent({
     async function refresh() {
       const acc = activeAccount.value;
       if (!acc) return;
+      // Phase 1: warm the account-level cache (instant render on cold start).
       try {
         await stats.loadCached(acc.realm, acc.accountId);
       } catch {
         // cache miss — fine
       }
+      // Phase 2: fetch fresh account stats (this populates avgDamage, PR, etc.
+      // via the WG account/info endpoint).
       try {
         await stats.lookup(acc.nickname, acc.realm);
-        // Load per-ship stats + encyclopedia (for type join) in parallel.
-        await Promise.all([
-          shipStats.load(acc.accountId, acc.realm),
-          encyclopedia.load(acc.realm),
-          trends.loadPlayer(acc.accountId, acc.realm),
-        ]);
       } catch {
         // surfaced via stats.error
       }
+      // Phase 3: per-ship stats + encyclopedia + trends — each independent.
+      // Use allSettled so a failure in one (e.g. trends) doesn't block the
+      // others (e.g. shipStats). Each store surfaces its own error.
+      await Promise.allSettled([
+        shipStats.load(acc.accountId, acc.realm),
+        encyclopedia.load(acc.realm),
+        trends.loadPlayer(acc.accountId, acc.realm),
+      ]);
     }
 
+    // Refresh on mount + whenever the active account changes. We always
+    // refresh (not just on cache miss) so per-ship stats + trends load even
+    // when account-level stats are already cached from a previous session.
     watch(activeAccount, (acc) => {
-      if (acc && !currentStats.value) void refresh();
+      if (acc) void refresh();
     }, { immediate: true });
 
     function shipTypeName(shipId: number): string {

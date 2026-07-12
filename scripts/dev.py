@@ -238,8 +238,32 @@ def run_mock(args: argparse.Namespace) -> int:
         return 0
 
 
+def _kill_lingering_wowsp() -> None:
+    """Kill any running wowsp.exe processes before starting a new dev session.
+    Prevents the 'multiple windows' issue where a stale instance from a
+    previous run lingers."""
+    import shutil
+    taskkill = shutil.which("taskkill")
+    if not taskkill:
+        return
+    try:
+        subprocess.call(
+            [taskkill, "/F", "/IM", "wowsp.exe"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass  # not on Windows, or no instances — fine
+
+
 def run_native(args: argparse.Namespace) -> int:
     try:
+        # Kill any lingering wowsp.exe from a previous dev session. Tauri's
+        # child-process cleanup is imperfect on Windows (Ctrl+C sometimes
+        # leaves the webview alive), and a stale instance holds the Vite port
+        # + causes the "multiple windows" symptom on the next `just dev`.
+        _kill_lingering_wowsp()
+
         if args.webui_only:
             procs: list[subprocess.Popen] = []
             start_vite(procs)
