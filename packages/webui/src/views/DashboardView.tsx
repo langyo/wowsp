@@ -6,6 +6,7 @@ import SSpinner from "@/components/base/SSpinner";
 import SSegmented from "@/components/base/SSegmented";
 import STag from "@/components/base/STag";
 import SScrollTop from "@/components/base/SScrollTop";
+import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -165,9 +166,7 @@ export default defineComponent({
             <div class="dashboard-view__content" key="content">
               {/* ── Identity header (centered) ── */}
               <header class="dash-identity">
-                <div class="dash-identity__avatar">
-                  <img src="/logo.webp" alt="" />
-                </div>
+                <PlayerBadge tier={currentStats.value.levelingTier ?? 0} size={56} />
                 <div class="dash-identity__info">
                   <h1 class="dash-identity__name">
                     {currentStats.value.clanTag ? (

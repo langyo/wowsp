@@ -179,6 +179,13 @@ pub struct PlayerStats {
     /// Number of distinct ships played.
     pub ships_played: Option<i64>,
 
+    // ── Service record (player level/badge) ─────────────────────────────
+    /// WG service record tier (player "level"). Used to render a rank badge
+    /// in the UI — higher tier = more decorated badge. Range: 1–100+.
+    pub leveling_tier: Option<i32>,
+    /// WG service record points (XP towards next tier).
+    pub leveling_points: Option<i64>,
+
     // ── Per-division winrates ───────────────────────────────────────────
     pub solo_wr: Option<f32>,
     pub div2_wr: Option<f32>,

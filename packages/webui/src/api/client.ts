@@ -100,6 +100,9 @@ export interface PlayerStats {
   hitRate?: number | null;
   pr?: number | null;
   shipsPlayed?: number | null;
+  // ── Service record (player level/badge) ─────────────────────────────
+  levelingTier?: number | null;
+  levelingPoints?: number | null;
   // ── Per-division winrates ───────────────────────────────────────────
   soloWr?: number | null;
   div2Wr?: number | null;

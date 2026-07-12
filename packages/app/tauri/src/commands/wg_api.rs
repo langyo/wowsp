@@ -67,16 +67,24 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         .json()
         .await
         .map_err(|e| format!("account/info parse: {e}"))?;
-    let stats_node = info
+    let player_node = info
         .data
         .as_ref()
         .and_then(|d| {
             let key = entry.account_id.to_string();
             d.get(&key)
-        })
-        .and_then(|v| v.get("statistics"));
+        });
+    let stats_node = player_node.and_then(|v| v.get("statistics"));
     let p = PvpStats::extract(stats_node);
     let hidden = stats_node.map_or(true, |s| s.get("pvp").map_or(true, |p| p.is_null()));
+    // Service record tier + points (for rank badge rendering).
+    let leveling_tier = player_node
+        .and_then(|v| v.get("leveling_tier"))
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let leveling_points = player_node
+        .and_then(|v| v.get("leveling_points"))
+        .and_then(|v| v.as_i64());
 
     // 3. Optional clan tag lookup (best-effort — never fails the whole call).
     let clan_tag = match client
@@ -120,6 +128,8 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         hit_rate: p.hit_rate,
         pr: p.pr,
         ships_played: p.ships_played,
+        leveling_tier,
+        leveling_points,
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
