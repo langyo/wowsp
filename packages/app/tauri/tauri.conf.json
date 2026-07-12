@@ -5,7 +5,7 @@
   "build": {
     "beforeBuildCommand": "pnpm --filter @wowsp/webui build",
     "beforeDevCommand": "pnpm --filter @wowsp/webui dev",
-    "devUrl": "http://localhost:5173/?autoscreenshot=1",
+    "devUrl": "http://localhost:5173",
     "frontendDist": "../../../dist/webui"
   },
   "bundle": {
@@ -52,7 +52,7 @@
         "https://ghp.ci/https://github.com/celestia-island/wowsp/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": "PLACEHOLDER_REPLACE_WITH_REAL_SIGNING_PUBKEY"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFN0NCMjlDM0NERjQ0MEIKUldRTFJOODhuTEo4L3E2VXNHK0pkSlBCT0lHaWtwTHNXUmk0cTFmQTU4ZXBIb1NuQjJGQnRPM1UK"
     }
   }
 }

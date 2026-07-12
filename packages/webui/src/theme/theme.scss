@@ -116,8 +116,28 @@ body {
   font-size: var(--text-base);
   line-height: 1.5;
   color: rgb(var(--color-text));
-  background: rgb(var(--color-background));
+  /* Wallpaper: solid color base (defaults to theme background), with an
+     optional image layer + overlay tint for readability. The CSS vars are
+     seeded by WallpaperRenderer.tsx from the active wallpaper preset. */
+  background-color: var(--wallpaper-solid-color, rgb(var(--color-background)));
+  background-image: var(--wallpaper-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+/* Overlay tint on top of the background image — darkens/brightens for text
+   readability without affecting the theme color tokens. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: rgb(var(--color-background));
+  opacity: var(--wallpaper-overlay-opacity, 0);
+  pointer-events: none;
 }
 a {
   color: rgb(var(--color-primary));

@@ -7,6 +7,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { api } from "@/api";
 import { initTheme } from "@/theme/useTheme";
 import Sidebar from "./Sidebar";
+import WallpaperRenderer from "./WallpaperRenderer";
 import "./AppShell.scss";
 
 /**
@@ -74,6 +75,7 @@ export default defineComponent({
 
     return () => (
       <div class="app-shell">
+        <WallpaperRenderer />
         <Sidebar />
         <main class="app-shell__main">
           <router-view />

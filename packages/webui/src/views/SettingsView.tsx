@@ -1,6 +1,7 @@
 import { defineComponent, ref } from "vue";
 
 import { useTheme } from "@/theme/useTheme";
+import { useWallpaper } from "@/theme/useWallpaper";
 import { themePresets, type ThemeMode } from "@/theme/presets";
 import { t } from "@/i18n";
 import AboutModal from "@/components/layout/AboutModal";
@@ -15,6 +16,7 @@ export default defineComponent({
   name: "SettingsView",
   setup() {
     const theme = useTheme();
+    const wallpaper = useWallpaper();
     const showAbout = ref(false);
 
     const modes: { value: ThemeMode; labelKey: string; icon: string }[] = [
@@ -91,6 +93,44 @@ export default defineComponent({
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        {/* wallpaper / background */}
+        <section class="settings-view__section">
+          <h2 class="settings-view__section-title">{t("settings.wallpaper")}</h2>
+          <div class="settings-view__wallpapers">
+            {wallpaper.allWallpapers.value.map((w) => (
+              <button
+                class={[
+                  "settings-view__wallpaper",
+                  wallpaper.activeWallpaperId.value === w.id ? "settings-view__wallpaper--on" : "",
+                ]}
+                onClick={() => wallpaper.setActiveWallpaper(w.id)}
+              >
+                <span class="settings-view__wallpaper-preview">
+                  {w.source.type === "solid" ? (
+                    <span
+                      class="settings-view__wallpaper-swatch"
+                      style={{
+                        background:
+                          w.source.color === "black"
+                            ? "#0b1220"
+                            : w.source.color === "white"
+                              ? "#f8fafc"
+                              : "linear-gradient(135deg, #0b1220 50%, #f8fafc 50%)",
+                      }}
+                    />
+                  ) : (
+                    <span
+                      class="settings-view__wallpaper-swatch settings-view__wallpaper-swatch--image"
+                      style={{ backgroundImage: `url(${w.source.url})` }}
+                    />
+                  )}
+                </span>
+                <span class="settings-view__wallpaper-name">{w.name}</span>
+              </button>
+            ))}
           </div>
         </section>
 
