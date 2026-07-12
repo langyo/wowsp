@@ -4,6 +4,7 @@ import STag from "@/components/base/STag";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import { prTier, winrateColor, winrateTier } from "@/utils/winrate";
+import { useClipboard } from "@/composables/useClipboard";
 import "./StatsCard.scss";
 
 /**
@@ -25,6 +26,7 @@ export default defineComponent({
     const pr = computed(() => prTier(props.stats.pr));
     const wrTier = computed(() => winrateTier(props.stats.winrate));
     const wrColor = computed(() => winrateColor(props.stats.winrate));
+    const { copy } = useClipboard();
 
     const kpis = computed(() => [
       {
@@ -108,7 +110,10 @@ export default defineComponent({
               class={[
                 "stats-card__kpi",
                 k.big ? "stats-card__kpi--big" : "",
+                "stats-card__kpi--copyable",
               ]}
+              onClick={() => copy(String(k.value), t("common.copied"))}
+              title={`${k.label}: ${k.value} (click to copy)`}
             >
               <span class="stats-card__kpi-label">{k.label}</span>
               <span

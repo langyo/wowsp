@@ -21,7 +21,7 @@ mod test_harness;
 
 use std::sync::Arc;
 
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use tracing_subscriber::EnvFilter;
 
 fn main() {
@@ -76,10 +76,11 @@ fn main() {
             // exit). The arena watcher / overlay capture wind down on the real
             // drain triggered by the tray Quit item.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                tracing::info!(window = %window.label(), "window close requested → minimize to tray");
+                // Prevent the default close. Emit an event to the frontend,
+                // which shows a confirm dialog (quit vs. minimize to tray).
+                tracing::info!(window = %window.label(), "window close requested → emitting close-requested event to frontend");
                 api.prevent_close();
-                let _ = window.minimize();
-                let _ = window.hide();
+                let _ = window.app_handle().emit("close-requested", ());
             }
         })
         .setup(|app| {
@@ -141,21 +142,35 @@ fn main() {
             }
 
             // ── System tray ───────────────────────────────────────────────
-            // Menu: Show / Hide / Quit. Clicking the tray icon restores the
-            // main window. The close button (above) minimizes to tray instead
-            // of exiting, so users reach "Quit" here.
-            let show = tauri::menu::MenuItem::with_id(app, "show", "Show WoWSP", true, None::<&str>)?;
-            let hide = tauri::menu::MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
-            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit WoWSP", true, None::<&str>)?;
+            // Menu: Show / Hide / Quit. Menu labels are localized based on the
+            // detected OS locale (zh → Chinese, else English). Clicking the
+            // tray icon restores the main window. The close button (above)
+            // now triggers a frontend confirm dialog (quit vs. minimize).
+            let is_zh = prefs.locale.starts_with("zh");
+            let (show_label, hide_label, quit_label, tooltip) = if is_zh {
+                ("显示 WoWSP", "隐藏", "退出 WoWSP", "WoWSP — 战舰世界战况面板")
+            } else {
+                ("Show WoWSP", "Hide", "Quit WoWSP", "WoWSP — World of WarShip Panel")
+            };
+            let show = tauri::menu::MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
+            let hide = tauri::menu::MenuItem::with_id(app, "hide", hide_label, true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&show, &hide, &quit])?;
 
+            // Use the highest-resolution icon for the tray.
+            let tray_icon = app.default_window_icon().cloned().unwrap_or_else(|| {
+                tauri::image::Image::from_path("icons/128x128@2x.png")
+                    .unwrap_or_else(|_| {
+                        tauri::image::Image::new_owned(include_bytes!("../icons/128x128.png").to_vec(), 128, 128)
+                    })
+            });
+
             let _tray = tauri::tray::TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().unwrap())
-                .tooltip("WoWSP — World of WarShip Panel")
+                .icon(tray_icon)
+                .tooltip(tooltip)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    // Double-click (or click on some platforms) → show window.
                     if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {

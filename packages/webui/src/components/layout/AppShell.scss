@@ -7,6 +7,11 @@
   overflow: hidden;
   background: rgb(var(--color-background));
   color: rgb(var(--color-text));
+  /* Disable text selection globally — the app is not a document. Interactive
+     elements (inputs, editable areas) re-enable it per-component. Copyable
+     values use click-to-copy + toast instead of selection. */
+  user-select: none;
+  -webkit-user-select: none;
 
   &__main {
     flex: 1;
@@ -19,5 +24,37 @@
      rather than the natural (collapsed) height of the page's root element. */
   &__page {
     min-height: 100%;
+  }
+}
+
+/* ── Close confirm dialog ────────────────────────────────────────────── */
+.close-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+
+  &__msg {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+  }
+
+  &__remember {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+
+    input {
+      margin: 0;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
   }
 }
