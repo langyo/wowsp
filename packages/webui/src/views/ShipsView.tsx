@@ -1,4 +1,5 @@
 import { computed, defineComponent, ref, watch } from "vue";
+import { RotateCcw, Star } from "lucide-vue-next";
 
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
@@ -138,7 +139,7 @@ export default defineComponent({
               ))}
             </select>
             <button class="ships-view__reload" onClick={() => void loadEncyclopedia(true)}>
-              ⟳ {t("ships.reload")}
+              <RotateCcw size={12} /> {t("ships.reload")}
             </button>
           </div>
         </header>
@@ -255,7 +256,7 @@ export default defineComponent({
                     <span class="ship-card__tag">{typeLabel(ship.type)}</span>
                     <span class="ship-card__tag">{nationLabel(ship.nation)}</span>
                     {ship.isPremium ? (
-                      <span class="ship-card__tag ship-card__tag--gold">★</span>
+                      <span class="ship-card__tag ship-card__tag--gold"><Star size={10} fill="currentColor" /></span>
                     ) : null}
                   </div>
                   <div class="ship-card__stats">

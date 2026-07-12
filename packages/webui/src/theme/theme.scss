@@ -145,3 +145,75 @@ a {
 button {
   font: inherit;
 }
+
+/* === Custom scrollbars (replace ugly native Windows bars) === */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-border) / 40%) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border) / 35%);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-primary) / 40%);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* === Styled form controls (replace native select/input appearance) === */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 12px;
+  padding-right: 1.75rem !important;
+  cursor: pointer;
+}
+select option {
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-text));
+}
+
+input[type="text"],
+input[type="search"],
+input[type="number"] {
+  outline: none;
+  transition: border-color var(--duration-short) var(--ease-standard);
+}
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="number"]:focus {
+  border-color: rgb(var(--color-primary) / 50%);
+}
+
+/* Range slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(var(--color-border) / 30%);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgb(var(--color-primary));
+  cursor: pointer;
+  border: 2px solid rgb(var(--color-surface));
+}

@@ -1,5 +1,6 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
+import { Anchor, Check, Download, RefreshCw } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import { t } from "@/i18n";
@@ -40,20 +41,22 @@ export default defineComponent({
         width="26rem"
       >
         <div class="about-modal">
-          <div class="about-modal__logo">⚓</div>
+          <div class="about-modal__logo"><Anchor size={48} strokeWidth={1.5} /></div>
           <h2 class="about-modal__name">WoWSP</h2>
           <p class="about-modal__subtitle">{t("about.subtitle")}</p>
           <div class="about-modal__version">
             <span>v{version.value}</span>
             {updater.available ? (
               <button class="about-modal__update" onClick={() => void updater.downloadAndInstall()}>
-                {t("about.updateAvailable")}
+                <Download size={12} /> {t("about.updateAvailable")}
               </button>
             ) : updater.checked ? (
-              <span class="about-modal__up-to-date">{t("about.upToDate")}</span>
+              <span class="about-modal__up-to-date">
+                <Check size={12} /> {t("about.upToDate")}
+              </span>
             ) : (
               <button class="about-modal__check" onClick={() => void updater.check()}>
-                {t("about.checkUpdate")}
+                <RefreshCw size={12} /> {t("about.checkUpdate")}
               </button>
             )}
           </div>

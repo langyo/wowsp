@@ -6,6 +6,7 @@ import {
   watch,
   type PropType,
 } from "vue";
+import { X } from "lucide-vue-next";
 import { usePopupManager } from "@/composables/usePopupManager";
 import { useReportedTransition } from "@/composables/useReportedTransition";
 import { focusFirst, trapFocus } from "@/utils/dom";
@@ -131,7 +132,7 @@ export default defineComponent({
                       <h2 class="s-modal__title">{props.title}</h2>
                       {props.closeable ? (
                         <button class="s-modal__close" onClick={close} aria-label="Close">
-                          ✕
+                          <X size={16} />
                         </button>
                       ) : null}
                     </header>

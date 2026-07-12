@@ -1,4 +1,5 @@
 import { computed, defineComponent, ref, watch } from "vue";
+import { Star, Diamond, Sparkles } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import { useAccountStore } from "@/stores/account";
@@ -123,10 +124,10 @@ export default defineComponent({
               <span class="ship-detail__type">{typeLabel(props.ship.type)}</span>
               <span class="ship-detail__nation">{nationLabel(props.ship.nation)}</span>
               {props.ship.isPremium ? (
-                <span class="ship-detail__badge">★ Premium</span>
+                <span class="ship-detail__badge"><Star size={10} fill="currentColor" /> Premium</span>
               ) : null}
               {props.ship.isSpecial ? (
-                <span class="ship-detail__badge ship-detail__badge--special">◇ Special</span>
+                <span class="ship-detail__badge ship-detail__badge--special"><Diamond size={10} /> Special</span>
               ) : null}
             </div>
 
@@ -299,7 +300,7 @@ const TrendBars = defineComponent({
             return (
               <div class="trend-bars__col">
                 {patch ? (
-                  <span class="trend-bars__patch" title={patch.summary}>★</span>
+                  <span class="trend-bars__patch" title={patch.summary}><Sparkles size={12} /></span>
                 ) : null}
                 <div
                   class="trend-bars__bar"

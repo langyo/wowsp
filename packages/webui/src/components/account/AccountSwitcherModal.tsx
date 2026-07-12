@@ -1,4 +1,5 @@
 import { defineComponent, ref, watch } from "vue";
+import { Check, X } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
@@ -131,7 +132,7 @@ export default defineComponent({
                       <span class="acct-modal__item-name">{a.nickname}</span>
                       <span class="acct-modal__item-realm">{a.realm.toUpperCase()}</span>
                       {isActive ? (
-                        <span class="acct-modal__item-check">✓</span>
+                        <span class="acct-modal__item-check"><Check size={14} /></span>
                       ) : null}
                     </button>
                     <button
@@ -139,7 +140,7 @@ export default defineComponent({
                       onClick={() => void remove(a)}
                       aria-label="remove"
                     >
-                      ✕
+                      <X size={14} />
                     </button>
                   </div>
                 );

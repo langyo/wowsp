@@ -1,4 +1,5 @@
 import { defineComponent, ref } from "vue";
+import { Sun, Moon, Monitor } from "lucide-vue-next";
 
 import { useTheme } from "@/theme/useTheme";
 import { useWallpaper } from "@/theme/useWallpaper";
@@ -19,10 +20,10 @@ export default defineComponent({
     const wallpaper = useWallpaper();
     const showAbout = ref(false);
 
-    const modes: { value: ThemeMode; labelKey: string; icon: string }[] = [
-      { value: "system", labelKey: "settings.themeModeSystem", icon: "☀" },
-      { value: "dark", labelKey: "settings.themeModeDark", icon: "🌙" },
-      { value: "light", labelKey: "settings.themeModeLight", icon: "☀️" },
+    const modes: { value: ThemeMode; labelKey: string; icon: typeof Sun }[] = [
+      { value: "system", labelKey: "settings.themeModeSystem", icon: Monitor },
+      { value: "dark", labelKey: "settings.themeModeDark", icon: Moon },
+      { value: "light", labelKey: "settings.themeModeLight", icon: Sun },
     ];
 
     const presets = Object.values(themePresets);
@@ -49,7 +50,7 @@ export default defineComponent({
                 ]}
                 onClick={() => theme.setMode(m.value)}
               >
-                <span class="settings-view__mode-icon">{m.icon}</span>
+                <span class="settings-view__mode-icon"><m.icon size={15} /></span>
                 <span>{t(m.labelKey)}</span>
               </button>
             ))}

@@ -1,5 +1,6 @@
 import { computed, defineComponent, ref } from "vue";
 import { RouterLink } from "vue-router";
+import { BarChart3, Search, Ship, Film, Settings, Anchor, X } from "lucide-vue-next";
 
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -26,27 +27,30 @@ export default defineComponent({
 
     return () => (
       <aside class="sidebar">
-        <div class="sidebar__brand">{t("common.app.name")}</div>
+        <div class="sidebar__brand">
+          <Anchor size={18} strokeWidth={2} />
+          <span>{t("common.app.name")}</span>
+        </div>
 
         <nav class="sidebar__nav">
           <RouterLink to="/" class="sidebar__link" activeClass="is-active" end>
-            <span class="sidebar__link-icon">📊</span>
+            <BarChart3 size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.dashboard")}</span>
           </RouterLink>
           <RouterLink to="/lookup" class="sidebar__link" activeClass="is-active">
-            <span class="sidebar__link-icon">🔍</span>
+            <Search size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.lookup")}</span>
           </RouterLink>
           <RouterLink to="/ships" class="sidebar__link" activeClass="is-active">
-            <span class="sidebar__link-icon">🚢</span>
+            <Ship size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.ships")}</span>
           </RouterLink>
           <RouterLink to="/replay" class="sidebar__link" activeClass="is-active">
-            <span class="sidebar__link-icon">🎬</span>
+            <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
           </RouterLink>
           <RouterLink to="/settings" class="sidebar__link" activeClass="is-active">
-            <span class="sidebar__link-icon">⚙️</span>
+            <Settings size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.settings")}</span>
           </RouterLink>
         </nav>
