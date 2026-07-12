@@ -57,6 +57,11 @@ export default defineComponent({
         label: t("stats.hitRate"),
         value: props.stats.hitRate != null ? `${props.stats.hitRate.toFixed(0)}%` : "—",
       },
+      {
+        label: "PR",
+        value: props.stats.pr != null ? props.stats.pr.toLocaleString() : "—",
+        color: pr.value.color,
+      },
     ]);
 
     const divisions = computed(() => [
