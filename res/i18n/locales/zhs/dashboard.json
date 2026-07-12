@@ -1,6 +1,27 @@
 {
-  "title": "我的水表",
-  "noAccount": "尚未绑定账户",
-  "noAccountHint": "绑定你的 Wargaming 账户以查看战绩。",
-  "loading": "加载战绩中..."
+  "title": "我的战绩",
+  "noAccount": "尚未绑定账号",
+  "noAccountHint": "绑定你的战舰世界账号以查看战绩数据。",
+  "loading": "加载战绩中...",
+  "overview": "概览",
+  "byType": "按舰种",
+  "shipList": "舰艇列表",
+  "range1d": "1天",
+  "range7d": "7天",
+  "range30d": "30天",
+  "rangeAll": "全部",
+  "battles": "场次",
+  "winrate": "胜率",
+  "avgDamage": "场均伤害",
+  "avgFrags": "场均击杀",
+  "lastBattle": "最后战斗",
+  "noShipsInRange": "该时段内没有对局。",
+  "shipType": {
+    "Battleship": "战列舰",
+    "Cruiser": "巡洋舰",
+    "Destroyer": "驱逐舰",
+    "AirCarrier": "航空母舰",
+    "Submarine": "潜艇",
+    "Unknown": "其他"
+  }
 }

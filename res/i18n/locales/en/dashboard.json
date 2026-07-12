@@ -2,5 +2,26 @@
   "title": "My stats",
   "noAccount": "No account bound yet",
   "noAccountHint": "Bind your Wargaming account to see your battle stats here.",
-  "loading": "Loading stats..."
+  "loading": "Loading stats...",
+  "overview": "Overview",
+  "byType": "By ship type",
+  "shipList": "Ships",
+  "range1d": "1D",
+  "range7d": "7D",
+  "range30d": "30D",
+  "rangeAll": "All",
+  "battles": "Battles",
+  "winrate": "Win rate",
+  "avgDamage": "Avg damage",
+  "avgFrags": "Avg frags",
+  "lastBattle": "Last battle",
+  "noShipsInRange": "No battles in this period.",
+  "shipType": {
+    "Battleship": "Battleship",
+    "Cruiser": "Cruiser",
+    "Destroyer": "Destroyer",
+    "AirCarrier": "Aircraft Carrier",
+    "Submarine": "Submarine",
+    "Unknown": "Other"
+  }
 }
