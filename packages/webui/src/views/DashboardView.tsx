@@ -200,10 +200,10 @@ export default defineComponent({
                       const wr = rs.battles > 0 ? (rs.wins / rs.battles) * 100 : 0;
                       return (
                         <div class="dash-ranked__card" key={rs.seasonId}>
-                          <div class="dash-ranked__season">{t("dashboard.season")} {rs.seasonId}</div>
-                          {rs.bestRank != null ? (
+                          <div class="dash-ranked__season">{rs.seasonName}</div>
+                          {rs.bestRankDisplay ? (
                             <div class="dash-ranked__rank" title={t("dashboard.bestRank")}>
-                              {t("dashboard.rank")} {rs.bestRank}
+                              {rs.bestRankDisplay}
                             </div>
                           ) : null}
                           <div class="dash-ranked__stats">

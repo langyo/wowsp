@@ -55,6 +55,9 @@ fn wg_client() -> Result<reqwest::Client, String> {
 #[serde(rename_all = "camelCase")]
 pub struct RankedSeasonStats {
     pub season_id: i64,
+    /// Human-readable season name, e.g. "Season 29". Derived from the
+    /// season_id (WG API returns null for the name field).
+    pub season_name: String,
     pub battles: i64,
     pub wins: i64,
     pub losses: i64,
@@ -68,6 +71,24 @@ pub struct RankedSeasonStats {
     pub current_rank: Option<i32>,
     /// Best rank achieved this season.
     pub best_rank: Option<i32>,
+    /// Human-readable rank display, e.g. "Gold 3", "Silver 7", "Bronze 10".
+    /// Derived from the league (1=gold, 2=silver, 3=bronze) + rank number.
+    pub best_rank_display: Option<String>,
+}
+
+/// Map a league number (1/2/3) to its metal name.
+fn league_name(league: i32) -> &'static str {
+    match league {
+        1 => "Gold",
+        2 => "Silver",
+        3 => "Bronze",
+        _ => "Unknown",
+    }
+}
+
+/// Format a rank display string: "Gold 3" or "Silver 10".
+fn format_rank_display(league: i32, rank: i32) -> String {
+    format!("{} {}", league_name(league), rank)
 }
 
 /// Fetch a player's ranked stats for the most recent N seasons.
@@ -163,10 +184,18 @@ pub async fn get_ranked_stats(
         };
 
         // Rank info: rank_info.<id>.<league>.<sprint>.{rank, rank_best}
+        // Returns (current_rank, best_rank, best_league).
         let rank = extract_rank(rank_info, &sid_str);
+
+        // Derive season name. WG API returns null for the name field, but
+        // the community convention maps season IDs: 1001-1010 = seasons 1-10,
+        // 1011-1020 = seasons 11-20, etc. Formula: (id - 1000).
+        let season_num = sid - 1000;
+        let season_name = format!("Season {}", season_num);
 
         out.push(RankedSeasonStats {
             season_id: *sid,
+            season_name,
             battles: get_i64(stats, "battles"),
             wins: get_i64(stats, "wins"),
             losses: get_i64(stats, "losses"),
@@ -177,43 +206,49 @@ pub async fn get_ranked_stats(
             survived_battles: get_i64(stats, "survived_battles"),
             planes_killed: get_i64(stats, "planes_killed"),
             current_rank: rank.as_ref().map(|r| r.0),
-            best_rank: rank.map(|r| r.1),
+            best_rank: rank.as_ref().map(|r| r.1),
+            best_rank_display: rank.map(|r| format_rank_display(r.2, r.1)),
         });
     }
     Ok(out)
 }
 
-/// Extract (current_rank, best_rank) from the rank_info nested structure.
+/// Extract (current_rank, best_rank, best_league) from the rank_info structure.
 /// Structure: rank_info.<seasonId>.<league>.<sprint>.{rank, rank_best}
-/// We take the latest sprint's data.
+/// league 1=Gold, 2=Silver, 3=Bronze. Returns the best (lowest-number = highest)
+/// rank + its league.
 fn extract_rank(
     rank_info: Option<&serde_json::Value>,
     season_id: &str,
-) -> Option<(i32, i32)> {
+) -> Option<(i32, i32, i32)> {
     let season = rank_info?.get(season_id)?;
-    // Iterate leagues (usually just "0" and "1")
     let mut best_current: Option<i32> = None;
     let mut best_ever: Option<i32> = None;
+    let mut best_league: i32 = 3; // default to bronze (worst)
     if let Some(obj) = season.as_object() {
-        for (_league, sprints) in obj {
+        for (league_str, sprints) in obj {
+            let league: i32 = league_str.parse().unwrap_or(3);
             if let Some(sprint_obj) = sprints.as_object() {
                 for (_sprint, info) in sprint_obj {
                     let r = info.get("rank").and_then(|v| v.as_i64()).map(|v| v as i32);
                     let rb = info.get("rank_best").and_then(|v| v.as_i64()).map(|v| v as i32);
-                    // Lower rank number = higher rank (1 is best). Take the
-                    // best (lowest) current and best-ever.
                     if let Some(r) = r {
                         best_current = Some(best_current.map_or(r, |c| c.min(r)));
                     }
                     if let Some(rb) = rb {
-                        best_ever = Some(best_ever.map_or(rb, |b| b.min(rb)));
+                        // Track the best (lowest) rank + the league it was in.
+                        // Lower league number = better league (1=gold > 2=silver > 3=bronze).
+                        if best_ever.map_or(true, |b| rb < b || (rb == b && league < best_league)) {
+                            best_ever = Some(rb);
+                            best_league = league;
+                        }
                     }
                 }
             }
         }
     }
     match (best_current, best_ever) {
-        (Some(c), Some(b)) => Some((c, b)),
+        (Some(c), Some(b)) => Some((c, b, best_league)),
         _ => None,
     }
 }

@@ -205,6 +205,7 @@ export interface CommunityTrend {
  *  for a single season. */
 export interface RankedSeasonStats {
   seasonId: number;
+  seasonName: string;
   battles: number;
   wins: number;
   losses: number;
@@ -216,6 +217,7 @@ export interface RankedSeasonStats {
   planesKilled: number;
   currentRank: number | null;
   bestRank: number | null;
+  bestRankDisplay: string | null;
 }
 
 export const api = {
