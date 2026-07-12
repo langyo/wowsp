@@ -25,11 +25,16 @@ use tauri::{Manager, WindowEvent};
 use tracing_subscriber::EnvFilter;
 
 fn main() {
-    // Initialize structured logging. RUST_LOG overrides the default level.
+    // Initialize structured logging with a compact, readable format:
+    //   wowsp 00:05:32 INFO module_name  message
+    // RUST_LOG overrides the default level. The target (module path) is shown
+    // so you can tell wowsp's own logs apart from Tauri/reqwest/etc.
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("wowsp=info,warn")),
         )
+        .with_target(true)
+        .with_ansi(true)
         .init();
 
     // ── Graceful-shutdown coordinator (malkuth) ──────────────────────────
