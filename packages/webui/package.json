@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run build-titlebar && vite",
     "build": "npm run build-titlebar && vue-tsc --noEmit && vite build",
-    "build-titlebar": "esbuild scripts/tauri-titlebar.ts --bundle --outfile=public/tauri-titlebar.js --format=iife --target=es2020",
+    "build-titlebar": "esbuild scripts/tauri-titlebar.ts --bundle --outfile=src/res/tauri-titlebar.js --format=iife --target=es2020",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.ts,.tsx --fix",
     "typecheck": "vue-tsc --noEmit",

@@ -18,7 +18,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOGO = ROOT / "packages/webui/public/logo.webp"
 ICON_DIR = ROOT / "packages/app/tauri/icons"
-PUBLIC_DIR = ROOT / "packages/webui/public"
+PUBLIC_DIR = ROOT / "packages/webui/src/res"
 
 # Tauri bundle png sizes + Windows Store tiles
 BUNDLE_PNG_SIZES = [32, 64, 128]
@@ -75,7 +75,8 @@ def main():
     except Exception:
         print("  icon.icns skipped (PIL icns limitation)")
 
-    # --- WebUI favicons ---
+    # --- WebUI favicons + logo (Vite publicDir = src/res) ---
+    img.resize((256, 256), Image.LANCZOS).save(PUBLIC_DIR / "logo.webp", format="WEBP", quality=95)
     for s in FAVICON_SIZES:
         img.resize((s, s), Image.LANCZOS).save(PUBLIC_DIR / f"favicon-{s}x{s}.png")
     img.resize((16, 16), Image.LANCZOS).save(PUBLIC_DIR / "favicon.ico", format="ICO")
