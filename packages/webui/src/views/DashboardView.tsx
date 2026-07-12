@@ -12,6 +12,7 @@ import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
+import { useRankedStore } from "@/stores/ranked";
 import { winrateColor } from "@/utils/winrate";
 import {
   filterByDateRange,
@@ -47,6 +48,7 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const encyclopedia = useEncyclopediaStore();
     const trends = useTrendsStore();
+    const ranked = useRankedStore();
 
     const showModal = ref(false);
     const dateRange = ref<DateRange>("all");
@@ -110,6 +112,7 @@ export default defineComponent({
         shipStats.load(acc.accountId, acc.realm),
         encyclopedia.load(acc.realm),
         trends.loadPlayer(acc.accountId, acc.realm),
+        ranked.load(acc.accountId, acc.realm, 5),
       ]);
     }
 
@@ -185,6 +188,35 @@ export default defineComponent({
 
               {/* ── KPI summary ── */}
               <StatsCard stats={currentStats.value} />
+
+              {/* ── Ranked history ── */}
+              {ranked.seasons.length > 0 ? (
+                <section class="dash-section">
+                  <div class="dash-section__head">
+                    <h3>{t("dashboard.ranked")}</h3>
+                  </div>
+                  <div class="dash-ranked">
+                    {ranked.seasons.map((rs) => {
+                      const wr = rs.battles > 0 ? (rs.wins / rs.battles) * 100 : 0;
+                      return (
+                        <div class="dash-ranked__card" key={rs.seasonId}>
+                          <div class="dash-ranked__season">{t("dashboard.season")} {rs.seasonId}</div>
+                          {rs.bestRank != null ? (
+                            <div class="dash-ranked__rank" title={t("dashboard.bestRank")}>
+                              {t("dashboard.rank")} {rs.bestRank}
+                            </div>
+                          ) : null}
+                          <div class="dash-ranked__stats">
+                            <span>{rs.battles} {t("dashboard.battles")}</span>
+                            <span style={{ color: winrateColor(wr) }}>{wr.toFixed(1)}%</span>
+                            <span>{rs.damageDealt > 0 ? Math.round(rs.damageDealt / rs.battles).toLocaleString() : "—"} {t("dashboard.avgDamage")}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
 
               {/* ── Date range + ship-type breakdown ── */}
               <section class="dash-section">
