@@ -6,8 +6,12 @@ Usage:
 
 Reads the logo (default: packages/webui/public/logo.webp), converts it to
 RGBA, and emits every icon size the Tauri shell + webui need:
-  - Tauri bundle: icon.ico, icon.icns, 32/64/128/128@2x png, Windows Store tiles
+  - Tauri bundle: icon.ico, icon.icns, 16/24/32/48/64/128/128@2x png, Store tiles
   - WebUI favicons: 16/32/48 png + favicon.ico + apple-touch + android-chrome
+
+The .ico embeds the full Windows multi-resolution layer set (16/24/32/48/
+64/128/256). All sizes are required for crisp taskbar rendering at every
+DPI scale — see tauri-apps/tauri#14596.
 
 Run this after replacing logo.webp with a new design.
 """
@@ -20,8 +24,10 @@ DEFAULT_LOGO = ROOT / "packages/webui/public/logo.webp"
 ICON_DIR = ROOT / "packages/app/tauri/icons"
 PUBLIC_DIR = ROOT / "packages/webui/src/res"
 
-# Tauri bundle png sizes + Windows Store tiles
-BUNDLE_PNG_SIZES = [32, 64, 128]
+# Tauri bundle png sizes + Windows Store tiles.
+# Includes 16×16 and 24×24 PNGs so the bundle.icon array can supply every
+# size Windows may request for the taskbar at any DPI scale.
+BUNDLE_PNG_SIZES = [16, 24, 32, 48, 64, 128]
 BUNDLE_PNG_RETINA = [256]  # 128x128@2x
 STORE_TILES = {
     "Square30x30": 30, "Square44x44": 44, "Square71x71": 71,
@@ -32,7 +38,12 @@ STORE_LOGO_SIZE = 50
 
 # WebUI favicon sizes
 FAVICON_SIZES = [16, 32, 48]
-ICO_SIZES = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+# Windows .ico multi-resolution layer set. MUST include 24×24 and 48×48:
+# the Windows shell requests these exact sizes for the taskbar at common
+# DPI scales (100%/125%/150%/200%), and if they are missing it falls back
+# to bitmap-upscaling the 32×32 layer — producing the "fuzzy taskbar icon"
+# symptom (tauri-apps/tauri#14596).
+ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
 APPLE_TOUCH = 180
 ANDROID_SIZES = [192, 512]
 

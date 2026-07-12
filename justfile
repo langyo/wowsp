@@ -83,6 +83,12 @@ run-webui:
 run-tauri *FLAGS:
     cargo tauri dev {{FLAGS}}
 
+# 启动带 test-harness feature 的 app（启用 dev-only HTTP 控制端口，
+# 供 `just test-visual` 的 Python 脚本驱动）。feature 门控保证 release
+# 构建绝不包含此控制服务器。
+dev-test *FLAGS:
+    cargo tauri dev --features test-harness {{FLAGS}}
+
 # Host preflight (runs scripts/preflight.py).
 preflight *FLAGS:
     python scripts/preflight.py {{FLAGS}}
@@ -110,8 +116,14 @@ check:
 test:
     cargo test --workspace
 
+# 视觉回归测试：驱动运行中的 Tauri app（需先 `just dev-test` 启动）。
+# 截图保存到 %APPDATA%/WoWSP/screenshots/，人工肉眼检查。
+test-visual *FLAGS:
+    python -m pytest scripts/visual -c scripts/pyproject.toml {{FLAGS}} -m visual
+
+# Playwright 浏览器 UI 测试（针对 mock 后端，`just dev webui --mock`）。
 test-e2e *FLAGS:
-    python -m pytest scripts/e2e {{FLAGS}}
+    python -m pytest scripts/e2e -c scripts/pyproject.toml {{FLAGS}} -m ui
 
 i18n-check *FLAGS:
     @python scripts/check_i18n.py {{FLAGS}}

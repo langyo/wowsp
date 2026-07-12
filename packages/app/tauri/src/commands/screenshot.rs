@@ -4,8 +4,10 @@
 //! (`GetDC` + `BitBlt` → top-down BGRA DIB → swizzle to RGBA → PNG), then
 //! saves it to a file path and returns the absolute path.
 //!
-//! This is the runtime screenshot mechanism used to verify each page renders
-//! correctly — it captures the actual pixels the user sees.
+//! Two callers use this: the `capture_main_window` Tauri command (callable
+//! from the webview) and the dev-only `test_harness` HTTP control server
+//! (callable from external Python). The core `capture_window_png` and
+//! `default_screenshot_path` helpers are `pub(crate)` so both reach them.
 
 use std::path::PathBuf;
 
@@ -29,32 +31,8 @@ pub fn capture_main_window(app: tauri::AppHandle, path: String) -> Result<String
     Ok(out_path.to_string_lossy().to_string())
 }
 
-/// Inject JavaScript into the main webview and execute it. Used by the
-/// interaction test harness to drive clicks, input, and navigation from
-/// outside the webview (e.g. from a Rust test script or the Tauri shell).
-/// The JS runs in the webview's context with full DOM access.
-#[tauri::command]
-pub fn eval_js(app: tauri::AppHandle, code: String) -> Result<(), String> {
-    let win = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    win.eval(&code).map_err(|e| format!("eval: {e}"))
-}
-
-/// Trigger the frontend auto-test harness from Rust. This calls
-/// `window.__wowspAutoTest__()` which the frontend exposes when the autoTest
-/// module loads. Useful when the URL query param approach doesn't work.
-#[tauri::command]
-pub fn trigger_autotest(app: tauri::AppHandle) -> Result<(), String> {
-    let win = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    win.eval("if (window.__wowspAutoTest__) { window.__wowspAutoTest__(); } else { console.error('[autotest] __wowspAutoTest__ not found'); }")
-        .map_err(|e| format!("eval: {e}"))
-}
-
 #[cfg(target_os = "windows")]
-fn capture_window_png(
+pub(crate) fn capture_window_png(
     win: &tauri::WebviewWindow,
     out_path: &std::path::Path,
 ) -> Result<(), String> {
@@ -70,12 +48,34 @@ fn capture_window_png(
         let _ = SetForegroundWindow(hwnd);
     }
 
+    // Read the client rect. If the window is mid-transition (e.g. restoring
+    // from minimized, or a wallpaper/telemetry change just happened),
+    // GetClientRect can briefly return a degenerate (tiny) rect. Retry up to
+    // 5 times with a short sleep to let the window settle — this fixes the
+    // intermittent "blank/partial screenshot" failures seen in visual tests.
     let mut rect = windows::Win32::Foundation::RECT::default();
-    unsafe {
-        GetClientRect(hwnd, &mut rect).map_err(|e| format!("GetClientRect: {e}"))?;
+    let mut width: i32 = 0;
+    let mut height: i32 = 0;
+    for attempt in 0..5 {
+        unsafe {
+            let _ = GetClientRect(hwnd, &mut rect);
+        }
+        width = (rect.right - rect.left).max(1);
+        height = (rect.bottom - rect.top).max(1);
+        // A real WoWSP window is at least ~600×400. Anything smaller means the
+        // window isn't ready (minimized, transitioning, or occluded).
+        if width >= 600 && height >= 400 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        if attempt == 0 {
+            tracing::warn!(
+                width,
+                height,
+                "client rect too small, retrying capture after window settles"
+            );
+        }
     }
-    let width: i32 = (rect.right - rect.left).max(1);
-    let height: i32 = (rect.bottom - rect.top).max(1);
 
     let mut pixels: Vec<u8>;
 
@@ -177,14 +177,14 @@ fn capture_window_png(
 }
 
 #[cfg(not(target_os = "windows"))]
-fn capture_window_png(
+pub(crate) fn capture_window_png(
     _win: &tauri::WebviewWindow,
     _out_path: &std::path::Path,
 ) -> Result<(), String> {
     Err("screenshot capture is Windows-only".into())
 }
 
-fn default_screenshot_path() -> Result<PathBuf, String> {
+pub(crate) fn default_screenshot_path() -> Result<PathBuf, String> {
     let dir = dirs_next::data_dir().ok_or_else(|| "cannot resolve data dir".to_string())?;
     let wowsp_dir = dir.join("WoWSP");
     std::fs::create_dir_all(&wowsp_dir).map_err(|e| format!("create {wowsp_dir:?}: {e}"))?;

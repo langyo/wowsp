@@ -1,11 +1,9 @@
 import { defineComponent, onBeforeUnmount, onMounted } from "vue";
-import { useRouter } from "vue-router";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { initTheme } from "@/theme/useTheme";
-import { exposeAutoTest, startAutoTest } from "@/dev/autoTest";
 import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
 import "./AppShell.scss";
@@ -20,24 +18,12 @@ export default defineComponent({
     const config = useConfigStore();
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
-    const router = useRouter();
 
     onMounted(() => {
       void initTheme();
       void config.detect();
       void accounts.load();
       gameStatus.start();
-
-      // Auto-test mode: drive real interactions (clicks, input, tab switches,
-      // theme toggles) and capture screenshots after each. Triggered by
-      // ?autotest=1 URL param OR the Rust trigger_autotest command (which
-      // calls window.__wowspAutoTest__()).
-      exposeAutoTest(router); // always expose, so Rust can trigger it
-      const params = new URLSearchParams(window.location.search);
-      const urlFlag = params.get("autotest") === "1";
-      if (urlFlag) {
-        startAutoTest(router);
-      }
     });
     onBeforeUnmount(() => gameStatus.stop());
 

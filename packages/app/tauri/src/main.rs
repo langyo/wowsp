@@ -16,6 +16,8 @@
 
 mod commands;
 mod os_prefs;
+#[cfg(feature = "test-harness")]
+mod test_harness;
 
 use std::sync::Arc;
 
@@ -76,47 +78,6 @@ fn main() {
             }
         })
         .setup(|app| {
-            // ── Runtime icon refresh (Windows taskbar / titlebar) ──────────
-            //
-            // The exe icon is baked in at build time by tauri-build (resource
-            // 32512 from icons/icon.ico, verified to embed up to 256×256).
-            // Windows, however, caches taskbar icons by exe path and frequently
-            // shows a stale low-res image when the same dev exe is rebuilt in
-            // place. Calling Window::set_icon at runtime overrides both the
-            // titlebar HICON and the taskbar HICON with the live image, bypassing
-            // the cache. We load the highest-resolution bundle PNG (128x128@2x =
-            // 256×256) so the runtime override is itself HD.
-            //
-            // The `image-png` cargo feature on the `tauri` crate enables PNG
-            // decoding for Image::from_path.
-            if let Some(w) = app.handle().webview_windows().values().next() {
-                let icon_path = app
-                    .path()
-                    .resource_dir()
-                    .ok()
-                    .map(|d| d.join("icons/128x128@2x.png"))
-                    .filter(|p| p.exists());
-                // Fall back to the source-relative path in dev (resource_dir
-                // points at the exe's parent in debug, not the repo).
-                let dev_path = std::env::current_dir()
-                    .map(|d| d.join("icons/128x128@2x.png"))
-                    .ok()
-                    .filter(|p| p.exists());
-                let tried = icon_path.as_ref().or(dev_path.as_ref());
-                if let Some(p) = tried {
-                    match tauri::image::Image::from_path(p) {
-                        Ok(img) => {
-                            if let Err(e) = w.set_icon(img) {
-                                tracing::warn!(error = %e, "runtime set_icon failed");
-                            } else {
-                                tracing::debug!(path = %p.display(), "runtime window icon applied");
-                            }
-                        }
-                        Err(e) => tracing::warn!(error = %e, "icon decode failed"),
-                    }
-                }
-            }
-
             // Seed OS preferences (locale + color scheme) into the webview
             // BEFORE any page JS runs, so the first paint matches the OS theme.
             let prefs = os_prefs::detect();
@@ -124,21 +85,54 @@ fn main() {
             if let Some(w) = app.handle().webview_windows().values().next() {
                 let _ = w.eval(&js);
                 let _ = w.center();
+
+                // ── Taskbar icon cache-defeat (Windows) ────────────────────
+                // The .ico embedded at build time (resource 32512) carries all
+                // 7 standard sizes (16/24/32/48/64/128/256) — the correct, clean
+                // source of truth. But Windows caches taskbar icons by exe path,
+                // and in dev mode the same wowsp.exe is rebuilt in place
+                // repeatedly, so the shell keeps showing a stale cached (often
+                // low-res) image long after the icon source changed.
+                //
+                // Calling Window::set_icon at runtime overrides the live HICON
+                // with a freshly-decoded 256×256 image, forcing the shell to
+                // re-render from our current asset rather than its cache. This
+                // runs in BOTH dev and release (it's cheap and harmless in
+                // release — the icon is already correct there, so this is a
+                // no-op visually). The asset path resolves to the bundled
+                // resource in release and the repo icons/ dir in dev.
+                let icon_path = app
+                    .path()
+                    .resource_dir()
+                    .ok()
+                    .map(|d| d.join("icons/128x128@2x.png"))
+                    .filter(|p| p.exists());
+                let dev_path = std::env::current_dir()
+                    .map(|d| d.join("icons/128x128@2x.png"))
+                    .ok()
+                    .filter(|p| p.exists());
+                if let Some(p) = icon_path.as_ref().or(dev_path.as_ref()) {
+                    if let Ok(img) = tauri::image::Image::from_path(p) {
+                        if let Err(e) = w.set_icon(img) {
+                            tracing::warn!(error = %e, "runtime set_icon failed");
+                        }
+                    }
+                }
             }
 
-            // ── Auto-test trigger ─────────────────────────────────────────
-            // When WOWSP_AUTOTEST=1 is set, wait for the webview to mount, then
-            // invoke the frontend test harness via eval. This bypasses URL
-            // query-param issues in Tauri's dev URL handling.
-            if std::env::var("WOWSP_AUTOTEST").as_deref() == Ok("1") {
+            // ── Dev-only test control server ──────────────────────────────
+            // When built with `--features test-harness`, spawn a localhost
+            // HTTP server that external Python scripts use to drive eval_js +
+            // capture_main_window for visual regression testing. The entire
+            // module is feature-gated and is NEVER compiled into release
+            // builds (cargo tauri build does not pass the feature).
+            #[cfg(feature = "test-harness")]
+            {
                 let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    if let Some(w) = app_handle.get_webview_window("main") {
-                        tracing::info!("triggering frontend autotest harness");
-                        let _ = w.eval("if (window.__wowspAutoTest__) { window.__wowspAutoTest__(); } else { console.error('[autotest] harness not loaded yet'); }");
-                    }
-                });
+                std::thread::Builder::new()
+                    .name("wowsp-test-harness".into())
+                    .spawn(move || test_harness::run(app_handle))
+                    .expect("spawn test-harness thread");
             }
 
             // ── System tray ───────────────────────────────────────────────
@@ -222,8 +216,6 @@ fn main() {
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,
             commands::screenshot::capture_main_window,
-            commands::screenshot::eval_js,
-            commands::screenshot::trigger_autotest,
             commands::mod_install::install_overlay_mod,
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
