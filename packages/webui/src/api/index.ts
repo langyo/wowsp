@@ -9,4 +9,12 @@ export type {
   EntityKind,
   EntityTrajectory,
   PlayerStats,
+  GameVersionInfo,
+  ShipInfo,
+  PlayerShipStats,
+  StatsSnapshot,
+  TrendBucket,
+  TrendResult,
+  PatchNote,
+  CommunityTrend,
 } from "./client";

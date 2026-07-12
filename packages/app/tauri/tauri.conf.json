@@ -8,6 +8,18 @@
     "devUrl": "http://localhost:5173",
     "frontendDist": "../../../dist/webui"
   },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/128x128.png",
+      "icons/64x64.png",
+      "icons/32x32.png",
+      "icons/icon.icns"
+    ]
+  },
   "app": {
     "withGlobalTauri": true,
     "windows": [
@@ -29,8 +41,18 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://api.worldofwarships.* https://vortex.worldofwarships.*; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://api.ipapi.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'"
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/celestia-island/wowsp/releases/latest/download/latest.json",
+        "https://ghp.ci/https://github.com/celestia-island/wowsp/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFN0NCMjlDM0NERjQ0MEIKUldRTFJOODhuTEo4L3E2VXNHK0pkSlBCT0lHaWtwTHNXUmk0cTFmQTU4ZXBIb1NuQjJGQnRPM1UK"
+    }
+  }
 }

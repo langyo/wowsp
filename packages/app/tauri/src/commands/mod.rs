@@ -4,12 +4,18 @@
 //! signatures thin and DTOs in `wowsp_tauri_shared` so the frontend can mirror
 //! them via `@wowsp/shared_ui`.
 
+pub mod appdata;
 pub mod arena_info;
+pub mod encyclopedia;
 pub mod game_detect;
+pub mod gameparams;
 pub mod mod_install;
 pub mod overlay;
 pub mod packets;
 pub mod replay;
+pub mod screenshot;
+pub mod ship_stats;
+pub mod trends;
 pub mod wg_api;
 
 use crate::os_prefs::OsPreferences;

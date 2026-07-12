@@ -1,0 +1,28 @@
+# pytest configuration for WoWSP's Python test suites.
+#
+# Two test directories live under scripts/:
+#   - visual/: screenshot regression tests that drive a running Tauri app
+#     (built with `cargo tauri dev --features test-harness`) via the dev-only
+#     HTTP control server. Marked @pytest.mark.visual.
+#   - e2e/: Playwright browser tests against the FastAPI mock backend
+#     (`just dev webui --mock`). Marked @pytest.mark.ui.
+#
+# Run everything:    python -m pytest scripts/ -c scripts/pyproject.toml
+# Run visual only:   python -m pytest scripts/visual -m visual
+# Run e2e only:      python -m pytest scripts/e2e -m ui
+
+[tool.pytest.ini_options]
+testpaths = ["visual", "e2e"]
+pythonpath = [".", "e2e", "visual"]
+asyncio_mode = "auto"
+timeout = 120
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning:websockets",
+    "ignore::DeprecationWarning:pytest_asyncio",
+]
+markers = [
+    "visual: 截图回归测试（需要运行中的 Tauri app + test-harness feature）",
+    "ui: Playwright 浏览器 UI 测试（针对 mock 后端）",
+    "mock: 针对 FastAPI mock 后端的测试",
+]

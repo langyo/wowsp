@@ -1,0 +1,12 @@
+{
+  "title": "趋势",
+  "winrateOverTime": "各版本胜率",
+  "damageOverTime": "各版本场均伤害",
+  "battleDelta": "对战场次",
+  "snapshotCount": "快照数",
+  "version": "版本",
+  "noSnapshots": "尚无历史。多次查询该玩家即可积累趋势。",
+  "patchNote": "补丁",
+  "patchAnnotation": "补丁叠加",
+  "community": "全服"
+}

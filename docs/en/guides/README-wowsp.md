@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![License](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](https://github.com/celestia-island/wowsp/blob/master/LICENSE)
+[![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/celestia-island/wowsp/blob/master/LICENSE)
 [![GitHub](https://img.shields.io/badge/github-celestia--island%2Fwowsp-blue.svg)](https://github.com/celestia-island/wowsp)
 
 </div>
@@ -12,7 +12,14 @@
 <div align="center">
 
 **English** ·
-[简体中文](../../zhs/guides/README-wowsp.md)
+[简体中文](../../zhs/guides/README-wowsp.md) ·
+[繁體中文](../../zht/guides/README-wowsp.md) ·
+[日本語](../../ja/guides/README-wowsp.md) ·
+[한국어](../../ko/guides/README-wowsp.md) ·
+[Français](../../fr/guides/README-wowsp.md) ·
+[Español](../../es/guides/README-wowsp.md) ·
+[Русский](../../ru/guides/README-wowsp.md) ·
+[العربية](../../ar/guides/README-wowsp.md)
 
 </div>
 

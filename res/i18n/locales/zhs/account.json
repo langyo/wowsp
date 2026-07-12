@@ -1,0 +1,16 @@
+{
+  "notBound": "未绑定账户",
+  "bind": "绑定账户",
+  "switch": "切换账户",
+  "switcherTitle": "账户管理",
+  "add": "添加账户",
+  "remove": "移除",
+  "nickname": "昵称",
+  "realm": "区服",
+  "search": "搜索",
+  "searching": "搜索中...",
+  "notFound": "未找到账户",
+  "bound": "已绑定",
+  "selectRealm": "选择区服",
+  "noAccounts": "尚未绑定账户。在上方搜索昵称以绑定。"
+}

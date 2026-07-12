@@ -162,6 +162,27 @@ pub struct PlayerStats {
     pub hidden: bool,
     /// Clan tag, if any.
     pub clan_tag: Option<String>,
+
+    // ── Deep stats (PvP) ────────────────────────────────────────────────
+    /// Average damage per battle.
+    pub avg_damage: Option<f32>,
+    /// Average experience per battle.
+    pub avg_xp: Option<f32>,
+    /// Kills / deaths ratio (deaths = battles - survived).
+    pub kd_ratio: Option<f32>,
+    /// Survival rate, percent (0–100).
+    pub survival_rate: Option<f32>,
+    /// Main battery hit rate, percent (0–100).
+    pub hit_rate: Option<f32>,
+    /// Personal Rating (community formula proxy: based on avg dmg + wr).
+    pub pr: Option<i64>,
+    /// Number of distinct ships played.
+    pub ships_played: Option<i64>,
+
+    // ── Per-division winrates ───────────────────────────────────────────
+    pub solo_wr: Option<f32>,
+    pub div2_wr: Option<f32>,
+    pub div3_wr: Option<f32>,
 }
 
 /// Entity metadata from an EntityCreate (0x05) packet. The fixed header is
@@ -183,3 +204,138 @@ pub struct EntityKind {
     pub initial_y: f32,
     pub initial_z: f32,
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Ship encyclopedia + per-ship stats + trends (milestone M10)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Game version metadata from `/wows/encyclopedia/info/`. Used for cache
+/// invalidation (encyclopedia is snapshotted per version) and for bucketing
+/// player stat trends by the patch they were played under.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameVersionInfo {
+    pub game_version: String,
+    pub ships_total: i64,
+    /// Unix epoch seconds when this version info was first cached.
+    pub timestamp: i64,
+}
+
+/// One ship entry from `/wows/encyclopedia/ships/` (the shipopedia). The
+/// `default_profile` is the raw JSON subtree — it's a deep nested object with
+/// hull HP, artillery, torpedoes, mobility, concealment, etc., and reshapes
+/// between game versions, so we keep it as `serde_json::Value` rather than
+/// trying to mirror every field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipInfo {
+    pub ship_id: i64,
+    pub name: String,
+    pub tier: i8,
+    /// Ship class: "Battleship" / "Cruiser" / "Destroyer" / "AirCarrier" /
+    /// "Submarine".
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Nation key: "usa" / "japan" / "ussr" / "germany" / "uk" / "france" /
+    /// "italy" / "netherlands" / "spain" / "pan_america" / "pan_asia" /
+    /// "commonwealth" / "pan_europe" / "arabia".
+    pub nation: String,
+    pub is_premium: bool,
+    pub is_special: bool,
+    pub description: String,
+    /// The version this entry was cached under (set by the fetcher, not WG).
+    pub game_version: String,
+    pub default_profile: serde_json::Value,
+}
+
+/// Per-player per-ship PvP stats from `/wows/ships/stats/`. One entry per ship
+/// the player has battled in. `name` is back-filled from the encyclopedia at
+/// fetch time (WG doesn't return ship names here, only `ship_id`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerShipStats {
+    pub ship_id: i64,
+    pub name: String,
+    pub battles: i64,
+    pub wins: i64,
+    pub damage_caused: i64,
+    pub frags: i64,
+    pub survived_battles: i64,
+    pub winrate: f32,
+    pub avg_damage: f32,
+    pub last_battle_time: i64,
+}
+
+/// One point in a player's career-stat time series. Appended (never
+/// overwritten) to `snapshots/<realm>_<accountId>.json` on each lookup, so
+/// consecutive snapshots let us derive per-version deltas and trends.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsSnapshot {
+    /// Unix epoch seconds.
+    pub timestamp: i64,
+    /// WG game version string active at snapshot time (e.g. "0.11.4").
+    pub game_version: String,
+    pub battles: i64,
+    pub wins: i64,
+    pub winrate: f32,
+    pub avg_damage: f32,
+    pub pr: Option<i64>,
+}
+
+/// Aggregated stats over one version bucket. Computed client-side from the
+/// snapshot array by grouping on `game_version`. When only one snapshot falls
+/// in a bucket (the common case), avg/min/max are all equal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrendBucket {
+    pub version: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub snapshot_count: i64,
+    pub battle_delta: i64,
+    pub winrate_avg: f32,
+    pub winrate_min: f32,
+    pub winrate_max: f32,
+    pub avg_damage: f32,
+    pub pr_avg: Option<i64>,
+}
+
+/// Player career trend across game versions, with patch annotations for
+/// context (e.g. "0.11.4 nerfed cruiser radar" overlaid on the winrate dip).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrendResult {
+    pub account_id: i64,
+    pub realm: String,
+    pub buckets: Vec<TrendBucket>,
+    pub patches: Vec<PatchNote>,
+}
+
+/// A patch/balance-change annotation. Ship-specific changes carry `ship_ids`;
+/// ship_ids empty means a global change. `summary` is a short headline,
+/// `changes` is a bullet list. This is hand-maintained JSON (no automated
+/// source) — the schema is the contract, content fills in over time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchNote {
+    pub version: String,
+    pub date: String,
+    pub ship_ids: Vec<i64>,
+    pub summary: String,
+    pub changes: Vec<String>,
+}
+
+/// Community-wide per-ship trend (the "server average winrate over versions"
+/// chart). Not available from WG's public API (they don't aggregate across
+/// players); wows-numbers has it but no API + blocks scraping. This struct is
+/// the placeholder contract — `available: false` until a backend partner is
+/// wired in. When available, `buckets` mirrors TrendBucket by version.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityTrend {
+    pub available: bool,
+    pub ship_id: i64,
+    pub buckets: Vec<TrendBucket>,
+}
+

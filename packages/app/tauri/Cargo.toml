@@ -47,6 +47,9 @@ winreg.workspace = true
 # Windows screen capture for overlay roster positioning
 windows.workspace = true
 
+# AppData directory resolution
+dirs-next.workspace = true
+
 # Image handling for capture analysis
 image.workspace = true
 
@@ -55,6 +58,7 @@ base64.workspace = true
 
 # Tauri desktop shell
 tauri.workspace = true
+tauri-plugin-updater.workspace = true
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
@@ -66,3 +70,9 @@ tauri-build.workspace = true
 # This feature is required by `cargo tauri build` and is injected by default.
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Dev-only test control server. NEVER enable in release builds. Gates a
+# localhost HTTP listener (see src/test_harness.rs) that lets external Python
+# scripts drive eval_js + capture_main_window for visual regression testing.
+# `cargo tauri build` does not pass this feature, so the control server is
+# never compiled into shipped binaries.
+test-harness = []

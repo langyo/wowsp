@@ -1,0 +1,12 @@
+{
+  "title": "Trend",
+  "winrateOverTime": "Win rate over versions",
+  "damageOverTime": "Avg damage over versions",
+  "battleDelta": "Battles played",
+  "snapshotCount": "Snapshots",
+  "version": "Version",
+  "noSnapshots": "No history yet. Look up this player a few times to build a trend.",
+  "patchNote": "Patch",
+  "patchAnnotation": "Patches overlay",
+  "community": "Community"
+}

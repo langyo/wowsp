@@ -1,0 +1,109 @@
+/* STag — design-system tag / badge / pill. Every variant shares an identical
+   line-box per size so mixed tags (tier + type + nation + premium) line up
+   perfectly in one row, regardless of content. Height is fixed via
+   inline-flex + a constant line-height, not derived from font-size, so a
+   tag with an icon and one without are the same height. */
+.s-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  vertical-align: middle;
+  /* SVG icons inside a tag inherit the tag's colour and shrink to the cap
+     height of the text, so they never push the tag taller. */
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+/* ── sizes ──────────────────────────────────────────────────────────────
+   Height is FIXED per size (not auto from padding) so all tags in a row
+   align. sm = 18px (dense card grids), md = 22px (headers, modals). */
+.s-tag-sm {
+  height: 18px;
+  padding: 0 0.4rem;
+  font-size: var(--text-2xs);
+  line-height: 18px;
+  svg {
+    width: 10px;
+    height: 10px;
+  }
+}
+
+.s-tag-md {
+  height: 22px;
+  padding: 0 0.5rem;
+  font-size: var(--text-xs);
+  line-height: 22px;
+  svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* ── variants (soft tinted backgrounds by default) ───────────────────── */
+.s-tag-neutral {
+  background: rgb(var(--color-bg));
+  color: rgb(var(--color-muted));
+}
+
+.s-tag-primary {
+  background: rgb(var(--color-primary) / 14%);
+  color: rgb(var(--color-primary));
+}
+
+.s-tag-gold {
+  background: rgb(230 170 50 / 16%);
+  color: rgb(230 170 50);
+}
+
+.s-tag-info {
+  background: rgb(120 200 255 / 16%);
+  color: rgb(120 200 255);
+}
+
+.s-tag-success {
+  background: rgb(var(--color-success) / 16%);
+  color: rgb(var(--color-success));
+}
+
+.s-tag-danger {
+  background: rgb(var(--color-error) / 16%);
+  color: rgb(var(--color-error));
+}
+
+/* ── solid (filled) variants — for emphasis (e.g. Premium badge) ───────
+   Solid inverts: full-colour background + on-solid text. The variant still
+   picks the hue. */
+.s-tag-solid {
+  &.s-tag-primary {
+    background: rgb(var(--color-primary));
+    color: rgb(var(--color-on-solid));
+  }
+  &.s-tag-gold {
+    background: rgb(230 170 50);
+    color: rgb(40 28 8);
+  }
+  &.s-tag-info {
+    background: rgb(120 200 255);
+    color: rgb(8 30 48);
+  }
+  &.s-tag-success {
+    background: rgb(var(--color-success));
+    color: rgb(var(--color-on-solid));
+  }
+  &.s-tag-danger {
+    background: rgb(var(--color-error));
+    color: rgb(var(--color-on-solid));
+  }
+  &.s-tag-neutral {
+    background: rgb(var(--color-muted));
+    color: rgb(var(--color-on-solid));
+  }
+}

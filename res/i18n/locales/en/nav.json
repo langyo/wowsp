@@ -1,5 +1,8 @@
 {
+  "dashboard": "My stats",
+  "lookup": "Stats lookup",
+  "ships": "Ships",
   "replay": "Replay review",
-  "overlay": "In-game overlay",
+  "settings": "Settings",
   "home": "Home"
 }

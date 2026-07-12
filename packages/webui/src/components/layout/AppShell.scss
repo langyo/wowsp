@@ -1,0 +1,16 @@
+.app-shell {
+  display: flex;
+  /* Use 100% (not 100vh) so the shell fills #app's actual height, which is
+     already reduced by the 32px title bar. Using 100vh would overflow by
+     exactly BAR_HEIGHT, clipping the bottom of the content. */
+  height: 100%;
+  overflow: hidden;
+  background: rgb(var(--color-background));
+  color: rgb(var(--color-text));
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+  }
+}

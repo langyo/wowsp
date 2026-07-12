@@ -3,5 +3,19 @@
   "language": "语言",
   "theme": "主题",
   "gamePath": "游戏路径",
-  "realm": "区服"
+  "realm": "区服",
+  "themeMode": "外观",
+  "themeModeSystem": "自动（跟随日照）",
+  "themeModeDark": "深色",
+  "themeModeLight": "浅色",
+  "themePreset": "配色方案",
+  "geolocation": "位置",
+  "geolocationHint": "用于基于日照的自动主题。通过 IP 解析，缓存 24 小时。",
+  "currentPeriod": "日照时段",
+  "periodDay": "白天",
+  "periodDusk": "黄昏",
+  "periodNight": "夜晚",
+  "about": "关于",
+  "updater": "更新",
+  "wallpaper": "背景"
 }

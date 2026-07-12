@@ -63,7 +63,17 @@ WATCH_CONFIG_GLOBS = [
 
 def _run(cmd: list[str], cwd: Path = ROOT, env: dict | None = None) -> subprocess.Popen:
     _log.info(f"$ {' '.join(cmd)}", module="spawn")
-    return subprocess.Popen(cmd, cwd=str(cwd), env={**os.environ, **(env or {})})
+    # On Windows, `pnpm`/`pnpm.cmd` is a corepack shim that subprocess.Popen
+    # can't resolve without a shell (Python 3.13 dropped implicit .cmd
+    # resolution for security). shell=True lets the OS resolve shims the same
+    # way a terminal would. Commands here are all hardcoded literals, so the
+    # shell-injection surface is nil.
+    return subprocess.Popen(
+        " ".join(cmd),
+        cwd=str(cwd),
+        env={**os.environ, **(env or {})},
+        shell=True,
+    )
 
 
 def _wait_port(port: int, timeout: float = 20.0) -> bool:

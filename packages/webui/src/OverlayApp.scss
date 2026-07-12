@@ -1,0 +1,23 @@
+.overlay-shell {
+  width: 100vw;
+  height: 100vh;
+  /* Transparent so the game shows through; the window itself is created with
+     transparent: true on the Rust side. */
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  font-family: var(--font-sans);
+  pointer-events: none; /* click-through by default; roster re-enables if needed */
+
+  &__hint {
+    padding: 0.3rem 0.9rem;
+    background: rgb(0 120 200 / 12%);
+    border-radius: var(--radius-full);
+    color: rgb(120 180 230);
+    font-size: var(--text-xs);
+    backdrop-filter: blur(8px);
+  }
+}

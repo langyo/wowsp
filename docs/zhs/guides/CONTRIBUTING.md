@@ -43,4 +43,4 @@ just test    # cargo test --workspace
 
 ## 授权与 CLA
 
-WoWSP 采用 **Business Source License 1.1（BUSL-1.1）**，**变更日期 2030-01-01**，届时自动转为 **Synthetic Source License（SySL-1.0）**。对所有内部、学术、政府、教育、非商业用途，今天起即等同于 SySL-1.0。详见 [`LICENSE`](../../../LICENSE)。
+WoWSP 采用 **Synthetic Source License（SySL-1.0）** —— 一种面向 AI 生成代码的宽松许可证，要求披露 AI 生成事实及所用模型，不设商业限制、不设变更日期、不设竞业期。详见 [`LICENSE`](../../../LICENSE)。

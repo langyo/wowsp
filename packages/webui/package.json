@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "dev": "npm run build-titlebar && vite",
+    "build": "npm run build-titlebar && vue-tsc --noEmit && vite build",
+    "build-titlebar": "esbuild scripts/tauri-titlebar.ts --bundle --outfile=src/res/tauri-titlebar.js --format=iife --target=es2020",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.ts,.tsx --fix",
     "typecheck": "vue-tsc --noEmit",
@@ -14,11 +15,14 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@vueuse/core": "^14",
     "echarts": "^6.1.0",
     "lucide-vue-next": "^1",
     "pinia": "^3",
     "three": "^0.184",
+    "uuid": "^11",
     "vue": "^3",
     "vue-i18n": "^11",
     "vue-router": "^4"

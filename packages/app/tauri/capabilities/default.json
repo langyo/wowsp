@@ -1,7 +1,7 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for the WoWSP main window",
-  "windows": ["main"],
+  "description": "Default capabilities for WoWSP windows (main + overlay)",
+  "windows": ["main", "overlay"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -12,6 +12,12 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-is-maximized",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:webview:allow-create-webview-window",
+    "updater:default",
+    "core:app:default",
+    "core:app:allow-version"
   ]
 }

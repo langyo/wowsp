@@ -1,69 +1,87 @@
+/**
+ * Arena overlay store (Mode 2). Holds the live roster pushed by the Rust
+ * arena-info watcher (`start_arena_watcher` → `wowsp://arena-info` events),
+ * plus the overlay window visibility flag.
+ *
+ * This is the store the dedicated overlay window (OverlayApp) consumes. It is
+ * distinct from the popup registry (`stores/popupRegistry.ts`) which coordinates
+ * modal/drawer z-index stacking in the main window.
+ */
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { api, type ArenaInfo, type CaptureResult } from "@/api";
-import { transport } from "@/transport";
+import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 
-/** Tauri event the Rust arena watcher emits on a fresh tempArenaInfo.json. */
-const ARENA_INFO_EVENT = "wowsp://arena-info";
-
-/**
- * Live overlay state (Mode 2). The arena-info roster updates whenever the game
- * writes a fresh `tempArenaInfo.json` (pushed via the Rust notify watcher);
- * the `visible` flag tracks whether the user is currently holding Tab.
- */
-export const useOverlayStore = defineStore("overlay", () => {
+export const useOverlayStore = defineStore("arenaOverlay", () => {
   const arenaInfo = ref<ArenaInfo | null>(null);
   const visible = ref(false);
-  const lastCapture = ref<CaptureResult | null>(null);
   const watching = ref(false);
-  let unlisten: (() => void) | null = null;
+  const error = ref<string | null>(null);
 
-  const allies = computed(() => arenaInfo.value?.vehicles.filter((v) => v.relation <= 1) ?? []);
-  const enemies = computed(() => arenaInfo.value?.vehicles.filter((v) => v.relation > 1) ?? []);
+  let arenaUnlisten: (() => void) | null = null;
 
-  async function refreshArenaInfo(dir?: string) {
-    arenaInfo.value = await api.readTempArenaInfo(dir);
+  const allies = computed<VehicleEntry[]>(
+    () => arenaInfo.value?.vehicles.filter((v) => v.relation <= 1) ?? [],
+  );
+  const enemies = computed<VehicleEntry[]>(
+    () => arenaInfo.value?.vehicles.filter((v) => v.relation > 1) ?? [],
+  );
+
+  async function setVisible(v: boolean) {
+    visible.value = v;
+    try {
+      await api.setOverlayVisible(v);
+    } catch {
+      // non-fatal — the window may not exist yet
+    }
   }
 
-  /** Start the Rust file watcher and subscribe to its push events. Idempotent. */
+  /** One-shot read of tempArenaInfo.json (if the game is in a battle). */
+  async function refreshArenaInfo(dir?: string) {
+    try {
+      const info = await api.readTempArenaInfo(dir);
+      if (info) arenaInfo.value = info;
+    } catch (e) {
+      error.value = (e as Error).message;
+    }
+  }
+
+  /** Start the file watcher; incoming arena-info events update `arenaInfo`. */
   async function startWatching(dir?: string) {
     if (watching.value) return;
-    await api.startArenaWatcher(dir);
-    if (transport.listen) {
-      unlisten = await transport.listen<ArenaInfo>(ARENA_INFO_EVENT, (info) => {
+    try {
+      await api.startArenaWatcher(dir);
+      arenaUnlisten = (await api.listenArenaInfo((info) => {
         arenaInfo.value = info;
-      });
+      })) as (() => void) | null;
+      watching.value = true;
+    } catch (e) {
+      error.value = (e as Error).message;
     }
-    watching.value = true;
   }
 
   async function stopWatching() {
     if (!watching.value) return;
-    await api.stopArenaWatcher();
-    unlisten?.();
-    unlisten = null;
-    watching.value = false;
-  }
-
-  async function setVisible(v: boolean) {
-    visible.value = v;
-    await api.setOverlayVisible(v);
-    if (v) {
-      lastCapture.value = await api.captureGameWindow();
+    arenaUnlisten?.();
+    arenaUnlisten = null;
+    try {
+      await api.stopArenaWatcher();
+    } catch {
+      // best-effort
     }
+    watching.value = false;
   }
 
   return {
     arenaInfo,
     visible,
-    lastCapture,
-    watching,
     allies,
     enemies,
+    watching,
+    error,
+    setVisible,
     refreshArenaInfo,
     startWatching,
     stopWatching,
-    setVisible,
   };
 });
