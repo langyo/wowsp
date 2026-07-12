@@ -5,6 +5,7 @@ import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
 import SSelect from "@/components/base/SSelect";
 import STag from "@/components/base/STag";
+import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { winrateColor } from "@/utils/winrate";
@@ -151,11 +152,10 @@ export default defineComponent({
                     ]}
                     onClick={() => void switchTo(a)}
                   >
-                    {/* avatar placeholder — WG portrait not wired yet; use
-                        an anchor icon on a tinted circle. */}
-                    <div class="acct-card__avatar">
-                      <Anchor size={18} />
-                    </div>
+                    {/* Player service-record badge based on leveling tier.
+                        Falls back to tier 0 (bronze "?") when stats not yet
+                        loaded. Replaces the old pig-logo placeholder. */}
+                    <PlayerBadge tier={s?.levelingTier ?? 0} size={38} />
                     <div class="acct-card__body">
                       <div class="acct-card__head">
                         {s?.clanTag ? (

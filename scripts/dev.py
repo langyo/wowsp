@@ -239,9 +239,7 @@ def run_mock(args: argparse.Namespace) -> int:
 
 
 def _kill_lingering_wowsp() -> None:
-    """Kill any running wowsp.exe processes before starting a new dev session.
-    Prevents the 'multiple windows' issue where a stale instance from a
-    previous run lingers."""
+    """Kill any running wowsp.exe processes before starting a new dev session."""
     import shutil
     taskkill = shutil.which("taskkill")
     if not taskkill:
@@ -253,16 +251,32 @@ def _kill_lingering_wowsp() -> None:
             stderr=subprocess.DEVNULL,
         )
     except Exception:
-        pass  # not on Windows, or no instances — fine
+        pass
+
+
+def _sync_logo() -> None:
+    """Sync docs/logo.webp → all icon assets if the source changed."""
+    sync_script = ROOT / "scripts" / "sync_logo.py"
+    if not sync_script.exists():
+        return
+    try:
+        subprocess.call(
+            [sys.executable, str(sync_script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 
 
 def run_native(args: argparse.Namespace) -> int:
     try:
-        # Kill any lingering wowsp.exe from a previous dev session. Tauri's
-        # child-process cleanup is imperfect on Windows (Ctrl+C sometimes
-        # leaves the webview alive), and a stale instance holds the Vite port
-        # + causes the "multiple windows" symptom on the next `just dev`.
+        # Kill any lingering wowsp.exe from a previous dev session.
         _kill_lingering_wowsp()
+
+        # Sync the logo from docs/ → all icon assets. Picks up logo changes
+        # automatically so the user doesn't need to run `just gen-icons` manually.
+        _sync_logo()
 
         if args.webui_only:
             procs: list[subprocess.Popen] = []
