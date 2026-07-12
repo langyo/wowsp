@@ -154,13 +154,18 @@ package *FLAGS:
 e2e-setup:
     @pip install -q -r scripts/requirements.txt && python -m playwright install chromium 2>/dev/null
 
-# ── Model conversion (ship/map → GLB via wowsunpack) ─────────────────
+# ── Model conversion (ship/map → baked GLB for holographic rendering) ──
 
 convert-ship *ARGS:
     python scripts/model_convert/convert_ship.py {{ARGS}}
 
 convert-map *ARGS:
     python scripts/model_convert/convert_map.py {{ARGS}}
+
+# Bake (simplify) a raw GLB to a low-poly holographic model.
+# Usage: just bake-model raw.glb -o ship.glb --triangles 2000
+bake-model *ARGS:
+    python scripts/model_convert/bake_model.py {{ARGS}}
 
 # ── Docs (lagrange multilingual site) ────────────────────────────────
 
