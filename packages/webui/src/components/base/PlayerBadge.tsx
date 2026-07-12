@@ -1,25 +1,37 @@
 import { computed, defineComponent } from "vue";
+import type { DogTag } from "@/api";
 
 import "./PlayerBadge.scss";
 
+/** Decode a WG ARGB-packed u32 color to a CSS rgba() string. */
+function argbToCss(argb: number): string {
+  const a = ((argb >> 24) & 0xff) / 255;
+  const r = (argb >> 16) & 0xff;
+  const g = (argb >> 8) & 0xff;
+  const b = argb & 0xff;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 /**
- * Player service-record badge. Renders a rank-style circular badge based on
- * the WG `leveling_tier` value (1–100+). Higher tiers get richer colors and
- * a tier-based ring style — mirroring how WoWS shows player level badges in
- * the game client.
+ * Player emblem badge. Renders the player's **dog tag** (personalized emblem)
+ * from the WG Vortex API — using the actual border + background colors the
+ * player chose in-game.
  *
- * The badge is pure CSS (no external images — WG doesn't expose player
- * avatar URLs via the API). The color tier matches community conventions:
- *   1–10:   bronze
- *   11–25:  silver
- *   26–50:  gold
- *   51–75:  platinum
- *   76+:    diamond
+ * The dog tag is a layered emblem: background color + texture pattern + center
+ * symbol + border color. Since the texture/symbol image assets are on WG's CDN
+ * behind signed URLs (not publicly accessible), we render the tag from the
+ * **color values** only — producing a colored shield shape with the player's
+ * actual color scheme. The center symbol is approximated with the player's
+ * service record tier number.
+ *
+ * If no dog_tag data is available (Vortex fetch failed), falls back to a
+ * tier-based badge (bronze→diamond).
  */
 export default defineComponent({
   name: "PlayerBadge",
   props: {
     tier: { type: Number, default: 0 },
+    dogTag: { type: Object as () => DogTag | null, default: null },
     size: { type: Number, default: 48 },
   },
   setup(props) {
@@ -30,11 +42,34 @@ export default defineComponent({
       if (props.tier >= 11) return "badge-silver";
       return "badge-bronze";
     });
+
+    /** If we have dog_tag colors, compute CSS custom properties for the
+     *  custom-colored rendering. */
+    const dogTagStyle = computed(() => {
+      if (!props.dogTag) return null;
+      const bg = argbToCss(props.dogTag.backgroundColor);
+      const border = argbToCss(props.dogTag.borderColor);
+      return {
+        "--dt-bg": bg,
+        "--dt-border": border,
+      } as Record<string, string>;
+    });
+
     return () => (
       <div
-        class={["player-badge", tierClass.value]}
-        style={{ width: `${props.size}px`, height: `${props.size}px` }}
-        title={`Service record tier ${props.tier}`}
+        class={[
+          "player-badge",
+          props.dogTag ? "player-badge--dogtag" : tierClass.value,
+        ]}
+        style={[
+          { width: `${props.size}px`, height: `${props.size}px` },
+          dogTagStyle.value,
+        ]}
+        title={
+          props.dogTag
+            ? `Player emblem (Tier ${props.tier})`
+            : `Service record tier ${props.tier}`
+        }
       >
         <span class="player-badge__tier">{props.tier || "?"}</span>
       </div>

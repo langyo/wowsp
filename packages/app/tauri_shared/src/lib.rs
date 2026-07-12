@@ -145,6 +145,21 @@ pub struct EntityTrajectory {
     pub samples: Vec<PositionSample>,
 }
 
+/// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.
+/// Colors are ARGB-packed u32 values; texture/symbol/background IDs are
+/// entity refs to pattern assets on WG's CDN.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DogTag {
+    pub texture_id: u32,
+    pub symbol_id: u32,
+    /// ARGB-packed border color.
+    pub border_color: u32,
+    /// ARGB-packed background color.
+    pub background_color: u32,
+    pub background_id: u32,
+}
+
 /// Player stats from the Wargaming public API (milestone M9). All fields are
 /// optional because hidden profiles return nulls and some game modes are
 /// absent for casual accounts.
@@ -185,6 +200,13 @@ pub struct PlayerStats {
     pub leveling_tier: Option<i32>,
     /// WG service record points (XP towards next tier).
     pub leveling_points: Option<i64>,
+
+    // ── Dog tag (player emblem) ─────────────────────────────────────────
+    /// Player's dog tag components, fetched from the WG Vortex API. The dog
+    /// tag is the player's personalized emblem shown in-game. Colors are
+    /// ARGB-packed u32 values; texture/symbol/background IDs are entity refs
+    /// to pattern assets. None if Vortex fetch failed.
+    pub dog_tag: Option<DogTag>,
 
     // ── Per-division winrates ───────────────────────────────────────────
     pub solo_wr: Option<f32>,

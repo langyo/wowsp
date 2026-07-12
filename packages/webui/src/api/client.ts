@@ -103,6 +103,8 @@ export interface PlayerStats {
   // ── Service record (player level/badge) ─────────────────────────────
   levelingTier?: number | null;
   levelingPoints?: number | null;
+  // ── Dog tag (player emblem from Vortex API) ─────────────────────────
+  dogTag?: DogTag | null;
   // ── Per-division winrates ───────────────────────────────────────────
   soloWr?: number | null;
   div2Wr?: number | null;
@@ -218,6 +220,17 @@ export interface RankedSeasonStats {
   currentRank: number | null;
   bestRank: number | null;
   bestRankDisplay: string | null;
+}
+
+/** Mirrors `wowsp_tauri_shared::DogTag` — player's personalized emblem. */
+export interface DogTag {
+  textureId: number;
+  symbolId: number;
+  /** ARGB-packed border color (u32). */
+  borderColor: number;
+  /** ARGB-packed background color (u32). */
+  backgroundColor: number;
+  backgroundId: number;
 }
 
 export const api = {

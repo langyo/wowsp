@@ -169,7 +169,7 @@ export default defineComponent({
             <div class="dashboard-view__content" key="content">
               {/* ── Identity header (centered) ── */}
               <header class="dash-identity">
-                <PlayerBadge tier={currentStats.value.levelingTier ?? 0} size={56} />
+                <PlayerBadge tier={currentStats.value.levelingTier ?? 0} dogTag={currentStats.value.dogTag ?? null} size={56} />
                 <div class="dash-identity__info">
                   <h1 class="dash-identity__name">
                     {currentStats.value.clanTag ? (

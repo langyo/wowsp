@@ -25,7 +25,19 @@
     line-height: 1;
   }
 
-  /* Tier color schemes — radial gradient + border color */
+  /* Dog tag mode — uses the player's actual in-game colors (passed as
+     --dt-bg and --dt-border CSS custom properties from the component). */
+  &--dogtag {
+    background: radial-gradient(
+      circle at 35% 30%,
+      color-mix(in srgb, var(--dt-bg, #444) 85%, white 15%),
+      var(--dt-bg, #444)
+    );
+    border-color: var(--dt-border, #888);
+  }
+
+  /* Tier color schemes — radial gradient + border color (fallback when no
+     dog_tag data is available) */
   &.badge-bronze {
     background: radial-gradient(circle at 35% 30%, rgb(205 127 50 / 90%), rgb(120 70 25));
     border-color: rgb(180 110 40);
