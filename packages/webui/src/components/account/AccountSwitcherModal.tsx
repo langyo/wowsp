@@ -155,7 +155,7 @@ export default defineComponent({
                     {/* Player service-record badge based on leveling tier.
                         Falls back to tier 0 (bronze "?") when stats not yet
                         loaded. Replaces the old pig-logo placeholder. */}
-                    <PlayerBadge tier={s?.levelingTier ?? 0} size={38} />
+                    <PlayerBadge tier={s?.levelingTier ?? 0} dogTag={s?.dogTag ?? null} size={38} />
                     <div class="acct-card__body">
                       <div class="acct-card__head">
                         {s?.clanTag ? (

@@ -113,6 +113,32 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         Err(_) => None,
     };
 
+    // 4. Dog tag lookup via the WG Vortex API (best-effort — never fails the
+    //    whole call). Vortex returns the player's personalized emblem
+    //    components (background, texture, symbol, border/background colors).
+    let dog_tag = match client
+        .get(format!(
+            "https://vortex.worldofwarships.{host}/api/accounts/{}",
+            entry.account_id
+        ))
+        .send()
+        .await
+    {
+        Ok(r) => {
+            let vortex: Option<serde_json::Value> = r.json().await.ok();
+            vortex
+                .as_ref()
+                .and_then(|v| {
+                    v.get("data")
+                        .and_then(|d| d.get(&entry.account_id.to_string()))
+                        .and_then(|p| p.get("dog_tag"))
+                        .filter(|t| !t.is_null())
+                })
+                .and_then(parse_dog_tag)
+        }
+        Err(_) => None,
+    };
+
     Ok(PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
@@ -130,10 +156,37 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         ships_played: p.ships_played,
         leveling_tier,
         leveling_points,
+        dog_tag,
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
     })
+}
+
+/// Parse a dog_tag JSON object from the Vortex API into a DogTag struct.
+/// The Vortex response has fields like `texture_id`, `symbol_id`,
+/// `border_color_id`, `background_color_id`, `background_id`. The color
+/// fields are ARGB-packed u32 values.
+fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared::DogTag> {
+    let get_u32 = |key: &str| -> u32 {
+        v.get(key)
+            .and_then(|x| x.as_u64())
+            .map(|x| x as u32)
+            .unwrap_or(0)
+    };
+    let tag = wowsp_tauri_shared::DogTag {
+        texture_id: get_u32("texture_id"),
+        symbol_id: get_u32("symbol_id"),
+        border_color: get_u32("border_color_id"),
+        background_color: get_u32("background_color_id"),
+        background_id: get_u32("background_id"),
+    };
+    // Only return if at least some fields are non-zero.
+    if tag.background_color != 0 || tag.border_color != 0 {
+        Some(tag)
+    } else {
+        None
+    }
 }
 
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
