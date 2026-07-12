@@ -3,6 +3,7 @@ import { Check, X } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
+import SSelect from "@/components/base/SSelect";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { t } from "@/i18n";
@@ -80,15 +81,12 @@ export default defineComponent({
         <div class="acct-modal">
           {/* search / bind */}
           <div class="acct-modal__search">
-            <select
-              class="acct-modal__realm"
-              value={searchRealm.value}
-              onChange={(e) => (searchRealm.value = (e.target as HTMLSelectElement).value)}
-            >
-              {realms.map((r) => (
-                <option value={r}>{r.toUpperCase()}</option>
-              ))}
-            </select>
+            <SSelect
+              size="sm"
+              modelValue={searchRealm.value}
+              onUpdate:modelValue={(v: string) => (searchRealm.value = v)}
+              options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+            />
             <input
               class="acct-modal__input"
               type="text"

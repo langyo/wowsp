@@ -2,6 +2,7 @@ import { defineComponent, ref } from "vue";
 
 import StatsCard from "@/components/stats/StatsCard";
 import SButton from "@/components/base/SButton";
+import SSelect from "@/components/base/SSelect";
 import { useStatsStore } from "@/stores/stats";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
@@ -36,15 +37,11 @@ export default defineComponent({
       <div class="lookup-view">
         <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
         <div class="lookup-view__search">
-          <select
-            class="lookup-view__realm"
-            value={realm.value}
-            onChange={(e) => (realm.value = (e.target as HTMLSelectElement).value)}
-          >
-            {realms.map((r) => (
-              <option value={r}>{r.toUpperCase()}</option>
-            ))}
-          </select>
+          <SSelect
+            modelValue={realm.value}
+            onUpdate:modelValue={(v: string) => (realm.value = v)}
+            options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+          />
           <input
             class="lookup-view__input"
             type="text"
@@ -55,7 +52,7 @@ export default defineComponent({
               if (e.key === "Enter") void search();
             }}
           />
-          <SButton onClick={() => void search()} disabled={stats.loading}>
+          <SButton size="md" onClick={() => void search()} disabled={stats.loading}>
             {stats.loading ? t("account.searching") : t("account.search")}
           </SButton>
         </div>

@@ -1,6 +1,8 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { RotateCcw, Star } from "lucide-vue-next";
 
+import SSelect from "@/components/base/SSelect";
+import SButton from "@/components/base/SButton";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -129,18 +131,15 @@ export default defineComponent({
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
           <div class="ships-view__realm">
-            <select
-              class="ships-view__realm-select"
-              value={realm.value}
-              onChange={(e) => (realm.value = (e.target as HTMLSelectElement).value)}
-            >
-              {realms.map((r) => (
-                <option value={r}>{r.toUpperCase()}</option>
-              ))}
-            </select>
-            <button class="ships-view__reload" onClick={() => void loadEncyclopedia(true)}>
+            <SSelect
+              size="sm"
+              modelValue={realm.value}
+              onUpdate:modelValue={(v: string) => (realm.value = v)}
+              options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+            />
+            <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
               <RotateCcw size={12} /> {t("ships.reload")}
-            </button>
+            </SButton>
           </div>
         </header>
 

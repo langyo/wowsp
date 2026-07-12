@@ -1,0 +1,102 @@
+.s-select {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  outline: none;
+
+  &-block { width: 100%; }
+
+  &__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    border: 1px solid rgb(var(--color-border) / 25%);
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-text));
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 40%);
+    }
+  }
+
+  &__trigger--open {
+    border-color: rgb(var(--color-primary) / 60%);
+  }
+
+  &__value {
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__chevron {
+    flex-shrink: 0;
+    color: rgb(var(--color-muted));
+    transition: transform var(--duration-short) var(--ease-standard);
+  }
+
+  &__trigger--open &__chevron {
+    transform: rotate(180deg);
+  }
+
+  &__panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 100;
+    margin: 0;
+    padding: 0.25rem;
+    list-style: none;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+    transition: background var(--duration-short) var(--ease-standard);
+
+    &--hl {
+      background: rgb(var(--color-primary) / 10%);
+    }
+
+    &--sel {
+      color: rgb(var(--color-primary));
+      font-weight: 500;
+    }
+  }
+
+  &__check {
+    flex-shrink: 0;
+    color: rgb(var(--color-primary));
+  }
+}
+
+// Size variants — match SButton paddings for visual consistency.
+.s-select-sm .s-select__trigger {
+  padding: 0.25rem 0.6rem;
+  font-size: var(--text-sm);
+}
+.s-select-md .s-select__trigger {
+  padding: 0.45rem 0.75rem;
+  font-size: var(--text-sm);
+}

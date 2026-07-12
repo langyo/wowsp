@@ -75,14 +75,13 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
 /// Fetch (and cache, per game version + language) the full ship encyclopedia.
 /// `force_refresh` bypasses the cache.
 ///
-/// **Language selection**: WG's `/encyclopedia/ships/` returns ship names +
-/// descriptions localized per `language`. The same ship can have very different
-/// names between realms — notably CN (国服) uses animal names for IJN ships
-/// ("动物园"), while ASIA's zh-cn translation uses the historical names. So:
-///   - realm "cn" → always use "zh-cn" (CN-specific localization)
-///   - other realms → use the caller's `language` (mapped from UI locale)
-/// The cache is keyed by `<version>-<language>` so switching language/realm
-/// re-fetches with the right names.
+/// **Language selection**: WoWSP uses compound locale tags (`zhs-cn`,
+/// `zhs-asia`, `en-eu`, etc.) as cache keys for external data, because the
+/// same WG language code can produce different ship names on different realms
+/// (CN's zh-cn = animal names for IJN, ASIA's zh-cn = historical names).
+///
+/// The cache is keyed by `<version>-<compound>` so switching realm or UI
+/// language re-fetches with the correct localization.
 #[tauri::command]
 pub async fn get_ship_encyclopedia(
     realm: String,
@@ -90,8 +89,8 @@ pub async fn get_ship_encyclopedia(
     language: Option<String>,
 ) -> Result<Vec<ShipInfo>, String> {
     let version = get_game_version().await?.game_version;
-    let lang = resolve_encyclopedia_language(&realm, language);
-    let cache_file = format!("encyclopedia/ships-{version}-{lang}.json");
+    let (compound, wg_lang) = resolve_encyclopedia_language(&realm, language);
+    let cache_file = format!("encyclopedia/ships-{version}-{compound}.json");
 
     if !force_refresh {
         if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
@@ -111,7 +110,7 @@ pub async fn get_ship_encyclopedia(
     let mut page_no = 1;
     loop {
         let url = format!(
-            "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={lang}&limit=100&page_no={page_no}&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile"
+            "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&page_no={page_no}&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile"
         );
         let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
             .get(&url)
@@ -206,25 +205,41 @@ fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, Stri
 
 /// Resolve the WG API `language` parameter for encyclopedia requests.
 ///
-/// Realm-specific overrides:
-///   - "cn" (国服) → "zh-cn" (CN has its own translation; notably IJN ships
-///     use animal names — the famous "动物园". Even if the user's UI is
-///     zh-Hans, CN realm must use zh-cn to get the correct CN names.)
+/// WoWSP uses a **compound locale** scheme for external data:
+///   `<ui-lang>-<realm>` → e.g. "zhs-cn", "zhs-asia", "en-asia", "ja-asia".
 ///
-/// Caller-supplied language (from the UI locale) is mapped to WG codes:
-///   "zhs" → "zh-hans", "zht" → "zh-tw", otherwise pass through.
-/// Falls back to "en".
-fn resolve_encyclopedia_language(realm: &str, ui_language: Option<String>) -> String {
-    // CN realm always uses zh-cn regardless of UI language.
-    if realm == "cn" {
-        return "zh-cn".to_string();
-    }
-    match ui_language.as_deref() {
-        Some("zhs") => "zh-hans".to_string(),
-        Some("zht") => "zh-tw".to_string(),
-        Some(lang) => lang.to_string(),
-        None => "en".to_string(),
-    }
+/// This distinguishes the same language across different realms — notably
+/// CN's zh-cn uses animal names for IJN ships ("动物园"), while ASIA's zh-cn
+/// uses historical names. The compound tag is the cache key, so switching
+/// realm re-fetches with the right names.
+///
+/// The caller passes the UI language (zhs/zht/en/fr/...) and the realm.
+/// This function combines them into:
+///   1. A compound tag for caching: "zhs-cn", "zhs-asia", etc.
+///   2. A WG API language code for the request: zh-cn, zh-tw, en, ja, ...
+fn resolve_encyclopedia_language(realm: &str, ui_language: Option<String>) -> (String, String) {
+    let ui = ui_language.as_deref().unwrap_or("en");
+
+    // Map UI locale → WG API language code.
+    let wg_lang = match ui {
+        "zhs" => "zh-cn",
+        "zht" => "zh-tw",
+        "en" => "en",
+        "ja" => "ja",
+        "ko" => "ko",
+        "fr" => "fr",
+        "es" => "es",
+        "ru" => "ru",
+        _ => "en", // unknown UI locale → English
+    };
+
+    // Compound tag: <ui-lang>-<realm>. This is the cache discriminator.
+    // CN realm is special — it always uses WG's zh-cn, but the compound tag
+    // still records it as "zhs-cn" (or "<ui>-cn") so switching from ASIA
+    // to CN re-fetches.
+    let compound = format!("{ui}-{realm}");
+
+    (compound, wg_lang.to_string())
 }
 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
@@ -364,33 +379,43 @@ mod tests {
     }
 
     #[test]
-    fn cn_realm_always_uses_zh_cn() {
-        // CN realm must use zh-cn even if UI language is English — CN has
-        // unique ship names (e.g. animal names for IJN ships).
-        assert_eq!(resolve_encyclopedia_language("cn", None), "zh-cn");
-        assert_eq!(resolve_encyclopedia_language("cn", Some("en".into())), "zh-cn");
-        assert_eq!(resolve_encyclopedia_language("cn", Some("zhs".into())), "zh-cn");
+    fn cn_realm_compound_tag_and_wg_lang() {
+        let (compound, wg) = resolve_encyclopedia_language("cn", Some("zhs".into()));
+        assert_eq!(compound, "zhs-cn");
+        assert_eq!(wg, "zh-cn");
     }
 
     #[test]
-    fn asia_realm_respects_ui_language() {
-        assert_eq!(resolve_encyclopedia_language("asia", Some("zhs".into())), "zh-hans");
-        assert_eq!(resolve_encyclopedia_language("asia", Some("zht".into())), "zh-tw");
-        assert_eq!(resolve_encyclopedia_language("asia", Some("en".into())), "en");
-        assert_eq!(resolve_encyclopedia_language("asia", None), "en");
+    fn asia_realm_compound_tag_and_wg_lang() {
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zhs".into()));
+        assert_eq!(compound, "zhs-asia");
+        assert_eq!(wg, "zh-cn");
+
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zht".into()));
+        assert_eq!(compound, "zht-asia");
+        assert_eq!(wg, "zh-tw");
+
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("en".into()));
+        assert_eq!(compound, "en-asia");
+        assert_eq!(wg, "en");
     }
 
     #[test]
-    fn cache_key_includes_language() {
-        // Verify the cache file name pattern includes the language suffix
-        // (checked via the format string, not an actual file write).
+    fn unknown_ui_language_falls_back_to_english() {
+        let (compound, wg) = resolve_encyclopedia_language("eu", Some("xxx".into()));
+        assert_eq!(wg, "en");
+        assert_eq!(compound, "xxx-eu");
+    }
+
+    #[test]
+    fn cache_key_uses_compound_tag() {
         let v = "15.5.0";
-        let lang = resolve_encyclopedia_language("cn", Some("zhs".into()));
-        let cache = format!("encyclopedia/ships-{v}-{lang}.json");
-        assert_eq!(cache, "encyclopedia/ships-15.5.0-zh-cn.json");
+        let (compound, _) = resolve_encyclopedia_language("cn", Some("zhs".into()));
+        let cache = format!("encyclopedia/ships-{v}-{compound}.json");
+        assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn.json");
 
-        let lang2 = resolve_encyclopedia_language("asia", Some("zhs".into()));
-        let cache2 = format!("encyclopedia/ships-{v}-{lang2}.json");
-        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zh-hans.json");
+        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zhs".into()));
+        let cache2 = format!("encyclopedia/ships-{v}-{compound2}.json");
+        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia.json");
     }
 }
