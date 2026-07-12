@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[2]
+REPO_ROOT = SCRIPT_DIR.parents[1]  # scripts/model_convert/ → scripts/ → repo root
 TOOLS_DIR = REPO_ROOT / "target" / "model-tools"
 SHIPS_OUT = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models" / "ships"
 TEMP_DIR = REPO_ROOT / "target" / "model-tmp"
@@ -103,19 +103,27 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool) -> bool:
         return True  # skip
 
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    raw_glb = TEMP_DIR / f"{gp_name}_raw.glb"
+    # Use a unique temp file per ship to avoid collision if a previous run
+    # was interrupted mid-bake.
+    import hashlib
+    tag = hashlib.md5(gp_name.encode()).hexdigest()[:8]
+    raw_glb = TEMP_DIR / f"raw_{tag}.glb"
 
     # Step 1: export raw GLB (no textures, LOD2, no turrets)
     try:
         rc = subprocess.call(
             [str(EXPORTER_BIN), "-W", game, "-s", gp_name,
              "-o", str(raw_glb), "-t", "-T", "-L", "2"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=60,
+            timeout=45,
         )
         if rc != 0 or not raw_glb.exists():
+            raw_glb.unlink(missing_ok=True)
             return False
-    except (subprocess.TimeoutExpired, Exception):
+    except subprocess.TimeoutExpired:
+        raw_glb.unlink(missing_ok=True)
+        return False
+    except Exception:
+        raw_glb.unlink(missing_ok=True)
         return False
 
     # Step 2: bake to low-poly
@@ -123,14 +131,15 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool) -> bool:
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT),
              str(raw_glb), "-o", str(out_glb), "--triangles", "2000"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             timeout=30,
         )
-        raw_glb.unlink(missing_ok=True)
         return rc == 0 and out_glb.exists()
-    except (subprocess.TimeoutExpired, Exception):
-        raw_glb.unlink(missing_ok=True)
+    except subprocess.TimeoutExpired:
         return False
+    except Exception:
+        return False
+    finally:
+        raw_glb.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -152,15 +161,24 @@ def main() -> int:
     ship_names = get_ship_names(game)
 
     # Filter: only bake ships that don't have a GLB yet (unless --force).
+    # Also skip PX*-prefixed ships (event/consumable/Boss units that have no
+    # playable 3D hull model — the exporter returns exit 1 for these).
+    PLAYABLE_PREFIXES = ("PA", "PB", "PC", "PD", "PE", "PF", "PG", "PH", "PI",
+                         "PJ", "PK", "PL", "PM", "PN", "PO", "PP", "PR", "PT",
+                         "PU")  # Commonwealth, Pan-Europe etc.
     todo = []
+    skipped = 0
     for name in ship_names:
+        if not any(name.startswith(p) for p in PLAYABLE_PREFIXES):
+            skipped += 1
+            continue
         fname = derive_filename(name)
         if args.force or not (SHIPS_OUT / fname).exists():
             todo.append(name)
     if args.limit > 0:
         todo = todo[: args.limit]
 
-    print(f"[batch_bake] {len(todo)} ships to bake (of {len(ship_names)} total)")
+    print(f"[batch_bake] {len(todo)} ships to bake (of {len(ship_names)} total, {skipped} non-playable skipped)")
     if not todo:
         print("[batch_bake] all ships already baked. Use --force to re-bake.")
         return 0
@@ -178,9 +196,8 @@ def main() -> int:
         rate = (i + 1) / elapsed if elapsed > 0 else 0
         eta = (len(todo) - i - 1) / rate if rate > 0 else 0
         status = "✓" if success else "✗"
-        if (i + 1) % 10 == 0 or i < 5:
-            eta_min = eta / 60
-            print(f"  [{i+1}/{len(todo)}] {status} {gp_name} ({ok} ok, {fail} fail, ETA {eta_min:.0f}min)")
+        eta_min = eta / 60
+        print(f"  [{i+1}/{len(todo)}] {status} {gp_name} ({ok} ok, {fail} fail, ETA {eta_min:.0f}min)", flush=True)
 
     print(f"\n[batch_bake] done: {ok} baked, {fail} failed in {(time.time()-start)/60:.1f}min")
     print(f"[batch_bake] models in {SHIPS_OUT}")
