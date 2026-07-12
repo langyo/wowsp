@@ -217,8 +217,8 @@ export const api = {
   lookupPlayerStats: (name: string, realm: string) =>
     transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
   getGameVersion: () => transport.invoke<GameVersionInfo>(RPC.get_game_version),
-  getShipEncyclopedia: (realm: string, forceRefresh: boolean) =>
-    transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh }),
+  getShipEncyclopedia: (realm: string, forceRefresh: boolean, language?: string) =>
+    transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh, language }),
   lookupPlayerShipStats: (accountId: number, realm: string) =>
     transport.invoke<PlayerShipStats[]>(RPC.lookup_player_ship_stats, { accountId, realm }),
   snapshotPlayerStats: (
