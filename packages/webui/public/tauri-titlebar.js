@@ -1,8 +1,7 @@
 "use strict";
 (() => {
   // scripts/tauri-titlebar.ts
-  var tauriGlobal = window.__TAURI__;
-  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && tauriGlobal?.window) {
+  try {
     let resolveDarkMode2 = function() {
       const htmlMode = document.documentElement.getAttribute("data-mode");
       if (htmlMode === "dark") return true;
@@ -24,7 +23,10 @@
       });
     };
     resolveDarkMode = resolveDarkMode2, applyTitlebarTheme = applyTitlebarTheme2, refreshMaximized = refreshMaximized2;
-    const win = tauriGlobal.window.getCurrentWindow();
+    const tauri = window.__TAURI__;
+    if (!tauri?.window) throw new Error("not tauri");
+    if (!("__TAURI_INTERNALS__" in window)) throw new Error("not tauri");
+    const win = tauri.window.getCurrentWindow();
     const BAR_HEIGHT = 32;
     const style = document.createElement("style");
     style.id = "wowsp-titlebar-style";
@@ -63,7 +65,7 @@
   color:var(--tb-fg);padding-left:8px;white-space:nowrap;
   display:flex;align-items:center;gap:6px;
 }
-#wowsp-titlebar-logo{width:18px;height:18px;border-radius:3px;flex-shrink:0}
+#wowsp-titlebar-logo{width:18px;height:18px;border-radius:3px;flex-shrink:0;pointer-events:none}
 #wowsp-titlebar-spacer{flex:1}
 .wowsp-caption-btn{
   width:46px;height:${BAR_HEIGHT}px;border:none;background:transparent;
@@ -86,15 +88,7 @@ html,body{margin:0!important;padding:0!important;overflow:hidden!important}
     const CLOSE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     const bar = document.createElement("div");
     bar.id = "wowsp-titlebar";
-    bar.innerHTML = [
-      '<span id="wowsp-titlebar-title"><img id="wowsp-titlebar-logo" src="/logo.webp" alt="" />WoWSP</span>',
-      '<span id="wowsp-titlebar-spacer"></span>',
-      '<div id="wowsp-titlebar-right">',
-      `<button type="button" class="wowsp-caption-btn" data-act="minimize" title="Minimize" aria-label="Minimize">${MIN_SVG}</button>`,
-      `<button type="button" class="wowsp-caption-btn" data-act="toggle" title="Maximize" aria-label="Maximize">${MAX_SVG}</button>`,
-      `<button type="button" class="wowsp-caption-btn wowsp-caption-btn--close" data-act="close" title="Close" aria-label="Close">${CLOSE_SVG}</button>`,
-      "</div>"
-    ].join("");
+    bar.innerHTML = `<span id="wowsp-titlebar-title"><img id="wowsp-titlebar-logo" src="/logo.webp" alt="" />WoWSP</span><span id="wowsp-titlebar-spacer"></span><div id="wowsp-titlebar-right"><button type="button" class="wowsp-caption-btn" data-act="minimize" title="Minimize" aria-label="Minimize">${MIN_SVG}</button><button type="button" class="wowsp-caption-btn" data-act="toggle" title="Maximize" aria-label="Maximize">${MAX_SVG}</button><button type="button" class="wowsp-caption-btn wowsp-caption-btn--close" data-act="close" title="Close" aria-label="Close">${CLOSE_SVG}</button></div>`;
     document.body.appendChild(bar);
     applyTitlebarTheme2();
     const themeObserver = new MutationObserver(applyTitlebarTheme2);
@@ -109,20 +103,6 @@ html,body{margin:0!important;padding:0!important;overflow:hidden!important}
     });
     if (typeof matchMedia !== "undefined") {
       matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTitlebarTheme2);
-    }
-    const titleEl = document.getElementById("wowsp-titlebar-title");
-    if (titleEl) {
-      const updateTitle = () => {
-        const logo = titleEl.querySelector("#wowsp-titlebar-logo");
-        titleEl.textContent = document.title || "WoWSP";
-        if (logo) titleEl.prepend(logo);
-      };
-      updateTitle();
-      const titleNode = document.querySelector("title");
-      if (titleNode) {
-        const mo = new MutationObserver(updateTitle);
-        mo.observe(titleNode, { childList: true, characterData: true, subtree: true });
-      }
     }
     refreshMaximized2();
     win.onResized(() => refreshMaximized2()).catch(() => {
@@ -145,6 +125,7 @@ html,body{margin:0!important;padding:0!important;overflow:hidden!important}
       else if (act === "close") win.close().catch(() => {
       });
     });
+  } catch {
   }
   var resolveDarkMode;
   var applyTitlebarTheme;

@@ -1,18 +1,15 @@
 /**
  * WoWSP native-DOM custom title bar for the Tauri desktop shell — TypeScript
  * source. Compiled to a self-contained JS bundle via esbuild and served from
- * the Vite public directory (src/res/tauri-titlebar.js). Loaded by index.html
+ * the Vite public directory (public/tauri-titlebar.js). Loaded by index.html
  * before Vue mounts so the caption buttons exist before any overlay.
  *
  * Build: see package.json "build-titlebar" script.
  */
 
-// Tauri injects window.__TAURI__ when withGlobalTauri is enabled. Access it
-// via window (not bare __TAURI__) so the guard doesn't ReferenceError in a
-// plain browser where the global doesn't exist.
-interface TauriGlobal {
-  window: { getCurrentWindow: () => TauriWindow };
-}
+// Tauri injects window.__TAURI__ when withGlobalTauri is enabled. Access via
+// window (not bare __TAURI__) so the guard doesn't ReferenceError in a plain
+// browser where the global doesn't exist.
 interface TauriWindow {
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<void>;
@@ -21,37 +18,31 @@ interface TauriWindow {
   onResized: (cb: () => void) => Promise<() => void>;
 }
 
-// Self-guard: in a plain (non-Tauri) browser, exit silently.
-const tauriGlobal = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-if (
-  typeof window !== "undefined"
-  && "__TAURI_INTERNALS__" in window
-  && tauriGlobal?.window
-) {
-  const win = tauriGlobal.window.getCurrentWindow();
+// Self-guard: in a plain (non-Tauri) browser, exit silently. Using `return`
+// instead of `throw` avoids triggering any window.onerror handler.
+try {
+  const tauri = (window as unknown as { __TAURI__?: { window: { getCurrentWindow: () => TauriWindow } } }).__TAURI__;
+  if (!tauri?.window) throw new Error("not tauri");
+  if (!("__TAURI_INTERNALS__" in window)) throw new Error("not tauri");
+
+  const win = tauri.window.getCurrentWindow();
   const BAR_HEIGHT = 32;
 
   // ── Theme detection ──────────────────────────────────────────────────
-  // The titlebar runs before Vue, so it can't use the app's reactive theme.
-  // Priority for determining dark/light:
-  //   1. <html data-mode="dark|light"> — set by useTheme.ts after mount.
-  //   2. localStorage["wowsp-theme-mode"] — explicit "dark"/"light".
-  //   3. matchMedia prefers-color-scheme (fallback for "system" mode before
-  //      the solar calculation completes).
   function resolveDarkMode(): boolean {
     const htmlMode = document.documentElement.getAttribute("data-mode");
     if (htmlMode === "dark") return true;
     if (htmlMode === "light") return false;
-
     const stored = localStorage.getItem("wowsp-theme-mode");
     if (stored === "dark") return true;
     if (stored === "light") return false;
-
-    return typeof matchMedia !== "undefined"
-      && matchMedia("(prefers-color-scheme: dark)").matches;
+    return (
+      typeof matchMedia !== "undefined" &&
+      matchMedia("(prefers-color-scheme: dark)").matches
+    );
   }
 
-  // CSS custom properties on #wowsp-titlebar — swapped by [data-theme-mode].
+  // ── Styles ───────────────────────────────────────────────────────────
   const style = document.createElement("style");
   style.id = "wowsp-titlebar-style";
   style.textContent = `
@@ -89,7 +80,7 @@ if (
   color:var(--tb-fg);padding-left:8px;white-space:nowrap;
   display:flex;align-items:center;gap:6px;
 }
-#wowsp-titlebar-logo{width:18px;height:18px;border-radius:3px;flex-shrink:0}
+#wowsp-titlebar-logo{width:18px;height:18px;border-radius:3px;flex-shrink:0;pointer-events:none}
 #wowsp-titlebar-spacer{flex:1}
 .wowsp-caption-btn{
   width:46px;height:${BAR_HEIGHT}px;border:none;background:transparent;
@@ -107,23 +98,23 @@ html,body{margin:0!important;padding:0!important;overflow:hidden!important}
 `;
   document.head.appendChild(style);
 
-  // Caption button SVGs.
+  // ── Caption button SVGs ──────────────────────────────────────────────
   const MIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14"/></svg>';
   const MAX_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>';
   const RESTORE_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="8" width="13" height="13" rx="2"/><path d="M8 8V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3"/></svg>';
   const CLOSE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
+  // ── Build the bar ────────────────────────────────────────────────────
   const bar = document.createElement("div");
   bar.id = "wowsp-titlebar";
-  bar.innerHTML = [
-    '<span id="wowsp-titlebar-title"><img id="wowsp-titlebar-logo" src="/logo.webp" alt="" />WoWSP</span>',
-    '<span id="wowsp-titlebar-spacer"></span>',
-    '<div id="wowsp-titlebar-right">',
-    `<button type="button" class="wowsp-caption-btn" data-act="minimize" title="Minimize" aria-label="Minimize">${MIN_SVG}</button>`,
-    `<button type="button" class="wowsp-caption-btn" data-act="toggle" title="Maximize" aria-label="Maximize">${MAX_SVG}</button>`,
-    `<button type="button" class="wowsp-caption-btn wowsp-caption-btn--close" data-act="close" title="Close" aria-label="Close">${CLOSE_SVG}</button>`,
-    '</div>',
-  ].join("");
+  bar.innerHTML =
+    '<span id="wowsp-titlebar-title"><img id="wowsp-titlebar-logo" src="/logo.webp" alt="" />WoWSP</span>' +
+    '<span id="wowsp-titlebar-spacer"></span>' +
+    '<div id="wowsp-titlebar-right">' +
+    `<button type="button" class="wowsp-caption-btn" data-act="minimize" title="Minimize" aria-label="Minimize">${MIN_SVG}</button>` +
+    `<button type="button" class="wowsp-caption-btn" data-act="toggle" title="Maximize" aria-label="Maximize">${MAX_SVG}</button>` +
+    `<button type="button" class="wowsp-caption-btn wowsp-caption-btn--close" data-act="close" title="Close" aria-label="Close">${CLOSE_SVG}</button>` +
+    "</div>";
   document.body.appendChild(bar);
 
   // ── Theme sync ───────────────────────────────────────────────────────
@@ -132,54 +123,36 @@ html,body{margin:0!important;padding:0!important;overflow:hidden!important}
   }
   applyTitlebarTheme();
 
-  // Watch the app's theme mode changes (useTheme.ts sets data-mode on <html>).
   const themeObserver = new MutationObserver(applyTitlebarTheme);
   themeObserver.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["data-mode", "data-theme"],
   });
-  // Storage events fire when another tab or the os-prefs script writes.
   window.addEventListener("storage", (e: StorageEvent) => {
     if (e.key === "wowsp-theme-mode" || e.key === "wowsp-theme") {
       applyTitlebarTheme();
     }
   });
-  // OS dark-mode preference change (only matters in "system" mode).
   if (typeof matchMedia !== "undefined") {
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTitlebarTheme);
   }
 
-  // ── Title text sync ──────────────────────────────────────────────────
-  const titleEl = document.getElementById("wowsp-titlebar-title");
-  if (titleEl) {
-    // Preserve the logo img + set text after it.
-    const updateTitle = (): void => {
-      const logo = titleEl.querySelector("#wowsp-titlebar-logo");
-      titleEl.textContent = document.title || "WoWSP";
-      if (logo) titleEl.prepend(logo);
-    };
-    updateTitle();
-    const titleNode = document.querySelector("title");
-    if (titleNode) {
-      const mo = new MutationObserver(updateTitle);
-      mo.observe(titleNode, { childList: true, characterData: true, subtree: true });
-    }
-  }
-
-  // ── Maximize/restore toggle ──────────────────────────────────────────
+  // ── Maximised-state toggle ───────────────────────────────────────────
   function refreshMaximized(): void {
     const btn = bar.querySelector<HTMLButtonElement>('[data-act="toggle"]');
     if (!btn) return;
-    win.isMaximized().then((max: boolean) => {
-      btn.innerHTML = max ? RESTORE_SVG : MAX_SVG;
-      btn.title = max ? "Restore" : "Maximize";
-      btn.setAttribute("aria-label", max ? "Restore" : "Maximize");
-    }).catch(() => {});
+    win
+      .isMaximized()
+      .then((max: boolean) => {
+        btn.innerHTML = max ? RESTORE_SVG : MAX_SVG;
+        btn.title = max ? "Restore" : "Maximize";
+        btn.setAttribute("aria-label", max ? "Restore" : "Maximize");
+      })
+      .catch(() => {});
   }
   refreshMaximized();
   win.onResized(() => refreshMaximized()).catch(() => {});
 
-  // ── Event handlers ───────────────────────────────────────────────────
   // Double-click drag region → toggle maximize.
   bar.addEventListener("dblclick", (e: MouseEvent) => {
     const target = e.target as Element | null;
@@ -197,4 +170,6 @@ html,body{margin:0!important;padding:0!important;overflow:hidden!important}
     else if (act === "toggle") win.toggleMaximize().catch(() => {});
     else if (act === "close") win.close().catch(() => {});
   });
+} catch {
+  // Not in Tauri (plain browser dev) — title bar not needed.
 }
