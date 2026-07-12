@@ -236,20 +236,26 @@ fn parse_ship_images(images: Option<&serde_json::Value>) -> wowsp_tauri_shared::
 ///   `<ui-lang>-<realm>` → e.g. "zhs-cn", "zhs-asia", "en-asia", "ja-asia".
 ///
 /// This distinguishes the same language across different realms — notably
-/// CN's zh-cn uses animal names for IJN ships ("动物园"), while ASIA's zh-cn
-/// uses historical names. The compound tag is the cache key, so switching
-/// realm re-fetches with the right names.
-///
-/// The caller passes the UI language (zhs/zht/en/fr/...) and the realm.
-/// This function combines them into:
-///   1. A compound tag for caching: "zhs-cn", "zhs-asia", etc.
-///   2. A WG API language code for the request: zh-cn, zh-tw, en, ja, ...
+/// CN's zh-cn uses animal names for IJN ships ("动物园"), while ASIA/EU/NA
+/// use the standard zh-tw translation (historical names, no animal names).
+/// So for `zhs` (simplified Chinese UI):
+///   - CN realm → zh-cn (国服动物名翻译)
+///   - Non-CN realm → zh-tw (国际服繁体原名 — WG doesn't offer a
+///     non-CN simplified Chinese, so zh-tw is the closest match that
+///     uses original ship names rather than animal names.)
 fn resolve_encyclopedia_language(realm: &str, ui_language: Option<String>) -> (String, String) {
     let ui = ui_language.as_deref().unwrap_or("en");
 
     // Map UI locale → WG API language code.
+    // Key distinction: zh-cn is the CN-server translation with animal names
+    // for IJN ships. Non-CN realms must use zh-tw to get original names.
     let wg_lang = match ui {
-        "zhs" => "zh-cn",
+        "zhs" => {
+            // Simplified Chinese UI: use zh-cn only for CN realm (where animal
+            // names are the official localization). For all other realms, use
+            // zh-tw (standard international Chinese — original ship names).
+            if realm == "cn" { "zh-cn" } else { "zh-tw" }
+        }
         "zht" => "zh-tw",
         "en" => "en",
         "ja" => "ja",
@@ -416,7 +422,9 @@ mod tests {
     fn asia_realm_compound_tag_and_wg_lang() {
         let (compound, wg) = resolve_encyclopedia_language("asia", Some("zhs".into()));
         assert_eq!(compound, "zhs-asia");
-        assert_eq!(wg, "zh-cn");
+        // Non-CN realm with simplified Chinese UI uses zh-tw (original names,
+        // not the CN animal-name localization).
+        assert_eq!(wg, "zh-tw");
 
         let (compound, wg) = resolve_encyclopedia_language("asia", Some("zht".into()));
         assert_eq!(compound, "zht-asia");

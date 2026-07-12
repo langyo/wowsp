@@ -5,6 +5,8 @@
   "loading": "Loading stats...",
   "overview": "Overview",
   "byType": "By ship type",
+  "byNation": "By nation",
+  "byTier": "By tier",
   "ranked": "Ranked battles",
   "season": "Season",
   "rank": "Rank",

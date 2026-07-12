@@ -261,6 +261,26 @@
 }
 
 /* ── Per-ship table ──────────────────────────────────────────────────── */
+.dash-ship-group {
+  margin-bottom: 0.5rem;
+
+  &__title {
+    margin: 0 0 0.4rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+  }
+
+  &__count {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    font-weight: 400;
+  }
+}
+
 .dash-ship-table {
   background: rgb(var(--color-surface));
   border: 1px solid rgb(var(--color-border) / 12%);
