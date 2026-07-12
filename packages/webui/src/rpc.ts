@@ -37,6 +37,7 @@ export const RPC = {
   install_overlay_mod: "install_overlay_mod",
   uninstall_overlay_mod: "uninstall_overlay_mod",
   is_overlay_mod_installed: "is_overlay_mod_installed",
+  get_ranked_stats: "get_ranked_stats",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

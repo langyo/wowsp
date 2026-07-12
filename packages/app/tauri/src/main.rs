@@ -224,6 +224,7 @@ fn main() {
             commands::mod_install::install_overlay_mod,
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
+            commands::ranked::get_ranked_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP tauri application");

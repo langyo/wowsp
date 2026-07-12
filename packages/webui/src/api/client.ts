@@ -201,6 +201,23 @@ export interface CommunityTrend {
   buckets: TrendBucket[];
 }
 
+/** Mirrors `wowsp_tauri_shared::RankedSeasonStats` — a player's ranked stats
+ *  for a single season. */
+export interface RankedSeasonStats {
+  seasonId: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  damageDealt: number;
+  frags: number;
+  maxDamage: number;
+  maxXp: number;
+  survivedBattles: number;
+  planesKilled: number;
+  currentRank: number | null;
+  bestRank: number | null;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
@@ -265,4 +282,6 @@ export const api = {
     transport.invoke<null>(RPC.uninstall_overlay_mod, { gameRoot }),
   isOverlayModInstalled: (gameRoot: string) =>
     transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
+  getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
+    transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
 };

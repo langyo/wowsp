@@ -12,6 +12,7 @@ pub mod gameparams;
 pub mod mod_install;
 pub mod overlay;
 pub mod packets;
+pub mod ranked;
 pub mod replay;
 pub mod screenshot;
 pub mod ship_stats;
