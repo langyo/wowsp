@@ -13,4 +13,11 @@
     min-width: 0;
     overflow: auto;
   }
+
+  /* Page wrapper around router-view content. Fills the scroll area so each
+     page transition (s-fade-slide) animates on a full-height container
+     rather than the natural (collapsed) height of the page's root element. */
+  &__page {
+    min-height: 100%;
+  }
 }

@@ -153,15 +153,14 @@ export default defineComponent({
               ))}
             </div>
 
-            {/* tab content */}
+            {/* tab content — cross-fade between tabs */}
             <div class="ship-detail__body">
-              {tab.value === "specs" ? (
-                <SpecsPanel profile={dp.value} />
-              ) : null}
-
-              {tab.value === "armor" ? (
-                <div class="ship-detail__armor">
-                  {gpLoading.value ? (
+              <Transition name="s-fade-slide" mode="out-in">
+                {tab.value === "specs" ? (
+                  <div key="specs"><SpecsPanel profile={dp.value} /></div>
+                ) : tab.value === "armor" ? (
+                  <div class="ship-detail__armor" key="armor">
+                    {gpLoading.value ? (
                     <SSpinner center size="lg" text={t("ships.detail.gameparamsLoading")} />
                   ) : gpError.value ? (
                     <p class="ship-detail__error">
@@ -175,10 +174,8 @@ export default defineComponent({
                     <p>{t("ships.detail.gameparamsMissing")}</p>
                   )}
                 </div>
-              ) : null}
-
-              {tab.value === "mystats" ? (
-                <div class="ship-detail__mystats">
+              ) : tab.value === "mystats" ? (
+                <div class="ship-detail__mystats" key="mystats">
                   {myShipStats.value ? (
                     <div class="ship-detail__mystats-grid">
                       <Stat label={t("stats.battles")} value={String(myShipStats.value.battles)} />
@@ -204,17 +201,16 @@ export default defineComponent({
                     </div>
                   ) : null}
                 </div>
-              ) : null}
-
-              {tab.value === "community" ? (
-                <div class="ship-detail__community">
+              ) : (
+                <div class="ship-detail__community" key="community">
                   {trends.communityTrend?.available ? (
                     <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
                   ) : (
                     <p>{t("ships.detail.communityUnavailable")}</p>
                   )}
                 </div>
-              ) : null}
+              )}
+              </Transition>
             </div>
           </div>
         )}

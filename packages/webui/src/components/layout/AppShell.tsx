@@ -32,7 +32,20 @@ export default defineComponent({
         <WallpaperRenderer />
         <Sidebar />
         <main class="app-shell__main">
-          <router-view />
+          {/* Route transition: fade+slide between pages. Uses out-in mode so
+              the old page leaves before the new one enters (no overlap).
+              The key is the route path so Vue remounts on navigation. */}
+          <router-view
+            v-slots={{
+              default: ({ Component, route }: { Component: unknown; route: { path: string } }) => (
+                <Transition name="s-fade-slide" mode="out-in">
+                  <div class="app-shell__page" key={route.path}>
+                    {Component as JSX.Element}
+                  </div>
+                </Transition>
+              ),
+            }}
+          />
         </main>
       </div>
     );

@@ -17,6 +17,12 @@
   opacity: var(--opacity-faded);
   cursor: not-allowed;
 }
+/* Loading state: spinner sits before the label. pointer-events none so a
+   mid-load click doesn't fire the handler twice. */
+.s-btn-loading {
+  cursor: progress;
+  pointer-events: none;
+}
 .s-btn-sm { padding: 0.25rem 0.6rem; font-size: var(--text-sm); }
 .s-btn-md { padding: 0.45rem 0.9rem; font-size: var(--text-base); }
 .s-btn-lg { padding: 0.6rem 1.2rem; font-size: var(--text-md); }

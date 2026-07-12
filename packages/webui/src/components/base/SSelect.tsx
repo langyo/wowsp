@@ -1,4 +1,13 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type PropType } from "vue";
+import {
+  computed,
+  defineComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type PropType,
+} from "vue";
 import { ChevronDown, Check } from "lucide-vue-next";
 
 import "./SSelect.scss";
@@ -10,16 +19,17 @@ export interface SelectOption {
 
 /**
  * WoWSP design-system select dropdown. Replaces the native <select> with a
- * themed, keyboard-navigable dropdown that matches the app's dark/light
- * tokens. Uses a portal-less absolute-positioned panel (no <Teleport> needed
- * since it's within the app container).
+ * themed, keyboard-navigable dropdown.
  *
- * Usage (JSX):
- *   <SSelect
- *     modelValue={realm.value}
- *     onUpdate:modelValue={(v) => (realm.value = v)}
- *     options={[{ value: "asia", label: "ASIA" }, ...]}
- *   />
+ * The dropdown panel is **Teleported to <body>** and positioned via
+ * getBoundingClientRect on each open. This is critical: without Teleport, the
+ * panel would be clipped by any ancestor with `overflow: auto/hidden` (e.g.
+ * SModal's scrollable body, which was causing the dropdown to be cut off when
+ * the select lived inside a short modal). Teleporting escapes all ancestor
+ * clipping contexts.
+ *
+ * Position is recomputed on open + on window resize/scroll while open. The
+ * panel also flips above the trigger if there isn't room below.
  */
 export default defineComponent({
   name: "SSelect",
@@ -36,7 +46,12 @@ export default defineComponent({
   setup(props, { emit }) {
     const open = ref(false);
     const rootRef = ref<HTMLElement | null>(null);
+    const panelRef = ref<HTMLElement | null>(null);
     const highlightedIndex = ref(0);
+    // Panel absolute position (set from getBoundingClientRect on open).
+    const panelStyle = ref<Record<string, string>>({});
+    // Whether the panel renders above the trigger (flipped).
+    const flipUp = ref(false);
 
     const selectedLabel = computed(() => {
       const opt = props.options.find((o) => o.value === props.modelValue);
@@ -81,14 +96,59 @@ export default defineComponent({
       }
     }
 
-    function onDocClick(e: MouseEvent) {
-      if (rootRef.value && !rootRef.value.contains(e.target as Node)) {
-        open.value = false;
-      }
+    /** Compute panel position from the trigger's rect. Called on open + on
+     *  viewport changes. Flips above if not enough room below. */
+    function updatePosition() {
+      const root = rootRef.value;
+      if (!root) return;
+      const rect = root.getBoundingClientRect();
+      const viewportH = window.innerHeight;
+      const spaceBelow = viewportH - rect.bottom;
+      const PANEL_MAX = 240; // matches SCSS max-height
+      const PANEL_GAP = 4;
+      // Flip up if there's not enough room below but more above.
+      flipUp.value = spaceBelow < PANEL_MAX + PANEL_GAP && rect.top > spaceBelow;
+      const top = flipUp.value
+        ? Math.max(8, rect.top - PANEL_GAP - Math.min(PANEL_MAX, rect.top - 16))
+        : rect.bottom + PANEL_GAP;
+      panelStyle.value = {
+        position: "fixed",
+        left: `${rect.left}px`,
+        top: `${top}px`,
+        width: `${rect.width}px`,
+        zIndex: "var(--z-tooltip)",
+      };
     }
 
-    onMounted(() => document.addEventListener("mousedown", onDocClick));
-    onBeforeUnmount(() => document.removeEventListener("mousedown", onDocClick));
+    function onDocClick(e: MouseEvent) {
+      // Close if click is outside both the trigger root and the teleported panel.
+      const target = e.target as Node;
+      if (rootRef.value?.contains(target)) return;
+      if (panelRef.value?.contains(target)) return;
+      open.value = false;
+    }
+
+    function onViewportChange() {
+      if (open.value) updatePosition();
+    }
+
+    watch(open, (isOpen) => {
+      if (isOpen) {
+        // Position on next tick so the panel exists to measure.
+        void nextTick(() => updatePosition());
+      }
+    });
+
+    onMounted(() => {
+      document.addEventListener("mousedown", onDocClick);
+      window.addEventListener("resize", onViewportChange);
+      window.addEventListener("scroll", onViewportChange, true);
+    });
+    onBeforeUnmount(() => {
+      document.removeEventListener("mousedown", onDocClick);
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("scroll", onViewportChange, true);
+    });
 
     return () => (
       <div
@@ -105,25 +165,34 @@ export default defineComponent({
           <span class="s-select__value">{selectedLabel.value}</span>
           <ChevronDown size={14} class="s-select__chevron" />
         </button>
-        {open.value ? (
-          <ul class="s-select__panel" role="listbox">
-            {props.options.map((opt, i) => (
-              <li
-                role="option"
-                class={[
-                  "s-select__option",
-                  i === highlightedIndex.value ? "s-select__option--hl" : "",
-                  opt.value === props.modelValue ? "s-select__option--sel" : "",
-                ]}
-                onClick={() => select(opt.value)}
-                onMouseenter={() => (highlightedIndex.value = i)}
+        <Teleport to="body">
+          <Transition name="s-select-panel" appear>
+            {open.value ? (
+              <ul
+                ref={panelRef}
+                class={["s-select__panel", flipUp.value ? "s-select__panel--up" : ""]}
+                style={panelStyle.value}
+                role="listbox"
               >
-                <span>{opt.label}</span>
-                {opt.value === props.modelValue ? <Check size={13} class="s-select__check" /> : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+                {props.options.map((opt, i) => (
+                  <li
+                    role="option"
+                    class={[
+                      "s-select__option",
+                      i === highlightedIndex.value ? "s-select__option--hl" : "",
+                      opt.value === props.modelValue ? "s-select__option--sel" : "",
+                    ]}
+                    onClick={() => select(opt.value)}
+                    onMouseenter={() => (highlightedIndex.value = i)}
+                  >
+                    <span>{opt.label}</span>
+                    {opt.value === props.modelValue ? <Check size={13} class="s-select__check" /> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Transition>
+        </Teleport>
       </div>
     );
   },

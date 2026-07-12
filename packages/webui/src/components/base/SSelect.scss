@@ -47,11 +47,9 @@
   }
 
   &__panel {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 100;
+    /* Position/width/z-index are set inline by the component (computed from
+       getBoundingClientRect) since the panel is Teleported to <body>. The
+       styles here are purely visual. */
     margin: 0;
     padding: 0.25rem;
     list-style: none;
@@ -61,6 +59,33 @@
     box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
     max-height: 240px;
     overflow-y: auto;
+  }
+
+  /* Enter/leave transition for the teleported dropdown panel. Uses the
+     popup-offset/popup-scale motion tokens so it matches SPopup/SDrawer.
+     Enter: spring overshoot from below; leave: quick retreat downward. */
+  .s-select-panel-enter-active {
+    transition:
+      opacity var(--duration-short) var(--ease-standard),
+      transform var(--duration-short) var(--ease-spring);
+  }
+  .s-select-panel-leave-active {
+    transition:
+      opacity var(--duration-short) var(--ease-standard),
+      transform var(--duration-short) var(--ease-in-expo);
+  }
+  /* Default (opens downward): enter from slightly above + scaled down,
+     leave downward. */
+  .s-select-panel-enter-from,
+  .s-select-panel-leave-to {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--motion-popup-offset))) scale(var(--motion-popup-scale));
+  }
+  /* When flipped up (panel above trigger), reverse the offset so it enters
+     from below the trigger and leaves downward. */
+  .s-select__panel--up.s-select-panel-enter-from,
+  .s-select__panel--up.s-select-panel-leave-to {
+    transform: translateY(var(--motion-popup-offset)) scale(var(--motion-popup-scale));
   }
 
   &__option {

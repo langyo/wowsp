@@ -23,6 +23,10 @@
   border-radius: var(--radius-lg);
   box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
   width: 100%;
+  /* Generous height bounds so modals don't feel cramped when content is
+     sparse, and scroll when it overflows. min-height prevents the SSelect
+     dropdown from being taller than the modal (which was clipping it). */
+  min-height: 200px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
