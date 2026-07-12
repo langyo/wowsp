@@ -59,20 +59,35 @@ export default defineComponent({
     const searchText = ref("");
     const selectedNations = ref<Set<string>>(new Set());
     const selectedTypes = ref<Set<string>>(new Set());
-    const tierMin = ref(1);
-    const tierMax = ref(10);
+    const selectedTiers = ref<Set<number>>(new Set());
 
-    function toggleSet(set: Set<string>, value: string) {
+    function toggleSet<T>(set: Set<T>, value: T): Set<T> {
       const next = new Set(set);
       if (next.has(value)) next.delete(value);
       else next.add(value);
       return next;
     }
 
+    /** Reset all filters to their empty state. */
+    function clearFilters() {
+      searchText.value = "";
+      selectedNations.value = new Set();
+      selectedTypes.value = new Set();
+      selectedTiers.value = new Set();
+    }
+
+    const hasActiveFilters = computed(
+      () =>
+        searchText.value.trim() !== "" ||
+        selectedNations.value.size > 0 ||
+        selectedTypes.value.size > 0 ||
+        selectedTiers.value.size > 0,
+    );
+
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
       return encyclopedia.ships.filter((s) => {
-        if (s.tier < tierMin.value || s.tier > tierMax.value) return false;
+        if (selectedTiers.value.size > 0 && !selectedTiers.value.has(s.tier)) return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
         if (q && !s.name.toLowerCase().includes(q)) return false;
@@ -156,13 +171,38 @@ export default defineComponent({
 
         {/* ── filter bar ── */}
         <div class="ships-view__filters">
-          <input
-            class="ships-view__search"
-            type="text"
-            placeholder={t("ships.search")}
-            value={searchText.value}
-            onInput={(e) => (searchText.value = (e.target as HTMLInputElement).value)}
-          />
+          <div class="ships-view__filter-top">
+            <input
+              class="ships-view__search"
+              type="text"
+              placeholder={t("ships.search")}
+              value={searchText.value}
+              onInput={(e) => (searchText.value = (e.target as HTMLInputElement).value)}
+            />
+            {hasActiveFilters.value ? (
+              <button class="ships-view__clear" onClick={() => clearFilters()}>
+                {t("ships.clear")}
+              </button>
+            ) : null}
+          </div>
+
+          <div class="ships-view__filter-group">
+            <span class="ships-view__filter-label">{t("ships.tier")}</span>
+            <div class="ships-view__chips">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((tier) => (
+                <button
+                  class={[
+                    "ships-view__chip",
+                    "ships-view__chip--tier",
+                    selectedTiers.value.has(tier) ? "ships-view__chip--on" : "",
+                  ]}
+                  onClick={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
+                >
+                  {tier}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div class="ships-view__filter-group">
             <span class="ships-view__filter-label">{t("ships.type")}</span>
@@ -197,34 +237,6 @@ export default defineComponent({
               ))}
             </div>
           </div>
-
-          <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">
-              {t("ships.tierRange")}: {tierMin.value} – {tierMax.value}
-            </span>
-            <div class="ships-view__tier-range">
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={tierMin.value}
-                onInput={(e) => {
-                  const v = Number((e.target as HTMLInputElement).value);
-                  tierMin.value = Math.min(v, tierMax.value);
-                }}
-              />
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={tierMax.value}
-                onInput={(e) => {
-                  const v = Number((e.target as HTMLInputElement).value);
-                  tierMax.value = Math.max(v, tierMin.value);
-                }}
-              />
-            </div>
-          </div>
         </div>
 
         {/* ── card grid — cross-fade between loading/error/empty/grid ── */}
@@ -251,11 +263,16 @@ export default defineComponent({
                       ship.isSpecial ? "ship-card--special" : "",
                     ]}
                     onClick={() => openDetail(ship)}
-                >
-                  <div class="ship-card__head">
-                    <span class="ship-card__tier">T{ship.tier}</span>
-                    <span class="ship-card__name">{ship.name}</span>
-                  </div>
+                  >
+                    {ship.images?.medium ? (
+                      <div class="ship-card__image">
+                        <img src={ship.images.medium} alt={ship.name} loading="lazy" />
+                      </div>
+                    ) : null}
+                    <div class="ship-card__head">
+                      <span class="ship-card__tier">T{ship.tier}</span>
+                      <span class="ship-card__name">{ship.name}</span>
+                    </div>
                   <div class="ship-card__tags">
                     <STag variant="neutral" size="sm">{typeLabel(ship.type)}</STag>
                     <STag variant="neutral" size="sm">{nationLabel(ship.nation)}</STag>

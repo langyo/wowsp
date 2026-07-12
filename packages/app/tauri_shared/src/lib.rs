@@ -246,6 +246,25 @@ pub struct ShipInfo {
     /// The version this entry was cached under (set by the fetcher, not WG).
     pub game_version: String,
     pub default_profile: serde_json::Value,
+    /// Ship image URLs from the WG CDN. All optional — not every ship has
+    /// every size. `medium` is the primary card image; `contour` is the
+    /// side-silhouette used in some UIs; `small`/`large` are alternatives.
+    pub images: ShipImages,
+}
+
+/// Ship image URLs returned by the WG encyclopedia API. Fields are the
+/// standard WG image size keys. Empty string if the size isn't available.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipImages {
+    /// Small portrait (~80×48). For compact lists.
+    pub small: String,
+    /// Medium portrait (~160×96). Primary card image.
+    pub medium: String,
+    /// Large portrait (~320×192). For detail views.
+    pub large: String,
+    /// Side-contour silhouette (~32×32). For minimap-style indicators.
+    pub contour: String,
 }
 
 /// Per-player per-ship PvP stats from `/wows/ships/stats/`. One entry per ship

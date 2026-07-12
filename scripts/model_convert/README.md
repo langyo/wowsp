@@ -63,10 +63,19 @@ decimation, texture downsampling — all forwarded to `wowsunpack`).
 
 1. Make sure `wowsunpack` is installed and the game is detected (run WoWSP once
    or set `WOWSP_GAME_PATH`).
-2. `just convert-model ship --name <ShipName>` (or `map --name <space_id>`).
-3. Commit the resulting GLB under `packages/webui/src/res/models/`.
-4. The holographic map auto-discovers models from that directory — no code
-   changes needed.
+2. `just convert-ship --name <ShipName>` (or `just convert-map --name <space_id>`).
+3. Commit the resulting GLB under `packages/webui/src/res/models/ships/` or
+   `packages/webui/src/res/models/maps/`.
+4. The frontend auto-discovers models via Vite's static asset glob
+   (`import.meta.glob` in `features/holographic/modelLoader.ts`). Model files
+   are matched case-insensitively by filename stem (without `.glb`):
+   - Ships: `<displayName>.glb` (e.g. `Montana.glb`) or `<modelDir>.glb`
+     (e.g. `PASB510_Montana.glb`). Both are tried in that order.
+   - Maps: `<spaceId>.glb` (e.g. `15_NE_north.glb`). Any `spaces/` prefix is
+     stripped before matching.
+5. No code changes are needed — placing the GLB in the right directory is
+   enough. The holographic map progressively enriches: ships without models
+   use procedural cone markers, maps without terrain use a grid helper.
 
 ## Status
 

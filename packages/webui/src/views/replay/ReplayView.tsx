@@ -118,6 +118,7 @@ export default defineComponent({
                       replayPath={parser.current.value.path}
                       trajectories={trajectories.value}
                       vehicles={parser.current.value.vehicles}
+                      mapId={parser.current.value.mapName ?? ""}
                     />
                   )}
                 </div>

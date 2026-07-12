@@ -2,6 +2,7 @@ import { defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import * as THREE from "three";
 
 import { useThreeScene } from "./useThreeScene";
+import { resolveMapModelUrl, loadGlbModel } from "./modelLoader";
 import type { EntityTrajectory, VehicleEntry } from "@/api";
 import "./HolographicMap.scss";
 
@@ -9,6 +10,12 @@ import "./HolographicMap.scss";
  * The holographic battle map. Renders every entity's decoded trajectory (M3)
  * as a colored line, plus a ship marker at the current playback time that
  * points along its heading. A time slider scrubs the whole match.
+ *
+ * Map terrain: if a converted GLB for this map's space id exists under
+ * `src/res/models/maps/<spaceId>.glb`, it is loaded and added to the scene.
+ * Otherwise the scene falls back to the GridHelper sea plane (defined in
+ * useThreeScene). Model loading is progressive — the app works without any
+ * converted assets and enriches as the user runs the conversion scripts.
  *
  * Coordinates: WoWS world space is x=east, z=north (planar). We map (x,z)
  * straight onto the three.js XZ plane and drop y. Bounds auto-fit to the data.
@@ -20,6 +27,8 @@ export default defineComponent({
     trajectories: { type: Array as () => EntityTrajectory[], default: () => [] },
     /** Roster from the replay header — used to color allies/enemies. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
+    /** Map space id (e.g. "15_NE_north") — used to load the terrain GLB. */
+    mapId: { type: String, default: "" },
   },
   setup(props) {
     const container = ref<HTMLElement | null>(null);
@@ -35,6 +44,7 @@ export default defineComponent({
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
+    let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
     function clearActors() {
@@ -56,6 +66,38 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+    }
+
+    /** Remove a previously-loaded map terrain model. */
+    function clearMapModel() {
+      if (mapModel) {
+        api.value?.scene.remove(mapModel);
+        mapModel.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            (o.material as THREE.Material).dispose();
+          }
+        });
+        mapModel = null;
+      }
+    }
+
+    /** Attempt to load the terrain GLB for the current mapId. If no converted
+     *  GLB exists, the scene keeps its GridHelper fallback. */
+    async function tryLoadMapModel() {
+      clearMapModel();
+      const scene = api.value?.scene;
+      if (!scene || !props.mapId) return;
+      const url = resolveMapModelUrl(props.mapId);
+      if (!url) return; // no converted model — use grid fallback
+      try {
+        const model = await loadGlbModel(url);
+        mapModel = model;
+        scene.add(model);
+      } catch (e) {
+        // Model load failed (corrupt GLB?) — silently fall back to grid.
+        console.warn("[HolographicMap] map model load failed:", e);
+      }
     }
 
     /** Recompute the match duration + auto-fit the camera to the data bounds. */
@@ -231,18 +273,26 @@ export default defineComponent({
     // Recompute markers whenever the scrubber moves.
     watch(current, (t) => updateMarkersAt(t));
 
-    // Once the scene is ready, build actors for any trajectories already set.
+    // Once the scene is ready, build actors for any trajectories already set
+    // and attempt to load the terrain model.
     watch(ready, (r) => {
       if (r) {
         recomputeBoundsAndCamera();
         rebuildActors();
         updateMarkersAt(current.value);
+        void tryLoadMapModel();
       }
+    });
+
+    // Reload terrain when the map changes (e.g. switching replays).
+    watch(() => props.mapId, () => {
+      if (ready.value) void tryLoadMapModel();
     });
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(playRaf);
       clearActors();
+      clearMapModel();
     });
 
     return () => (

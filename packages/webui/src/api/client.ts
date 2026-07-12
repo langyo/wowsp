@@ -114,6 +114,13 @@ export interface GameVersionInfo {
 }
 
 /** Mirrors `wowsp_tauri_shared::ShipInfo`. */
+export interface ShipImages {
+  small: string;
+  medium: string;
+  large: string;
+  contour: string;
+}
+
 export interface ShipInfo {
   shipId: number;
   name: string;
@@ -125,6 +132,7 @@ export interface ShipInfo {
   description: string;
   gameVersion: string;
   defaultProfile: unknown;
+  images: ShipImages;
 }
 
 /** Mirrors `wowsp_tauri_shared::PlayerShipStats`. */

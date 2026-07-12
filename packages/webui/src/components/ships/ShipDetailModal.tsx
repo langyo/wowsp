@@ -121,6 +121,13 @@ export default defineComponent({
       >
         {!props.ship ? null : (
           <div class="ship-detail">
+            {/* ship portrait banner */}
+            {props.ship.images?.large ? (
+              <div class="ship-detail__portrait">
+                <img src={props.ship.images.large} alt={props.ship.name} />
+              </div>
+            ) : null}
+
             {/* identity header */}
             <div class="ship-detail__id">
               <STag variant="primary">Tier {props.ship.tier}</STag>

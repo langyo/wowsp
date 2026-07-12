@@ -3,6 +3,24 @@
   flex-direction: column;
   gap: 0.85rem;
 
+  &__portrait {
+    width: 100%;
+    height: 140px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: rgb(var(--color-bg));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgb(0 0 0 / 30%));
+    }
+  }
+
   &__id {
     display: flex;
     align-items: center;

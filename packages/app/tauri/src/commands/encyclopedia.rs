@@ -90,7 +90,11 @@ pub async fn get_ship_encyclopedia(
 ) -> Result<Vec<ShipInfo>, String> {
     let version = get_game_version().await?.game_version;
     let (compound, wg_lang) = resolve_encyclopedia_language(&realm, language);
-    let cache_file = format!("encyclopedia/ships-{version}-{compound}.json");
+    // Schema version: bump when the cached ShipInfo shape changes (e.g. adding
+    // the `images` field). This invalidates old caches automatically — users
+    // don't need to manually clear AppData after an app update.
+    const CACHE_SCHEMA: u32 = 2; // v2: added ShipImages
+    let cache_file = format!("encyclopedia/ships-{version}-{compound}-s{CACHE_SCHEMA}.json");
 
     if !force_refresh {
         if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
@@ -110,7 +114,7 @@ pub async fn get_ship_encyclopedia(
     let mut page_no = 1;
     loop {
         let url = format!(
-            "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&page_no={page_no}&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile"
+            "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&page_no={page_no}&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
         );
         let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
             .get(&url)
@@ -200,7 +204,30 @@ fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, Stri
             .to_string(),
         game_version: version.to_string(),
         default_profile: value.get("default_profile").cloned().unwrap_or(serde_json::Value::Null),
+        images: parse_ship_images(value.get("images")),
     })
+}
+
+/// Extract the ShipImages struct from the WG `images` object. The WG API
+/// returns `{"small": "...", "medium": "...", "large": "...", "contour": "..."}`.
+/// Missing keys → empty string (graceful degradation).
+fn parse_ship_images(images: Option<&serde_json::Value>) -> wowsp_tauri_shared::ShipImages {
+    let img = match images {
+        Some(v) if v.is_object() => v,
+        _ => return Default::default(),
+    };
+    let get = |key: &str| -> String {
+        img.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    wowsp_tauri_shared::ShipImages {
+        small: get("small"),
+        medium: get("medium"),
+        large: get("large"),
+        contour: get("contour"),
+    }
 }
 
 /// Resolve the WG API `language` parameter for encyclopedia requests.
@@ -410,12 +437,13 @@ mod tests {
     #[test]
     fn cache_key_uses_compound_tag() {
         let v = "15.5.0";
+        const SCHEMA: u32 = 2;
         let (compound, _) = resolve_encyclopedia_language("cn", Some("zhs".into()));
-        let cache = format!("encyclopedia/ships-{v}-{compound}.json");
-        assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn.json");
+        let cache = format!("encyclopedia/ships-{v}-{compound}-s{SCHEMA}.json");
+        assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn-s2.json");
 
         let (compound2, _) = resolve_encyclopedia_language("asia", Some("zhs".into()));
-        let cache2 = format!("encyclopedia/ships-{v}-{compound2}.json");
-        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia.json");
+        let cache2 = format!("encyclopedia/ships-{v}-{compound2}-s{SCHEMA}.json");
+        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia-s2.json");
     }
 }
