@@ -71,7 +71,21 @@ export default defineComponent({
             : `Service record tier ${props.tier}`
         }
       >
-        <span class="player-badge__tier">{props.tier || "?"}</span>
+        {props.dogTag ? (
+          <>
+            {/* Dog tag: use the extracted game asset as the base shape,
+             * tinted with the player's actual in-game colors via CSS
+             * background-blend + border color. */}
+            <img
+              class="player-badge__dt-img"
+              src="/dogtags/DT_Default.png"
+              alt=""
+            />
+            <span class="player-badge__tier">{props.tier || "?"}</span>
+          </>
+        ) : (
+          <span class="player-badge__tier">{props.tier || "?"}</span>
+        )}
       </div>
     );
   },
