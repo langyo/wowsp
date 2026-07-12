@@ -270,74 +270,52 @@ export default defineComponent({
                 </section>
               ) : null}
 
-              {/* ── Date range + ship-type breakdown ── */}
+              {/* ── Ship stats: group mode + date range + sort (no text titles,
+                   the button groups ARE the section headers) ── */}
               <section class="dash-section">
-                <div class="dash-section__head">
-                  <h3>{t("dashboard.byType")}</h3>
+                {/* Row 1: group mode + sort */}
+                <div class="dash-section__controls">
                   <SSegmented
-                    modelValue={dateRange.value}
-                    onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                    options={rangeOptions}
+                    modelValue={groupMode.value}
+                    onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
+                    options={[
+                      { value: "type", label: t("dashboard.byType") },
+                      { value: "nation", label: t("dashboard.byNation") },
+                      { value: "tier", label: t("dashboard.byTier") },
+                    ]}
+                  />
+                  <SSegmented
+                    modelValue={sortBy.value}
+                    onUpdate:modelValue={(v: string) => (sortBy.value = v as typeof sortBy.value)}
+                    options={[
+                      { value: "battles", label: t("dashboard.battles") },
+                      { value: "winrate", label: t("dashboard.winrate") },
+                      { value: "avgDamage", label: t("dashboard.avgDamage") },
+                    ]}
                   />
                 </div>
+                {/* Row 2: date range */}
+                <SSegmented
+                  modelValue={dateRange.value}
+                  onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
+                  options={rangeOptions}
+                  block
+                />
 
-                {typeSummary.value.length === 0 ? (
-                  <p class="dash-empty">{t("dashboard.noShipsInRange")}</p>
-                ) : (
+                {/* Group summary cards (compact) */}
+                {typeSummary.value.length > 0 ? (
                   <div class="dash-type-grid">
                     {typeSummary.value.map((ts) => (
                       <div class="dash-type-card" key={ts.type}>
-                        <div class="dash-type-card__head">
-                          <span class="dash-type-card__code">
-                            {SHIP_TYPE_SHORT[ts.type] ?? "?"}
-                          </span>
-                          <span class="dash-type-card__name">
-                        {t(`dashboard.shipType.${ts.type}`, {})}
-                      </span>
-                        </div>
-                        <div class="dash-type-card__battles">
-                          {ts.battles.toLocaleString()} <small>{t("dashboard.battles")}</small>
-                        </div>
-                        <div class="dash-type-card__stats">
-                          <span style={{ color: winrateColor(ts.winrate) }}>
-                            {ts.winrate.toFixed(1)}%
-                          </span>
-                          <span class="dash-type-card__dmg">
-                            {ts.avgDamage.toFixed(0)} {t("dashboard.avgDamage").replace("Avg ", "")}
-                          </span>
-                        </div>
+                        <span class="dash-type-card__code">{SHIP_TYPE_SHORT[ts.type] ?? "?"}</span>
+                        <span class="dash-type-card__battles">{ts.battles.toLocaleString()}</span>
+                        <span style={{ color: winrateColor(ts.winrate) }}>{ts.winrate.toFixed(1)}%</span>
                       </div>
                     ))}
                   </div>
-                )}
-              </section>
+                ) : null}
 
-              {/* ── Per-ship table with group mode selector ── */}
-              <section class="dash-section">
-                <div class="dash-section__head">
-                  <h3>{t("dashboard.shipList")}</h3>
-                  <div class="dash-section__controls">
-                    <SSegmented
-                      modelValue={groupMode.value}
-                      onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
-                      options={[
-                        { value: "type", label: t("dashboard.byType") },
-                        { value: "nation", label: t("dashboard.byNation") },
-                        { value: "tier", label: t("dashboard.byTier") },
-                      ]}
-                    />
-                    <SSegmented
-                      modelValue={sortBy.value}
-                      onUpdate:modelValue={(v: string) => (sortBy.value = v as typeof sortBy.value)}
-                      options={[
-                        { value: "battles", label: t("dashboard.battles") },
-                        { value: "winrate", label: t("dashboard.winrate") },
-                        { value: "avgDamage", label: t("dashboard.avgDamage") },
-                      ]}
-                    />
-                  </div>
-                </div>
-
+                {/* Grouped ship table */}
                 {groupedShips.value.length === 0 ? (
                   <p class="dash-empty">{t("dashboard.noShipsInRange")}</p>
                 ) : (
