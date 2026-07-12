@@ -119,7 +119,7 @@ async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipSta
     let host = realm_host(realm)?;
     let client = wg_client()?;
     let url = format!(
-        "https://api.worldofwarships.{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&extra=club&fields=ship_id,battle_type,last_battle_time,pvp"
+        "https://api.worldofwarships.{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&fields=ship_id,last_battle_time,pvp"
     );
     let resp: WgResponse<serde_json::Value> = client
         .get(&url)
