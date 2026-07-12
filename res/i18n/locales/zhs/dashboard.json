@@ -5,6 +5,8 @@
   "loading": "加载战绩中...",
   "overview": "概览",
   "byType": "按舰种",
+  "byNation": "按阵营",
+  "byTier": "按等级",
   "ranked": "排位战",
   "season": "赛季",
   "rank": "段位",
