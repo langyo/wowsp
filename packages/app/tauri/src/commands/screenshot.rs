@@ -29,6 +29,30 @@ pub fn capture_main_window(app: tauri::AppHandle, path: String) -> Result<String
     Ok(out_path.to_string_lossy().to_string())
 }
 
+/// Inject JavaScript into the main webview and execute it. Used by the
+/// interaction test harness to drive clicks, input, and navigation from
+/// outside the webview (e.g. from a Rust test script or the Tauri shell).
+/// The JS runs in the webview's context with full DOM access.
+#[tauri::command]
+pub fn eval_js(app: tauri::AppHandle, code: String) -> Result<(), String> {
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    win.eval(&code).map_err(|e| format!("eval: {e}"))
+}
+
+/// Trigger the frontend auto-test harness from Rust. This calls
+/// `window.__wowspAutoTest__()` which the frontend exposes when the autoTest
+/// module loads. Useful when the URL query param approach doesn't work.
+#[tauri::command]
+pub fn trigger_autotest(app: tauri::AppHandle) -> Result<(), String> {
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    win.eval("if (window.__wowspAutoTest__) { window.__wowspAutoTest__(); } else { console.error('[autotest] __wowspAutoTest__ not found'); }")
+        .map_err(|e| format!("eval: {e}"))
+}
+
 #[cfg(target_os = "windows")]
 fn capture_window_png(
     win: &tauri::WebviewWindow,

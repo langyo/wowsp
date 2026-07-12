@@ -85,6 +85,21 @@ fn main() {
                 let _ = w.center();
             }
 
+            // ── Auto-test trigger ─────────────────────────────────────────
+            // When WOWSP_AUTOTEST=1 is set, wait for the webview to mount, then
+            // invoke the frontend test harness via eval. This bypasses URL
+            // query-param issues in Tauri's dev URL handling.
+            if std::env::var("WOWSP_AUTOTEST").as_deref() == Ok("1") {
+                let app_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        tracing::info!("triggering frontend autotest harness");
+                        let _ = w.eval("if (window.__wowspAutoTest__) { window.__wowspAutoTest__(); } else { console.error('[autotest] harness not loaded yet'); }");
+                    }
+                });
+            }
+
             // ── System tray ───────────────────────────────────────────────
             // Menu: Show / Hide / Quit. Clicking the tray icon restores the
             // main window. The close button (above) minimizes to tray instead
@@ -166,6 +181,8 @@ fn main() {
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,
             commands::screenshot::capture_main_window,
+            commands::screenshot::eval_js,
+            commands::screenshot::trigger_autotest,
             commands::mod_install::install_overlay_mod,
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
