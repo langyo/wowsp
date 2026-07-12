@@ -61,3 +61,7 @@ packages/webui/.generated/
 
 # ZCode agent working dir
 .zcode/
+
+# Model conversion tool cache (downloaded by batch_bake.py)
+/target/model-tools/
+/target/model-tmp/

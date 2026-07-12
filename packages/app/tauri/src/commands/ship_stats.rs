@@ -182,7 +182,8 @@ impl RawShipStats {
             battles,
             wins: pvp.get("wins").and_then(|v| v.as_i64()).unwrap_or(0),
             damage_caused: pvp
-                .get("damage_caused")
+                .get("damage_dealt")
+                .or_else(|| pvp.get("damage_caused"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
             frags: pvp.get("frags").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -360,7 +361,7 @@ mod tests {
             "pvp": {
                 "battles": 100,
                 "wins": 55,
-                "damage_caused": 2500000,
+                "damage_dealt": 2500000,
                 "frags": 80,
                 "survived_battles": 30
             }
@@ -382,7 +383,7 @@ mod tests {
     fn raw_ship_stats_skips_zero_battles() {
         let entry = serde_json::json!({
             "ship_id": 1,
-            "pvp": { "battles": 0, "wins": 0, "damage_caused": 0, "frags": 0, "survived_battles": 0 }
+            "pvp": { "battles": 0, "wins": 0, "damage_dealt": 0, "frags": 0, "survived_battles": 0 }
         });
         assert!(RawShipStats::from_wg(&entry).is_none());
     }

@@ -37,6 +37,8 @@
     "gameparamsMissing": "GameParams.data not unpacked. Run wowsunpack to see armor schemes and shell ballistics.",
     "gameparamsError": "Failed to load: {error}",
     "noSpecs": "No specifications available for this ship.",
+    "noImage": "No image available.",
+    "noModel": "No 3D model baked for this ship yet. Run `just convert-ship --name <model>` + `just bake-model` to generate one.",
     "noMyStats": "Bind an account and you have no battles in this ship yet.",
     "communityUnavailable": "Community trend data source is not connected yet. This will show server-average winrate by version once a backend partner is wired in."
   },

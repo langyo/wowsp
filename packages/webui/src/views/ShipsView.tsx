@@ -5,6 +5,7 @@ import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
 import STag from "@/components/base/STag";
 import SSpinner from "@/components/base/SSpinner";
+import { resolveShipImage } from "@/utils/shipImages";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -264,11 +265,14 @@ export default defineComponent({
                     ]}
                     onClick={() => openDetail(ship)}
                   >
-                    {ship.images?.medium ? (
-                      <div class="ship-card__image">
-                        <img src={ship.images.medium} alt={ship.name} loading="lazy" />
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const imgUrl = resolveShipImage(ship.shipId, ship.images?.medium);
+                      return imgUrl ? (
+                        <div class="ship-card__image">
+                          <img src={imgUrl} alt={ship.name} loading="lazy" />
+                        </div>
+                      ) : null;
+                    })()}
                     <div class="ship-card__head">
                       <span class="ship-card__tier">T{ship.tier}</span>
                       <span class="ship-card__name">{ship.name}</span>

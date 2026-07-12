@@ -147,7 +147,12 @@ struct PvpStats {
 
 impl PvpStats {
     fn extract(stats: Option<&serde_json::Value>) -> Self {
-        let pvp = stats.and_then(|s| s.get("pvp")).filter(|v| !v.is_null());
+        let statistics = stats.filter(|v| !v.is_null());
+        let statistics = match statistics {
+            Some(s) => s,
+            None => return Self::empty(),
+        };
+        let pvp = statistics.get("pvp").filter(|v| !v.is_null());
         let pvp = match pvp {
             Some(p) => p,
             None => return Self::empty(),
@@ -160,7 +165,7 @@ impl PvpStats {
             _ => None,
         };
 
-        let damage = get_i64(pvp, "damage_caused");
+        let damage = get_i64(pvp, "damage_dealt").or_else(|| get_i64(pvp, "damage_caused"));
         let avg_damage = match (damage, battles) {
             (Some(d), Some(b)) if b > 0 => Some(d as f32 / b as f32),
             _ => None,
@@ -183,8 +188,16 @@ impl PvpStats {
             _ => None,
         };
 
-        let shots = get_i64(pvp, "main_battery_shots");
-        let hits = get_i64(pvp, "main_battery_hits");
+        // Main battery shots/hits are nested under a "main_battery" sub-object
+        // (WG changed the schema: formerly flat main_battery_shots/hits, now
+        // main_battery.{shots,hits}). Try both layouts for compatibility.
+        let mb = pvp.get("main_battery");
+        let shots = mb
+            .and_then(|m| get_i64(m, "shots"))
+            .or_else(|| get_i64(pvp, "main_battery_shots"));
+        let hits = mb
+            .and_then(|m| get_i64(m, "hits"))
+            .or_else(|| get_i64(pvp, "main_battery_hits"));
         let hit_rate = match (hits, shots) {
             (Some(h), Some(s)) if s > 0 => Some(100.0 * h as f32 / s as f32),
             _ => None,
@@ -210,9 +223,9 @@ impl PvpStats {
             hit_rate,
             pr,
             ships_played,
-            solo_wr: div_wr(pvp, "pvp_solo"),
-            div2_wr: div_wr(pvp, "pvp_div2"),
-            div3_wr: div_wr(pvp, "pvp_div3"),
+            solo_wr: div_wr(statistics, "pvp_solo"),
+            div2_wr: div_wr(statistics, "pvp_div2"),
+            div3_wr: div_wr(statistics, "pvp_div3"),
         }
     }
 
@@ -315,20 +328,24 @@ mod tests {
 
     #[test]
     fn pvp_stats_extracts_all_fields() {
+        // Mirrors the real WG account/info response shape: the top-level is
+        // "statistics", with "pvp" as a child. Damage is "damage_dealt" (WG
+        // renamed it from "damage_caused"). Main battery shots/hits are nested
+        // under a "main_battery" sub-object. Division splits are siblings of
+        // "pvp" under "statistics" (pvp_solo / pvp_div2 / pvp_div3).
         let raw = serde_json::json!({
             "pvp": {
                 "battles": 1000,
                 "wins": 550,
-                "damage_caused": 1_500_000,
+                "damage_dealt": 1_500_000,
                 "xp": 1_200_000,
                 "frags": 800,
                 "survived_battles": 300,
-                "main_battery_shots": 5000,
-                "main_battery_hits": 1500,
-                "pvp_solo": { "battles": 600, "wins": 330 },
-                "pvp_div2": { "battles": 200, "wins": 110 },
-                "pvp_div3": { "battles": 200, "wins": 110 }
-            }
+                "main_battery": { "shots": 5000, "hits": 1500 }
+            },
+            "pvp_solo": { "battles": 600, "wins": 330 },
+            "pvp_div2": { "battles": 200, "wins": 110 },
+            "pvp_div3": { "battles": 200, "wins": 110 }
         });
         let p = PvpStats::extract(Some(&raw));
         assert_eq!(p.battles, Some(1000));

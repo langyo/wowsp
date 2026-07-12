@@ -37,6 +37,8 @@
     "gameparamsMissing": "GameParams.data 尚未解包。请运行 wowsunpack 以查看装甲方案与弹道曲线。",
     "gameparamsError": "加载失败：{error}",
     "noSpecs": "此舰艇暂无规格数据。",
+    "noImage": "无图片。",
+    "noModel": "此舰艇尚未烘焙 3D 模型。运行 `just convert-ship --name <模型名>` + `just bake-model` 生成。",
     "noMyStats": "绑定账号后且你尚未在此舰上有对局。",
     "communityUnavailable": "全服趋势数据源尚未接入。待后端合作方接入后，此处将按版本显示全服平均胜率。"
   },

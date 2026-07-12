@@ -167,6 +167,16 @@ convert-map *ARGS:
 bake-model *ARGS:
     python scripts/model_convert/bake_model.py {{ARGS}}
 
+# Batch-bake ALL ships in the current game version to holographic GLBs.
+# Tools are cached under target/model-tools/. Idempotent (skips existing).
+bake-all-ships *ARGS:
+    python scripts/model_convert/batch_bake.py {{ARGS}}
+
+# Download + cache all ship portrait images from the WG CDN.
+# Images saved to src/res/images/ships/. Idempotent (skips existing).
+download-ship-images *ARGS:
+    python scripts/model_convert/download_ship_images.py {{ARGS}}
+
 # ── Docs (lagrange multilingual site) ────────────────────────────────
 
 # Build the docs site into dist/docs/. Installs lagrange if missing.
