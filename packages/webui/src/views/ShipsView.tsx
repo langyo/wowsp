@@ -3,6 +3,8 @@ import { RotateCcw, Star } from "lucide-vue-next";
 
 import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
+import STag from "@/components/base/STag";
+import SSpinner from "@/components/base/SSpinner";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -227,7 +229,9 @@ export default defineComponent({
 
         {/* ── card grid ── */}
         {encyclopedia.loading ? (
-          <div class="ships-view__status">{t("ships.loading")}</div>
+          <div class="ships-view__status">
+            <SSpinner center size="lg" text={t("ships.loading")} />
+          </div>
         ) : encyclopedia.error ? (
           <div class="ships-view__status ships-view__status--error">{encyclopedia.error}</div>
         ) : filteredShips.value.length === 0 ? (
@@ -252,10 +256,13 @@ export default defineComponent({
                     <span class="ship-card__name">{ship.name}</span>
                   </div>
                   <div class="ship-card__tags">
-                    <span class="ship-card__tag">{typeLabel(ship.type)}</span>
-                    <span class="ship-card__tag">{nationLabel(ship.nation)}</span>
+                    <STag variant="neutral" size="sm">{typeLabel(ship.type)}</STag>
+                    <STag variant="neutral" size="sm">{nationLabel(ship.nation)}</STag>
                     {ship.isPremium ? (
-                      <span class="ship-card__tag ship-card__tag--gold"><Star size={10} fill="currentColor" /></span>
+                      <STag variant="gold" size="sm"><Star size={10} fill="currentColor" /></STag>
+                    ) : null}
+                    {ship.isSpecial ? (
+                      <STag variant="info" size="sm">{t("ships.special")}</STag>
                     ) : null}
                   </div>
                   <div class="ship-card__stats">

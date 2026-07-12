@@ -1,13 +1,16 @@
 import { computed, defineComponent, ref, watch } from "vue";
-import { Star, Diamond, Sparkles } from "lucide-vue-next";
+import { Star, Diamond, Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
+import STag from "@/components/base/STag";
+import SSpinner from "@/components/base/SSpinner";
 import { useAccountStore } from "@/stores/account";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import { winrateColor, prTier } from "@/utils/winrate";
+import { buildShipSpecs } from "./shipSpecs";
 import "./ShipDetailModal.scss";
 
 /**
@@ -120,14 +123,14 @@ export default defineComponent({
           <div class="ship-detail">
             {/* identity header */}
             <div class="ship-detail__id">
-              <span class="ship-detail__tier">Tier {props.ship.tier}</span>
-              <span class="ship-detail__type">{typeLabel(props.ship.type)}</span>
-              <span class="ship-detail__nation">{nationLabel(props.ship.nation)}</span>
+              <STag variant="primary">Tier {props.ship.tier}</STag>
+              <STag variant="primary">{typeLabel(props.ship.type)}</STag>
+              <STag variant="neutral">{nationLabel(props.ship.nation)}</STag>
               {props.ship.isPremium ? (
-                <span class="ship-detail__badge"><Star size={10} fill="currentColor" /> Premium</span>
+                <STag variant="gold"><Star size={12} fill="currentColor" /> {t("ships.premium")}</STag>
               ) : null}
               {props.ship.isSpecial ? (
-                <span class="ship-detail__badge ship-detail__badge--special"><Diamond size={10} /> Special</span>
+                <STag variant="info"><Diamond size={12} /> {t("ships.special")}</STag>
               ) : null}
             </div>
 
@@ -153,20 +156,13 @@ export default defineComponent({
             {/* tab content */}
             <div class="ship-detail__body">
               {tab.value === "specs" ? (
-                <div class="ship-detail__specs">
-                  <SpecsGrid label={t("ships.detail.hull")} data={dp.value.hull as object | undefined} />
-                  <SpecsGrid label={t("ships.detail.mainBattery")} data={dp.value.artillery as object | undefined} />
-                  <SpecsGrid label={t("ships.detail.torpedoes")} data={dp.value.torpedoes as object | undefined} />
-                  <SpecsGrid label={t("ships.detail.mobility")} data={dp.value.mobility as object | undefined} />
-                  <SpecsGrid label={t("ships.detail.concealment")} data={dp.value.concealment as object | undefined} />
-                  <SpecsGrid label={t("ships.detail.antiAircraft")} data={dp.value.anti_aircraft as object | undefined} />
-                </div>
+                <SpecsPanel profile={dp.value} />
               ) : null}
 
               {tab.value === "armor" ? (
                 <div class="ship-detail__armor">
                   {gpLoading.value ? (
-                    <p>{t("ships.detail.gameparamsLoading")}</p>
+                    <SSpinner center size="lg" text={t("ships.detail.gameparamsLoading")} />
                   ) : gpError.value ? (
                     <p class="ship-detail__error">
                       {t("ships.detail.gameparamsError", { error: gpError.value })}
@@ -227,29 +223,65 @@ export default defineComponent({
   },
 });
 
-/** Small inline component: renders a sub-object of default_profile as key/value
- *  rows. Recurses one level for nested objects. */
-const SpecsGrid = defineComponent({
-  name: "SpecsGrid",
+/** Player-friendly specs panel. Renders the grouped, labelled, unit-formatted
+ *  spec tree produced by `buildShipSpecs` — modelled on 浩舰's grouped layout
+ *  (Survivability / Main Battery / Torpedoes / Anti-Air / Mobility /
+ *  Concealment). Each group is a card with an icon header; rows show a
+ *  human-readable label, the formatted value, and an optional help icon
+ *  (hover/focus tooltip) explaining what the stat means to new players.
+ *  Groups with no rows are omitted upstream, so a destroyer simply has no
+ *  Anti-Air card rather than showing "—". */
+const SpecsPanel = defineComponent({
+  name: "SpecsPanel",
   props: {
-    label: { type: String, required: true },
-    data: { type: Object, default: undefined },
+    profile: { type: Object as () => Record<string, unknown> | null, default: null },
   },
   setup(props) {
+    const groups = computed(() => buildShipSpecs(props.profile));
+    // Map icon name (from shipSpecs) → lucide component, resolved once.
+    const iconFor = (name: string) => {
+      switch (name) {
+        case "Shield": return Shield;
+        case "Crosshair": return Crosshair;
+        case "Target": return Target;
+        case "Plane": return Plane;
+        case "Gauge": return Gauge;
+        case "Eye": return Eye;
+        default: return Shield;
+      }
+    };
     return () => {
-      if (!props.data || typeof props.data !== "object") return null;
-      const entries = Object.entries(props.data).slice(0, 12);
+      if (groups.value.length === 0) {
+        return <p class="ship-detail__empty">{t("ships.detail.noSpecs")}</p>;
+      }
       return (
-        <div class="specs-grid">
-          <h5 class="specs-grid__title">{props.label}</h5>
-          <dl class="specs-grid__rows">
-            {entries.map(([k, v]) => (
-              <div class="specs-grid__row">
-                <dt>{k}</dt>
-                <dd>{typeof v === "object" ? "…" : String(v)}</dd>
-              </div>
-            ))}
-          </dl>
+        <div class="specs-panel">
+          {groups.value.map((g) => {
+            const Icon = iconFor(g.icon);
+            return (
+              <section class="specs-group">
+                <header class="specs-group__head">
+                  <Icon size={14} />
+                  <h5 class="specs-group__title">{t(`ships.spec.group.${g.group}`)}</h5>
+                </header>
+                <dl class="specs-group__rows">
+                  {g.rows.map((row) => (
+                    <div class="specs-group__row" key={row.key}>
+                      <dt class="specs-group__label">
+                        {t(`ships.spec.${row.key}`)}
+                        {row.hint ? (
+                          <span class="specs-group__hint" title={t(`ships.spec.${row.hint}`)}>
+                            <HelpCircle size={11} />
+                          </span>
+                        ) : null}
+                      </dt>
+                      <dd class="specs-group__value">{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            );
+          })}
         </div>
       );
     };

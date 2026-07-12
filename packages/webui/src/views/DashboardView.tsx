@@ -2,6 +2,7 @@ import { computed, defineComponent, ref, watch } from "vue";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
+import SSpinner from "@/components/base/SSpinner";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { useTrendsStore } from "@/stores/trends";
@@ -67,7 +68,9 @@ export default defineComponent({
             </button>
           </div>
         ) : stats.loading ? (
-          <div class="dashboard-view__loading">{t("dashboard.loading")}</div>
+          <div class="dashboard-view__loading">
+            <SSpinner center size="lg" text={t("dashboard.loading")} />
+          </div>
         ) : currentStats.value ? (
           <div class="dashboard-view__content">
             <StatsCard stats={currentStats.value} />

@@ -76,6 +76,47 @@ fn main() {
             }
         })
         .setup(|app| {
+            // ── Runtime icon refresh (Windows taskbar / titlebar) ──────────
+            //
+            // The exe icon is baked in at build time by tauri-build (resource
+            // 32512 from icons/icon.ico, verified to embed up to 256×256).
+            // Windows, however, caches taskbar icons by exe path and frequently
+            // shows a stale low-res image when the same dev exe is rebuilt in
+            // place. Calling Window::set_icon at runtime overrides both the
+            // titlebar HICON and the taskbar HICON with the live image, bypassing
+            // the cache. We load the highest-resolution bundle PNG (128x128@2x =
+            // 256×256) so the runtime override is itself HD.
+            //
+            // The `image-png` cargo feature on the `tauri` crate enables PNG
+            // decoding for Image::from_path.
+            if let Some(w) = app.handle().webview_windows().values().next() {
+                let icon_path = app
+                    .path()
+                    .resource_dir()
+                    .ok()
+                    .map(|d| d.join("icons/128x128@2x.png"))
+                    .filter(|p| p.exists());
+                // Fall back to the source-relative path in dev (resource_dir
+                // points at the exe's parent in debug, not the repo).
+                let dev_path = std::env::current_dir()
+                    .map(|d| d.join("icons/128x128@2x.png"))
+                    .ok()
+                    .filter(|p| p.exists());
+                let tried = icon_path.as_ref().or(dev_path.as_ref());
+                if let Some(p) = tried {
+                    match tauri::image::Image::from_path(p) {
+                        Ok(img) => {
+                            if let Err(e) = w.set_icon(img) {
+                                tracing::warn!(error = %e, "runtime set_icon failed");
+                            } else {
+                                tracing::debug!(path = %p.display(), "runtime window icon applied");
+                            }
+                        }
+                        Err(e) => tracing::warn!(error = %e, "icon decode failed"),
+                    }
+                }
+            }
+
             // Seed OS preferences (locale + color scheme) into the webview
             // BEFORE any page JS runs, so the first paint matches the OS theme.
             let prefs = os_prefs::detect();

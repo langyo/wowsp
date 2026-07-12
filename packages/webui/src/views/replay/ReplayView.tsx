@@ -7,6 +7,7 @@ import { api } from "@/api";
 import type { EntityTrajectory } from "@/api";
 import { t } from "@/i18n";
 import SButton from "@/components/base/SButton";
+import SSpinner from "@/components/base/SSpinner";
 import type { VehicleEntry } from "@/api";
 import "./ReplayView.scss";
 
@@ -82,7 +83,9 @@ export default defineComponent({
 
         <section class="replay-view__main">
           {parser.loading.value ? (
-            <div class="replay-view__placeholder">{t("replay.loading")}</div>
+            <div class="replay-view__placeholder">
+              <SSpinner center size="lg" text={t("replay.loading")} />
+            </div>
           ) : parser.error.value ? (
             <div class="replay-view__placeholder replay-view__placeholder--error">
               {parser.error.value}

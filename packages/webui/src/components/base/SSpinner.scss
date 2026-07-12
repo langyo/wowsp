@@ -1,0 +1,74 @@
+/* SSpinner — pure-CSS infinite spinner. Ported from shittim-chest, tokenised
+   for the WoWSP palette (no --space-* scale here; literal paddings instead).
+   The animation is registered in theme.scss's reduced-motion preserve list
+   so it keeps spinning even when prefers-reduced-motion kills other keyframes
+   (a stopped spinner reads as "done/frozen", which is worse than no
+   motion-respect for a loading affordance). */
+.s-spinner-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.s-spinner-centered {
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.s-spinner {
+  border: 2px solid rgb(var(--color-border) / 25%);
+  border-top-color: rgb(var(--color-primary));
+  border-radius: 50%;
+  animation: s-spinner-rotate 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* `tone="current"` — same shape/duration, but coloured with `currentcolor`
+   so the spinner matches surrounding text (e.g. inside a coloured SButton
+   where the label is white-on-primary). Track = faded currentcolor,
+   arc = full currentcolor. */
+.s-spinner-current {
+  border-color: color-mix(in srgb, currentcolor 30%, transparent);
+  border-top-color: currentcolor;
+}
+
+.s-spinner-xs {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+
+.s-spinner-sm {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+.s-spinner-md {
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+}
+
+.s-spinner-lg {
+  width: 34px;
+  height: 34px;
+  border-width: 3px;
+}
+
+.s-spinner-xl {
+  width: 46px;
+  height: 46px;
+  border-width: 4px;
+}
+
+.s-spinner-text {
+  font-size: var(--text-sm);
+  color: rgb(var(--color-muted));
+}
+
+@keyframes s-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}

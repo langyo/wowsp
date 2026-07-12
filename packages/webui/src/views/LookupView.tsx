@@ -3,6 +3,7 @@ import { defineComponent, ref } from "vue";
 import StatsCard from "@/components/stats/StatsCard";
 import SButton from "@/components/base/SButton";
 import SSelect from "@/components/base/SSelect";
+import SSpinner from "@/components/base/SSpinner";
 import { useStatsStore } from "@/stores/stats";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
@@ -53,7 +54,7 @@ export default defineComponent({
             }}
           />
           <SButton size="md" onClick={() => void search()} disabled={stats.loading}>
-            {stats.loading ? t("account.searching") : t("account.search")}
+            {stats.loading ? <SSpinner size="sm" tone="current" /> : t("account.search")}
           </SButton>
         </div>
 
@@ -64,6 +65,10 @@ export default defineComponent({
         {result.value ? (
           <div class="lookup-view__result">
             <StatsCard stats={result.value} />
+          </div>
+        ) : stats.loading ? (
+          <div class="lookup-view__loading">
+            <SSpinner center size="lg" text={t("account.searching")} />
           </div>
         ) : null}
       </div>

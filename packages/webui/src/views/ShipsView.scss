@@ -212,18 +212,6 @@
     gap: 0.25rem;
   }
 
-  &__tag {
-    font-size: var(--text-2xs);
-    color: rgb(var(--color-muted));
-    background: rgb(var(--color-bg));
-    padding: 0.1rem 0.35rem;
-    border-radius: var(--radius-xs);
-
-    &--gold {
-      color: rgb(230 170 50);
-    }
-  }
-
   &__stats {
     display: flex;
     gap: 0.6rem;

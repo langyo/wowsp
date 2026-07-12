@@ -4,6 +4,7 @@ import { Check, X } from "lucide-vue-next";
 import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
 import SSelect from "@/components/base/SSelect";
+import SSpinner from "@/components/base/SSpinner";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { t } from "@/i18n";
@@ -103,7 +104,7 @@ export default defineComponent({
               disabled={searching.value || !searchName.value.trim()}
               onClick={() => void doSearch()}
             >
-              {searching.value ? "..." : t("account.search")}
+              {searching.value ? <SSpinner size="xs" tone="current" /> : t("account.search")}
             </SButton>
           </div>
           {searchError.value ? (

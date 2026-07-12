@@ -1,5 +1,6 @@
 import { computed, defineComponent } from "vue";
 
+import STag from "@/components/base/STag";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import { prTier, winrateColor, winrateTier } from "@/utils/winrate";
@@ -75,9 +76,9 @@ export default defineComponent({
             <h3 class="stats-card__name">{props.stats.name}</h3>
           </div>
           <div class="stats-card__badges">
-            <span class="stats-card__realm">{props.stats.realm.toUpperCase()}</span>
+            <STag variant="neutral" size="sm">{props.stats.realm.toUpperCase()}</STag>
             {props.stats.hidden ? (
-              <span class="stats-card__hidden">{t("stats.hidden")}</span>
+              <STag variant="danger" size="sm">{t("stats.hidden")}</STag>
             ) : null}
           </div>
         </header>
