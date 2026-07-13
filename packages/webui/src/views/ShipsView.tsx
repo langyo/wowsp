@@ -315,7 +315,7 @@ export default defineComponent({
                     title={nationLabel(n)}
                     onClick={() => (treeNation.value = n)}
                   >
-                    <NationFlag nation={n} label={nationLabel(n)} variant="crest" size="md" />
+                    <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
                     <span class="ships-view__nation-name">{nationLabel(n)}</span>
                   </button>
                 ))}
