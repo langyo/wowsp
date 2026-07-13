@@ -1,17 +1,25 @@
 .ships-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  gap: 1rem;
   padding: 1.25rem 1.5rem;
   overflow-y: auto;
-  gap: 1rem;
 
   &__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    flex-wrap: wrap;
   }
+
+  &__header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  gap: 1rem;
 
   &__title {
     font-size: var(--text-xl);
@@ -209,6 +217,60 @@
     &--error {
       color: rgb(220 80 80);
     }
+  }
+
+  // ── tech-tree view layout ──
+  &__tree-body {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    min-height: 400px;
+  }
+
+  &__nation-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.5rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-md);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0.5rem;
+  }
+
+  &__nation-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: pointer;
+    transition: background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 8%);
+    }
+
+    &--on {
+      background: rgb(var(--color-primary) / 14%);
+      border-color: rgb(var(--color-primary) / 40%);
+    }
+  }
+
+  &__nation-name {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
+    white-space: nowrap;
+  }
+
+  &__tree-canvas {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
   }
 }
 

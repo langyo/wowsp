@@ -70,7 +70,7 @@ export default defineComponent({
       const el = model3dContainer.value;
       if (!el || renderer) return;
       const w = el.clientWidth || 400;
-      const h = 200;
+      const h = 150;
       scene3d = new THREE.Scene();
       scene3d.background = new THREE.Color(0x0b1220);
       camera3d = new THREE.PerspectiveCamera(40, w / h, 0.1, 5000);

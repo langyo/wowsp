@@ -3,9 +3,11 @@ import { RotateCcw } from "lucide-vue-next";
 
 import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
+import SSegmented from "@/components/base/SSegmented";
 import STag from "@/components/base/STag";
 import SSpinner from "@/components/base/SSpinner";
 import NationFlag from "@/components/base/NationFlag";
+import TechTreeView from "@/components/ships/TechTreeView";
 import { resolveShipImage } from "@/utils/shipImages";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
@@ -42,8 +44,18 @@ export default defineComponent({
     const realm = ref(accounts.activeRealm || "asia");
     const realms = ["ru", "eu", "na", "asia"];
 
+    // ── view mode (tech-tree vs list) ─────────────────────────────────
+    const viewMode = ref<"tree" | "grid">("tree");
+    // Single-nation selection for the tech-tree view (defaults to first nation
+    // once the encyclopedia loads).
+    const treeNation = ref<string>("");
+
     async function loadEncyclopedia(force = false) {
       await encyclopedia.load(realm.value, force);
+      // Default the tech-tree nation to the first available once loaded.
+      if (!treeNation.value && encyclopedia.nations.length > 0) {
+        treeNation.value = encyclopedia.nations[0];
+      }
       // If an account is bound, also load their per-ship stats so cards can
       // show "your battles" badges.
       const acc = accounts.activeAccount;
@@ -107,6 +119,13 @@ export default defineComponent({
     const selectedShip = ref<ShipInfo | null>(null);
     const gameRoot = computed(() => config.activeInstall?.path ?? "");
 
+    /** Encyclopedia ships keyed by shipId, for the tech-tree resolver. */
+    const shipsById = computed(() => {
+      const m = new Map<number, ShipInfo>();
+      for (const s of encyclopedia.ships) m.set(s.shipId, s);
+      return m;
+    });
+
     function openDetail(ship: ShipInfo) {
       selectedShip.value = ship;
       // Preload community trend for the modal's "Server Trend" tab.
@@ -155,16 +174,26 @@ export default defineComponent({
       <div class="ships-view">
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
-          <div class="ships-view__realm">
-            <SSelect
-              size="sm"
-              modelValue={realm.value}
-              onUpdate:modelValue={(v: string) => (realm.value = v)}
-              options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+          <div class="ships-view__header-right">
+            <SSegmented
+              modelValue={viewMode.value}
+              onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid")}
+              options={[
+                { value: "tree", label: t("ships.viewMode.tree") },
+                { value: "grid", label: t("ships.viewMode.grid") },
+              ]}
             />
-            <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
-              <RotateCcw size={12} /> {t("ships.reload")}
-            </SButton>
+            <div class="ships-view__realm">
+              <SSelect
+                size="sm"
+                modelValue={realm.value}
+                onUpdate:modelValue={(v: string) => (realm.value = v)}
+                options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+              />
+              <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+                <RotateCcw size={12} /> {t("ships.reload")}
+              </SButton>
+            </div>
           </div>
         </header>
 
@@ -265,7 +294,7 @@ export default defineComponent({
           </div>
         </div>
 
-        {/* ── card grid — cross-fade between loading/error/empty/grid ── */}
+        {/* ── view body: tech-tree (nation rail + tree) or list grid ── */}
         <Transition name="s-fade-slide" mode="out-in">
           {encyclopedia.loading ? (
             <div class="ships-view__status" key="loading">
@@ -273,6 +302,37 @@ export default defineComponent({
             </div>
           ) : encyclopedia.error ? (
             <div class="ships-view__status ships-view__status--error" key="error">{encyclopedia.error}</div>
+          ) : viewMode.value === "tree" ? (
+            <div class="ships-view__tree-body" key="tree">
+              {/* nation rail — vertical list of faction crests */}
+              <aside class="ships-view__nation-rail">
+                {encyclopedia.nations.map((n) => (
+                  <button
+                    class={[
+                      "ships-view__nation-btn",
+                      treeNation.value === n ? "ships-view__nation-btn--on" : "",
+                    ]}
+                    title={nationLabel(n)}
+                    onClick={() => (treeNation.value = n)}
+                  >
+                    <NationFlag nation={n} label={nationLabel(n)} variant="crest" size="md" />
+                    <span class="ships-view__nation-name">{nationLabel(n)}</span>
+                  </button>
+                ))}
+              </aside>
+              {/* the tree itself */}
+              <div class="ships-view__tree-canvas">
+                {treeNation.value ? (
+                  <TechTreeView
+                    nation={treeNation.value}
+                    byId={shipsById.value}
+                    onOpen={(ship: ShipInfo) => openDetail(ship)}
+                  />
+                ) : (
+                  <div class="ships-view__status">{t("ships.empty")}</div>
+                )}
+              </div>
+            </div>
           ) : filteredShips.value.length === 0 ? (
             <div class="ships-view__status" key="empty">{t("ships.empty")}</div>
           ) : (
@@ -304,7 +364,7 @@ export default defineComponent({
                     </div>
                   <div class="ship-card__tags">
                     <STag variant="neutral" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</STag>
-                    <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} size="sm" />
+                    <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
                     <STag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</STag>
                   </div>
                   <div class="ship-card__stats">
