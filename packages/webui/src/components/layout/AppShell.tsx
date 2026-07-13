@@ -12,6 +12,7 @@ import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { t } from "@/i18n";
 import "./AppShell.scss";
 
@@ -38,9 +39,10 @@ export default defineComponent({
       }
       showCloseDialog.value = false;
       if (action === "quit") {
-        // Exit the entire app process, not just destroy the window.
-        const { exit } = await import("@tauri-apps/api/app");
-        await exit(0);
+        // Use Rust-side process exit for a hard kill (bypasses any JS-side
+        // promise queuing issues). The drain controller handles graceful
+        // shutdown of background tasks before the process terminates.
+        await invoke("quit_app");
       } else {
         const win = getCurrentWindow();
         await win.hide();
@@ -96,7 +98,7 @@ export default defineComponent({
           width="24rem"
           v-slots={{
             default: () => (
-              <div>
+              <div class="close-dialog__body">
                 <p class="close-dialog__msg">{t("tray.closeMsg")}</p>
                 <SCheckbox
                   modelValue={rememberChoice.value}
@@ -107,7 +109,7 @@ export default defineComponent({
             ),
             footer: () => [
               <SButton
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 onClick={() => void handleCloseChoice("minimize")}
               >
