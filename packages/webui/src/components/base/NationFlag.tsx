@@ -1,6 +1,7 @@
 import { defineComponent, computed, ref, type PropType } from "vue";
 
 import { resolveNationFlag, nationInitial, type NationFlagVariant } from "@/utils/nationFlags";
+import "./NationFlag.scss";
 
 /**
  * Nation emblem badge — renders the in-game faction crest/flag when the asset
