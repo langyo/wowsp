@@ -15,9 +15,18 @@
  *   ships: `<displayName>.glb` or `<modelDir>.glb` (e.g. "Montana.glb",
  *          "PASB510_Montana.glb")
  *   maps:  `<spaceId>.glb` (e.g. "15_NE_north.glb")
+ *
+ * ## Skin → base model dedup
+ * Many ships are reskins of a base ship (ARP/AZUR/FBO/Black/collab variants)
+ * and share the same 3D hull. `src/res/data/ship_models.json` (built by
+ * `scripts/extract/build_ship_models.py`) maps each shipId to a `baseName` —
+ * for a skin ship, the base ship's readable name. `resolveShipModelByShipId`
+ * reads this so skins reuse the base's baked GLB, letting us delete ~170
+ * duplicate model files.
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import shipModelNames from "../../res/data/ship_models.json";
 
 // Vite static asset glob: eagerly import all GLB files under src/res/models/.
 // Returns a map of path → resolved URL string. Empty if no models exist yet.
@@ -65,6 +74,40 @@ export function resolveShipModelUrl(
   return null;
 }
 
+/** Entry shape from ship_models.json. */
+interface ShipModelEntry {
+  index: string;
+  name: string;
+  baseName: string;
+  originShipName: string;
+  hullModel: string;
+}
+
+const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
+
+/**
+ * Resolve a ship model URL by shipId. This is the preferred resolver: it
+ * consults `ship_models.json` and, for skin ships, follows `baseName` to the
+ * underlying base model — so reskins reuse the base's baked GLB instead of
+ * each keeping a duplicate file.
+ *
+ * Falls back to name-based resolution if the ship isn't in the map or its base
+ * name has no model either.
+ */
+export function resolveShipModelByShipId(
+  shipId: number | string | undefined,
+  fallbackName?: string,
+): string | null {
+  if (shipId != null) {
+    const entry = shipModelMap[String(shipId)];
+    if (entry?.baseName) {
+      const url = shipModelUrls.get(entry.baseName.toLowerCase());
+      if (url) return url;
+    }
+  }
+  return resolveShipModelUrl(fallbackName, undefined);
+}
+
 /** Resolve a map model URL by space id (e.g. "15_NE_north"). */
 export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   if (!spaceId) return null;
@@ -81,7 +124,11 @@ function getLoader(): GLTFLoader {
 }
 
 /** Load a GLB model from a URL. Returns a Promise<THREE.Group> (the scene
- *  root of the loaded model). Rejects on parse/load error. */
+ *  root of the loaded model). Rejects on parse/load error.
+ *
+ *  The baked GLBs were repaired on disk by `scripts/model_convert/repair_glbs.py`
+ *  (which fixed a negative bufferView byteLength + JSON-chunk null padding), so
+ *  a plain GLTFLoader.load is sufficient. */
 export function loadGlbModel(url: string): Promise<THREE.Group> {
   return new Promise((resolve, reject) => {
     getLoader().load(

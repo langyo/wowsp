@@ -173,7 +173,7 @@ def write_glb(path: Path, vertices: list[float], indices: list[int]):
     vert_bv_len = len(vert_bytes)
     vert_bv_off = 0
     idx_bv_off = vert_bv_len
-    idx_bv_len = len(idx_bytes) - vert_bv_len  # includes padding
+    idx_bv_len = len(idx_bytes)  # the index buffer's own length (with its pad)
 
     gjson = {
         "asset": {"version": "2.0", "generator": "WoWSP bake_model.py"},

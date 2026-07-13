@@ -1,0 +1,52 @@
+/* Weapon module bar — horizontal row of clickable weapon cards under the
+   holographic stage. Each card flies the 3D camera to a ship region. */
+.weapon-bar {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0;
+
+  &__btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.6rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-primary) / 22%);
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-text));
+    cursor: pointer;
+    transition: background var(--duration-short) var(--ease-standard),
+      border-color var(--duration-short) var(--ease-standard),
+      transform var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 12%);
+      border-color: rgb(var(--color-primary) / 50%);
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+
+    /* lucide icon */
+    svg {
+      color: rgb(var(--color-primary));
+      flex-shrink: 0;
+    }
+  }
+
+  &__label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__detail {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+}

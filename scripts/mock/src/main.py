@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import base64
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -213,6 +214,39 @@ async def cmd_get_ship_encyclopedia(request: Request) -> list[dict[str, Any]]:
 @app.post("/api/appdata_read")
 async def cmd_appdata_read(payload: dict) -> str | None:
     return None
+
+
+# --- Ship GameParams (detail modal armor/ballistics tab) ------------------
+# Serves a real trimmed GameParams subtree for Yamato (the canonical example
+# ship used for visual verification) and a minimal synthetic object for any
+# other ship, so the detail modal's armor viewer is exercisable in a browser.
+
+_FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+_YAMATO_GP = _FIXTURES / "yamato_gameparams.json"
+
+
+@app.post("/api/get_ship_gameparams")
+async def cmd_get_ship_gameparams(payload: dict) -> Any:
+    ship_id = payload.get("shipId")
+    if _YAMATO_GP.exists():
+        try:
+            return json.loads(_YAMATO_GP.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    # Minimal synthetic GameParams for any other ship.
+    return {
+        "id": int(ship_id) if ship_id else 0,
+        "index": "MOCK",
+        "name": "Mock",
+        "typeinfo": {"nation": "usa", "species": "Cruiser", "type": "Ship"},
+        "A_Hull": {
+            "armor": {"1": 25.0, "2": 100.0, "3": 305.0, "4": 32.0},
+            "health": 40000,
+            "armourCit": [-1, -1],
+            "armourDeck": [-1, -1],
+            "armourExtremities": [-1, -1],
+        },
+    }
 
 
 @app.post("/api/appdata_write")

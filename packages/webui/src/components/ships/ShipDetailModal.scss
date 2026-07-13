@@ -3,69 +3,6 @@
   flex-direction: column;
   gap: 0.85rem;
 
-  &__portrait-wrap {
-    position: relative;
-  }
-
-  &__portrait {
-    width: 100%;
-    height: 120px;
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    background: rgb(var(--color-bg));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      filter: drop-shadow(0 4px 12px rgb(0 0 0 / 30%));
-    }
-
-    &--3d {
-      background: rgb(11 18 32);
-    }
-  }
-
-  &__portrait-empty {
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-  }
-
-  &__3d-canvas {
-    width: 100%;
-    height: 100%;
-
-    canvas {
-      display: block;
-    }
-  }
-
-  &__3d-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgb(11 18 32 / 80%);
-
-    &--error {
-      color: rgb(var(--color-muted));
-      font-size: var(--text-xs);
-      text-align: center;
-      padding: 1rem;
-    }
-  }
-
-  &__view-toggle {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 1;
-  }
-
   &__id {
     display: flex;
     align-items: center;
