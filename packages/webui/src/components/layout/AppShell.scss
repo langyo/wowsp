@@ -27,7 +27,13 @@
   }
 }
 
-/* ── Close confirm dialog body ───────────────────────────────────────── */
+/* ── Close confirm dialog body ─────────────────────────────────────────
+   Fixed min-height prevents the modal from resizing when the checkbox
+   is toggled (the Check icon adds/removes a few px of height). */
+.close-dialog__body {
+  min-height: 80px;
+}
+
 .close-dialog__msg {
   margin: 0 0 0.75rem;
   font-size: var(--text-sm);
