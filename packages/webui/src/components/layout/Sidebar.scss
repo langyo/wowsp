@@ -85,10 +85,57 @@
 
   &__game-status {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-border) / 8%);
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
+
+    &.is-running {
+      background: rgb(var(--color-success) / 8%);
+    }
+  }
+
+  &__game-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__game-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding-left: 1.05rem; /* align under the status text, past the 8px dot */
+  }
+
+  &__game-client {
+    color: rgb(var(--color-text));
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__game-pid {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    width: fit-content;
+    color: rgb(var(--color-muted));
+    transition: color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  &__game-pid-val {
+    font-family: var(--font-mono);
+    color: rgb(var(--color-primary));
   }
 
   &__status-dot {
@@ -96,6 +143,7 @@
     height: 8px;
     border-radius: 50%;
     background: rgb(var(--color-muted));
+    flex-shrink: 0;
 
     &--on {
       background: rgb(var(--color-success));

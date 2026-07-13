@@ -13,6 +13,18 @@ export interface GameInstall {
   realm?: string | null;
 }
 
+/** Mirrors `wowsp_tauri_shared::GameProcessInfo`. Richer than the legacy
+ *  `is_game_running` boolean — carries the PID and the install (kind/realm)
+ *  the running process belongs to, resolved by exe-path prefix match. */
+export interface GameProcessInfo {
+  running: boolean;
+  pid?: number | null;
+  kind?: GameInstall["kind"] | null;
+  realm?: string | null;
+  exePath?: string | null;
+  matchedInstall?: GameInstall | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::VehicleEntry`. */
 export interface VehicleEntry {
   id: number;
@@ -239,6 +251,8 @@ export const api = {
   appdataWrite: (file: string, content: string) => transport.invoke<null>(RPC.appdata_write, { file, content }),
   appdataDelete: (file: string) => transport.invoke<null>(RPC.appdata_delete, { file }),
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
+  getGameProcess: (installs: GameInstall[]) =>
+    transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),

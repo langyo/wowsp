@@ -12,6 +12,7 @@ export const RPC = {
   appdata_write: "appdata_write",
   appdata_delete: "appdata_delete",
   is_game_running: "is_game_running",
+  get_game_process: "get_game_process",
   detect_game_install: "detect_game_install",
   set_game_path: "set_game_path",
   read_replay_header: "read_replay_header",

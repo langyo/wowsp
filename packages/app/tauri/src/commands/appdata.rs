@@ -184,7 +184,7 @@ fn find_game_pid() -> Option<u32> {
 fn query_process_image_path(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32_EXE_FORMAT,
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
     unsafe {
@@ -193,7 +193,7 @@ fn query_process_image_path(pid: u32) -> Option<String> {
         let mut len = buf.len() as u32;
         let result = QueryFullProcessImageNameW(
             handle,
-            PROCESS_NAME_WIN32_EXE_FORMAT,
+            PROCESS_NAME_WIN32,
             windows::core::PWSTR(buf.as_mut_ptr()),
             &mut len,
         );

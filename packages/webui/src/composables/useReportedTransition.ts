@@ -12,7 +12,7 @@ export interface ReportedTransition extends ReportedTransitionTrack {
 
 export function useReportedTransition(durationMs: number): ReportedTransition {
   const handles = new Map<string, { anim?: AnimationHandle; cron?: CronHandle }>();
-  let mainKey = "";
+  const mainKey = "";
 
   function track(key: string): ReportedTransitionTrack {
     return {

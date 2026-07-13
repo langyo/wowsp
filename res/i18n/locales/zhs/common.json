@@ -14,6 +14,14 @@
   },
   "game": {
     "online": "游戏运行中",
-    "offline": "游戏未启动"
+    "offline": "游戏未启动",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "官服（WG中心）",
+      "lesta": "Lesta（俄服）",
+      "cn360": "国服（空中网）",
+      "manual": "手动指定"
+    }
   }
 }

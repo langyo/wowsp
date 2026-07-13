@@ -132,19 +132,28 @@
 
   &__error {
     color: rgb(220 80 80);
+    margin: 0;
   }
 
-  &__json {
-    max-height: 360px;
-    overflow: auto;
-    background: rgb(var(--color-bg));
-    border: 1px solid rgb(var(--color-border) / 15%);
-    border-radius: var(--radius-sm);
-    padding: 0.75rem;
-    font-size: var(--text-2xs);
-    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
-    color: rgb(var(--color-text));
+  &__error-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    p {
+      margin: 0;
+    }
+  }
+
+  &__hint {
     margin: 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted) / 75%);
+    line-height: 1.5;
+  }
+
+  &__skill {
+    font-size: var(--text-sm);
   }
 
   &__mystats-grid {
@@ -316,5 +325,21 @@
     font-size: var(--text-xs);
     text-align: center;
     padding: 1rem;
+  }
+}
+
+/* ── Armor & ballistics panel ─────────────────────────────────────────────
+   Reuses the `.specs-group` card layout from SpecsPanel. Just wraps the
+   groups + an approximation disclaimer. */
+.ballistics-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  &__approx {
+    margin: 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted) / 60%);
+    font-style: italic;
   }
 }

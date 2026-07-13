@@ -5,8 +5,16 @@ import { BarChart3, Search, Ship, Film, Settings, Package } from "lucide-vue-nex
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
+import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
+import type { GameInstallKind } from "@/api";
 import "./Sidebar.scss";
+
+/** Map a client kind to its localized label (e.g. Steam / 官服 / Lesta / 国服). */
+function kindLabel(kind: GameInstallKind | null | undefined): string {
+  if (!kind) return "";
+  return t(`common.game.kind.${kind}`);
+}
 
 /**
  * Left sidebar: brand + nav links + spacer + footer.
@@ -22,6 +30,7 @@ export default defineComponent({
   setup() {
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
+    const { copy } = useClipboard();
     const showSwitcher = ref(false);
 
     const accountLabel = computed(() => {
@@ -29,6 +38,22 @@ export default defineComponent({
       if (!a) return t("account.notBound");
       return `${a.nickname} [${a.realm.toUpperCase()}]`;
     });
+
+    const running = computed(() => gameStatus.process.running);
+    const proc = computed(() => gameStatus.process);
+
+    // "Steam · ASIA" or just "Steam" when realm is unknown.
+    const clientLabel = computed(() => {
+      const k = kindLabel(proc.value.kind);
+      const r = proc.value.realm?.toUpperCase();
+      return [k, r].filter(Boolean).join(" · ");
+    });
+
+    function copyPid() {
+      if (proc.value.pid != null) {
+        void copy(String(proc.value.pid), t("common.copied"));
+      }
+    }
 
     return () => (
       <aside class="sidebar">
@@ -63,16 +88,40 @@ export default defineComponent({
         <div class="sidebar__spacer" />
 
         <div class="sidebar__footer">
-          <div class="sidebar__game-status">
-            <span
-              class={[
-                "sidebar__status-dot",
-                gameStatus.running ? "sidebar__status-dot--on" : "sidebar__status-dot--off",
-              ]}
-            />
-            <span class="sidebar__status-text">
-              {gameStatus.running ? t("common.game.online") : t("common.game.offline")}
-            </span>
+          <div class={["sidebar__game-status", running.value ? "is-running" : "is-offline"]}>
+            <div class="sidebar__game-status-row">
+              <span
+                class={[
+                  "sidebar__status-dot",
+                  running.value ? "sidebar__status-dot--on" : "sidebar__status-dot--off",
+                ]}
+              />
+              <span class="sidebar__status-text">
+                {running.value ? t("common.game.online") : t("common.game.offline")}
+              </span>
+            </div>
+            {running.value ? (
+              <div class="sidebar__game-detail">
+                {clientLabel.value ? (
+                  <span class="sidebar__game-client" title={proc.value.exePath ?? undefined}>
+                    {clientLabel.value}
+                  </span>
+                ) : null}
+                {proc.value.pid != null ? (
+                  <span
+                    class="sidebar__game-pid"
+                    title={t("common.copied")}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      copyPid();
+                    }}
+                  >
+                    {t("common.game.pid")}:{" "}
+                    <span class="sidebar__game-pid-val">{proc.value.pid}</span>
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div class="sidebar__account-row">
             <div class="sidebar__account" onClick={() => (showSwitcher.value = true)}>
