@@ -146,6 +146,80 @@ async def cmd_set_overlay_visible() -> None:
     return None
 
 
+# --- Encyclopedia (ships page) -------------------------------------------
+# The mock builds ShipInfo[] from the bundled tech_tree.json (real ship ids,
+# names, tiers, types, nations) so the ships view has realistic content in a
+# browser. default_profile is a minimal synthetic block; images fall back to
+# the WG CDN URL the real backend would return.
+
+_TECH_TREE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "res" / "data" / "tech_tree.json"
+)
+_RARITY_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "res" / "data" / "ship_rarity.json"
+)
+
+
+def _load_encyclopedia() -> list[dict[str, Any]]:
+    import json
+
+    if not _TECH_TREE_PATH.exists():
+        return []
+    tree = json.loads(_TECH_TREE_PATH.read_text(encoding="utf-8"))
+    rarity = {}
+    if _RARITY_PATH.exists():
+        rarity = json.loads(_RARITY_PATH.read_text(encoding="utf-8"))
+    ships: list[dict[str, Any]] = []
+    for node in tree.values():
+        sid = node.get("shipId")
+        ships.append({
+            "shipId": sid,
+            "name": node.get("name", "").replace("IDS_", ""),
+            "tier": node.get("tier", 1),
+            "type": node.get("type", "Cruiser"),
+            "nation": node.get("nation", "usa"),
+            "isPremium": node.get("isPremium", False),
+            "isSpecial": node.get("isSpecial", False),
+            "description": "",
+            "gameVersion": "mock",
+            "defaultProfile": {
+                "hull": {"health": 30000 + node.get("tier", 1) * 5000},
+                "mobility": {"max_speed": 30},
+                "concealment": {"detect_distance_by_ship": 12},
+            },
+            "images": {
+                "small": f"https://vignette.wikia.nocookie.net/x/{sid}.png",
+                "medium": f"https://vignette.wikia.nocookie.net/x/{sid}.png",
+                "large": f"https://vignette.wikia.nocookie.net/x/{sid}.png",
+                "contour": "",
+            },
+        })
+    return ships
+
+
+@app.post("/api/get_game_version")
+async def cmd_get_game_version() -> dict:
+    return {"gameVersion": "mock-0.0.0", "shipsTotal": 0, "timestamp": 0}
+
+
+@app.post("/api/get_ship_encyclopedia")
+async def cmd_get_ship_encyclopedia(request: Request) -> list[dict[str, Any]]:
+    await request.json()
+    return _load_encyclopedia()
+
+
+@app.post("/api/appdata_read")
+async def cmd_appdata_read(payload: dict) -> str | None:
+    return None
+
+
+@app.post("/api/appdata_write")
+async def cmd_appdata_write(payload: dict) -> None:
+    return None
+
+
 if __name__ == "__main__":
     import uvicorn
 

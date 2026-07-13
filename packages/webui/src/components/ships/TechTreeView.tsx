@@ -87,10 +87,13 @@ export default defineComponent({
     });
 
     /** SVG connector overlay: re-measured from card DOM whenever the layout
-     *  changes or the viewport resizes. */
+     *  changes or the viewport resizes. The overlay is sized to the tree's full
+     *  scrollable content (not just the visible client area) so connectors stay
+     *  aligned with cards when the tree scrolls horizontally. */
     const containerRef = ref<HTMLElement | null>(null);
     const connectors = ref<{ d: string; key: string }[]>([]);
     const branchLabels = ref<{ x: number; y: number; text: string; tip: string }[]>([]);
+    const svgSize = ref({ w: 0, h: 0 });
     let ro: ResizeObserver | null = null;
 
     function measure() {
@@ -131,6 +134,9 @@ export default defineComponent({
       });
       connectors.value = segs;
       branchLabels.value = labels;
+      // Size the SVG to the full scrollable content so paths aren't clipped and
+      // stay aligned with cards across horizontal scroll.
+      svgSize.value = { w: root.scrollWidth, h: root.scrollHeight };
     }
 
     onMounted(() => {
@@ -168,10 +174,26 @@ export default defineComponent({
       }
       return (
         <div class="tech-tree" ref={containerRef}>
-          <svg class="tech-tree__svg" aria-hidden="true">
-            {connectors.value.map((s) => (
-              <path class="tech-tree__conn" d={s.d} key={s.key} />
-            ))}
+          <svg
+            class="tech-tree__svg"
+            aria-hidden="true"
+            width={svgSize.value.w}
+            height={svgSize.value.h}
+          >
+            {connectors.value.map((s) => {
+              // Parse the two endpoints (M..H.. and final H..) to dot them.
+              const nums = s.d.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+              // nums: [x1, y1, mx, y2, x2] for our path shape
+              const x1 = nums[0];
+              const y1 = nums[1];
+              const x2 = nums[nums.length - 1];
+              const y2 = nums.length >= 4 ? nums[3] : y1;
+              return [
+                <path class="tech-tree__conn" d={s.d} key={`${s.key}-p`} />,
+                <circle class="tech-tree__node" cx={x1} cy={y1} r={2.5} key={`${s.key}-a`} />,
+                <circle class="tech-tree__node" cx={x2} cy={y2} r={2.5} key={`${s.key}-b`} />,
+              ];
+            })}
             {branchLabels.value.map((l, i) => (
               <text
                 class="tech-tree__label"
