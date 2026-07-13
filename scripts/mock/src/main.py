@@ -71,6 +71,24 @@ async def cmd_set_game_path(request: Request) -> dict:
     return {"kind": "manual", "path": body.get("path", ""), "realm": "asia"}
 
 
+@app.get("/api/is_game_running")
+async def cmd_is_game_running() -> bool:
+    return False
+
+
+@app.post("/api/get_game_process")
+async def cmd_get_game_process() -> dict:
+    # Mock: game not running. The webui renders the "offline" state.
+    return {
+        "running": False,
+        "pid": None,
+        "kind": None,
+        "realm": None,
+        "exePath": None,
+        "matchedInstall": None,
+    }
+
+
 @app.get("/api/list_replays")
 async def cmd_list_replays() -> list[str]:
     return [str(p) for p in sorted(FIXTURES.glob("*.wowsreplay"))] or [

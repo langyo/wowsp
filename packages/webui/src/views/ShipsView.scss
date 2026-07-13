@@ -165,6 +165,33 @@
       font-variant-numeric: tabular-nums;
       font-weight: 500;
     }
+
+    /* Rarity chips: tinted to match each tier's in-game frame colour when on. */
+    &--common.ships-view__chip--on {
+      background: rgb(200 200 205 / 15%);
+      border-color: rgb(200 200 205 / 50%);
+      color: rgb(220 220 225);
+    }
+    &--uncommon.ships-view__chip--on {
+      background: rgb(90 200 110 / 15%);
+      border-color: rgb(90 200 110 / 50%);
+      color: rgb(110 220 130);
+    }
+    &--rare.ships-view__chip--on {
+      background: rgb(90 160 255 / 15%);
+      border-color: rgb(90 160 255 / 50%);
+      color: rgb(120 175 255);
+    }
+    &--epic.ships-view__chip--on {
+      background: rgb(230 90 80 / 15%);
+      border-color: rgb(230 90 80 / 50%);
+      color: rgb(240 110 100);
+    }
+    &--legendary.ships-view__chip--on {
+      background: rgb(255 140 40 / 15%);
+      border-color: rgb(255 140 40 / 50%);
+      color: rgb(255 160 60);
+    }
   }
 
   &__grid {
@@ -202,12 +229,30 @@
     transform: translateY(-2px);
   }
 
-  &--premium {
-    border-left: 3px solid rgb(230 170 50);
+  // Rarity tier accents — match the in-game card frame palette.
+  //   common (普通/white):       no accent — tech-tree is the baseline
+  //   uncommon (罕见/green):     green left bar
+  //   rare (稀有/blue):          blue left bar
+  //   epic (史诗/red):           red left bar
+  //   legendary (传奇/orange):   orange left bar
+  &--common {
+    /* no accent — tech-tree ships are the baseline */
   }
 
-  &--special {
-    border-left: 3px solid rgb(120 200 255);
+  &--uncommon {
+    border-left: 3px solid rgb(90 200 110);
+  }
+
+  &--rare {
+    border-left: 3px solid rgb(90 160 255);
+  }
+
+  &--epic {
+    border-left: 3px solid rgb(230 90 80);
+  }
+
+  &--legendary {
+    border-left: 3px solid rgb(255 140 40);
   }
 
   &__image {

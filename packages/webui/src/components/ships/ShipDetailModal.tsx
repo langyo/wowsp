@@ -1,19 +1,24 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Star, Diamond, Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
+import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import STag from "@/components/base/STag";
 import SSpinner from "@/components/base/SSpinner";
 import SSegmented from "@/components/base/SSegmented";
+import NationFlag from "@/components/base/NationFlag";
 import { useAccountStore } from "@/stores/account";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
 import { t } from "@/i18n";
-import { winrateColor, prTier } from "@/utils/winrate";
+import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
+import { buildArmorScheme, buildBallistics } from "./ballistics";
+import SkillBuilder from "./SkillBuilder";
 import { resolveShipModelUrl, loadGlbModel } from "@/features/holographic/modelLoader";
 import { resolveShipImage } from "@/utils/shipImages";
+import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
+import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import * as THREE from "three";
 import "./ShipDetailModal.scss";
 
@@ -41,7 +46,7 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const trends = useTrendsStore();
 
-    const tab = ref<"specs" | "armor" | "mystats" | "community">("specs");
+    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
     // ── Portrait 2D/3D toggle ──────────────────────────────────────────
     const viewMode = ref<"2d" | "3d">("2d");
@@ -228,6 +233,14 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
+    /** Derived rarity + tier short code for the header. */
+    const rarity = computed(() =>
+      props.ship ? shipRarity(props.ship) : "common",
+    );
+    const typeShort = computed(() =>
+      props.ship ? SHIP_TYPE_SHORT[props.ship.type] ?? "?" : "?",
+    );
+
     return () => (
       <SModal
         modelValue={open.value}
@@ -284,14 +297,16 @@ export default defineComponent({
             {/* identity header */}
             <div class="ship-detail__id">
               <STag variant="primary">Tier {props.ship.tier}</STag>
-              <STag variant="primary">{typeLabel(props.ship.type)}</STag>
-              <STag variant="neutral">{nationLabel(props.ship.nation)}</STag>
-              {props.ship.isPremium ? (
-                <STag variant="gold"><Star size={12} fill="currentColor" /> {t("ships.premium")}</STag>
-              ) : null}
-              {props.ship.isSpecial ? (
-                <STag variant="info"><Diamond size={12} /> {t("ships.special")}</STag>
-              ) : null}
+              <STag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</STag>
+              <NationFlag
+                nation={props.ship.nation}
+                label={nationLabel(props.ship.nation)}
+                size="md"
+                showLabel
+              />
+              <STag variant={RARITY_VARIANT[rarity.value]}>
+                {t(`ships.rarity.${rarity.value}`)}
+              </STag>
             </div>
 
             {props.ship.description ? (
@@ -300,7 +315,7 @@ export default defineComponent({
 
             {/* tab bar */}
             <div class="ship-detail__tabs">
-              {(["specs", "armor", "mystats", "community"] as const).map((name) => (
+              {(["specs", "armor", "mystats", "community", "skill"] as const).map((name) => (
                 <button
                   class={[
                     "ship-detail__tab",
@@ -308,7 +323,7 @@ export default defineComponent({
                   ]}
                   onClick={() => selectTab(name)}
                 >
-                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : "Community"}`)}
+                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
                 </button>
               ))}
             </div>
@@ -317,21 +332,25 @@ export default defineComponent({
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
-                  <div key="specs"><SpecsPanel profile={dp.value} /></div>
+                  <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
                 ) : tab.value === "armor" ? (
                   <div class="ship-detail__armor" key="armor">
                     {gpLoading.value ? (
                     <SSpinner center size="lg" text={t("ships.detail.gameparamsLoading")} />
                   ) : gpError.value ? (
-                    <p class="ship-detail__error">
-                      {t("ships.detail.gameparamsError", { error: gpError.value })}
-                    </p>
+                    <div class="ship-detail__error-block">
+                      <p class="ship-detail__error">
+                        {t("ships.detail.gameparamsError", { error: gpError.value })}
+                      </p>
+                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
+                    </div>
                   ) : gameparams.value ? (
-                    <pre class="ship-detail__json">
-                      {JSON.stringify(gameparams.value, null, 2)}
-                    </pre>
+                    <BallisticsPanel gp={gameparams.value} />
                   ) : (
-                    <p>{t("ships.detail.gameparamsMissing")}</p>
+                    <div class="ship-detail__error-block">
+                      <p>{t("ships.detail.gameparamsMissing")}</p>
+                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
+                    </div>
                   )}
                 </div>
               ) : tab.value === "mystats" ? (
@@ -361,13 +380,17 @@ export default defineComponent({
                     </div>
                   ) : null}
                 </div>
-              ) : (
+              ) : tab.value === "community" ? (
                 <div class="ship-detail__community" key="community">
                   {trends.communityTrend?.available ? (
                     <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
                   ) : (
                     <p>{t("ships.detail.communityUnavailable")}</p>
                   )}
+                </div>
+              ) : (
+                <div class="ship-detail__skill" key="skill">
+                  <SkillBuilder shipType={props.ship.type} />
                 </div>
               )}
               </Transition>
@@ -391,9 +414,10 @@ const SpecsPanel = defineComponent({
   name: "SpecsPanel",
   props: {
     profile: { type: Object as () => Record<string, unknown> | null, default: null },
+    nation: { type: String, default: undefined },
   },
   setup(props) {
-    const groups = computed(() => buildShipSpecs(props.profile));
+    const groups = computed(() => buildShipSpecs(props.profile, props.nation));
     // Map icon name (from shipSpecs) → lucide component, resolved once.
     const iconFor = (name: string) => {
       switch (name) {
@@ -438,6 +462,127 @@ const SpecsPanel = defineComponent({
               </section>
             );
           })}
+        </div>
+      );
+    };
+  },
+});
+
+/**
+ * Armor & ballistics panel — replaces the old raw-JSON dump of the GameParams
+ * subtree. Extracts the armor scheme (citadel / deck / belt / torpedo belt /
+ * extremities) and shell ballistics (sigma, dispersion, per-shell mass /
+ * muzzle / airDrag + estimated penetration) via the `ballistics` module, and
+ * renders them as the same grouped card layout as SpecsPanel.
+ *
+ * The penetration curve is an *estimate* (derived from mass × muzzle² ×
+ * airDrag), not the exact in-game krupp formula — the panel labels it as such.
+ */
+const BallisticsPanel = defineComponent({
+  name: "BallisticsPanel",
+  props: {
+    gp: { type: Object as () => Record<string, unknown> | null, default: null },
+  },
+  setup(props) {
+    const armorGroup = computed(() => buildArmorScheme(props.gp));
+    const ballisticsGroups = computed(() => buildBallistics(props.gp));
+    const anyGroups = computed(
+      () => armorGroup.value != null || ballisticsGroups.value.length > 0,
+    );
+    const iconFor = (name: string) => {
+      switch (name) {
+        case "Shield": return Shield;
+        case "Crosshair": return Crosshair;
+        default: return Shield;
+      }
+    };
+    /** Resolve a row label: armor/ballistics rows use keys under their own
+     *  i18n namespaces, falling back to the spec namespace for shared keys. */
+    function rowLabel(row: { key: string }): string {
+      const armor = t(`ships.armor.${row.key}`, {});
+      if (armor && armor !== `ships.armor.${row.key}`) return armor;
+      const ball = t(`ships.ballistics.${row.key}`, {});
+      if (ball && ball !== `ships.ballistics.${row.key}`) return ball;
+      const spec = t(`ships.spec.${row.key}`, {});
+      if (spec && spec !== `ships.spec.${row.key}`) return spec;
+      return row.key;
+    }
+    function rowHint(row: { hint?: string }): string | null {
+      if (!row.hint) return null;
+      const ball = t(`ships.ballistics.${row.hint}`, {});
+      if (ball && ball !== `ships.ballistics.${row.hint}`) return ball;
+      const spec = t(`ships.spec.${row.hint}`, {});
+      if (spec && spec !== `ships.spec.${row.hint}`) return spec;
+      return null;
+    }
+    return () => {
+      if (!anyGroups.value) {
+        return (
+          <div class="ship-detail__error-block">
+            <p>{t("ships.detail.noBallistics")}</p>
+          </div>
+        );
+      }
+      return (
+        <div class="ballistics-panel">
+          {armorGroup.value ? (
+            <section class="specs-group">
+              <header class="specs-group__head">
+                <Shield size={14} />
+                <h5 class="specs-group__title">{t("ships.armor.groupTitle")}</h5>
+              </header>
+              <dl class="specs-group__rows">
+                {armorGroup.value.rows.map((row) => {
+                  const hint = rowHint(row);
+                  return (
+                    <div class="specs-group__row" key={row.key}>
+                      <dt class="specs-group__label">
+                        {rowLabel(row)}
+                        {hint ? (
+                          <span class="specs-group__hint" title={hint}>
+                            <HelpCircle size={11} />
+                          </span>
+                        ) : null}
+                      </dt>
+                      <dd class="specs-group__value">{row.value}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          ) : null}
+
+          {ballisticsGroups.value.map((g, gi) => {
+            const Icon = iconFor(g.icon);
+            return (
+              <section class="specs-group" key={gi}>
+                <header class="specs-group__head">
+                  <Icon size={14} />
+                  <h5 class="specs-group__title">{t("ships.ballistics.groupTitle")}</h5>
+                </header>
+                <dl class="specs-group__rows">
+                  {g.rows.map((row) => {
+                    const hint = rowHint(row);
+                    return (
+                      <div class="specs-group__row" key={row.key}>
+                        <dt class="specs-group__label">
+                          {rowLabel(row)}
+                          {hint ? (
+                            <span class="specs-group__hint" title={hint}>
+                              <HelpCircle size={11} />
+                            </span>
+                          ) : null}
+                        </dt>
+                        <dd class="specs-group__value">{row.value}</dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </section>
+            );
+          })}
+
+          <p class="ballistics-panel__approx">{t("ships.detail.ballisticsApprox")}</p>
         </div>
       );
     };

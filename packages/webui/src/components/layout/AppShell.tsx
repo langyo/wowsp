@@ -47,7 +47,9 @@ export default defineComponent({
 
     onMounted(async () => {
       void initTheme();
-      void config.detect();
+      // Restore the previously-selected client path before detecting, so a
+      // rescan keeps the user's choice instead of always picking installs[0].
+      void config.load().then(() => config.detect());
       void accounts.load();
       gameStatus.start();
 
@@ -100,24 +102,22 @@ export default defineComponent({
 
           {/* Footer slot = action buttons */}
           {{
-            footer: () => (
-              <>
-                <SButton
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void handleCloseChoice("minimize")}
-                >
-                  {t("tray.minimize")}
-                </SButton>
-                <SButton
-                  variant="danger"
-                  size="sm"
-                  onClick={() => void handleCloseChoice("quit")}
-                >
-                  {t("tray.quit")}
-                </SButton>
-              </>
-            ),
+            footer: () => [
+              <SButton
+                variant="ghost"
+                size="sm"
+                onClick={() => void handleCloseChoice("minimize")}
+              >
+                {t("tray.minimize")}
+              </SButton>,
+              <SButton
+                variant="danger"
+                size="sm"
+                onClick={() => void handleCloseChoice("quit")}
+              >
+                {t("tray.quit")}
+              </SButton>,
+            ],
           }}
         </SModal>
       </div>

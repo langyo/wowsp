@@ -1,19 +1,22 @@
 import { computed, defineComponent, ref, watch } from "vue";
-import { RotateCcw, Star } from "lucide-vue-next";
+import { RotateCcw } from "lucide-vue-next";
 
 import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
 import STag from "@/components/base/STag";
 import SSpinner from "@/components/base/SSpinner";
+import NationFlag from "@/components/base/NationFlag";
 import { resolveShipImage } from "@/utils/shipImages";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
-import { api, type ShipInfo } from "@/api";
+import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
+import { shipRarity, RARITY_VARIANT, RARITY_CARD_MOD, RARITY_ORDER, type Rarity } from "@/utils/shipRarity";
+import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import "./ShipsView.scss";
 
@@ -61,6 +64,7 @@ export default defineComponent({
     const selectedNations = ref<Set<string>>(new Set());
     const selectedTypes = ref<Set<string>>(new Set());
     const selectedTiers = ref<Set<number>>(new Set());
+    const selectedRarities = ref<Set<Rarity>>(new Set());
 
     function toggleSet<T>(set: Set<T>, value: T): Set<T> {
       const next = new Set(set);
@@ -75,6 +79,7 @@ export default defineComponent({
       selectedNations.value = new Set();
       selectedTypes.value = new Set();
       selectedTiers.value = new Set();
+      selectedRarities.value = new Set();
     }
 
     const hasActiveFilters = computed(
@@ -82,7 +87,8 @@ export default defineComponent({
         searchText.value.trim() !== "" ||
         selectedNations.value.size > 0 ||
         selectedTypes.value.size > 0 ||
-        selectedTiers.value.size > 0,
+        selectedTiers.value.size > 0 ||
+        selectedRarities.value.size > 0,
     );
 
     const filteredShips = computed(() => {
@@ -91,6 +97,7 @@ export default defineComponent({
         if (selectedTiers.value.size > 0 && !selectedTiers.value.has(s.tier)) return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
+        if (selectedRarities.value.size > 0 && !selectedRarities.value.has(shipRarity(s))) return false;
         if (q && !s.name.toLowerCase().includes(q)) return false;
         return true;
       });
@@ -238,6 +245,24 @@ export default defineComponent({
               ))}
             </div>
           </div>
+
+          <div class="ships-view__filter-group">
+            <span class="ships-view__filter-label">{t("ships.rarity._label")}</span>
+            <div class="ships-view__chips">
+              {RARITY_ORDER.map((r) => (
+                <button
+                  class={[
+                    "ships-view__chip",
+                    `ships-view__chip--${r}`,
+                    selectedRarities.value.has(r) ? "ships-view__chip--on" : "",
+                  ]}
+                  onClick={() => (selectedRarities.value = toggleSet(selectedRarities.value, r))}
+                >
+                  {t(`ships.rarity.${r}`)}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* ── card grid — cross-fade between loading/error/empty/grid ── */}
@@ -255,13 +280,13 @@ export default defineComponent({
               {filteredShips.value.map((ship) => {
                 const battles = shipBattles(ship.shipId);
                 const wr = shipWr(ship.shipId);
+                const rarity = shipRarity(ship); // RaritySignals fields present on ShipInfo
                 return (
                   <div
                     class={[
                       "ship-card",
                       `ship-card--${ship.type.toLowerCase()}`,
-                      ship.isPremium ? "ship-card--premium" : "",
-                      ship.isSpecial ? "ship-card--special" : "",
+                      `ship-card--${RARITY_CARD_MOD[rarity]}`,
                     ]}
                     onClick={() => openDetail(ship)}
                   >
@@ -278,14 +303,9 @@ export default defineComponent({
                       <span class="ship-card__name">{ship.name}</span>
                     </div>
                   <div class="ship-card__tags">
-                    <STag variant="neutral" size="sm">{typeLabel(ship.type)}</STag>
-                    <STag variant="neutral" size="sm">{nationLabel(ship.nation)}</STag>
-                    {ship.isPremium ? (
-                      <STag variant="gold" size="sm"><Star size={10} fill="currentColor" /></STag>
-                    ) : null}
-                    {ship.isSpecial ? (
-                      <STag variant="info" size="sm">{t("ships.special")}</STag>
-                    ) : null}
+                    <STag variant="neutral" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</STag>
+                    <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} size="sm" />
+                    <STag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</STag>
                   </div>
                   <div class="ship-card__stats">
                     {hp(ship) != null ? (

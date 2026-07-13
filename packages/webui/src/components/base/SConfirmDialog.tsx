@@ -39,26 +39,24 @@ export default defineComponent({
 
         {/* Footer slot with cancel + confirm buttons */}
         {{
-          footer: () => (
-            <>
-              <SButton
-                variant="ghost"
-                size="sm"
-                onClick={() => emit("cancel")}
-                disabled={props.loading}
-              >
-                {props.cancelLabel || "Cancel"}
-              </SButton>
-              <SButton
-                variant={props.confirmVariant}
-                size="sm"
-                onClick={() => emit("confirm")}
-                loading={props.loading}
-              >
-                {props.confirmLabel || "Confirm"}
-              </SButton>
-            </>
-          ),
+          footer: () => [
+            <SButton
+              variant="ghost"
+              size="sm"
+              onClick={() => emit("cancel")}
+              disabled={props.loading}
+            >
+              {props.cancelLabel || "Cancel"}
+            </SButton>,
+            <SButton
+              variant={props.confirmVariant}
+              size="sm"
+              onClick={() => emit("confirm")}
+              loading={props.loading}
+            >
+              {props.confirmLabel || "Confirm"}
+            </SButton>,
+          ],
         }}
       </SModal>
     );

@@ -14,6 +14,14 @@
   },
   "game": {
     "online": "Game running",
-    "offline": "Game offline"
+    "offline": "Game offline",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "Wargaming Center",
+      "lesta": "Lesta",
+      "cn360": "CN (360)",
+      "manual": "Manual"
+    }
   }
 }
