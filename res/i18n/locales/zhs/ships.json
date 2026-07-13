@@ -1,8 +1,32 @@
 {
   "title": "舰艇百科",
   "search": "搜索舰艇...",
-  "nation": "国家",
-  "type": "类型",
+  "nation": {
+    "usa": "美国",
+    "japan": "日本",
+    "ussr": "苏联",
+    "germany": "德国",
+    "uk": "英国",
+    "france": "法国",
+    "italy": "意大利",
+    "netherlands": "荷兰",
+    "spain": "西班牙",
+    "pan_america": "泛美",
+    "pan_asia": "泛亚",
+    "commonwealth": "英联邦",
+    "pan_europe": "泛欧",
+    "europe": "欧洲",
+    "arabia": "阿拉伯"
+  },
+  "type": {
+    "Battleship": "战列舰",
+    "Cruiser": "巡洋舰",
+    "Destroyer": "驱逐舰",
+    "AirCarrier": "航空母舰",
+    "Submarine": "潜艇",
+    "Auxiliary": "辅助舰",
+    "Mixed": "混合型"
+  },
   "filterNation": "国家",
   "filterType": "类型",
   "tier": "等级",
@@ -53,7 +77,40 @@
     "noMyStats": "绑定账号后且你尚未在此舰上有对局。",
     "communityUnavailable": "全服趋势数据源尚未接入。待后端合作方接入后，此处将按版本显示全服平均胜率。",
     "ballisticsApprox": "穿深曲线为基于弹重 / 空气阻力 / krupp 的估算值，非游戏精确公式。",
-    "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。"
+    "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。",
+    "stage": {
+      "hint3d": "拖动旋转 · 滚轮缩放 · 右键拖动平移"
+    },
+    "weapon": {
+      "mainGun": "主炮组",
+      "torpedo": "鱼雷",
+      "aaGun": "防空",
+      "secondary": "副炮",
+      "engine": "引擎",
+      "finder": "测距仪",
+      "launchers": "发射管",
+      "auras": "个防空圈"
+    },
+    "armor": {
+      "noData": "无装甲数据。",
+      "legend": "装甲 (mm)",
+      "estimated": "估算",
+      "zone": {
+        "bow": "舰首",
+        "midship": "中段",
+        "citadel": "核心舱",
+        "stern": "舰尾",
+        "belt": "装甲带",
+        "deck": "甲板"
+      },
+      "overmatchThreshold": "碾压需 ≥{n}mm 口径",
+      "outcome": {
+        "overmatch": "碾压",
+        "pen": "穿透",
+        "overpen": "过穿",
+        "bounce": "跳弹"
+      }
+    }
   },
   "armor": {
     "groupTitle": "装甲方案",
@@ -154,15 +211,6 @@
     "airDetectHint": "敌机发现你的距离。",
     "subDetect": "被潜艇发现距离"
   },
-  "type": {
-    "Battleship": "战列舰",
-    "Cruiser": "巡洋舰",
-    "Destroyer": "驱逐舰",
-    "AirCarrier": "航空母舰",
-    "Submarine": "潜艇",
-    "Auxiliary": "辅助舰",
-    "Mixed": "混合型"
-  },
   "skills": {
     "title": "舰长加点模拟",
     "pointsUsed": "{used} / {max} 点",
@@ -207,22 +255,5 @@
     "CV_Anti-Large": "反大型舰航母",
     "SS_Close": "近程潜艇",
     "SS_Far": "远程潜艇"
-  },
-  "nation": {
-    "usa": "美国",
-    "japan": "日本",
-    "ussr": "苏联",
-    "germany": "德国",
-    "uk": "英国",
-    "france": "法国",
-    "italy": "意大利",
-    "netherlands": "荷兰",
-    "spain": "西班牙",
-    "pan_america": "泛美",
-    "pan_asia": "泛亚",
-    "commonwealth": "英联邦",
-    "pan_europe": "泛欧",
-    "europe": "欧洲",
-    "arabia": "阿拉伯"
   }
 }

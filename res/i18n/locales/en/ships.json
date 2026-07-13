@@ -1,8 +1,32 @@
 {
   "title": "Ship Encyclopedia",
   "search": "Search ships...",
-  "nation": "Nation",
-  "type": "Type",
+  "nation": {
+    "usa": "USA",
+    "japan": "Japan",
+    "ussr": "USSR",
+    "germany": "Germany",
+    "uk": "UK",
+    "france": "France",
+    "italy": "Italy",
+    "netherlands": "Netherlands",
+    "spain": "Spain",
+    "pan_america": "Pan-America",
+    "pan_asia": "Pan-Asia",
+    "commonwealth": "Commonwealth",
+    "pan_europe": "Pan-Europe",
+    "europe": "Europe",
+    "arabia": "Arabia"
+  },
+  "type": {
+    "Battleship": "Battleship",
+    "Cruiser": "Cruiser",
+    "Destroyer": "Destroyer",
+    "AirCarrier": "Aircraft Carrier",
+    "Submarine": "Submarine",
+    "Auxiliary": "Auxiliary",
+    "Mixed": "Mixed"
+  },
   "filterNation": "Nation",
   "filterType": "Type",
   "tier": "Tier",
@@ -53,7 +77,40 @@
     "noMyStats": "Bind an account and you have no battles in this ship yet.",
     "communityUnavailable": "Community trend data source is not connected yet. This will show server-average winrate by version once a backend partner is wired in.",
     "ballisticsApprox": "Penetration curves are an estimate derived from shell mass / airDrag / krupp — not the exact in-game model.",
-    "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship."
+    "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
+    "stage": {
+      "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan"
+    },
+    "weapon": {
+      "mainGun": "Main Battery",
+      "torpedo": "Torpedoes",
+      "aaGun": "Anti-Air",
+      "secondary": "Secondaries",
+      "engine": "Engine",
+      "finder": "Rangefinders",
+      "launchers": "launchers",
+      "auras": "auras"
+    },
+    "armor": {
+      "noData": "No armor data available.",
+      "legend": "Armor (mm)",
+      "estimated": "approximate",
+      "zone": {
+        "bow": "Bow",
+        "midship": "Midship",
+        "citadel": "Citadel",
+        "stern": "Stern",
+        "belt": "Belt",
+        "deck": "Deck"
+      },
+      "overmatchThreshold": "Overmatch needs ≥{n}mm caliber",
+      "outcome": {
+        "overmatch": "Overmatch",
+        "pen": "Pen",
+        "overpen": "Overpen",
+        "bounce": "Bounce"
+      }
+    }
   },
   "armor": {
     "groupTitle": "Armor Scheme",
@@ -154,15 +211,6 @@
     "airDetectHint": "Distance at which enemy aircraft spot you.",
     "subDetect": "Submarine Detectability"
   },
-  "type": {
-    "Battleship": "Battleship",
-    "Cruiser": "Cruiser",
-    "Destroyer": "Destroyer",
-    "AirCarrier": "Aircraft Carrier",
-    "Submarine": "Submarine",
-    "Auxiliary": "Auxiliary",
-    "Mixed": "Mixed"
-  },
   "skills": {
     "title": "Captain Skill Builder",
     "pointsUsed": "{used} / {max} pts",
@@ -207,22 +255,5 @@
     "CV_Anti-Large": "Anti-large carriers",
     "SS_Close": "Close-range submarines",
     "SS_Far": "Long-range submarines"
-  },
-  "nation": {
-    "usa": "USA",
-    "japan": "Japan",
-    "ussr": "USSR",
-    "germany": "Germany",
-    "uk": "UK",
-    "france": "France",
-    "italy": "Italy",
-    "netherlands": "Netherlands",
-    "spain": "Spain",
-    "pan_america": "Pan-America",
-    "pan_asia": "Pan-Asia",
-    "commonwealth": "Commonwealth",
-    "pan_europe": "Pan-Europe",
-    "europe": "Europe",
-    "arabia": "Arabia"
   }
 }

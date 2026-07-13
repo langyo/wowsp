@@ -1,10 +1,9 @@
-import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import STag from "@/components/base/STag";
 import SSpinner from "@/components/base/SSpinner";
-import SSegmented from "@/components/base/SSegmented";
 import NationFlag from "@/components/base/NationFlag";
 import { useAccountStore } from "@/stores/account";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -15,11 +14,11 @@ import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import { buildArmorScheme, buildBallistics } from "./ballistics";
 import SkillBuilder from "./SkillBuilder";
-import { resolveShipModelUrl, loadGlbModel } from "@/features/holographic/modelLoader";
-import { resolveShipImage } from "@/utils/shipImages";
+import ShipStage, { type FocusZone } from "./ShipStage";
+import WeaponBar from "./WeaponBar";
+import ArmorBelt from "./ArmorBelt";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
-import * as THREE from "three";
 import "./ShipDetailModal.scss";
 
 /**
@@ -48,126 +47,20 @@ export default defineComponent({
 
     const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
-    // ── Portrait 2D/3D toggle ──────────────────────────────────────────
-    const viewMode = ref<"2d" | "3d">("2d");
-    /** Whether a baked 3D model exists for this ship. */
-    const hasModel = computed(() => {
-      if (!props.ship) return false;
-      // Try both displayName and modelDir naming conventions.
-      const name = props.ship.name;
-      return resolveShipModelUrl(name, undefined) !== null;
-    });
-    // 3D viewer state (lazy-initialized when user switches to 3D).
-    const model3dContainer = ref<HTMLElement | null>(null);
-    let renderer: THREE.WebGLRenderer | null = null;
-    let scene3d: THREE.Scene | null = null;
-    let camera3d: THREE.PerspectiveCamera | null = null;
-    let rafId3d = 0;
-    const model3dLoading = ref(false);
-    const model3dError = ref<string | null>(null);
-
-    function init3dViewer() {
-      const el = model3dContainer.value;
-      if (!el || renderer) return;
-      const w = el.clientWidth || 400;
-      const h = 150;
-      scene3d = new THREE.Scene();
-      scene3d.background = new THREE.Color(0x0b1220);
-      camera3d = new THREE.PerspectiveCamera(40, w / h, 0.1, 5000);
-      camera3d.position.set(150, 80, 150);
-      camera3d.lookAt(0, 0, 0);
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(w, h);
-      el.appendChild(renderer.domElement);
-      // Lights for the holographic model.
-      scene3d.add(new THREE.AmbientLight(0x4488ff, 0.6));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-      dir.position.set(100, 200, 100);
-      scene3d.add(dir);
-      const tick = () => {
-        if (scene3d && camera3d && renderer) {
-          // Gentle auto-rotate.
-          if (scene3d.children.length > 2) {
-            const model = scene3d.children.find((c) => c.type === "Group");
-            if (model) model.rotation.y += 0.005;
-          }
-          renderer.render(scene3d, camera3d);
-        }
-        rafId3d = requestAnimationFrame(tick);
-      };
-      tick();
+    // ── Holographic stage (ShipStage owns its own Three.js lifecycle) ──
+    const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
+    function onWeaponFocus(zone: FocusZone) {
+      stageRef.value?.focusZone(zone);
     }
 
-    async function loadShipModel() {
-      if (!props.ship) return;
-      model3dLoading.value = true;
-      model3dError.value = null;
-      try {
-        const url = resolveShipModelUrl(props.ship.name, undefined);
-        if (!url) {
-          model3dError.value = t("ships.detail.noModel");
-          return;
-        }
-        const model = await loadGlbModel(url);
-        // Auto-scale the model to a reasonable viewing size.
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 1);
-        const scale = 200 / maxDim;
-        model.scale.setScalar(scale);
-        // Center it.
-        const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
-        model.position.sub(center);
-        if (scene3d) scene3d.add(model);
-      } catch (e) {
-        model3dError.value = (e as Error).message;
-      } finally {
-        model3dLoading.value = false;
-      }
-    }
-
-    watch(viewMode, (mode) => {
-      if (mode === "3d") {
-        // Init the viewer on next tick (after the container renders).
-        setTimeout(() => {
-          init3dViewer();
-          if (scene3d && scene3d.children.length <= 2) {
-            void loadShipModel();
-          }
-        }, 50);
-      }
-    });
-
-    // Reset 3D state when ship changes.
-    watch(
-      () => props.ship,
-      () => {
-        viewMode.value = "2d";
-        if (scene3d) {
-          // Remove old model.
-          const groups = scene3d.children.filter((c) => c.type === "Group");
-          for (const g of groups) scene3d!.remove(g);
-        }
-        model3dError.value = null;
-      },
-    );
-
-    onBeforeUnmount(() => {
-      cancelAnimationFrame(rafId3d);
-      if (renderer) {
-        renderer.dispose();
-        renderer.domElement.remove();
-      }
-    });
-
-    // ── Armor tab: lazy GameParams ─────────────────────────────────────
+    // ── Armor tab + WeaponBar: lazy GameParams ─────────────────────────
     const gameparams = ref<unknown>(null);
     const gpLoading = ref(false);
     const gpError = ref<string | null>(null);
     const gpFetched = ref(false);
 
     async function loadGameparams() {
-      if (gpFetched.value || !props.ship || !props.gameRoot) return;
+      if (gpFetched.value || !props.ship) return;
       gpLoading.value = true;
       gpError.value = null;
       try {
@@ -191,7 +84,8 @@ export default defineComponent({
       void trends.loadPlayer(acc.accountId, acc.realm).catch(() => {});
     }
 
-    // Reset state when ship changes (modal reopen).
+    // Reset state when ship changes (modal reopen). Pre-fetch GameParams so the
+    // WeaponBar under the stage is populated immediately (ArmorBelt shares it).
     watch(
       () => props.ship,
       (s) => {
@@ -200,8 +94,12 @@ export default defineComponent({
         gpFetched.value = false;
         gpError.value = null;
         myStatsLoaded.value = false;
-        if (s) void trends.loadCommunity(s.shipId);
+        if (s) {
+          void loadGameparams();
+          void trends.loadCommunity(s.shipId);
+        }
       },
+      { immediate: true },
     );
 
     function selectTab(name: typeof tab.value) {
@@ -246,53 +144,15 @@ export default defineComponent({
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
         title={props.ship?.name ?? t("ships.detail.title")}
-        width="48rem"
+        width="58rem"
       >
         {!props.ship ? null : (
           <div class="ship-detail">
-            {/* ship portrait: 2D image / 3D model toggle */}
-            <div class="ship-detail__portrait-wrap">
-              <Transition name="s-fade-slide" mode="out-in">
-                {viewMode.value === "2d" ? (
-                  <div class="ship-detail__portrait" key="2d">
-                    {(() => {
-                      const imgUrl = resolveShipImage(props.ship!.shipId, props.ship!.images?.large);
-                      return imgUrl ? (
-                        <img src={imgUrl} alt={props.ship!.name} />
-                      ) : (
-                        <div class="ship-detail__portrait-empty">{t("ships.detail.noImage")}</div>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <div class="ship-detail__portrait ship-detail__portrait--3d" key="3d">
-                    <div ref={model3dContainer} class="ship-detail__3d-canvas" />
-                    {model3dLoading.value ? (
-                      <div class="ship-detail__3d-overlay">
-                        <SSpinner center size="md" />
-                      </div>
-                    ) : null}
-                    {model3dError.value ? (
-                      <div class="ship-detail__3d-overlay ship-detail__3d-overlay--error">
-                        {model3dError.value}
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </Transition>
-              {hasModel.value || viewMode.value === "2d" ? (
-                <div class="ship-detail__view-toggle">
-                  <SSegmented
-                    modelValue={viewMode.value}
-                    onUpdate:modelValue={(v: string) => (viewMode.value = v as "2d" | "3d")}
-                    options={[
-                      { value: "2d", label: "2D" },
-                      ...(hasModel.value ? [{ value: "3d", label: "3D" }] : []),
-                    ]}
-                  />
-                </div>
-              ) : null}
-            </div>
+            {/* holographic stage (3D orbit + 2D toggle, owns its own lifecycle) */}
+            <ShipStage ref={stageRef} ship={props.ship} />
+
+            {/* weapon module bar — click a module to focus the 3D camera */}
+            <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
 
             {/* identity header */}
             <div class="ship-detail__id">
@@ -345,7 +205,10 @@ export default defineComponent({
                       <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
                     </div>
                   ) : gameparams.value ? (
-                    <BallisticsPanel gp={gameparams.value} />
+                    <>
+                      <ArmorBelt gameparams={gameparams.value as Record<string, any>} />
+                      <BallisticsPanel gp={gameparams.value} />
+                    </>
                   ) : (
                     <div class="ship-detail__error-block">
                       <p>{t("ships.detail.gameparamsMissing")}</p>

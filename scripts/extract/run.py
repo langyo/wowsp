@@ -9,6 +9,7 @@ Modules:
   assets    nation flags (crest + small), crew skill icons, modernization icons
   rarity    ship_id → rarity map (GameParams RarityCategory, via wowsinfo bridge)
   techtree  tech-tree topology (nextShips) + archetype
+  models    shipId → base model name map (skin→base dedup for the 3D viewer)
   images    ship portrait PNGs from WG CDN (slow; skip with --module to avoid)
 
 Usage:
@@ -36,7 +37,7 @@ from _common import (  # noqa: E402
     run_metadata,
 )
 
-ALL_MODULES = ["assets", "rarity", "techtree", "images"]
+ALL_MODULES = ["assets", "rarity", "techtree", "images", "models"]
 
 # Repo root (scripts/extract/ → repo root).
 REPO = HERE.parent.parent
@@ -50,6 +51,7 @@ WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = RES_DATA / "ship_rarity.json"
 TECHTREE_JSON = RES_DATA / "tech_tree.json"
+SHIPMODELS_JSON = RES_DATA / "ship_models.json"
 
 
 def main() -> None:
@@ -84,9 +86,9 @@ def main() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── shared caches (built on demand) ──────────────────────────────────
-    needs_gp = bool(set(modules) & {"rarity", "techtree"})
+    needs_gp = bool(set(modules) & {"rarity", "techtree", "models"})
     needs_meta = "assets" in modules
-    needs_bridge = bool(set(modules) & {"rarity", "techtree"})
+    needs_bridge = bool(set(modules) & {"rarity", "techtree", "models"})
 
     if needs_gp:
         _ensure_gameparams(game, args.refresh)
@@ -102,6 +104,8 @@ def main() -> None:
         _run_rarity()
     if "techtree" in modules:
         _run_techtree()
+    if "models" in modules:
+        _run_shipmodels()
     if "images" in modules:
         _run_images()
 
@@ -199,6 +203,16 @@ def _run_techtree() -> None:
         "--gameparams", str(GAMEPARAMS_JSON),
         "--rarity", str(RARITY_JSON),
         "--out", str(TECHTREE_JSON),
+    )
+
+
+def _run_shipmodels() -> None:
+    """shipId → base model name map (skin→base dedup for the 3D viewer)."""
+    _py(
+        "build_ship_models.py",
+        "--gameparams", str(GAMEPARAMS_JSON),
+        "--bridge", str(WOWSINFO_JSON),
+        "--out", str(SHIPMODELS_JSON),
     )
 
 

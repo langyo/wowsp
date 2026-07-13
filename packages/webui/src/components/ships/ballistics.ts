@@ -68,6 +68,21 @@ export function buildArmorScheme(gp: Gp): SpecGroup | null {
   const torpPct = num(torpBelt?.factor != null ? (1 - torpBelt.factor) * 100 : null);
   if (torpPct != null && torpPct >= 0)
     rows.push({ key: "torpedoBelt", value: `${torpPct.toFixed(0)}%` });
+
+  // Fallback / supplement: the rich per-part thickness dictionary under
+  // A_Hull.armor ({ groupId: thicknessMm }). Summarise it as a histogram-style
+  // row so the panel isn't empty when the named segments above aren't present.
+  if (rows.length === 0) {
+    const dict = readArmorDict(gp);
+    if (dict) {
+      const zs = zoneArmor(dict);
+      for (const z of zs) {
+        if (z.thickness != null) {
+          rows.push({ key: z.zone, value: `${z.thickness} mm` });
+        }
+      }
+    }
+  }
   if (rows.length === 0) return null;
   return { group: "armor", icon: "Shield", rows };
 }
@@ -228,3 +243,146 @@ function shellName(key: string): string {
 
 /** The 5-point range sample (km) used by the penetration-curve renderer. */
 export const PEN_SAMPLE_DISTANCES = [0, 5, 10, 15, 20];
+
+// ─── Overmatch & overpenetration (WoWS 14.3 rule) ───────────────────────────
+//
+// In WoWS, an AP shell *overmatches* (ignores ricochet and always pens) when
+// shellCaliber / armorThickness ≥ 14.3. So the smallest caliber that can
+// overmatch a given armor is `armor × 14.3`. Conversely, a given shell
+// overmatches armor up to `caliber / 14.3`.
+//
+// Overpenetration is approximate: when the armor is thinner than roughly
+// caliber/6, the AP fuse may arm but exit before detonating → overpen (10% dmg).
+
+/** The WoWS AP overmatch constant. shell/armor ≥ this → always pens. */
+export const OVERMATCH_RATIO = 14.3;
+
+/** Smallest caliber (mm) that overmatches the given armor thickness. */
+export function overmatchThreshold(armorMm: number): number {
+  return Math.ceil(armorMm * OVERMATCH_RATIO);
+}
+
+/** Largest armor thickness (mm) the given shell caliber overmatches. */
+export function overmatchedArmor(shellCaliberMm: number): number {
+  return Math.floor(shellCaliberMm / OVERMATCH_RATIO);
+}
+
+/** Whether a given shell caliber overmatches a given armor thickness. */
+export function canOvermatch(shellCaliberMm: number, armorMm: number): boolean {
+  if (armorMm <= 0) return true;
+  return shellCaliberMm / armorMm >= OVERMATCH_RATIO;
+}
+
+export type PenOutcome = "overmatch" | "pen" | "overpen" | "bounce";
+
+/**
+ * Predict the AP outcome for a shell hitting `armorMm`. Simplified:
+ *   - overmatch: shell/armor ≥ 14.3 (always pens, ignores angle)
+ *   - overpen:   armor < shell/6 (fuse may not arm in time, exits far side)
+ *   - bounce:    armor ≥ shell × 14.3 AND not overmatch (can't pen head-on at
+ *                auto-bounce angles — conservative, real game needs angle)
+ *   - pen:       everything in between (normal penetration)
+ */
+export function apOutcome(shellCaliberMm: number, armorMm: number): PenOutcome {
+  if (armorMm <= 0) return "overmatch";
+  if (canOvermatch(shellCaliberMm, armorMm)) return "overmatch";
+  if (armorMm < shellCaliberMm / 6) return "overpen";
+  return "pen";
+}
+
+// ─── Armor dictionary (GameParams A_Hull.armor) ─────────────────────────────
+//
+// GameParams stores per-part armor as `{ "<groupId>": <thicknessMm>, ... }`
+// under `A_Hull.armor` (also surfaced on turret mounts as their own `armor`).
+// The group ids map to armor meshes in the .geometry file, which we don't have,
+// so we aggregate by thickness for histogram/bucket views.
+
+export type ArmorDict = Record<string, number>;
+
+/** Read the A_Hull.armor thickness dictionary from a GameParams subtree. */
+export function readArmorDict(gp: Gp): ArmorDict | null {
+  if (!gp || typeof gp !== "object") return null;
+  const hull = gp.A_Hull ?? gp.Hull ?? gp.hull;
+  if (!hull || typeof hull !== "object") return null;
+  const a = hull.armor ?? hull.Armor;
+  if (!a || typeof a !== "object") return null;
+  const out: ArmorDict = {};
+  for (const [k, v] of Object.entries(a)) {
+    const n = num(v);
+    if (n != null) out[k] = n;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+export interface ArmorBucket {
+  /** Lower bound (inclusive) of the thickness range, mm. */
+  lo: number;
+  /** Upper bound (inclusive), mm. -1 = open-ended (≥ lo). */
+  hi: number;
+  /** Number of armor parts in this bucket. */
+  count: number;
+  /** Human-readable range label (e.g. "0–32", "100–199", "410+"). */
+  label: string;
+}
+
+/** Fixed thickness buckets used by the armor visualisation + legend. */
+export const ARMOR_BUCKETS: { lo: number; hi: number; label: string; color: string }[] = [
+  { lo: 0, hi: 32, label: "0–32", color: "#8a9099" },
+  { lo: 33, hi: 99, label: "33–99", color: "#5fb0d8" },
+  { lo: 100, hi: 199, label: "100–199", color: "#3a7bd5" },
+  { lo: 200, hi: 299, label: "200–299", color: "#9b59b6" },
+  { lo: 300, hi: 409, label: "300–409", color: "#e74c3c" },
+  { lo: 410, hi: -1, label: "410+", color: "#f1c40f" },
+];
+
+/** Aggregate an armor dictionary into fixed thickness buckets. */
+export function armorHistogram(dict: ArmorDict | null): ArmorBucket[] {
+  if (!dict) return [];
+  const buckets = ARMOR_BUCKETS.map((b) => ({ ...b, count: 0 }));
+  for (const t of Object.values(dict)) {
+    const b = buckets.find((bk) => (bk.hi < 0 ? t >= bk.lo : t >= bk.lo && t <= bk.hi));
+    if (b) b.count += 1;
+  }
+  return buckets;
+}
+
+/** Representative thicknesses for named ship zones (best-effort from dict). */
+export interface ZoneArmor {
+  zone: "bow" | "midship" | "citadel" | "stern" | "deck" | "belt";
+  /** Best-guess thickness mm, or null if unknowable. */
+  thickness: number | null;
+  /** Whether this is an estimate (we lack spatial mapping). */
+  estimated: boolean;
+}
+
+/**
+ * Map the flat armor thickness dictionary to named ship zones. Because group
+ * ids map to geometry we don't have, this is a heuristic: sort the unique
+ * non-zero thicknesses descending and assign the thickest to citadel, next to
+ * belt, then deck; the thinnest non-zero to bow/stern. Marked as estimated.
+ */
+export function zoneArmor(dict: ArmorDict | null): ZoneArmor[] {
+  if (!dict) return [];
+  const uniq = Array.from(new Set(Object.values(dict).filter((t) => t > 0))).sort((a, b) => b - a);
+  if (uniq.length === 0) return [];
+  const pick = (rank: number): number | null => (rank < uniq.length ? uniq[rank] : null);
+  return [
+    { zone: "citadel", thickness: pick(0), estimated: true },
+    { zone: "belt", thickness: pick(1) ?? pick(0), estimated: true },
+    { zone: "deck", thickness: pick(2) ?? pick(1) ?? pick(0), estimated: true },
+    { zone: "midship", thickness: pick(3) ?? pick(2) ?? pick(1), estimated: true },
+    { zone: "bow", thickness: uniq[uniq.length - 1], estimated: true },
+    { zone: "stern", thickness: uniq[uniq.length - 1], estimated: true },
+  ];
+}
+
+/** Color for a given thickness (mm), matching ARMOR_BUCKETS. */
+export function armorColor(thicknessMm: number | null): string {
+  if (thicknessMm == null || thicknessMm <= 0) return "#3a4048";
+  for (const b of ARMOR_BUCKETS) {
+    if (b.hi < 0 ? thicknessMm >= b.lo : thicknessMm >= b.lo && thicknessMm <= b.hi) {
+      return b.color;
+    }
+  }
+  return "#3a4048";
+}
