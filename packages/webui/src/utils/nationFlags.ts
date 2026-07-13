@@ -3,41 +3,20 @@
  *
  * Ship nation emblems are *game faction crests*, not real-world national
  * flags — e.g. the US "eagle + shield" badge, IJN rising-sun-with-anchor,
- * Pan-Asia's dragon. The user supplies these as PNGs unpacked from the game
- * client, dropped into `src/res/images/nations/<nation>.png` using the same
- * WG `nation` code strings the encyclopedia returns (usa, japan, ussr, …).
+ * Pan-Asia's dragon. They live under `src/res/images/nations/<nation>.webp`,
+ * which (because `src/res` is Vite's publicDir) is served at runtime from
+ * `${BASE_URL}images/nations/<nation>.webp`.
  *
- * This mirrors `resolveShipImage`'s Vite glob pattern: discover every PNG
- * under the nations folder at build time, key by filename stem, and expose a
- * resolver. When a flag is absent we return null and the caller renders a
- * graceful initial-letter fallback so the UI is never broken by a missing
- * asset.
+ * Because publicDir assets aren't processed by `import.meta.glob` (and globing
+ * `/src/res/...` triggers a Vite warning), we resolve URLs directly from the
+ * public root. Existence is handled by the `<NationFlag>` component's image
+ * `onerror`, which swaps to the letter fallback.
  */
-// Accept both .webp (preferred, smaller) and legacy .png so adding the webp
-// set never breaks a checkout that still has the old PNGs around.
-const flagModules = import.meta.glob("/src/res/images/nations/*.{webp,png}", {
-  query: "?url",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
 
-/** Map: nation code (WG string, e.g. "usa") → local flag URL. */
-const flagUrls = new Map<string, string>();
-for (const [path, url] of Object.entries(flagModules)) {
-  const stem = path.split("/").pop()!.replace(/\.png$/i, "");
-  flagUrls.set(stem.toLowerCase(), url);
-}
-
-/** Resolve a nation's emblem URL, or null if no asset exists. */
+/** Build the public URL for a nation's flag. */
 export function resolveNationFlag(nation: string | undefined): string | null {
   if (!nation) return null;
-  return flagUrls.get(nation.toLowerCase()) ?? null;
-}
-
-/** Whether a flag asset is available for a nation. */
-export function hasNationFlag(nation: string | undefined): boolean {
-  if (!nation) return false;
-  return flagUrls.has(nation.toLowerCase());
+  return `${import.meta.env.BASE_URL}images/nations/${encodeURIComponent(nation)}.webp`;
 }
 
 /**

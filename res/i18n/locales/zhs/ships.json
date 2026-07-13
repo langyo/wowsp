@@ -3,6 +3,8 @@
   "search": "搜索舰艇...",
   "nation": "国家",
   "type": "类型",
+  "filterNation": "国家",
+  "filterType": "类型",
   "tier": "等级",
   "tierRange": "等级范围",
   "all": "全部",
