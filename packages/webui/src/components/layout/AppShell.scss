@@ -29,7 +29,7 @@
 
 /* ── Close confirm dialog body ───────────────────────────────────────── */
 .close-dialog__msg {
-  margin: 0;
+  margin: 0 0 0.75rem;
   font-size: var(--text-sm);
   color: rgb(var(--color-muted));
   line-height: 1.5;
