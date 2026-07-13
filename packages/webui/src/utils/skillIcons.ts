@@ -6,7 +6,7 @@
  * them via Vite's glob import keyed by filename stem so a missing asset falls
  * back gracefully to the letter-badge in the UI.
  */
-const skillIconModules = import.meta.glob("/src/res/images/skills/*.{webp,png}", {
+const skillIconModules = import.meta.glob("../res/images/skills/*.{webp,png}", {
   query: "?url",
   import: "default",
   eager: true,

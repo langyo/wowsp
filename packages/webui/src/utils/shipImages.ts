@@ -2,15 +2,18 @@
  * Local ship image resolution.
  *
  * Ship portraits are pre-downloaded by `scripts/model_convert/download_ship_images.py`
- * and cached under `src/res/images/ships/<shipId>.png`. This module discovers
- * them via Vite's glob import and provides a resolver that returns the local
- * URL when available, falling back to the WG CDN URL otherwise.
+ * and cached under `src/res/images/ships/<shipId>.png` (which, because
+ * `src/res` is Vite's publicDir, is served at runtime from
+ * `${BASE_URL}images/ships/<shipId>.png`). This module discovers them via a
+ * file-relative Vite glob (a `/src/res/...` absolute glob would trip Vite's
+ * "publicDir served at root" warning) and provides a resolver returning the
+ * local URL when available, falling back to the WG CDN URL otherwise.
  *
  * Design: prefer local images (offline-capable, no CDN dependency, committed
  * to the repo as permanent assets). Fall back to CDN for ships whose image
  * hasn't been downloaded yet.
  */
-const localImageModules = import.meta.glob("/src/res/images/ships/*.png", {
+const localImageModules = import.meta.glob("../res/images/ships/*.png", {
   query: "?url",
   import: "default",
   eager: true,

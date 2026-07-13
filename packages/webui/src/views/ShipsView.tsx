@@ -213,7 +213,7 @@ export default defineComponent({
           </div>
 
           <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">{t("ships.type")}</span>
+            <span class="ships-view__filter-label">{t("ships.filterType")}</span>
             <div class="ships-view__chips">
               {encyclopedia.types.map((tp) => (
                 <button
@@ -230,7 +230,7 @@ export default defineComponent({
           </div>
 
           <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">{t("ships.nation")}</span>
+            <span class="ships-view__filter-label">{t("ships.filterNation")}</span>
             <div class="ships-view__chips">
               {encyclopedia.nations.map((n) => (
                 <button

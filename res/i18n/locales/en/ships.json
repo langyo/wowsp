@@ -3,6 +3,8 @@
   "search": "Search ships...",
   "nation": "Nation",
   "type": "Type",
+  "filterNation": "Nation",
+  "filterType": "Type",
   "tier": "Tier",
   "tierRange": "Tier range",
   "all": "All",

@@ -21,13 +21,15 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 // Vite static asset glob: eagerly import all GLB files under src/res/models/.
 // Returns a map of path → resolved URL string. Empty if no models exist yet.
-const shipModules = import.meta.glob("/src/res/models/ships/*.glb", {
+// Uses a file-relative pattern; an absolute `/src/res/...` glob would trip
+// Vite's "publicDir served at root" warning since src/res is the publicDir.
+const shipModules = import.meta.glob("../../res/models/ships/*.glb", {
   query: "?url",
   import: "default",
   eager: true,
 }) as Record<string, string>;
 
-const mapModules = import.meta.glob("/src/res/models/maps/*.glb", {
+const mapModules = import.meta.glob("../../res/models/maps/*.glb", {
   query: "?url",
   import: "default",
   eager: true,
