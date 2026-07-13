@@ -37,10 +37,12 @@ export default defineComponent({
         localStorage.setItem("wowsp-close-action", action);
       }
       showCloseDialog.value = false;
-      const win = getCurrentWindow();
       if (action === "quit") {
-        await win.destroy();
+        // Exit the entire app process, not just destroy the window.
+        const { exit } = await import("@tauri-apps/api/app");
+        await exit(0);
       } else {
+        const win = getCurrentWindow();
         await win.hide();
       }
     }
