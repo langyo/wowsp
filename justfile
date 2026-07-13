@@ -175,7 +175,25 @@ bake-all-ships *ARGS:
 # Download + cache all ship portrait images from the WG CDN.
 # Images saved to src/res/images/ships/. Idempotent (skips existing).
 download-ship-images *ARGS:
-    python scripts/model_convert/download_ship_images.py {{ARGS}}
+    python scripts/extract/download_ship_images.py {{ARGS}}
+
+# ── Game asset extraction (unpack → flags / skills / rarity / tech-tree) ──
+
+# Unpack + refresh all game-derived resources from the local WoWS install:
+# nation flags (crest + small), skill icons, modernization icons, the
+# ship_id→rarity map, and the tech-tree topology JSON.
+#
+# Auto-detects the newest game install; override with `--path <dir>`.
+# Run only some steps with `--module rarity,techtree` (valid: assets,rarity,
+# techtree,images). Shared wowsunpack outputs are cached under
+# %LOCALAPPDATA%/WoWSP-extract so later runs are fast.
+#
+# Usage:
+#   just extract                          # auto-detect game, run all modules
+#   just extract all --path D:\WoWS       # explicit game path
+#   just extract rarity,techtree          # only these modules (skip slow ones)
+extract *ARGS:
+    python scripts/extract/run.py {{ARGS}}
 
 # ── Docs (lagrange multilingual site) ────────────────────────────────
 

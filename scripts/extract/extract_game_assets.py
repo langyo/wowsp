@@ -128,6 +128,11 @@ def main() -> None:
         for path in paths:
             name = path.rsplit("/", 1)[-1]
             stem = name[:-4] if name.endswith(".png") else name
+            # `/gui/nation_flag_tree/USA.png`   → stem "USA"
+            # `/gui/nation_flags/small/flag_USA.png` → stem "flag_USA"
+            # Strip the leading "flag_" so both resolve via NATION_CODE_MAP.
+            if stem.startswith("flag_"):
+                stem = stem[len("flag_"):]
             if args.as_nation_flags:
                 code = NATION_CODE_MAP.get(stem)
                 if not code:

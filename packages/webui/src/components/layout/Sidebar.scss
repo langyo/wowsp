@@ -160,6 +160,8 @@
   }
 
   &__account {
+    flex: 1 1 0;
+    min-width: 0;
     padding: 0.5rem 0.6rem;
     border-radius: var(--radius-sm);
     background: rgb(var(--color-primary) / 6%);
@@ -173,7 +175,14 @@
 
   &__account-name {
     font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
+    color: var(--color-muted);
+    /* Two-line clamp with ellipsis — pure CSS, no JS truncation needed. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
   }
 
   /* Settings icon button — sits in the footer next to account info. */

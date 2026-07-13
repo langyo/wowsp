@@ -28,7 +28,8 @@
     color: inherit;
   }
 
-  // Size variants — set both img and fallback to the same diameter.
+  // Size variants. Crests (vertical ~700×915) and flags (horizontal) share a
+  // diameter; the img aspect is preserved by object-fit:contain.
   &--sm {
     .nation-flag__img {
       width: 16px;
@@ -63,5 +64,16 @@
       height: 28px;
       font-size: 12px;
     }
+  }
+
+  // Variant: crest keeps its tall aspect (use the img's natural ratio by
+  // letting height follow from a fixed width for larger sizes).
+  &--crest.nation-flag--md .nation-flag__img {
+    width: 18px;
+    height: 22px;
+  }
+  &--crest.nation-flag--lg .nation-flag__img {
+    width: 24px;
+    height: 30px;
   }
 }

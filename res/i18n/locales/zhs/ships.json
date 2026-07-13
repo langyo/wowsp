@@ -180,6 +180,34 @@
     "CV": "航空母舰",
     "SS": "潜艇"
   },
+  "viewMode": {
+    "tree": "科技树",
+    "grid": "列表"
+  },
+  "techTree": {
+    "title": "科技树",
+    "branch": "分支",
+    "locked": "需达到 {n} 级",
+    "premium": "金币",
+    "special": "特种",
+    "empty": "该阵营暂无科技树。"
+  },
+  "archetype": {
+    "BB_Far": "远距离战列舰",
+    "BB_Mid": "中距离战列舰",
+    "BB_Close": "近战战列舰",
+    "CA_Spammer": "高爆巡洋舰",
+    "CA_Hybrid": "混合巡洋舰",
+    "CA_Controller": "功能巡洋舰",
+    "CA_Auxiliary": "辅助巡洋舰",
+    "DD_Art": "炮击驱逐舰",
+    "DD_Hybrid": "混合驱逐舰",
+    "DD_Auxiliary": "鱼雷驱逐舰",
+    "CV_Universalist": "通用航母",
+    "CV_Anti-Large": "反大型舰航母",
+    "SS_Close": "近程潜艇",
+    "SS_Far": "远程潜艇"
+  },
   "nation": {
     "usa": "美国",
     "japan": "日本",

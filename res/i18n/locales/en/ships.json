@@ -180,6 +180,34 @@
     "CV": "Aircraft Carrier",
     "SS": "Submarine"
   },
+  "viewMode": {
+    "tree": "Tech Tree",
+    "grid": "List"
+  },
+  "techTree": {
+    "title": "Tech Tree",
+    "branch": "Branch",
+    "locked": "Tier {n} required",
+    "premium": "Premium",
+    "special": "Special",
+    "empty": "No tech tree for this nation."
+  },
+  "archetype": {
+    "BB_Far": "Long-range battleships",
+    "BB_Mid": "Mid-range battleships",
+    "BB_Close": "Brawler battleships",
+    "CA_Spammer": "HE cruisers",
+    "CA_Hybrid": "Hybrid cruisers",
+    "CA_Controller": "Utility cruisers",
+    "CA_Auxiliary": "Support cruisers",
+    "DD_Art": "Gunboat destroyers",
+    "DD_Hybrid": "Hybrid destroyers",
+    "DD_Auxiliary": "Torpedo destroyers",
+    "CV_Universalist": "Versatile carriers",
+    "CV_Anti-Large": "Anti-large carriers",
+    "SS_Close": "Close-range submarines",
+    "SS_Far": "Long-range submarines"
+  },
   "nation": {
     "usa": "USA",
     "japan": "Japan",

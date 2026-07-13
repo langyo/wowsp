@@ -2,21 +2,28 @@
  * Nation flag (in-game faction emblem) resolution.
  *
  * Ship nation emblems are *game faction crests*, not real-world national
- * flags — e.g. the US "eagle + shield" badge, IJN rising-sun-with-anchor,
- * Pan-Asia's dragon. They live under `src/res/images/nations/<nation>.webp`,
- * which (because `src/res` is Vite's publicDir) is served at runtime from
- * `${BASE_URL}images/nations/<nation>.webp`.
+ * flags. There are two variants, both extracted from the game client:
  *
- * Because publicDir assets aren't processed by `import.meta.glob` (and globing
- * `/src/res/...` triggers a Vite warning), we resolve URLs directly from the
- * public root. Existence is handled by the `<NationFlag>` component's image
+ *   crest  — the large vertical faction crest (700×915) from
+ *            `/gui/nation_flag_tree/`. Used in the tech-tree view's nation
+ *            switcher and the ship-detail header.
+ *   flag   — the small rectangular list-view flag (~150-266 KB) from
+ *            `/gui/nation_flags/small/`. Used on compact ship cards.
+ *
+ * Both live under `src/res/images/` (Vite publicDir), served at runtime from
+ * `${BASE_URL}images/...`. Existence is handled by `<NationFlag>`'s image
  * `onerror`, which swaps to the letter fallback.
  */
+export type NationFlagVariant = "crest" | "flag";
 
-/** Build the public URL for a nation's flag. */
-export function resolveNationFlag(nation: string | undefined): string | null {
+/** Build the public URL for a nation's flag of the given variant. */
+export function resolveNationFlag(
+  nation: string | undefined,
+  variant: NationFlagVariant = "crest",
+): string | null {
   if (!nation) return null;
-  return `${import.meta.env.BASE_URL}images/nations/${encodeURIComponent(nation)}.webp`;
+  const dir = variant === "crest" ? "nations" : "nations_small";
+  return `${import.meta.env.BASE_URL}images/${dir}/${encodeURIComponent(nation)}.webp`;
 }
 
 /**
