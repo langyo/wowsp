@@ -101,8 +101,10 @@ def main() -> None:
     args = ap.parse_args()
 
     meta = json.loads(Path(args.meta).read_text())
-    # size → list of paths (paths are unique per size for our target classes)
-    size_to_paths: dict[int, list[str]] = {}
+    # size → list of {path, crc32} entries. PNG sizes collide within the pkg
+    # (e.g. flag_Pan_America.png == ships_silhouettes/PUSC015.png at 15920 B),
+    # so we disambiguate by crc32 when a size has multiple candidate paths.
+    size_to_entries: dict[int, list[dict]] = {}
     keep_prefixes = tuple(args.prefix)
     for e in meta:
         p = e["path"]
@@ -110,10 +112,13 @@ def main() -> None:
             continue
         if e.get("is_directory"):
             continue
-        sz = e["unpacked_size"]
-        size_to_paths.setdefault(sz, []).append(p)
-    print(f"[extract] {sum(len(v) for v in size_to_paths.values())} target entries "
-          f"({len(size_to_paths)} distinct sizes)")
+        size_to_entries.setdefault(e["unpacked_size"], []).append(
+            {"path": p, "crc32": e.get("crc32")},
+        )
+    print(f"[extract] {sum(len(v) for v in size_to_entries.values())} target entries "
+          f"({len(size_to_entries)} distinct sizes)")
+
+    import zlib
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -122,10 +127,15 @@ def main() -> None:
 
     written = 0
     for offset, png in slice_pngs(pkg):
-        paths = size_to_paths.get(len(png))
-        if not paths:
+        entries = size_to_entries.get(len(png))
+        if not entries:
             continue
-        for path in paths:
+        # If this size collides, match by crc32 to pick the right source file.
+        crc = zlib.crc32(png) & 0xFFFFFFFF
+        for entry in entries:
+            if entry["crc32"] is not None and entry["crc32"] != crc:
+                continue  # size matched but crc differs → different file
+            path = entry["path"]
             name = path.rsplit("/", 1)[-1]
             stem = name[:-4] if name.endswith(".png") else name
             # `/gui/nation_flag_tree/USA.png`   → stem "USA"
