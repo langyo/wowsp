@@ -16,14 +16,48 @@
  */
 export type NationFlagVariant = "crest" | "flag";
 
+/**
+ * WG's encyclopedia and GameParams use inconsistent nation codes — PascalCase
+ * (`Russia`, `United_Kingdom`, `Pan_America`), while the extracted flag files
+ * are lowercase with a different rename (`ussr`, `uk`, `pan_america`). This
+ * maps any WG code to the on-disk filename stem so the flag resolves.
+ */
+const NATION_FILE_MAP: Record<string, string> = {
+  // direct lowercase matches
+  commonwealth: "commonwealth",
+  france: "france",
+  germany: "germany",
+  italy: "italy",
+  japan: "japan",
+  netherlands: "netherlands",
+  spain: "spain",
+  usa: "usa",
+  // renames (WG code → on-disk stem)
+  russia: "ussr",
+  ussr: "ussr",
+  europe: "pan_europe",
+  pan_europe: "pan_europe",
+  united_kingdom: "uk",
+  uk: "uk",
+  pan_america: "pan_america",
+  pan_asia: "pan_asia",
+};
+
+/** Normalize a WG nation code to the on-disk filename stem (lowercase). */
+function nationFileStem(nation: string): string {
+  const key = nation.trim().toLowerCase();
+  return NATION_FILE_MAP[key] ?? key;
+}
+
 /** Build the public URL for a nation's flag of the given variant. */
 export function resolveNationFlag(
   nation: string | undefined,
   variant: NationFlagVariant = "crest",
 ): string | null {
   if (!nation) return null;
+  const stem = nationFileStem(nation);
   const dir = variant === "crest" ? "nations" : "nations_small";
-  return `${import.meta.env.BASE_URL}images/${dir}/${encodeURIComponent(nation)}.webp`;
+  return `${import.meta.env.BASE_URL}images/${dir}/${encodeURIComponent(stem)}.webp`;
 }
 
 /**
