@@ -76,6 +76,13 @@ export default defineComponent({
     let resizeObs: ResizeObserver | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
+    /** Active highlight ring (spawned by focusZone); animated + disposed by the rAF loop. */
+    let activeRing: {
+      mesh: THREE.Mesh;
+      born: number;
+      duration: number;
+      baseScale: number;
+    } | null = null;
 
     // ── Holographic shader ────────────────────────────────────────────────
     // The baked GLBs have no normals (they're merged + stripped), so we compute
@@ -203,6 +210,27 @@ export default defineComponent({
           uniforms.value.time.value += dt;
           uniforms.value.scanOffset.value += dt * 0.6;
         }
+        // Animate the focus-zone highlight ring: pulse scale + fade over its
+        // lifetime, gently face the camera so the reticle stays visible, then
+        // dispose when done.
+        if (activeRing) {
+          const r = activeRing;
+          const elapsed = performance.now() - r.born;
+          const k = Math.min(1, elapsed / r.duration);
+          const pulse = 1 + 0.12 * Math.sin(elapsed * 0.014);
+          // Expand outward as it fades (energy ripple dissipating).
+          const grow = 1 + k * 0.4;
+          r.mesh.scale.setScalar(pulse * grow);
+          (r.mesh.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k * k);
+          // Keep the ring roughly facing the camera without snapping flat.
+          r.mesh.lookAt(cam.position);
+          if (k >= 1) {
+            sc.remove(r.mesh);
+            (r.mesh.geometry as THREE.BufferGeometry).dispose();
+            (r.mesh.material as THREE.Material).dispose();
+            activeRing = null;
+          }
+        }
         ctrl.update();
         rnd.render(sc, cam);
         rafId = requestAnimationFrame(tick);
@@ -292,6 +320,13 @@ export default defineComponent({
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
+      // Dispose any active highlight ring.
+      if (activeRing && scene.value) {
+        scene.value.remove(activeRing.mesh);
+        (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
+        (activeRing.mesh.material as THREE.Material).dispose();
+        activeRing = null;
+      }
       resizeObs?.disconnect();
       resizeObs = null;
       const c = controls.value;
@@ -332,7 +367,13 @@ export default defineComponent({
       () => props.ship?.shipId,
       () => {
         if (viewMode.value === "3d") {
-          // Remove the old model, then load the new one.
+          // Remove the old model + any active highlight ring, then load the new one.
+          if (activeRing && scene.value) {
+            scene.value.remove(activeRing.mesh);
+            (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
+            (activeRing.mesh.material as THREE.Material).dispose();
+            activeRing = null;
+          }
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
@@ -342,9 +383,55 @@ export default defineComponent({
       },
     );
 
+    // ── Focus zone highlight ring ──────────────────────────────────────────
+    // Spawns a cyan pulsing RingGeometry at the focused ship region's world
+    // position, oriented to face the camera. Animated (pulse + fade) by the
+    // rAF render loop and disposed after `durationMs`. Replaces any prior ring.
+    function spawnHighlightRing(zone: FocusZone, box: THREE.Box3, durationMs = 2000): void {
+      const sc = scene.value;
+      if (!sc) return;
+      // Remove any prior ring first.
+      if (activeRing) {
+        sc.remove(activeRing.mesh);
+        (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
+        (activeRing.mesh.material as THREE.Material).dispose();
+        activeRing = null;
+      }
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const half = size.x / 2;
+      // Ring placement per zone — matches the focusZone camera target.
+      const pos = new THREE.Vector3();
+      switch (zone) {
+        case "bow": pos.set(center.x + half * 0.7, center.y + size.y * 0.2, center.z); break;
+        case "stern": pos.set(center.x - half * 0.7, center.y + size.y * 0.2, center.z); break;
+        case "deck": pos.set(center.x, center.y + size.y * 0.7, center.z); break;
+        case "waterline": pos.set(center.x - half * 0.4, center.y - size.y * 0.2, center.z); break;
+        case "midship":
+        default: pos.set(center.x, center.y + size.y * 0.15, center.z);
+      }
+      const radius = Math.max(size.y * 0.9, 20);
+      // A thin bright torus reads better as a "focus reticle" than a flat ring;
+      // use TorusGeometry so the highlight has visible thickness from any angle.
+      const tube = Math.max(radius * 0.04, 1.2);
+      const geo = new THREE.TorusGeometry(radius, tube, 12, 48);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x66eeff,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(pos);
+      sc.add(mesh);
+      activeRing = { mesh, born: performance.now(), duration: durationMs, baseScale: radius };
+    }
+
     // ── Focus zone camera tween ───────────────────────────────────────────
-    // focusZone flies the camera to a preset view of a ship region. Exposed
-    // to the parent via setupState so the template ref can call it:
+    // focusZone flies the camera to a preset view of a ship region and spawns
+    // a pulsing highlight ring there. Exposed to the parent via setupState so
+    // the template ref can call it:
     //   stageRef.value?.focusZone("bow")
     function focusZone(zone: FocusZone): void {
       const cam = camera.value;
@@ -383,6 +470,11 @@ export default defineComponent({
           camPos = new THREE.Vector3(center.x + 60, center.y + 90, dist * 1.1);
       }
       tweenCamera(cam, ctrl, camPos, target, 700);
+      // Spawn the highlight ring for real weapon-focus zones (skip the default
+      // framing call — that's just initial camera placement, not a focus action).
+      if (zone !== "default") {
+        spawnHighlightRing(zone, box);
+      }
     }
 
     function tweenCamera(
