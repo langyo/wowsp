@@ -410,4 +410,3 @@ pub struct CommunityTrend {
     pub ship_id: i64,
     pub buckets: Vec<TrendBucket>,
 }
-

@@ -67,16 +67,13 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         .json()
         .await
         .map_err(|e| format!("account/info parse: {e}"))?;
-    let player_node = info
-        .data
-        .as_ref()
-        .and_then(|d| {
-            let key = entry.account_id.to_string();
-            d.get(&key)
-        });
+    let player_node = info.data.as_ref().and_then(|d| {
+        let key = entry.account_id.to_string();
+        d.get(&key)
+    });
     let stats_node = player_node.and_then(|v| v.get("statistics"));
     let p = PvpStats::extract(stats_node);
-    let hidden = stats_node.map_or(true, |s| s.get("pvp").map_or(true, |p| p.is_null()));
+    let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p| p.is_null()));
     // Service record tier + points (for rank badge rendering).
     let leveling_tier = player_node
         .and_then(|v| v.get("leveling_tier"))
@@ -130,12 +127,12 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
                 .as_ref()
                 .and_then(|v| {
                     v.get("data")
-                        .and_then(|d| d.get(&entry.account_id.to_string()))
+                        .and_then(|d| d.get(entry.account_id.to_string()))
                         .and_then(|p| p.get("dog_tag"))
                         .filter(|t| !t.is_null())
                 })
                 .and_then(parse_dog_tag)
-        }
+        },
         Err(_) => None,
     };
 
@@ -266,7 +263,7 @@ impl PvpStats {
             _ => None,
         };
 
-        let ships_played = get_i64(pvp, "battles").and_then(|_| {
+        let ships_played = get_i64(pvp, "battles").and({
             // ships_played is approximated by counting ship entries — but
             // account/info doesn't include per-ship; we leave it as battles
             // count fallback (the ships/{shipId} endpoint gives the real count

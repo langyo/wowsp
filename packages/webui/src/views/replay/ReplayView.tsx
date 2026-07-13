@@ -193,7 +193,7 @@ export default defineComponent({
               {parser.error.value}
             </div>
           ) : parser.current.value ? (
-            <>
+            <div class="replay-view__content">
               <header class="replay-view__meta">
                 <strong class="replay-view__map">
                   {parser.current.value.mapName ?? `map #${parser.current.value.mapId ?? "?"}`}
@@ -229,7 +229,7 @@ export default defineComponent({
                   <RosterColumn title="Enemies" rows={enemies.value} kind="enemy" />
                 </div>
               </div>
-            </>
+            </div>
           ) : (
             <div class="replay-view__placeholder">{t("replay.select")}</div>
           )}
