@@ -92,16 +92,17 @@ export default defineComponent({
           onUpdate:modelValue={(v: boolean) => (showCloseDialog.value = v)}
           title={t("tray.closeTitle")}
           width="24rem"
-        >
-          <p class="close-dialog__msg">{t("tray.closeMsg")}</p>
-          <SCheckbox
-            modelValue={rememberChoice.value}
-            onUpdate:modelValue={(v: boolean) => (rememberChoice.value = v)}
-            label={t("tray.remember")}
-          />
-
-          {/* Footer slot = action buttons */}
-          {{
+          v-slots={{
+            default: () => (
+              <div>
+                <p class="close-dialog__msg">{t("tray.closeMsg")}</p>
+                <SCheckbox
+                  modelValue={rememberChoice.value}
+                  onUpdate:modelValue={(v: boolean) => (rememberChoice.value = v)}
+                  label={t("tray.remember")}
+                />
+              </div>
+            ),
             footer: () => [
               <SButton
                 variant="ghost"
@@ -119,7 +120,7 @@ export default defineComponent({
               </SButton>,
             ],
           }}
-        </SModal>
+        />
       </div>
     );
   },
