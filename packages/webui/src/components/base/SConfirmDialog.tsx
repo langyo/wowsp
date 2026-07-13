@@ -33,12 +33,9 @@ export default defineComponent({
         }}
         title={props.title}
         closeable={!props.loading}
-      >
-        {/* Default slot or message */}
-        {slots.default ? slots.default() : <p class="s-confirm__msg">{props.message}</p>}
-
-        {/* Footer slot with cancel + confirm buttons */}
-        {{
+        v-slots={{
+          default: () =>
+            slots.default ? slots.default() : <p class="s-confirm__msg">{props.message}</p>,
           footer: () => [
             <SButton
               variant="ghost"
@@ -58,7 +55,7 @@ export default defineComponent({
             </SButton>,
           ],
         }}
-      </SModal>
+      />
     );
   },
 });

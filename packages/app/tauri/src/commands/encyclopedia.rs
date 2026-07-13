@@ -61,14 +61,20 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0")
         .to_string();
-    let ships_total = data.get("ships_total").and_then(|v| v.as_i64()).unwrap_or(0);
+    let ships_total = data
+        .get("ships_total")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let info = GameVersionInfo {
         game_version,
         ships_total,
         timestamp: now_ts(),
     };
     // Persist (best-effort).
-    let _ = appdata_write(INFO_CACHE.into(), serde_json::to_string(&info).unwrap_or_default());
+    let _ = appdata_write(
+        INFO_CACHE.into(),
+        serde_json::to_string(&info).unwrap_or_default(),
+    );
     Ok(info)
 }
 
@@ -175,10 +181,7 @@ fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, Stri
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        tier: value
-            .get("tier")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i8,
+        tier: value.get("tier").and_then(|v| v.as_i64()).unwrap_or(0) as i8,
         type_: value
             .get("type")
             .and_then(|v| v.as_str())
@@ -203,7 +206,10 @@ fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, Stri
             .unwrap_or("")
             .to_string(),
         game_version: version.to_string(),
-        default_profile: value.get("default_profile").cloned().unwrap_or(serde_json::Value::Null),
+        default_profile: value
+            .get("default_profile")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
         images: parse_ship_images(value.get("images")),
     })
 }
@@ -255,7 +261,7 @@ fn resolve_encyclopedia_language(realm: &str, ui_language: Option<String>) -> (S
             // names are the official localization). For all other realms, use
             // zh-tw (standard international Chinese — original ship names).
             if realm == "cn" { "zh-cn" } else { "zh-tw" }
-        }
+        },
         "zht" => "zh-tw",
         "en" => "en",
         "ja" => "ja",

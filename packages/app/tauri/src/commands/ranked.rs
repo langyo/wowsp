@@ -108,9 +108,8 @@ pub async fn get_ranked_stats(
     let n = season_count.unwrap_or(5).min(30) as usize;
 
     // 1. Get season IDs (sorted descending = most recent first).
-    let seasons_url = format!(
-        "https://api.worldofwarships.{host}/wows/seasons/info/?application_id={app_id}"
-    );
+    let seasons_url =
+        format!("https://api.worldofwarships.{host}/wows/seasons/info/?application_id={app_id}");
     let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> = client
         .get(&seasons_url)
         .send()
@@ -122,7 +121,10 @@ pub async fn get_ranked_stats(
     if seasons_resp.status != "ok" {
         return Err(format!(
             "seasons/info: {}",
-            seasons_resp.error.and_then(|e| e.message).unwrap_or_default()
+            seasons_resp
+                .error
+                .and_then(|e| e.message)
+                .unwrap_or_default()
         ));
     }
     let mut season_ids: Vec<i64> = seasons_resp
@@ -161,7 +163,7 @@ pub async fn get_ranked_stats(
     let player = stats_resp
         .data
         .as_ref()
-        .and_then(|d| d.get(&account_id.to_string()));
+        .and_then(|d| d.get(account_id.to_string()));
     let player = match player {
         Some(p) if !p.is_null() => p,
         _ => return Ok(Vec::new()),
@@ -217,10 +219,7 @@ pub async fn get_ranked_stats(
 /// Structure: rank_info.<seasonId>.<league>.<sprint>.{rank, rank_best}
 /// league 1=Gold, 2=Silver, 3=Bronze. Returns the best (lowest-number = highest)
 /// rank + its league.
-fn extract_rank(
-    rank_info: Option<&serde_json::Value>,
-    season_id: &str,
-) -> Option<(i32, i32, i32)> {
+fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Option<(i32, i32, i32)> {
     let season = rank_info?.get(season_id)?;
     let mut best_current: Option<i32> = None;
     let mut best_ever: Option<i32> = None;
@@ -231,14 +230,17 @@ fn extract_rank(
             if let Some(sprint_obj) = sprints.as_object() {
                 for (_sprint, info) in sprint_obj {
                     let r = info.get("rank").and_then(|v| v.as_i64()).map(|v| v as i32);
-                    let rb = info.get("rank_best").and_then(|v| v.as_i64()).map(|v| v as i32);
+                    let rb = info
+                        .get("rank_best")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as i32);
                     if let Some(r) = r {
                         best_current = Some(best_current.map_or(r, |c| c.min(r)));
                     }
                     if let Some(rb) = rb {
                         // Track the best (lowest) rank + the league it was in.
                         // Lower league number = better league (1=gold > 2=silver > 3=bronze).
-                        if best_ever.map_or(true, |b| rb < b || (rb == b && league < best_league)) {
+                        if best_ever.is_none_or(|b| rb < b || (rb == b && league < best_league)) {
                             best_ever = Some(rb);
                             best_league = league;
                         }

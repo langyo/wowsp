@@ -98,7 +98,7 @@ pub(crate) fn capture_window_png(
             return Err("CreateCompatibleBitmap failed".into());
         }
 
-        let old_bmp = SelectObject(hdc_mem, hbmp.clone().into());
+        let old_bmp = SelectObject(hdc_mem, hbmp.into());
 
         // WebView2 renders via DirectComposition, so BitBlt from the window DC
         // captures only a blank surface. PrintWindow with PW_RENDERFULLCONTENT
@@ -112,7 +112,19 @@ pub(crate) fn capture_window_png(
         );
         if !ok.as_bool() {
             // Fallback: try BitBlt (works for non-composited windows).
-            if BitBlt(hdc_mem, 0, 0, width, height, Some(hdc_window), 0, 0, SRCCOPY).is_err() {
+            if BitBlt(
+                hdc_mem,
+                0,
+                0,
+                width,
+                height,
+                Some(hdc_window),
+                0,
+                0,
+                SRCCOPY,
+            )
+            .is_err()
+            {
                 let _ = SelectObject(hdc_mem, old_bmp);
                 let _ = DeleteObject(hbmp.into());
                 let _ = DeleteDC(hdc_mem);
@@ -141,7 +153,7 @@ pub(crate) fn capture_window_png(
         pixels = vec![0u8; (width as usize) * (height as usize) * 4];
         let got = GetDIBits(
             hdc_mem,
-            hbmp.clone(),
+            hbmp,
             0,
             height as u32,
             Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),

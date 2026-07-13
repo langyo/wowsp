@@ -76,7 +76,9 @@ pub fn is_game_running() -> bool {
 /// `is_game_running` is the boolean projection of this.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn get_game_process(installs: Vec<wowsp_tauri_shared::GameInstall>) -> wowsp_tauri_shared::GameProcessInfo {
+pub fn get_game_process(
+    installs: Vec<wowsp_tauri_shared::GameInstall>,
+) -> wowsp_tauri_shared::GameProcessInfo {
     use wowsp_tauri_shared::{GameInstallKind, GameProcessInfo};
 
     let Some(pid) = find_game_pid() else {
@@ -110,10 +112,14 @@ pub fn get_game_process(installs: Vec<wowsp_tauri_shared::GameInstall>) -> wowsp
                 })
                 .unwrap_or(false);
             (
-                Some(if is_steam { GameInstallKind::Steam } else { GameInstallKind::Wargaming }),
+                Some(if is_steam {
+                    GameInstallKind::Steam
+                } else {
+                    GameInstallKind::Wargaming
+                }),
                 None,
             )
-        }
+        },
     };
 
     GameProcessInfo {
@@ -128,7 +134,9 @@ pub fn get_game_process(installs: Vec<wowsp_tauri_shared::GameInstall>) -> wowsp
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn get_game_process(_installs: Vec<wowsp_tauri_shared::GameInstall>) -> wowsp_tauri_shared::GameProcessInfo {
+pub fn get_game_process(
+    _installs: Vec<wowsp_tauri_shared::GameInstall>,
+) -> wowsp_tauri_shared::GameProcessInfo {
     wowsp_tauri_shared::GameProcessInfo {
         running: false,
         pid: None,
@@ -184,8 +192,8 @@ fn find_game_pid() -> Option<u32> {
 fn query_process_image_path(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-        PROCESS_QUERY_LIMITED_INFORMATION,
+        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        QueryFullProcessImageNameW,
     };
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
@@ -222,7 +230,8 @@ fn match_install<'a>(
         .iter()
         .filter(|i| {
             let dir = normalize(&i.path);
-            !dir.is_empty() && (exe_norm.starts_with(&dir) || exe_norm.starts_with(&format!("{dir}\\")))
+            !dir.is_empty()
+                && (exe_norm.starts_with(&dir) || exe_norm.starts_with(&format!("{dir}\\")))
         })
         .max_by_key(|i| i.path.len())
 }

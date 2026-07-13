@@ -43,7 +43,7 @@ pub fn run(app: tauri::AppHandle) {
         Err(e) => {
             tracing::error!(error = %e, port, "test-harness: failed to bind control server");
             return;
-        }
+        },
     };
 
     let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
@@ -53,7 +53,10 @@ pub fn run(app: tauri::AppHandle) {
         tracing::warn!(error = %e, "test-harness: could not write port file");
     }
 
-    tracing::info!(port = actual_port, "test-harness: control server listening on 127.0.0.1");
+    tracing::info!(
+        port = actual_port,
+        "test-harness: control server listening on 127.0.0.1"
+    );
 
     for stream in listener.incoming() {
         match stream {
@@ -63,7 +66,7 @@ pub fn run(app: tauri::AppHandle) {
                 // and sends requests sequentially, so no need for a thread
                 // pool. Keeping it sync also avoids pulling in tokio here.
                 let _ = std::thread::spawn(move || handle_connection(&mut stream, &app));
-            }
+            },
             Err(e) => tracing::warn!(error = %e, "test-harness: accept failed"),
         }
     }
@@ -179,7 +182,13 @@ fn handle_capture(app: &tauri::AppHandle, body: &str) -> (&'static str, String) 
         // Sanitize name: only allow alnum/dash/underscore (prevent path traversal).
         let safe: String = name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         dir.join(format!("{safe}.png"))
     };
@@ -192,7 +201,7 @@ fn handle_capture(app: &tauri::AppHandle, body: &str) -> (&'static str, String) 
         Ok(()) => {
             let path_str = out_path.to_string_lossy().replace('\\', "/");
             (OK, format!("{{\"path\":\"{path_str}\"}}"))
-        }
+        },
         Err(e) => bad(&format!("capture failed: {e}")),
     }
 }

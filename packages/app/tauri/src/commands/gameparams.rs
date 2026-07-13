@@ -49,8 +49,7 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
     let json_path = json_candidates.iter().find(|p| p.exists());
 
     if let Some(path) = json_path {
-        let raw = fs::read_to_string(path)
-            .map_err(|e| format!("read GameParams.json: {e}"))?;
+        let raw = fs::read_to_string(path).map_err(|e| format!("read GameParams.json: {e}"))?;
         let slice = extract_ship_slice(&raw, ship_id)?;
         let serialized = serde_json::to_string(&slice).unwrap_or_default();
         let _ = appdata_write(cache_file, serialized);

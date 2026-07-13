@@ -166,13 +166,13 @@ export default defineComponent({
                       <div class="acct-card__meta">
                         <STag variant="neutral" size="sm">{a.realm.toUpperCase()}</STag>
                         {s ? (
-                          <>
-                            {s.battles != null ? (
+                          [
+                            s.battles != null ? (
                               <span class="acct-card__stat" title={t("stats.battles")}>
                                 <Swords size={11} /> {s.battles.toLocaleString()}
                               </span>
-                            ) : null}
-                            {s.winrate != null ? (
+                            ) : null,
+                            s.winrate != null ? (
                               <span
                                 class="acct-card__stat"
                                 style={{ color: winrateColor(s.winrate) }}
@@ -180,11 +180,11 @@ export default defineComponent({
                               >
                                 <Trophy size={11} /> {s.winrate.toFixed(1)}%
                               </span>
-                            ) : null}
-                            {s.hidden ? (
+                            ) : null,
+                            s.hidden ? (
                               <STag variant="danger" size="sm">{t("stats.hidden")}</STag>
-                            ) : null}
-                          </>
+                            ) : null,
+                          ]
                         ) : null}
                       </div>
                     </div>

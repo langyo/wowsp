@@ -44,7 +44,7 @@ pub async fn lookup_player_ship_stats(
                 serde_json::to_string(&enriched).unwrap_or_default(),
             );
             enriched
-        }
+        },
         Err(e) => {
             // Fallback to cache if the live API failed.
             if let Ok(Some(raw)) = appdata_read(cache_file) {
@@ -53,7 +53,7 @@ pub async fn lookup_player_ship_stats(
                 }
             }
             return Err(e);
-        }
+        },
     };
     Ok(stats)
 }
