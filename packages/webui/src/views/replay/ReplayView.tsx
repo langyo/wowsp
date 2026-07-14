@@ -5,8 +5,13 @@ import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
 import { api } from "@/api";
-import type { EntityTrajectory, GameInstallKind } from "@/api";
+import type { EntityTrajectory, GameInstallKind, PlayerStats, ShipInfo } from "@/api";
 import { t } from "@/i18n";
+import { useAccountStore } from "@/stores/account";
+import { useStatsStore } from "@/stores/stats";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { winrateColor } from "@/utils/winrate";
+import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import SButton from "@/components/base/SButton";
 import SSelect, { type SelectOption } from "@/components/base/SSelect";
 import SSpinner from "@/components/base/SSpinner";
@@ -29,27 +34,44 @@ function installLabel(kind: GameInstallKind, realm?: string | null): string {
 /** The replays subfolder of a client install. WoWS writes replays under
  *  `<install>/replays/`. */
 function replaysDir(installPath: string): string {
-  // Normalize separators and append `replays`.
   const trimmed = installPath.replace(/[\\/]+$/, "");
   return `${trimmed}/replays`;
 }
 
+/** Localize a replay matchGroup ("pvp"/"ranked"/…) with a generic fallback. */
+function modeLabel(group?: string | null): string {
+  if (!group) return t("replay.mode._fallback");
+  const key = `replay.mode.${group}`;
+  const lbl = t(key);
+  // t() returns the key when missing — fall back to the generic battle label.
+  return lbl === key ? t("replay.mode._fallback") : lbl;
+}
+
+/** Format a `YYYYMMDD[_HHMMSS]` timestamp from the replay filename into a
+ *  locale-friendly date(+time) string. Returns "—" if unparseable. */
+function formatDateTime(dt?: string | null): string {
+  if (!dt) return "—";
+  const m = dt.match(/^(\d{4})(\d{2})(\d{2})(?:_(\d{2})(\d{2})(\d{2}))?$/);
+  if (!m) return dt;
+  const [, y, mo, d, hh, mm] = m;
+  const hhmm = hh ? ` ${hh}:${mm}` : "";
+  return `${y}-${mo}-${d}${hhmm}`;
+}
+
 /**
- * Standalone review view (Mode 1). Pick a replay, see its metadata + the
- * holographic map rendering its timeline. Roster is split into allies/enemies
- * using `relation` (0/1 = ally, 2+ = enemy) — the same split the overlay uses.
- *
- * The left rail holds a **client selector** (so multi-install machines — e.g.
- * Steam + Wargaming Center — can switch which client's replays are listed) and
- * the replay list below it. The selector drives `refreshList` with the active
- * install's `replays/` path; without it the list command would fall back to
- * env vars (which are almost never set), yielding an empty list.
+ * Standalone review view (Mode 1). The left rail lists replays as info cards
+ * indexed by match time / mode / own ship / map; picking one opens the detail
+ * view: a holographic battle map, the recorder's ship as a holographic model,
+ * and an enriched roster (this-match ship + ship type + on-demand avg stats).
  */
 export default defineComponent({
   name: "ReplayView",
   setup() {
     const parser = useReplayParser();
     const gd = useGameDetect();
+    const accounts = useAccountStore();
+    const stats = useStatsStore();
+    const encyclopedia = useEncyclopediaStore();
 
     // Client-selector options derived from detected installs.
     const clientOptions = computed<SelectOption[]>(() =>
@@ -60,6 +82,16 @@ export default defineComponent({
     );
     const activePath = computed(() => gd.config.activeInstall?.path ?? "");
     const hasClient = computed(() => gd.config.installs.length > 0);
+
+    /** The realm to query player stats against. Prefer the client install's
+     *  realm, then the bound account's realm, else the UI default. */
+    const realm = computed(
+      () =>
+        gd.config.activeInstall?.realm ??
+        accounts.activeAccount?.realm ??
+        accounts.activeRealm ??
+        "asia",
+    );
 
     /** Reload the replay list from the given (or active) client's replays dir. */
     async function reload(path?: string) {
@@ -74,6 +106,8 @@ export default defineComponent({
     onMounted(async () => {
       await gd.detect();
       await reload();
+      // Warm the encyclopedia so ship names/types resolve for every roster.
+      void encyclopedia.load(realm.value).catch(() => {});
     });
 
     // When the user picks a different client, update the store + reload.
@@ -98,19 +132,51 @@ export default defineComponent({
     // open so the header parse stays fast; the decode is the expensive step.
     const trajectories = ref<EntityTrajectory[]>([]);
     const trajectoryError = ref<string | null>(null);
+    /** Match duration (seconds) — the max sample time across all trajectories.
+     *  Only knowable after the packet stream is decoded; shown in the detail. */
+    const duration = ref(0);
     watch(
       () => parser.current.value?.path,
       async (path) => {
         trajectories.value = [];
         trajectoryError.value = null;
+        duration.value = 0;
         if (!path) return;
         try {
           trajectories.value = await api.readReplayPositions(path);
+          let maxT = 0;
+          for (const tr of trajectories.value) {
+            for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
+          }
+          duration.value = maxT;
         } catch (e) {
           trajectoryError.value = (e as Error).message;
         }
       },
     );
+
+    /** Format a match duration (seconds) as M:SS or H:MM:SS. */
+    function formatDuration(sec: number): string {
+      if (!sec || sec <= 0) return "—";
+      const s = Math.round(sec);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const ss = s % 60;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
+    }
+
+    /** Resolve a roster vehicle's ShipInfo (for ship type/name back-fill). */
+    function shipOf(v: VehicleEntry): ShipInfo | null {
+      return encyclopedia.byId.get(v.shipId) ?? null;
+    }
+    function shipTypeShort(v: VehicleEntry): string {
+      const info = shipOf(v);
+      return (info ? SHIP_TYPE_SHORT[info.type] : null) ?? "?";
+    }
+    function shipDisplayName(v: VehicleEntry): string {
+      return shipOf(v)?.name ?? v.shipName ?? v.name ?? `#${v.shipId}`;
+    }
 
     const refreshing = ref(false);
     async function onRefresh() {
@@ -121,6 +187,37 @@ export default defineComponent({
         refreshing.value = false;
       }
     }
+
+    /** Per-player avg-stats cache for the open replay (keyed by name). Looked
+     *  up lazily on hover via lookupByName — one WG call per player, on demand. */
+    const statsCache = ref<Map<string, PlayerStats>>(new Map());
+    const loadingNames = ref<Set<string>>(new Set());
+    const failedNames = ref<Set<string>>(new Set());
+    async function lookupByName(name: string) {
+      if (!name || statsCache.value.has(name) || loadingNames.value.has(name)) return;
+      loadingNames.value = new Set(loadingNames.value).add(name);
+      try {
+        const s = await stats.lookup(name, realm.value);
+        statsCache.value = new Map(statsCache.value).set(name, s);
+      } catch {
+        failedNames.value = new Set(failedNames.value).add(name);
+      } finally {
+        const next = new Set(loadingNames.value);
+        next.delete(name);
+        loadingNames.value = next;
+      }
+    }
+    // Reset the stats cache whenever the open replay changes.
+    watch(
+      () => parser.current.value?.path,
+      () => {
+        statsCache.value = new Map();
+        loadingNames.value = new Set();
+        failedNames.value = new Set();
+      },
+    );
+
+    const currentPath = computed(() => parser.current.value?.path ?? "");
 
     return () => (
       <main class="replay-view">
@@ -166,16 +263,38 @@ export default defineComponent({
               <p class="replay-view__empty">{t("replay.list.empty")}</p>
             ) : (
               <ul class="replay-view__items">
-                {parser.list.value.map((p) => (
-                  <li key={p} class="replay-view__item">
-                    <SButton
-                      size="sm"
-                      variant="ghost"
-                      block
-                      onClick={() => parser.open(p)}
+                {parser.list.value.map((r) => (
+                  <li key={r.path} class="replay-view__item">
+                    <button
+                      type="button"
+                      class={[
+                        "replay-card",
+                        currentPath.value === r.path ? "replay-card--active" : "",
+                      ]}
+                      onClick={() => parser.open(r.path)}
                     >
-                      {p.split(/[\\/]/).pop()}
-                    </SButton>
+                      <div class="replay-card__top">
+                        <span class="replay-card__ship">
+                          {r.ownShipName ?? t("replay.ownShip")}
+                        </span>
+                        {r.matchGroup ? (
+                          <span class="replay-card__pill">{modeLabel(r.matchGroup)}</span>
+                        ) : null}
+                      </div>
+                      <div class="replay-card__row">
+                        <span class="replay-card__label">{t("replay.matchTime")}</span>
+                        <span class="replay-card__val">{formatDateTime(r.dateTime)}</span>
+                      </div>
+                      <div class="replay-card__row">
+                        <span class="replay-card__label">{t("replay.mapLabel")}</span>
+                        <span class="replay-card__val">{r.mapName ?? t("replay.map.unknown")}</span>
+                      </div>
+                      <div class="replay-card__foot">
+                        <span class="replay-card__players">
+                          {t("replay.players", { n: r.playerCount })}
+                        </span>
+                      </div>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -199,17 +318,28 @@ export default defineComponent({
                   {parser.current.value.mapName ?? `map #${parser.current.value.mapId ?? "?"}`}
                 </strong>
                 <span class="replay-view__meta-item">
-                  {parser.current.value.dateTime ?? ""}
+                  {formatDateTime(parser.current.value.dateTime)}
                 </span>
-                <span class="replay-view__meta-item replay-view__pill">
-                  {parser.current.value.matchGroup ?? ""}
-                </span>
+                {parser.current.value.matchGroup ? (
+                  <span class="replay-view__meta-item replay-view__pill">
+                    {modeLabel(parser.current.value.matchGroup)}
+                  </span>
+                ) : null}
                 <span class="replay-view__meta-item replay-view__count">
-                  {parser.current.value.vehicles.length} players
+                  {t("replay.players", { n: parser.current.value.vehicles.length })}
                 </span>
+                {duration.value > 0 ? (
+                  <span class="replay-view__meta-item">
+                    {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
+                  </span>
+                ) : null}
               </header>
 
-              <div class="replay-view__body">
+              <div class="replay-view__detail">
+                {/* Holographic battle map — every ship rendered as its own 3D
+                    model (or a tier/nation/type fallback), tinted by team role
+                    (self=green / ally=blue / enemy=yellow). No separate ship
+                    preview panel; the recorder's own ship lives on the map. */}
                 <div class="replay-view__map-wrap">
                   {trajectoryError.value ? (
                     <div class="replay-view__placeholder replay-view__placeholder--error">
@@ -220,14 +350,38 @@ export default defineComponent({
                       replayPath={parser.current.value.path}
                       trajectories={trajectories.value}
                       vehicles={parser.current.value.vehicles}
+                      encyclopedia={encyclopedia.byId.value}
                       mapId={parser.current.value.mapName ?? ""}
                     />
                   )}
                 </div>
-                <div class="replay-view__roster">
-                  <RosterColumn title="Allies" rows={allies.value} kind="ally" />
-                  <RosterColumn title="Enemies" rows={enemies.value} kind="enemy" />
-                </div>
+              </div>
+
+              <div class="replay-view__roster">
+                <RosterColumn
+                  title={t("replay.roster.allies")}
+                  rows={allies.value}
+                  kind="ally"
+                  shipOf={shipOf}
+                  shipTypeShort={shipTypeShort}
+                  shipDisplayName={shipDisplayName}
+                  statsCache={statsCache.value}
+                  loadingNames={loadingNames.value}
+                  failedNames={failedNames.value}
+                  onHoverPlayer={(n) => void lookupByName(n)}
+                />
+                <RosterColumn
+                  title={t("replay.roster.enemies")}
+                  rows={enemies.value}
+                  kind="enemy"
+                  shipOf={shipOf}
+                  shipTypeShort={shipTypeShort}
+                  shipDisplayName={shipDisplayName}
+                  statsCache={statsCache.value}
+                  loadingNames={loadingNames.value}
+                  failedNames={failedNames.value}
+                  onHoverPlayer={(n) => void lookupByName(n)}
+                />
               </div>
             </div>
           ) : (
@@ -239,29 +393,79 @@ export default defineComponent({
   },
 });
 
-/** A two-column roster (allies | enemies) rendered from a replay's vehicles. */
+/** A roster column: each row shows the player's this-match ship + type, and
+ *  lazily fetches the player's average stats (winrate / avg damage / battles)
+ *  on hover via the WG API. */
 const RosterColumn = defineComponent({
   name: "RosterColumn",
   props: {
     title: { type: String, required: true },
     rows: { type: Array as () => VehicleEntry[], required: true },
     kind: { type: String as () => "ally" | "enemy", required: true },
+    // Helpers passed from the parent to avoid re-instantiating the encyclopedia
+    // store lookup closures per column.
+    shipOf: { type: Function as unknown as () => (v: VehicleEntry) => ShipInfo | null, required: true },
+    shipTypeShort: { type: Function as unknown as () => (v: VehicleEntry) => string, required: true },
+    shipDisplayName: { type: Function as unknown as () => (v: VehicleEntry) => string, required: true },
+    statsCache: { type: Object as () => Map<string, PlayerStats>, required: true },
+    loadingNames: { type: Object as () => Set<string>, required: true },
+    failedNames: { type: Object as () => Set<string>, required: true },
   },
-  setup(props) {
+  emits: { hoverPlayer: (_name: string) => true },
+  setup(props, { emit }) {
     return () => (
       <div class={["roster-col", `roster-col--${props.kind}`]}>
         <div class="roster-col__head">
           {props.title} <span class="roster-col__count">{props.rows.length}</span>
         </div>
         <ul class="roster-col__list">
-          {props.rows.map((v) => (
-            <li class="roster-col__row" key={v.id}>
-              <span class="roster-col__name">{v.name || `#${v.id}`}</span>
-              <span class="roster-col__ship">
-                {v.shipName ?? `ship ${v.shipId}`}
-              </span>
-            </li>
-          ))}
+          {props.rows.map((v, idx) => {
+            const s = props.statsCache.get(v.name) ?? null;
+            const loading = props.loadingNames.has(v.name);
+            const failed = props.failedNames.has(v.name);
+            return (
+              <li
+                class="roster-col__row"
+                key={`${v.id}-${v.name}-${idx}`}
+                onMouseenter={() => emit("hoverPlayer", v.name)}
+              >
+                <div class="roster-col__main">
+                  <span class="roster-col__name">{v.name || `#${v.id}`}</span>
+                  <span class="roster-col__ship">
+                    <span class="roster-col__shiptype">{props.shipTypeShort(v)}</span>
+                    {props.shipDisplayName(v)}
+                  </span>
+                </div>
+                <div class="roster-col__stats">
+                  {loading ? (
+                    <span class="roster-col__stat roster-col__stat--muted">
+                      {t("replay.roster.loadingStats")}
+                    </span>
+                  ) : failed ? (
+                    <span class="roster-col__stat roster-col__stat--muted">
+                      {t("replay.roster.statsFailed")}
+                    </span>
+                  ) : s ? (
+                    <>
+                      <span class="roster-col__stat" style={{ color: winrateColor(s.winrate) }}>
+                        {s.winrate != null ? `${s.winrate.toFixed(1)}%` : "—"}
+                      </span>
+                      <span class="roster-col__stat roster-col__stat--dmg">
+                        {s.avgDamage != null ? Math.round(s.avgDamage).toLocaleString() : "—"}
+                      </span>
+                      <span class="roster-col__stat roster-col__stat--muted">
+                        {(s.battles ?? 0).toLocaleString()}
+                      </span>
+                    </>
+                  ) : (
+                    <span class="roster-col__stat roster-col__stat--muted">
+                      {t("replay.roster.hoverForStats")}
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
     );

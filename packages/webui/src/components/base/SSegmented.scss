@@ -1,10 +1,20 @@
 /* SSegmented — iOS-style segmented control with sliding indicator.
    The indicator slides via CSS variables (--seg-count / --seg-index) set
    from JS. Width = 1/count of the track; transform = index × 100% of the
-   indicator's own width. Both are pure CSS math — no DOM measurement. */
+   indicator's own width. Both are pure CSS math — no DOM measurement.
+
+   The track is a CSS grid of equal 1fr columns: each option gets the same
+   width (= the widest option's min-content), so a 4-char label never
+   overflows its slot and the indicator's `1/count` math always aligns.
+   This works for BOTH inline (shrink-to-fit, sized to the widest label)
+   and block (width:100%) modes — the flex-based layout only produced
+   equal widths when the container had a definite width, leaving inline
+   groups with unequal, overflowing options. */
 .s-segmented {
   position: relative;
-  display: inline-flex;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   align-items: center;
   gap: 0;
   padding: 2px;
@@ -14,7 +24,7 @@
   font-family: inherit;
 
   &--block {
-    display: flex;
+    display: grid;
     width: 100%;
   }
 
@@ -37,8 +47,7 @@
   &__option {
     position: relative;
     z-index: 1; /* above the indicator */
-    flex: 1 1 0;
-    min-width: 0;
+    min-width: 0; /* allow text to be laid out by the grid cell */
     border: none;
     background: transparent;
     color: rgb(var(--color-muted));

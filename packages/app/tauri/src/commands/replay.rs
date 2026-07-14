@@ -16,7 +16,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use wowsp_tauri_shared::{ReplayMeta, VehicleEntry};
+use wowsp_tauri_shared::{ReplayMeta, ReplayMetaLite, VehicleEntry};
 
 /// Replay magic — first 4 bytes of every `.wowsreplay`.
 const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
@@ -113,6 +113,132 @@ pub fn list_replays(dir: Option<String>, limit: Option<usize>) -> Result<Vec<Str
         .collect())
 }
 
+/// List replays with their parsed descriptor metadata — same walk as
+/// [`list_replays`], but each entry carries the lightweight summary fields
+/// (date/time, match group, map, own ship, player count) instead of just a
+/// path. Only the first JSON block is read per file (no packet-stream decode),
+/// so a few hundred replays list in well under a second. Files whose header
+/// can't be parsed still appear, with whatever fields were recoverable.
+#[tauri::command]
+pub fn list_replays_meta(
+    dir: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ReplayMetaLite>, String> {
+    let dir = resolve_replay_dir(dir)?;
+    let mut entries: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    walk_replays(&dir, &mut entries);
+    use std::cmp::Reverse;
+    entries.sort_by_key(|(_, t)| Reverse(*t));
+    let limit = limit.unwrap_or(200);
+    Ok(entries
+        .into_iter()
+        .take(limit)
+        .map(|(p, _)| lite_from_path(&p))
+        .collect())
+}
+
+/// Build a [`ReplayMetaLite`] for one replay file by reading just its
+/// descriptor-JSON block. On any parse failure, returns a lite entry with only
+/// the path + filename-derived datetime populated, so the file is still listed.
+fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
+    let path_str = path.to_string_lossy().into_owned();
+    let date_time = parse_datetime_from_filename(&path_str);
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(_) => {
+            return ReplayMetaLite {
+                path: path_str,
+                date_time,
+                match_group: None,
+                map_name: None,
+                map_id: None,
+                own_ship_id: None,
+                own_ship_name: None,
+                player_count: 0,
+            };
+        }
+    };
+    let json = match extract_descriptor_json(&bytes) {
+        Some(j) => j,
+        None => {
+            return ReplayMetaLite {
+                path: path_str,
+                date_time,
+                match_group: None,
+                map_name: None,
+                map_id: None,
+                own_ship_id: None,
+                own_ship_name: None,
+                player_count: 0,
+            };
+        }
+    };
+    let raw: serde_json::Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => {
+            return ReplayMetaLite {
+                path: path_str,
+                date_time,
+                match_group: None,
+                map_name: None,
+                map_id: None,
+                own_ship_id: None,
+                own_ship_name: None,
+                player_count: 0,
+            };
+        }
+    };
+    lite_from_raw(path_str, date_time, raw)
+}
+
+/// Project the parsed descriptor JSON onto a [`ReplayMetaLite`]. Shares the
+/// defensive field-pulling style of [`meta_from_raw`], but drops the roster
+/// and raw JSON and resolves the recording player's ship (relation == 0).
+fn lite_from_raw(
+    path: String,
+    date_time: Option<String>,
+    raw: serde_json::Value,
+) -> ReplayMetaLite {
+    let obj = raw.as_object();
+    let match_group = obj
+        .and_then(|o| o.get("matchGroup"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let map_id = obj.and_then(|o| o.get("mapId")).and_then(|v| v.as_i64());
+    let map_name = obj
+        .and_then(|o| o.get("mapDisplayName"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+
+    // Pull the roster just enough to count players + find the recorder (relation 0).
+    let vehicles = obj
+        .and_then(|o| o.get("vehicles"))
+        .and_then(|v| v.as_array());
+    let player_count = vehicles.map(|a| a.len()).unwrap_or(0);
+    let own = vehicles.and_then(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_object())
+            .find(|o| o.get("relation").and_then(|x| x.as_i64()).unwrap_or(-1) == 0)
+    });
+    let own_ship_id = own.and_then(|o| o.get("shipId")).and_then(|x| x.as_i64());
+    // ship_name is left None here — the frontend resolves it via the encyclopedia.
+    let own_ship_name = own
+        .and_then(|o| o.get("name"))
+        .and_then(|x| x.as_str())
+        .map(str::to_owned);
+
+    ReplayMetaLite {
+        path,
+        date_time,
+        match_group,
+        map_name,
+        map_id,
+        own_ship_id,
+        own_ship_name,
+        player_count,
+    }
+}
+
 /// Public re-export so `arena_info` can reuse the exact same JSON extraction
 /// (the live `tempArenaInfo.json` shares the replay's dual-format header).
 pub fn extract_descriptor_json_pub(bytes: &[u8]) -> Option<String> {
@@ -200,17 +326,20 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
 }
 
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
-/// the leading `YYYYMMDD_HHMMSS` is the only timestamp source.
+/// the leading `YYYYMMDD_HHMMSS` is the only timestamp source. Both segments
+/// are 8/6 pure digits; we return them joined by `_` when both are present,
+/// falling back to the date alone if only the first matches.
 fn parse_datetime_from_filename(path: &str) -> Option<String> {
-    let stem = std::path::Path::new(path)
-        .file_name()?
-        .to_str()?
-        .split('_')
-        .next()?;
-    if stem.len() == 8 && stem.chars().all(|c| c.is_ascii_digit()) {
-        Some(stem.to_owned())
-    } else {
-        None
+    let name = std::path::Path::new(path).file_name()?.to_str()?;
+    let mut parts = name.split('_');
+    let date = parts.next()?;
+    let is_digits = |s: &str, n: usize| s.len() == n && s.chars().all(|c| c.is_ascii_digit());
+    if !is_digits(date, 8) {
+        return None;
+    }
+    match parts.next() {
+        Some(t) if is_digits(t, 6) => Some(format!("{date}_{t}")),
+        _ => Some(date.to_owned()),
     }
 }
 
@@ -287,7 +416,42 @@ mod tests {
         assert_eq!(meta.map_name.as_deref(), Some("15_NE_north"));
         assert_eq!(meta.map_id, Some(8));
         assert_eq!(meta.match_group.as_deref(), Some("pvp"));
-        assert_eq!(meta.date_time.as_deref(), Some("20250622"));
+        // dateTime now retains the full YYYYMMDD_HHMMSS from the filename.
+        assert_eq!(meta.date_time.as_deref(), Some("20250622_152405"));
+    }
+
+    /// Datetime parser keeps the time-of-day segment and tolerates a date-only
+    /// filename (older clients / renamed files).
+    #[test]
+    fn datetime_parser_keeps_time_or_date() {
+        assert_eq!(
+            parse_datetime_from_filename("20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay")
+                .as_deref(),
+            Some("20250622_152405"),
+        );
+        assert_eq!(
+            parse_datetime_from_filename("20250622_someother.wowsreplay").as_deref(),
+            Some("20250622"),
+        );
+        assert!(parse_datetime_from_filename("replay.wowsreplay").is_none());
+    }
+
+    /// The lite projection counts players and finds the recorder's ship
+    /// (relation == 0) without retaining the roster or raw JSON.
+    #[test]
+    fn lite_from_raw_finds_own_ship() {
+        let json = r#"{"matchGroup":"ranked","mapDisplayName":"15_NE_north","mapId":8,"vehicles":[
+            {"id":1,"name":"Alpha","relation":0,"shipId":4182828960},
+            {"id":2,"name":"Bravo","relation":1,"shipId":4286591792},
+            {"id":3,"name":"Enemy","relation":2,"shipId":4292851696}
+        ]}"#;
+        let raw: serde_json::Value = serde_json::from_str(json).unwrap();
+        let lite = lite_from_raw("20250622_152405_x.wowsreplay".into(), Some("20250622_152405".into()), raw);
+        assert_eq!(lite.match_group.as_deref(), Some("ranked"));
+        assert_eq!(lite.map_name.as_deref(), Some("15_NE_north"));
+        assert_eq!(lite.player_count, 3);
+        assert_eq!(lite.own_ship_id, Some(4182828960));
+        assert_eq!(lite.own_ship_name.as_deref(), Some("Alpha"));
     }
 
     /// If a real replay is available on this machine, parse it end-to-end.

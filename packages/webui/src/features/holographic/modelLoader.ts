@@ -116,6 +116,92 @@ export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   return mapModelUrls.get(clean) ?? null;
 }
 
+/** Minimal ship shape needed for fallback resolution (tier/nation/type +
+ *  shipId to look up baseName). Intentionally a structural subset of ShipInfo
+ *  so callers can pass either a full ShipInfo or a trimmed projection. */
+export interface ShipModelSpec {
+  shipId: number;
+  tier?: number | null;
+  nation?: string | null;
+  type?: string | null;
+}
+
+/** Resolve a model URL for a single ship spec, checking its exact baseName in
+ *  ship_models.json first. Returns null if this ship has no baked model. */
+function resolveExact(spec: ShipModelSpec): string | null {
+  if (spec.shipId == null) return null;
+  const entry = shipModelMap[String(spec.shipId)];
+  if (entry?.baseName) {
+    const url = shipModelUrls.get(entry.baseName.toLowerCase());
+    if (url) return url;
+  }
+  return null;
+}
+
+/** Find a fallback model URL for a ship that has no exact model, by matching
+ *  other (premium/skin/missing) ships against tech-tree ships of the same
+ *  tier/nation/type that DO have a baked GLB.
+ *
+ *  Resolution priority (first hit wins):
+ *    1. same tier + nation + type, tech-tree (non-premium/special)
+ *    2. same tier + type, tech-tree
+ *    3. same tier, tech-tree
+ *  e.g. a premium tier-8 US battleship with no model → a tier-8 US tech-tree
+ *  BB (e.g. North Carolina line). Pass the full encyclopedia (`ships`) so the
+ *  search has candidates; it's filtered to ships whose baseName resolves.
+ *
+ *  Returns null if no candidate at any tier — the caller then renders a cone. */
+export function resolveFallbackModel(
+  spec: ShipModelSpec,
+  ships: ShipModelSpec[],
+): string | null {
+  const tier = spec.tier;
+  if (tier == null) return null;
+
+  // Candidate pool: ships with the same tier whose baseName actually resolves
+  // to a baked model. Built once, then filtered by progressively looser keys.
+  const candidates = ships.filter(
+    (s) => s.tier === tier && resolveExact(s) != null,
+  );
+  if (candidates.length === 0) return null;
+
+  const nation = spec.nation?.toLowerCase();
+  const type = spec.type?.toLowerCase();
+
+  // 1. exact tier + nation + type
+  if (nation && type) {
+    const hit = candidates.find(
+      (s) => s.nation?.toLowerCase() === nation && s.type?.toLowerCase() === type,
+    );
+    const url = hit && resolveExact(hit);
+    if (url) return url;
+  }
+  // 2. same tier + type
+  if (type) {
+    const hit = candidates.find((s) => s.type?.toLowerCase() === type);
+    const url = hit && resolveExact(hit);
+    if (url) return url;
+  }
+  // 3. same tier (any) — pick the first candidate.
+  return resolveExact(candidates[0]);
+}
+
+/** Resolve the best available model URL for a ship entry: exact match first,
+ *  then a tier/nation/type fallback against the encyclopedia. Returns null if
+ *  neither resolves (caller renders a cone marker).
+ *
+ *  This is the entry point for the replay map — pass the full ShipInfo for the
+ *  ship and the encyclopedia list (or its values) as the fallback pool. */
+export function resolveShipModelForEntry(
+  ship: ShipModelSpec | null | undefined,
+  encyclopedia: ShipModelSpec[],
+): string | null {
+  if (!ship) return null;
+  const exact = resolveExact(ship);
+  if (exact) return exact;
+  return resolveFallbackModel(ship, encyclopedia);
+}
+
 /** Shared GLTFLoader instance (heavy to construct). */
 let _loader: GLTFLoader | null = null;
 function getLoader(): GLTFLoader {

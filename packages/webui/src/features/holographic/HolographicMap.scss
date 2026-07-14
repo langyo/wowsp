@@ -87,4 +87,33 @@
     font-size: var(--text-2xs);
     white-space: nowrap;
   }
+
+  &__legend {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.4rem 0.6rem;
+    background: rgb(0 0 0 / 50%);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+  }
+
+  &__legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-text) / 80%);
+    white-space: nowrap;
+  }
+
+  &__legend-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: var(--radius-full);
+    box-shadow: 0 0 6px currentColor;
+  }
 }
