@@ -8,5 +8,45 @@
   "client": "游戏客户端",
   "refresh": "刷新",
   "loading": "正在解析录像…",
-  "select": "从列表中选择一个录像以加载。"
+  "select": "从列表中选择一个录像以加载。",
+  "players": "{n} 人",
+  "mode": {
+    "pvp": "随机战",
+    "ranked": "排位战",
+    "clan": "公会战",
+    "event": "活动",
+    "cooperative": "联合作战",
+    "training": "训练房",
+    "brawl": "乱斗",
+    "squad": "小队战",
+    "_fallback": "对战"
+  },
+  "map": {
+    "unknown": "未知地图",
+    "contour": "等高线地形图",
+    "contourHint": "等高线地形：陆地按高度分层，海域含海床等深线（含海沟）。"
+  },
+  "ownShip": "主舰",
+  "noShipModel": "暂无该舰艇的全息白模。",
+  "duration": "时长",
+  "matchTime": "对战时间",
+  "mapLabel": "地图",
+  "legend": {
+    "self": "我方舰",
+    "ally": "队友",
+    "enemy": "敌方"
+  },
+  "roster": {
+    "allies": "我方",
+    "enemies": "敌方",
+    "shipType": "舰种",
+    "avgStats": "平均战绩",
+    "hoverForStats": "悬停查看战绩",
+    "loadingStats": "查询中…",
+    "statsFailed": "查询失败",
+    "noStats": "无战绩",
+    "battles": "场次",
+    "winrate": "胜率",
+    "avgDamage": "场均"
+  }
 }

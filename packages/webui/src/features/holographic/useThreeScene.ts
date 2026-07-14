@@ -17,7 +17,10 @@ export interface ThreeScene {
   renderer: THREE.WebGLRenderer;
 }
 
-export function useThreeScene(container: Ref<HTMLElement | null>) {
+export function useThreeScene(
+  container: Ref<HTMLElement | null>,
+  onFrame?: (dt: number) => void,
+) {
   const ready = ref(false);
   const api = shallowRef<ThreeScene | null>(null);
   let rafId = 0;
@@ -50,7 +53,9 @@ export function useThreeScene(container: Ref<HTMLElement | null>) {
     api.value = { scene, camera, renderer };
     ready.value = true;
 
+    const clock = new THREE.Clock();
     const tick = () => {
+      if (onFrame) onFrame(clock.getDelta());
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(tick);
     };
