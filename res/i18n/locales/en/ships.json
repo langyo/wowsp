@@ -61,6 +61,7 @@
     "tabMyStats": "My Stats",
     "tabCommunity": "Server Trend",
     "tabSkill": "Captain Skills",
+    "tabShipyard": "Shipyard",
     "mainBattery": "Main Battery",
     "hull": "Hull",
     "mobility": "Mobility",
@@ -255,5 +256,22 @@
     "CV_Anti-Large": "Anti-large carriers",
     "SS_Close": "Close-range submarines",
     "SS_Far": "Long-range submarines"
+  },
+  "shipyard": {
+    "healthSlider": "Current HP",
+    "healthHint": "Tune the HP slider to see the effect of trigger-type skills (e.g. Adrenaline Rush).",
+    "modifiedStats": "Modified stats",
+    "stat": "Stat",
+    "base": "Base",
+    "modified": "Modified",
+    "stats": {
+      "hp": "HP",
+      "reload": "Reload",
+      "range": "Range",
+      "traverse": "Traverse",
+      "concealment": "Concealment",
+      "speed": "Speed",
+      "torpedoSpeed": "Torpedo speed"
+    }
   }
 }

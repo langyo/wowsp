@@ -14,11 +14,13 @@ import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import { buildArmorScheme, buildBallistics } from "./ballistics";
 import SkillBuilder from "./SkillBuilder";
+import ShipyardPanel from "./ShipyardPanel";
 import ShipStage, { type FocusZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import ArmorBelt from "./ArmorBelt";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { tierToRoman } from "@/utils/tierRoman";
 import "./ShipDetailModal.scss";
 
 /**
@@ -45,7 +47,13 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const trends = useTrendsStore();
 
-    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
+    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill" | "shipyard">("specs");
+
+    // ── Shipyard: shared skill allocation + HP (for trigger skills) ──────
+    // Lifted here so switching tabs preserves the build; SkillBuilder (in the
+    // skill tab) and ShipyardPanel both bind to these.
+    const shipyardRank = ref<Record<string, number>>({});
+    const shipyardHealthPct = ref(1);
 
     // ── Holographic stage (ShipStage owns its own Three.js lifecycle) ──
     const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
@@ -143,7 +151,7 @@ export default defineComponent({
       <SModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
-        title={props.ship?.name ?? t("ships.detail.title")}
+        title={props.ship ? `${tierToRoman(props.ship.tier)} ${props.ship.name}` : t("ships.detail.title")}
         width="58rem"
       >
         {!props.ship ? null : (
@@ -156,11 +164,12 @@ export default defineComponent({
 
             {/* identity header */}
             <div class="ship-detail__id">
-              <STag variant="primary">Tier {props.ship.tier}</STag>
+              <STag variant="primary">{tierToRoman(props.ship.tier)}</STag>
               <STag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</STag>
               <NationFlag
                 nation={props.ship.nation}
                 label={nationLabel(props.ship.nation)}
+                variant="flag"
                 size="md"
                 showLabel
               />
@@ -175,7 +184,7 @@ export default defineComponent({
 
             {/* tab bar */}
             <div class="ship-detail__tabs">
-              {(["specs", "armor", "mystats", "community", "skill"] as const).map((name) => (
+              {(["specs", "armor", "mystats", "community", "skill", "shipyard"] as const).map((name) => (
                 <button
                   class={[
                     "ship-detail__tab",
@@ -183,7 +192,7 @@ export default defineComponent({
                   ]}
                   onClick={() => selectTab(name)}
                 >
-                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
+                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : name === "skill" ? "Skill" : "Shipyard"}`)}
                 </button>
               ))}
             </div>
@@ -250,6 +259,16 @@ export default defineComponent({
                   ) : (
                     <p>{t("ships.detail.communityUnavailable")}</p>
                   )}
+                </div>
+              ) : tab.value === "shipyard" ? (
+                <div class="ship-detail__shipyard" key="shipyard">
+                  <ShipyardPanel
+                    ship={props.ship}
+                    rank={shipyardRank.value}
+                    healthPct={shipyardHealthPct.value}
+                    onUpdate:rank={(v: Record<string, number>) => (shipyardRank.value = v)}
+                    onUpdate:healthPct={(v: number) => (shipyardHealthPct.value = v)}
+                  />
                 </div>
               ) : (
                 <div class="ship-detail__skill" key="skill">

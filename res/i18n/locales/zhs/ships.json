@@ -61,6 +61,7 @@
     "tabMyStats": "我的成绩",
     "tabCommunity": "全服趋势",
     "tabSkill": "舰长加点",
+    "tabShipyard": "船坞",
     "mainBattery": "主炮",
     "hull": "船体",
     "mobility": "机动",
@@ -255,5 +256,22 @@
     "CV_Anti-Large": "反大型舰航母",
     "SS_Close": "近程潜艇",
     "SS_Far": "远程潜艇"
+  },
+  "shipyard": {
+    "healthSlider": "当前血量",
+    "healthHint": "调节血量滑块以查看触发型技能（肾上腺素等）的效果变化。",
+    "modifiedStats": "重算属性",
+    "stat": "项目",
+    "base": "基础",
+    "modified": "加点后",
+    "stats": {
+      "hp": "血量",
+      "reload": "装填",
+      "range": "射程",
+      "traverse": "炮塔回转",
+      "concealment": "水面隐蔽",
+      "speed": "航速",
+      "torpedoSpeed": "鱼雷航速"
+    }
   }
 }

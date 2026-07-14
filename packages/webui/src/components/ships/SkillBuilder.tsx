@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import { RotateCcw, Lock } from "lucide-vue-next";
 
 import SButton from "@/components/base/SButton";
@@ -28,19 +28,36 @@ export default defineComponent({
   name: "SkillBuilder",
   props: {
     shipType: { type: String, required: true },
+    /** Optional externally-controlled allocation. When provided, the builder
+     *  becomes controlled (emits `update:modelRank` instead of mutating an
+     *  internal ref) so a parent like the shipyard can share the state. */
+    modelRank: { type: Object as PropType<Record<string, number>>, default: undefined },
   },
-  setup(props) {
+  emits: {
+    "update:modelRank": (_v: Record<string, number>) => true,
+  },
+  setup(props, { emit }) {
     const cls = computed<SkillClass>(() => skillClassFor(props.shipType));
     const tree = computed(() => SKILL_TREES[cls.value] ?? []);
-    // rank[skill.name] = invested points (0..maxRank). Names are unique within
-    // a class tree.
-    const rank = ref<Record<string, number>>({});
+    // Internal allocation (used when no modelRank is passed — the standalone
+    // skill tab). For controlled usage the parent's ref is the source of truth.
+    const internalRank = ref<Record<string, number>>({});
 
-    // Reset allocation whenever the tree (ship class) changes.
+    /** The active allocation: external if provided, else internal. */
+    const rank = computed(() => props.modelRank ?? internalRank.value);
+
+    /** Write an allocation, routing to the external emit when controlled. */
+    function setRank(next: Record<string, number>) {
+      if (props.modelRank !== undefined) emit("update:modelRank", next);
+      else internalRank.value = next;
+    }
+
+    // Reset the INTERNAL allocation whenever the tree (ship class) changes.
+    // (Controlled mode leaves reset to the parent.)
     watch(
       cls,
       () => {
-        rank.value = {};
+        internalRank.value = {};
       },
       { immediate: true },
     );
@@ -71,17 +88,18 @@ export default defineComponent({
     }
     function inc(skill: Skill): void {
       if (!canInc(skill.name, skill.maxRank)) return;
-      rank.value = { ...rank.value, [skill.name]: (rank.value[skill.name] ?? 0) + 1 };
+      const next = { ...rank.value, [skill.name]: (rank.value[skill.name] ?? 0) + 1 };
+      setRank(next);
     }
     function dec(name: string): void {
       const cur = rank.value[name] ?? 0;
       if (cur <= 0) return;
-      const next = cur - 1;
-      rank.value = { ...rank.value, [name]: next };
-      if (next === 0) delete rank.value[name];
+      const next: Record<string, number> = { ...rank.value, [name]: cur - 1 };
+      if (next[name] === 0) delete next[name];
+      setRank(next);
     }
     function reset(): void {
-      rank.value = {};
+      setRank({});
     }
 
     /** Group skills by tier (1..4) for column rendering. */
