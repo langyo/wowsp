@@ -47,6 +47,18 @@ function modeLabel(group?: string | null): string {
   return lbl === key ? t("replay.mode._fallback") : lbl;
 }
 
+/** Resolve a map's localized display name from its internal space id (e.g.
+ *  "18_NE_ice_islands" → "冰之岛"/"Islands of Ice"). Space ids often DON'T
+ *  match the display name (WG renamed maps but kept the internal id — e.g.
+ *  "38_Canada" is "Shatter"/"碎裂"), so this lookup is authoritative. Falls
+ *  back to the raw id, then to the unknown-map label. */
+function displayMapName(spaceId?: string | null): string {
+  if (!spaceId) return t("replay.map.unknown");
+  const key = `replay.map.names.${spaceId}`;
+  const lbl = t(key);
+  return lbl === key ? spaceId : lbl;
+}
+
 /** Format a `YYYYMMDD[_HHMMSS]` timestamp from the replay filename into a
  *  locale-friendly date(+time) string. Returns "—" if unparseable. */
 function formatDateTime(dt?: string | null): string {
@@ -287,7 +299,7 @@ export default defineComponent({
                       </div>
                       <div class="replay-card__row">
                         <span class="replay-card__label">{t("replay.mapLabel")}</span>
-                        <span class="replay-card__val">{r.mapName ?? t("replay.map.unknown")}</span>
+                        <span class="replay-card__val">{displayMapName(r.mapName)}</span>
                       </div>
                       <div class="replay-card__foot">
                         <span class="replay-card__players">
@@ -315,7 +327,7 @@ export default defineComponent({
             <div class="replay-view__content">
               <header class="replay-view__meta">
                 <strong class="replay-view__map">
-                  {parser.current.value.mapName ?? `map #${parser.current.value.mapId ?? "?"}`}
+                  {displayMapName(parser.current.value.mapName)}
                 </strong>
                 <span class="replay-view__meta-item">
                   {formatDateTime(parser.current.value.dateTime)}

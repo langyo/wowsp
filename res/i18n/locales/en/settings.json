@@ -1,6 +1,9 @@
 {
   "title": "Settings",
   "language": "Language",
+  "uiLanguage": "Interface language",
+  "dataLanguage": "Game data language",
+  "dataLanguageHint": "Source of localized names for ships, captains, maps, etc. The same language can differ by region (e.g. CN-server simplified uses animal names for IJN ships, ASIA uses original names). Pick \"auto\" to follow the interface language and active realm.",
   "theme": "Theme",
   "gamePath": "Game path",
   "realm": "Realm",

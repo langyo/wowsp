@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
-import { i18n } from "@/i18n";
+import { resolveWgLanguage } from "@/i18n/useLanguage";
 
 /** Ship encyclopedia store. Caches the full shipopedia in memory after the
  *  first load; the Rust layer handles disk caching + version invalidation.
@@ -40,9 +40,12 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     return m;
   });
 
-  /** Current UI language code (zhs/en/...). */
+  /** Effective WG language code for game-asset (ship/captain) names. Uses the
+   *  independent data-language setting (auto → derive from UI locale + realm,
+   *  preserving the CN-server animal-name distinction) rather than the raw UI
+   *  locale, so the user can decouple ship-name language from UI language. */
   function currentLanguage(): string {
-    return i18n.global.locale.value as string;
+    return resolveWgLanguage();
   }
 
   /** Load the full encyclopedia for a realm. Safe to call repeatedly — the
