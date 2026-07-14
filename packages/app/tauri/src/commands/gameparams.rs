@@ -76,16 +76,18 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
 
 /// Extract one ship's subtree from the unpacked GameParams.json.
 ///
-/// The unpacked format (from wowsunpack) is a top-level array of ship
-/// objects. Each object has an `id` (the numeric ship id, matching WG's
-/// `ship_id`) and a `name` (the internal ship name like "PASB018_Montana").
-/// We find the entry whose `id == ship_id` and return the whole object.
+/// Supports four top-level shapes the various unpackers emit:
+///   1. Array of ship objects: `[ { "id": 428..., ... }, ... ]`
+///   2. `{ "ships": [ ... ] }` wrapper
+///   3. `{ "<numericShipId>": { ... } }` keyed by the id as a string
+///   4. `{ "<internalName>": { "id": <num>, ... }, ... }` — keyed by the
+///      internal ship name (e.g. "PJSB018_Yamato_1944"), with the numeric
+///      id as a field inside each entry. This is the shape the
+///      `wowsunpack game-params` command actually emits.
 ///
-/// To avoid loading the entire (often 50-100MB) JSON into a single serde
-/// tree on every call, we do a streaming scan: deserialize only enough to
-/// match the id, then capture the matching object. In practice the file is
-/// a single huge array, so we parse it fully once per miss and rely on the
-/// per-ship cache to make subsequent calls instant.
+/// In cases 1/2/4 we scan entries and match by the `id` field; in case 3
+/// the key itself is the id. The per-ship AppData cache makes subsequent
+/// calls instant regardless of file size.
 pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value, String> {
     let parsed: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("parse GameParams.json: {e}"))?;
@@ -110,6 +112,14 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
         let key = ship_id.to_string();
         if let Some(v) = obj.get(&key) {
             return Ok(v.clone());
+        }
+        // Dict-of-internal-names form (the shape wowsunpack game-params
+        // actually emits): keys are internal names, the numeric id lives as
+        // a field inside each entry. Scan values and match by id field.
+        for (_name, entry) in obj {
+            if entry_matches_id(entry, ship_id) {
+                return Ok(entry.clone());
+            }
         }
     }
 
@@ -226,6 +236,38 @@ mod tests {
         let raw = serde_json::json!([{ "id": 1, "name": "A" }]).to_string();
         let err = extract_ship_slice(&raw, 999).unwrap_err();
         assert!(err.contains("not found"));
+    }
+
+    /// The real wowsunpack `game-params` output is keyed by internal ship
+    /// name (not numeric id), with the numeric id as a field. The parser
+    /// must scan values and match by `id`.
+    #[test]
+    fn extracts_ship_from_dict_of_names_form() {
+        let raw = serde_json::json!({
+            "PJSB018_Yamato_1944": {
+                "id": 4276041424_i64,
+                "name": "PJSB018_Yamato_1944",
+                "typeinfo": { "type": "Ship" },
+                "A_Hull": { "maxHP": 48600 }
+            },
+            "PASA002_Bogue": {
+                "id": 4292851696_i64,
+                "name": "PASA002_Bogue",
+                "typeinfo": { "type": "Ship" }
+            }
+        })
+        .to_string();
+        let ship = extract_ship_slice(&raw, 4276041424).unwrap();
+        assert_eq!(
+            ship.get("name").and_then(|v| v.as_str()),
+            Some("PJSB018_Yamato_1944")
+        );
+        assert_eq!(
+            ship.get("A_Hull")
+                .and_then(|h| h.get("maxHP"))
+                .and_then(|v| v.as_i64()),
+            Some(48600)
+        );
     }
 
     #[test]
