@@ -21,7 +21,7 @@
  * The internal codes and the per-class coefficient values live in skills.json;
  * this file only records WHICH code each named skill uses and WHICH stat it hits.
  */
-import skillData from "../../res/data/skills.json";
+import skillData from "../../data/skills.json";
 
 /** WoWS ship-class names as they appear in GameParams per-class modifier dicts. */
 export type GpClass =
