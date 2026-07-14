@@ -5,6 +5,8 @@ import { useTheme } from "@/theme/useTheme";
 import { useWallpaper } from "@/theme/useWallpaper";
 import { themePresets, type ThemeMode } from "@/theme/presets";
 import { t } from "@/i18n";
+import { useLanguage } from "@/i18n/useLanguage";
+import SSelect from "@/components/base/SSelect";
 import AboutModal from "@/components/layout/AboutModal";
 import "./SettingsView.scss";
 
@@ -18,6 +20,7 @@ export default defineComponent({
   setup() {
     const theme = useTheme();
     const wallpaper = useWallpaper();
+    const lang = useLanguage();
     const showAbout = ref(false);
 
     const modes: { value: ThemeMode; labelKey: string; icon: typeof Sun }[] = [
@@ -37,6 +40,40 @@ export default defineComponent({
     return () => (
       <div class="settings-view">
         <h1 class="settings-view__title">{t("settings.title")}</h1>
+
+        {/* language — two independent dropdowns: UI (app interface) vs data
+            (game-asset names: ships/captains/maps). The same language can have
+            different official translations across regions, e.g. 国服 simplified
+            (animal names for IJN) vs 亚服 Chinese. */ }
+        <section class="settings-view__section">
+          <h2 class="settings-view__section-title">{t("settings.language")}</h2>
+          <div class="settings-view__langs">
+            <div class="settings-view__lang">
+              <span class="settings-view__lang-label">{t("settings.uiLanguage")}</span>
+              <SSelect
+                modelValue={lang.uiLocale.value}
+                onUpdate:modelValue={(v: string) => lang.setUiLocale(v as "en" | "zhs")}
+                options={lang.uiLocaleOptions.map((o) => ({ value: o.value, label: o.label }))}
+                block
+              />
+            </div>
+            <div class="settings-view__lang">
+              <span class="settings-view__lang-label">{t("settings.dataLanguage")}</span>
+              <SSelect
+                modelValue={lang.dataLanguage.value}
+                onUpdate:modelValue={(v: string) => lang.setDataLanguage(v)}
+                options={lang.wgLanguageOptions.map((o) => ({
+                  value: o.value,
+                  label: o.value === "auto"
+                    ? `${o.label} (${lang.effectiveWgLanguage.value})`
+                    : o.label,
+                }))}
+                block
+              />
+            </div>
+          </div>
+          <p class="settings-view__hint">{t("settings.dataLanguageHint")}</p>
+        </section>
 
         {/* appearance */}
         <section class="settings-view__section">
