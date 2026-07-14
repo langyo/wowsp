@@ -220,6 +220,7 @@ fn main() {
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
             commands::replay::list_replays,
+            commands::replay::list_replays_meta,
             commands::arena_info::read_temp_arena_info,
             commands::arena_info::start_arena_watcher,
             commands::arena_info::stop_arena_watcher,

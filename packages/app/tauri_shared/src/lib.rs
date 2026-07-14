@@ -107,6 +107,31 @@ pub struct VehicleEntry {
     pub ship_name: Option<String>,
 }
 
+/// Lightweight replay summary for the list view. `list_replays_meta` parses
+/// only the descriptor-JSON block (no packet stream) of each file so a few
+/// hundred replays can be listed fast. The full `ReplayMeta` (with roster +
+/// raw JSON) is returned later by `read_replay_header` when one is opened.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayMetaLite {
+    pub path: String,
+    /// Parsed from the replay filename (`YYYYMMDD_HHMMSS`).
+    pub date_time: Option<String>,
+    /// e.g. `"pvp"`, `"ranked"`, `"clan"`, `"event"`.
+    pub match_group: Option<String>,
+    /// Client display name, e.g. `"15_NE_north"`.
+    pub map_name: Option<String>,
+    /// Numeric map id (the client JSON sends `mapId` as a number).
+    pub map_id: Option<i64>,
+    /// The recording player's ship id — the roster entry with `relation == 0`.
+    /// Used to render the per-replay holographic ship preview.
+    pub own_ship_id: Option<i64>,
+    /// The recording player's ship display name, when resolvable.
+    pub own_ship_name: Option<String>,
+    /// Number of players in the roster.
+    pub player_count: usize,
+}
+
 /// Snapshot of the live `tempArenaInfo.json` the game writes when a battle
 /// loads. Same shape as `ReplayMeta::vehicles`, but streamed live in overlay
 /// mode rather than read from a saved replay.
