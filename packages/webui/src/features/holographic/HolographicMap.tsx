@@ -1,9 +1,18 @@
-import { defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { defineComponent, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import * as THREE from "three";
 
 import { useThreeScene } from "./useThreeScene";
-import { resolveMapModelUrl, loadGlbModel } from "./modelLoader";
-import type { EntityTrajectory, VehicleEntry } from "@/api";
+import {
+  resolveMapModelUrl,
+  resolveShipModelForEntry,
+  loadGlbModel,
+  type ShipModelSpec,
+} from "./modelLoader";
+import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "./holoShader";
+import { makeHoloContourMaterial } from "./holoContourShader";
+import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
+import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
+import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
 import "./HolographicMap.scss";
 
 /**
@@ -25,14 +34,24 @@ export default defineComponent({
   props: {
     replayPath: { type: String, default: "" },
     trajectories: { type: Array as () => EntityTrajectory[], default: () => [] },
-    /** Roster from the replay header — used to color allies/enemies. */
+    /** Roster from the replay header — used to map trajectories to teams and
+     *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
+    /** Ship encyclopedia (shipId → ShipInfo). Used to resolve tier/nation/type
+     *  for per-ship model loading + tier-based fallback when a model is missing. */
+    encyclopedia: { type: Object as () => Map<number, ShipInfo>, default: () => new Map() },
     /** Map space id (e.g. "15_NE_north") — used to load the terrain GLB. */
     mapId: { type: String, default: "" },
   },
   setup(props) {
     const container = ref<HTMLElement | null>(null);
-    const { ready, api } = useThreeScene(container);
+    // Uniforms objects for the map's holographic materials (islands + terrain
+    // contour). Each material has its own uniforms; we tick all of them each
+    // frame so the scanline sweep stays in sync across both shaders.
+    const holoUniformsList: HoloUniforms[] = [];
+    const { ready, api } = useThreeScene(container, (dt) => {
+      for (const u of holoUniformsList) tickHoloUniforms(u, dt);
+    });
 
     // Playback state.
     const duration = ref(0);
@@ -47,7 +66,13 @@ export default defineComponent({
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
+    /** Tokens used to cancel in-flight async marker loads when actors are
+     *  rebuilt/unmounted before a GLB resolves. Each rebuild bumps the epoch;
+     *  stale loads compare against the live epoch before mutating the scene. */
+    let markerEpoch = 0;
+
     function clearActors() {
+      markerEpoch++; // invalidate any in-flight marker loads
       const scene = api.value?.scene;
       if (!scene) return;
       for (const l of trajectoryLines) {
@@ -57,12 +82,20 @@ export default defineComponent({
       }
       for (const m of shipMarkers) {
         scene.remove(m);
-        m.traverse((o) => {
-          if (o instanceof THREE.Mesh) {
-            o.geometry.dispose();
-            (o.material as THREE.Material).dispose();
-          }
-        });
+        // Markers built by buildShipMarker share geometry with the global GLB
+        // cache (identical ships reuse one buffer) — only dispose materials,
+        // not geometry. Cone fallbacks own their geometry but disposeMarker
+        // only touches materials, so dispose cones' geometry explicitly.
+        if (m.userData.isCone) {
+          m.traverse((o) => {
+            if (o instanceof THREE.Mesh) {
+              o.geometry.dispose();
+              (o.material as THREE.Material).dispose();
+            }
+          });
+        } else {
+          disposeMarker(m);
+        }
       }
       trajectoryLines = [];
       shipMarkers = [];
@@ -79,11 +112,15 @@ export default defineComponent({
           }
         });
         mapModel = null;
+        holoUniformsList.length = 0;
       }
     }
 
-    /** Attempt to load the terrain GLB for the current mapId. If no converted
-     *  GLB exists, the scene keeps its GridHelper fallback. */
+    /** Attempt to load the terrain GLB for the current mapId and restyle it as
+     *  a holographic island mesh (same cyan scanline/fresnel shader as the ship
+     *  viewer). If no converted GLB exists, the scene keeps its GridHelper
+     *  fallback. Contour-line terrain is a planned feature — for now the map is
+     *  the low-poly island geometry in holo style. */
     async function tryLoadMapModel() {
       clearMapModel();
       const scene = api.value?.scene;
@@ -92,6 +129,52 @@ export default defineComponent({
       if (!url) return; // no converted model — use grid fallback
       try {
         const model = await loadGlbModel(url);
+        // Baked GLBs drop POSITION accessor min/max — recompute per-geometry so
+        // bounds-dependent logic (future fit/clip) still works.
+        model.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (mesh.geometry?.attributes.position) {
+            mesh.geometry.computeBoundingBox();
+            mesh.geometry.computeBoundingSphere();
+          }
+        });
+        // Restyle meshes by role. The converted map GLB is a multi-mesh file
+        // whose nodes are named `Terrain` (the elevation height-field, incl.
+        // sea-floor bathymetry/trenches) and `Islands` (simplified land). The
+        // terrain gets the contour shader (topographic + bathymetric bands);
+        // islands get the plain holographic shader. Both share the same
+        // time/scanOffset uniforms so one onFrame tick animates everything.
+        const islandMat = makeHoloMaterial();
+        const contourMat = makeHoloContourMaterial();
+        holoUniformsList.push(
+          islandMat.uniforms as unknown as HoloUniforms,
+          contourMat.uniforms as unknown as HoloUniforms,
+        );
+        const wireMat = new THREE.MeshBasicMaterial({
+          color: 0x2a8fb5,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.08,
+          depthWrite: false,
+        });
+        const meshes: THREE.Mesh[] = [];
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+        });
+        for (const mesh of meshes) {
+          // A mesh is "terrain" if it or any ancestor node is named Terrain
+          // (GLTFLoader propagates the glTF node name to the Object3D).
+          let isTerrain = mesh.name === "Terrain";
+          let p: THREE.Object3D | null = mesh.parent;
+          while (!isTerrain && p && p !== model) {
+            if (p.name === "Terrain") isTerrain = true;
+            p = p.parent;
+          }
+          mesh.material = isTerrain ? contourMat : islandMat;
+          const wire = new THREE.Mesh(mesh.geometry, wireMat);
+          wire.raycast = () => {}; // overlay shouldn't intercept picks
+          mesh.add(wire);
+        }
         mapModel = model;
         scene.add(model);
       } catch (e) {
@@ -138,31 +221,72 @@ export default defineComponent({
       cam.lookAt(cx, 0, cz);
     }
 
-    /** Build the trajectory lines + ship markers from the decoded data. */
+    /** Map each ship trajectory to its roster entry (for team role + ship
+     *  model) via the EntityCreate `vehicleId`. WoWS's MM-style tooling treats
+     *  this as the player's per-match id, matching the roster `id` field. When
+     *  a trajectory has no matching roster entry (older replay, decode gap),
+     *  the role falls back to the entity-id spawn-order heuristic: the client
+     *  spawns team A before team B, so the first half of ships (by entity id)
+     *  are treated as allies. Unresolved ships never claim the "self" role, so
+     *  the recorder's own marker stays uniquely green. */
+    function resolveMarkerContext(
+      traj: EntityTrajectory,
+      shipEntityIds: number[],
+    ): { role: TeamRole; shipInfo: ShipInfo | null } {
+      const vehicles = props.vehicles;
+      // 1. Exact: vehicleId (from EntityCreate) == roster id.
+      const vid = traj.kind?.vehicleId;
+      const entry =
+        vid != null ? vehicles.find((v) => v.id === vid) : undefined;
+      let role: TeamRole;
+      let shipInfo: ShipInfo | null;
+      if (entry) {
+        role = roleFromRelation(entry.relation);
+        shipInfo = props.encyclopedia.get(entry.shipId) ?? null;
+      } else {
+        // 2. Fallback: entity-id spawn order (team A spawns before team B).
+        //    Never "self" — only the exact match earns the recorder tint.
+        const idx = shipEntityIds.indexOf(traj.entityId);
+        const isAlly = idx >= 0 && idx < shipEntityIds.length / 2;
+        role = isAlly ? "ally" : "enemy";
+        shipInfo = null;
+      }
+      return { role, shipInfo };
+    }
+
+    /** Build the trajectory lines + ship markers from the decoded data.
+     *
+     *  Each ship gets a colored trajectory line (team-tinted) and a marker.
+     *  The marker starts as a small cone (instant, correct color), then an
+     *  async GLB load swaps in the actual ship model (or a tier/nation/type
+     *  fallback) tinted to the team color. If the model fails to load, the
+     *  cone stays. */
     function rebuildActors() {
       clearActors();
       const scene = api.value?.scene;
       if (!scene || props.trajectories.length === 0) return;
+      const epoch = markerEpoch;
+
+      // Encyclopedia as the fallback pool for tier/nation/type resolution.
+      const encSpecs: ShipModelSpec[] = [...props.encyclopedia.values()];
 
       // Ships = EntityCreate type 2 with a healthy number of position samples
-      // (transient entities like planes/torpedoes have far fewer). The
-      // entity-create metadata makes this filter exact instead of the previous
-      // "entity id parity" approximation.
-      const SHIP_TYPE = 2;
-      const MIN_SHIP_SAMPLES = 80;
-      const shipIds = props.trajectories
-        .filter((t) => t.kind?.entityType === SHIP_TYPE && t.samples.length >= MIN_SHIP_SAMPLES)
+      // (transient entities like planes/torpedoes have far fewer). Sorted by
+      // entity id — the client spawns team A before team B, so this order is
+      // the fallback team-split heuristic when a roster join fails.
+      const shipEntityIds = props.trajectories
+        .filter((t) => t.kind?.entityType === 2 && t.samples.length >= 80)
         .map((t) => t.entityId)
         .sort((a, b) => a - b);
 
       for (const traj of props.trajectories) {
         if (traj.samples.length < 2) continue;
-        // Only render ships on the holographic map; skip zones/avatars/planes.
-        if (!shipIds.includes(traj.entityId)) continue;
-        // Split allies/enemies by entity-id order (the client spawns team A
-        // before team B). With 10 ships this yields 5 allies / 5 enemies.
-        const isAlly = shipIds.indexOf(traj.entityId) < shipIds.length / 2;
-        const color = isAlly ? 0x47e3a5 : 0xff4200;
+        // Only render ships (EntityCreate type 2 with many samples); skip
+        // zones/avatars/planes/torpedoes.
+        if (traj.kind?.entityType !== 2 || traj.samples.length < 80) continue;
+
+        const { role, shipInfo } = resolveMarkerContext(traj, shipEntityIds);
+        const color = TEAM_COLOR[role];
 
         // Trajectory line on the XZ plane (y=0.5 to hover above the grid).
         const pts = traj.samples.map((s) => new THREE.Vector3(s.x, 0.5, s.z));
@@ -172,19 +296,50 @@ export default defineComponent({
         scene.add(line);
         trajectoryLines.push(line);
 
-        // Ship marker: a small cone pointing along heading (yaw). Added once,
-        // repositioned each frame by updateMarkersAt().
+        // Marker: start as a cone, optionally upgraded to a ship model.
         const marker = new THREE.Group();
         const coneGeom = new THREE.ConeGeometry(14, 36, 8);
         const coneMat = new THREE.MeshBasicMaterial({ color });
         const cone = new THREE.Mesh(coneGeom, coneMat);
-        // Cone points +Y by default; rotate so it lies flat and points +Z at yaw 0.
-        cone.rotation.x = Math.PI / 2;
+        cone.rotation.x = Math.PI / 2; // lie flat, point +Z at yaw 0
         marker.add(cone);
         marker.userData.entityId = traj.entityId;
+        marker.userData.role = role;
+        marker.userData.isCone = true;
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
+
+        // Async: swap the cone for the real/fallback ship model.
+        const modelUrl = resolveShipModelForEntry(shipInfo, encSpecs);
+        if (modelUrl) {
+          buildShipMarker({ url: modelUrl, role })
+            .then((shipModel) => {
+              if (epoch !== markerEpoch || !api.value?.scene) return; // stale
+              // Preserve placement + heading; the caller updates rotation.y
+              // each frame via updateMarkersAt(), so just swap geometry.
+              const pos = marker.position.clone();
+              const yaw = marker.rotation.y;
+              const visible = marker.visible;
+              for (const child of [...marker.children]) {
+                marker.remove(child);
+                child.traverse((o) => {
+                  if (o instanceof THREE.Mesh) {
+                    o.geometry.dispose();
+                    (o.material as THREE.Material).dispose();
+                  }
+                });
+              }
+              marker.add(shipModel);
+              marker.position.copy(pos);
+              marker.rotation.y = yaw;
+              marker.visible = visible;
+              marker.userData.isCone = false;
+            })
+            .catch(() => {
+              /* cone stays — model load failed (corrupt/missing GLB) */
+            });
+        }
       }
     }
 
@@ -270,6 +425,31 @@ export default defineComponent({
       { deep: false },
     );
 
+    // Rebuild when the roster arrives/changes (team roles + shipId resolution)
+    // or when the encyclopedia finishes loading (enables tier-based fallback
+    // models). Both are needed because they resolve independently of the
+    // trajectory stream.
+    watch(
+      () => props.vehicles,
+      () => {
+        if (ready.value) {
+          rebuildActors();
+          updateMarkersAt(current.value);
+        }
+      },
+      { deep: false },
+    );
+    watch(
+      () => props.encyclopedia,
+      () => {
+        if (ready.value) {
+          rebuildActors();
+          updateMarkersAt(current.value);
+        }
+      },
+      { deep: false },
+    );
+
     // Recompute markers whenever the scrubber moves.
     watch(current, (t) => updateMarkersAt(t));
 
@@ -293,12 +473,29 @@ export default defineComponent({
       cancelAnimationFrame(playRaf);
       clearActors();
       clearMapModel();
+      clearShipMarkerCache();
     });
 
     return () => (
       <div class="holo-map">
         <div ref={container} class="holo-map__canvas" />
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
+        {props.trajectories.length > 0 ? (
+          <div class="holo-map__legend">
+            <span class="holo-map__legend-item">
+              <span class="holo-map__legend-dot" style={{ background: "#3cb478" }} />
+              {t("replay.legend.self")}
+            </span>
+            <span class="holo-map__legend-item">
+              <span class="holo-map__legend-dot" style={{ background: "#0078c8" }} />
+              {t("replay.legend.ally")}
+            </span>
+            <span class="holo-map__legend-item">
+              <span class="holo-map__legend-dot" style={{ background: "#e6aa32" }} />
+              {t("replay.legend.enemy")}
+            </span>
+          </div>
+        ) : null}
         {props.trajectories.length > 0 ? (
           <div class="holo-map__controls">
             <button class="holo-map__play" onClick={togglePlay}>

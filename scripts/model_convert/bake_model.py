@@ -5,16 +5,19 @@ Takes a high-poly GLB from wows-gltf-exporter and produces a **baked** low-poly
 GLB suitable for three.js holographic display:
   - Merges all mesh primitives into one geometry
   - Drops UV/normal/color attributes (holographic shaders don't need them)
-  - Decimates to a target triangle count (default 2000) — enough to show the
-    ship's silhouette + turret bumps, not enough to burden the GPU
+  - Decimates to a target triangle count (default 6000) via **vertex clustering**
+    — quantizing vertices into a voxel grid and collapsing each occupied cell
+    to its centroid. This keeps surfaces continuous (each cluster's triangles
+    stay connected to their neighbours), unlike naive every-Nth-triangle
+    sampling which shreds a watertight hull into disconnected shards.
   - Applies a flat holographic material (no textures)
 
-The result is typically 50-200KB per ship (vs 10-20MB raw), making it
+The result is typically 60-150KB per ship (vs 10-20MB raw), making it
 practical to commit many models to the git tree.
 
 Usage:
     python scripts/model_convert/bake_model.py input.glb -o output.glb
-    python scripts/model_convert/bake_model.py input.glb --triangles 3000
+    python scripts/model_convert/bake_model.py input.glb --triangles 8000
 """
 from __future__ import annotations
 
@@ -23,6 +26,8 @@ import json
 import struct
 import sys
 from pathlib import Path
+
+import numpy as np
 
 
 def parse_glb(path: Path) -> dict:
@@ -91,9 +96,8 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
             for j in range(ncomp):
                 val = struct.unpack_from(f"<{fmt}", bv_data, pos + j * cs)[0]
                 values.append(val)
-        if comp_type in (5125,):
-            # Normalize UINT indices to int
-            pass
+        # All component types unpack to native Python ints/floats above, so no
+        # UINT-specific normalization is needed.
         return values, ncomp
 
     all_verts: list[float] = []
@@ -104,6 +108,12 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
             continue
         for prim in mesh["primitives"]:
             if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
+                continue
+            # glTF primitive `mode` defaults to 4 (TRIANGLES). WoWS exports are
+            # always triangle lists, but bail on any other topology (strip/fan/
+            # lines/points) rather than mis-reading its indices as triangles.
+            mode = prim.get("mode", 4)
+            if mode != 4:
                 continue
             # Get vertices
             pos_acc = prim["attributes"]["POSITION"]
@@ -126,32 +136,303 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
     return all_verts, all_indices
 
 
+def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
+    """One pass of vertex clustering at a fixed voxel `pitch`.
+
+    Each vertex is quantized to its voxel cell; vertices sharing a cell collapse
+    to the cell centroid. Faces whose three corners land in the same cell become
+    degenerate and are dropped. Duplicate (now-merged) faces are removed.
+
+    Returns (new_verts, new_faces) or (None, None) if nothing survives.
+    """
+    if len(faces) == 0:
+        return None, None
+    bb_min = verts.min(axis=0)
+    # Offset cells to be non-negative before packing into a single int key.
+    cells = np.floor((verts - bb_min) / pitch).astype(np.int64)
+    cells_off = cells - cells.min(axis=0)
+    dims = cells_off.max(axis=0) + 1
+    keys = (
+        cells_off[:, 0] * (dims[1] * dims[2])
+        + cells_off[:, 1] * dims[2]
+        + cells_off[:, 2]
+    )
+    uniq, inv = np.unique(keys, return_inverse=True)
+    # Centroid of each occupied cell (mean of its member vertices).
+    new_verts = np.zeros((len(uniq), 3), dtype=np.float64)
+    np.add.at(new_verts, inv, verts)
+    new_verts /= np.bincount(inv)[:, None]
+    # Remap faces into the compact cluster id space.
+    new_faces = inv[faces]
+    keep = ~(
+        (new_faces[:, 0] == new_faces[:, 1])
+        | (new_faces[:, 1] == new_faces[:, 2])
+        | (new_faces[:, 0] == new_faces[:, 2])
+    )
+    new_faces = new_faces[keep]
+    # Drop duplicate faces (winding ignored — a silhouette doesn't care).
+    new_faces.sort(axis=1)
+    new_faces = np.unique(new_faces, axis=0)
+    if len(new_faces) == 0:
+        return None, None
+    # Compact: remove vertices left unreferenced after dedup.
+    used = np.zeros(len(new_verts), dtype=bool)
+    used[new_faces.reshape(-1)] = True
+    remap = np.full(len(new_verts), -1, dtype=np.int64)
+    remap[used] = np.arange(int(used.sum()))
+    new_verts = new_verts[used]
+    new_faces = remap[new_faces]
+    return new_verts, new_faces
+
+
 def decimate(vertices: list[float], indices: list[int], target_tris: int) -> tuple[list[float], list[int]]:
-    """Simple uniform-spaced decimation: keeps every Nth vertex and
-    re-triangulates as a fan. This is a crude but effective approach for
-    holographic silhouettes — we don't need mesh fidelity, just the rough
-    shape. For true quadric decimation, install `pymeshlab` or `fast-simplification`."""
-    n_tris = len(indices) // 3
-    if n_tris <= target_tris:
+    """Vertex-clustering decimation that preserves surface continuity.
+
+    The previous implementation kept every Nth triangle by index, which shreds
+    a hull into disconnected shards because triangles in WoWS exports are laid
+    out in contiguous per-region runs — sampling by index punches holes through
+    every patch. Vertex clustering instead quantizes the geometry onto a voxel
+    grid and collapses each cell to its centroid, so neighbouring triangles stay
+    welded and the silhouette stays watertight-ish.
+
+    The voxel pitch is searched (binary-search-ish refinement) so the output
+    lands near `target_tris` rather than at an arbitrary resolution. When the
+    mesh is already small enough, it's returned untouched.
+    """
+    verts = np.asarray(vertices, dtype=np.float64).reshape(-1, 3)
+    faces = np.asarray(indices, dtype=np.int64).reshape(-1, 3)
+
+    extent = float(verts.max() - verts.min())
+    if extent <= 0.0:
         return vertices, indices
 
-    # Sample: keep every k-th triangle.
-    k = n_tris / target_tris
-    new_indices = []
-    used_verts = set()
-    for i in range(0, n_tris, max(1, int(k))):
-        t0, t1, t2 = indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]
-        new_indices.extend([t0, t1, t2])
-        used_verts.update([t0, t1, t2])
+    n_tris = len(faces)
+    if n_tris <= target_tris:
+        # Already few enough triangles — but the raw GLB has per-face duplicated
+        # vertices (WoWS exports aren't welded), so still run one weld pass at a
+        # tiny pitch that only collapses exactly-coincident vertices. This keeps
+        # the geometry identical while shrinking the vertex buffer from ~150k to
+        # a few thousand, so the output file stays ~75KB instead of ~1.7MB.
+        weld_pitch = extent / 100000.0
+        nv, nf = _cluster_once(verts, faces, weld_pitch)
+        if nv is not None and len(nf) > 0:
+            return nv.reshape(-1).tolist(), nf.reshape(-1).tolist()
+        return vertices, indices
 
-    # Compact vertices: remap old indices to new compact range.
-    sorted_used = sorted(used_verts)
-    remap = {old: new for new, old in enumerate(sorted_used)}
-    new_verts = []
-    for old_idx in sorted_used:
-        new_verts.extend(vertices[old_idx * 3 : old_idx * 3 + 3])
-    new_indices = [remap[idx] for idx in new_indices]
-    return new_verts, new_indices
+    # Face count is monotonic *decreasing* in pitch (bigger pitch → more
+    # collapsing → fewer faces). Binary search the pitch that yields a face
+    # count closest to (but not far above) the target.
+    lo = extent / 2048.0  # tiny pitch ≈ no reduction
+    hi = extent / 4.0  # huge pitch ≈ aggressive
+    best = None
+    for _ in range(24):
+        mid = (lo + hi) * 0.5
+        nv, nf = _cluster_once(verts, faces, mid)
+        if nv is None:
+            # Too aggressive — this pitch erased everything. Back off.
+            hi = mid
+            continue
+        got = int(len(nf))
+        if got > target_tris:
+            lo = mid  # need more collapsing → bigger pitch
+        else:
+            best = (nv, nf)
+            hi = mid  # try to get closer to target from above
+        if abs(got - target_tris) <= target_tris * 0.15:
+            best = (nv, nf)
+            break
+
+    if best is None:
+        # Fallback: single pass at a pitch sized for ~target faces. Empirical
+        # calibration: face count ≈ (extent/pitch)² on a surface, so
+        # pitch ≈ extent / sqrt(target).
+        pitch = extent / (max(target_tris, 1) ** 0.5)
+        nv, nf = _cluster_once(verts, faces, pitch)
+        if nv is None:
+            # Last resort: return the welded-original (faces intact, vertices
+            # deduped) rather than the bloated per-face-duplicated buffer.
+            nv, nf = _cluster_once(verts, faces, extent / 100000.0)
+            if nv is None:
+                return vertices, indices
+        best = (nv, nf)
+
+    new_verts, new_faces = best
+    # Safety net: strip any vertices left unreferenced by the final face list.
+    # Each decimation path is supposed to do this already, but a fallback that
+    # kept the original (per-face-duplicated) buffer would otherwise emit a
+    # ~1.5MB file for a 75KB model. Cheap to guarantee here.
+    if len(new_verts) > 0 and len(new_faces) > 0:
+        used = np.zeros(len(new_verts), dtype=bool)
+        used[new_faces.reshape(-1)] = True
+        if (~used).any():
+            remap = np.full(len(new_verts), -1, dtype=np.int64)
+            remap[used] = np.arange(int(used.sum()))
+            new_verts = new_verts[used]
+            new_faces = remap[new_faces]
+    return new_verts.reshape(-1).tolist(), new_faces.reshape(-1).tolist()
+
+
+def extract_meshes_by_name(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
+    """Extract every mesh primitive from a GLB, grouped by mesh name.
+
+    Unlike `extract_all_triangles` (which merges everything into one geometry),
+    this keeps each named mesh separate so a caller can decimate + restyle them
+    independently (e.g. a map's `Terrain` mesh vs its island meshes). Meshes
+    with no name are grouped under the key `""`.
+
+    Returns {name: (flat_vertices_xyz, indices)}.
+    """
+    gjson = gltf["json"]
+    binary = gltf["binary"]
+
+    buffers = []
+    for buf in gjson.get("buffers", []):
+        if buf.get("uri", "").startswith("data:"):
+            import base64
+            raw = base64.b64decode(buf["uri"].split(",", 1)[1])
+            buffers.append(bytearray(raw))
+        else:
+            buffers.append(bytearray(binary[: buf["byteLength"]]))
+
+    def get_buffer_view_data(bv_idx):
+        bv = gjson["bufferViews"][bv_idx]
+        buf = buffers[bv["buffer"]]
+        start = bv.get("byteOffset", 0)
+        return bytes(buf[start : start + bv["byteLength"]])
+
+    def get_accessor_data(acc_idx):
+        acc = gjson["accessors"][acc_idx]
+        bv_data = get_buffer_view_data(acc["bufferView"])
+        count = acc["count"]
+        comp_type = acc["componentType"]
+        acc_type = acc["type"]
+        comp_sizes = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+        comp_fmts = {5120: "b", 5121: "B", 5122: "h", 5123: "H", 5125: "I", 5126: "f"}
+        type_ncomp = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
+        ncomp = type_ncomp[acc_type]
+        cs = comp_sizes[comp_type]
+        fmt = comp_fmts[comp_type]
+        offset = acc.get("byteOffset", 0)
+        bv = gjson["bufferViews"][acc["bufferView"]]
+        stride = bv.get("byteStride", cs * ncomp)
+        values = []
+        for i in range(count):
+            pos = offset + i * stride
+            for j in range(ncomp):
+                val = struct.unpack_from(f"<{fmt}", bv_data, pos + j * cs)[0]
+                values.append(val)
+        return values, ncomp
+
+    out: dict[str, tuple[list[float], list[int]]] = {}
+    for mesh in gjson.get("meshes", []):
+        name = mesh.get("name", "") or ""
+        verts: list[float] = []
+        indices: list[int] = []
+        for prim in mesh.get("primitives", []):
+            if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
+                continue
+            mode = prim.get("mode", 4)
+            if mode != 4:
+                continue
+            pv, ncomp = get_accessor_data(prim["attributes"]["POSITION"])
+            assert ncomp == 3
+            base_vert = len(verts) // 3
+            verts.extend(pv)
+            if prim.get("indices") is not None:
+                iv, _ = get_accessor_data(prim["indices"])
+                indices.extend(int(v) + base_vert for v in iv)
+            else:
+                nv = len(pv) // 3
+                for i in range(0, nv, 3):
+                    if i + 2 < nv:
+                        indices.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
+        if name in out:
+            ev, ei = out[name]
+            base = len(ev) // 3
+            out[name] = (ev + verts, ei + [b + base for b in indices])
+        else:
+            out[name] = (verts, indices)
+    return out
+
+
+def write_glb_multimesh(
+    path: Path,
+    meshes: list[tuple[str, list[float], list[int]]],
+):
+    """Write a GLB with several named meshes in one scene.
+
+    `meshes` is a list of (name, flat_vertices_xyz, indices). Each entry becomes
+    its own mesh node (so the frontend can identify e.g. the `Terrain` mesh by
+    name and restyle it). All meshes share the material conventions of
+    `write_glb` (flat cyan, alpha blend) — the frontend overrides materials at
+    load time for holographic styling, so the on-disk material is a placeholder.
+    """
+    def pad4(data: bytes) -> bytes:
+        pad = (4 - len(data) % 4) % 4
+        return data + b"\x00" * pad
+
+    bin_chunks: list[bytes] = []
+    accessors: list[dict] = []
+    buffer_views: list[dict] = []
+    gltf_meshes: list[dict] = []
+    nodes: list[dict] = []
+    cur_offset = 0
+    for mi, (name, vertices, indices) in enumerate(meshes):
+        n_verts = len(vertices) // 3
+        idx_type = 5123 if n_verts < 65536 else 5125
+        idx_fmt = "H" if idx_type == 5123 else "I"
+        vert_bytes = pad4(struct.pack(f"<{len(vertices)}f", *vertices))
+        idx_bytes = pad4(struct.pack(f"<{len(indices)}{idx_fmt}", *indices))
+        pos_bv = len(buffer_views)
+        buffer_views.append({"buffer": 0, "byteOffset": cur_offset, "byteLength": len(vert_bytes), "target": 34962})
+        accessors.append({"bufferView": pos_bv, "componentType": 5126, "count": n_verts, "type": "VEC3"})
+        cur_offset += len(vert_bytes)
+        idx_bv = len(buffer_views)
+        buffer_views.append({"buffer": 0, "byteOffset": cur_offset, "byteLength": len(idx_bytes), "target": 34963})
+        accessors.append({"bufferView": idx_bv, "componentType": idx_type, "count": len(indices), "type": "SCALAR"})
+        cur_offset += len(idx_bytes)
+        bin_chunks.append(vert_bytes)
+        bin_chunks.append(idx_bytes)
+        pos_acc = len(accessors) - 2
+        idx_acc = len(accessors) - 1
+        gltf_meshes.append({
+            "name": name,
+            "primitives": [{"attributes": {"POSITION": pos_acc}, "indices": idx_acc, "material": 0}],
+        })
+        nodes.append({"mesh": mi, "name": name})
+
+    bin_data = b"".join(bin_chunks)
+    gjson = {
+        "asset": {"version": "2.0", "generator": "WoWSP bake_model.write_glb_multimesh"},
+        "scene": 0,
+        "scenes": [{"nodes": list(range(len(nodes)))}],
+        "nodes": nodes,
+        "meshes": gltf_meshes,
+        "materials": [
+            {
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.0, 0.67, 0.85, 1.0],
+                    "metallicFactor": 0.1,
+                    "roughnessFactor": 0.7,
+                },
+                "alphaMode": "BLEND",
+                "alphaCutoff": 0.5,
+                "emissiveFactor": [0.0, 0.3, 0.4],
+            }
+        ],
+        "buffers": [{"byteLength": len(bin_data)}],
+        "bufferViews": buffer_views,
+        "accessors": accessors,
+    }
+
+    json_bytes = pad4(json.dumps(gjson, separators=(",", ":")).encode("utf-8"))
+    total_len = 12 + 8 + len(json_bytes) + 8 + len(bin_data)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<III", 0x46546C67, 2, total_len))
+        f.write(struct.pack("<II", len(json_bytes), 0x4E4F534A))
+        f.write(json_bytes)
+        f.write(struct.pack("<II", len(bin_data), 0x004E4942))
+        f.write(bin_data)
 
 
 def write_glb(path: Path, vertices: list[float], indices: list[int]):
@@ -229,7 +510,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Bake (simplify) a WoWS GLB for holographic rendering")
     parser.add_argument("input", help="input GLB path")
     parser.add_argument("-o", "--output", required=True, help="output GLB path")
-    parser.add_argument("--triangles", type=int, default=2000, help="target triangle count (default: 2000)")
+    parser.add_argument("--triangles", type=int, default=6000, help="target triangle count (default: 6000)")
     args = parser.parse_args()
 
     inp = Path(args.input)

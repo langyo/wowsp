@@ -8,5 +8,45 @@
   "client": "Client",
   "refresh": "Refresh",
   "loading": "Parsing replay…",
-  "select": "Select a replay from the list to load it."
+  "select": "Select a replay from the list to load it.",
+  "players": "{n} players",
+  "mode": {
+    "pvp": "Random",
+    "ranked": "Ranked",
+    "clan": "Clan",
+    "event": "Event",
+    "cooperative": "Co-op",
+    "training": "Training",
+    "brawl": "Brawl",
+    "squad": "Squad",
+    "_fallback": "Battle"
+  },
+  "map": {
+    "unknown": "Unknown map",
+    "contour": "Contour terrain",
+    "contourHint": "Contour terrain: land banded by elevation, sea shows bathymetry (incl. trenches)."
+  },
+  "ownShip": "Your ship",
+  "noShipModel": "No holographic model for this ship.",
+  "duration": "Duration",
+  "matchTime": "Match time",
+  "mapLabel": "Map",
+  "legend": {
+    "self": "You",
+    "ally": "Allies",
+    "enemy": "Enemies"
+  },
+  "roster": {
+    "allies": "Allies",
+    "enemies": "Enemies",
+    "shipType": "Type",
+    "avgStats": "Avg stats",
+    "hoverForStats": "Hover for stats",
+    "loadingStats": "Loading…",
+    "statsFailed": "Failed",
+    "noStats": "No stats",
+    "battles": "Battles",
+    "winrate": "WR",
+    "avgDamage": "Avg dmg"
+  }
 }
