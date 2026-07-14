@@ -31,7 +31,7 @@ export interface SpecGroup {
   rows: SpecRow[];
 }
 
-type Profile = Record<string, unknown> | null | undefined;
+export type Profile = Record<string, unknown> | null | undefined;
 
 function num(v: unknown): number | null {
   if (v == null) return null;
