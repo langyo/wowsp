@@ -27,7 +27,6 @@ DEFAULT_OUT = (
     / "packages"
     / "webui"
     / "src"
-    / "res"
     / "data"
     / "skills.json"
 )
