@@ -29,6 +29,27 @@ app.add_middleware(
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
+
+def wg_to_short_code(wg: str) -> str:
+    """Map a WG API language code to the app's internal locale short-code.
+
+    WG codes like "zh-cn" and "zh-sg" both resolve to "zhs" (Simplified
+    Chinese). The compound tag used for cache/file naming is
+    ``<short_code>-<realm>`` (e.g. "zhs-asia", "zht-asia", "en-asia").
+    """
+    _MAP = {
+        "zh-cn": "zhs",
+        "zh-sg": "zhs",
+        "zh-tw": "zht",
+        "en": "en",
+        "ja": "ja",
+        "ko": "ko",
+        "ru": "ru",
+        "fr": "fr",
+        "es": "es",
+    }
+    return _MAP.get(wg, "en")
+
 # A sample roster matching tempArenaInfo.json shape. Enough to render both
 # teams in the overlay view during mock development.
 _SAMPLE_ROSTER = [
@@ -207,7 +228,14 @@ async def cmd_get_game_version() -> dict:
 
 @app.post("/api/get_ship_encyclopedia")
 async def cmd_get_ship_encyclopedia(request: Request) -> list[dict[str, Any]]:
-    await request.json()
+    body = await request.json()
+    realm = body.get("realm", "asia")
+    lang = body.get("language", "en")
+    # The frontend sends a WG language code; convert to short-code+realm
+    # for internal compound tagging (matching the Rust resolve_encyclopedia_language).
+    short = wg_to_short_code(lang)
+    compound = f"{short}-{realm}"
+    print(f"[mock] get_ship_encyclopedia realm={realm} wg={lang} compound={compound}")
     return _load_encyclopedia()
 
 

@@ -81,12 +81,10 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
 /// Fetch (and cache, per game version + language) the full ship encyclopedia.
 /// `force_refresh` bypasses the cache.
 ///
-/// **Language selection**: WoWSP uses compound locale tags (`zhs-cn`,
-/// `zhs-asia`, `en-eu`, etc.) as cache keys for external data, because the
-/// same WG language code can produce different ship names on different realms
-/// (CN's zh-cn = animal names for IJN, ASIA's zh-cn = historical names).
-///
-/// The cache is keyed by `<version>-<compound>` so switching realm or UI
+/// **Language selection**: The frontend resolves and passes an explicit WG
+/// language code (zh-cn, zh-sg, zh-tw, en, ja, ko, ru, fr, es). Compound
+/// cache keys are `<wg-lang>-<realm>` (e.g. "zh-cn-asia", "zh-sg-asia").
+/// The cache is keyed by `<version>-<compound>` so switching realm or
 /// language re-fetches with the correct localization.
 #[tauri::command]
 pub async fn get_ship_encyclopedia(
@@ -265,47 +263,35 @@ fn parse_ship_images(images: Option<&serde_json::Value>) -> wowsp_tauri_shared::
 
 /// Resolve the WG API `language` parameter for encyclopedia requests.
 ///
-/// WoWSP uses a **compound locale** scheme for external data:
-///   `<ui-lang>-<realm>` → e.g. "zhs-cn", "zhs-asia", "en-asia", "ja-asia".
-///
-/// This distinguishes the same language across different realms — notably
-/// CN's zh-cn uses animal names for IJN ships ("动物园"), while ASIA/EU/NA
-/// use the standard zh-tw translation (historical names, no animal names).
-/// So for `zhs` (simplified Chinese UI):
-///   - CN realm → zh-cn (国服动物名翻译)
-///   - Non-CN realm → zh-tw (国际服繁体原名 — WG doesn't offer a
-///     non-CN simplified Chinese, so zh-tw is the closest match that
-///     uses original ship names rather than animal names.)
-fn resolve_encyclopedia_language(realm: &str, ui_language: Option<String>) -> (String, String) {
-    let ui = ui_language.as_deref().unwrap_or("en");
+/// The frontend sends an explicit WG language code (e.g. "zh-cn", "zh-sg",
+/// "zh-tw", "en", "ja", ...). The WG code is passed directly to the API.
+/// The compound cache key uses a **language short-code + realm** format
+/// (e.g. "zhs-cn", "zhs-asia", "zht-asia", "en-asia") to keep caches
+/// compact and aligned with the app's internal locale names.
+fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> (String, String) {
+    let wg_lang = data_language.unwrap_or_else(|| "en".to_string());
+    let short = wg_to_short_code(&wg_lang);
+    let compound = format!("{short}-{realm}");
+    (compound, wg_lang)
+}
 
-    // Map UI locale → WG API language code.
-    // Key distinction: zh-cn is the CN-server translation with animal names
-    // for IJN ships. Non-CN realms must use zh-tw to get original names.
-    let wg_lang = match ui {
-        "zhs" => {
-            // Simplified Chinese UI: use zh-cn only for CN realm (where animal
-            // names are the official localization). For all other realms, use
-            // zh-tw (standard international Chinese — original ship names).
-            if realm == "cn" { "zh-cn" } else { "zh-tw" }
-        },
-        "zht" => "zh-tw",
+/// Map a WG API language code to the app's internal locale short-code.
+///
+/// WG codes like "zh-cn" and "zh-sg" both map to "zhs" (Simplified
+/// Chinese), "zh-tw" maps to "zht" (Traditional Chinese), and most
+/// others (en, ja, ko, ru, fr, es) are their own short code.
+fn wg_to_short_code(wg: &str) -> &str {
+    match wg {
+        "zh-cn" | "zh-sg" => "zhs",
+        "zh-tw" => "zht",
         "en" => "en",
         "ja" => "ja",
         "ko" => "ko",
+        "ru" => "ru",
         "fr" => "fr",
         "es" => "es",
-        "ru" => "ru",
-        _ => "en", // unknown UI locale → English
-    };
-
-    // Compound tag: <ui-lang>-<realm>. This is the cache discriminator.
-    // CN realm is special — it always uses WG's zh-cn, but the compound tag
-    // still records it as "zhs-cn" (or "<ui>-cn") so switching from ASIA
-    // to CN re-fetches.
-    let compound = format!("{ui}-{realm}");
-
-    (compound, wg_lang.to_string())
+        _ => "en",
+    }
 }
 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
@@ -445,21 +431,19 @@ mod tests {
     }
 
     #[test]
-    fn cn_realm_compound_tag_and_wg_lang() {
-        let (compound, wg) = resolve_encyclopedia_language("cn", Some("zhs".into()));
+    fn cn_realm_uses_short_code_compound() {
+        let (compound, wg) = resolve_encyclopedia_language("cn", Some("zh-cn".into()));
         assert_eq!(compound, "zhs-cn");
         assert_eq!(wg, "zh-cn");
     }
 
     #[test]
-    fn asia_realm_compound_tag_and_wg_lang() {
-        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zhs".into()));
+    fn asia_realm_uses_short_code_compound() {
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
         assert_eq!(compound, "zhs-asia");
-        // Non-CN realm with simplified Chinese UI uses zh-tw (original names,
-        // not the CN animal-name localization).
-        assert_eq!(wg, "zh-tw");
+        assert_eq!(wg, "zh-sg");
 
-        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zht".into()));
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         assert_eq!(compound, "zht-asia");
         assert_eq!(wg, "zh-tw");
 
@@ -469,22 +453,40 @@ mod tests {
     }
 
     #[test]
-    fn unknown_ui_language_falls_back_to_english() {
-        let (compound, wg) = resolve_encyclopedia_language("eu", Some("xxx".into()));
-        assert_eq!(wg, "en");
-        assert_eq!(compound, "xxx-eu");
+    fn wg_code_maps_to_correct_short_code() {
+        assert_eq!(wg_to_short_code("zh-cn"), "zhs");
+        assert_eq!(wg_to_short_code("zh-sg"), "zhs");
+        assert_eq!(wg_to_short_code("zh-tw"), "zht");
+        assert_eq!(wg_to_short_code("en"), "en");
+        assert_eq!(wg_to_short_code("ja"), "ja");
+        assert_eq!(wg_to_short_code("ko"), "ko");
+        assert_eq!(wg_to_short_code("ru"), "ru");
+        assert_eq!(wg_to_short_code("fr"), "fr");
+        assert_eq!(wg_to_short_code("es"), "es");
+        assert_eq!(wg_to_short_code("unknown"), "en");
     }
 
     #[test]
-    fn cache_key_uses_compound_tag() {
+    fn missing_language_falls_back_to_english() {
+        let (compound, wg) = resolve_encyclopedia_language("eu", None);
+        assert_eq!(wg, "en");
+        assert_eq!(compound, "en-eu");
+    }
+
+    #[test]
+    fn cache_key_uses_short_code_and_realm() {
         let v = "15.5.0";
         const SCHEMA: u32 = 2;
-        let (compound, _) = resolve_encyclopedia_language("cn", Some("zhs".into()));
+        let (compound, _) = resolve_encyclopedia_language("cn", Some("zh-cn".into()));
         let cache = format!("encyclopedia/ships-{v}-{compound}-s{SCHEMA}.json");
         assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn-s2.json");
 
-        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zhs".into()));
+        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
         let cache2 = format!("encyclopedia/ships-{v}-{compound2}-s{SCHEMA}.json");
         assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia-s2.json");
+
+        let (compound3, _) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
+        let cache3 = format!("encyclopedia/ships-{v}-{compound3}-s{SCHEMA}.json");
+        assert_eq!(cache3, "encyclopedia/ships-15.5.0-zht-asia-s2.json");
     }
 }

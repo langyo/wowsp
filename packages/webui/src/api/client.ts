@@ -41,7 +41,7 @@ export interface VehicleEntry {
 export interface ReplayMeta {
   path: string;
   matchGroup?: string | null;
-  /** Parsed from the replay filename (YYYYMMDD). */
+  /** Parsed from the replay filename (`YYYYMMDD` or `YYYYMMDD_HHMMSS`). */
   dateTime?: string | null;
   /** Internal numeric map id. */
   mapId?: number | null;
@@ -49,6 +49,27 @@ export interface ReplayMeta {
   mapName?: string | null;
   vehicles: VehicleEntry[];
   raw: unknown;
+}
+
+/** Mirrors `wowsp_tauri_shared::ReplayMetaLite`. Lightweight replay summary
+ *  returned by `list_replays_meta` — only the descriptor-JSON block is parsed
+ *  (no packet stream), so a few hundred replays list fast. The full
+ *  `ReplayMeta` (with roster + raw JSON) comes later from `readReplayHeader`. */
+export interface ReplayMetaLite {
+  path: string;
+  /** `YYYYMMDD_HHMMSS` when recoverable, else `YYYYMMDD`, else null. */
+  dateTime?: string | null;
+  /** e.g. "pvp", "ranked", "clan", "event". */
+  matchGroup?: string | null;
+  /** Client map display name, e.g. "15_NE_north". */
+  mapName?: string | null;
+  mapId?: number | null;
+  /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
+  ownShipId?: number | null;
+  /** Recorder's ship display name when resolvable, else null. */
+  ownShipName?: string | null;
+  /** Number of players in the roster. */
+  playerCount: number;
 }
 
 /** Mirrors `wowsp_tauri_shared::ArenaInfo`. */
@@ -93,6 +114,9 @@ export interface EntityTrajectory {
   entityId: number;
   kind?: EntityKind | null;
   samples: PositionSample[];
+  /** Match time (s) the entity was destroyed (EntityDestroy 0x06), if sunk.
+   *  Undefined/null = survived. The map freezes + greys the marker from here. */
+  deathTime?: number | null;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
@@ -260,6 +284,10 @@ export const api = {
     transport.invoke<EntityTrajectory[]>(RPC.read_replay_positions, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
+  /** List replays with parsed descriptor metadata (date/mode/map/own ship).
+   *  Only reads the JSON header block per file — fast even for hundreds. */
+  listReplaysMeta: (dir?: string, limit?: number) =>
+    transport.invoke<ReplayMetaLite[]>(RPC.list_replays_meta, { dir, limit }),
   readTempArenaInfo: (dir?: string) =>
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),

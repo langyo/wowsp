@@ -18,6 +18,7 @@ export const RPC = {
   read_replay_header: "read_replay_header",
   read_replay_positions: "read_replay_positions",
   list_replays: "list_replays",
+  list_replays_meta: "list_replays_meta",
   read_temp_arena_info: "read_temp_arena_info",
   start_arena_watcher: "start_arena_watcher",
   stop_arena_watcher: "stop_arena_watcher",

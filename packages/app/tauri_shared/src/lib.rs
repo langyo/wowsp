@@ -192,6 +192,11 @@ pub struct EntityTrajectory {
     /// position. `None` when the replay never created the entity (rare).
     pub kind: Option<EntityKind>,
     pub samples: Vec<PositionSample>,
+    /// Match time (seconds) at which the entity was destroyed (EntityDestroy
+    /// 0x06), if it was. `None` = survived the whole match. The frontend freezes
+    /// the marker here and tints it grey.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub death_time: Option<f32>,
 }
 
 /// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.

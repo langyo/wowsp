@@ -16,9 +16,16 @@
     "clan": "Clan",
     "event": "Event",
     "cooperative": "Co-op",
+    "pve": "Co-op",
     "training": "Training",
     "brawl": "Brawl",
     "squad": "Squad",
+    "ranked_solo": "Ranked (solo)",
+    "ranked_sprint": "Ranked Sprint",
+    "pve_event": "Operation",
+    "convoy": "Convoy",
+    "asymmetric": "Asymmetric",
+    "sandbox": "Sandbox",
     "_fallback": "Battle"
   },
   "map": {
@@ -69,17 +76,23 @@
   "legend": {
     "self": "You",
     "ally": "Allies",
-    "enemy": "Enemies"
+    "enemy": "Enemies",
+    "dead": "Sunk"
+  },
+  "tip": {
+    "loading": "Loading…",
+    "failed": "Failed",
+    "hidden": "Hidden stats",
+    "winrate": "Win rate",
+    "avgDamage": "Avg dmg",
+    "battles": "Battles",
+    "survival": "Survival",
+    "hitRate": "Hit rate"
   },
   "roster": {
     "allies": "Allies",
     "enemies": "Enemies",
     "shipType": "Type",
-    "avgStats": "Avg stats",
-    "hoverForStats": "Hover for stats",
-    "loadingStats": "Loading…",
-    "statsFailed": "Failed",
-    "noStats": "No stats",
     "battles": "Battles",
     "winrate": "WR",
     "avgDamage": "Avg dmg"

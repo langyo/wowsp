@@ -16,9 +16,16 @@
     "clan": "公会战",
     "event": "活动",
     "cooperative": "联合作战",
+    "pve": "联合作战",
     "training": "训练房",
     "brawl": "乱斗",
     "squad": "小队战",
+    "ranked_solo": "排位战(单野)",
+    "ranked_sprint": "排位冲刺战",
+    "pve_event": "行动",
+    "convoy": "护航战",
+    "asymmetric": "非对称战",
+    "sandbox": "沙盒",
     "_fallback": "对战"
   },
   "map": {
@@ -69,17 +76,23 @@
   "legend": {
     "self": "我方舰",
     "ally": "队友",
-    "enemy": "敌方"
+    "enemy": "敌方",
+    "dead": "已击毁"
+  },
+  "tip": {
+    "loading": "查询中…",
+    "failed": "查询失败",
+    "hidden": "隐藏战绩",
+    "winrate": "胜率",
+    "avgDamage": "场均",
+    "battles": "场次",
+    "survival": "存活",
+    "hitRate": "命中"
   },
   "roster": {
     "allies": "我方",
     "enemies": "敌方",
     "shipType": "舰种",
-    "avgStats": "平均战绩",
-    "hoverForStats": "悬停查看战绩",
-    "loadingStats": "查询中…",
-    "statsFailed": "查询失败",
-    "noStats": "无战绩",
     "battles": "场次",
     "winrate": "胜率",
     "avgDamage": "场均"
