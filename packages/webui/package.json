@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build-titlebar && vite",
-    "build": "npm run build-titlebar && vue-tsc --noEmit && vite build",
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
     "build-titlebar": "esbuild scripts/tauri-titlebar.ts --bundle --outfile=src/res/tauri-titlebar.js --format=iife --target=es2020",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.ts,.tsx --fix",
