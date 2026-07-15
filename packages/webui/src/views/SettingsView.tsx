@@ -62,12 +62,7 @@ export default defineComponent({
               <SSelect
                 modelValue={lang.dataLanguage.value}
                 onUpdate:modelValue={(v: string) => lang.setDataLanguage(v)}
-                options={lang.wgLanguageOptions.map((o) => ({
-                  value: o.value,
-                  label: o.value === "auto"
-                    ? `${o.label} (${lang.effectiveWgLanguage.value})`
-                    : o.label,
-                }))}
+                options={lang.wgLanguageOptions.map((o) => ({ value: o.value, label: o.label }))}
                 block
               />
             </div>
