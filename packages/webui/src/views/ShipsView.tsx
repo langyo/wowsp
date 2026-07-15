@@ -206,97 +206,100 @@ export default defineComponent({
           </div>
         ) : null}
 
-        {/* ── filter bar ── */}
-        <div class="ships-view__filters">
-          <div class="ships-view__filter-top">
-            <input
-              class="ships-view__search"
-              type="text"
-              placeholder={t("ships.search")}
-              value={searchText.value}
-              onInput={(e) => (searchText.value = (e.target as HTMLInputElement).value)}
-            />
-            {hasActiveFilters.value ? (
-              <button class="ships-view__clear" onClick={() => clearFilters()}>
-                {t("ships.clear")}
-              </button>
-            ) : null}
-          </div>
-
-          <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">{t("ships.tier")}</span>
-            <div class="ships-view__chips">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((tier) => (
-                <button
-                  class={[
-                    "ships-view__chip",
-                    "ships-view__chip--tier",
-                    selectedTiers.value.has(tier) ? "ships-view__chip--on" : "",
-                  ]}
-                  onClick={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
-                >
-                  {tier}
+        {/* ── filter bar (hidden in tree mode) ── */}
+        {viewMode.value === "tree" ? null : (
+          <div class="ships-view__filters">
+            <div class="ships-view__filter-top">
+              <input
+                class="ships-view__search"
+                type="text"
+                placeholder={t("ships.search")}
+                value={searchText.value}
+                onInput={(e) => (searchText.value = (e.target as HTMLInputElement).value)}
+              />
+              {hasActiveFilters.value ? (
+                <button class="ships-view__clear" onClick={() => clearFilters()}>
+                  {t("ships.clear")}
                 </button>
-              ))}
+              ) : null}
+            </div>
+
+            <div class="ships-view__filter-group">
+              <span class="ships-view__filter-label">{t("ships.tier")}</span>
+              <div class="ships-view__chips">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((tier) => (
+                  <button
+                    class={[
+                      "ships-view__chip",
+                      "ships-view__chip--tier",
+                      selectedTiers.value.has(tier) ? "ships-view__chip--on" : "",
+                    ]}
+                    onClick={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
+                  >
+                    {tier}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div class="ships-view__filter-group">
+              <span class="ships-view__filter-label">{t("ships.filterType")}</span>
+              <div class="ships-view__chips">
+                {encyclopedia.types.map((tp) => (
+                  <button
+                    class={[
+                      "ships-view__chip",
+                      selectedTypes.value.has(tp) ? "ships-view__chip--on" : "",
+                    ]}
+                    onClick={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
+                  >
+                    {typeLabel(tp)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div class="ships-view__filter-group">
+              <span class="ships-view__filter-label">{t("ships.filterNation")}</span>
+              <div class="ships-view__chips">
+                {encyclopedia.nations.map((n) => (
+                  <button
+                    class={[
+                      "ships-view__chip",
+                      selectedNations.value.has(n) ? "ships-view__chip--on" : "",
+                    ]}
+                    onClick={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
+                  >
+                    {nationLabel(n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div class="ships-view__filter-group">
+              <span class="ships-view__filter-label">{t("ships.rarity._label")}</span>
+              <div class="ships-view__chips">
+                {RARITY_ORDER.map((r) => (
+                  <button
+                    class={[
+                      "ships-view__chip",
+                      `ships-view__chip--${r}`,
+                      selectedRarities.value.has(r) ? "ships-view__chip--on" : "",
+                    ]}
+                    onClick={() => (selectedRarities.value = toggleSet(selectedRarities.value, r))}
+                  >
+                    {t(`ships.rarity.${r}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
+        )}
 
-          <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">{t("ships.filterType")}</span>
-            <div class="ships-view__chips">
-              {encyclopedia.types.map((tp) => (
-                <button
-                  class={[
-                    "ships-view__chip",
-                    selectedTypes.value.has(tp) ? "ships-view__chip--on" : "",
-                  ]}
-                  onClick={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
-                >
-                  {typeLabel(tp)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">{t("ships.filterNation")}</span>
-            <div class="ships-view__chips">
-              {encyclopedia.nations.map((n) => (
-                <button
-                  class={[
-                    "ships-view__chip",
-                    selectedNations.value.has(n) ? "ships-view__chip--on" : "",
-                  ]}
-                  onClick={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
-                >
-                  {nationLabel(n)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div class="ships-view__filter-group">
-            <span class="ships-view__filter-label">{t("ships.rarity._label")}</span>
-            <div class="ships-view__chips">
-              {RARITY_ORDER.map((r) => (
-                <button
-                  class={[
-                    "ships-view__chip",
-                    `ships-view__chip--${r}`,
-                    selectedRarities.value.has(r) ? "ships-view__chip--on" : "",
-                  ]}
-                  onClick={() => (selectedRarities.value = toggleSet(selectedRarities.value, r))}
-                >
-                  {t(`ships.rarity.${r}`)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── view body: tech-tree (nation rail + tree) or list grid ── */}
-        <Transition name="s-fade-slide" mode="out-in">
-          {encyclopedia.loading ? (
+        {/* ── view body: scrollable area ── */}
+        <div class="ships-view__body">
+          <Transition name="s-fade-slide" mode="out-in">
+            {encyclopedia.loading ? (
             <div class="ships-view__status" key="loading">
               <SSpinner center size="lg" text={t("ships.loading")} />
             </div>
@@ -404,7 +407,8 @@ export default defineComponent({
             })}
             </div>
           )}
-        </Transition>
+          </Transition>
+        </div>
 
         {/* ── detail modal ── */}
         <ShipDetailModal

@@ -14,7 +14,7 @@ import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import { buildArmorScheme, buildBallistics } from "./ballistics";
 import SkillBuilder from "./SkillBuilder";
-import ShipyardPanel from "./ShipyardPanel";
+import DataObserver from "./DataObserver";
 import ShipStage, { type FocusZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import ArmorBelt from "./ArmorBelt";
@@ -24,14 +24,12 @@ import { tierToRoman } from "@/utils/tierRoman";
 import "./ShipDetailModal.scss";
 
 /**
- * Ship detail modal with 4 tabs:
+ * Ship detail modal with tabs:
  *  - Specs: WG default_profile fields (HP / artillery / mobility / etc.)
  *  - Armor & Ballistics: GameParams lazy-load (wowsunpack JSON)
- *  - My Stats: per-player per-ship stats from ships/stats + trend line
- *  - Server Trend: community trend placeholder
- *
- * GameParams is fetched on first Armor tab activation (lazy), cached by the
- * Rust layer. My Stats tab also lazy-loads the player's ship stats + trend.
+ *  - My Stats: per-player per-ship stats + trend line
+ *  - Server Trend: community trend
+ *  - Captain Skills: skill planner + data observer (replaces 2D/3D preview)
  */
 export default defineComponent({
   name: "ShipDetailModal",
@@ -47,21 +45,19 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const trends = useTrendsStore();
 
-    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill" | "shipyard">("specs");
+    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
-    // ── Shipyard: shared skill allocation + HP (for trigger skills) ──────
-    // Lifted here so switching tabs preserves the build; SkillBuilder (in the
-    // skill tab) and ShipyardPanel both bind to these.
-    const shipyardRank = ref<Record<string, number>>({});
-    const shipyardHealthPct = ref(1);
+    // ── Captain skills state (shared between SkillBuilder + DataObserver) ──
+    const skillRank = ref<Record<string, number>>({});
+    const skillHealthPct = ref(1);
 
-    // ── Holographic stage (ShipStage owns its own Three.js lifecycle) ──
+    // ── Holographic stage ─────────────────────────────────────────────────
     const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
     function onWeaponFocus(zone: FocusZone) {
       stageRef.value?.focusZone(zone);
     }
 
-    // ── Armor tab + WeaponBar: lazy GameParams ─────────────────────────
+    // ── Armor tab: lazy GameParams ─────────────────────────────────────────
     const gameparams = ref<unknown>(null);
     const gpLoading = ref(false);
     const gpError = ref<string | null>(null);
@@ -81,7 +77,7 @@ export default defineComponent({
       }
     }
 
-    // ── My Stats tab: lazy player ship stats + trend ───────────────────
+    // ── My Stats tab: lazy player ship stats + trend ──────────────────────
     const myStatsLoaded = ref(false);
     async function loadMyStats() {
       if (myStatsLoaded.value) return;
@@ -92,8 +88,6 @@ export default defineComponent({
       void trends.loadPlayer(acc.accountId, acc.realm).catch(() => {});
     }
 
-    // Reset state when ship changes (modal reopen). Pre-fetch GameParams so the
-    // WeaponBar under the stage is populated immediately (ArmorBelt shares it).
     watch(
       () => props.ship,
       (s) => {
@@ -102,6 +96,8 @@ export default defineComponent({
         gpFetched.value = false;
         gpError.value = null;
         myStatsLoaded.value = false;
+        skillRank.value = {};
+        skillHealthPct.value = 1;
         if (s) {
           void loadGameparams();
           void trends.loadCommunity(s.shipId);
@@ -124,7 +120,6 @@ export default defineComponent({
       return shipStats.getShip(acc.accountId, acc.realm, props.ship.shipId);
     });
 
-    // Trend buckets that affect this ship (patches touching its shipId).
     const relevantPatches = computed(() => {
       if (!props.ship || !trends.playerTrend) return [];
       return trends.playerTrend.patches.filter((p) => p.shipIds.includes(props.ship!.shipId));
@@ -139,7 +134,6 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
-    /** Derived rarity + tier short code for the header. */
     const rarity = computed(() =>
       props.ship ? shipRarity(props.ship) : "common",
     );
@@ -156,11 +150,20 @@ export default defineComponent({
       >
         {!props.ship ? null : (
           <div class="ship-detail">
-            {/* holographic stage (3D orbit + 2D toggle, owns its own lifecycle) */}
-            <ShipStage ref={stageRef} ship={props.ship} />
-
-            {/* weapon module bar — click a module to focus the 3D camera */}
-            <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
+            {/* holographic stage: shown for all tabs except skill (where data observer replaces it) */}
+            {tab.value !== "skill" ? (
+              <>
+                <ShipStage ref={stageRef} ship={props.ship} />
+                <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
+              </>
+            ) : (
+              /* Data observer: replaces the stage when in the captain skills tab */
+              <DataObserver
+                ship={props.ship}
+                rank={skillRank.value}
+                healthPct={skillHealthPct.value}
+              />
+            )}
 
             {/* identity header */}
             <div class="ship-detail__id">
@@ -184,7 +187,7 @@ export default defineComponent({
 
             {/* tab bar */}
             <div class="ship-detail__tabs">
-              {(["specs", "armor", "mystats", "community", "skill", "shipyard"] as const).map((name) => (
+              {(["specs", "armor", "mystats", "community", "skill"] as const).map((name) => (
                 <button
                   class={[
                     "ship-detail__tab",
@@ -192,12 +195,12 @@ export default defineComponent({
                   ]}
                   onClick={() => selectTab(name)}
                 >
-                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : name === "skill" ? "Skill" : "Shipyard"}`)}
+                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
                 </button>
               ))}
             </div>
 
-            {/* tab content — cross-fade between tabs */}
+            {/* tab content */}
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
@@ -260,19 +263,29 @@ export default defineComponent({
                     <p>{t("ships.detail.communityUnavailable")}</p>
                   )}
                 </div>
-              ) : tab.value === "shipyard" ? (
-                <div class="ship-detail__shipyard" key="shipyard">
-                  <ShipyardPanel
-                    ship={props.ship}
-                    rank={shipyardRank.value}
-                    healthPct={shipyardHealthPct.value}
-                    onUpdate:rank={(v: Record<string, number>) => (shipyardRank.value = v)}
-                    onUpdate:healthPct={(v: number) => (shipyardHealthPct.value = v)}
-                  />
-                </div>
               ) : (
                 <div class="ship-detail__skill" key="skill">
-                  <SkillBuilder shipType={props.ship.type} />
+                  {/* HP slider for Adrenaline Rush effect in DataObserver */}
+                  <div class="ship-detail__hp-slider">
+                    <label class="ship-detail__hp-label">
+                      {t("ships.shipyard.healthSlider")}:
+                      <strong>{Math.round(skillHealthPct.value * 100)}%</strong>
+                    </label>
+                    <input
+                      class="ship-detail__hp-input"
+                      type="range"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={Math.round(skillHealthPct.value * 100)}
+                      onInput={(e) => (skillHealthPct.value = Number((e.target as HTMLInputElement).value) / 100)}
+                    />
+                  </div>
+                  <SkillBuilder
+                    shipType={props.ship.type}
+                    modelRank={skillRank.value}
+                    onUpdate:modelRank={(r: Record<string, number>) => (skillRank.value = r)}
+                  />
                 </div>
               )}
               </Transition>
@@ -284,14 +297,7 @@ export default defineComponent({
   },
 });
 
-/** Player-friendly specs panel. Renders the grouped, labelled, unit-formatted
- *  spec tree produced by `buildShipSpecs` — modelled on 浩舰's grouped layout
- *  (Survivability / Main Battery / Torpedoes / Anti-Air / Mobility /
- *  Concealment). Each group is a card with an icon header; rows show a
- *  human-readable label, the formatted value, and an optional help icon
- *  (hover/focus tooltip) explaining what the stat means to new players.
- *  Groups with no rows are omitted upstream, so a destroyer simply has no
- *  Anti-Air card rather than showing "—". */
+/** Player-friendly specs panel. */
 const SpecsPanel = defineComponent({
   name: "SpecsPanel",
   props: {
@@ -300,7 +306,6 @@ const SpecsPanel = defineComponent({
   },
   setup(props) {
     const groups = computed(() => buildShipSpecs(props.profile, props.nation));
-    // Map icon name (from shipSpecs) → lucide component, resolved once.
     const iconFor = (name: string) => {
       switch (name) {
         case "Shield": return Shield;
@@ -350,16 +355,6 @@ const SpecsPanel = defineComponent({
   },
 });
 
-/**
- * Armor & ballistics panel — replaces the old raw-JSON dump of the GameParams
- * subtree. Extracts the armor scheme (citadel / deck / belt / torpedo belt /
- * extremities) and shell ballistics (sigma, dispersion, per-shell mass /
- * muzzle / airDrag + estimated penetration) via the `ballistics` module, and
- * renders them as the same grouped card layout as SpecsPanel.
- *
- * The penetration curve is an *estimate* (derived from mass × muzzle² ×
- * airDrag), not the exact in-game krupp formula — the panel labels it as such.
- */
 const BallisticsPanel = defineComponent({
   name: "BallisticsPanel",
   props: {
@@ -371,15 +366,6 @@ const BallisticsPanel = defineComponent({
     const anyGroups = computed(
       () => armorGroup.value != null || ballisticsGroups.value.length > 0,
     );
-    const iconFor = (name: string) => {
-      switch (name) {
-        case "Shield": return Shield;
-        case "Crosshair": return Crosshair;
-        default: return Shield;
-      }
-    };
-    /** Resolve a row label: armor/ballistics rows use keys under their own
-     *  i18n namespaces, falling back to the spec namespace for shared keys. */
     function rowLabel(row: { key: string }): string {
       const armor = t(`ships.armor.${row.key}`, {});
       if (armor && armor !== `ships.armor.${row.key}`) return armor;
@@ -433,37 +419,32 @@ const BallisticsPanel = defineComponent({
               </dl>
             </section>
           ) : null}
-
-          {ballisticsGroups.value.map((g, gi) => {
-            const Icon = iconFor(g.icon);
-            return (
-              <section class="specs-group" key={gi}>
-                <header class="specs-group__head">
-                  <Icon size={14} />
-                  <h5 class="specs-group__title">{t("ships.ballistics.groupTitle")}</h5>
-                </header>
-                <dl class="specs-group__rows">
-                  {g.rows.map((row) => {
-                    const hint = rowHint(row);
-                    return (
-                      <div class="specs-group__row" key={row.key}>
-                        <dt class="specs-group__label">
-                          {rowLabel(row)}
-                          {hint ? (
-                            <span class="specs-group__hint" title={hint}>
-                              <HelpCircle size={11} />
-                            </span>
-                          ) : null}
-                        </dt>
-                        <dd class="specs-group__value">{row.value}</dd>
-                      </div>
-                    );
-                  })}
-                </dl>
-              </section>
-            );
-          })}
-
+          {ballisticsGroups.value.map((g, gi) => (
+            <section class="specs-group" key={gi}>
+              <header class="specs-group__head">
+                <Crosshair size={14} />
+                <h5 class="specs-group__title">{t("ships.ballistics.groupTitle")}</h5>
+              </header>
+              <dl class="specs-group__rows">
+                {g.rows.map((row) => {
+                  const hint = rowHint(row);
+                  return (
+                    <div class="specs-group__row" key={row.key}>
+                      <dt class="specs-group__label">
+                        {rowLabel(row)}
+                        {hint ? (
+                          <span class="specs-group__hint" title={hint}>
+                            <HelpCircle size={11} />
+                          </span>
+                        ) : null}
+                      </dt>
+                      <dd class="specs-group__value">{row.value}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          ))}
           <p class="ballistics-panel__approx">{t("ships.detail.ballisticsApprox")}</p>
         </div>
       );
@@ -490,9 +471,6 @@ const Stat = defineComponent({
   },
 });
 
-/** Mini trend visualization — one bar per version bucket, height = winrate.
- *  Patches touching the ship are annotated above the bar. Pure SVG, no chart
- *  library dependency. */
 const TrendBars = defineComponent({
   name: "TrendBars",
   props: {

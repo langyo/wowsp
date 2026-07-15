@@ -58,11 +58,17 @@
   &--error   &__icon { color: rgb(var(--color-error)); }
   &--warning &__icon { color: rgb(var(--color-warning)); }
   &--info    &__icon { color: rgb(var(--color-info)); }
+  &--loading &__icon { color: rgb(var(--color-primary)); }
 
   &--success { border-left: 3px solid rgb(var(--color-success)); }
   &--error   { border-left: 3px solid rgb(var(--color-error)); }
   &--warning { border-left: 3px solid rgb(var(--color-warning)); }
   &--info    { border-left: 3px solid rgb(var(--color-info)); }
+  &--loading { border-left: 3px solid rgb(var(--color-primary)); }
+
+  &__icon--spin {
+    animation: s-toast-spin 1s linear infinite;
+  }
 }
 
 /* Enter: slide in from the right + fade. */
@@ -88,4 +94,9 @@
 }
 .s-toast-move {
   transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+@keyframes s-toast-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

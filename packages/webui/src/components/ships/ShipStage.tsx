@@ -12,7 +12,9 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import SSegmented from "@/components/base/SSegmented";
 import SSpinner from "@/components/base/SSpinner";
-import { resolveShipModelByShipId, loadGlbModel } from "@/features/holographic/modelLoader";
+import { resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
+import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t } from "@/i18n";
 import type { ShipInfo } from "@/api";
@@ -65,10 +67,7 @@ export default defineComponent({
     const controls = shallowRef<OrbitControls | null>(null);
     const modelGroup = shallowRef<THREE.Group | null>(null);
     /** Uniforms for the animated holographic shader (time + scan offset). */
-    const uniforms = shallowRef<{
-      time: { value: number };
-      scanOffset: { value: number };
-    } | null>(null);
+    const uniforms = shallowRef<HoloUniforms | null>(null);
     /** Bounding box of the loaded model (for focus-zone camera placement). */
     const modelBox = shallowRef<THREE.Box3 | null>(null);
 
@@ -85,69 +84,14 @@ export default defineComponent({
     } | null = null;
 
     // ── Holographic shader ────────────────────────────────────────────────
-    // The baked GLBs have no normals (they're merged + stripped), so we compute
-    // face normals in the fragment shader via screen-space derivatives (dFdx/
-    // dFdy) — WebGL2 default in three r150+. Fresnel uses that normal vs. the
-    // view direction. Scanlines sweep vertically; a wireframe pass is drawn as
-    // a separate overlay mesh.
-    const VERT = /* glsl */ `
-      varying vec3 vWorldPos;
-      varying vec3 vViewPos;
-      varying vec3 vLocalPos;
-      void main() {
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWorldPos = wp.xyz;
-        vLocalPos = position;
-        vec4 vp = viewMatrix * wp;
-        vViewPos = vp.xyz;
-        gl_Position = projectionMatrix * vp;
-      }
-    `;
-    const FRAG = /* glsl */ `
-      precision highp float;
-      uniform float time;
-      uniform float scanOffset;
-      uniform vec3 baseColor;
-      uniform vec3 fresnelColor;
-      varying vec3 vWorldPos;
-      varying vec3 vViewPos;
-      varying vec3 vLocalPos;
-      void main() {
-        // Face normal from screen-space derivatives of the world position.
-        vec3 dx = dFdx(vWorldPos);
-        vec3 dy = dFdy(vWorldPos);
-        vec3 n = normalize(cross(dx, dy));
-        // View direction (from fragment to camera, in world space).
-        vec3 viewDir = normalize(cameraPosition - vWorldPos);
-        // Fresnel: bright at glancing angles.
-        float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
-        // Scanlines along the model's vertical (Y) axis, sweeping over time.
-        float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
-        scan = smoothstep(0.82, 1.0, scan);
-        vec3 col = baseColor * (0.35 + 0.25 * fres);
-        col += fresnelColor * fres * 1.4;
-        col += fresnelColor * scan * 0.6;
-        float alpha = 0.72 + 0.28 * fres;
-        gl_FragColor = vec4(col, alpha);
-      }
-    `;
-
+    // The shader source + material factory live in the shared `holoShader`
+    // module (also used by the replay's recorder-ship panel). This thin wrapper
+    // also stashes the uniforms on the component ref so the render loop can
+    // drive the scanline animation each frame via `tickHoloUniforms`.
     function makeHoloMaterial(): THREE.ShaderMaterial {
-      const u = {
-        time: { value: 0 },
-        scanOffset: { value: 0 },
-        baseColor: { value: new THREE.Color(0x0d6e8a) },
-        fresnelColor: { value: new THREE.Color(0x33ccff) },
-      };
-      uniforms.value = u;
-      return new THREE.ShaderMaterial({
-        uniforms: u,
-        vertexShader: VERT,
-        fragmentShader: FRAG,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      });
+      const mat = sharedMakeHoloMaterial();
+      uniforms.value = mat.uniforms as unknown as HoloUniforms;
+      return mat;
     }
 
     // ── Scene lifecycle ───────────────────────────────────────────────────
@@ -163,7 +107,10 @@ export default defineComponent({
       sc.fog = new THREE.Fog(0x070d18, 400, 1400);
 
       const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
-      cam.position.set(180, 90, 260);
+      // Initial view before a model loads — matches the `default` focus-zone
+      // framing (starboard-bow ~2 o'clock, elevated). focusZone("default")
+      // re-positions precisely once the model bounds are known.
+      cam.position.set(230, 215, 400);
 
       const rnd = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -192,7 +139,7 @@ export default defineComponent({
       ctrl.maxDistance = 800;
       ctrl.maxPolarAngle = Math.PI * 0.85; // don't go under the grid floor
       ctrl.autoRotate = true;
-      ctrl.autoRotateSpeed = 0.6;
+      ctrl.autoRotateSpeed = 0.5;
       // Stop auto-rotate as soon as the user touches it.
       ctrl.addEventListener("start", () => {
         ctrl.autoRotate = false;
@@ -206,10 +153,7 @@ export default defineComponent({
       const clock = new THREE.Clock();
       const tick = () => {
         const dt = clock.getDelta();
-        if (uniforms.value) {
-          uniforms.value.time.value += dt;
-          uniforms.value.scanOffset.value += dt * 0.6;
-        }
+        if (uniforms.value) tickHoloUniforms(uniforms.value, dt);
         // Animate the focus-zone highlight ring: pulse scale + fade over its
         // lifetime, gently face the camera so the reticle stays visible, then
         // dispose when done.
@@ -254,7 +198,26 @@ export default defineComponent({
       loading.value = true;
       errorMsg.value = null;
       try {
-        const url = resolveShipModelByShipId(ship.shipId, ship.name);
+        let url = resolveShipModelByShipId(ship.shipId, ship.name);
+        // Fallback: try to match a model of the same tier/nation/type if no
+        // exact model exists for this ship. This lets the holographic stage
+        // show a similar hull rather than a blank viewport.
+        if (!url) {
+          const encyclopedia = useEncyclopediaStore();
+          const spec: ShipModelSpec = {
+            shipId: ship.shipId,
+            tier: ship.tier,
+            nation: ship.nation,
+            type: ship.type,
+          };
+          const pool: ShipModelSpec[] = encyclopedia.list.map((s) => ({
+            shipId: s.shipId,
+            tier: s.tier,
+            nation: s.nation,
+            type: s.type,
+          }));
+          url = resolveFallbackModel(spec, pool);
+        }
         if (!url) {
           hasModel.value = false;
           errorMsg.value = t("ships.detail.noModel");
@@ -467,9 +430,33 @@ export default defineComponent({
           target.set(center.x - half * 0.3, center.y - size.y * 0.2, center.z);
           break;
         default:
-          camPos = new THREE.Vector3(center.x + 60, center.y + 90, dist * 1.1);
+          // Starboard-bow "2 o'clock" vantage: ~60° azimuth from the bow
+          // (the +X axis), elevated ~50° above the waterline so the deck
+          // and superstructure both read. A high hero angle for the initial
+          // holographic reveal. Spherical coords, X = bow, Z = starboard.
+          {
+            const az = Math.PI / 3; // 60° azimuth toward starboard (2 o'clock)
+            const el = Math.PI * 0.28; // ~50° elevation (high vantage)
+            const R = dist * 1.15;
+            camPos = new THREE.Vector3(
+              center.x + R * Math.cos(el) * Math.cos(az),
+              center.y + R * Math.sin(el),
+              center.z + R * Math.cos(el) * Math.sin(az),
+            );
+          }
       }
       tweenCamera(cam, ctrl, camPos, target, 700);
+      // The `default` framing is the initial hero reveal — resume gentle
+      // auto-rotation once the camera settles so the ship slowly turns. The
+      // "start" listener on OrbitControls (set up in initScene) stops it as
+      // soon as the user grabs the view. Explicit weapon-focus zones stay
+      // non-rotating (autoRotate left off above).
+      if (zone === "default") {
+        const ctrlLocal = ctrl;
+        window.setTimeout(() => {
+          ctrlLocal.autoRotate = true;
+        }, 750);
+      }
       // Spawn the highlight ring for real weapon-focus zones (skip the default
       // framing call — that's just initial camera placement, not a focus action).
       if (zone !== "default") {

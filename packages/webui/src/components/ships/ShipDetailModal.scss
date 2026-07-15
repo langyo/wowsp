@@ -90,7 +90,38 @@
   }
 
   &__skill {
-    font-size: var(--text-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  &__hp-slider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.7rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__hp-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
+    white-space: nowrap;
+
+    strong {
+      color: rgb(var(--color-primary));
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__hp-input {
+    flex: 1;
+    accent-color: rgb(var(--color-primary));
   }
 
   &__mystats-grid {

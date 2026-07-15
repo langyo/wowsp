@@ -61,7 +61,6 @@
     "tabMyStats": "My Stats",
     "tabCommunity": "Server Trend",
     "tabSkill": "Captain Skills",
-    "tabShipyard": "Shipyard",
     "mainBattery": "Main Battery",
     "hull": "Hull",
     "mobility": "Mobility",
@@ -227,7 +226,9 @@
     "CA": "Cruiser",
     "DD": "Destroyer",
     "CV": "Aircraft Carrier",
-    "SS": "Submarine"
+    "SS": "Submarine",
+    "equipment": "Equipment",
+    "flags": "Flags"
   },
   "viewMode": {
     "tree": "Tech Tree",

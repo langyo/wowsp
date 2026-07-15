@@ -61,7 +61,6 @@
     "tabMyStats": "我的成绩",
     "tabCommunity": "全服趋势",
     "tabSkill": "舰长加点",
-    "tabShipyard": "船坞",
     "mainBattery": "主炮",
     "hull": "船体",
     "mobility": "机动",
@@ -227,7 +226,9 @@
     "CA": "巡洋舰",
     "DD": "驱逐舰",
     "CV": "航空母舰",
-    "SS": "潜艇"
+    "SS": "潜艇",
+    "equipment": "装备",
+    "flags": "信号旗"
   },
   "viewMode": {
     "tree": "科技树",

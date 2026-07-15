@@ -2,79 +2,79 @@
  * GLB model loading utilities for the holographic 3D scene.
  *
  * Ship and map models are pre-converted GLB files placed under
- * `src/res/models/ships/` and `src/res/models/maps/` by the one-time
- * conversion scripts (`scripts/model_convert/convert_ship.py` /
- * `convert_map.py`). These are static assets bundled by Vite.
- *
- * Design: the loaders are **optional** — if a GLB doesn't exist for a given
- * ship/map, the scene falls back to procedural geometry (cone markers /
- * grid helper). This lets the app work with zero models, and progressively
- * enriches as the user converts assets via the scripts.
- *
- * File naming convention (from the conversion scripts):
- *   ships: `<displayName>.glb` or `<modelDir>.glb` (e.g. "Montana.glb",
- *          "PASB510_Montana.glb")
- *   maps:  `<spaceId>.glb` (e.g. "15_NE_north.glb")
+ * `src/res/models/ships/` and `src/res/models/maps/` (Vite's publicDir).
+ * Since they live in the public directory, they are served at the root path
+ * (e.g. `/models/ships/Montana.glb`). We discover available files via a
+ * non-URL glob (just filename listing) and build public URLs from the stems.
  *
  * ## Skin → base model dedup
- * Many ships are reskins of a base ship (ARP/AZUR/FBO/Black/collab variants)
- * and share the same 3D hull. `src/res/data/ship_models.json` (built by
- * `scripts/extract/build_ship_models.py`) maps each shipId to a `baseName` —
- * for a skin ship, the base ship's readable name. `resolveShipModelByShipId`
- * reads this so skins reuse the base's baked GLB, letting us delete ~170
- * duplicate model files.
+ * `src/res/data/ship_models.json` maps each shipId to a `baseName`.
+ * We import it directly as a module (it lives in src/data, not src/res/data).
  */
-import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import shipModelNames from "../../res/data/ship_models.json";
 
-// Vite static asset glob: eagerly import all GLB files under src/res/models/.
-// Returns a map of path → resolved URL string. Empty if no models exist yet.
-// Uses a file-relative pattern; an absolute `/src/res/...` glob would trip
-// Vite's "publicDir served at root" warning since src/res is the publicDir.
-const shipModules = import.meta.glob("../../res/models/ships/*.glb", {
+import shipModelNames from "../../data/ship_models.json";
+
+// ── Ship model stems (extracted from glob paths, NOT used as import URLs) ──
+// We only need the filename stems to check which models exist; actual
+// URLs are constructed as `/models/ships/<stem>.glb` (public dir root path).
+const _shipGlob = import.meta.glob("../../res/models/ships/*.glb", {
   query: "?url",
   import: "default",
   eager: true,
 }) as Record<string, string>;
 
-const mapModules = import.meta.glob("../../res/models/maps/*.glb", {
+/** All available ship model stems (lowercased filename without extension). */
+const shipModelStems = new Set<string>();
+for (const path of Object.keys(_shipGlob)) {
+  const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
+  shipModelStems.add(stem);
+}
+
+const _mapGlob = import.meta.glob("../../res/models/maps/*.glb", {
   query: "?url",
   import: "default",
   eager: true,
 }) as Record<string, string>;
 
-/** All available ship model URLs, keyed by lowercased filename stem. */
-const shipModelUrls = new Map<string, string>();
-for (const [path, url] of Object.entries(shipModules)) {
+const mapModelStems = new Set<string>();
+for (const path of Object.keys(_mapGlob)) {
   const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
-  shipModelUrls.set(stem, url);
+  mapModelStems.add(stem);
 }
 
-/** All available map model URLs, keyed by lowercased space id. */
-const mapModelUrls = new Map<string, string>();
-for (const [path, url] of Object.entries(mapModules)) {
-  const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
-  mapModelUrls.set(stem, url);
+/** Get the public URL for a ship GLB model. Returns null if no model exists
+ *  under that stem. */
+function shipModelUrl(stem: string): string | null {
+  if (shipModelStems.has(stem.toLowerCase())) {
+    return `/models/ships/${encodeURIComponent(stem)}.glb`;
+  }
+  return null;
 }
 
-/** Resolve a ship model URL by trying multiple naming conventions. */
+function mapModelUrl(stem: string): string | null {
+  if (mapModelStems.has(stem.toLowerCase())) {
+    return `/models/maps/${encodeURIComponent(stem)}.glb`;
+  }
+  return null;
+}
+
+// ── Re-export public API with the same signatures ────────────────────────
+
 export function resolveShipModelUrl(
   displayName: string | undefined,
   modelDir: string | undefined,
 ): string | null {
   if (displayName) {
-    const key = displayName.toLowerCase();
-    if (shipModelUrls.has(key)) return shipModelUrls.get(key)!;
+    const url = shipModelUrl(displayName);
+    if (url) return url;
   }
   if (modelDir) {
-    const key = modelDir.toLowerCase();
-    if (shipModelUrls.has(key)) return shipModelUrls.get(key)!;
+    const url = shipModelUrl(modelDir);
+    if (url) return url;
   }
   return null;
 }
 
-/** Entry shape from ship_models.json. */
 interface ShipModelEntry {
   index: string;
   name: string;
@@ -85,15 +85,6 @@ interface ShipModelEntry {
 
 const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 
-/**
- * Resolve a ship model URL by shipId. This is the preferred resolver: it
- * consults `ship_models.json` and, for skin ships, follows `baseName` to the
- * underlying base model — so reskins reuse the base's baked GLB instead of
- * each keeping a duplicate file.
- *
- * Falls back to name-based resolution if the ship isn't in the map or its base
- * name has no model either.
- */
 export function resolveShipModelByShipId(
   shipId: number | string | undefined,
   fallbackName?: string,
@@ -101,24 +92,19 @@ export function resolveShipModelByShipId(
   if (shipId != null) {
     const entry = shipModelMap[String(shipId)];
     if (entry?.baseName) {
-      const url = shipModelUrls.get(entry.baseName.toLowerCase());
+      const url = shipModelUrl(entry.baseName);
       if (url) return url;
     }
   }
   return resolveShipModelUrl(fallbackName, undefined);
 }
 
-/** Resolve a map model URL by space id (e.g. "15_NE_north"). */
 export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   if (!spaceId) return null;
-  // Strip any "spaces/" prefix.
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
-  return mapModelUrls.get(clean) ?? null;
+  return mapModelUrl(clean);
 }
 
-/** Minimal ship shape needed for fallback resolution (tier/nation/type +
- *  shipId to look up baseName). Intentionally a structural subset of ShipInfo
- *  so callers can pass either a full ShipInfo or a trimmed projection. */
 export interface ShipModelSpec {
   shipId: number;
   tier?: number | null;
@@ -126,31 +112,15 @@ export interface ShipModelSpec {
   type?: string | null;
 }
 
-/** Resolve a model URL for a single ship spec, checking its exact baseName in
- *  ship_models.json first. Returns null if this ship has no baked model. */
 function resolveExact(spec: ShipModelSpec): string | null {
   if (spec.shipId == null) return null;
   const entry = shipModelMap[String(spec.shipId)];
   if (entry?.baseName) {
-    const url = shipModelUrls.get(entry.baseName.toLowerCase());
-    if (url) return url;
+    return shipModelUrl(entry.baseName);
   }
   return null;
 }
 
-/** Find a fallback model URL for a ship that has no exact model, by matching
- *  other (premium/skin/missing) ships against tech-tree ships of the same
- *  tier/nation/type that DO have a baked GLB.
- *
- *  Resolution priority (first hit wins):
- *    1. same tier + nation + type, tech-tree (non-premium/special)
- *    2. same tier + type, tech-tree
- *    3. same tier, tech-tree
- *  e.g. a premium tier-8 US battleship with no model → a tier-8 US tech-tree
- *  BB (e.g. North Carolina line). Pass the full encyclopedia (`ships`) so the
- *  search has candidates; it's filtered to ships whose baseName resolves.
- *
- *  Returns null if no candidate at any tier — the caller then renders a cone. */
 export function resolveFallbackModel(
   spec: ShipModelSpec,
   ships: ShipModelSpec[],
@@ -158,8 +128,6 @@ export function resolveFallbackModel(
   const tier = spec.tier;
   if (tier == null) return null;
 
-  // Candidate pool: ships with the same tier whose baseName actually resolves
-  // to a baked model. Built once, then filtered by progressively looser keys.
   const candidates = ships.filter(
     (s) => s.tier === tier && resolveExact(s) != null,
   );
@@ -168,7 +136,6 @@ export function resolveFallbackModel(
   const nation = spec.nation?.toLowerCase();
   const type = spec.type?.toLowerCase();
 
-  // 1. exact tier + nation + type
   if (nation && type) {
     const hit = candidates.find(
       (s) => s.nation?.toLowerCase() === nation && s.type?.toLowerCase() === type,
@@ -176,45 +143,42 @@ export function resolveFallbackModel(
     const url = hit && resolveExact(hit);
     if (url) return url;
   }
-  // 2. same tier + type
   if (type) {
     const hit = candidates.find((s) => s.type?.toLowerCase() === type);
     const url = hit && resolveExact(hit);
     if (url) return url;
   }
-  // 3. same tier (any) — pick the first candidate.
   return resolveExact(candidates[0]);
 }
 
-/** Resolve the best available model URL for a ship entry: exact match first,
- *  then a tier/nation/type fallback against the encyclopedia. Returns null if
- *  neither resolves (caller renders a cone marker).
- *
- *  This is the entry point for the replay map — pass the full ShipInfo for the
- *  ship and the encyclopedia list (or its values) as the fallback pool. */
 export function resolveShipModelForEntry(
   ship: ShipModelSpec | null | undefined,
   encyclopedia: ShipModelSpec[],
 ): string | null {
-  if (!ship) return null;
-  const exact = resolveExact(ship);
-  if (exact) return exact;
-  return resolveFallbackModel(ship, encyclopedia);
+  if (ship) {
+    const exact = resolveExact(ship);
+    if (exact) return exact;
+    const fallback = resolveFallbackModel(ship, encyclopedia);
+    if (fallback) return fallback;
+  }
+  for (const s of encyclopedia) {
+    const url = resolveExact(s);
+    if (url) return url;
+  }
+  return null;
 }
 
-/** Shared GLTFLoader instance (heavy to construct). */
+// ── GLTF loading ──────────────────────────────────────────────────────────
+
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
 let _loader: GLTFLoader | null = null;
 function getLoader(): GLTFLoader {
   if (!_loader) _loader = new GLTFLoader();
   return _loader;
 }
 
-/** Load a GLB model from a URL. Returns a Promise<THREE.Group> (the scene
- *  root of the loaded model). Rejects on parse/load error.
- *
- *  The baked GLBs were repaired on disk by `scripts/model_convert/repair_glbs.py`
- *  (which fixed a negative bufferView byteLength + JSON-chunk null padding), so
- *  a plain GLTFLoader.load is sufficient. */
 export function loadGlbModel(url: string): Promise<THREE.Group> {
   return new Promise((resolve, reject) => {
     getLoader().load(
@@ -226,12 +190,10 @@ export function loadGlbModel(url: string): Promise<THREE.Group> {
   });
 }
 
-/** Check whether any ship models have been converted yet. */
 export function hasShipModels(): boolean {
-  return shipModelUrls.size > 0;
+  return shipModelStems.size > 0;
 }
 
-/** Check whether any map models have been converted yet. */
 export function hasMapModels(): boolean {
-  return mapModelUrls.size > 0;
+  return mapModelStems.size > 0;
 }

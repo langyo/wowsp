@@ -1,11 +1,14 @@
 import { reactive } from "vue";
 
-export type ToastType = "success" | "error" | "warning" | "info";
+export type ToastType = "success" | "error" | "warning" | "info" | "loading";
 
 export interface ToastItem {
   id: number;
   type: ToastType;
   message: string;
+  /** When true, the close button is hidden and the toast is auto-dismissed
+   *  only by the caller (via dismiss). Loading toasts use this. */
+  persistent?: boolean;
 }
 
 const state = reactive<{ toasts: ToastItem[] }>({ toasts: [] });
@@ -24,18 +27,24 @@ function dismiss(id: number) {
   }
 }
 
-function show(message: string, type: ToastType = "info", duration = DEFAULT_DURATION) {
+function show(message: string, type: ToastType = "info", duration = DEFAULT_DURATION): number {
   const id = ++nextId;
-  state.toasts.push({ id, type, message });
-  // Auto-dismiss for success/info (errors/warnings are sticky).
-  if (type === "success" || type === "info") {
+  const persistent = type === "loading" || type === "error" || type === "warning";
+  state.toasts.push({ id, type, message, persistent });
+  // Auto-dismiss for success/info only (errors/warnings/loading are sticky).
+  if (!persistent) {
     timers.set(id, setTimeout(() => dismiss(id), duration));
   }
   return id;
 }
 
-/** Toast composable. Shared module-level state so all callers see the same
- *  toasts. Mount <SToast /> once at the app root to render them. */
+/** Show a persistent loading toast. Returns the toast id for later dismissal. */
+function showLoading(message: string): number {
+  const id = ++nextId;
+  state.toasts.push({ id, type: "loading", message, persistent: true });
+  return id;
+}
+
 export function useToast() {
   return {
     toasts: state.toasts,
@@ -44,6 +53,7 @@ export function useToast() {
     error: (msg: string) => show(msg, "error"),
     warning: (msg: string) => show(msg, "warning"),
     info: (msg: string) => show(msg, "info"),
+    loading: (msg: string) => showLoading(msg),
     dismiss,
   };
 }

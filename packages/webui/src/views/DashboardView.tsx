@@ -13,6 +13,7 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
 import { useRankedStore } from "@/stores/ranked";
+import { useToast } from "@/composables/useToast";
 import { winrateColor } from "@/utils/winrate";
 import {
   filterByDateRange,
@@ -49,6 +50,7 @@ export default defineComponent({
     const encyclopedia = useEncyclopediaStore();
     const trends = useTrendsStore();
     const ranked = useRankedStore();
+    const toast = useToast();
 
     const showModal = ref(false);
     const dateRange = ref<DateRange>("all");
@@ -144,28 +146,27 @@ export default defineComponent({
     async function refresh() {
       const acc = activeAccount.value;
       if (!acc) return;
+      const toastId = toast.loading(t("dashboard.loading"));
       // Phase 1: warm the account-level cache (instant render on cold start).
       try {
         await stats.loadCached(acc.realm, acc.accountId);
       } catch {
         // cache miss — fine
       }
-      // Phase 2: fetch fresh account stats (this populates avgDamage, PR, etc.
-      // via the WG account/info endpoint).
+      // Phase 2: fetch fresh account stats.
       try {
         await stats.lookup(acc.nickname, acc.realm);
       } catch {
         // surfaced via stats.error
       }
-      // Phase 3: per-ship stats + encyclopedia + trends — each independent.
-      // Use allSettled so a failure in one (e.g. trends) doesn't block the
-      // others (e.g. shipStats). Each store surfaces its own error.
+      // Phase 3: per-ship stats + encyclopedia + trends — parallel.
       await Promise.allSettled([
         shipStats.load(acc.accountId, acc.realm),
         encyclopedia.load(acc.realm),
         trends.loadPlayer(acc.accountId, acc.realm),
         ranked.load(acc.accountId, acc.realm, 5),
       ]);
+      toast.dismiss(toastId);
     }
 
     // Refresh on mount + whenever the active account changes. We always
@@ -270,10 +271,9 @@ export default defineComponent({
                 </section>
               ) : null}
 
-              {/* ── Ship stats: group mode + date range + sort (no text titles,
-                   the button groups ARE the section headers) ── */}
+              {/* ── Ship stats: group mode + sort + date range on one row (no
+                   text titles, the button groups ARE the section headers) ── */}
               <section class="dash-section">
-                {/* Row 1: group mode + sort */}
                 <div class="dash-section__controls">
                   <SSegmented
                     modelValue={groupMode.value}
@@ -293,14 +293,13 @@ export default defineComponent({
                       { value: "avgDamage", label: t("dashboard.avgDamage") },
                     ]}
                   />
+                  {/* Date range (period) selector — on the same row as the others. */}
+                  <SSegmented
+                    modelValue={dateRange.value}
+                    onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
+                    options={rangeOptions}
+                  />
                 </div>
-                {/* Row 2: date range */}
-                <SSegmented
-                  modelValue={dateRange.value}
-                  onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                  options={rangeOptions}
-                  block
-                />
 
                 {/* Group summary cards (compact) */}
                 {typeSummary.value.length > 0 ? (

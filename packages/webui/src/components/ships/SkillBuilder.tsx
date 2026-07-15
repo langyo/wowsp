@@ -16,21 +16,20 @@ import {
 import "./SkillBuilder.scss";
 
 /**
- * Captain skill-point planner for a ship. Renders the class-appropriate
- * 4-tier tree, lets the player invest / refund points within a fixed 21-pt
- * budget, and enforces the per-tier unlock rule (tier N needs ≥ N-1 points in
- * lower tiers). No stat deltas are computed — this is a planning aid only.
+ * Captain skill-point planner — redesigned as a 3-column layout matching
+ * the in-game (and 浩舰) captain panel:
+ *   Left:  Equipment / Upgrades (placeholder)
+ *   Center: Captain skill tree (4 tiers stacked vertically, skills in rows)
+ *   Right: Signal Flags (placeholder)
  *
- * Allocation state is `Record<skillId, rank>`; the builder recomputes the
- * running totals and lock state on every change.
+ * The skill section renders a compact vertical view: one row per tier, each
+ * skill displayed as a hexagonal icon with rank dots. Tier unlock rules are
+ * enforced (tier N requires ≥N-1 points in lower tiers). Total 21-pt budget.
  */
 export default defineComponent({
   name: "SkillBuilder",
   props: {
     shipType: { type: String, required: true },
-    /** Optional externally-controlled allocation. When provided, the builder
-     *  becomes controlled (emits `update:modelRank` instead of mutating an
-     *  internal ref) so a parent like the shipyard can share the state. */
     modelRank: { type: Object as PropType<Record<string, number>>, default: undefined },
   },
   emits: {
@@ -39,28 +38,16 @@ export default defineComponent({
   setup(props, { emit }) {
     const cls = computed<SkillClass>(() => skillClassFor(props.shipType));
     const tree = computed(() => SKILL_TREES[cls.value] ?? []);
-    // Internal allocation (used when no modelRank is passed — the standalone
-    // skill tab). For controlled usage the parent's ref is the source of truth.
     const internalRank = ref<Record<string, number>>({});
 
-    /** The active allocation: external if provided, else internal. */
     const rank = computed(() => props.modelRank ?? internalRank.value);
 
-    /** Write an allocation, routing to the external emit when controlled. */
     function setRank(next: Record<string, number>) {
       if (props.modelRank !== undefined) emit("update:modelRank", next);
       else internalRank.value = next;
     }
 
-    // Reset the INTERNAL allocation whenever the tree (ship class) changes.
-    // (Controlled mode leaves reset to the parent.)
-    watch(
-      cls,
-      () => {
-        internalRank.value = {};
-      },
-      { immediate: true },
-    );
+    watch(cls, () => { internalRank.value = {}; }, { immediate: true });
 
     const usedPoints = computed(() =>
       Object.values(rank.value).reduce((sum, r) => sum + r, 0),
@@ -68,14 +55,12 @@ export default defineComponent({
     const remaining = computed(() => SKILL_BUDGET - usedPoints.value);
     const overBudget = computed(() => remaining.value < 0);
 
-    /** Points spent in tiers strictly below `tier`. */
     function pointsBelowTier(tier: number): number {
       return tree.value
         .filter((s) => s.tier < tier)
         .reduce((sum, s) => sum + (rank.value[s.name] ?? 0), 0);
     }
 
-    /** A tier is unlocked when enough points sit in the tiers below it. */
     function tierUnlocked(tier: number): boolean {
       if (tier === 1) return true;
       const need = TIER_UNLOCK[tier as 2 | 3 | 4];
@@ -86,11 +71,13 @@ export default defineComponent({
       if ((rank.value[name] ?? 0) >= maxRank) return false;
       return remaining.value > 0;
     }
+
     function inc(skill: Skill): void {
       if (!canInc(skill.name, skill.maxRank)) return;
       const next = { ...rank.value, [skill.name]: (rank.value[skill.name] ?? 0) + 1 };
       setRank(next);
     }
+
     function dec(name: string): void {
       const cur = rank.value[name] ?? 0;
       if (cur <= 0) return;
@@ -98,11 +85,9 @@ export default defineComponent({
       if (next[name] === 0) delete next[name];
       setRank(next);
     }
-    function reset(): void {
-      setRank({});
-    }
 
-    /** Group skills by tier (1..4) for column rendering. */
+    function reset(): void { setRank({}); }
+
     const tiers = computed(() => {
       const out: Record<number, Skill[]> = { 1: [], 2: [], 3: [], 4: [] };
       for (const s of tree.value) out[s.tier].push(s);
@@ -111,96 +96,106 @@ export default defineComponent({
 
     return () => {
       if (tree.value.length === 0) {
-        return <p class="skill-builder__empty">{t("ships.skills.noTree")}</p>;
+        return <p class="skill-builder-v__empty">{t("ships.skills.noTree")}</p>;
       }
       return (
-        <div class="skill-builder">
-          <div class="skill-builder__bar">
+        <div class="skill-builder-v">
+          {/* ── Top bar: point counter + reset ── */}
+          <div class="skill-builder-v__bar">
             <span
-              class={[
-                "skill-builder__points",
-                overBudget.value ? "skill-builder__points--over" : "",
-              ]}
+              class={["skill-builder-v__points", overBudget.value ? "skill-builder-v__points--over" : ""]}
             >
-              {t("ships.skills.pointsUsed", {
-                used: usedPoints.value,
-                max: SKILL_BUDGET,
-              })}
+              {t("ships.skills.pointsUsed", { used: usedPoints.value, max: SKILL_BUDGET })}
             </span>
             {remaining.value >= 0
-              ? <span class="skill-builder__remaining">{t("ships.skills.remaining", { n: remaining.value })}</span>
-              : <span class="skill-builder__remaining skill-builder__points--over">{t("ships.skills.overBudget")}</span>}
+              ? <span class="skill-builder-v__remaining">{t("ships.skills.remaining", { n: remaining.value })}</span>
+              : <span class="skill-builder-v__remaining skill-builder-v__points--over">{t("ships.skills.overBudget")}</span>}
             <SButton variant="ghost" size="sm" onClick={reset}>
               <RotateCcw size={12} /> {t("ships.skills.reset")}
             </SButton>
           </div>
 
-          <div class="skill-builder__grid">
-            {[1, 2, 3, 4].map((tier) => {
-              const unlocked = tierUnlocked(tier);
-              const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
-              return (
-                <div class={["skill-builder__tier", unlocked ? "" : "skill-builder__tier--locked"]}>
-                  <div class="skill-builder__tier-head">
-                    <span>{t("ships.skills.tier", { n: tier })}</span>
-                    {!unlocked ? (
-                      <span class="skill-builder__lock" title={t("ships.skills.locked", { n: need })}>
-                        <Lock size={11} />
-                      </span>
-                    ) : null}
-                  </div>
-                  <div class="skill-builder__skills">
-                    {tiers.value[tier].map((skill) => {
-                      const r = rank.value[skill.name] ?? 0;
-                      const filled = unlocked && r > 0;
-                      const canI = unlocked && canInc(skill.name, skill.maxRank);
-                      const iconUrl = resolveSkillIcon(skill.icon);
-                      const displayName = skillDisplayName(skill.name);
-                      return (
-                        <div
-                          class={[
-                            "skill-skill",
-                            filled ? "skill-skill--filled" : "",
-                            unlocked ? "" : "skill-skill--dim",
-                          ]}
-                        >
-                          <button
-                            type="button"
-                            class="skill-skill__inc"
-                            disabled={!canI}
-                            onClick={() => inc(skill)}
-                            title={displayName}
+          {/* ── 3-column layout ── */}
+          <div class="skill-builder-v__columns">
+            {/* Left: Equipment placeholder */}
+            <div class="skill-builder-v__equip">
+              <div class="skill-builder-v__placeholder">
+                <span class="skill-builder-v__placeholder-icon">⚙</span>
+                <span class="skill-builder-v__placeholder-text">{t("ships.skills.equipment", {})}</span>
+              </div>
+            </div>
+
+            {/* Center: Captain skills — vertical tiers, skills in rows */}
+            <div class="skill-builder-v__skills">
+              {[1, 2, 3, 4].map((tier) => {
+                const unlocked = tierUnlocked(tier);
+                const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
+                return (
+                  <div
+                    class={["skill-tier-v", unlocked ? "" : "skill-tier-v--locked"]}
+                    key={tier}
+                  >
+                    <div class="skill-tier-v__label">
+                      <span>{t("ships.skills.tier", { n: tier })}</span>
+                      {!unlocked ? (
+                        <span class="skill-tier-v__lock" title={t("ships.skills.locked", { n: need })}>
+                          <Lock size={10} />
+                        </span>
+                      ) : null}
+                    </div>
+                    <div class="skill-tier-v__row">
+                      {tiers.value[tier].map((skill) => {
+                        const r = rank.value[skill.name] ?? 0;
+                        const canI = unlocked && canInc(skill.name, skill.maxRank);
+                        const iconUrl = resolveSkillIcon(skill.icon);
+                        const displayName = skillDisplayName(skill.name);
+                        return (
+                          <div
+                            class={["skill-tile-v", r > 0 ? "skill-tile-v--active" : ""]}
+                            key={skill.name}
                           >
-                            <span class="skill-skill__icon">
-                              {iconUrl ? (
-                                <img class="skill-skill__icon-img" src={iconUrl} alt={displayName} draggable={false} />
-                              ) : (
-                                displayName.charAt(0)
-                              )}
-                            </span>
-                            <span class="skill-skill__name">{displayName}</span>
-                          </button>
-                          <div class="skill-skill__ranks">
-                            {Array.from({ length: skill.maxRank }, (_, i) => (
-                              <button
-                                type="button"
-                                class={[
-                                  "skill-skill__pip",
-                                  i < r ? "skill-skill__pip--on" : "",
-                                ]}
-                                disabled={!unlocked || (i >= r ? !canI : false)}
-                                onClick={() => (i >= r ? inc(skill) : dec(skill.name))}
-                                aria-label={t("ships.skills.rank", { n: i + 1 })}
-                              />
-                            ))}
+                            <button
+                              type="button"
+                              class="skill-tile-v__btn"
+                              disabled={!unlocked}
+                              onClick={() => (unlocked ? inc(skill) : null)}
+                              title={displayName}
+                            >
+                              <span class="skill-tile-v__icon">
+                                {iconUrl ? (
+                                  <img class="skill-tile-v__icon-img" src={iconUrl} alt={displayName} draggable={false} />
+                                ) : (
+                                  displayName.charAt(0)
+                                )}
+                              </span>
+                            </button>
+                            <span class="skill-tile-v__name">{displayName}</span>
+                            <div class="skill-tile-v__pips">
+                              {Array.from({ length: skill.maxRank }, (_, i) => (
+                                <button
+                                  type="button"
+                                  class={["skill-tile-v__pip", i < r ? "skill-tile-v__pip--on" : ""]}
+                                  disabled={!unlocked || (i >= r ? !canI : false)}
+                                  onClick={() => (i >= r ? inc(skill) : dec(skill.name))}
+                                />
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            {/* Right: Flags placeholder */}
+            <div class="skill-builder-v__flags">
+              <div class="skill-builder-v__placeholder">
+                <span class="skill-builder-v__placeholder-icon">🏴</span>
+                <span class="skill-builder-v__placeholder-text">{t("ships.skills.flags", {})}</span>
+              </div>
+            </div>
           </div>
         </div>
       );
