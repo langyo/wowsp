@@ -64,7 +64,11 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     error.value = null;
     try {
       version.value = await api.getGameVersion();
-      ships.value = await api.getShipEncyclopedia(realm, forceRefresh, lang);
+      const raw = await api.getShipEncyclopedia(realm, forceRefresh, lang);
+      // Filter out copy/event ships whose names contain square brackets
+      // (e.g. "[TS] Yamato", "[复制] Shimakaze") — they reuse the base
+      // ship's model and don't need separate listing.
+      ships.value = raw.filter((s) => !/[\[\]]/.test(s.name));
       loadedRealm.value = realm;
       loadedLanguage.value = lang;
     } catch (e) {
