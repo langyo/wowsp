@@ -89,24 +89,18 @@ fn main() {
             let prefs = os_prefs::detect();
             let js = os_prefs::initialization_script(&prefs);
             if let Some(w) = app.handle().webview_windows().values().next() {
-                let _ = w.eval(&js);
-                let _ = w.center();
-
-                // ── Taskbar icon cache-defeat (Windows) ────────────────────
-                // The .ico embedded at build time (resource 32512) carries all
-                // 7 standard sizes (16/24/32/48/64/128/256) — the correct, clean
-                // source of truth. But Windows caches taskbar icons by exe path,
-                // and in dev mode the same wowsp.exe is rebuilt in place
-                // repeatedly, so the shell keeps showing a stale cached (often
-                // low-res) image long after the icon source changed.
+                // ── Taskbar + program icon (Windows) ─────────────────────
+                // Set the window icon FIRST, before eval/center — both of
+                // those may trigger a paint, and we want the correct icon
+                // visible from the very first frame.
                 //
-                // Calling Window::set_icon at runtime overrides the live HICON
-                // with a freshly-decoded 256×256 image, forcing the shell to
-                // re-render from our current asset rather than its cache. This
-                // runs in BOTH dev and release (it's cheap and harmless in
-                // release — the icon is already correct there, so this is a
-                // no-op visually). The asset path resolves to the bundled
-                // resource in release and the repo icons/ dir in dev.
+                // The .ico embedded at build time (resource 32512) carries
+                // all 7 standard sizes, but Windows caches by exe path;
+                // in dev mode repeated rebuilds produce a stale low-res
+                // entry.  `set_icon` at runtime overrides the live HICON
+                // with a freshly‑decoded 256×256 image (ICON_BIG for
+                // Alt‑Tab / title bar, ICON_SMALL for the taskbar).
+                // Runs in both dev & release (harmless no-op in release).
                 let icon_path = app
                     .path()
                     .resource_dir()
@@ -124,6 +118,9 @@ fn main() {
                         }
                     }
                 }
+
+                let _ = w.eval(&js);
+                let _ = w.center();
             }
 
             // ── Dev-only test control server ──────────────────────────────
@@ -157,13 +154,21 @@ fn main() {
             let quit = tauri::menu::MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&show, &hide, &quit])?;
 
-            // Use the highest-resolution icon for the tray.
-            let tray_icon = app.default_window_icon().cloned().unwrap_or_else(|| {
-                tauri::image::Image::from_path("icons/128x128@2x.png")
-                    .unwrap_or_else(|_| {
-                        tauri::image::Image::new_owned(include_bytes!("../icons/128x128.png").to_vec(), 128, 128)
-                    })
-            });
+            // ── Tray icon (small, for notification area) ──────────────
+            // Windows tray icons are tiny: 16×16 at 100% DPI, 20×20 at
+            // 125%, 24×24 at 150%, 32×32 at 200%. Using the default window
+            // icon (256×256) forces a brutal downscale → blur. Provide a
+            // purpose-sized small source so the shell's scaling is minimal.
+            // In dev: reads from the repo icons/ dir so changes are live.
+            // In release: uses the embedded 32×32 PNG compiled into the binary.
+            let tray_icon = tauri::image::Image::from_path("icons/32x32.png")
+                .unwrap_or_else(|_| {
+                    tauri::image::Image::new_owned(
+                        include_bytes!("../icons/32x32.png").to_vec(),
+                        32,
+                        32,
+                    )
+                });
 
             let _tray = tauri::tray::TrayIconBuilder::new()
                 .icon(tray_icon)
