@@ -113,12 +113,12 @@ export default defineComponent({
 
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
-      return encyclopedia.ships.filter((s) => {
+      return encyclopedia.displayShips.filter((s) => {
         if (selectedTiers.value.size > 0 && !selectedTiers.value.has(s.tier)) return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
         if (selectedRarities.value.size > 0 && !selectedRarities.value.has(shipRarity(s))) return false;
-        if (q && !s.name.toLowerCase().includes(q)) return false;
+        if (q && !s.name.toLowerCase().includes(q) && !encyclopedia.shipDisplayName(s).toLowerCase().includes(q)) return false;
         return true;
       });
     });
@@ -366,7 +366,7 @@ export default defineComponent({
                     })()}
                     <div class="ship-card__head">
                       <span class="ship-card__tier">T{ship.tier}</span>
-                      <span class="ship-card__name">{ship.name}</span>
+                      <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
                     <STag variant="neutral" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</STag>
