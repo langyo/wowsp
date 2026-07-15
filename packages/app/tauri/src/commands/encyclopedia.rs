@@ -114,46 +114,73 @@ pub async fn get_ship_encyclopedia(
 
     let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
     let host = realm_host(&realm)?;
-    let client = wg_client()?;
+    let client = std::sync::Arc::new(wg_client()?);
+    let base_url = format!(
+        "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
+    );
+
+    // Fetch page 1 first to get page_total, then fetch remaining pages in parallel.
+    let page1_url = format!("{base_url}&page_no=1");
+    let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
+        .get(&page1_url)
+        .send()
+        .await
+        .map_err(|e| format!("encyclopedia/ships page 1 request: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("encyclopedia/ships page 1 parse: {e}"))?;
+    if page1_resp.status != "ok" {
+        return Err(format!(
+            "encyclopedia/ships: {}",
+            page1_resp.error.message.unwrap_or_default()
+        ));
+    }
+    let page_total = page1_resp
+        .meta
+        .as_ref()
+        .and_then(|m| m.get("page_total"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+
+    // Spawn concurrent requests for pages 2..page_total.
+    let mut handles = Vec::new();
+    for pn in 2..=page_total {
+        let url = format!("{base_url}&page_no={pn}");
+        let c = client.clone();
+        handles.push(tokio::spawn(async move {
+            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = c
+                .get(&url)
+                .send()
+                .await?
+                .json()
+                .await?;
+            if resp.status != "ok" {
+                anyhow::bail!("{}", resp.error.message.unwrap_or_default());
+            }
+            Ok::<_, anyhow::Error>((pn, resp.data.unwrap_or_default()))
+        }));
+    }
+
+    // Collect all results, preserving order.
+    let mut page_data: Vec<(i64, serde_json::Map<String, serde_json::Value>)> = Vec::new();
+    // Push page 1 first.
+    page_data.push((1, page1_resp.data.unwrap_or_default()));
+    for h in handles {
+        match h.await {
+            Ok(Ok((pn, data))) => page_data.push((pn, data)),
+            Ok(Err(e)) => return Err(format!("encyclopedia/ships page fetch: {e}")),
+            Err(e) => return Err(format!("encyclopedia/ships task panic: {e}")),
+        }
+    }
+    page_data.sort_by_key(|(pn, _)| *pn);
 
     let mut all: Vec<ShipInfo> = Vec::new();
-    let mut page_no = 1;
-    loop {
-        let url = format!(
-            "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&page_no={page_no}&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
-        );
-        let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("encyclopedia/ships page {page_no} request: {e}"))?
-            .json()
-            .await
-            .map_err(|e| format!("encyclopedia/ships page {page_no} parse: {e}"))?;
-        if resp.status != "ok" {
-            return Err(format!(
-                "encyclopedia/ships: {}",
-                resp.error.message.unwrap_or_default()
-            ));
-        }
-        let data = resp.data.unwrap_or_default();
-        // data is { "<shipId>": { ... }, ... }
+    for (_pn, data) in page_data {
         for (_id, value) in data {
             if let Ok(ship) = parse_ship(&value, &version) {
                 all.push(ship);
             }
         }
-        // WG pagination: meta.page_total tells us how many pages.
-        let page_total = resp
-            .meta
-            .as_ref()
-            .and_then(|m| m.get("page_total"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(1);
-        if page_no as i64 >= page_total {
-            break;
-        }
-        page_no += 1;
     }
 
     // Persist cache.

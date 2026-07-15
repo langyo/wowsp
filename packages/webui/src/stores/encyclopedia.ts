@@ -19,11 +19,18 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   const loadedRealm = ref<string | null>(null);
   const loadedLanguage = ref<string | null>(null);
 
+  /** In-game nation order (matching the port tech-tree panel left-to-right). */
+  const NATION_ORDER: Record<string, number> = {
+    japan: 0, usa: 1, ussr: 2, germany: 3, uk: 4, france: 5,
+    pan_asia: 6, italy: 7, netherlands: 8, commonwealth: 9,
+    pan_america: 10, spain: 11, europe: 12,
+  };
+
   /** Ships grouped by nation → for the nation filter dropdown. */
   const nations = computed(() => {
     const set = new Set<string>();
     for (const s of ships.value) if (s.nation) set.add(s.nation);
-    return [...set].sort();
+    return [...set].sort((a, b) => (NATION_ORDER[a] ?? 99) - (NATION_ORDER[b] ?? 99));
   });
 
   /** Ships grouped by type → for the type filter (BB/CA/DD/CV/SS). */

@@ -4,251 +4,320 @@ import { t } from "@/i18n";
 import { resolveShipImage } from "@/utils/shipImages";
 import { nationTree, techTreeNode, type TechTreeNode } from "@/utils/techTreeData";
 import { archetypeKey } from "@/utils/archetypeLabels";
-import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { tierToRoman } from "@/utils/tierRoman";
+import { GitBranch } from "lucide-vue-next";
 import type { ShipInfo } from "@/api";
 import "./TechTreeView.scss";
 
 /**
- * Per-nation tech-tree view — mirrors the in-game tech-tree page.
+ * Vertical tech-tree.
  *
- * Layout: for the selected nation, one horizontal row per ship type
- * (Battleship / Cruiser / Destroyer / Aircraft Carrier / Submarine). Within a
- * row, each research branch is its own sub-row: T1 on the left, T10 on the
- * right, with right-angle SVG connectors between consecutive tiers and a
- * short archetype label on the branch (e.g. "Long-range battleships"). Forks
- * (a tier that unlocks 2+ successors) stack vertically as parallel branches.
- *
- * Node positions are computed by the renderer (CSS grid by tier), and the SVG
- * overlay measures the rendered card DOM to draw the connectors — so a window
- * resize re-runs the measurement via a ResizeObserver.
- *
- * Premium / special ships that hang off a tech-tree node render as a small
- * side card pinned under their parent (no outgoing connector).
+ * Layout (matching the in-game port tech-tree panel):
+ *   - Nation rail on the left (handled by ShipsView).
+ *   - Ship-type sections laid out left-to-right in a horizontal row.
+ *     Each section header labels the type (Battleship / Cruiser / ...).
+ *   - Within a section, each research branch is a column. Cards are
+ *     absolutely positioned so tiers align horizontally across columns.
+ *   - Fork branches start their own column at the fork tier; shared
+ *     prefix ships appear only in the first/main column, never duplicated.
+ *   - SVG connectors draw vertical links within a column and diagonal
+ *     fork connectors from the parent ship to the fork column's first ship.
  */
 export default defineComponent({
   name: "TechTreeView",
   props: {
     nation: { type: String, required: true },
-    /** The full encyclopedia, used to resolve display names + images by shipId. */
     byId: { type: Object as () => Map<number, ShipInfo>, required: true },
   },
-  emits: {
-    open: (_ship: ShipInfo) => true,
-  },
+  emits: { open: (_ship: ShipInfo) => true },
   setup(props, { emit }) {
     const tree = computed(() => nationTree(props.nation));
     const hasTree = computed(() => tree.value.some((g) => g.branches.length > 0));
 
-    // Flatten every (type, branch, shipId) into a render list so the template
-    // can place cards into a tier-indexed grid. Connectors are drawn later by
-    // measuring the rendered DOM.
-    interface Cell {
-      typeIdx: number;
-      type: string;
-      branchIdx: number;
-      tier: number;
+    // Layout dimensions
+    const COL_W = 118;
+    const CARD_H = 110;
+    const GAP_X = 22;   // horizontal gap between branch columns
+    const GAP_Y = 16;   // vertical gap between tier rows
+    const PAD = 14;     // padding inside each type section canvas
+    const HEAD_H = 22;  // type header height
+
+    // ── Build deduplicated positioned cells per type section ─────────────
+    interface PosCell {
       shipId: number;
-      node: TechTreeNode;
       ship: ShipInfo | undefined;
+      node: TechTreeNode;
+      tier: number;
+      branchIdx: number;
       archetype: string | null;
-      isRoot: boolean;
+      /** shipId of the parent in this branch (null for first ship). */
+      parentId: number | null;
+      /** If this cell is the start of a fork branch, the ship it forks from. */
+      forkFromId: number | null;
+      /** If this ship is a fork point (spawns multiple branches), the archetypes. */
+      forkArchetypes: string[];
     }
-    const rows = computed(() => {
-      const out: Cell[][] = [];
-      tree.value.forEach((group, typeIdx) => {
-        group.branches.forEach((branch, branchIdx) => {
-          const cells: Cell[] = [];
-          branch.ships.forEach((sid, i) => {
-            const node = (null as never) as TechTreeNode; // reassigned below
-            const cell: Cell = {
-              typeIdx,
-              type: group.type,
-              branchIdx,
-              tier: 0,
+
+    interface TypeSection {
+      type: string;
+      cells: PosCell[];
+      numBranches: number;
+      minTier: number;
+      maxTier: number;
+    }
+
+    const sections = computed<TypeSection[]>(() => {
+      return tree.value.map((group) => {
+        const claimed = new Set<number>(); // shipIds already placed in an earlier column
+        const cells: PosCell[] = [];
+        let minTier = 11;
+        let maxTier = 1;
+
+        group.branches.forEach((branch, bi) => {
+          // Find the first ship in this branch not yet claimed by earlier branches.
+          let startIdx = 0;
+          let forkFrom: number | null = null;
+          while (startIdx < branch.ships.length && claimed.has(branch.ships[startIdx])) {
+            forkFrom = branch.ships[startIdx];
+            startIdx++;
+          }
+          if (startIdx >= branch.ships.length) return; // all ships already in another column
+
+          for (let i = startIdx; i < branch.ships.length; i++) {
+            const sid = branch.ships[i];
+            const node = techTreeNode(sid);
+            if (!node) continue;
+            const ship = props.byId.get(sid);
+            if (node.tier < minTier) minTier = node.tier;
+            if (node.tier > maxTier) maxTier = node.tier;
+            claimed.add(sid);
+
+            const isFirstInCol = i === startIdx;
+            cells.push({
               shipId: sid,
+              ship,
               node,
-              ship: props.byId.get(sid),
-              archetype: i === branch.ships.length - 1 ? archetypeKey(branch.archetype) : null,
-              isRoot: i === 0,
-            };
-            cells.push(cell);
-          });
-          out.push(cells);
+              tier: node.tier,
+              branchIdx: bi,
+              archetype: i === branch.ships.length - 1 ? archetypeKey(node.archetype) : null,
+              parentId: i > startIdx ? branch.ships[i - 1] : null,
+              forkFromId: isFirstInCol ? forkFrom : null,
+            });
+          }
         });
-      });
-      // Populate node + tier from tech_tree.json after the skeleton.
-      for (const cells of out) {
-        for (const c of cells) {
-          c.node = techTreeNode(c.shipId);
-          c.tier = c.node?.tier ?? 0;
+
+        return {
+          type: group.type,
+          cells,
+          numBranches: group.branches.length,
+          minTier,
+          maxTier,
+        };
+      }).filter((s) => s.cells.length > 0).map((sec) => {
+        // Annotate fork points: ships that spawn other branches
+        const forkParentArchetypes = new Map<number, string[]>();
+        for (const c of sec.cells) {
+          if (c.forkFromId != null && c.archetype) {
+            if (!forkParentArchetypes.has(c.forkFromId)) {
+              forkParentArchetypes.set(c.forkFromId, []);
+            }
+            forkParentArchetypes.get(c.forkFromId)!.push(c.archetype);
+          }
         }
-      }
-      return out;
+        return {
+          ...sec,
+          cells: sec.cells.map((c) => ({
+            ...c,
+            forkArchetypes: forkParentArchetypes.get(c.shipId) ?? [],
+          })),
+        };
+      });
     });
 
-    /** SVG connector overlay: re-measured from card DOM whenever the layout
-     *  changes or the viewport resizes. The overlay is sized to the tree's full
-     *  scrollable content (not just the visible client area) so connectors stay
-     *  aligned with cards when the tree scrolls horizontally. */
+    // ── SVG overlay measurement ──────────────────────────────────────────
     const containerRef = ref<HTMLElement | null>(null);
-    const connectors = ref<{ d: string; key: string }[]>([]);
-    const branchLabels = ref<{ x: number; y: number; text: string; tip: string }[]>([]);
+    interface DItem { key: string; d: string; cls: string; cx?: number; cy?: number }
+    const drawItems = ref<DItem[]>([]);
     const svgSize = ref({ w: 0, h: 0 });
     let ro: ResizeObserver | null = null;
 
     function measure() {
       const root = containerRef.value;
       if (!root) return;
-      const rootRect = root.getBoundingClientRect();
-      const segs: { d: string; key: string }[] = [];
-      const labels: { x: number; y: number; text: string; tip: string }[] = [];
-      // For each branch row, connect consecutive cards with a right-angle path.
-      const rowEls = root.querySelectorAll<HTMLElement>(".tech-row__branch");
-      rowEls.forEach((rowEl, ri) => {
-        const cards = Array.from(rowEl.querySelectorAll<HTMLElement>(".tech-card"));
-        for (let i = 0; i < cards.length - 1; i++) {
-          const a = cards[i].getBoundingClientRect();
-          const b = cards[i + 1].getBoundingClientRect();
-          const x1 = a.right - rootRect.left;
-          const y1 = a.top + a.height / 2 - rootRect.top;
-          const x2 = b.left - rootRect.left;
-          const y2 = b.top + b.height / 2 - rootRect.top;
-          const mx = (x1 + x2) / 2;
-          // right-angle: out → vertical → in (a flat path if same row).
-          segs.push({
-            d: `M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`,
-            key: `${ri}-${i}`,
-          });
+      const rootR = root.getBoundingClientRect();
+      const out: DItem[] = [];
+
+      sections.value.forEach((sec) => {
+        const cardEls = new Map<number, { x: number; y: number; w: number; h: number }>();
+        sec.cells.forEach((c) => {
+          const el = root.querySelector(`[data-sid="${c.shipId}"]`) as HTMLElement | null;
+          if (el) {
+            const r = el.getBoundingClientRect();
+            cardEls.set(c.shipId, { x: r.left - rootR.left, y: r.top - rootR.top, w: r.width, h: r.height });
+          }
+        });
+
+        // Tracks: per-branch dashed vertical guide lines
+        for (let bi = 0; bi < sec.numBranches; bi++) {
+          const col = sec.cells.filter((c) => c.branchIdx === bi);
+          if (col.length < 2) continue;
+          const first = cardEls.get(col[0].shipId);
+          const last = cardEls.get(col[col.length - 1].shipId);
+          if (first && last) {
+            const cx = first.x + first.w / 2;
+            out.push({ key: `trk-${sec.type}-${bi}`, d: `M ${cx} ${first.y + first.h / 2} L ${cx} ${last.y + last.h / 2}`, cls: "track" });
+          }
         }
-        // Branch archetype label at the row's right edge (last card).
-        const labelEl = rowEl.querySelector<HTMLElement>(".tech-card__archetype");
-        if (labelEl) {
-          const last = cards[cards.length - 1].getBoundingClientRect();
-          labels.push({
-            x: last.right - rootRect.left + 8,
-            y: last.top + last.height / 2 - rootRect.top,
-            text: labelEl.dataset.label ?? "",
-            tip: labelEl.dataset.tip ?? "",
+
+        // Connectors: parent → child with right-angle paths
+        const dotSet = new Set<string>();
+
+        // 1. Same-column vertical connectors (parentId in same branch)
+        sec.cells.forEach((c) => {
+          if (!c.parentId) return;
+          const p = cardEls.get(c.parentId);
+          const ch = cardEls.get(c.shipId);
+          if (!p || !ch) return;
+          const pCX = p.x + p.w / 2;
+          const pCY = p.y + p.h;
+          const cCX = ch.x + ch.w / 2;
+          const cCY = ch.y;
+
+          const dk1 = `dot-${c.parentId}-out`;
+          if (!dotSet.has(dk1)) { dotSet.add(dk1); out.push({ key: dk1, cx: pCX, cy: pCY, d: "", cls: "dot" }); }
+          const dk2 = `dot-${c.shipId}-in`;
+          if (!dotSet.has(dk2)) { dotSet.add(dk2); out.push({ key: dk2, cx: cCX, cy: cCY, d: "", cls: "dot" }); }
+
+          out.push({ key: `v-${c.parentId}-${c.shipId}`, d: `M ${pCX} ${pCY} V ${cCY}`, cls: "conn" });
+        });
+
+        // 2. Fork connectors: from forkFromId to first unique ship (right-angle path)
+        sec.cells.forEach((c) => {
+          if (!c.forkFromId) return;
+          const p = cardEls.get(c.forkFromId);
+          const ch = cardEls.get(c.shipId);
+          if (!p || !ch) return;
+          const pCX = p.x + p.w / 2;
+          const pCY = p.y + p.h;
+          const cCX = ch.x + ch.w / 2;
+          const cCY = ch.y;
+
+          // Right-angle fork path:
+          //   parent↓ → corner → child→ (or ┌ shape when child is to the right)
+          // Step 1: down from parent bottom to halfway between parent-bottom and child-top
+          const midY = pCY + (cCY - pCY) * 0.45;
+          out.push({
+            key: `f-${c.forkFromId}-${c.shipId}`,
+            d: `M ${pCX} ${pCY} V ${midY} H ${cCX} V ${cCY}`,
+            cls: "conn",
           });
-        }
+
+          const dk1 = `dot-${c.forkFromId}-fout`;
+          if (!dotSet.has(dk1)) { dotSet.add(dk1); out.push({ key: dk1, cx: pCX, cy: pCY, d: "", cls: "dot" }); }
+          const dk2 = `dot-${c.shipId}-fin`;
+          if (!dotSet.has(dk2)) { dotSet.add(dk2); out.push({ key: dk2, cx: cCX, cy: cCY, d: "", cls: "dot" }); }
+        });
       });
-      connectors.value = segs;
-      branchLabels.value = labels;
-      // Size the SVG to the full scrollable content so paths aren't clipped and
-      // stay aligned with cards across horizontal scroll.
+
+      drawItems.value = out;
       svgSize.value = { w: root.scrollWidth, h: root.scrollHeight };
     }
 
     onMounted(() => {
-      void nextTick(measure);
+      void nextTick(() => measure());
+      setTimeout(() => measure(), 350);
       if (containerRef.value && typeof ResizeObserver !== "undefined") {
         ro = new ResizeObserver(() => measure());
         ro.observe(containerRef.value);
       }
     });
     onBeforeUnmount(() => ro?.disconnect());
-    watch(() => props.nation, () => void nextTick(measure));
+    watch(() => props.nation, () => {
+      void nextTick(() => { setTimeout(measure, 150); setTimeout(measure, 500); });
+    });
 
-    function shipLabel(cell: Cell): string {
+    function shipLabel(cell: PosCell): string {
       return cell.ship?.name ?? cell.node?.name ?? String(cell.shipId);
     }
-    function shipImg(cell: Cell): string | null {
+    function shipImg(cell: PosCell): string | null {
       return cell.ship ? resolveShipImage(cell.ship.shipId, cell.ship.images?.small) : null;
     }
-    function typeShort(type: string): string {
-      return SHIP_TYPE_SHORT[type] ?? "?";
-    }
-
-    /** Distinct type headers (once per type group). */
-    const typeHeaders = computed(() => {
-      const seen = new Map<string, number>(); // type → first typeIdx
-      tree.value.forEach((g) => {
-        if (!seen.has(g.type) && g.branches.length) seen.set(g.type, tree.value.indexOf(g));
-      });
-      return Array.from(seen.entries()); // [type, typeIdx]
-    });
 
     return () => {
       if (!hasTree.value) {
-        return <div class="tech-tree tech-tree--empty">{t("ships.techTree.empty")}</div>;
+        return <div class="tech-tree-v3 tech-tree-v3--empty">{t("ships.techTree.empty")}</div>;
       }
       return (
-        <div class="tech-tree" ref={containerRef}>
-          <svg
-            class="tech-tree__svg"
-            aria-hidden="true"
-            width={svgSize.value.w}
-            height={svgSize.value.h}
-          >
-            {connectors.value.map((s) => {
-              // Parse the two endpoints (M..H.. and final H..) to dot them.
-              const nums = s.d.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
-              // nums: [x1, y1, mx, y2, x2] for our path shape
-              const x1 = nums[0];
-              const y1 = nums[1];
-              const x2 = nums[nums.length - 1];
-              const y2 = nums.length >= 4 ? nums[3] : y1;
-              return [
-                <path class="tech-tree__conn" d={s.d} key={`${s.key}-p`} />,
-                <circle class="tech-tree__node" cx={x1} cy={y1} r={2.5} key={`${s.key}-a`} />,
-                <circle class="tech-tree__node" cx={x2} cy={y2} r={2.5} key={`${s.key}-b`} />,
-              ];
+        <div class="tech-tree-v3" ref={containerRef}>
+          <svg class="tech-tree-v3__svg" aria-hidden="true" width={svgSize.value.w} height={svgSize.value.h}>
+            {drawItems.value.map((item) => {
+              if (item.cls === "dot") {
+                return <circle key={item.key} class="tech-tree-v3__dot" cx={item.cx} cy={item.cy} r={3} />;
+              }
+              return (
+                <path key={item.key} class={`tech-tree-v3__${item.cls}`} d={item.d} />
+              );
             })}
-            {branchLabels.value.map((l, i) => (
-              <text
-                class="tech-tree__label"
-                x={l.x}
-                y={l.y}
-                dy="0.32em"
-                key={i}
-              >
-                {l.text}
-              </text>
-            ))}
           </svg>
-          {typeHeaders.value.map(([type, _idx]) => (
-            <div class="tech-type">
-              <div class="tech-type__head">
-                <span class="tech-type__name">{t(`ships.type.${type}`)}</span>
-                <span class="tech-type__abbr">({typeShort(type)})</span>
-              </div>
-              <div class="tech-type__branches">
-                {rows.value
-                  .filter((cells) => cells[0]?.type === type)
-                  .map((cells, bi) => (
-                    <div class="tech-row__branch" key={bi}>
-                      {cells.map((cell) => (
-                        <button
-                          class={[
-                            "tech-card",
-                            cell.node?.isPremium ? "tech-card--premium" : "",
-                            cell.node?.isSpecial ? "tech-card--special" : "",
-                            cell.isRoot ? "tech-card--root" : "",
-                          ]}
-                          style={{ "--tier": cell.tier }}
-                          onClick={() => cell.ship && emit("open", cell.ship)}
+
+          {/* Type sections laid out left-to-right */}
+          <div class="tech-tree-v3__row">
+            {sections.value.map((sec) => {
+              const tierH = CARD_H + GAP_Y;
+              const w = sec.numBranches * (COL_W + GAP_X) - GAP_X + PAD * 2;
+              const h = (sec.maxTier - sec.minTier + 1) * tierH + PAD * 2;
+              return (
+                <div class="tech-type-v3" key={sec.type}>
+                  <div class="tech-type-v3__head">{t(`ships.type.${sec.type}`)}</div>
+                  <div class="tech-type-v3__canvas" style={{ width: `${w}px`, height: `${h}px` }}>
+                    {sec.cells.map((cell) => {
+                      const left = PAD + cell.branchIdx * (COL_W + GAP_X);
+                      const top = PAD + (cell.tier - sec.minTier) * tierH;
+                      const img = shipImg(cell);
+                      const name = shipLabel(cell);
+                      return (
+                        <div
+                          class="tech-cell-v3"
+                          data-sid={cell.shipId}
+                          style={{ left: `${left}px`, top: `${top}px`, width: `${COL_W}px` }}
                         >
-                          {shipImg(cell) ? (
-                            <img class="tech-card__img" src={shipImg(cell)!} alt={shipLabel(cell)} loading="lazy" />
-                          ) : (
-                            <div class="tech-card__img tech-card__img--empty" />
-                          )}
-                          <span class="tech-card__tier">T{cell.tier}</span>
-                          <span class="tech-card__name">{shipLabel(cell)}</span>
+                          <button
+                            class={[
+                              "tech-card-v3",
+                              cell.node.isPremium ? "tech-card-v3--premium" : "",
+                              cell.node.isSpecial ? "tech-card-v3--special" : "",
+                            ]}
+                            onClick={() => cell.ship && emit("open", cell.ship)}
+                          >
+                            {cell.forkArchetypes.length > 0 ? (
+                              <span
+                                class="tech-card-v3__fork"
+                                title={cell.forkArchetypes.map((a) => t(`ships.archetype.${a}`)).join(" / ")}
+                              >
+                                <GitBranch size={10} />
+                              </span>
+                            ) : null}
+                            {img ? (
+                              <img class="tech-card-v3__img" src={img} alt={name} loading="lazy" />
+                            ) : (
+                              <div class="tech-card-v3__img--placeholder">
+                                <span class="tech-card-v3__initial">{name.charAt(0)}</span>
+                              </div>
+                            )}
+                            <span class="tech-card-v3__tier">{tierToRoman(cell.tier)}</span>
+                            <span class="tech-card-v3__name">{name}</span>
+                          </button>
                           {cell.archetype ? (
-                            <span
-                              class="tech-card__archetype"
-                              data-label={t(`ships.archetype.${cell.archetype}`)}
-                              data-tip={t(`ships.archetype.${cell.archetype}`)}
-                            />
+                            <span class="tech-card-v3__archetype">{cell.archetype}</span>
                           ) : null}
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-              </div>
-            </div>
-          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       );
     };
