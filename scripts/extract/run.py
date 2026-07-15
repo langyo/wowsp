@@ -42,6 +42,7 @@ ALL_MODULES = ["assets", "rarity", "techtree", "images", "models"]
 # Repo root (scripts/extract/ → repo root).
 REPO = HERE.parent.parent
 RES_DATA = REPO / "packages" / "webui" / "src" / "res" / "data"
+SRC_DATA = REPO / "packages" / "webui" / "src" / "data"
 RES_IMG = REPO / "packages" / "webui" / "src" / "res" / "images"
 
 # Shared intermediate artifacts cached across runs.
@@ -51,7 +52,7 @@ WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = RES_DATA / "ship_rarity.json"
 TECHTREE_JSON = RES_DATA / "tech_tree.json"
-SHIPMODELS_JSON = RES_DATA / "ship_models.json"
+SHIPMODELS_JSON = SRC_DATA / "ship_models.json"
 
 
 def main() -> None:
