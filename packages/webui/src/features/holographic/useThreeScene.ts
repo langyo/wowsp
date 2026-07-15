@@ -41,7 +41,11 @@ export function useThreeScene(
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(width, height);
+    // updateStyle=true (3rd arg) makes setSize write CSS width/height on the
+    // canvas, so the element matches its container instead of leaving the
+    // browser to resolve an unset inline size (which on 2× DPI lands at
+    // container × dpr and overflows the flex chain).
+    renderer.setSize(width, height, true);
     el.appendChild(renderer.domElement);
 
     // Holographic grid + a faint sea plane.
@@ -67,7 +71,7 @@ export function useThreeScene(
       if (w === 0 || h === 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      renderer.setSize(w, h, true);
     });
     resizeObs.observe(el);
   });

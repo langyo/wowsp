@@ -78,7 +78,7 @@ fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
 fn group_by_entity(
     decoded: super::packets::DecodedReplay,
 ) -> Vec<wowsp_tauri_shared::EntityTrajectory> {
-    let super::packets::DecodedReplay { positions, kinds } = decoded;
+    let super::packets::DecodedReplay { positions, kinds, destroys } = decoded;
     let mut out: Vec<_> = positions
         .into_iter()
         .map(
@@ -86,6 +86,7 @@ fn group_by_entity(
                 entity_id,
                 kind: kinds.get(&entity_id).cloned(),
                 samples,
+                death_time: destroys.get(&entity_id).copied(),
             },
         )
         .collect();

@@ -39,7 +39,7 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     if (mounts.length > 0) {
       let barrels = 0;
       let caliber = 0;
-      let turretCount = mounts.length;
+      const turretCount = mounts.length;
       for (const [, m] of mounts) {
         if (m && typeof m === "object") {
           barrels += Number(m.numBarrels ?? 0) || 0;

@@ -33,6 +33,27 @@ INDEX_FILE = IMAGES_OUT / "_index.json"
 ENCYCLOPEDIA_GLOB = "ships-*-s2.json"
 
 
+def wg_to_short_code(wg: str) -> str:
+    """Map a WG API language code to the app's internal locale short-code.
+
+    WG codes like "zh-cn" and "zh-sg" both resolve to "zhs" (Simplified
+    Chinese). The compound tag used for cache/file naming is
+    ``<short_code>-<realm>`` (e.g. "zhs-asia", "zht-asia", "en-asia").
+    """
+    _MAP = {
+        "zh-cn": "zhs",
+        "zh-sg": "zhs",
+        "zh-tw": "zht",
+        "en": "en",
+        "ja": "ja",
+        "ko": "ko",
+        "ru": "ru",
+        "fr": "fr",
+        "es": "es",
+    }
+    return _MAP.get(wg, "en")
+
+
 def load_ships() -> list[dict]:
     import glob
 
