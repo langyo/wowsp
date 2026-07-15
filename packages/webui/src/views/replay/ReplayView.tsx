@@ -212,7 +212,9 @@ export default defineComponent({
       return (info ? SHIP_TYPE_SHORT[info.type] : null) ?? "?";
     }
     function shipDisplayName(v: VehicleEntry): string {
-      return shipOf(v)?.name ?? v.shipName ?? v.name ?? `#${v.shipId}`;
+      const info = shipOf(v);
+      if (info) return encyclopedia.shipDisplayName(info);
+      return v.shipName ?? v.name ?? `#${v.shipId}`;
     }
 
     /** Extract a ship's max HP from the encyclopedia defaultProfile. The

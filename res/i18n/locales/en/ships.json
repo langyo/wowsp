@@ -39,6 +39,9 @@
   "noData": "No encyclopedia data yet. Pick a realm and load.",
   "versionLabel": "Game version",
   "shipsCount": "{n} ships",
+  "label": {
+    "eventLimited": "Event Limited"
+  },
   "rarity": {
     "_label": "Rarity",
     "common": "Common",

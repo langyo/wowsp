@@ -39,6 +39,9 @@
   "noData": "尚无百科数据。请选择区服并加载。",
   "versionLabel": "游戏版本",
   "shipsCount": "{n} 艘舰艇",
+  "label": {
+    "eventLimited": "活动限时"
+  },
   "rarity": {
     "_label": "稀有度",
     "common": "普通",

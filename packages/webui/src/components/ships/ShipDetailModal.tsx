@@ -5,6 +5,7 @@ import SModal from "@/components/base/SModal";
 import STag from "@/components/base/STag";
 import NationFlag from "@/components/base/NationFlag";
 import { useAccountStore } from "@/stores/account";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
@@ -148,7 +149,7 @@ export default defineComponent({
       <SModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
-        title={props.ship ? `${tierToRoman(props.ship.tier)} ${props.ship.name}` : t("ships.detail.title")}
+        title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
         width="58rem"
       >
         {!props.ship ? null : (

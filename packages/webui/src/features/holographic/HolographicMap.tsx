@@ -15,6 +15,7 @@ import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./te
 import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import "./HolographicMap.scss";
 
 /**
@@ -376,7 +377,10 @@ export default defineComponent({
         // Floating label: player name + ship info for the overlay.
         const rosterEntry = props.vehicles.find((v) => v.id === traj.kind?.vehicleId);
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
-        const shipName = shipInfo?.name ?? rosterEntry?.shipName ?? "?";
+        const encStore = useEncyclopediaStore();
+        const shipName = shipInfo
+          ? encStore.shipDisplayName(shipInfo)
+          : (rosterEntry?.shipName ?? "?");
         newLabels.push({
           entityId: traj.entityId,
           role,
