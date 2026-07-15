@@ -30,12 +30,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Stray downloads / packages
-*.deb
-*.rpm
-*.tar.gz
-*.zip
-
 # Test coverage
 /coverage/
 **/__pycache__/
