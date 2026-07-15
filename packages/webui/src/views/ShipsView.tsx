@@ -71,6 +71,13 @@ export default defineComponent({
     // Reload when realm changes.
     watch(realm, () => void loadEncyclopedia());
 
+    // Fallback: if encyclopedia loads while treeNation is still blank, pick first.
+    watch(() => encyclopedia.nations, (n) => {
+      if (!treeNation.value && n.length > 0) {
+        treeNation.value = n[0];
+      }
+    });
+
     // ── filters ────────────────────────────────────────────────────────
     const searchText = ref("");
     const selectedNations = ref<Set<string>>(new Set());
@@ -296,10 +303,9 @@ export default defineComponent({
           </div>
         )}
 
-        {/* ── view body: scrollable area ── */}
-        <div class="ships-view__body">
-          <Transition name="s-fade-slide" mode="out-in">
-            {encyclopedia.loading ? (
+        {/* ── view body: tree or grid ── */}
+        <Transition name="s-fade-slide" mode="out-in">
+          {encyclopedia.loading ? (
             <div class="ships-view__status" key="loading">
               <SSpinner center size="lg" text={t("ships.loading")} />
             </div>
@@ -407,8 +413,7 @@ export default defineComponent({
             })}
             </div>
           )}
-          </Transition>
-        </div>
+        </Transition>
 
         {/* ── detail modal ── */}
         <ShipDetailModal
