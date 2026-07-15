@@ -13,6 +13,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { winrateColor } from "@/utils/winrate";
 import { modeColor } from "@/utils/modeColors";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { useToast } from "@/composables/useToast";
 import SButton from "@/components/base/SButton";
 import SSelect, { type SelectOption } from "@/components/base/SSelect";
 import SSpinner from "@/components/base/SSpinner";
@@ -85,6 +86,18 @@ export default defineComponent({
     const accounts = useAccountStore();
     const stats = useStatsStore();
     const encyclopedia = useEncyclopediaStore();
+    const toast = useToast();
+
+    // Auto-manage loading toast for replay operations.
+    let loadingToastId = 0;
+    watch(() => parser.loading.value, (v) => {
+      if (v) {
+        loadingToastId = toast.loading(t("replay.loading"));
+      } else if (loadingToastId) {
+        toast.dismiss(loadingToastId);
+        loadingToastId = 0;
+      }
+    });
 
     // Client-selector options derived from detected installs.
     const clientOptions = computed<SelectOption[]>(() =>
@@ -351,11 +364,6 @@ export default defineComponent({
         <section ref={mainRef} class="replay-view__main">
           {parser.current.value ? (
             <div class="replay-view__content">
-              {parser.loading.value ? (
-                <div class="replay-view__loading-overlay" aria-busy="true">
-                  <SSpinner size="sm" text={t("replay.loading")} />
-                </div>
-              ) : null}
               {parser.error.value ? (
                 <div class="replay-view__placeholder replay-view__placeholder--error">
                   {parser.error.value}
@@ -438,10 +446,6 @@ export default defineComponent({
                   onHoverPlayer={(n) => void lookupByName(n)}
                 />
               </div>
-            </div>
-          ) : parser.loading.value ? (
-            <div class="replay-view__placeholder">
-              <SSpinner center size="lg" text={t("replay.loading")} />
             </div>
           ) : parser.error.value ? (
             <div class="replay-view__placeholder replay-view__placeholder--error">

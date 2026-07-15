@@ -3,13 +3,13 @@ import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } fr
 
 import SModal from "@/components/base/SModal";
 import STag from "@/components/base/STag";
-import SSpinner from "@/components/base/SSpinner";
 import NationFlag from "@/components/base/NationFlag";
 import { useAccountStore } from "@/stores/account";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
 import { t } from "@/i18n";
+import { useToast } from "@/composables/useToast";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import { buildArmorScheme, buildBallistics } from "./ballistics";
@@ -44,6 +44,7 @@ export default defineComponent({
     const accounts = useAccountStore();
     const shipStats = useShipStatsStore();
     const trends = useTrendsStore();
+    const toast = useToast();
 
     const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
@@ -67,6 +68,7 @@ export default defineComponent({
       if (gpFetched.value || !props.ship) return;
       gpLoading.value = true;
       gpError.value = null;
+      const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
@@ -74,6 +76,7 @@ export default defineComponent({
       } finally {
         gpLoading.value = false;
         gpFetched.value = true;
+        toast.dismiss(toastId);
       }
     }
 
@@ -207,9 +210,7 @@ export default defineComponent({
                   <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
                 ) : tab.value === "armor" ? (
                   <div class="ship-detail__armor" key="armor">
-                    {gpLoading.value ? (
-                    <SSpinner center size="lg" text={t("ships.detail.gameparamsLoading")} />
-                  ) : gpError.value ? (
+                    {gpError.value ? (
                     <div class="ship-detail__error-block">
                       <p class="ship-detail__error">
                         {t("ships.detail.gameparamsError", { error: gpError.value })}
