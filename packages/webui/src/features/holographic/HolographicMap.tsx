@@ -11,8 +11,10 @@ import {
 import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "./holoShader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
-import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
+import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
 import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
+import { tierToRoman } from "@/utils/tierRoman";
+import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import "./HolographicMap.scss";
 
 /**
@@ -51,6 +53,11 @@ export default defineComponent({
     const holoUniformsList: HoloUniforms[] = [];
     const { ready, api } = useThreeScene(container, (dt) => {
       for (const u of holoUniformsList) tickHoloUniforms(u, dt);
+      // Keep floating label positions in sync even when the camera is
+      // being panned/zoomed (Orbit-like controls aren't wired here yet,
+      // but the projection is cheap enough to run every frame for when
+      // they are).
+      updateLabelPositions();
     });
 
     // Playback state.
@@ -65,6 +72,26 @@ export default defineComponent({
     let shipMarkers: THREE.Group[] = [];
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
+
+    /** Per-marker display info for the floating HTML labels. Rebuilt alongside
+     *  the markers; positions are updated each frame by projecting the marker's
+     *  world position into screen space. */
+    interface ShipLabel {
+      entityId: number;
+      role: TeamRole;
+      name: string;
+      shipName: string;
+      tier: number | null;
+      type: string | null;
+      /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
+      x: number;
+      y: number;
+      visible: boolean;
+      dead: boolean;
+    }
+    const shipLabels = ref<ShipLabel[]>([]);
+    /** World-position scratch vector reused each frame for label projection. */
+    const _projVec = new THREE.Vector3();
 
     /** Tokens used to cancel in-flight async marker loads when actors are
      *  rebuilt/unmounted before a GLB resolves. Each rebuild bumps the epoch;
@@ -260,11 +287,15 @@ export default defineComponent({
      *  The marker starts as a small cone (instant, correct color), then an
      *  async GLB load swaps in the actual ship model (or a tier/nation/type
      *  fallback) tinted to the team color. If the model fails to load, the
-     *  cone stays. */
+     *  cone stays.
+     *
+     *  Also populates `shipLabels` — per-ship display data for the floating
+     *  HTML labels overlaid on the canvas. Labels track player name, ship
+     *  name, tier, type icon, role colour, and death state. */
     function rebuildActors() {
       clearActors();
       const scene = api.value?.scene;
-      if (!scene || props.trajectories.length === 0) return;
+      if (!scene || props.trajectories.length === 0) { shipLabels.value = []; return; }
       const epoch = markerEpoch;
 
       // Encyclopedia as the fallback pool for tier/nation/type resolution.
@@ -278,6 +309,8 @@ export default defineComponent({
         .filter((t) => t.kind?.entityType === 2 && t.samples.length >= 80)
         .map((t) => t.entityId)
         .sort((a, b) => a - b);
+
+      const newLabels: ShipLabel[] = [];
 
       for (const traj of props.trajectories) {
         if (traj.samples.length < 2) continue;
@@ -306,6 +339,7 @@ export default defineComponent({
         marker.userData.entityId = traj.entityId;
         marker.userData.role = role;
         marker.userData.isCone = true;
+        marker.userData.deathTime = traj.deathTime ?? null;
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
@@ -316,8 +350,6 @@ export default defineComponent({
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return; // stale
-              // Preserve placement + heading; the caller updates rotation.y
-              // each frame via updateMarkersAt(), so just swap geometry.
               const pos = marker.position.clone();
               const yaw = marker.rotation.y;
               const visible = marker.visible;
@@ -340,27 +372,105 @@ export default defineComponent({
               /* cone stays — model load failed (corrupt/missing GLB) */
             });
         }
+
+        // Floating label: player name + ship info for the overlay.
+        const rosterEntry = props.vehicles.find((v) => v.id === traj.kind?.vehicleId);
+        const name = rosterEntry?.name ?? `#${traj.entityId}`;
+        const shipName = shipInfo?.name ?? rosterEntry?.shipName ?? "?";
+        newLabels.push({
+          entityId: traj.entityId,
+          role,
+          name,
+          shipName,
+          tier: shipInfo?.tier ?? null,
+          type: shipInfo?.type ?? null,
+          x: 0, y: 0,
+          visible: false,
+          dead: false,
+        });
       }
+      shipLabels.value = newLabels;
     }
 
-    /** Position + orient each ship marker at the current playback time. */
+    /** Position + orient each ship marker at the current playback time.
+     *  Ships that have been destroyed (time ≥ deathTime) are frozen at their
+     *  last known position and their materials desaturated to a faint grey
+     *  tint that still hints at the original team colour. */
     function updateMarkersAt(t: number) {
-      for (const marker of shipMarkers) {
+      const labels = shipLabels.value;
+      for (let i = 0; i < shipMarkers.length; i++) {
+        const marker = shipMarkers[i];
+        const label = labels[i];
         const entityId = marker.userData.entityId as number;
         const traj = props.trajectories.find((tr) => tr.entityId === entityId);
         if (!traj || traj.samples.length === 0) {
           marker.visible = false;
+          if (label) label.visible = false;
           continue;
         }
-        const s = sampleAt(traj, t);
+        // After death, freeze at the last sample position (no more interpolation).
+        const deathTime = marker.userData.deathTime as number | null;
+        const dead = deathTime != null && t >= deathTime;
+        if (label) label.dead = dead;
+        const tEff = dead ? deathTime! : t;
+        const s = sampleAt(traj, tEff);
         if (!s) {
           marker.visible = false;
+          if (label) label.visible = false;
           continue;
         }
         marker.visible = true;
         marker.position.set(s.x, 0.5, s.z);
-        // yaw is heading about vertical (Y) axis; rotate the marker group.
         marker.rotation.y = s.yaw;
+
+        // Grey out dead ships: desaturate every child material toward a faint
+        // grey while keeping a hint of the role colour so teams remain readable.
+        if (dead) {
+          const role = marker.userData.role as TeamRole;
+          const { baseColor, fresnelColor } = holoColorsFor(role);
+          // Blend role colours with grey, reduce opacity.
+          const deadBase = new THREE.Color(baseColor).lerp(new THREE.Color(0x444444), 0.75);
+          const deadFresnel = new THREE.Color(fresnelColor).lerp(new THREE.Color(0x666666), 0.65);
+          marker.traverse((o) => {
+            const m = o as THREE.Mesh;
+            if (m.material && (m.material as any).uniforms) {
+              const u = (m.material as any).uniforms;
+              if (u.baseColor) u.baseColor.value.set(deadBase);
+              if (u.fresnelColor) u.fresnelColor.value.set(deadFresnel);
+              (m.material as THREE.Material).opacity = 0.35;
+            }
+          });
+        }
+      }
+      // Update screen-space positions of floating labels from marker world positions.
+      updateLabelPositions();
+    }
+
+    /** Project every visible marker's world position into screen pixels and
+     *  write them into `shipLabels` so the overlay <div>s track the ships. */
+    function updateLabelPositions() {
+      const cam = api.value?.camera;
+      const rnd = api.value?.renderer;
+      const el = container.value;
+      const canvas = rnd?.domElement;
+      if (!cam || !rnd || !el || !canvas) return;
+      const labels = shipLabels.value;
+      const hw = canvas.clientWidth / 2;
+      const hh = canvas.clientHeight / 2;
+      for (let i = 0; i < shipMarkers.length; i++) {
+        const label = labels[i];
+        if (!label) continue;
+        const marker = shipMarkers[i];
+        if (!marker.visible) { label.visible = false; continue; }
+        // Project the marker's world position (offset 20 units upward so the
+        // label sits above the ship silhouette, not buried inside it).
+        _projVec.copy(marker.position);
+        _projVec.y += 20;
+        _projVec.project(cam);
+        // NDC → pixel within the canvas rect.
+        label.x = (_projVec.x * hw) + hw;
+        label.y = (-_projVec.y * hh) + hh;
+        label.visible = _projVec.z < 1;
       }
     }
 
@@ -414,10 +524,30 @@ export default defineComponent({
       }
     }
 
+    // Reset playback when switching replays.
+    watch(
+      () => props.replayPath,
+      () => {
+        if (ready.value) {
+          current.value = 0;
+          playing.value = false;
+          duration.value = 0;
+          clearActors();
+          shipLabels.value = [];
+          bounds = null;
+        }
+      },
+    );
+
     // Recompute + rebuild whenever trajectories change.
     watch(
       () => props.trajectories,
-      () => {
+      (trajs) => {
+        if (trajs.length === 0) {
+          current.value = 0;
+          playing.value = false;
+          return;
+        }
         recomputeBoundsAndCamera();
         rebuildActors();
         updateMarkersAt(current.value);
@@ -479,6 +609,35 @@ export default defineComponent({
     return () => (
       <div class="holo-map">
         <div ref={container} class="holo-map__canvas" />
+        {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
+        <div class="holo-map__labels" aria-hidden="true">
+          {shipLabels.value.map((lbl) => (
+            <div
+              key={lbl.entityId}
+              class={[
+                "holo-label",
+                `holo-label--${lbl.role}`,
+                lbl.dead ? "holo-label--dead" : "",
+                lbl.visible ? "" : "holo-label--hidden",
+              ]}
+              style={{
+                left: `${lbl.x}px`,
+                top: `${lbl.y}px`,
+                borderColor: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
+              }}
+            >
+              <span class="holo-label__name" title={lbl.name}>{lbl.name}</span>
+              <span class="holo-label__ship">
+                {lbl.type ? <ShipTypeIcon type={lbl.type} size={10} /> : null}
+                {lbl.tier != null ? (
+                  <span class="holo-label__tier">{tierToRoman(lbl.tier)}</span>
+                ) : null}
+                {lbl.shipName}
+              </span>
+              {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
+            </div>
+          ))}
+        </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
         {props.trajectories.length > 0 ? (
           <div class="holo-map__legend">

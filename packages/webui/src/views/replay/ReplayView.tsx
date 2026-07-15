@@ -11,6 +11,7 @@ import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { winrateColor } from "@/utils/winrate";
+import { modeColor } from "@/utils/modeColors";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import SButton from "@/components/base/SButton";
 import SSelect, { type SelectOption } from "@/components/base/SSelect";
@@ -140,6 +141,17 @@ export default defineComponent({
       () => parser.current.value?.vehicles.filter((v) => v.relation > 1) ?? [],
     );
 
+    /** Ref on the scrollable main section so we can reset scrollTop when
+     *  switching replays — otherwise it stays at the roster position and the
+     *  map/meta above scrolls out of view. */
+    const mainRef = ref<HTMLElement | null>(null);
+    watch(
+      () => parser.current.value?.path,
+      () => {
+        if (mainRef.value) mainRef.value.scrollTop = 0;
+      },
+    );
+
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
     // open so the header parse stays fast; the decode is the expensive step.
     const trajectories = ref<EntityTrajectory[]>([]);
@@ -188,6 +200,26 @@ export default defineComponent({
     }
     function shipDisplayName(v: VehicleEntry): string {
       return shipOf(v)?.name ?? v.shipName ?? v.name ?? `#${v.shipId}`;
+    }
+
+    /** Extract a ship's max HP from the encyclopedia defaultProfile. The
+     *  baked profile carries hull.health as the stock hull's max HP — enough
+     *  for a relative HP bar (live HP during the match is not decoded from
+     *  the replay packet stream). */
+    function shipHp(v: VehicleEntry): number {
+      const dp = shipOf(v)?.defaultProfile as { hull?: { health?: number } } | undefined;
+      return dp?.hull?.health ?? 0;
+    }
+
+    /** Total max HP per team (for the roster header). 0 if the encyclopedia
+     *  hasn't loaded yet — the header shows the HP only when resolvable. */
+    const allyTotalHp = computed(() => allies.value.reduce((s, v) => s + shipHp(v), 0));
+    const enemyTotalHp = computed(() => enemies.value.reduce((s, v) => s + shipHp(v), 0));
+
+    /** The max single-ship HP within a team — the denominator for HP-bar
+     *  widths (the tankiest ship fills the bar, others scale down). */
+    function maxHpIn(rows: VehicleEntry[]): number {
+      return rows.reduce((m, v) => Math.max(m, shipHp(v)), 0) || 1;
     }
 
     const refreshing = ref(false);
@@ -290,7 +322,9 @@ export default defineComponent({
                           {r.ownShipName ?? t("replay.ownShip")}
                         </span>
                         {r.matchGroup ? (
-                          <span class="replay-card__pill">{modeLabel(r.matchGroup)}</span>
+                          <span class="replay-card__pill" style={modeColor(r.matchGroup)}>
+                            {modeLabel(r.matchGroup)}
+                          </span>
                         ) : null}
                       </div>
                       <div class="replay-card__row">
@@ -314,17 +348,19 @@ export default defineComponent({
           </div>
         </aside>
 
-        <section class="replay-view__main">
-          {parser.loading.value ? (
-            <div class="replay-view__placeholder">
-              <SSpinner center size="lg" text={t("replay.loading")} />
-            </div>
-          ) : parser.error.value ? (
-            <div class="replay-view__placeholder replay-view__placeholder--error">
-              {parser.error.value}
-            </div>
-          ) : parser.current.value ? (
+        <section ref={mainRef} class="replay-view__main">
+          {parser.current.value ? (
             <div class="replay-view__content">
+              {parser.loading.value ? (
+                <div class="replay-view__loading-overlay" aria-busy="true">
+                  <SSpinner size="sm" text={t("replay.loading")} />
+                </div>
+              ) : null}
+              {parser.error.value ? (
+                <div class="replay-view__placeholder replay-view__placeholder--error">
+                  {parser.error.value}
+                </div>
+              ) : null}
               <header class="replay-view__meta">
                 <strong class="replay-view__map">
                   {displayMapName(parser.current.value.mapName)}
@@ -333,7 +369,10 @@ export default defineComponent({
                   {formatDateTime(parser.current.value.dateTime)}
                 </span>
                 {parser.current.value.matchGroup ? (
-                  <span class="replay-view__meta-item replay-view__pill">
+                  <span
+                    class="replay-view__meta-item replay-view__pill"
+                    style={modeColor(parser.current.value.matchGroup)}
+                  >
                     {modeLabel(parser.current.value.matchGroup)}
                   </span>
                 ) : null}
@@ -374,7 +413,9 @@ export default defineComponent({
                   title={t("replay.roster.allies")}
                   rows={allies.value}
                   kind="ally"
-                  shipOf={shipOf}
+                  totalHp={allyTotalHp.value}
+                  maxHp={maxHpIn(allies.value)}
+                  shipHp={shipHp}
                   shipTypeShort={shipTypeShort}
                   shipDisplayName={shipDisplayName}
                   statsCache={statsCache.value}
@@ -386,7 +427,9 @@ export default defineComponent({
                   title={t("replay.roster.enemies")}
                   rows={enemies.value}
                   kind="enemy"
-                  shipOf={shipOf}
+                  totalHp={enemyTotalHp.value}
+                  maxHp={maxHpIn(enemies.value)}
+                  shipHp={shipHp}
                   shipTypeShort={shipTypeShort}
                   shipDisplayName={shipDisplayName}
                   statsCache={statsCache.value}
@@ -395,6 +438,14 @@ export default defineComponent({
                   onHoverPlayer={(n) => void lookupByName(n)}
                 />
               </div>
+            </div>
+          ) : parser.loading.value ? (
+            <div class="replay-view__placeholder">
+              <SSpinner center size="lg" text={t("replay.loading")} />
+            </div>
+          ) : parser.error.value ? (
+            <div class="replay-view__placeholder replay-view__placeholder--error">
+              {parser.error.value}
             </div>
           ) : (
             <div class="replay-view__placeholder">{t("replay.select")}</div>
@@ -405,18 +456,27 @@ export default defineComponent({
   },
 });
 
-/** A roster column: each row shows the player's this-match ship + type, and
- *  lazily fetches the player's average stats (winrate / avg damage / battles)
- *  on hover via the WG API. */
+/** Format an HP value compactly: 392500 → "392.5k", 96000 → "96.0k". */
+function formatHp(hp: number): string {
+  if (hp >= 1000) return `${(hp / 1000).toFixed(1)}k`;
+  return String(hp);
+}
+
+/** A roster column: each row shows the player's name + this-match ship + an
+ *  HP bar (max HP relative to the team's tankiest ship). Hovering a row shows
+ *  a compact stats tooltip that lazily fetches the player's average WG stats. */
 const RosterColumn = defineComponent({
   name: "RosterColumn",
   props: {
     title: { type: String, required: true },
     rows: { type: Array as () => VehicleEntry[], required: true },
     kind: { type: String as () => "ally" | "enemy", required: true },
-    // Helpers passed from the parent to avoid re-instantiating the encyclopedia
-    // store lookup closures per column.
-    shipOf: { type: Function as unknown as () => (v: VehicleEntry) => ShipInfo | null, required: true },
+    /** Summed max HP of the whole team — shown in the column header. */
+    totalHp: { type: Number, default: 0 },
+    /** Max single-ship HP in the team — denominator for HP-bar widths. */
+    maxHp: { type: Number, default: 1 },
+    /** Helper: resolve a vehicle's max HP from the encyclopedia. */
+    shipHp: { type: Function as unknown as () => (v: VehicleEntry) => number, required: true },
     shipTypeShort: { type: Function as unknown as () => (v: VehicleEntry) => string, required: true },
     shipDisplayName: { type: Function as unknown as () => (v: VehicleEntry) => string, required: true },
     statsCache: { type: Object as () => Map<string, PlayerStats>, required: true },
@@ -425,21 +485,42 @@ const RosterColumn = defineComponent({
   },
   emits: { hoverPlayer: (_name: string) => true },
   setup(props, { emit }) {
+    // Hover-tooltip state (position:fixed, anchored to the hovered row — same
+    // pattern as ArmorBelt.tsx).
+    const hovered = ref<VehicleEntry | null>(null);
+    const tipPos = ref({ x: 0, y: 0 });
+
+    function onEnter(e: MouseEvent, v: VehicleEntry) {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      tipPos.value = { x: r.left + r.width / 2, y: r.top };
+      hovered.value = v;
+      emit("hoverPlayer", v.name);
+    }
+    function onLeave() {
+      hovered.value = null;
+    }
+
     return () => (
       <div class={["roster-col", `roster-col--${props.kind}`]}>
         <div class="roster-col__head">
-          {props.title} <span class="roster-col__count">{props.rows.length}</span>
+          {props.title}
+          <span class="roster-col__count">{props.rows.length}</span>
+          {props.totalHp > 0 ? (
+            <span class="roster-col__totalhp">
+              {formatHp(props.totalHp)} HP
+            </span>
+          ) : null}
         </div>
         <ul class="roster-col__list">
           {props.rows.map((v, idx) => {
-            const s = props.statsCache.get(v.name) ?? null;
-            const loading = props.loadingNames.has(v.name);
-            const failed = props.failedNames.has(v.name);
+            const hp = props.shipHp(v);
+            const hpPct = Math.round((hp / props.maxHp) * 100);
             return (
               <li
                 class="roster-col__row"
                 key={`${v.id}-${v.name}-${idx}`}
-                onMouseenter={() => emit("hoverPlayer", v.name)}
+                onMouseenter={(e) => onEnter(e, v)}
+                onMouseleave={onLeave}
               >
                 <div class="roster-col__main">
                   <span class="roster-col__name">{v.name || `#${v.id}`}</span>
@@ -448,38 +529,91 @@ const RosterColumn = defineComponent({
                     {props.shipDisplayName(v)}
                   </span>
                 </div>
-                <div class="roster-col__stats">
-                  {loading ? (
-                    <span class="roster-col__stat roster-col__stat--muted">
-                      {t("replay.roster.loadingStats")}
-                    </span>
-                  ) : failed ? (
-                    <span class="roster-col__stat roster-col__stat--muted">
-                      {t("replay.roster.statsFailed")}
-                    </span>
-                  ) : s ? (
-                    <>
-                      <span class="roster-col__stat" style={{ color: winrateColor(s.winrate) }}>
-                        {s.winrate != null ? `${s.winrate.toFixed(1)}%` : "—"}
-                      </span>
-                      <span class="roster-col__stat roster-col__stat--dmg">
-                        {s.avgDamage != null ? Math.round(s.avgDamage).toLocaleString() : "—"}
-                      </span>
-                      <span class="roster-col__stat roster-col__stat--muted">
-                        {(s.battles ?? 0).toLocaleString()}
-                      </span>
-                    </>
-                  ) : (
-                    <span class="roster-col__stat roster-col__stat--muted">
-                      {t("replay.roster.hoverForStats")}
-                    </span>
-                  )}
+                <div class="roster-col__hp" title={`${hp.toLocaleString()} HP`}>
+                  <div class="roster-col__hp-fill" style={{ width: `${hpPct}%` }} />
                 </div>
               </li>
             );
           })}
         </ul>
+        {hovered.value ? (
+          <RosterTooltip
+            vehicle={hovered.value}
+            pos={tipPos.value}
+            shipDisplayName={props.shipDisplayName}
+            statsCache={props.statsCache}
+            loadingNames={props.loadingNames}
+            failedNames={props.failedNames}
+          />
+        ) : null}
       </div>
     );
+  },
+});
+
+/** Compact hover tooltip showing a player's WG stats in a 2-column grid.
+ *  Anchored via position:fixed above the hovered row (pointer-events:none so
+ *  the tooltip never steals focus). Shows a spinner while the lookup is in
+ *  flight, then the stats grid once cached. */
+const RosterTooltip = defineComponent({
+  name: "RosterTooltip",
+  props: {
+    vehicle: { type: Object as () => VehicleEntry, required: true },
+    pos: { type: Object as () => { x: number; y: number }, required: true },
+    shipDisplayName: { type: Function as unknown as () => (v: VehicleEntry) => string, required: true },
+    statsCache: { type: Object as () => Map<string, PlayerStats>, required: true },
+    loadingNames: { type: Object as () => Set<string>, required: true },
+    failedNames: { type: Object as () => Set<string>, required: true },
+  },
+  setup(props) {
+    return () => {
+      const v = props.vehicle;
+      const s = props.statsCache.get(v.name) ?? null;
+      const loading = props.loadingNames.has(v.name);
+      const failed = props.failedNames.has(v.name);
+
+      const kpis: Array<{ label: string; val: string; color?: string }> = [];
+      if (s) {
+        kpis.push(
+          { label: t("replay.tip.winrate"), val: s.winrate != null ? `${s.winrate.toFixed(1)}%` : "—", color: winrateColor(s.winrate) },
+          { label: t("replay.tip.avgDamage"), val: s.avgDamage != null ? Math.round(s.avgDamage).toLocaleString() : "—" },
+          { label: t("replay.tip.battles"), val: (s.battles ?? 0).toLocaleString() },
+          { label: "PR", val: s.pr != null ? String(Math.round(s.pr)) : "—", color: winrateColor((s.pr ?? 0) / 30) },
+          { label: t("replay.tip.survival"), val: s.survivalRate != null ? `${s.survivalRate.toFixed(0)}%` : "—" },
+          { label: t("replay.tip.hitRate"), val: s.hitRate != null ? `${s.hitRate.toFixed(0)}%` : "—" },
+        );
+      }
+
+      return (
+        <div
+          class="roster-tip"
+          style={{ left: `${props.pos.x}px`, top: `${props.pos.y}px` }}
+        >
+          <div class="roster-tip__name">{v.name || `#${v.id}`}</div>
+          {s?.hidden ? (
+            <div class="roster-tip__hidden">{t("replay.tip.hidden")}</div>
+          ) : loading ? (
+            <div class="roster-tip__loading">
+              <SSpinner size="sm" /> {t("replay.tip.loading")}
+            </div>
+          ) : failed ? (
+            <div class="roster-tip__hidden">{t("replay.tip.failed")}</div>
+          ) : s ? (
+            <div class="roster-tip__grid">
+              {kpis.map((k) => (
+                <div class="roster-tip__kpi" key={k.label}>
+                  <span class="roster-tip__kpi-label">{k.label}</span>
+                  <span class="roster-tip__kpi-val" style={k.color ? { color: k.color } : undefined}>
+                    {k.val}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div class="roster-tip__loading">{t("replay.tip.loading")}</div>
+          )}
+        </div>
+      );
+    };
   },
 });

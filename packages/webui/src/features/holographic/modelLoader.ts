@@ -3,62 +3,62 @@
  *
  * Ship and map models are pre-converted GLB files placed under
  * `src/res/models/ships/` and `src/res/models/maps/` (Vite's publicDir).
- * Since they live in the public directory, they are served at the root path
- * (e.g. `/models/ships/Montana.glb`). We discover available files via a
- * non-URL glob (just filename listing) and build public URLs from the stems.
+ * Model availability is discovered at build time via import.meta.glob; the
+ * resolved URLs are used directly so Vite handles dev/prod URL mapping.
  *
  * ## Skin → base model dedup
- * `src/res/data/ship_models.json` maps each shipId to a `baseName`.
- * We import it directly as a module (it lives in src/data, not src/res/data).
+ * `src/data/ship_models.json` maps each shipId to a `baseName`.
  */
 
 import shipModelNames from "../../data/ship_models.json";
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-// ── Ship model stems (extracted from glob paths, NOT used as import URLs) ──
-// We only need the filename stems to check which models exist; actual
-// URLs are constructed as `/models/ships/<stem>.glb` (public dir root path).
+// ── Ship model URLs (stem → Vite-resolved URL) ──────────────────────────
 const _shipGlob = import.meta.glob("../../res/models/ships/*.glb", {
   query: "?url",
   import: "default",
   eager: true,
 }) as Record<string, string>;
 
-/** All available ship model stems (lowercased filename without extension). */
-const shipModelStems = new Set<string>();
-for (const path of Object.keys(_shipGlob)) {
+const shipUrlByStem = new Map<string, string>();
+for (const [path, url] of Object.entries(_shipGlob)) {
   const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
-  shipModelStems.add(stem);
+  shipUrlByStem.set(stem, url);
 }
 
+// ── Map model URLs ───────────────────────────────────────────────────────
 const _mapGlob = import.meta.glob("../../res/models/maps/*.glb", {
   query: "?url",
   import: "default",
   eager: true,
 }) as Record<string, string>;
 
-const mapModelStems = new Set<string>();
-for (const path of Object.keys(_mapGlob)) {
+const mapUrlByStem = new Map<string, string>();
+for (const [path, url] of Object.entries(_mapGlob)) {
   const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
-  mapModelStems.add(stem);
+  mapUrlByStem.set(stem, url);
 }
 
-/** Get the public URL for a ship GLB model. Returns null if no model exists
- *  under that stem. */
+// ── ship_models.json mapping ─────────────────────────────────────────────
+interface ShipModelEntry {
+  index: string;
+  name: string;
+  baseName: string;
+  originShipName: string;
+  hullModel: string;
+}
+const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
+
+// ── URL resolvers ────────────────────────────────────────────────────────
+
 function shipModelUrl(stem: string): string | null {
-  if (shipModelStems.has(stem.toLowerCase())) {
-    return `/models/ships/${encodeURIComponent(stem)}.glb`;
-  }
-  return null;
+  return shipUrlByStem.get(stem.toLowerCase()) ?? null;
 }
 
 function mapModelUrl(stem: string): string | null {
-  if (mapModelStems.has(stem.toLowerCase())) {
-    return `/models/maps/${encodeURIComponent(stem)}.glb`;
-  }
-  return null;
+  return mapUrlByStem.get(stem.toLowerCase()) ?? null;
 }
-
-// ── Re-export public API with the same signatures ────────────────────────
 
 export function resolveShipModelUrl(
   displayName: string | undefined,
@@ -75,16 +75,6 @@ export function resolveShipModelUrl(
   return null;
 }
 
-interface ShipModelEntry {
-  index: string;
-  name: string;
-  baseName: string;
-  originShipName: string;
-  hullModel: string;
-}
-
-const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
-
 export function resolveShipModelByShipId(
   shipId: number | string | undefined,
   fallbackName?: string,
@@ -96,7 +86,13 @@ export function resolveShipModelByShipId(
       if (url) return url;
     }
   }
-  return resolveShipModelUrl(fallbackName, undefined);
+  // Direct name lookup bypasses ship_models.json (handles ships not yet
+  // mapped, or custom skins whose GLB filename matches the ship name).
+  if (fallbackName) {
+    const url = shipModelUrl(fallbackName);
+    if (url) return url;
+  }
+  return null;
 }
 
 export function resolveMapModelUrl(spaceId: string | undefined): string | null {
@@ -104,6 +100,8 @@ export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
   return mapModelUrl(clean);
 }
+
+// ── Fallback resolution (tier / nation / type) ──────────────────────────
 
 export interface ShipModelSpec {
   shipId: number;
@@ -116,7 +114,8 @@ function resolveExact(spec: ShipModelSpec): string | null {
   if (spec.shipId == null) return null;
   const entry = shipModelMap[String(spec.shipId)];
   if (entry?.baseName) {
-    return shipModelUrl(entry.baseName);
+    const url = shipModelUrl(entry.baseName);
+    if (url) return url;
   }
   return null;
 }
@@ -126,29 +125,60 @@ export function resolveFallbackModel(
   ships: ShipModelSpec[],
 ): string | null {
   const tier = spec.tier;
-  if (tier == null) return null;
-
-  const candidates = ships.filter(
-    (s) => s.tier === tier && resolveExact(s) != null,
-  );
-  if (candidates.length === 0) return null;
-
   const nation = spec.nation?.toLowerCase();
   const type = spec.type?.toLowerCase();
 
-  if (nation && type) {
-    const hit = candidates.find(
-      (s) => s.nation?.toLowerCase() === nation && s.type?.toLowerCase() === type,
-    );
-    const url = hit && resolveExact(hit);
-    if (url) return url;
+  // Try same tier + same nation + same type.
+  if (tier != null && nation && type) {
+    for (const s of ships) {
+      if (
+        s.tier === tier &&
+        s.nation?.toLowerCase() === nation &&
+        s.type?.toLowerCase() === type
+      ) {
+        const url = resolveExact(s);
+        if (url) return url;
+      }
+    }
   }
+
+  // Try same tier + same type (any nation).
+  if (tier != null && type) {
+    for (const s of ships) {
+      if (s.tier === tier && s.type?.toLowerCase() === type) {
+        const url = resolveExact(s);
+        if (url) return url;
+      }
+    }
+  }
+
+  // Try same tier (any type/nation).
+  if (tier != null) {
+    for (const s of ships) {
+      if (s.tier === tier) {
+        const url = resolveExact(s);
+        if (url) return url;
+      }
+    }
+  }
+
+  // Try same type (any tier/nation).
   if (type) {
-    const hit = candidates.find((s) => s.type?.toLowerCase() === type);
-    const url = hit && resolveExact(hit);
+    for (const s of ships) {
+      if (s.type?.toLowerCase() === type) {
+        const url = resolveExact(s);
+        if (url) return url;
+      }
+    }
+  }
+
+  // Absolute fallback: any available model.
+  for (const s of ships) {
+    const url = resolveExact(s);
     if (url) return url;
   }
-  return resolveExact(candidates[0]);
+
+  return null;
 }
 
 export function resolveShipModelForEntry(
@@ -161,6 +191,7 @@ export function resolveShipModelForEntry(
     const fallback = resolveFallbackModel(ship, encyclopedia);
     if (fallback) return fallback;
   }
+  // Ultimate fallback: any model in the encyclopedia.
   for (const s of encyclopedia) {
     const url = resolveExact(s);
     if (url) return url;
@@ -170,9 +201,6 @@ export function resolveShipModelForEntry(
 
 // ── GLTF loading ──────────────────────────────────────────────────────────
 
-import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-
 let _loader: GLTFLoader | null = null;
 function getLoader(): GLTFLoader {
   if (!_loader) _loader = new GLTFLoader();
@@ -180,20 +208,27 @@ function getLoader(): GLTFLoader {
 }
 
 export function loadGlbModel(url: string): Promise<THREE.Group> {
+  console.log("[modelLoader] loading:", url);
   return new Promise((resolve, reject) => {
     getLoader().load(
       url,
-      (gltf) => resolve(gltf.scene),
+      (gltf) => {
+        console.log("[modelLoader] loaded:", url);
+        resolve(gltf.scene);
+      },
       undefined,
-      (err) => reject(err),
+      (err) => {
+        console.error("[modelLoader] failed:", url, err);
+        reject(err);
+      },
     );
   });
 }
 
 export function hasShipModels(): boolean {
-  return shipModelStems.size > 0;
+  return shipUrlByStem.size > 0;
 }
 
 export function hasMapModels(): boolean {
-  return mapModelStems.size > 0;
+  return mapUrlByStem.size > 0;
 }
