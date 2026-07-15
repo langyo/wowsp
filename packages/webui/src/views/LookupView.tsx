@@ -3,21 +3,17 @@ import { defineComponent, ref } from "vue";
 import StatsCard from "@/components/stats/StatsCard";
 import SButton from "@/components/base/SButton";
 import SSelect from "@/components/base/SSelect";
-import SSpinner from "@/components/base/SSpinner";
 import { useStatsStore } from "@/stores/stats";
+import { useToast } from "@/composables/useToast";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import "./LookupView.scss";
 
-/**
- * Stats lookup page. Search box (nickname + realm) → WG API query → deep
- * stats card display. Uses the stats store, which appends a snapshot on each
- * lookup (so repeated lookups build trend history).
- */
 export default defineComponent({
   name: "LookupView",
   setup() {
     const stats = useStatsStore();
+    const toast = useToast();
     const nickname = ref("");
     const realm = ref("asia");
     const realms = ["ru", "eu", "na", "asia"];
@@ -27,10 +23,13 @@ export default defineComponent({
       const name = nickname.value.trim();
       if (!name) return;
       result.value = null;
+      const toastId = toast.loading(t("account.searching"));
       try {
         result.value = await stats.lookup(name, realm.value);
       } catch {
         // error surfaced via stats.error
+      } finally {
+        toast.dismiss(toastId);
       }
     }
 
@@ -66,10 +65,6 @@ export default defineComponent({
           {result.value ? (
             <div class="lookup-view__result" key="result">
               <StatsCard stats={result.value} />
-            </div>
-          ) : stats.loading ? (
-            <div class="lookup-view__loading" key="loading">
-              <SSpinner center size="lg" text={t("account.searching")} />
             </div>
           ) : null}
         </Transition>

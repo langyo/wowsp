@@ -5,7 +5,6 @@ import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
 import SSegmented from "@/components/base/SSegmented";
 import STag from "@/components/base/STag";
-import SSpinner from "@/components/base/SSpinner";
 import NationFlag from "@/components/base/NationFlag";
 import TechTreeView from "@/components/ships/TechTreeView";
 import { resolveShipImage } from "@/utils/shipImages";
@@ -13,6 +12,7 @@ import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useToast } from "@/composables/useToast";
 import { useTrendsStore } from "@/stores/trends";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
@@ -39,6 +39,7 @@ export default defineComponent({
     const trends = useTrendsStore();
     const accounts = useAccountStore();
     const config = useConfigStore();
+    const toast = useToast();
 
     // ── realm picker + load ────────────────────────────────────────────
     const realm = ref(accounts.activeRealm || "asia");
@@ -51,7 +52,9 @@ export default defineComponent({
     const firstLoadDone = ref(false);
 
     async function loadEncyclopedia(force = false) {
+      const toastId = toast.loading(t("ships.loading"));
       await encyclopedia.load(realm.value, force);
+      toast.dismiss(toastId);
       firstLoadDone.value = true;
       if (!treeNation.value && encyclopedia.nations.length > 0) {
         treeNation.value = encyclopedia.nations[0];
@@ -303,11 +306,7 @@ export default defineComponent({
 
         {/* ── view body: tree or grid ── */}
         <Transition name="s-fade-slide" mode="out-in">
-          {encyclopedia.loading || (!firstLoadDone.value && encyclopedia.ships.length === 0) ? (
-            <div class="ships-view__status" key="loading">
-              <SSpinner center size="lg" text={t("ships.loading")} />
-            </div>
-          ) : encyclopedia.error ? (
+          {encyclopedia.error ? (
             <div class="ships-view__status ships-view__status--error" key="error">{encyclopedia.error}</div>
           ) : viewMode.value === "tree" ? (
             <div class="ships-view__tree-body" key="tree">

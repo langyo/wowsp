@@ -2,7 +2,6 @@ import { computed, defineComponent, ref, watch } from "vue";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import SSpinner from "@/components/base/SSpinner";
 import SSegmented from "@/components/base/SSegmented";
 import STag from "@/components/base/STag";
 import SScrollTop from "@/components/base/SScrollTop";
@@ -213,10 +212,6 @@ export default defineComponent({
               <button class="dashboard-view__bind" onClick={() => (showModal.value = true)}>
                 {t("account.search")}
               </button>
-            </div>
-          ) : stats.loading && !currentStats.value ? (
-            <div class="dashboard-view__loading" key="loading">
-              <SSpinner center size="lg" text={t("dashboard.loading")} />
             </div>
           ) : currentStats.value ? (
             <div class="dashboard-view__content" key="content">
