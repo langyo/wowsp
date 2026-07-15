@@ -46,18 +46,16 @@ export default defineComponent({
 
     // ── view mode (tech-tree vs list) ─────────────────────────────────
     const viewMode = ref<"tree" | "grid">("tree");
-    // Single-nation selection for the tech-tree view (defaults to first nation
-    // once the encyclopedia loads).
     const treeNation = ref<string>("");
+    /** True once the first load attempt completes (success or fail). */
+    const firstLoadDone = ref(false);
 
     async function loadEncyclopedia(force = false) {
       await encyclopedia.load(realm.value, force);
-      // Default the tech-tree nation to the first available once loaded.
+      firstLoadDone.value = true;
       if (!treeNation.value && encyclopedia.nations.length > 0) {
         treeNation.value = encyclopedia.nations[0];
       }
-      // If an account is bound, also load their per-ship stats so cards can
-      // show "your battles" badges.
       const acc = accounts.activeAccount;
       if (acc) {
         void shipStats.load(acc.accountId, acc.realm).catch(() => {});
@@ -305,7 +303,7 @@ export default defineComponent({
 
         {/* ── view body: tree or grid ── */}
         <Transition name="s-fade-slide" mode="out-in">
-          {encyclopedia.loading ? (
+          {encyclopedia.loading || (!firstLoadDone.value && encyclopedia.ships.length === 0) ? (
             <div class="ships-view__status" key="loading">
               <SSpinner center size="lg" text={t("ships.loading")} />
             </div>
