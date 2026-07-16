@@ -1,8 +1,8 @@
-name: Deploy Documentation
+name: Deploy Docs
 
 on:
   push:
-    branches: [master, dev]
+    branches: [master]
     paths:
       - 'docs/**'
       - '.github/workflows/docs.yml'
@@ -21,14 +21,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
+      - run: cargo install lagrange-library --locked
       - run: lagrange build --src docs --out _site
       - run: echo "wowsp.docs.celestia.world" > _site/CNAME
 
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 
@@ -41,4 +42,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v4
