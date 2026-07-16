@@ -59,14 +59,102 @@ python scripts/model_convert/convert_map.py --name 15_NE_north
 Run `--help` on either script for all flags (LOD, hull selection, terrain
 decimation, texture downsampling — all forwarded to `wowsunpack`).
 
+## Baking (low-poly holographic GLBs)
+
+`bake_model.py` simplifies a high-poly exporter GLB down to a small low-poly
+GLB (~60–150 KB) for the holographic viewer, using vertex-clustering
+decimation that keeps surfaces continuous. `batch_bake.py` runs the full
+export→bake pipeline for every playable ship.
+
+### Resumable / batched runs
+
+The batch driver is **resumable by default**. It inspects each existing GLB's
+triangle count (via JSON accessor metadata only — no binary decode) and treats
+ones below `--resume-min-tris` (default 3000) as *stale* and re-bakes only
+those. This separates the current ~6000-tri vertex-clustering bakes from old
+~2000-tri shard bakes, so you can interrupt and re-run freely — each run only
+touches what still needs work.
+
+```bash
+# Bake everything stale (full run, ~4.5h for ~900 ships) — safe to Ctrl-C
+python scripts/model_convert/batch_bake.py
+
+# Batched: bake 100 stale ships then exit. Re-run to pick up the next 100.
+# Each invocation is short (~30min) so no single run must finish the lot.
+python scripts/model_convert/batch_bake.py --limit 100
+python scripts/model_convert/batch_bake.py --limit 100   # continues where the last left off
+
+# Re-bake absolutely everything (ignore freshness)
+python scripts/model_convert/batch_bake.py --force
+
+# One ship at a time (no batch driver) — useful for debugging one model
+python scripts/model_convert/bake_model.py input_raw.glb -o ships/Foo.glb --triangles 6000
+```
+
+The driver checkpoints progress implicitly via the output files themselves:
+there's no separate state to corrupt, and a killed run leaves every file it
+finished in a valid state.
+
+
 ## How to add a new map or ship
 
 1. Make sure `wowsunpack` is installed and the game is detected (run WoWSP once
    or set `WOWSP_GAME_PATH`).
-2. `just convert-model ship --name <ShipName>` (or `map --name <space_id>`).
-3. Commit the resulting GLB under `packages/webui/src/res/models/`.
-4. The holographic map auto-discovers models from that directory — no code
-   changes needed.
+2. `just convert-ship --name <ShipName>` (or `just convert-map --name <space_id>`).
+3. Commit the resulting GLB under `packages/webui/src/res/models/ships/` or
+   `packages/webui/src/res/models/maps/`.
+4. The frontend auto-discovers models via Vite's static asset glob
+   (`import.meta.glob` in `features/holographic/modelLoader.ts`). Model files
+   are matched case-insensitively by filename stem (without `.glb`):
+   - Ships: `<displayName>.glb` (e.g. `Montana.glb`) or `<modelDir>.glb`
+     (e.g. `PASB510_Montana.glb`). Both are tried in that order.
+   - Maps: `<spaceId>.glb` (e.g. `15_NE_north.glb`). Any `spaces/` prefix is
+     stripped before matching.
+5. No code changes are needed — placing the GLB in the right directory is
+   enough. The holographic map progressively enriches: ships without models
+   use procedural cone markers, maps without terrain use a grid helper.
+
+## Contour maps (terrain elevation + sea-floor bathymetry)
+
+`convert_map_holo.py` produces the **holographic contour map** the replay
+viewer renders: a multi-mesh GLB with a decimated `Terrain` height-field
+(showing contour bands + sea-floor bathymetry/trenches) and simplified
+`Islands`. `convert_map.py` (above) only emits island geometry and drops the
+terrain — use `convert_map_holo.py` for the full topographic result.
+
+```bash
+# Requires the patched wowsunpack (below). One map at a time:
+just convert-map-holo --name 18_NE_ice_islands
+just convert-map-holo --name 15_NE_north
+
+# Or directly (set the patched binary path):
+WOWSP_WOWSUNPACK=target/model-tools-patched/wowsunpack.exe \
+  python scripts/model_convert/convert_map_holo.py --name 18_NE_ice_islands
+```
+
+### Why `wowsunpack`?
+
+Stock `wowsunpack export-map` clamps terrain to sea level (Y >= 0) and culls
+fully-submerged triangles — so sea-floor bathymetry and trenches are discarded
+before the GLB is written. The raw `terrain.bin` heightmap *does* contain
+negative depths; the exporter just throws them away with no flag to disable it.
+
+`wowsunpack` is vendored as a workspace member (`packages/tools/wowsunpack-vendor/`)
+from the official [`landaire/wows-toolkit`](https://github.com/landaire/wows-toolkit)
+repo. Build it once:
+
+```bash
+just build-wowsunpack-patched
+```
+
+This clones the official repo into `packages/tools/wowsunpack-vendor/` (gitignored)
+and compiles `wowsunpack` as a workspace member into `target/release/wowsunpack.exe`.
+`convert_map_holo.py` auto-detects and uses it. The script gracefully
+degrades without `--keep-submerged` (trenches flattened, contours still work).
+
+The frontend renders the contour terrain via `holoContourShader.ts` — land is
+banded by elevation, shallow sea teal, and deep trenches deep-blue with the
+densest contour lines.
 
 ## Status
 

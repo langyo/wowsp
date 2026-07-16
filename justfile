@@ -154,13 +154,61 @@ package *FLAGS:
 e2e-setup:
     @pip install -q -r scripts/requirements.txt && python -m playwright install chromium 2>/dev/null
 
-# ── Model conversion (ship/map → GLB via wowsunpack) ─────────────────
+# ── Model conversion (ship/map → baked GLB for holographic rendering) ──
 
 convert-ship *ARGS:
     python scripts/model_convert/convert_ship.py {{ARGS}}
 
 convert-map *ARGS:
     python scripts/model_convert/convert_map.py {{ARGS}}
+
+# Convert a map to a holographic CONTOUR GLB (terrain elevation + sea-floor
+# bathymetry/trenches + simplified islands). Requires a patched wowsunpack
+# with `--keep-submerged` (build: just build-wowsunpack-patched) to preserve
+# below-sea-level geometry; without it trenches are flattened.
+# Usage: just convert-map-holo --name 18_NE_ice_islands
+convert-map-holo *ARGS:
+    WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
+
+# Build wowsunpack from vendored source (landaire/wows-toolkit) into target/release/.
+# One-time setup: just clone, then compiles via workspace `-p wowsunpack`.
+build-wowsunpack-patched:
+    @echo "Cloning/building wowsunpack (landaire/wows-toolkit)..."
+    -git -C packages/tools/wowsunpack-vendor pull --rebase 2>/dev/null || git clone https://github.com/landaire/wows-toolkit.git packages/tools/wowsunpack-vendor
+    cargo build --release -p wowsunpack
+
+# Bake (simplify) a raw GLB to a low-poly holographic model.
+# Usage: just bake-model raw.glb -o ship.glb --triangles 2000
+bake-model *ARGS:
+    python scripts/model_convert/bake_model.py {{ARGS}}
+
+# Batch-bake ALL ships in the current game version to holographic GLBs.
+# Tools are cached under target/model-tools/. Idempotent (skips existing).
+bake-all-ships *ARGS:
+    python scripts/model_convert/batch_bake.py {{ARGS}}
+
+# Download + cache all ship portrait images from the WG CDN.
+# Images saved to src/res/images/ships/. Idempotent (skips existing).
+download-ship-images *ARGS:
+    python scripts/extract/download_ship_images.py {{ARGS}}
+
+# ── Game asset extraction (unpack → flags / skills / rarity / tech-tree) ──
+
+# Unpack + refresh all game-derived resources from the local WoWS install:
+# nation flags (crest + small), skill icons, modernization icons, the
+# ship_id→rarity map, and the tech-tree topology JSON.
+#
+# Auto-detects the newest game install; override with `--path <dir>`.
+# Run only some steps with `--module rarity,techtree` (valid: assets,rarity,
+# techtree,images). Shared wowsunpack outputs are cached under
+# %LOCALAPPDATA%/WoWSP-extract so later runs are fast.
+#
+# Usage:
+#   just extract                          # auto-detect game, run all modules
+#   just extract all --path D:\WoWS       # explicit game path
+#   just extract rarity,techtree          # only these modules (skip slow ones)
+extract *ARGS:
+    python scripts/extract/run.py {{ARGS}}
 
 # ── Docs (lagrange multilingual site) ────────────────────────────────
 

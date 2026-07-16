@@ -1,3 +1,5 @@
+<p align="center"><img src="./docs/logo.webp" alt="WoWSP" width="128" /></p>
+
 <h1 align="center">WoWSP</h1>
 
 <p align="center"><strong>World of WarShip Panel — replay review &amp; in-game overlay</strong></p>

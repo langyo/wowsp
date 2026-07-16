@@ -1,20 +1,36 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-import { api } from "@/api";
+import { api, type GameProcessInfo } from "@/api";
+import { useConfigStore } from "@/stores/config";
 
-/** Polls the game process state every 3 seconds. The sidebar shows a green dot
- *  when the game is running. When a new replay file appears (arena watcher),
- *  WoWSP starts querying stats for everyone in the battle. */
+const OFFLINE: GameProcessInfo = {
+  running: false,
+  pid: null,
+  kind: null,
+  realm: null,
+  exePath: null,
+  matchedInstall: null,
+};
+
+/** Polls the game process state every 3 seconds. The sidebar footer shows the
+ *  PID + which client (Steam / Wargaming / ...) is running. When a new replay
+ *  file appears (arena watcher), WoWSP starts querying stats for everyone in
+ *  the battle.
+ *
+ *  The backend resolves which install the running exe belongs to by matching
+ *  its path against the detected installs, so we pass the full installs list
+ *  (from the config store) on every poll. */
 export const useGameStatusStore = defineStore("gameStatus", () => {
-  const running = ref(false);
+  const process = ref<GameProcessInfo>({ ...OFFLINE });
   let pollHandle: number | null = null;
 
   async function check() {
     try {
-      running.value = await api.isGameRunning();
+      const config = useConfigStore();
+      process.value = await api.getGameProcess(config.installs);
     } catch {
-      running.value = false;
+      process.value = { ...OFFLINE };
     }
   }
 
@@ -34,5 +50,5 @@ export const useGameStatusStore = defineStore("gameStatus", () => {
     }
   }
 
-  return { running, start, stop, check };
+  return { process, start, stop, check };
 });

@@ -44,7 +44,7 @@ pub async fn lookup_player_ship_stats(
                 serde_json::to_string(&enriched).unwrap_or_default(),
             );
             enriched
-        }
+        },
         Err(e) => {
             // Fallback to cache if the live API failed.
             if let Ok(Some(raw)) = appdata_read(cache_file) {
@@ -53,7 +53,7 @@ pub async fn lookup_player_ship_stats(
                 }
             }
             return Err(e);
-        }
+        },
     };
     Ok(stats)
 }
@@ -119,7 +119,7 @@ async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipSta
     let host = realm_host(realm)?;
     let client = wg_client()?;
     let url = format!(
-        "https://api.worldofwarships.{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&extra=club&fields=ship_id,battle_type,last_battle_time,pvp"
+        "https://api.worldofwarships.{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&fields=ship_id,last_battle_time,pvp"
     );
     let resp: WgResponse<serde_json::Value> = client
         .get(&url)
@@ -182,7 +182,8 @@ impl RawShipStats {
             battles,
             wins: pvp.get("wins").and_then(|v| v.as_i64()).unwrap_or(0),
             damage_caused: pvp
-                .get("damage_caused")
+                .get("damage_dealt")
+                .or_else(|| pvp.get("damage_caused"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
             frags: pvp.get("frags").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -360,7 +361,7 @@ mod tests {
             "pvp": {
                 "battles": 100,
                 "wins": 55,
-                "damage_caused": 2500000,
+                "damage_dealt": 2500000,
                 "frags": 80,
                 "survived_battles": 30
             }
@@ -382,7 +383,7 @@ mod tests {
     fn raw_ship_stats_skips_zero_battles() {
         let entry = serde_json::json!({
             "ship_id": 1,
-            "pvp": { "battles": 0, "wins": 0, "damage_caused": 0, "frags": 0, "survived_battles": 0 }
+            "pvp": { "battles": 0, "wins": 0, "damage_dealt": 0, "frags": 0, "survived_battles": 0 }
         });
         assert!(RawShipStats::from_wg(&entry).is_none());
     }

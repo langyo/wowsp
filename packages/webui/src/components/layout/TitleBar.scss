@@ -1,0 +1,116 @@
+/* ── TitleBar ───────────────────────────────────────────────────────────
+   Custom window chrome for the frameless (decorations: false) Tauri
+   window. Dark/light theme via the [data-mode] attribute that the
+   app's theme system sets on <html>. */
+
+/* ── Dark mode (default) ──────────────────────────────────────────── */
+.titlebar {
+  --tb-bg: rgba(18, 24, 38, 0.6);
+  --tb-border: rgba(255, 255, 255, 0.06);
+  --tb-fg: rgba(255, 255, 255, 0.55);
+  --tb-fg-strong: rgba(255, 255, 255, 0.95);
+  --tb-hover: rgba(255, 255, 255, 0.1);
+  --tb-active: rgba(255, 255, 255, 0.16);
+  --tb-focus: rgba(0, 120, 200, 0.6);
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  user-select: none;
+  background: var(--tb-bg);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--tb-border);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  -webkit-app-region: drag;
+  app-region: drag;
+
+  /* ── Light mode overrides ────────────────────────────────────── */
+  [data-mode="light"] & {
+    --tb-bg: rgba(245, 248, 252, 0.75);
+    --tb-border: rgba(0, 0, 0, 0.08);
+    --tb-fg: rgba(0, 0, 0, 0.55);
+    --tb-fg-strong: rgba(0, 0, 0, 0.88);
+    --tb-hover: rgba(0, 0, 0, 0.06);
+    --tb-active: rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* ── Brand (logo + name) ────────────────────────────────────────── */
+.titlebar__brand {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--tb-fg);
+  padding-left: 8px;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.titlebar__logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.titlebar__spacer {
+  flex: 1;
+}
+
+/* ── Caption buttons ────────────────────────────────────────────── */
+.titlebar__btns {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.titlebar__btn {
+  width: 46px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--tb-fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  outline: none;
+  padding: 0;
+
+  &:hover {
+    background: var(--tb-hover);
+    color: var(--tb-fg-strong);
+  }
+
+  &:active {
+    background: var(--tb-active);
+  }
+
+  &--close:hover {
+    background: #e81123;
+    color: #fff;
+  }
+
+  &--close:active {
+    background: #f1707a;
+    color: #fff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--tb-focus);
+    outline-offset: -2px;
+  }
+}

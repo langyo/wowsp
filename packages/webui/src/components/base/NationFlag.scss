@@ -1,0 +1,83 @@
+.nation-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  line-height: 1;
+
+  &__img {
+    display: block;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 35%));
+  }
+
+  &__fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgb(var(--color-bg));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    color: rgb(var(--color-text));
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  &__label {
+    font-size: var(--text-xs);
+    color: inherit;
+  }
+
+  // Size variants. Crests (vertical ~700×915) and flags (horizontal) share a
+  // diameter; the img aspect is preserved by object-fit:contain.
+  &--sm {
+    .nation-flag__img {
+      width: 16px;
+      height: 12px;
+    }
+    .nation-flag__fallback {
+      width: 16px;
+      height: 16px;
+      font-size: 9px;
+    }
+  }
+
+  &--md {
+    .nation-flag__img {
+      width: 22px;
+      height: 16px;
+    }
+    .nation-flag__fallback {
+      width: 22px;
+      height: 22px;
+      font-size: 10px;
+    }
+  }
+
+  &--lg {
+    .nation-flag__img {
+      width: 28px;
+      height: 20px;
+    }
+    .nation-flag__fallback {
+      width: 28px;
+      height: 28px;
+      font-size: 12px;
+    }
+  }
+
+  // Variant: crest keeps its tall aspect (use the img's natural ratio by
+  // letting height follow from a fixed width for larger sizes).
+  &--crest.nation-flag--sm .nation-flag__img {
+    width: 20px;
+    height: 26px;
+  }
+  &--crest.nation-flag--md .nation-flag__img {
+    width: 32px;
+    height: 42px;
+  }
+  &--crest.nation-flag--lg .nation-flag__img {
+    width: 48px;
+    height: 62px;
+  }
+}

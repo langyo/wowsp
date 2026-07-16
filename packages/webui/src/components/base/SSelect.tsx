@@ -52,6 +52,9 @@ export default defineComponent({
     const panelStyle = ref<Record<string, string>>({});
     // Whether the panel renders above the trigger (flipped).
     const flipUp = ref(false);
+    // ResizeObserver watching the trigger so the panel tracks the trigger
+    // during a modal's scale-in transition (when its rect changes every frame).
+    let resizeObs: ResizeObserver | null = null;
 
     const selectedLabel = computed(() => {
       const opt = props.options.find((o) => o.value === props.modelValue);
@@ -97,11 +100,21 @@ export default defineComponent({
     }
 
     /** Compute panel position from the trigger's rect. Called on open + on
-     *  viewport changes. Flips above if not enough room below. */
+     *  viewport changes. Flips above if not enough room below.
+     *
+     *  Guards against zero-size rects (the trigger measures 0×0 while a
+     *  containing modal is mid-scale-in transition) by deferring the
+     *  computation to the next animation frame until the rect stabilizes. */
     function updatePosition() {
       const root = rootRef.value;
       if (!root) return;
       const rect = root.getBoundingClientRect();
+      // If the trigger isn't laid out yet (e.g. modal still scaling in), defer
+      // to the next frame so we don't pin the panel to (0,0).
+      if (rect.width === 0 && rect.height === 0) {
+        void nextTick(() => requestAnimationFrame(updatePosition));
+        return;
+      }
       const viewportH = window.innerHeight;
       const spaceBelow = viewportH - rect.bottom;
       const PANEL_MAX = 240; // matches SCSS max-height
@@ -116,6 +129,7 @@ export default defineComponent({
         left: `${rect.left}px`,
         top: `${top}px`,
         width: `${rect.width}px`,
+        minWidth: `${Math.max(rect.width, 140)}px`,
         zIndex: "var(--z-tooltip)",
       };
     }
@@ -134,8 +148,20 @@ export default defineComponent({
 
     watch(open, (isOpen) => {
       if (isOpen) {
-        // Position on next tick so the panel exists to measure.
-        void nextTick(() => updatePosition());
+        // Position on next animation frame so the panel exists to measure and
+        // any ancestor modal scale-in transition has settled.
+        void nextTick(() => requestAnimationFrame(updatePosition));
+        // Track trigger size changes (e.g. modal still animating) while open.
+        if (rootRef.value && typeof ResizeObserver !== "undefined") {
+          resizeObs?.disconnect();
+          resizeObs = new ResizeObserver(() => {
+            if (open.value) updatePosition();
+          });
+          resizeObs.observe(rootRef.value);
+        }
+      } else {
+        resizeObs?.disconnect();
+        resizeObs = null;
       }
     });
 
@@ -145,6 +171,8 @@ export default defineComponent({
       window.addEventListener("scroll", onViewportChange, true);
     });
     onBeforeUnmount(() => {
+      resizeObs?.disconnect();
+      resizeObs = null;
       document.removeEventListener("mousedown", onDocClick);
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
