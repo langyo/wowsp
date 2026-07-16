@@ -34,7 +34,7 @@
     "esbuild": "^0.28.1",
     "happy-dom": "^20.10.2",
     "sass": "^1.100.0",
-    "typescript": "^5",
+    "typescript": "^7",
     "vite": "^8",
     "vitest": "^4.1.8",
     "vue-tsc": "^2"
