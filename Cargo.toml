@@ -8,6 +8,8 @@ default-members = [
 members = [
     "packages/app/tauri",
     "packages/app/tauri_shared",
+    "packages/tools/wowsunpack-vendor/crates/wowsunpack",
+    "packages/tools/wowsunpack-vendor/crates/wows-core",
 ]
 
 exclude = [
@@ -19,7 +21,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
-license = "SySL-1.0"
+license = "MIT"
 description = "World of WarShip Panel — replay review & in-game overlay"
 repository = "https://github.com/celestia-island/wowsp"
 
@@ -36,7 +38,7 @@ thiserror = "^2"
 chrono = { version = "^0.4", features = ["serde", "clock"] }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
-toml = "^0.8"
+toml = "1.1"
 uuid = { version = "^1", features = ["v4", "serde"] }
 
 # Logging and tracing
@@ -66,7 +68,7 @@ notify = "^7"
 # the crate default); pin byteorder so we can name `BigEndian` explicitly.
 blowfish = "^0.10"
 byteorder = "^1"
-flate2 = "^1"
+flate2 = { version = "^1", features = ["zlib-rs"] }
 
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
@@ -101,6 +103,26 @@ tauri-plugin-updater = "^2"
 
 # AppData directory resolution (cross-platform %APPDATA%)
 dirs-next = "^2"
+
+# wowsunpack / wows-core vendor deps (inherited via workspace = true)
+wows-core = { path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
+clap = { version = "4.6.0", features = ["derive"] }
+rootcause = "0.12"
+glob = "0.3"
+pickled = { version = "2.0.0-alpha9" }
+winnow = "1.0"
+paste = "1"
+roxmltree = "0.21"
+itertools = "0.14"
+gettext = "0.4"
+convert_case = "0.11"
+indicatif = "0.18.4"
+rkyv = "0.8.15"
+bon = "3.9.1"
+image_dds = { version = "0.7", default-features = false }
+ciborium = "0.2"
+insta = { version = "1.47", features = ["yaml"] }
+sha2 = "0.10"
 
 # ── Build profiles ──────────────────────────────────────────
 
