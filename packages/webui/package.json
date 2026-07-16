@@ -20,7 +20,7 @@
     "@vueuse/core": "^14",
     "echarts": "^6.1.0",
     "lucide-vue-next": "^1",
-    "pinia": "^3",
+    "pinia": "^4",
     "three": "^0.184",
     "uuid": "^11",
     "vue": "^3",
