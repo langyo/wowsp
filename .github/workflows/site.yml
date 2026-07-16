@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/workflows/site.yml'
       - 'packages/site/**'
-      - 'docs/logo.webp'
+      - 'docs/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
   workflow_dispatch:
@@ -27,6 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - uses: pnpm/action-setup@v6
         with:
           version: 9
@@ -38,14 +40,19 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Generate shader bundle
-        run: python scripts/glsl_bundle.py --verbose
-
-      - name: Build site
+      - name: Build landing page
         run: |
           cd packages/site
           pnpm build --outDir ../../dist --emptyOutDir
           cd ../..
+
+      - name: Build docs
+        run: |
+          cargo install lagrange-library --locked
+          lagrange build --src docs --out dist/docs
+
+      - name: Prepare pages
+        run: |
           touch dist/.nojekyll
           echo "wowsp.langyo.xyz" > dist/CNAME
 
@@ -71,4 +78,4 @@ jobs:
         run: sleep 30
       - name: Retry deployment
         if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

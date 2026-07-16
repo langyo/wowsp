@@ -12,12 +12,11 @@ default:
 PM := "pnpm"
 
 # ── dev ───────────────────────────────────────────────────────────────
-# Usage: just dev app | webui | site | docs | test
+# Usage: just dev app | webui | site | test
 #   just dev app [--mock]        → cargo tauri dev
 #   just dev app --watch         → cargo tauri dev + watch Cargo.toml
 #   just dev webui [--mock]      → Vite dev server
 #   just dev site                → site dev server (landing page)
-#   just dev docs [--port 3000]  → lagrange docs preview
 #   just dev test                → tauri dev with test-harness feature
 
 _dev-app *FLAGS='':
@@ -29,10 +28,6 @@ _dev-webui *FLAGS='':
 _dev-site *FLAGS='':
     {{PM}} --filter @wowsp/site dev {{FLAGS}}
 
-_dev-docs port='3000':
-    cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
-    lagrange dev --src docs --out dist/docs --port {{port}}
-
 _dev-test *FLAGS='':
     cargo tauri dev --features test-harness {{FLAGS}}
 
@@ -42,8 +37,7 @@ dev target *FLAGS='':
 # ── build ─────────────────────────────────────────────────────────────
 #   just build app [--release]   → cargo build (release by default)
 #   just build webui             → pnpm build @wowsp/webui
-#   just build site              → pnpm build @wowsp/site
-#   just build docs              → lagrange build → dist/docs
+#   just build site              → site + lagrange docs → dist/
 #   just build package           → cargo tauri build (installer)
 #   just build wowsunpack        → clone + compile vendored wowsunpack
 #   just build all               → webui + site + app
@@ -64,12 +58,10 @@ _build-webui:
 
 _build-site:
     {{PM}} --filter @wowsp/site build --outDir ../../dist --emptyOutDir
-    echo "wowsp.langyo.xyz" > dist/CNAME
-    New-Item -ItemType File -Force -Path dist/.nojekyll | Out-Null
-
-_build-docs:
     cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
     lagrange build --src docs --out dist/docs
+    echo "wowsp.langyo.xyz" > dist/CNAME
+    New-Item -ItemType File -Force -Path dist/.nojekyll | Out-Null
 
 _build-package *FLAGS='':
     cargo tauri build {{FLAGS}}
