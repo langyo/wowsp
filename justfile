@@ -25,9 +25,9 @@ _dev-app *FLAGS='':
 _dev-webui *FLAGS='':
     python scripts/dev.py webui {{FLAGS}}
 
-_dev-site port='3000':
+_dev-site port='0':
     @where lagrange >nul 2>nul || cargo install lagrange-library
-    @$p = {{port}}; while ($p -lt {{port}} + 10) { $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $p); try { $l.Start(); $l.Stop(); lagrange dev --src docs --out dist/site --port $p; break } catch { $p++ } finally { $l.Dispose() } }
+    lagrange dev --src docs --out dist/site --port {{port}}
 
 _dev-test *FLAGS='':
     cargo tauri dev --features test-harness {{FLAGS}}
