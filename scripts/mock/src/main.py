@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import base64
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,27 @@ app.add_middleware(
 )
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+
+
+def wg_to_short_code(wg: str) -> str:
+    """Map a WG API language code to the app's internal locale short-code.
+
+    WG codes like "zh-cn" and "zh-sg" both resolve to "zhs" (Simplified
+    Chinese). The compound tag used for cache/file naming is
+    ``<short_code>-<realm>`` (e.g. "zhs-asia", "zht-asia", "en-asia").
+    """
+    _MAP = {
+        "zh-cn": "zhs",
+        "zh-sg": "zhs",
+        "zh-tw": "zht",
+        "en": "en",
+        "ja": "ja",
+        "ko": "ko",
+        "ru": "ru",
+        "fr": "fr",
+        "es": "es",
+    }
+    return _MAP.get(wg, "en")
 
 # A sample roster matching tempArenaInfo.json shape. Enough to render both
 # teams in the overlay view during mock development.
@@ -69,6 +91,24 @@ async def cmd_detect_game_install() -> list[dict]:
 async def cmd_set_game_path(request: Request) -> dict:
     body = await request.json()
     return {"kind": "manual", "path": body.get("path", ""), "realm": "asia"}
+
+
+@app.get("/api/is_game_running")
+async def cmd_is_game_running() -> bool:
+    return False
+
+
+@app.post("/api/get_game_process")
+async def cmd_get_game_process() -> dict:
+    # Mock: game not running. The webui renders the "offline" state.
+    return {
+        "running": False,
+        "pid": None,
+        "kind": None,
+        "realm": None,
+        "exePath": None,
+        "matchedInstall": None,
+    }
 
 
 @app.get("/api/list_replays")
@@ -125,6 +165,120 @@ async def cmd_capture_game_window() -> dict:
 
 @app.post("/api/set_overlay_visible")
 async def cmd_set_overlay_visible() -> None:
+    return None
+
+
+# --- Encyclopedia (ships page) -------------------------------------------
+# The mock builds ShipInfo[] from the bundled tech_tree.json (real ship ids,
+# names, tiers, types, nations) so the ships view has realistic content in a
+# browser. default_profile is a minimal synthetic block; images fall back to
+# the WG CDN URL the real backend would return.
+
+_TECH_TREE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "res" / "data" / "tech_tree.json"
+)
+_RARITY_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "res" / "data" / "ship_rarity.json"
+)
+
+
+def _load_encyclopedia() -> list[dict[str, Any]]:
+    import json
+
+    if not _TECH_TREE_PATH.exists():
+        return []
+    tree = json.loads(_TECH_TREE_PATH.read_text(encoding="utf-8"))
+    rarity = {}
+    if _RARITY_PATH.exists():
+        rarity = json.loads(_RARITY_PATH.read_text(encoding="utf-8"))
+    ships: list[dict[str, Any]] = []
+    for node in tree.values():
+        sid = node.get("shipId")
+        ships.append({
+            "shipId": sid,
+            "name": node.get("name", "").replace("IDS_", ""),
+            "tier": node.get("tier", 1),
+            "type": node.get("type", "Cruiser"),
+            "nation": node.get("nation", "usa"),
+            "isPremium": node.get("isPremium", False),
+            "isSpecial": node.get("isSpecial", False),
+            "description": "",
+            "gameVersion": "mock",
+            "defaultProfile": {
+                "hull": {"health": 30000 + node.get("tier", 1) * 5000},
+                "mobility": {"max_speed": 30},
+                "concealment": {"detect_distance_by_ship": 12},
+            },
+            "images": {
+                "small": f"https://vignette.wikia.nocookie.net/x/{sid}.png",
+                "medium": f"https://vignette.wikia.nocookie.net/x/{sid}.png",
+                "large": f"https://vignette.wikia.nocookie.net/x/{sid}.png",
+                "contour": "",
+            },
+        })
+    return ships
+
+
+@app.post("/api/get_game_version")
+async def cmd_get_game_version() -> dict:
+    return {"gameVersion": "mock-0.0.0", "shipsTotal": 0, "timestamp": 0}
+
+
+@app.post("/api/get_ship_encyclopedia")
+async def cmd_get_ship_encyclopedia(request: Request) -> list[dict[str, Any]]:
+    body = await request.json()
+    realm = body.get("realm", "asia")
+    lang = body.get("language", "en")
+    # The frontend sends a WG language code; convert to short-code+realm
+    # for internal compound tagging (matching the Rust resolve_encyclopedia_language).
+    short = wg_to_short_code(lang)
+    compound = f"{short}-{realm}"
+    print(f"[mock] get_ship_encyclopedia realm={realm} wg={lang} compound={compound}")
+    return _load_encyclopedia()
+
+
+@app.post("/api/appdata_read")
+async def cmd_appdata_read(payload: dict) -> str | None:
+    return None
+
+
+# --- Ship GameParams (detail modal armor/ballistics tab) ------------------
+# Serves a real trimmed GameParams subtree for Yamato (the canonical example
+# ship used for visual verification) and a minimal synthetic object for any
+# other ship, so the detail modal's armor viewer is exercisable in a browser.
+
+_FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+_YAMATO_GP = _FIXTURES / "yamato_gameparams.json"
+
+
+@app.post("/api/get_ship_gameparams")
+async def cmd_get_ship_gameparams(payload: dict) -> Any:
+    ship_id = payload.get("shipId")
+    if _YAMATO_GP.exists():
+        try:
+            return json.loads(_YAMATO_GP.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    # Minimal synthetic GameParams for any other ship.
+    return {
+        "id": int(ship_id) if ship_id else 0,
+        "index": "MOCK",
+        "name": "Mock",
+        "typeinfo": {"nation": "usa", "species": "Cruiser", "type": "Ship"},
+        "A_Hull": {
+            "armor": {"1": 25.0, "2": 100.0, "3": 305.0, "4": 32.0},
+            "health": 40000,
+            "armourCit": [-1, -1],
+            "armourDeck": [-1, -1],
+            "armourExtremities": [-1, -1],
+        },
+    }
+
+
+@app.post("/api/appdata_write")
+async def cmd_appdata_write(payload: dict) -> None:
     return None
 
 

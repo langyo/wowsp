@@ -13,6 +13,18 @@ export interface GameInstall {
   realm?: string | null;
 }
 
+/** Mirrors `wowsp_tauri_shared::GameProcessInfo`. Richer than the legacy
+ *  `is_game_running` boolean — carries the PID and the install (kind/realm)
+ *  the running process belongs to, resolved by exe-path prefix match. */
+export interface GameProcessInfo {
+  running: boolean;
+  pid?: number | null;
+  kind?: GameInstall["kind"] | null;
+  realm?: string | null;
+  exePath?: string | null;
+  matchedInstall?: GameInstall | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::VehicleEntry`. */
 export interface VehicleEntry {
   id: number;
@@ -29,7 +41,7 @@ export interface VehicleEntry {
 export interface ReplayMeta {
   path: string;
   matchGroup?: string | null;
-  /** Parsed from the replay filename (YYYYMMDD). */
+  /** Parsed from the replay filename (`YYYYMMDD` or `YYYYMMDD_HHMMSS`). */
   dateTime?: string | null;
   /** Internal numeric map id. */
   mapId?: number | null;
@@ -37,6 +49,27 @@ export interface ReplayMeta {
   mapName?: string | null;
   vehicles: VehicleEntry[];
   raw: unknown;
+}
+
+/** Mirrors `wowsp_tauri_shared::ReplayMetaLite`. Lightweight replay summary
+ *  returned by `list_replays_meta` — only the descriptor-JSON block is parsed
+ *  (no packet stream), so a few hundred replays list fast. The full
+ *  `ReplayMeta` (with roster + raw JSON) comes later from `readReplayHeader`. */
+export interface ReplayMetaLite {
+  path: string;
+  /** `YYYYMMDD_HHMMSS` when recoverable, else `YYYYMMDD`, else null. */
+  dateTime?: string | null;
+  /** e.g. "pvp", "ranked", "clan", "event". */
+  matchGroup?: string | null;
+  /** Client map display name, e.g. "15_NE_north". */
+  mapName?: string | null;
+  mapId?: number | null;
+  /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
+  ownShipId?: number | null;
+  /** Recorder's ship display name when resolvable, else null. */
+  ownShipName?: string | null;
+  /** Number of players in the roster. */
+  playerCount: number;
 }
 
 /** Mirrors `wowsp_tauri_shared::ArenaInfo`. */
@@ -81,6 +114,9 @@ export interface EntityTrajectory {
   entityId: number;
   kind?: EntityKind | null;
   samples: PositionSample[];
+  /** Match time (s) the entity was destroyed (EntityDestroy 0x06), if sunk.
+   *  Undefined/null = survived. The map freezes + greys the marker from here. */
+  deathTime?: number | null;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
@@ -100,6 +136,11 @@ export interface PlayerStats {
   hitRate?: number | null;
   pr?: number | null;
   shipsPlayed?: number | null;
+  // ── Service record (player level/badge) ─────────────────────────────
+  levelingTier?: number | null;
+  levelingPoints?: number | null;
+  // ── Dog tag (player emblem from Vortex API) ─────────────────────────
+  dogTag?: DogTag | null;
   // ── Per-division winrates ───────────────────────────────────────────
   soloWr?: number | null;
   div2Wr?: number | null;
@@ -114,6 +155,13 @@ export interface GameVersionInfo {
 }
 
 /** Mirrors `wowsp_tauri_shared::ShipInfo`. */
+export interface ShipImages {
+  small: string;
+  medium: string;
+  large: string;
+  contour: string;
+}
+
 export interface ShipInfo {
   shipId: number;
   name: string;
@@ -125,6 +173,7 @@ export interface ShipInfo {
   description: string;
   gameVersion: string;
   defaultProfile: unknown;
+  images: ShipImages;
 }
 
 /** Mirrors `wowsp_tauri_shared::PlayerShipStats`. */
@@ -190,12 +239,44 @@ export interface CommunityTrend {
   buckets: TrendBucket[];
 }
 
+/** Mirrors `wowsp_tauri_shared::RankedSeasonStats` — a player's ranked stats
+ *  for a single season. */
+export interface RankedSeasonStats {
+  seasonId: number;
+  seasonName: string;
+  battles: number;
+  wins: number;
+  losses: number;
+  damageDealt: number;
+  frags: number;
+  maxDamage: number;
+  maxXp: number;
+  survivedBattles: number;
+  planesKilled: number;
+  currentRank: number | null;
+  bestRank: number | null;
+  bestRankDisplay: string | null;
+}
+
+/** Mirrors `wowsp_tauri_shared::DogTag` — player's personalized emblem. */
+export interface DogTag {
+  textureId: number;
+  symbolId: number;
+  /** ARGB-packed border color (u32). */
+  borderColor: number;
+  /** ARGB-packed background color (u32). */
+  backgroundColor: number;
+  backgroundId: number;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
   appdataWrite: (file: string, content: string) => transport.invoke<null>(RPC.appdata_write, { file, content }),
   appdataDelete: (file: string) => transport.invoke<null>(RPC.appdata_delete, { file }),
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
+  getGameProcess: (installs: GameInstall[]) =>
+    transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
@@ -203,6 +284,10 @@ export const api = {
     transport.invoke<EntityTrajectory[]>(RPC.read_replay_positions, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
+  /** List replays with parsed descriptor metadata (date/mode/map/own ship).
+   *  Only reads the JSON header block per file — fast even for hundreds. */
+  listReplaysMeta: (dir?: string, limit?: number) =>
+    transport.invoke<ReplayMetaLite[]>(RPC.list_replays_meta, { dir, limit }),
   readTempArenaInfo: (dir?: string) =>
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),
@@ -254,4 +339,6 @@ export const api = {
     transport.invoke<null>(RPC.uninstall_overlay_mod, { gameRoot }),
   isOverlayModInstalled: (gameRoot: string) =>
     transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
+  getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
+    transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
 };

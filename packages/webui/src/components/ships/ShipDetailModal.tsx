@@ -1,27 +1,36 @@
 import { computed, defineComponent, ref, watch } from "vue";
-import { Star, Diamond, Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
+import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import STag from "@/components/base/STag";
-import SSpinner from "@/components/base/SSpinner";
+import NationFlag from "@/components/base/NationFlag";
 import { useAccountStore } from "@/stores/account";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
 import { t } from "@/i18n";
-import { winrateColor, prTier } from "@/utils/winrate";
+import { useToast } from "@/composables/useToast";
+import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
+import { buildArmorScheme, buildBallistics } from "./ballistics";
+import SkillBuilder from "./SkillBuilder";
+import DataObserver from "./DataObserver";
+import ShipStage, { type FocusZone } from "./ShipStage";
+import WeaponBar from "./WeaponBar";
+import ArmorBelt from "./ArmorBelt";
+import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
+import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { tierToRoman } from "@/utils/tierRoman";
 import "./ShipDetailModal.scss";
 
 /**
- * Ship detail modal with 4 tabs:
+ * Ship detail modal with tabs:
  *  - Specs: WG default_profile fields (HP / artillery / mobility / etc.)
  *  - Armor & Ballistics: GameParams lazy-load (wowsunpack JSON)
- *  - My Stats: per-player per-ship stats from ships/stats + trend line
- *  - Server Trend: community trend placeholder
- *
- * GameParams is fetched on first Armor tab activation (lazy), cached by the
- * Rust layer. My Stats tab also lazy-loads the player's ship stats + trend.
+ *  - My Stats: per-player per-ship stats + trend line
+ *  - Server Trend: community trend
+ *  - Captain Skills: skill planner + data observer (replaces 2D/3D preview)
  */
 export default defineComponent({
   name: "ShipDetailModal",
@@ -36,19 +45,31 @@ export default defineComponent({
     const accounts = useAccountStore();
     const shipStats = useShipStatsStore();
     const trends = useTrendsStore();
+    const toast = useToast();
 
-    const tab = ref<"specs" | "armor" | "mystats" | "community">("specs");
+    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
-    // ── Armor tab: lazy GameParams ─────────────────────────────────────
+    // ── Captain skills state (shared between SkillBuilder + DataObserver) ──
+    const skillRank = ref<Record<string, number>>({});
+    const skillHealthPct = ref(1);
+
+    // ── Holographic stage ─────────────────────────────────────────────────
+    const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
+    function onWeaponFocus(zone: FocusZone) {
+      stageRef.value?.focusZone(zone);
+    }
+
+    // ── Armor tab: lazy GameParams ─────────────────────────────────────────
     const gameparams = ref<unknown>(null);
     const gpLoading = ref(false);
     const gpError = ref<string | null>(null);
     const gpFetched = ref(false);
 
     async function loadGameparams() {
-      if (gpFetched.value || !props.ship || !props.gameRoot) return;
+      if (gpFetched.value || !props.ship) return;
       gpLoading.value = true;
       gpError.value = null;
+      const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
@@ -56,10 +77,11 @@ export default defineComponent({
       } finally {
         gpLoading.value = false;
         gpFetched.value = true;
+        toast.dismiss(toastId);
       }
     }
 
-    // ── My Stats tab: lazy player ship stats + trend ───────────────────
+    // ── My Stats tab: lazy player ship stats + trend ──────────────────────
     const myStatsLoaded = ref(false);
     async function loadMyStats() {
       if (myStatsLoaded.value) return;
@@ -70,7 +92,6 @@ export default defineComponent({
       void trends.loadPlayer(acc.accountId, acc.realm).catch(() => {});
     }
 
-    // Reset state when ship changes (modal reopen).
     watch(
       () => props.ship,
       (s) => {
@@ -79,8 +100,14 @@ export default defineComponent({
         gpFetched.value = false;
         gpError.value = null;
         myStatsLoaded.value = false;
-        if (s) void trends.loadCommunity(s.shipId);
+        skillRank.value = {};
+        skillHealthPct.value = 1;
+        if (s) {
+          void loadGameparams();
+          void trends.loadCommunity(s.shipId);
+        }
       },
+      { immediate: true },
     );
 
     function selectTab(name: typeof tab.value) {
@@ -97,7 +124,6 @@ export default defineComponent({
       return shipStats.getShip(acc.accountId, acc.realm, props.ship.shipId);
     });
 
-    // Trend buckets that affect this ship (patches touching its shipId).
     const relevantPatches = computed(() => {
       if (!props.ship || !trends.playerTrend) return [];
       return trends.playerTrend.patches.filter((p) => p.shipIds.includes(props.ship!.shipId));
@@ -112,26 +138,51 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
+    const rarity = computed(() =>
+      props.ship ? shipRarity(props.ship) : "common",
+    );
+    const typeShort = computed(() =>
+      props.ship ? SHIP_TYPE_SHORT[props.ship.type] ?? "?" : "?",
+    );
+
     return () => (
       <SModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
-        title={props.ship?.name ?? t("ships.detail.title")}
-        width="48rem"
+        title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
+        width="58rem"
       >
         {!props.ship ? null : (
           <div class="ship-detail">
+            {/* holographic stage: shown for all tabs except skill (where data observer replaces it) */}
+            {tab.value !== "skill" ? (
+              <>
+                <ShipStage ref={stageRef} ship={props.ship} />
+                <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
+              </>
+            ) : (
+              /* Data observer: replaces the stage when in the captain skills tab */
+              <DataObserver
+                ship={props.ship}
+                rank={skillRank.value}
+                healthPct={skillHealthPct.value}
+              />
+            )}
+
             {/* identity header */}
             <div class="ship-detail__id">
-              <STag variant="primary">Tier {props.ship.tier}</STag>
-              <STag variant="primary">{typeLabel(props.ship.type)}</STag>
-              <STag variant="neutral">{nationLabel(props.ship.nation)}</STag>
-              {props.ship.isPremium ? (
-                <STag variant="gold"><Star size={12} fill="currentColor" /> {t("ships.premium")}</STag>
-              ) : null}
-              {props.ship.isSpecial ? (
-                <STag variant="info"><Diamond size={12} /> {t("ships.special")}</STag>
-              ) : null}
+              <STag variant="primary">{tierToRoman(props.ship.tier)}</STag>
+              <STag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</STag>
+              <NationFlag
+                nation={props.ship.nation}
+                label={nationLabel(props.ship.nation)}
+                variant="flag"
+                size="md"
+                showLabel
+              />
+              <STag variant={RARITY_VARIANT[rarity.value]}>
+                {t(`ships.rarity.${rarity.value}`)}
+              </STag>
             </div>
 
             {props.ship.description ? (
@@ -140,7 +191,7 @@ export default defineComponent({
 
             {/* tab bar */}
             <div class="ship-detail__tabs">
-              {(["specs", "armor", "mystats", "community"] as const).map((name) => (
+              {(["specs", "armor", "mystats", "community", "skill"] as const).map((name) => (
                 <button
                   class={[
                     "ship-detail__tab",
@@ -148,30 +199,35 @@ export default defineComponent({
                   ]}
                   onClick={() => selectTab(name)}
                 >
-                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : "Community"}`)}
+                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
                 </button>
               ))}
             </div>
 
-            {/* tab content — cross-fade between tabs */}
+            {/* tab content */}
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
-                  <div key="specs"><SpecsPanel profile={dp.value} /></div>
+                  <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
                 ) : tab.value === "armor" ? (
                   <div class="ship-detail__armor" key="armor">
-                    {gpLoading.value ? (
-                    <SSpinner center size="lg" text={t("ships.detail.gameparamsLoading")} />
-                  ) : gpError.value ? (
-                    <p class="ship-detail__error">
-                      {t("ships.detail.gameparamsError", { error: gpError.value })}
-                    </p>
+                    {gpError.value ? (
+                    <div class="ship-detail__error-block">
+                      <p class="ship-detail__error">
+                        {t("ships.detail.gameparamsError", { error: gpError.value })}
+                      </p>
+                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
+                    </div>
                   ) : gameparams.value ? (
-                    <pre class="ship-detail__json">
-                      {JSON.stringify(gameparams.value, null, 2)}
-                    </pre>
+                    <>
+                      <ArmorBelt gameparams={gameparams.value as Record<string, any>} />
+                      <BallisticsPanel gp={gameparams.value} />
+                    </>
                   ) : (
-                    <p>{t("ships.detail.gameparamsMissing")}</p>
+                    <div class="ship-detail__error-block">
+                      <p>{t("ships.detail.gameparamsMissing")}</p>
+                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
+                    </div>
                   )}
                 </div>
               ) : tab.value === "mystats" ? (
@@ -201,13 +257,37 @@ export default defineComponent({
                     </div>
                   ) : null}
                 </div>
-              ) : (
+              ) : tab.value === "community" ? (
                 <div class="ship-detail__community" key="community">
                   {trends.communityTrend?.available ? (
                     <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
                   ) : (
                     <p>{t("ships.detail.communityUnavailable")}</p>
                   )}
+                </div>
+              ) : (
+                <div class="ship-detail__skill" key="skill">
+                  {/* HP slider for Adrenaline Rush effect in DataObserver */}
+                  <div class="ship-detail__hp-slider">
+                    <label class="ship-detail__hp-label">
+                      {t("ships.shipyard.healthSlider")}:
+                      <strong>{Math.round(skillHealthPct.value * 100)}%</strong>
+                    </label>
+                    <input
+                      class="ship-detail__hp-input"
+                      type="range"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={Math.round(skillHealthPct.value * 100)}
+                      onInput={(e) => (skillHealthPct.value = Number((e.target as HTMLInputElement).value) / 100)}
+                    />
+                  </div>
+                  <SkillBuilder
+                    shipType={props.ship.type}
+                    modelRank={skillRank.value}
+                    onUpdate:modelRank={(r: Record<string, number>) => (skillRank.value = r)}
+                  />
                 </div>
               )}
               </Transition>
@@ -219,22 +299,15 @@ export default defineComponent({
   },
 });
 
-/** Player-friendly specs panel. Renders the grouped, labelled, unit-formatted
- *  spec tree produced by `buildShipSpecs` — modelled on 浩舰's grouped layout
- *  (Survivability / Main Battery / Torpedoes / Anti-Air / Mobility /
- *  Concealment). Each group is a card with an icon header; rows show a
- *  human-readable label, the formatted value, and an optional help icon
- *  (hover/focus tooltip) explaining what the stat means to new players.
- *  Groups with no rows are omitted upstream, so a destroyer simply has no
- *  Anti-Air card rather than showing "—". */
+/** Player-friendly specs panel. */
 const SpecsPanel = defineComponent({
   name: "SpecsPanel",
   props: {
     profile: { type: Object as () => Record<string, unknown> | null, default: null },
+    nation: { type: String, default: undefined },
   },
   setup(props) {
-    const groups = computed(() => buildShipSpecs(props.profile));
-    // Map icon name (from shipSpecs) → lucide component, resolved once.
+    const groups = computed(() => buildShipSpecs(props.profile, props.nation));
     const iconFor = (name: string) => {
       switch (name) {
         case "Shield": return Shield;
@@ -284,6 +357,103 @@ const SpecsPanel = defineComponent({
   },
 });
 
+const BallisticsPanel = defineComponent({
+  name: "BallisticsPanel",
+  props: {
+    gp: { type: Object as () => Record<string, unknown> | null, default: null },
+  },
+  setup(props) {
+    const armorGroup = computed(() => buildArmorScheme(props.gp));
+    const ballisticsGroups = computed(() => buildBallistics(props.gp));
+    const anyGroups = computed(
+      () => armorGroup.value != null || ballisticsGroups.value.length > 0,
+    );
+    function rowLabel(row: { key: string }): string {
+      const armor = t(`ships.armor.${row.key}`, {});
+      if (armor && armor !== `ships.armor.${row.key}`) return armor;
+      const ball = t(`ships.ballistics.${row.key}`, {});
+      if (ball && ball !== `ships.ballistics.${row.key}`) return ball;
+      const spec = t(`ships.spec.${row.key}`, {});
+      if (spec && spec !== `ships.spec.${row.key}`) return spec;
+      return row.key;
+    }
+    function rowHint(row: { hint?: string }): string | null {
+      if (!row.hint) return null;
+      const ball = t(`ships.ballistics.${row.hint}`, {});
+      if (ball && ball !== `ships.ballistics.${row.hint}`) return ball;
+      const spec = t(`ships.spec.${row.hint}`, {});
+      if (spec && spec !== `ships.spec.${row.hint}`) return spec;
+      return null;
+    }
+    return () => {
+      if (!anyGroups.value) {
+        return (
+          <div class="ship-detail__error-block">
+            <p>{t("ships.detail.noBallistics")}</p>
+          </div>
+        );
+      }
+      return (
+        <div class="ballistics-panel">
+          {armorGroup.value ? (
+            <section class="specs-group">
+              <header class="specs-group__head">
+                <Shield size={14} />
+                <h5 class="specs-group__title">{t("ships.armor.groupTitle")}</h5>
+              </header>
+              <dl class="specs-group__rows">
+                {armorGroup.value.rows.map((row) => {
+                  const hint = rowHint(row);
+                  return (
+                    <div class="specs-group__row" key={row.key}>
+                      <dt class="specs-group__label">
+                        {rowLabel(row)}
+                        {hint ? (
+                          <span class="specs-group__hint" title={hint}>
+                            <HelpCircle size={11} />
+                          </span>
+                        ) : null}
+                      </dt>
+                      <dd class="specs-group__value">{row.value}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          ) : null}
+          {ballisticsGroups.value.map((g, gi) => (
+            <section class="specs-group" key={gi}>
+              <header class="specs-group__head">
+                <Crosshair size={14} />
+                <h5 class="specs-group__title">{t("ships.ballistics.groupTitle")}</h5>
+              </header>
+              <dl class="specs-group__rows">
+                {g.rows.map((row) => {
+                  const hint = rowHint(row);
+                  return (
+                    <div class="specs-group__row" key={row.key}>
+                      <dt class="specs-group__label">
+                        {rowLabel(row)}
+                        {hint ? (
+                          <span class="specs-group__hint" title={hint}>
+                            <HelpCircle size={11} />
+                          </span>
+                        ) : null}
+                      </dt>
+                      <dd class="specs-group__value">{row.value}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          ))}
+          <p class="ballistics-panel__approx">{t("ships.detail.ballisticsApprox")}</p>
+        </div>
+      );
+    };
+  },
+});
+
 const Stat = defineComponent({
   name: "Stat",
   props: {
@@ -303,9 +473,6 @@ const Stat = defineComponent({
   },
 });
 
-/** Mini trend visualization — one bar per version bucket, height = winrate.
- *  Patches touching the ship are annotated above the bar. Pure SVG, no chart
- *  library dependency. */
 const TrendBars = defineComponent({
   name: "TrendBars",
   props: {

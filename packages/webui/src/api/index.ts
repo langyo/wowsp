@@ -3,6 +3,7 @@ export type {
   GameInstall,
   VehicleEntry,
   ReplayMeta,
+  ReplayMetaLite,
   ArenaInfo,
   CaptureResult,
   PositionSample,

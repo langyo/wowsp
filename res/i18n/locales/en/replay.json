@@ -1,8 +1,100 @@
 {
   "list": {
     "title": "Replays",
-    "empty": "No replays found in the configured folder."
+    "empty": "No replays found in the selected client's folder.",
+    "count": "{n} replays",
+    "noClient": "No game client detected. Run a scan on the dashboard, or set a path manually."
   },
+  "client": "Client",
+  "refresh": "Refresh",
   "loading": "Parsing replay…",
-  "select": "Select a replay from the list to load it."
+  "select": "Select a replay from the list to load it.",
+  "players": "{n} players",
+  "mode": {
+    "pvp": "Random",
+    "ranked": "Ranked",
+    "clan": "Clan",
+    "event": "Event",
+    "cooperative": "Co-op",
+    "pve": "Co-op",
+    "training": "Training",
+    "brawl": "Brawl",
+    "squad": "Squad",
+    "ranked_solo": "Ranked (solo)",
+    "ranked_sprint": "Ranked Sprint",
+    "pve_event": "Operation",
+    "convoy": "Convoy",
+    "asymmetric": "Asymmetric",
+    "sandbox": "Sandbox",
+    "_fallback": "Battle"
+  },
+  "map": {
+    "unknown": "Unknown map",
+    "contour": "Contour terrain",
+    "contourHint": "Contour terrain: land banded by elevation, sea shows bathymetry (incl. trenches).",
+    "names": {
+      "00_CO_ocean": "Ocean",
+      "04_Archipelago": "Archipelago",
+      "08_NE_passage": "Strait",
+      "13_OC_new_dawn": "New Dawn",
+      "14_Atlantic": "The Atlantic",
+      "15_NE_north": "North",
+      "16_OC_bees_to_honey": "Hotspot",
+      "17_NA_fault_line": "Fault Line",
+      "18_NE_ice_islands": "Islands of Ice",
+      "19_OC_prey": "Trap",
+      "20_NE_two_brothers": "Two Brothers",
+      "22_tierra_del_fuego": "Land of Fire",
+      "23_Shards": "Shards",
+      "25_sea_hope": "Sea of Fortune",
+      "28_naval_mission": "Tears of the Desert",
+      "35_NE_north_winter": "Northern Lights",
+      "37_Ridge": "Mountain Range",
+      "38_Canada": "Shatter",
+      "40_Okinawa": "Okinawa",
+      "41_Conquest": "Trident",
+      "42_Neighbors": "Neighbors",
+      "44_Path_warrior": "Warrior's Path",
+      "45_Zigzag": "Loop",
+      "46_Estuary": "Estuary",
+      "47_Sleeping_Giant": "Sleeping Giant",
+      "50_Gold_harbor": "Haven",
+      "51_Greece": "Greece",
+      "52_Britain": "Crash Zone Alpha",
+      "53_Shoreside": "Northern Waters",
+      "54_Faroe": "The Faroe Islands",
+      "55_Seychelles": "Seychelles",
+      "56_AngelWings": "Sunset Isles",
+      "58_RidgeNew": "Mountain Range (reworked)"
+    }
+  },
+  "ownShip": "Your ship",
+  "noShipModel": "No holographic model for this ship.",
+  "duration": "Duration",
+  "matchTime": "Match time",
+  "mapLabel": "Map",
+  "legend": {
+    "self": "You",
+    "ally": "Allies",
+    "enemy": "Enemies",
+    "dead": "Sunk"
+  },
+  "tip": {
+    "loading": "Loading…",
+    "failed": "Failed",
+    "hidden": "Hidden stats",
+    "winrate": "Win rate",
+    "avgDamage": "Avg dmg",
+    "battles": "Battles",
+    "survival": "Survival",
+    "hitRate": "Hit rate"
+  },
+  "roster": {
+    "allies": "Allies",
+    "enemies": "Enemies",
+    "shipType": "Type",
+    "battles": "Battles",
+    "winrate": "WR",
+    "avgDamage": "Avg dmg"
+  }
 }

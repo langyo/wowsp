@@ -21,15 +21,20 @@ mod test_harness;
 
 use std::sync::Arc;
 
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use tracing_subscriber::EnvFilter;
 
 fn main() {
-    // Initialize structured logging. RUST_LOG overrides the default level.
+    // Initialize structured logging with a compact, readable format:
+    //   wowsp 00:05:32 INFO module_name  message
+    // RUST_LOG overrides the default level. The target (module path) is shown
+    // so you can tell wowsp's own logs apart from Tauri/reqwest/etc.
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("wowsp=info,warn")),
         )
+        .with_target(true)
+        .with_ansi(true)
         .init();
 
     // ── Graceful-shutdown coordinator (malkuth) ──────────────────────────
@@ -71,10 +76,11 @@ fn main() {
             // exit). The arena watcher / overlay capture wind down on the real
             // drain triggered by the tray Quit item.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                tracing::info!(window = %window.label(), "window close requested → minimize to tray");
+                // Prevent the default close. Emit an event to the frontend,
+                // which shows a confirm dialog (quit vs. minimize to tray).
+                tracing::info!(window = %window.label(), "window close requested → emitting close-requested event to frontend");
                 api.prevent_close();
-                let _ = window.minimize();
-                let _ = window.hide();
+                let _ = window.app_handle().emit("close-requested", ());
             }
         })
         .setup(|app| {
@@ -83,24 +89,18 @@ fn main() {
             let prefs = os_prefs::detect();
             let js = os_prefs::initialization_script(&prefs);
             if let Some(w) = app.handle().webview_windows().values().next() {
-                let _ = w.eval(&js);
-                let _ = w.center();
-
-                // ── Taskbar icon cache-defeat (Windows) ────────────────────
-                // The .ico embedded at build time (resource 32512) carries all
-                // 7 standard sizes (16/24/32/48/64/128/256) — the correct, clean
-                // source of truth. But Windows caches taskbar icons by exe path,
-                // and in dev mode the same wowsp.exe is rebuilt in place
-                // repeatedly, so the shell keeps showing a stale cached (often
-                // low-res) image long after the icon source changed.
+                // ── Taskbar + program icon (Windows) ─────────────────────
+                // Set the window icon FIRST, before eval/center — both of
+                // those may trigger a paint, and we want the correct icon
+                // visible from the very first frame.
                 //
-                // Calling Window::set_icon at runtime overrides the live HICON
-                // with a freshly-decoded 256×256 image, forcing the shell to
-                // re-render from our current asset rather than its cache. This
-                // runs in BOTH dev and release (it's cheap and harmless in
-                // release — the icon is already correct there, so this is a
-                // no-op visually). The asset path resolves to the bundled
-                // resource in release and the repo icons/ dir in dev.
+                // The .ico embedded at build time (resource 32512) carries
+                // all 7 standard sizes, but Windows caches by exe path;
+                // in dev mode repeated rebuilds produce a stale low-res
+                // entry.  `set_icon` at runtime overrides the live HICON
+                // with a freshly‑decoded 256×256 image (ICON_BIG for
+                // Alt‑Tab / title bar, ICON_SMALL for the taskbar).
+                // Runs in both dev & release (harmless no-op in release).
                 let icon_path = app
                     .path()
                     .resource_dir()
@@ -118,6 +118,9 @@ fn main() {
                         }
                     }
                 }
+
+                let _ = w.eval(&js);
+                let _ = w.center();
             }
 
             // ── Dev-only test control server ──────────────────────────────
@@ -136,21 +139,43 @@ fn main() {
             }
 
             // ── System tray ───────────────────────────────────────────────
-            // Menu: Show / Hide / Quit. Clicking the tray icon restores the
-            // main window. The close button (above) minimizes to tray instead
-            // of exiting, so users reach "Quit" here.
-            let show = tauri::menu::MenuItem::with_id(app, "show", "Show WoWSP", true, None::<&str>)?;
-            let hide = tauri::menu::MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
-            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit WoWSP", true, None::<&str>)?;
+            // Menu: Show / Hide / Quit. Menu labels are localized based on the
+            // detected OS locale (zh → Chinese, else English). Clicking the
+            // tray icon restores the main window. The close button (above)
+            // now triggers a frontend confirm dialog (quit vs. minimize).
+            let is_zh = prefs.locale.starts_with("zh");
+            let (show_label, hide_label, quit_label, tooltip) = if is_zh {
+                ("显示 WoWSP", "隐藏", "退出 WoWSP", "WoWSP — 战舰世界战况面板")
+            } else {
+                ("Show WoWSP", "Hide", "Quit WoWSP", "WoWSP — World of WarShip Panel")
+            };
+            let show = tauri::menu::MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
+            let hide = tauri::menu::MenuItem::with_id(app, "hide", hide_label, true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&show, &hide, &quit])?;
 
+            // ── Tray icon (small, for notification area) ──────────────
+            // Windows tray icons are tiny: 16×16 at 100% DPI, 20×20 at
+            // 125%, 24×24 at 150%, 32×32 at 200%. Using the default window
+            // icon (256×256) forces a brutal downscale → blur. Provide a
+            // purpose-sized small source so the shell's scaling is minimal.
+            // In dev: reads from the repo icons/ dir so changes are live.
+            // In release: uses the embedded 32×32 PNG compiled into the binary.
+            let tray_icon = tauri::image::Image::from_path("icons/32x32.png")
+                .unwrap_or_else(|_| {
+                    tauri::image::Image::new_owned(
+                        include_bytes!("../icons/32x32.png").to_vec(),
+                        32,
+                        32,
+                    )
+                });
+
             let _tray = tauri::tray::TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().unwrap())
-                .tooltip("WoWSP — World of WarShip Panel")
+                .icon(tray_icon)
+                .tooltip(tooltip)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    // Double-click (or click on some platforms) → show window.
                     if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
@@ -194,11 +219,13 @@ fn main() {
             commands::appdata::appdata_write,
             commands::appdata::appdata_delete,
             commands::appdata::is_game_running,
+            commands::appdata::get_game_process,
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
             commands::replay::list_replays,
+            commands::replay::list_replays_meta,
             commands::arena_info::read_temp_arena_info,
             commands::arena_info::start_arena_watcher,
             commands::arena_info::stop_arena_watcher,
@@ -219,6 +246,8 @@ fn main() {
             commands::mod_install::install_overlay_mod,
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
+            commands::ranked::get_ranked_stats,
+            commands::quit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP tauri application");

@@ -78,6 +78,12 @@
   color: rgb(var(--color-error));
 }
 
+/* Legendary — distinct orange (vs gold's yellow) for the top rarity tier. */
+.s-tag-legendary {
+  background: rgb(255 140 40 / 18%);
+  color: rgb(255 150 50);
+}
+
 /* ── solid (filled) variants — for emphasis (e.g. Premium badge) ───────
    Solid inverts: full-colour background + on-solid text. The variant still
    picks the hue. */
@@ -101,6 +107,10 @@
   &.s-tag-danger {
     background: rgb(var(--color-error));
     color: rgb(var(--color-on-solid));
+  }
+  &.s-tag-legendary {
+    background: rgb(255 140 40);
+    color: rgb(40 24 8);
   }
   &.s-tag-neutral {
     background: rgb(var(--color-muted));

@@ -39,12 +39,20 @@ const PACKET_POSITION: u32 = 0x0a;
 /// vehicleId / spaceId / position / direction) is readable without the entity
 /// DB; the trailing `state` BinaryStream (entity properties) is skipped.
 const PACKET_ENTITY_CREATE: u32 = 0x05;
+/// Packet type for entity destruction. Payload is just the entity id (i32) —
+/// emitted when a ship is sunk / a transient (plane, torpedo) expires. We
+/// record the time so the frontend can freeze + grey out sunk ships.
+const PACKET_ENTITY_DESTROY: u32 = 0x06;
 
 /// Output of decoding: per-entity trajectories plus the EntityCreate metadata
-/// keyed by entity id (so the frontend can filter ships vs zones vs avatars).
+/// keyed by entity id (so the frontend can filter ships vs zones vs avatars),
+/// and a map of entity id → sink time for ships destroyed during the match.
 pub struct DecodedReplay {
     pub positions: BTreeMap<i32, Vec<PositionSample>>,
     pub kinds: BTreeMap<i32, EntityKind>,
+    /// Entity id → match time (seconds) at which the entity was destroyed.
+    /// Ships whose id never appears here survived the whole match.
+    pub destroys: BTreeMap<i32, f32>,
 }
 
 /// Decrypt + decompress the packet stream, then walk frames extracting both
@@ -99,6 +107,7 @@ fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
 fn walk_frames(inflated: &[u8]) -> DecodedReplay {
     let mut positions: BTreeMap<i32, Vec<PositionSample>> = BTreeMap::new();
     let mut kinds: BTreeMap<i32, EntityKind> = BTreeMap::new();
+    let mut destroys: BTreeMap<i32, f32> = BTreeMap::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -121,6 +130,13 @@ fn walk_frames(inflated: &[u8]) -> DecodedReplay {
                     kinds.insert(eid, created.clone_into_kind());
                 }
             },
+            PACKET_ENTITY_DESTROY => {
+                // Payload is a single i32 entity id. Record the destruction
+                // time; the frontend freezes + greys out the marker from here.
+                if let Some(eid) = parse_entity_destroy(payload) {
+                    destroys.insert(eid, time);
+                }
+            },
             _ => {},
         }
         cur = payload_end;
@@ -133,7 +149,7 @@ fn walk_frames(inflated: &[u8]) -> DecodedReplay {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
-    DecodedReplay { positions, kinds }
+    DecodedReplay { positions, kinds, destroys }
 }
 
 /// Parsed EntityCreate used internally to key the kinds map; converted to
@@ -183,6 +199,15 @@ fn parse_entity_create(payload: &[u8]) -> Option<ParsedCreate> {
         y,
         z,
     })
+}
+
+/// Parse an EntityDestroy (0x06) payload. WoWS layout: a single i32 entity id
+/// identifying the entity being removed (ship sunk, plane/torpedo expired).
+fn parse_entity_destroy(payload: &[u8]) -> Option<i32> {
+    if payload.len() < 4 {
+        return None;
+    }
+    Some(i32::from_le_bytes(payload[0..4].try_into().ok()?))
 }
 
 /// Parse a Position (0x0a) payload. Layout (45 bytes):
@@ -236,12 +261,16 @@ mod tests {
             .iter()
             .filter(|(_, k)| k.entity_type == 2)
             .count();
+        // A real match almost always has at least one ship destroyed (someone
+        // dies). We don't hard-assert destroys > 0 (a stomps game can have
+        // none), but log it so the EntityDestroy path is observable in CI.
         eprintln!(
-            "[m3+entity] {} position samples across {} entities; {} EntityCreates ({} type=2 ships)",
+            "[m3+entity+destroy] {} position samples across {} entities; {} EntityCreates ({} type=2 ships); {} destroyed",
             total_samples,
             decoded.positions.len(),
             decoded.kinds.len(),
-            ships
+            ships,
+            decoded.destroys.len(),
         );
         assert!(ships >= 2, "a real match has at least 2 ships");
         // Every entity kind must have finite initial coords.
