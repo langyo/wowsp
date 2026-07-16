@@ -25,8 +25,9 @@ _dev-app *FLAGS='':
 _dev-webui *FLAGS='':
     python scripts/dev.py webui {{FLAGS}}
 
-_dev-site *FLAGS='':
-    {{PM}} --filter @wowsp/site dev {{FLAGS}}
+_dev-site port='3000':
+    cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
+    lagrange dev --src docs --out dist/site --port {{port}}
 
 _dev-test *FLAGS='':
     cargo tauri dev --features test-harness {{FLAGS}}
@@ -57,11 +58,8 @@ _build-webui:
     {{PM}} --filter @wowsp/webui build
 
 _build-site:
-    {{PM}} --filter @wowsp/site build --outDir ../../dist --emptyOutDir
     cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
-    lagrange build --src docs --out dist/docs
-    echo "wowsp.langyo.xyz" > dist/CNAME
-    New-Item -ItemType File -Force -Path dist/.nojekyll | Out-Null
+    lagrange build --src docs --out dist
 
 _build-package *FLAGS='':
     cargo tauri build {{FLAGS}}

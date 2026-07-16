@@ -1,6 +1,5 @@
 packages:
   - 'packages/webui'
-  - 'packages/site'
 allowBuilds:
   esbuild: true
   vue-demi: true

@@ -1,7 +1,7 @@
 [site]
 title = "WoWSP"
 description = "World of Warship Panel — replay review & in-game overlay"
-cname = "wowsp.docs.celestia.world"
+cname = "wowsp.langyo.xyz"
 
 [languages]
 default = "en"
