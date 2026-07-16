@@ -28,7 +28,7 @@
     "vue-router": "^5"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5",
+    "@vitejs/plugin-vue": "^6",
     "@vitejs/plugin-vue-jsx": "^5",
     "@vue/test-utils": "^2.4.11",
     "esbuild": "^0.28.1",
