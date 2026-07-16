@@ -1,18 +1,20 @@
-<div align="center">
-<img src="./logo.webp" alt="WoWSP" width="128" />
-</div>
+---
+hero: true
+---
+
+<p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
 
 # WoWSP
 
 **World of WarShip Panel — replay review & in-game overlay**
 
-WoWSP is a next-generation battle analysis dashboard for World of Warships.
+WoWSP is a next-generation battle analysis dashboard for **World of Warships**.
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:2rem 0">
 
 <div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
 
-**<span style="color:#7aa2f7">Replay Review</span>**
+### Replay Review
 
 Open any `.wowsreplay` and watch the full match on a holographic 3D map — no game launch required.
 
@@ -20,7 +22,7 @@ Open any `.wowsreplay` and watch the full match on a holographic 3D map — no g
 
 <div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
 
-**<span style="color:#7aa2f7">3D Ship Viewer</span>**
+### 3D Ship Viewer
 
 Browse every ship as a low-poly holographic model. Rotate, zoom, inspect armor layouts.
 
@@ -28,15 +30,15 @@ Browse every ship as a low-poly holographic model. Rotate, zoom, inspect armor l
 
 <div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
 
-**<span style="color:#7aa2f7">In-Game Overlay</span>**
+### In-Game Overlay
 
-A transparent overlay shows live team rosters while you play, visible only when you hold Tab.
+A transparent overlay shows live team rosters while you play, visible only when you hold `Tab`.
 
 </div>
 
 <div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
 
-**<span style="color:#7aa2f7">Stats & Insights</span>**
+### Stats & Insights
 
 Deep-dive into your battle history with per-ship stats, ranked seasons, and performance trends.
 

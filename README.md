@@ -11,34 +11,19 @@
 
 </div>
 
-<div align="center">
-
-**English** ·
-[简体中文](./docs/zhs/README.md) ·
-[繁體中文](./docs/zht/README.md) ·
-[日本語](./docs/ja/README.md) ·
-[한국어](./docs/ko/README.md) ·
-[Français](./docs/fr/README.md) ·
-[Español](./docs/es/README.md) ·
-[Русский](./docs/ru/README.md) ·
-[العربية](./docs/ar/README.md)
-
-</div>
-
 WoWSP is a next-generation battle analysis dashboard for **World of Warships**.
 
-| | |
-|---|---|
-| **Replay Review** — Open any `.wowsreplay` and watch the full match on a holographic 3D map, no game launch required. | **3D Ship Viewer** — Browse every ship as a low-poly holographic model. Rotate, zoom, inspect armor. |
-| **In-Game Overlay** — A transparent overlay shows live team rosters while you play, visible only when you hold Tab. | **Stats & Insights** — Deep-dive into your battle history with per-ship stats, ranked seasons, and performance trends. |
+- **Replay Review** — Open any `.wowsreplay` and watch the full match on a holographic 3D map, no game launch required.
+- **3D Ship Viewer** — Browse every ship as a low-poly holographic model. Rotate, zoom, inspect armor.
+- **In-Game Overlay** — A transparent overlay shows live team rosters while you play, visible only when you hold `Tab`.
+- **Stats & Insights** — Deep-dive into your battle history with per-ship stats, ranked seasons, and performance trends.
 
-The replay parsing, game-detection, and `tempArenaInfo.json` polling principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell, build infrastructure, and licensing model are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
+The replay parsing, game-detection, and `tempArenaInfo.json` polling principles are adapted from [ApeRadar](https://github.com/zylalx1/ApeRadar); the frontend shell, build infrastructure, and licensing model are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## Links
 
 - [Documentation](https://wowsp.langyo.xyz) — full docs in 9 languages, built with [lagrange](https://github.com/celestia-island/lagrange)
 - [PLAN.md](./PLAN.md) — feature roadmap (all milestones complete)
-- [GitHub](https://github.com/langyo/wowsp)
 
 ## Status
 

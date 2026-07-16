@@ -1,6 +1,4 @@
-<div align="center">
-<img src="./logo.webp" alt="WoWSP" width="128" />
-</div>
+<p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
 
 # WoWSP
 
@@ -8,46 +6,26 @@
 
 WoWSP est un tableau de bord d'analyse de bataille de nouvelle génération pour World of Warships.
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:2rem 0">
+## Fonctionnalités
 
-<div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
-
-**<span style="color:#7aa2f7">Analyse de Replays</span>**
+### Analyse de Replays
 
 Ouvrez n'importe quel `.wowsreplay` et regardez le match complet sur une carte 3D holographique — sans lancer le jeu.
 
-</div>
-
-<div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
-
-**<span style="color:#7aa2f7">Visualiseur 3D</span>**
+### Visualiseur 3D
 
 Parcourez tous les navires en modèles holographiques low-poly. Rotation, zoom, inspection du blindage.
 
-</div>
+### Overlay en Jeu
 
-<div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
+Un overlay transparent affiche les compositions d'équipe en direct, visible uniquement en maintenant `Tab`.
 
-**<span style="color:#7aa2f7">Overlay en Jeu</span>**
-
-Un overlay transparent affiche les compositions d'équipe en direct, visible uniquement en maintenant Tab.
-
-</div>
-
-<div style="background:#131e32;border:1px solid #1e3250;border-radius:1rem;padding:1.25rem">
-
-**<span style="color:#7aa2f7">Statistiques</span>**
+### Statistiques
 
 Analysez en profondeur votre historique de combat avec des stats par navire, saisons classées et tendances.
 
-</div>
+---
 
-</div>
+[GitHub](https://github.com/langyo/wowsp) · [Documentation](./guides/architecture.md)
 
-<div align="center">
-
-[GitHub](https://github.com/langyo/wowsp) &nbsp;·&nbsp; [Documentation](./guides/architecture.md)
-
-</div>
-
-<p align="center" style="margin-top:3rem;font-size:0.75rem;color:#587898">Sous licence SySL-1.0</p>
+*Sous licence SySL-1.0*
