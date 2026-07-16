@@ -5,14 +5,10 @@ on:
     branches: [master]
     paths:
       - '.github/workflows/site.yml'
-      - 'packages/webui/**'
-      - 'package.json'
+      - 'packages/site/**'
+      - 'docs/logo.webp'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
-      - 'tsconfig*.json'
-      - 'vite.config.ts'
-      - 'uno.config.ts'
-      - 'eslint.config.js'
   workflow_dispatch:
 
 permissions:
@@ -47,12 +43,11 @@ jobs:
 
       - name: Build site
         run: |
-          cd packages/webui
+          cd packages/site
           pnpm build --outDir ../../dist --emptyOutDir
           cd ../..
-          cp docs/logo.webp dist/logo.webp
           touch dist/.nojekyll
-          echo "wowsp.celestia.world" > dist/CNAME
+          echo "wowsp.langyo.xyz" > dist/CNAME
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
