@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5",
-    "@vitejs/plugin-vue-jsx": "^4",
+    "@vitejs/plugin-vue-jsx": "^5",
     "@vue/test-utils": "^2.4.11",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.10.2",
