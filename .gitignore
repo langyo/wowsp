@@ -53,8 +53,8 @@ packages/webui/.generated/
 # WoWSP runtime data (detected game paths, parsed replays cache)
 .wowsp-cache/
 
-# Cargo lockfile — COMMITTED for this workspace (it produces binaries).
-# See https://doc.rust-lang.org/cargo/faq.html#why-do-binaries-have-cargo-lock-in-version-control-but-not-libraries
+# Cargo lockfile (generated, not tracked)
+Cargo.lock
 
 # ZCode agent working dir
 .zcode/
@@ -62,3 +62,6 @@ packages/webui/.generated/
 # Model conversion tool cache (downloaded by batch_bake.py)
 /target/model-tools/
 /target/model-tmp/
+
+# Vendored external Rust projects (built in-tree but not part of our workspace)
+packages/tools/wowsunpack-vendor/

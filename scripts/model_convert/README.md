@@ -132,28 +132,25 @@ WOWSP_WOWSUNPACK=target/model-tools-patched/wowsunpack.exe \
   python scripts/model_convert/convert_map_holo.py --name 18_NE_ice_islands
 ```
 
-### Why a patched wowsunpack?
+### Why `wowsunpack`?
 
-Stock `wowsunpack export-map` clamps terrain to sea level (Y ≥ 0) and culls
-fully-submerged triangles — so sea-floor bathymetry and trenches (where
-submarines operate) are discarded before the GLB is written. The raw
-`terrain.bin` heightmap *does* contain negative depths; the exporter just
-throws them away with no flag to disable it.
+Stock `wowsunpack export-map` clamps terrain to sea level (Y >= 0) and culls
+fully-submerged triangles — so sea-floor bathymetry and trenches are discarded
+before the GLB is written. The raw `terrain.bin` heightmap *does* contain
+negative depths; the exporter just throws them away with no flag to disable it.
 
-WoWSP's fork ([`langyo/wows-toolkit`](https://github.com/langyo/wows-toolkit))
-adds a `--keep-submerged` flag that skips both the clamp and the cull, so
-below-sea-level geometry exports as real negative-Y vertices. Build it once:
+`wowsunpack` is vendored as a workspace member (`packages/tools/wowsunpack-vendor/`)
+from the official [`landaire/wows-toolkit`](https://github.com/landaire/wows-toolkit)
+repo. Build it once:
 
 ```bash
 just build-wowsunpack-patched
 ```
 
-This clones the fork into `../wows-toolkit-patched`, builds it with the stable
-Rust toolchain (~2 min), and copies the binary to
-`target/model-tools-patched/wowsunpack.exe`. `convert_map_holo.py` auto-detects
-and uses it. The script also degrades gracefully: if only the stock
-`wowsunpack` is available it retries without `--keep-submerged`, so islands +
-land contours still work (just without trench depth).
+This clones the official repo into `packages/tools/wowsunpack-vendor/` (gitignored)
+and compiles `wowsunpack` as a workspace member into `target/release/wowsunpack.exe`.
+`convert_map_holo.py` auto-detects and uses it. The script gracefully
+degrades without `--keep-submerged` (trenches flattened, contours still work).
 
 The frontend renders the contour terrain via `holoContourShader.ts` — land is
 banded by elevation, shallow sea teal, and deep trenches deep-blue with the

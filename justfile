@@ -168,16 +168,14 @@ convert-map *ARGS:
 # below-sea-level geometry; without it trenches are flattened.
 # Usage: just convert-map-holo --name 18_NE_ice_islands
 convert-map-holo *ARGS:
-    WOWSP_WOWSUNPACK="target/model-tools-patched/wowsunpack.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
+    WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
 
-# Build the patched wowsunpack (fork of landaire/wows-toolkit with the
-# --keep-submerged flag) into target/model-tools-patched/. One-time setup.
+# Build wowsunpack from vendored source (landaire/wows-toolkit) into target/release/.
+# One-time setup: just clone, then compiles via workspace `-p wowsunpack`.
 build-wowsunpack-patched:
-    @echo "Cloning/building patched wowsunpack (landaire/wows-toolkit fork)..."
-    -git -C ../wows-toolkit-patched pull --rebase 2>/dev/null || git clone https://github.com/langyo/wows-toolkit.git ../wows-toolkit-patched
-    RUSTUP_TOOLCHAIN=stable cargo build --release --manifest-path ../wows-toolkit-patched/Cargo.toml -p wowsunpack
-    mkdir -p target/model-tools-patched
-    cp ../wows-toolkit-patched/target/release/wowsunpack.exe target/model-tools-patched/
+    @echo "Cloning/building wowsunpack (landaire/wows-toolkit)..."
+    -git -C packages/tools/wowsunpack-vendor pull --rebase 2>/dev/null || git clone https://github.com/landaire/wows-toolkit.git packages/tools/wowsunpack-vendor
+    cargo build --release -p wowsunpack
 
 # Bake (simplify) a raw GLB to a low-poly holographic model.
 # Usage: just bake-model raw.glb -o ship.glb --triangles 2000

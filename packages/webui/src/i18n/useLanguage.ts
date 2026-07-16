@@ -18,7 +18,7 @@
  * from the UI locale + active realm, then persisted so it behaves as if the
  * user selected it explicitly.
  */
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 
 import { i18n, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
 
@@ -92,9 +92,6 @@ function setDataLanguage(code: string): void {
   dataLanguage.value = code;
   localStorage.setItem(DATA_KEY, code);
 }
-
-/** Keep the i18n instance in sync if uiLocale ever changes externally. */
-watch(uiLocale, (l) => setLocale(l));
 
 export function useLanguage() {
   return {

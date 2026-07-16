@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
+import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 
@@ -89,6 +90,16 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       loading.value = false;
     }
   }
+
+  // Auto-reload when data-language setting or active realm changes.
+  watch(
+    () => [useLanguage().dataLanguage.value, useAccountStore().activeRealm] as const,
+    ([lang, realm], [oldLang, oldRealm]) => {
+      if (oldLang && (lang !== oldLang || realm !== oldRealm)) {
+        load(realm, true);
+      }
+    },
+  );
 
   return { ships, displayShips, version, loading, error, loadedRealm, loadedLanguage, nations, types, byId, isEventShip, shipDisplayName, load };
 });
