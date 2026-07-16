@@ -27,7 +27,7 @@ _dev-webui *FLAGS='':
 
 _dev-site port='3000':
     @where lagrange >nul 2>nul || cargo install lagrange-library
-    lagrange dev --src docs --out dist/site --port {{port}}
+    @$p = {{port}}; while ($p -lt {{port}} + 10) { $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $p); try { $l.Start(); $l.Stop(); lagrange dev --src docs --out dist/site --port $p; break } catch { $p++ } finally { $l.Dispose() } }
 
 _dev-test *FLAGS='':
     cargo tauri dev --features test-harness {{FLAGS}}
