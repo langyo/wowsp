@@ -25,7 +25,7 @@ _dev-app *FLAGS='':
 _dev-webui *FLAGS='':
     python scripts/dev.py webui {{FLAGS}}
 
-_dev-site port='0':
+_dev-site port='4173':
     @where lagrange >nul 2>nul || cargo install lagrange-library
     lagrange dev --src docs --out dist/site --port {{port}}
 
