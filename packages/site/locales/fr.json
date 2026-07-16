@@ -1,0 +1,12 @@
+{
+  "title": "WoWSP",
+  "tagline": "World of WarShip Panel — analyse de replays & overlay en jeu",
+  "features": {
+    "replay": { "title": "Analyse de Replays", "desc": "Ouvrez n'importe quel fichier .wowsreplay et regardez le match complet sur une carte 3D holographique — sans lancer le jeu." },
+    "viewer": { "title": "Visualiseur 3D", "desc": "Parcourez tous les navires du jeu en modèles holographiques low-poly. Rotation, zoom, inspection du blindage." },
+    "overlay": { "title": "Overlay en Jeu", "desc": "Un overlay transparent affiche les compositions d'équipe en direct pendant que vous jouez, visible uniquement en maintenant Tab." },
+    "stats": { "title": "Statistiques", "desc": "Analysez en profondeur votre historique de combat avec des stats par navire, saisons classées et tendances de performance." }
+  },
+  "links": { "github": "GitHub", "docs": "Documentation" },
+  "footer": "Sous licence SySL-1.0"
+}

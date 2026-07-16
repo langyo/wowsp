@@ -2,26 +2,11 @@
   "title": "WoWSP",
   "tagline": "World of WarShip Panel — replay review & in-game overlay",
   "features": {
-    "replay": {
-      "title": "Replay Review",
-      "desc": "Open any .wowsreplay and watch the full match on a holographic 3D map — no game launch required."
-    },
-    "viewer": {
-      "title": "3D Ship Viewer",
-      "desc": "Browse every ship in the game as a low-poly holographic model. Rotate, zoom, inspect armor layouts."
-    },
-    "overlay": {
-      "title": "In-Game Overlay",
-      "desc": "A transparent overlay shows live team rosters while you play, visible only when you hold Tab."
-    },
-    "stats": {
-      "title": "Stats & Insights",
-      "desc": "Deep-dive into your battle history with per-ship stats, ranked seasons, and performance trends."
-    }
+    "replay": { "title": "Replay Review", "desc": "Open any .wowsreplay and watch the full match on a holographic 3D map — no game launch required." },
+    "viewer": { "title": "3D Ship Viewer", "desc": "Browse every ship in the game as a low-poly holographic model. Rotate, zoom, inspect armor layouts." },
+    "overlay": { "title": "In-Game Overlay", "desc": "A transparent overlay shows live team rosters while you play, visible only when you hold Tab." },
+    "stats": { "title": "Stats & Insights", "desc": "Deep-dive into your battle history with per-ship stats, ranked seasons, and performance trends." }
   },
-  "links": {
-    "github": "GitHub",
-    "docs": "Documentation"
-  },
+  "links": { "github": "GitHub", "docs": "Documentation" },
   "footer": "Licensed under SySL-1.0"
 }
