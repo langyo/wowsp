@@ -6,8 +6,8 @@
 
 <div align="center">
 
-[![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/celestia-island/wowsp/blob/master/LICENSE)
-[![GitHub](https://img.shields.io/badge/github-celestia--island%2Fwowsp-blue.svg)](https://github.com/celestia-island/wowsp)
+[![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/langyo/wowsp/blob/master/LICENSE)
+[![GitHub](https://img.shields.io/badge/github-langyo%2Fwowsp-blue.svg)](https://github.com/langyo/wowsp)
 
 </div>
 
@@ -37,7 +37,7 @@ The replay parsing, game-detection, and `tempArenaInfo.json` polling principles 
 
 Architecture, design, and guides live under [`docs/`](./docs) (English + 简体中文), built with [lagrange](https://github.com/celestia-island/lagrange).
 
-Source: [wowsp](https://github.com/celestia-island/wowsp).
+Source: [wowsp](https://github.com/langyo/wowsp).
 
 ## Status
 
