@@ -26,7 +26,7 @@ _dev-webui *FLAGS='':
     python scripts/dev.py webui {{FLAGS}}
 
 _dev-site port='3000':
-    cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
+    @where lagrange >nul 2>nul || cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
     lagrange dev --src docs --out dist/site --port {{port}}
 
 _dev-test *FLAGS='':
@@ -58,7 +58,7 @@ _build-webui:
     {{PM}} --filter @wowsp/webui build
 
 _build-site:
-    cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
+    @where lagrange >nul 2>nul || cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
     lagrange build --src docs --out dist
 
 _build-package *FLAGS='':
