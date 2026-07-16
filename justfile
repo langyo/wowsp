@@ -123,7 +123,6 @@ check:
 #   just fmt check     → cargo fmt --check only
 
 _fmt-fix:
-    @python scripts/utils/enforce_import_groups.py
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo fmt --all
     {{PM}} -r lint --fix
