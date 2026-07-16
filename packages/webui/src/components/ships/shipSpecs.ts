@@ -31,7 +31,7 @@ export interface SpecGroup {
   rows: SpecRow[];
 }
 
-type Profile = Record<string, unknown> | null | undefined;
+export type Profile = Record<string, unknown> | null | undefined;
 
 function num(v: unknown): number | null {
   if (v == null) return null;
@@ -58,12 +58,69 @@ function armourThickness(v: unknown): number | null {
   return m;
 }
 
+/** Per-shell row: damage, fire chance, muzzle velocity, HE pen estimate.
+ *  Returns one row per available shell (HE / SAP / AP / Cruise). */
+function shellRows(shells: Record<string, any> | undefined): SpecRow[] {
+  if (!shells || typeof shells !== "object") return [];
+  const rows: SpecRow[] = [];
+  // Order: HE, SAP, AP, Cruise (readable priority for players).
+  const order: Array<[string, string, string]> = [
+    ["HE", "heShell", "heShellHint"],
+    ["CS", "sapShell", "sapShellHint"],
+    ["AP", "apShell", "apShellHint"],
+    ["Cruise", "cruiseShell", undefined],
+  ];
+  for (const [key, rowKey, hint] of order) {
+    const sh = shells[key];
+    if (!sh || typeof sh !== "object") continue;
+    const parts: string[] = [];
+    const dmg = fmtNum(sh.damage);
+    if (dmg) parts.push(dmg);
+    // HE / SAP carry a fire / pen affordance.
+    if (key === "HE") {
+      const fp = num(sh.burn_probability);
+      if (fp != null) parts.push(`${fp}% ${fireLabel()}`);
+    }
+    const spd = num(sh.bullet_speed);
+    if (spd != null) parts.push(`${spd} ${speedUnit()}`);
+    const rowValue = parts.join(" · ");
+    if (rowValue) rows.push({ key: rowKey, value: rowValue, hint });
+  }
+  return rows;
+}
+
+// Tiny locale-aware suffix helpers so the module stays free-format.
+function fireLabel(): string {
+  return "fire";
+}
+function speedUnit(): string {
+  return "m/s";
+}
+
+/** Estimated HE penetration (mm). Germans use caliber/4, others caliber/6. */
+function hePenFromCaliber(caliberMm: number | null, nation: string | undefined): number | null {
+  if (caliberMm == null || caliberMm <= 0) return null;
+  const div = nation === "germany" ? 4 : 6;
+  return Math.round(caliberMm / div);
+}
+
+/** Extract the main-gun caliber (mm) from the artillery sub-tree.
+ *  WG stores barrel diameter under several keys depending on schema; try the
+ *  common ones. */
+function mainGunCaliber(art: any): number | null {
+  if (!art || typeof art !== "object") return null;
+  // `barrelDiameter` (mm) on some profiles, or under the first turret.
+  const direct = num(art.barrelDiameter) ?? num(art.barrel_diameter) ?? num(art.caliber);
+  if (direct != null) return direct;
+  return null;
+}
+
 /**
  * Build the player-friendly spec tree from a raw WG `default_profile`.
  * Returns groups in display order; empty groups (no rows) are omitted so a
  * destroyer simply has no "Anti-Air" group rather than showing "—".
  */
-export function buildShipSpecs(profile: Profile): SpecGroup[] {
+export function buildShipSpecs(profile: Profile, nation?: string): SpecGroup[] {
   if (!profile || typeof profile !== "object") return [];
   const p = profile as Record<string, any>;
   const groups: SpecGroup[] = [];
@@ -95,29 +152,39 @@ export function buildShipSpecs(profile: Profile): SpecGroup[] {
   const reload = num((art as any)?.shot_delay);
   if (reload != null)
     artRows.push({ key: "mainGunReload", value: `${reload.toFixed(1)} s`, hint: "mainGunReloadHint" });
-  // DPM-equivalent: barrels from hull
   const barrels = num((hull as any)?.artillery_barrels);
   if (barrels != null) artRows.push({ key: "mainGunBarrels", value: String(barrels) });
+  const caliber = mainGunCaliber(art);
+  if (caliber != null)
+    artRows.push({ key: "mainGunCaliber", value: `${caliber} mm`, hint: "mainGunCaliberHint" });
+  // Sigma: WG puts it at artillery.sigma (top-level of the artillery block).
+  const sigma = num((art as any)?.sigma);
+  if (sigma != null)
+    artRows.push({ key: "mainGunSigma", value: sigma.toFixed(1), hint: "mainGunSigmaHint" });
   const rot = num((art as any)?.rotation_time);
   if (rot != null)
     artRows.push({ key: "turretTraverse", value: `${rot.toFixed(1)} s / 180°`, hint: "turretTraverseHint" });
   const disp = num((art as any)?.max_dispersion);
-  if (disp != null) artRows.push({ key: "maxDispersion", value: `${disp} m` });
-  // Per-shell damage (HE + AP)
+  if (disp != null)
+    artRows.push({ key: "maxDispersion", value: `${disp} m`, hint: "maxDispersionHint" });
+  // HE penetration estimate (mm) — only meaningful if there's an HE shell.
   const shells = (art as any)?.shells as Record<string, any> | undefined;
-  if (shells && typeof shells === "object") {
-    const he = shells.HE;
-    const ap = shells.AP;
-    if (he) {
-      const d = fmtNum(he.damage);
-      const fp = num(he.burn_probability);
-      const fpStr = fp != null ? ` · ${fp}% fire` : "";
-      if (d) artRows.push({ key: "heShell", value: `${d}${fpStr}`, hint: "heShellHint" });
-    }
-    if (ap) {
-      const d = fmtNum(ap.damage);
-      if (d) artRows.push({ key: "apShell", value: d, hint: "apShellHint" });
-    }
+  const heShell = shells?.HE;
+  const hePen = heShell
+    ? num(heShell.penetration) ?? hePenFromCaliber(caliber, nation)
+    : null;
+  if (hePen != null)
+    artRows.push({ key: "hePenetration", value: `${hePen} mm`, hint: "hePenetrationHint" });
+  // Per-shell rows (damage / fire / muzzle velocity for each shell type).
+  artRows.push(...shellRows(shells));
+  // DPM (best of HE / AP), computed as perShellDamage × barrels / reload.
+  if (barrels != null && reload != null && reload > 0 && shells) {
+    const heDmg = num(shells.HE?.damage) ?? null;
+    const apDmg = num(shells.AP?.damage) ?? null;
+    if (heDmg != null)
+      artRows.push({ key: "heDpm", value: fmtNum((heDmg * barrels) / reload)! });
+    if (apDmg != null)
+      artRows.push({ key: "apDpm", value: fmtNum((apDmg * barrels) / reload)! });
   }
   if (artRows.length) groups.push({ group: "artillery", icon: "Crosshair", rows: artRows });
 
@@ -148,20 +215,31 @@ export function buildShipSpecs(profile: Profile): SpecGroup[] {
   if (aa && typeof aa === "object") {
     const rating = num((aa as any).defense);
     if (rating != null && rating > 0) aaRows.push({ key: "aaRating", value: String(rating) });
-    // Long-range aura (highest distance slot)
+    // WG slots are keyed by range bucket; split into short/mid/long by distance.
     const slots = (aa as any).slots as Record<string, any> | undefined;
     if (slots && typeof slots === "object") {
       const slotList = Object.values(slots)
-        .map((s) => ({ dist: num((s as any).distance), dmg: num((s as any).avg_damage), guns: num((s as any).guns) }))
-        .filter((s) => s.dist != null && s.dist > 0);
-      slotList.sort((a, b) => (b.dist ?? 0) - (a.dist ?? 0));
-      const longRange = slotList[0];
-      if (longRange && longRange.dmg != null) {
-        aaRows.push({
-          key: "aaLongRange",
-          value: `${longRange.dmg.toFixed(0)} DPS · ${longRange.dist} km`,
-        });
+        .map((s) => ({
+          dist: num((s as any).distance),
+          dmg: num((s as any).avg_damage),
+          guns: num((s as any).guns),
+        }))
+        .filter((s) => s.dist != null && s.dist > 0 && s.dmg != null);
+      slotList.sort((a, b) => (a.dist ?? 0) - (b.dist ?? 0));
+      // <3.0 short, 3.0–5.0 mid, >5.0 long (rough aura split).
+      const bandOf = (d: number): "short" | "mid" | "long" =>
+        d <= 3.0 ? "short" : d <= 5.0 ? "mid" : "long";
+      const bands: Record<string, { dmg: number; dist: number }> = {};
+      for (const s of slotList) {
+        const b = bandOf(s.dist!);
+        if (!bands[b] || s.dist! > bands[b].dist) bands[b] = { dmg: s.dmg!, dist: s.dist! };
       }
+      if (bands.long)
+        aaRows.push({ key: "aaLongRange", value: `${bands.long.dmg.toFixed(0)} DPS · ${bands.long.dist} km` });
+      if (bands.mid)
+        aaRows.push({ key: "aaMidRange", value: `${bands.mid.dmg.toFixed(0)} DPS · ${bands.mid.dist} km` });
+      if (bands.short)
+        aaRows.push({ key: "aaShortRange", value: `${bands.short.dmg.toFixed(0)} DPS · ${bands.short.dist} km` });
     }
   }
   if (aaRows.length) groups.push({ group: "antiAir", icon: "Plane", rows: aaRows });

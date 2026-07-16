@@ -12,6 +12,7 @@ pub mod gameparams;
 pub mod mod_install;
 pub mod overlay;
 pub mod packets;
+pub mod ranked;
 pub mod replay;
 pub mod screenshot;
 pub mod ship_stats;
@@ -25,4 +26,16 @@ use crate::os_prefs::OsPreferences;
 #[tauri::command]
 pub fn get_os_preferences() -> OsPreferences {
     crate::os_prefs::detect()
+}
+
+/// Hard-quit the app. Triggers graceful drain of background tasks, then
+/// exits the process. Called from the frontend close-confirm dialog.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    use tauri::Manager;
+    tracing::info!("quit_app: beginning graceful drain + exit");
+    if let Some(d) = app.try_state::<malkuth::DrainController>() {
+        d.begin_drain(malkuth::ShutdownKind::Graceful);
+    }
+    app.exit(0);
 }

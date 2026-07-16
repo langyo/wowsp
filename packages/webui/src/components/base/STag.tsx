@@ -8,7 +8,8 @@ export type TagVariant =
   | "gold"
   | "info"
   | "success"
-  | "danger";
+  | "danger"
+  | "legendary";
 export type TagSize = "sm" | "md";
 
 /**

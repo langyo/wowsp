@@ -6,13 +6,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  border-left-width: 3px;
-
-  // tier accent on the left border
-  &--red { border-left-color: rgb(220 80 80); }
-  &--yellow { border-left-color: rgb(230 170 50); }
-  &--green { border-left-color: rgb(71 227 165); }
-  &--purple { border-left-color: rgb(168 85 247); }
 
   &__head {
     display: flex;
@@ -51,75 +44,92 @@
     flex-shrink: 0;
   }
 
-  &__pr-bar {
+  /* ── Hero bar: winrate + PR on the same row ──
+     Left: big winrate number + "win rate" label + total battles small text.
+     Right: PR number + tier label.
+     Both are click-to-copy with hover highlight. */
+  &__hero {
     display: flex;
-    align-items: baseline;
-    gap: 0.6rem;
-    padding: 0.6rem 0.75rem;
+    align-items: stretch;
+    gap: 1rem;
+    padding: 0.75rem;
     background: rgb(var(--color-bg));
     border-radius: var(--radius-sm);
   }
 
-  &__pr-num {
-    font-size: var(--text-2xl);
-    font-weight: 800;
-    line-height: 1;
-  }
-
-  &__pr-label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  &__pr-meta {
-    margin-left: auto;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-  }
-
-  &__kpis {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 0.5rem;
-  }
-
-  &__kpi {
-    background: rgb(var(--color-bg));
-    border-radius: var(--radius-sm);
-    padding: 0.5rem 0.6rem;
+  &__hero-main {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    align-items: center;
+    gap: 0.1rem;
+  }
 
-    &--big {
-      grid-column: span 2;
-      background: rgb(var(--color-primary) / 8%);
+  &__wr {
+    font-size: var(--text-2xl);
+    font-weight: 800;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover {
+      opacity: 0.7;
     }
   }
 
-  &__kpi-label {
+  &__wr-label {
     font-size: var(--text-2xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: rgb(var(--color-muted));
   }
 
-  &__kpi-value {
-    font-size: var(--text-lg);
-    font-weight: 700;
-    color: rgb(var(--color-text));
+  &__battles-total {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    margin-top: 0.2rem;
+    cursor: pointer;
 
-    .stats-card__kpi--big & {
-      font-size: var(--text-2xl);
+    &:hover {
+      color: rgb(var(--color-text));
     }
   }
 
+  &__pr-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+    padding-left: 1rem;
+    border-left: 1px solid rgb(var(--color-border) / 20%);
+    cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover {
+      opacity: 0.7;
+    }
+  }
+
+  &__pr-num {
+    font-size: var(--text-xl);
+    font-weight: 800;
+    line-height: 1.1;
+  }
+
+  &__pr-label {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Division splits: 3 columns centered ──
+     Each column: winrate number on top, label below. */
   &__divisions {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgb(var(--color-border) / 12%);
   }
 
   &__division {
@@ -137,5 +147,51 @@
   &__division-wr {
     font-size: var(--text-md);
     font-weight: 700;
+  }
+
+  /* ── KPI grid: 3 columns, no WR/PR (those are in the hero bar) ── */
+  &__kpis {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  &__kpi {
+    background: rgb(var(--color-bg));
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.4rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.15rem;
+    min-width: 0;
+    overflow: hidden;
+
+    &--copyable {
+      cursor: pointer;
+      transition: background var(--duration-short);
+
+      &:hover {
+        background: rgb(var(--color-primary) / 6%);
+      }
+    }
+  }
+
+  &__kpi-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  &__kpi-value {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: rgb(var(--color-text));
   }
 }

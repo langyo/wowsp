@@ -1,0 +1,177 @@
+/* Tech tree v3 — type sections laid out left-to-right in a horizontal row.
+   Within each section: columns = branches (absolutely positioned cards),
+   rows = tiers (T1 top, T11 bottom). Fork branches never duplicate ships. */
+.tech-tree-v3 {
+  position: relative;
+  min-height: 200px;
+  min-width: max-content;
+
+  &--empty {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+    text-align: center;
+    padding: 3rem 1rem;
+    min-width: auto;
+  }
+
+  &__svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible;
+  }
+
+  &__conn {
+    fill: none;
+    stroke: rgb(var(--color-primary) / 38%);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &__track {
+    fill: none;
+    stroke: rgb(var(--color-primary) / 8%);
+    stroke-width: 1;
+    stroke-dasharray: 5 7;
+    stroke-linecap: round;
+  }
+
+  &__dot {
+    fill: rgb(var(--color-primary) / 48%);
+  }
+
+  &__row {
+    display: flex;
+    gap: 1.2rem;
+    align-items: flex-start;
+    padding: 0.3rem 0;
+  }
+}
+
+/* ── One type section (BB / CA / DD / CV / SS) ────────────────────────── */
+.tech-type-v3 {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex-shrink: 0;
+
+  &__head {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-primary));
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.25rem;
+  }
+
+  &__canvas {
+    position: relative;
+    flex-shrink: 0;
+  }
+}
+
+/* ── One card cell ─────────────────────────────────────────────────────── */
+.tech-cell-v3 {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+}
+
+.tech-card-v3 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.18rem;
+  width: 100%;
+  padding: 0.3rem 0.25rem;
+  position: relative;
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface));
+  cursor: pointer;
+  transition: border-color var(--duration-short), transform var(--duration-short);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 50%);
+    transform: translateY(-2px);
+  }
+
+  &--premium {
+    border-color: rgb(230 170 50 / 40%);
+    background: rgb(230 170 50 / 6%);
+  }
+
+  &--special {
+    border-color: rgb(255 140 40 / 40%);
+    background: rgb(255 140 40 / 6%);
+  }
+
+  &__img {
+    width: 100%;
+    height: 38px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 25%));
+  }
+
+  &__img--placeholder {
+    width: 100%;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(var(--color-bg));
+    border-radius: var(--radius-xs);
+  }
+
+  &__initial {
+    font-size: var(--text-lg);
+    font-weight: 800;
+    color: rgb(var(--color-primary) / 30%);
+    text-transform: uppercase;
+  }
+
+  &__tier {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  &__fork {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    color: rgb(230 170 50 / 70%);
+    display: flex;
+    align-items: center;
+    cursor: help;
+  }
+
+  &__name {
+    font-size: 10px;
+    color: rgb(var(--color-text));
+    text-align: center;
+    line-height: 1.2;
+    max-width: 100%;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+
+  &__archetype {
+    font-size: 8px;
+    color: rgb(var(--color-muted) / 50%);
+    text-align: center;
+    line-height: 1.15;
+    max-width: 100%;
+  }
+}

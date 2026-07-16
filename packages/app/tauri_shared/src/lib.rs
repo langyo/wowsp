@@ -39,6 +39,30 @@ pub struct GameInstall {
     pub realm: Option<String>,
 }
 
+/// Snapshot of the currently-running World of Warships process, with the
+/// install (kind/realm) it belongs to resolved by matching the process's exe
+/// path against the known installs.
+///
+/// `is_game_running` (the legacy boolean command) derives from `running`. This
+/// richer view lets the sidebar show the PID + which client (Steam / Wargaming
+/// / Lesta / 360) is running, mirroring how Starward reports the active game
+/// process.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameProcessInfo {
+    pub running: bool,
+    /// OS process id of the matched `WorldOfWarships*.exe`, when running.
+    pub pid: Option<u32>,
+    /// The install kind of the matched install (Steam / Wargaming / ...).
+    pub kind: Option<GameInstallKind>,
+    /// Realm of the matched install, when known.
+    pub realm: Option<String>,
+    /// Full path to the running exe, when queryable.
+    pub exe_path: Option<String>,
+    /// The full install record the process was matched against, when any.
+    pub matched_install: Option<GameInstall>,
+}
+
 /// Top-level metadata extracted from a `.wowsreplay` header.
 ///
 /// A replay file is laid out as:
@@ -81,6 +105,31 @@ pub struct VehicleEntry {
     pub ship_id: i64,
     /// Pre-resolved ship display name (looked up from the ships DB), if known.
     pub ship_name: Option<String>,
+}
+
+/// Lightweight replay summary for the list view. `list_replays_meta` parses
+/// only the descriptor-JSON block (no packet stream) of each file so a few
+/// hundred replays can be listed fast. The full `ReplayMeta` (with roster +
+/// raw JSON) is returned later by `read_replay_header` when one is opened.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayMetaLite {
+    pub path: String,
+    /// Parsed from the replay filename (`YYYYMMDD_HHMMSS`).
+    pub date_time: Option<String>,
+    /// e.g. `"pvp"`, `"ranked"`, `"clan"`, `"event"`.
+    pub match_group: Option<String>,
+    /// Client display name, e.g. `"15_NE_north"`.
+    pub map_name: Option<String>,
+    /// Numeric map id (the client JSON sends `mapId` as a number).
+    pub map_id: Option<i64>,
+    /// The recording player's ship id — the roster entry with `relation == 0`.
+    /// Used to render the per-replay holographic ship preview.
+    pub own_ship_id: Option<i64>,
+    /// The recording player's ship display name, when resolvable.
+    pub own_ship_name: Option<String>,
+    /// Number of players in the roster.
+    pub player_count: usize,
 }
 
 /// Snapshot of the live `tempArenaInfo.json` the game writes when a battle
@@ -143,6 +192,26 @@ pub struct EntityTrajectory {
     /// position. `None` when the replay never created the entity (rare).
     pub kind: Option<EntityKind>,
     pub samples: Vec<PositionSample>,
+    /// Match time (seconds) at which the entity was destroyed (EntityDestroy
+    /// 0x06), if it was. `None` = survived the whole match. The frontend freezes
+    /// the marker here and tints it grey.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub death_time: Option<f32>,
+}
+
+/// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.
+/// Colors are ARGB-packed u32 values; texture/symbol/background IDs are
+/// entity refs to pattern assets on WG's CDN.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DogTag {
+    pub texture_id: u32,
+    pub symbol_id: u32,
+    /// ARGB-packed border color.
+    pub border_color: u32,
+    /// ARGB-packed background color.
+    pub background_color: u32,
+    pub background_id: u32,
 }
 
 /// Player stats from the Wargaming public API (milestone M9). All fields are
@@ -178,6 +247,20 @@ pub struct PlayerStats {
     pub pr: Option<i64>,
     /// Number of distinct ships played.
     pub ships_played: Option<i64>,
+
+    // ── Service record (player level/badge) ─────────────────────────────
+    /// WG service record tier (player "level"). Used to render a rank badge
+    /// in the UI — higher tier = more decorated badge. Range: 1–100+.
+    pub leveling_tier: Option<i32>,
+    /// WG service record points (XP towards next tier).
+    pub leveling_points: Option<i64>,
+
+    // ── Dog tag (player emblem) ─────────────────────────────────────────
+    /// Player's dog tag components, fetched from the WG Vortex API. The dog
+    /// tag is the player's personalized emblem shown in-game. Colors are
+    /// ARGB-packed u32 values; texture/symbol/background IDs are entity refs
+    /// to pattern assets. None if Vortex fetch failed.
+    pub dog_tag: Option<DogTag>,
 
     // ── Per-division winrates ───────────────────────────────────────────
     pub solo_wr: Option<f32>,
@@ -246,6 +329,25 @@ pub struct ShipInfo {
     /// The version this entry was cached under (set by the fetcher, not WG).
     pub game_version: String,
     pub default_profile: serde_json::Value,
+    /// Ship image URLs from the WG CDN. All optional — not every ship has
+    /// every size. `medium` is the primary card image; `contour` is the
+    /// side-silhouette used in some UIs; `small`/`large` are alternatives.
+    pub images: ShipImages,
+}
+
+/// Ship image URLs returned by the WG encyclopedia API. Fields are the
+/// standard WG image size keys. Empty string if the size isn't available.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipImages {
+    /// Small portrait (~80×48). For compact lists.
+    pub small: String,
+    /// Medium portrait (~160×96). Primary card image.
+    pub medium: String,
+    /// Large portrait (~320×192). For detail views.
+    pub large: String,
+    /// Side-contour silhouette (~32×32). For minimap-style indicators.
+    pub contour: String,
 }
 
 /// Per-player per-ship PvP stats from `/wows/ships/stats/`. One entry per ship
@@ -338,4 +440,3 @@ pub struct CommunityTrend {
     pub ship_id: i64,
     pub buckets: Vec<TrendBucket>,
 }
-

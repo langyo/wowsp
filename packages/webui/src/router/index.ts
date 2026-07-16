@@ -26,6 +26,11 @@ export const router = createRouter({
       component: () => import("@/views/replay/ReplayView"),
     },
     {
+      path: "/resources",
+      name: "resources",
+      component: () => import("@/views/ResourcesView"),
+    },
+    {
       path: "/settings",
       name: "settings",
       component: () => import("@/views/SettingsView"),

@@ -112,10 +112,7 @@ pub(crate) fn bucket_by_version(snapshots: &[StatsSnapshot]) -> Vec<TrendBucket>
                 battle_delta,
                 winrate_avg: mean(&winrates),
                 winrate_min: winrates.iter().cloned().fold(f32::INFINITY, f32::min),
-                winrate_max: winrates
-                    .iter()
-                    .cloned()
-                    .fold(f32::NEG_INFINITY, f32::max),
+                winrate_max: winrates.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
                 avg_damage: mean(&damages),
                 pr_avg,
             }
@@ -128,7 +125,10 @@ pub(crate) fn bucket_by_version(snapshots: &[StatsSnapshot]) -> Vec<TrendBucket>
 /// changes that touched the viewed ship.
 #[allow(dead_code)]
 pub(crate) fn patches_for_ship(patches: &[PatchNote], ship_id: i64) -> Vec<&PatchNote> {
-    patches.iter().filter(|p| p.ship_ids.contains(&ship_id)).collect()
+    patches
+        .iter()
+        .filter(|p| p.ship_ids.contains(&ship_id))
+        .collect()
 }
 
 fn mean(xs: &[f32]) -> f32 {
@@ -169,7 +169,14 @@ fn appdata_read(file: String) -> Result<Option<String>, String> {
 mod tests {
     use super::*;
 
-    fn snap(ts: i64, version: &str, battles: i64, winrate: f32, damage: f32, pr: Option<i64>) -> StatsSnapshot {
+    fn snap(
+        ts: i64,
+        version: &str,
+        battles: i64,
+        winrate: f32,
+        damage: f32,
+        pr: Option<i64>,
+    ) -> StatsSnapshot {
         StatsSnapshot {
             timestamp: ts,
             game_version: version.to_string(),

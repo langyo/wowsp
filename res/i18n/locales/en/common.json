@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "World of Warship Panel — replay review & in-game overlay"
   },
+  "copied": "Copied to clipboard",
+  "copyFailed": "Failed to copy",
   "detect": {
     "title": "Game installation",
     "scanning": "Scanning registry and Steam libraries…",
@@ -12,6 +14,14 @@
   },
   "game": {
     "online": "Game running",
-    "offline": "Game offline"
+    "offline": "Game offline",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "Wargaming Center",
+      "lesta": "Lesta",
+      "cn360": "CN (360)",
+      "manual": "Manual"
+    }
   }
 }

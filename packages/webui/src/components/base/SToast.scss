@@ -1,0 +1,102 @@
+.s-toast-container {
+  position: fixed;
+  top: 2.5rem; /* below the title bar */
+  right: 1rem;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+.s-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 20%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+  font-size: var(--text-sm);
+  color: rgb(var(--color-text));
+  user-select: none;
+
+  &__icon {
+    flex-shrink: 0;
+  }
+
+  &__msg {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__close {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--radius-xs);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--duration-short);
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+  }
+
+  &--success &__icon { color: rgb(var(--color-success)); }
+  &--error   &__icon { color: rgb(var(--color-error)); }
+  &--warning &__icon { color: rgb(var(--color-warning)); }
+  &--info    &__icon { color: rgb(var(--color-info)); }
+  &--loading &__icon { color: rgb(var(--color-primary)); }
+
+  &--success { border-left: 3px solid rgb(var(--color-success)); }
+  &--error   { border-left: 3px solid rgb(var(--color-error)); }
+  &--warning { border-left: 3px solid rgb(var(--color-warning)); }
+  &--info    { border-left: 3px solid rgb(var(--color-info)); }
+  &--loading { border-left: 3px solid rgb(var(--color-primary)); }
+
+  &__icon--spin {
+    animation: s-toast-spin 1s linear infinite;
+  }
+}
+
+/* Enter: slide in from the right + fade. */
+.s-toast-enter-active {
+  transition:
+    opacity var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-normal) var(--ease-spring);
+}
+.s-toast-leave-active {
+  transition:
+    opacity var(--duration-short) var(--ease-in-expo),
+    transform var(--duration-short) var(--ease-in-expo);
+  position: absolute;
+  right: 0;
+}
+.s-toast-enter-from {
+  opacity: 0;
+  transform: translateX(100%);
+}
+.s-toast-leave-to {
+  opacity: 0;
+  transform: translateX(100%);
+}
+.s-toast-move {
+  transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+@keyframes s-toast-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

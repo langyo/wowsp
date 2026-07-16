@@ -17,7 +17,10 @@ export interface ThreeScene {
   renderer: THREE.WebGLRenderer;
 }
 
-export function useThreeScene(container: Ref<HTMLElement | null>) {
+export function useThreeScene(
+  container: Ref<HTMLElement | null>,
+  onFrame?: (dt: number) => void,
+) {
   const ready = ref(false);
   const api = shallowRef<ThreeScene | null>(null);
   let rafId = 0;
@@ -38,7 +41,11 @@ export function useThreeScene(container: Ref<HTMLElement | null>) {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(width, height);
+    // updateStyle=true (3rd arg) makes setSize write CSS width/height on the
+    // canvas, so the element matches its container instead of leaving the
+    // browser to resolve an unset inline size (which on 2× DPI lands at
+    // container × dpr and overflows the flex chain).
+    renderer.setSize(width, height, true);
     el.appendChild(renderer.domElement);
 
     // Holographic grid + a faint sea plane.
@@ -50,7 +57,9 @@ export function useThreeScene(container: Ref<HTMLElement | null>) {
     api.value = { scene, camera, renderer };
     ready.value = true;
 
+    const clock = new THREE.Clock();
     const tick = () => {
+      if (onFrame) onFrame(clock.getDelta());
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(tick);
     };
@@ -62,7 +71,7 @@ export function useThreeScene(container: Ref<HTMLElement | null>) {
       if (w === 0 || h === 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      renderer.setSize(w, h, true);
     });
     resizeObs.observe(el);
   });

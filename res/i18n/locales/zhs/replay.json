@@ -1,8 +1,100 @@
 {
   "list": {
     "title": "录像列表",
-    "empty": "配置的目录下没有找到录像文件。"
+    "empty": "所选客户端目录下没有找到录像文件。",
+    "count": "{n} 个录像",
+    "noClient": "未检测到游戏客户端，请先在首页扫描或手动指定路径。"
   },
+  "client": "游戏客户端",
+  "refresh": "刷新",
   "loading": "正在解析录像…",
-  "select": "从列表中选择一个录像以加载。"
+  "select": "从列表中选择一个录像以加载。",
+  "players": "{n} 人",
+  "mode": {
+    "pvp": "随机战",
+    "ranked": "排位战",
+    "clan": "公会战",
+    "event": "活动",
+    "cooperative": "联合作战",
+    "pve": "联合作战",
+    "training": "训练房",
+    "brawl": "乱斗",
+    "squad": "小队战",
+    "ranked_solo": "排位战(单野)",
+    "ranked_sprint": "排位冲刺战",
+    "pve_event": "行动",
+    "convoy": "护航战",
+    "asymmetric": "非对称战",
+    "sandbox": "沙盒",
+    "_fallback": "对战"
+  },
+  "map": {
+    "unknown": "未知地图",
+    "contour": "等高线地形图",
+    "contourHint": "等高线地形：陆地按高度分层，海域含海床等深线（含海沟）。",
+    "names": {
+      "00_CO_ocean": "海洋",
+      "04_Archipelago": "群岛",
+      "08_NE_passage": "海峡",
+      "13_OC_new_dawn": "新曙光",
+      "14_Atlantic": "大西洋",
+      "15_NE_north": "北方",
+      "16_OC_bees_to_honey": "热点",
+      "17_NA_fault_line": "断层线",
+      "18_NE_ice_islands": "冰之岛",
+      "19_OC_prey": "陷阱",
+      "20_NE_two_brothers": "两兄弟",
+      "22_tierra_del_fuego": "烈焰之地",
+      "23_Shards": "碎岛",
+      "25_sea_hope": "命运之海",
+      "28_naval_mission": "沙漠之泪",
+      "35_NE_north_winter": "北极光",
+      "37_Ridge": "崇山峻岭",
+      "38_Canada": "碎裂",
+      "40_Okinawa": "冲绳",
+      "41_Conquest": "三叉戟",
+      "42_Neighbors": "邻居",
+      "44_Path_warrior": "战士之路",
+      "45_Zigzag": "环线",
+      "46_Estuary": "河口",
+      "47_Sleeping_Giant": "沉睡的巨人",
+      "50_Gold_harbor": "避风港",
+      "51_Greece": "希腊",
+      "52_Britain": "阿尔法碰撞区",
+      "53_Shoreside": "北方水域",
+      "54_Faroe": "法罗群岛",
+      "55_Seychelles": "塞舌尔",
+      "56_AngelWings": "日落群岛",
+      "58_RidgeNew": "崇山峻岭（重制）"
+    }
+  },
+  "ownShip": "主舰",
+  "noShipModel": "暂无该舰艇的全息白模。",
+  "duration": "时长",
+  "matchTime": "对战时间",
+  "mapLabel": "地图",
+  "legend": {
+    "self": "我方舰",
+    "ally": "队友",
+    "enemy": "敌方",
+    "dead": "已击毁"
+  },
+  "tip": {
+    "loading": "查询中…",
+    "failed": "查询失败",
+    "hidden": "隐藏战绩",
+    "winrate": "胜率",
+    "avgDamage": "场均",
+    "battles": "场次",
+    "survival": "存活",
+    "hitRate": "命中"
+  },
+  "roster": {
+    "allies": "我方",
+    "enemies": "敌方",
+    "shipType": "舰种",
+    "battles": "场次",
+    "winrate": "胜率",
+    "avgDamage": "场均"
+  }
 }

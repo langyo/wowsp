@@ -67,16 +67,21 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         .json()
         .await
         .map_err(|e| format!("account/info parse: {e}"))?;
-    let stats_node = info
-        .data
-        .as_ref()
-        .and_then(|d| {
-            let key = entry.account_id.to_string();
-            d.get(&key)
-        })
-        .and_then(|v| v.get("statistics"));
+    let player_node = info.data.as_ref().and_then(|d| {
+        let key = entry.account_id.to_string();
+        d.get(&key)
+    });
+    let stats_node = player_node.and_then(|v| v.get("statistics"));
     let p = PvpStats::extract(stats_node);
-    let hidden = stats_node.map_or(true, |s| s.get("pvp").map_or(true, |p| p.is_null()));
+    let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p| p.is_null()));
+    // Service record tier + points (for rank badge rendering).
+    let leveling_tier = player_node
+        .and_then(|v| v.get("leveling_tier"))
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let leveling_points = player_node
+        .and_then(|v| v.get("leveling_points"))
+        .and_then(|v| v.as_i64());
 
     // 3. Optional clan tag lookup (best-effort — never fails the whole call).
     let clan_tag = match client
@@ -105,6 +110,32 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         Err(_) => None,
     };
 
+    // 4. Dog tag lookup via the WG Vortex API (best-effort — never fails the
+    //    whole call). Vortex returns the player's personalized emblem
+    //    components (background, texture, symbol, border/background colors).
+    let dog_tag = match client
+        .get(format!(
+            "https://vortex.worldofwarships.{host}/api/accounts/{}",
+            entry.account_id
+        ))
+        .send()
+        .await
+    {
+        Ok(r) => {
+            let vortex: Option<serde_json::Value> = r.json().await.ok();
+            vortex
+                .as_ref()
+                .and_then(|v| {
+                    v.get("data")
+                        .and_then(|d| d.get(entry.account_id.to_string()))
+                        .and_then(|p| p.get("dog_tag"))
+                        .filter(|t| !t.is_null())
+                })
+                .and_then(parse_dog_tag)
+        },
+        Err(_) => None,
+    };
+
     Ok(PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
@@ -120,10 +151,39 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         hit_rate: p.hit_rate,
         pr: p.pr,
         ships_played: p.ships_played,
+        leveling_tier,
+        leveling_points,
+        dog_tag,
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
     })
+}
+
+/// Parse a dog_tag JSON object from the Vortex API into a DogTag struct.
+/// The Vortex response has fields like `texture_id`, `symbol_id`,
+/// `border_color_id`, `background_color_id`, `background_id`. The color
+/// fields are ARGB-packed u32 values.
+fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared::DogTag> {
+    let get_u32 = |key: &str| -> u32 {
+        v.get(key)
+            .and_then(|x| x.as_u64())
+            .map(|x| x as u32)
+            .unwrap_or(0)
+    };
+    let tag = wowsp_tauri_shared::DogTag {
+        texture_id: get_u32("texture_id"),
+        symbol_id: get_u32("symbol_id"),
+        border_color: get_u32("border_color_id"),
+        background_color: get_u32("background_color_id"),
+        background_id: get_u32("background_id"),
+    };
+    // Only return if at least some fields are non-zero.
+    if tag.background_color != 0 || tag.border_color != 0 {
+        Some(tag)
+    } else {
+        None
+    }
 }
 
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
@@ -147,7 +207,12 @@ struct PvpStats {
 
 impl PvpStats {
     fn extract(stats: Option<&serde_json::Value>) -> Self {
-        let pvp = stats.and_then(|s| s.get("pvp")).filter(|v| !v.is_null());
+        let statistics = stats.filter(|v| !v.is_null());
+        let statistics = match statistics {
+            Some(s) => s,
+            None => return Self::empty(),
+        };
+        let pvp = statistics.get("pvp").filter(|v| !v.is_null());
         let pvp = match pvp {
             Some(p) => p,
             None => return Self::empty(),
@@ -160,7 +225,7 @@ impl PvpStats {
             _ => None,
         };
 
-        let damage = get_i64(pvp, "damage_caused");
+        let damage = get_i64(pvp, "damage_dealt").or_else(|| get_i64(pvp, "damage_caused"));
         let avg_damage = match (damage, battles) {
             (Some(d), Some(b)) if b > 0 => Some(d as f32 / b as f32),
             _ => None,
@@ -183,14 +248,22 @@ impl PvpStats {
             _ => None,
         };
 
-        let shots = get_i64(pvp, "main_battery_shots");
-        let hits = get_i64(pvp, "main_battery_hits");
+        // Main battery shots/hits are nested under a "main_battery" sub-object
+        // (WG changed the schema: formerly flat main_battery_shots/hits, now
+        // main_battery.{shots,hits}). Try both layouts for compatibility.
+        let mb = pvp.get("main_battery");
+        let shots = mb
+            .and_then(|m| get_i64(m, "shots"))
+            .or_else(|| get_i64(pvp, "main_battery_shots"));
+        let hits = mb
+            .and_then(|m| get_i64(m, "hits"))
+            .or_else(|| get_i64(pvp, "main_battery_hits"));
         let hit_rate = match (hits, shots) {
             (Some(h), Some(s)) if s > 0 => Some(100.0 * h as f32 / s as f32),
             _ => None,
         };
 
-        let ships_played = get_i64(pvp, "battles").and_then(|_| {
+        let ships_played = get_i64(pvp, "battles").and({
             // ships_played is approximated by counting ship entries — but
             // account/info doesn't include per-ship; we leave it as battles
             // count fallback (the ships/{shipId} endpoint gives the real count
@@ -210,9 +283,9 @@ impl PvpStats {
             hit_rate,
             pr,
             ships_played,
-            solo_wr: div_wr(pvp, "pvp_solo"),
-            div2_wr: div_wr(pvp, "pvp_div2"),
-            div3_wr: div_wr(pvp, "pvp_div3"),
+            solo_wr: div_wr(statistics, "pvp_solo"),
+            div2_wr: div_wr(statistics, "pvp_div2"),
+            div3_wr: div_wr(statistics, "pvp_div3"),
         }
     }
 
@@ -315,20 +388,24 @@ mod tests {
 
     #[test]
     fn pvp_stats_extracts_all_fields() {
+        // Mirrors the real WG account/info response shape: the top-level is
+        // "statistics", with "pvp" as a child. Damage is "damage_dealt" (WG
+        // renamed it from "damage_caused"). Main battery shots/hits are nested
+        // under a "main_battery" sub-object. Division splits are siblings of
+        // "pvp" under "statistics" (pvp_solo / pvp_div2 / pvp_div3).
         let raw = serde_json::json!({
             "pvp": {
                 "battles": 1000,
                 "wins": 550,
-                "damage_caused": 1_500_000,
+                "damage_dealt": 1_500_000,
                 "xp": 1_200_000,
                 "frags": 800,
                 "survived_battles": 300,
-                "main_battery_shots": 5000,
-                "main_battery_hits": 1500,
-                "pvp_solo": { "battles": 600, "wins": 330 },
-                "pvp_div2": { "battles": 200, "wins": 110 },
-                "pvp_div3": { "battles": 200, "wins": 110 }
-            }
+                "main_battery": { "shots": 5000, "hits": 1500 }
+            },
+            "pvp_solo": { "battles": 600, "wins": 330 },
+            "pvp_div2": { "battles": 200, "wins": 110 },
+            "pvp_div3": { "battles": 200, "wins": 110 }
         });
         let p = PvpStats::extract(Some(&raw));
         assert_eq!(p.battles, Some(1000));

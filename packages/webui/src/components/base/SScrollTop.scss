@@ -1,0 +1,31 @@
+.s-scroll-top {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: var(--z-floating);
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgb(var(--color-border) / 20%);
+  border-radius: var(--radius-full);
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-text));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+  transition:
+    background var(--duration-short) var(--ease-standard),
+    color var(--duration-short) var(--ease-standard),
+    transform var(--duration-short) var(--ease-spring);
+
+  &:hover {
+    background: rgb(var(--color-primary));
+    color: rgb(var(--color-on-solid));
+    transform: translateY(-2px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}

@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "战舰世界战况分析仪表盘 — 录像复盘与游戏内覆盖层"
   },
+  "copied": "已复制到剪贴板",
+  "copyFailed": "复制失败",
   "detect": {
     "title": "游戏安装",
     "scanning": "正在扫描注册表与 Steam 游戏库…",
@@ -12,6 +14,14 @@
   },
   "game": {
     "online": "游戏运行中",
-    "offline": "游戏未启动"
+    "offline": "游戏未启动",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "官服（WG中心）",
+      "lesta": "Lesta（俄服）",
+      "cn360": "国服（空中网）",
+      "manual": "手动指定"
+    }
   }
 }

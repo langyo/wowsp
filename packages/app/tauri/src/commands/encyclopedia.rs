@@ -61,26 +61,30 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0")
         .to_string();
-    let ships_total = data.get("ships_total").and_then(|v| v.as_i64()).unwrap_or(0);
+    let ships_total = data
+        .get("ships_total")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let info = GameVersionInfo {
         game_version,
         ships_total,
         timestamp: now_ts(),
     };
     // Persist (best-effort).
-    let _ = appdata_write(INFO_CACHE.into(), serde_json::to_string(&info).unwrap_or_default());
+    let _ = appdata_write(
+        INFO_CACHE.into(),
+        serde_json::to_string(&info).unwrap_or_default(),
+    );
     Ok(info)
 }
 
 /// Fetch (and cache, per game version + language) the full ship encyclopedia.
 /// `force_refresh` bypasses the cache.
 ///
-/// **Language selection**: WoWSP uses compound locale tags (`zhs-cn`,
-/// `zhs-asia`, `en-eu`, etc.) as cache keys for external data, because the
-/// same WG language code can produce different ship names on different realms
-/// (CN's zh-cn = animal names for IJN, ASIA's zh-cn = historical names).
-///
-/// The cache is keyed by `<version>-<compound>` so switching realm or UI
+/// **Language selection**: The frontend resolves and passes an explicit WG
+/// language code (zh-cn, zh-sg, zh-tw, en, ja, ko, ru, fr, es). Compound
+/// cache keys are `<wg-lang>-<realm>` (e.g. "zh-cn-asia", "zh-sg-asia").
+/// The cache is keyed by `<version>-<compound>` so switching realm or
 /// language re-fetches with the correct localization.
 #[tauri::command]
 pub async fn get_ship_encyclopedia(
@@ -90,7 +94,11 @@ pub async fn get_ship_encyclopedia(
 ) -> Result<Vec<ShipInfo>, String> {
     let version = get_game_version().await?.game_version;
     let (compound, wg_lang) = resolve_encyclopedia_language(&realm, language);
-    let cache_file = format!("encyclopedia/ships-{version}-{compound}.json");
+    // Schema version: bump when the cached ShipInfo shape changes (e.g. adding
+    // the `images` field). This invalidates old caches automatically — users
+    // don't need to manually clear AppData after an app update.
+    const CACHE_SCHEMA: u32 = 2; // v2: added ShipImages
+    let cache_file = format!("encyclopedia/ships-{version}-{compound}-s{CACHE_SCHEMA}.json");
 
     if !force_refresh {
         if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
@@ -104,46 +112,73 @@ pub async fn get_ship_encyclopedia(
 
     let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
     let host = realm_host(&realm)?;
-    let client = wg_client()?;
+    let client = std::sync::Arc::new(wg_client()?);
+    let base_url = format!(
+        "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
+    );
+
+    // Fetch page 1 first to get page_total, then fetch remaining pages in parallel.
+    let page1_url = format!("{base_url}&page_no=1");
+    let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
+        .get(&page1_url)
+        .send()
+        .await
+        .map_err(|e| format!("encyclopedia/ships page 1 request: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("encyclopedia/ships page 1 parse: {e}"))?;
+    if page1_resp.status != "ok" {
+        return Err(format!(
+            "encyclopedia/ships: {}",
+            page1_resp.error.message.unwrap_or_default()
+        ));
+    }
+    let page_total = page1_resp
+        .meta
+        .as_ref()
+        .and_then(|m| m.get("page_total"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+
+    // Spawn concurrent requests for pages 2..page_total.
+    let mut handles = Vec::new();
+    for pn in 2..=page_total {
+        let url = format!("{base_url}&page_no={pn}");
+        let c = client.clone();
+        handles.push(tokio::spawn(async move {
+            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = c
+                .get(&url)
+                .send()
+                .await?
+                .json()
+                .await?;
+            if resp.status != "ok" {
+                anyhow::bail!("{}", resp.error.message.unwrap_or_default());
+            }
+            Ok::<_, anyhow::Error>((pn, resp.data.unwrap_or_default()))
+        }));
+    }
+
+    // Collect all results, preserving order.
+    let mut page_data: Vec<(i64, serde_json::Map<String, serde_json::Value>)> = Vec::new();
+    // Push page 1 first.
+    page_data.push((1, page1_resp.data.unwrap_or_default()));
+    for h in handles {
+        match h.await {
+            Ok(Ok((pn, data))) => page_data.push((pn, data)),
+            Ok(Err(e)) => return Err(format!("encyclopedia/ships page fetch: {e}")),
+            Err(e) => return Err(format!("encyclopedia/ships task panic: {e}")),
+        }
+    }
+    page_data.sort_by_key(|(pn, _)| *pn);
 
     let mut all: Vec<ShipInfo> = Vec::new();
-    let mut page_no = 1;
-    loop {
-        let url = format!(
-            "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&page_no={page_no}&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile"
-        );
-        let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("encyclopedia/ships page {page_no} request: {e}"))?
-            .json()
-            .await
-            .map_err(|e| format!("encyclopedia/ships page {page_no} parse: {e}"))?;
-        if resp.status != "ok" {
-            return Err(format!(
-                "encyclopedia/ships: {}",
-                resp.error.message.unwrap_or_default()
-            ));
-        }
-        let data = resp.data.unwrap_or_default();
-        // data is { "<shipId>": { ... }, ... }
+    for (_pn, data) in page_data {
         for (_id, value) in data {
             if let Ok(ship) = parse_ship(&value, &version) {
                 all.push(ship);
             }
         }
-        // WG pagination: meta.page_total tells us how many pages.
-        let page_total = resp
-            .meta
-            .as_ref()
-            .and_then(|m| m.get("page_total"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(1);
-        if page_no as i64 >= page_total {
-            break;
-        }
-        page_no += 1;
     }
 
     // Persist cache.
@@ -171,10 +206,7 @@ fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, Stri
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        tier: value
-            .get("tier")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i8,
+        tier: value.get("tier").and_then(|v| v.as_i64()).unwrap_or(0) as i8,
         type_: value
             .get("type")
             .and_then(|v| v.as_str())
@@ -199,47 +231,67 @@ fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, Stri
             .unwrap_or("")
             .to_string(),
         game_version: version.to_string(),
-        default_profile: value.get("default_profile").cloned().unwrap_or(serde_json::Value::Null),
+        default_profile: value
+            .get("default_profile")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        images: parse_ship_images(value.get("images")),
     })
+}
+
+/// Extract the ShipImages struct from the WG `images` object. The WG API
+/// returns `{"small": "...", "medium": "...", "large": "...", "contour": "..."}`.
+/// Missing keys → empty string (graceful degradation).
+fn parse_ship_images(images: Option<&serde_json::Value>) -> wowsp_tauri_shared::ShipImages {
+    let img = match images {
+        Some(v) if v.is_object() => v,
+        _ => return Default::default(),
+    };
+    let get = |key: &str| -> String {
+        img.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    wowsp_tauri_shared::ShipImages {
+        small: get("small"),
+        medium: get("medium"),
+        large: get("large"),
+        contour: get("contour"),
+    }
 }
 
 /// Resolve the WG API `language` parameter for encyclopedia requests.
 ///
-/// WoWSP uses a **compound locale** scheme for external data:
-///   `<ui-lang>-<realm>` → e.g. "zhs-cn", "zhs-asia", "en-asia", "ja-asia".
-///
-/// This distinguishes the same language across different realms — notably
-/// CN's zh-cn uses animal names for IJN ships ("动物园"), while ASIA's zh-cn
-/// uses historical names. The compound tag is the cache key, so switching
-/// realm re-fetches with the right names.
-///
-/// The caller passes the UI language (zhs/zht/en/fr/...) and the realm.
-/// This function combines them into:
-///   1. A compound tag for caching: "zhs-cn", "zhs-asia", etc.
-///   2. A WG API language code for the request: zh-cn, zh-tw, en, ja, ...
-fn resolve_encyclopedia_language(realm: &str, ui_language: Option<String>) -> (String, String) {
-    let ui = ui_language.as_deref().unwrap_or("en");
+/// The frontend sends an explicit WG language code (e.g. "zh-cn", "zh-sg",
+/// "zh-tw", "en", "ja", ...). The WG code is passed directly to the API.
+/// The compound cache key uses a **language short-code + realm** format
+/// (e.g. "zhs-cn", "zhs-asia", "zht-asia", "en-asia") to keep caches
+/// compact and aligned with the app's internal locale names.
+fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> (String, String) {
+    let wg_lang = data_language.unwrap_or_else(|| "en".to_string());
+    let short = wg_to_short_code(&wg_lang);
+    let compound = format!("{short}-{realm}");
+    (compound, wg_lang)
+}
 
-    // Map UI locale → WG API language code.
-    let wg_lang = match ui {
-        "zhs" => "zh-cn",
-        "zht" => "zh-tw",
+/// Map a WG API language code to the app's internal locale short-code.
+///
+/// WG codes like "zh-cn" and "zh-sg" both map to "zhs" (Simplified
+/// Chinese), "zh-tw" maps to "zht" (Traditional Chinese), and most
+/// others (en, ja, ko, ru, fr, es) are their own short code.
+fn wg_to_short_code(wg: &str) -> &str {
+    match wg {
+        "zh-cn" | "zh-sg" => "zhs",
+        "zh-tw" => "zht",
         "en" => "en",
         "ja" => "ja",
         "ko" => "ko",
+        "ru" => "ru",
         "fr" => "fr",
         "es" => "es",
-        "ru" => "ru",
-        _ => "en", // unknown UI locale → English
-    };
-
-    // Compound tag: <ui-lang>-<realm>. This is the cache discriminator.
-    // CN realm is special — it always uses WG's zh-cn, but the compound tag
-    // still records it as "zhs-cn" (or "<ui>-cn") so switching from ASIA
-    // to CN re-fetches.
-    let compound = format!("{ui}-{realm}");
-
-    (compound, wg_lang.to_string())
+        _ => "en",
+    }
 }
 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
@@ -379,19 +431,19 @@ mod tests {
     }
 
     #[test]
-    fn cn_realm_compound_tag_and_wg_lang() {
-        let (compound, wg) = resolve_encyclopedia_language("cn", Some("zhs".into()));
+    fn cn_realm_uses_short_code_compound() {
+        let (compound, wg) = resolve_encyclopedia_language("cn", Some("zh-cn".into()));
         assert_eq!(compound, "zhs-cn");
         assert_eq!(wg, "zh-cn");
     }
 
     #[test]
-    fn asia_realm_compound_tag_and_wg_lang() {
-        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zhs".into()));
+    fn asia_realm_uses_short_code_compound() {
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
         assert_eq!(compound, "zhs-asia");
-        assert_eq!(wg, "zh-cn");
+        assert_eq!(wg, "zh-sg");
 
-        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zht".into()));
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         assert_eq!(compound, "zht-asia");
         assert_eq!(wg, "zh-tw");
 
@@ -401,21 +453,40 @@ mod tests {
     }
 
     #[test]
-    fn unknown_ui_language_falls_back_to_english() {
-        let (compound, wg) = resolve_encyclopedia_language("eu", Some("xxx".into()));
-        assert_eq!(wg, "en");
-        assert_eq!(compound, "xxx-eu");
+    fn wg_code_maps_to_correct_short_code() {
+        assert_eq!(wg_to_short_code("zh-cn"), "zhs");
+        assert_eq!(wg_to_short_code("zh-sg"), "zhs");
+        assert_eq!(wg_to_short_code("zh-tw"), "zht");
+        assert_eq!(wg_to_short_code("en"), "en");
+        assert_eq!(wg_to_short_code("ja"), "ja");
+        assert_eq!(wg_to_short_code("ko"), "ko");
+        assert_eq!(wg_to_short_code("ru"), "ru");
+        assert_eq!(wg_to_short_code("fr"), "fr");
+        assert_eq!(wg_to_short_code("es"), "es");
+        assert_eq!(wg_to_short_code("unknown"), "en");
     }
 
     #[test]
-    fn cache_key_uses_compound_tag() {
-        let v = "15.5.0";
-        let (compound, _) = resolve_encyclopedia_language("cn", Some("zhs".into()));
-        let cache = format!("encyclopedia/ships-{v}-{compound}.json");
-        assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn.json");
+    fn missing_language_falls_back_to_english() {
+        let (compound, wg) = resolve_encyclopedia_language("eu", None);
+        assert_eq!(wg, "en");
+        assert_eq!(compound, "en-eu");
+    }
 
-        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zhs".into()));
-        let cache2 = format!("encyclopedia/ships-{v}-{compound2}.json");
-        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia.json");
+    #[test]
+    fn cache_key_uses_short_code_and_realm() {
+        let v = "15.5.0";
+        const SCHEMA: u32 = 2;
+        let (compound, _) = resolve_encyclopedia_language("cn", Some("zh-cn".into()));
+        let cache = format!("encyclopedia/ships-{v}-{compound}-s{SCHEMA}.json");
+        assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn-s2.json");
+
+        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
+        let cache2 = format!("encyclopedia/ships-{v}-{compound2}-s{SCHEMA}.json");
+        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia-s2.json");
+
+        let (compound3, _) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
+        let cache3 = format!("encyclopedia/ships-{v}-{compound3}-s{SCHEMA}.json");
+        assert_eq!(cache3, "encyclopedia/ships-15.5.0-zht-asia-s2.json");
     }
 }

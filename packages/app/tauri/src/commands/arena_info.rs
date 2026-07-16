@@ -163,9 +163,13 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Ok(game) = std::env::var("WOWSP_GAME_PATH") {
         return Ok(PathBuf::from(game).join("replays"));
     }
-    // As a last resort, try the detected install (managed state set by the
-    // config store on the frontend). If still nothing, surface a clear error.
-    Err("no replay dir: set WOWSP_GAME_PATH or WOWSP_REPLAY_DIR".into())
+    // Last resort: auto-detect the install (registry + Steam) and use its
+    // `replays/` folder. Mirrors `replay::resolve_replay_dir`. The frontend
+    // normally passes the active install's path explicitly.
+    if let Some(detected) = super::game_detect::detect_game_install().into_iter().next() {
+        return Ok(PathBuf::from(&detected.path).join("replays"));
+    }
+    Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into())
 }
 
 fn find_latest_arena_info(dir: &PathBuf) -> Option<PathBuf> {

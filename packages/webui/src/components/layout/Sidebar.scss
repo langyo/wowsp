@@ -76,12 +76,66 @@
     gap: 0.5rem;
   }
 
-  &__game-status {
+  /* Account + settings button on the same row */
+  &__account-row {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+  }
+
+  &__game-status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-border) / 8%);
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
+
+    &.is-running {
+      background: rgb(var(--color-success) / 8%);
+    }
+  }
+
+  &__game-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__game-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding-left: 1.05rem; /* align under the status text, past the 8px dot */
+  }
+
+  &__game-client {
+    color: rgb(var(--color-text));
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__game-pid {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    width: fit-content;
+    color: rgb(var(--color-muted));
+    transition: color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  &__game-pid-val {
+    font-family: var(--font-mono);
+    color: rgb(var(--color-primary));
   }
 
   &__status-dot {
@@ -89,6 +143,7 @@
     height: 8px;
     border-radius: 50%;
     background: rgb(var(--color-muted));
+    flex-shrink: 0;
 
     &--on {
       background: rgb(var(--color-success));
@@ -105,6 +160,8 @@
   }
 
   &__account {
+    flex: 1 1 0;
+    min-width: 0;
     padding: 0.5rem 0.6rem;
     border-radius: var(--radius-sm);
     background: rgb(var(--color-primary) / 6%);
@@ -118,6 +175,36 @@
 
   &__account-name {
     font-size: var(--text-xs);
+    color: var(--color-muted);
+    /* Two-line clamp with ellipsis — pure CSS, no JS truncation needed. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+
+  /* Settings icon button — sits in the footer next to account info. */
+  &__settings-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
     color: rgb(var(--color-muted));
+    transition: background var(--duration-short), color var(--duration-short);
+    flex-shrink: 0;
+
+    &:hover {
+      background: rgb(var(--color-primary) / 10%);
+      color: rgb(var(--color-primary));
+    }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+    }
   }
 }

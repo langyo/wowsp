@@ -1,0 +1,72 @@
+/* SSegmented — iOS-style segmented control with sliding indicator.
+   The indicator slides via CSS variables (--seg-count / --seg-index) set
+   from JS. Width = 1/count of the track; transform = index × 100% of the
+   indicator's own width. Both are pure CSS math — no DOM measurement.
+
+   The track is a CSS grid of equal 1fr columns: each option gets the same
+   width (= the widest option's min-content), so a 4-char label never
+   overflows its slot and the indicator's `1/count` math always aligns.
+   This works for BOTH inline (shrink-to-fit, sized to the widest label)
+   and block (width:100%) modes — the flex-based layout only produced
+   equal widths when the container had a definite width, leaving inline
+   groups with unequal, overflowing options. */
+.s-segmented {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+
+  &--block {
+    display: grid;
+    width: 100%;
+  }
+
+  /* The sliding highlight pill. Sits behind the options at z-index 0. */
+  &__indicator {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    height: calc(100% - 4px);
+    width: calc((100% - 4px) / var(--seg-count, 1));
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-surface));
+    box-shadow: 0 1px 3px rgb(0 0 0 / 12%), 0 0 0 1px rgb(var(--color-border) / 10%);
+    pointer-events: none;
+    z-index: 0;
+    transform: translateX(calc(var(--seg-index, 0) * 100%));
+    transition: transform var(--duration-normal) var(--ease-standard);
+  }
+
+  &__option {
+    position: relative;
+    z-index: 1; /* above the indicator */
+    min-width: 0; /* allow text to be laid out by the grid cell */
+    border: none;
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    padding: 0.35rem 0.85rem;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    transition: color var(--duration-short) var(--ease-standard);
+
+    &:hover:not(.s-segmented__option--active) {
+      color: rgb(var(--color-text));
+    }
+
+    &--active {
+      color: rgb(var(--color-primary));
+      font-weight: 600;
+    }
+  }
+}
