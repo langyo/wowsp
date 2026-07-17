@@ -27,17 +27,10 @@ const WG_PUBLISHERS: &[&str] = &[
 const STEAM_APPID: &str = "552990";
 
 /// Auto-detect every World of Warships install on this machine.
-///
-/// TODO(M1): implement the registry walk (`HKCU` + `HKLM`
-/// `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`, filter by
-/// `WG_PUBLISHERS`, validate `WorldOfWarships.exe`) and the Steam
-/// `libraryfolders.vdf` + `appmanifest_<appid>.acf` parse. For now returns
-/// whatever is pinned in `WOWSP_GAME_PATH`, or an empty list.
 #[tauri::command]
 pub fn detect_game_install() -> Vec<GameInstall> {
     let mut found = Vec::new();
 
-    // 1. Env override (developer convenience + manual pin).
     if let Ok(p) = std::env::var("WOWSP_GAME_PATH") {
         if is_game_dir(&p) {
             found.push(GameInstall {
@@ -48,10 +41,7 @@ pub fn detect_game_install() -> Vec<GameInstall> {
         }
     }
 
-    // 2. Registry scan (official / Lesta / 360). TODO(M1).
     found.extend(scan_registry_uninstall_keys());
-
-    // 3. Steam scan. TODO(M1).
     found.extend(scan_steam_libraries());
 
     found

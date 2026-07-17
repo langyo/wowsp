@@ -2,15 +2,10 @@
 //!
 //! Overlay mode needs WoWSP to launch alongside the game. The cleanest hook the
 //! game exposes is a mod file under `bin/<version>/res_mods/`: the WoWS client
-//! loads Python mods from there at startup. A full "launch WoWSP on game start"
-//! mod requires the BigWorld Python mod API (PnFMods loader); this module lays
-//! the file-structure groundwork and records install state, with the live
-//! Python launcher stubbed as TODO.
-//!
-//! Status: `install_overlay_mod` / `uninstall_overlay_mod` / `is_overlay_mod_installed`
-//! write/remove a marker file + a placeholder PnFMods loader under
-//! `res_mods/<latest_bin_version>/`. The loader body is a TODO that, once the
-//! BigWorld mod entrypoint is reverse-engineered, shells out to the WoWSP exe.
+//! loads Python mods from there at startup. A PnFMods.py loader + WoWSP.py
+//! payload are written into the game directory; WoWSP.py uses the BigWorld
+//! Python mod API to spawn the WoWSP process on game load and terminate it on
+//! game disconnect.
 
 use std::fs;
 use std::path::PathBuf;
@@ -18,12 +13,9 @@ use std::path::PathBuf;
 /// Files WoWSP drops into res_mods to mark itself installed. The PnFMods.py
 /// loader is the conventional WoWS mod entrypoint; `WoWSP.py` is our payload.
 const MOD_FILES: &[(&str, &str)] = &[
-    // The PnFMods loader the WoWS client imports at startup. The real body
-    // registers WoWSP's payload; TODO(M6-bigworld): fill in once the loader
-    // contract is confirmed against a running game.
     (
         "PnFMods.py",
-        "# WoWSP loader placeholder — see packages/app/tauri/src/commands/mod_install.rs\n",
+        "import WoWSP\n",
     ),
     ("WoWSP.py", include_str!("../../../mod_templates/WoWSP.py")),
 ];

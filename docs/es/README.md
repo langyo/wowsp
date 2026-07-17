@@ -1,24 +1,35 @@
+<p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
+
+<div align="center">
+
 # WoWSP
 
-**Panel de análisis de batalla para World of Warships — revisión de repeticiones y superposición dentro del juego**
+**World of WarShip Panel — revisión de repeticiones & superposición en juego**
 
-WoWSP es un panel de análisis de batalla de nueva generación para World of Warships. Funciona en dos modos: revisión independiente de repeticiones (mapa 3D holográfico) y una superposición transparente dentro del juego.
+WoWSP es un panel de análisis de batalla de nueva generación para World of Warships.
 
-## Índice de documentación
+## Funcionalidades
 
-### Guías
+### Revisión de Repeticiones
 
-| Índice de documentación | |
-|---|---|
-| [Arquitectura](./guides/architecture.md) | Arquitectura del sistema y diseño de dos modos |
-| [Conceptos](./guides/fundamentals.md) | Conceptos fundamentales |
-| [Compilación](./guides/building.md) | Guía de compilación y desarrollo |
-| [Contribuir](./guides/CONTRIBUTING.md) | Guía de contribución |
+Abre cualquier `.wowsreplay` y mira la partida completa en un mapa 3D holográfico — sin abrir el juego.
 
-### Diseño
+### Visor 3D de Barcos
 
-| Índice de documentación | |
-|---|---|
-| [Diseño de arquitectura](./designs/architecture.md) | Documento de diseño arquitectónico |
+Explora todos los barcos como modelos holográficos low-poly. Gira, amplía, inspecciona el blindaje.
 
-Consulte la barra lateral para el índice completo.
+### Superposición en Juego
+
+Una superposición transparente muestra las alineaciones en directo, visible solo al mantener `Tab`.
+
+### Estadísticas
+
+Analiza en profundidad tu historial de combate con estadísticas por barco, temporadas clasificatorias y tendencias.
+
+---
+
+[GitHub](https://github.com/langyo/wowsp) · [Documentación](./guides/architecture.md)
+
+*Bajo licencia SySL-1.0*
+
+</div>

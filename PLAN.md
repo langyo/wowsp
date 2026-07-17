@@ -63,16 +63,14 @@ visible only while `Tab` is held.
 
 ## Feature milestones (dev branch)
 
-- [ ] M1 — Real game-detection (registry + Steam), cached to `.wowsp-cache/`
-- [ ] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
-- [ ] M3 — Replay packet-stream decoder → per-entity event timeline
-- [ ] M4 — three.js holographic map renders one full match from a replay
-- [ ] M5 — Model converters produce GLB for at least one map + a handful of ships
-- [ ] M6 — Mod installer: launches WoWSP with the game, transparent overlay window
-- [ ] M7 — `tempArenaInfo.json` polling → live roster in overlay mode
-- [ ] M8 — Tab-triggered capture + roster re-anchoring
-- [ ] M9 — Optional Wargaming stat lookup (Vortex / WG Public API)
+- [x] M1 — Real game-detection (registry + Steam), cached to `.wowsp-cache/`
+- [x] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
+- [x] M3 — Replay packet-stream decoder → per-entity event timeline
+- [x] M4 — three.js holographic map renders one full match from a replay
+- [x] M5 — Model converters produce GLB for at least one map + a handful of ships
+- [x] M6 — Mod installer: launches WoWSP with the game, transparent overlay window
+- [x] M7 — `tempArenaInfo.json` polling → live roster in overlay mode
+- [x] M8 — Tab-triggered capture + roster re-anchoring
+- [x] M9 — Optional Wargaming stat lookup (Vortex / WG Public API)
 
-Each milestone is a focused PR against `dev`. The skeleton in this repository is
-the foundation for all of them — every TODO in the code points at the milestone
-it belongs to.
+All nine milestones are complete. Ongoing work continues on `dev`.

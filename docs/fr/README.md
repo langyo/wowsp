@@ -1,24 +1,35 @@
+<p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
+
+<div align="center">
+
 # WoWSP
 
-**Tableau de bord d'analyse de bataille pour World of Warships — revue des replays et overlay en jeu**
+**World of WarShip Panel — analyse de replays & overlay en jeu**
 
-WoWSP est un tableau de bord d'analyse de bataille de nouvelle génération pour World of Warships. Il fonctionne dans deux modes : la revue autonome des replays (carte 3D holographique) et l'overlay transparent en jeu.
+WoWSP est un tableau de bord d'analyse de bataille de nouvelle génération pour World of Warships.
 
-## Index de la documentation
+## Fonctionnalités
 
-### Guides
+### Analyse de Replays
 
-| Index de la documentation | |
-|---|---|
-| [Architecture](./guides/architecture.md) | Architecture du système et conception à deux modes |
-| [Concepts](./guides/fundamentals.md) | Concepts fondamentaux |
-| [Compilation](./guides/building.md) | Guide de compilation et de développement |
-| [Contribuer](./guides/CONTRIBUTING.md) | Guide de contribution |
+Ouvrez n'importe quel `.wowsreplay` et regardez le match complet sur une carte 3D holographique — sans lancer le jeu.
 
-### Conception
+### Visualiseur 3D
 
-| Index de la documentation | |
-|---|---|
-| [Conception de l'architecture](./designs/architecture.md) | Document de conception architecturale |
+Parcourez tous les navires en modèles holographiques low-poly. Rotation, zoom, inspection du blindage.
 
-Consultez la barre latérale pour l'index complet.
+### Overlay en Jeu
+
+Un overlay transparent affiche les compositions d'équipe en direct, visible uniquement en maintenant `Tab`.
+
+### Statistiques
+
+Analysez en profondeur votre historique de combat avec des stats par navire, saisons classées et tendances.
+
+---
+
+[GitHub](https://github.com/langyo/wowsp) · [Documentation](./guides/architecture.md)
+
+*Sous licence SySL-1.0*
+
+</div>

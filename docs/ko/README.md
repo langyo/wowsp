@@ -1,24 +1,35 @@
+<p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
+
+<div align="center">
+
 # WoWSP
 
-**World of Warships 전투 분석 대시보드 — 리플레이 리뷰 및 게임 내 오버레이**
+**World of WarShip Panel — 리플레이 리뷰 & 게임 내 오버레이**
 
-WoWSP는 World of Warships를 위한 차세대 전투 분석 대시보드입니다. 두 가지 모드로 동작합니다. 독립적인 리플레이 리뷰(홀로그램 3D 지도)와 게임 내 투명 오버레이입니다.
+WoWSP는 World of Warships를 위한 차세대 전투 분석 대시보드입니다.
 
-## 문서 색인
+## 기능
 
-### 가이드
+### 리플레이 리뷰
 
-| 문서 색인 | |
-|---|---|
-| [아키텍처](./guides/architecture.md) | 시스템 아키텍처와 이중 모드 설계 |
-| [기본 개념](./guides/fundamentals.md) | 핵심 개념 |
-| [빌드](./guides/building.md) | 빌드 및 개발 가이드 |
-| [기여 가이드](./guides/CONTRIBUTING.md) | 기여 방법 |
+`.wowsreplay` 파일을 열기만 하면 홀로그래픽 3D 지도에서 전체 경기를 다시 볼 수 있습니다——게임 실행이 필요 없습니다.
 
-### 설계
+### 3D 함선 뷰어
 
-| 문서 색인 | |
-|---|---|
-| [아키텍처 설계](./designs/architecture.md) | 아키텍처 설계 문서 |
+모든 함선을 로우폴리 홀로그래픽 모델로 탐색. 회전, 확대, 장갑 배치 확인이 가능합니다.
 
-전체 목차는 사이드바를 참조하세요.
+### 게임 내 오버레이
+
+`Tab` 키를 누르고 있는 동안에만 투명 오버레이로 양 팀 정보를 실시간 표시합니다.
+
+### 통계 & 인사이트
+
+함선별 통계, 랭크 시즌, 성과 추이 등 전적을 상세히 분석할 수 있습니다.
+
+---
+
+[GitHub](https://github.com/langyo/wowsp) · [문서](./guides/architecture.md)
+
+*SySL-1.0 라이선스*
+
+</div>
