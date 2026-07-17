@@ -1,5 +1,7 @@
 <p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
 
+<div align="center">
+
 # WoWSP
 
 **World of WarShip Panel — 리플레이 리뷰 & 게임 내 오버레이**
@@ -29,3 +31,5 @@ WoWSP는 World of Warships를 위한 차세대 전투 분석 대시보드입니�
 [GitHub](https://github.com/langyo/wowsp) · [문서](./guides/architecture.md)
 
 *SySL-1.0 라이선스*
+
+</div>

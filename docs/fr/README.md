@@ -1,5 +1,7 @@
 <p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
 
+<div align="center">
+
 # WoWSP
 
 **World of WarShip Panel — analyse de replays & overlay en jeu**
@@ -29,3 +31,5 @@ Analysez en profondeur votre historique de combat avec des stats par navire, sai
 [GitHub](https://github.com/langyo/wowsp) · [Documentation](./guides/architecture.md)
 
 *Sous licence SySL-1.0*
+
+</div>

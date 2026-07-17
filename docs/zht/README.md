@@ -1,5 +1,7 @@
 <p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
 
+<div align="center">
+
 # WoWSP
 
 **戰艦世界戰況面板 — 回放復盤 & 遊戲內浮層**
@@ -29,3 +31,5 @@ WoWSP 是面向《戰艦世界》的新一代戰況分析儀表板。
 [GitHub](https://github.com/langyo/wowsp) · [文件](./guides/architecture.md)
 
 *基於 SySL-1.0 協議授權*
+
+</div>

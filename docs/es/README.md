@@ -1,5 +1,7 @@
 <p align="center"><img src="./logo.webp" alt="WoWSP" width="128" /></p>
 
+<div align="center">
+
 # WoWSP
 
 **World of WarShip Panel — revisión de repeticiones & superposición en juego**
@@ -29,3 +31,5 @@ Analiza en profundidad tu historial de combate con estadísticas por barco, temp
 [GitHub](https://github.com/langyo/wowsp) · [Documentación](./guides/architecture.md)
 
 *Bajo licencia SySL-1.0*
+
+</div>
