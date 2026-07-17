@@ -24,21 +24,11 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - uses: Swatinem/rust-cache@v2
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
       - name: Generate shader bundle
         run: python scripts/glsl_bundle.py --verbose
-      - name: Generate Tauri icons
-        run: python scripts/ensure_tauri_icons.py
       - name: Rustfmt
         run: cargo fmt --all -- --check
       - name: Clippy
