@@ -165,13 +165,12 @@ export default defineComponent({
           const r = activeRing;
           const elapsed = performance.now() - r.born;
           const k = Math.min(1, elapsed / r.duration);
-          const pulse = 1 + 0.12 * Math.sin(elapsed * 0.014);
-          // Expand outward as it fades (energy ripple dissipating).
-          const grow = 1 + k * 0.4;
-          r.mesh.scale.setScalar(pulse * grow);
-          (r.mesh.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k * k);
-          // Keep the ring roughly facing the camera without snapping flat.
-          r.mesh.lookAt(cam.position);
+          // Update shader time uniform for the pulsing glow.
+          const mat = r.mesh.material as THREE.ShaderMaterial;
+          if (mat.uniforms) mat.uniforms.uTime.value = elapsed * 0.001;
+          // Shrink slightly as it fades.
+          const shrink = 1 - k * 0.2;
+          r.mesh.scale.setScalar(shrink);
           if (k >= 1) {
             sc.remove(r.mesh);
             (r.mesh.geometry as THREE.BufferGeometry).dispose();
@@ -351,14 +350,13 @@ export default defineComponent({
       },
     );
 
-    // ── Focus zone highlight ring ──────────────────────────────────────────
-    // Spawns a cyan pulsing RingGeometry at the focused ship region's world
-    // position, oriented to face the camera. Animated (pulse + fade) by the
-    // rAF render loop and disposed after `durationMs`. Replaces any prior ring.
+    // ── Focus zone highlight ─────────────────────────────────────────────
+    // Spawns a soft pulsing glow at the focused ship region.  Uses a small
+    // semi-transparent sphere instead of a ring so the highlight blends into
+    // the model rather than floating obtrusively in front of it.
     function spawnHighlightRing(zone: FocusZone, box: THREE.Box3, durationMs = 2000): void {
       const sc = scene.value;
       if (!sc) return;
-      // Remove any prior ring first.
       if (activeRing) {
         sc.remove(activeRing.mesh);
         (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
@@ -368,7 +366,6 @@ export default defineComponent({
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       const half = size.x / 2;
-      // Ring placement per zone — matches the focusZone camera target.
       const pos = new THREE.Vector3();
       switch (zone) {
         case "bow": pos.set(center.x + half * 0.7, center.y + size.y * 0.2, center.z); break;
@@ -378,22 +375,39 @@ export default defineComponent({
         case "midship":
         default: pos.set(center.x, center.y + size.y * 0.15, center.z);
       }
-      const radius = Math.max(size.y * 0.9, 20);
-      // A thin bright torus reads better as a "focus reticle" than a flat ring;
-      // use TorusGeometry so the highlight has visible thickness from any angle.
-      const tube = Math.max(radius * 0.04, 1.2);
-      const geo = new THREE.TorusGeometry(radius, tube, 12, 48);
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0x66eeff,
+      // Small glowing sphere that pulses gently — reads as a highlight, not UI chrome.
+      const glowRadius = Math.max(size.y * 0.55, 14);
+      const geo = new THREE.SphereGeometry(glowRadius, 16, 16);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          varying vec3 vNormal;
+          varying vec3 vPosition;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vPosition = mv.xyz;
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `
+          varying vec3 vNormal;
+          varying vec3 vPosition;
+          uniform float uTime;
+          void main() {
+            float rim = 1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
+            rim = pow(rim, 2.5);
+            float pulse = 0.6 + 0.4 * sin(uTime * 4.0);
+            float alpha = rim * pulse * 0.35;
+            gl_FragColor = vec4(0.4, 0.93, 1.0, alpha);
+          }`,
         transparent: true,
-        opacity: 0.95,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(pos);
       sc.add(mesh);
-      activeRing = { mesh, born: performance.now(), duration: durationMs, baseScale: radius };
+      activeRing = { mesh, born: performance.now(), duration: durationMs, baseScale: glowRadius };
     }
 
     // ── Focus zone camera tween ───────────────────────────────────────────
