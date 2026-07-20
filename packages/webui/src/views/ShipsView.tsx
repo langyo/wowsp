@@ -77,6 +77,7 @@ export default defineComponent({
           loadToastId = 0;
         }
       },
+      { immediate: true },
     );
 
     // Auto-load on mount if not already loaded for this realm.
@@ -86,12 +87,19 @@ export default defineComponent({
     // Reload when realm changes.
     watch(realm, () => void loadEncyclopedia());
 
-    // Fallback: if encyclopedia loads while treeNation is still blank, pick first.
-    watch(() => encyclopedia.nations, (n) => {
-      if (!treeNation.value && n.length > 0) {
-        treeNation.value = n[0];
-      }
-    });
+    // When ships become available (either from our own load or one already in
+    // flight from the dashboard), mark first load done and pick default nation.
+    watch(
+      () => encyclopedia.ships.length,
+      (n) => {
+        if (n > 0) {
+          firstLoadDone.value = true;
+          if (!treeNation.value && encyclopedia.nations.length > 0) {
+            treeNation.value = encyclopedia.nations[0];
+          }
+        }
+      },
+    );
 
     // ── filters ────────────────────────────────────────────────────────
     const searchText = ref("");
