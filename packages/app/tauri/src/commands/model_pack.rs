@@ -13,16 +13,14 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use flate2::read::GzDecoder;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use tar::Archive;
 
 const REPO: &str = "langyo/wowsp";
 const ASSET_NAME: &str = "wowsp-models.tar.gz";
 const FALLBACK_TAGS: &[&str] = &["res-latest-old-1", "res-latest-old-2"];
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn models_cache_dir() -> Result<PathBuf, String> {
     let base = dirs_next::cache_dir()
@@ -45,16 +43,17 @@ fn write_cached_version(tag: &str) -> Result<(), String> {
 }
 
 /// Resolve a GitHub Release asset download URL for a given tag.
-fn release_asset_url(client: &Client, tag: &str) -> Result<String, String> {
+async fn release_asset_url(client: &Client, tag: &str) -> Result<String, String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
     let resp: serde_json::Value = client
         .get(&url)
         .header("User-Agent", "WoWSP-model-pack/1.0")
         .header("Accept", "application/vnd.github+json")
-        .timeout(REQUEST_TIMEOUT)
         .send()
+        .await
         .map_err(|e| format!("fetch release {tag}: {e}"))?
         .json()
+        .await
         .map_err(|e| format!("parse release {tag}: {e}"))?;
 
     let assets = resp["assets"].as_array().ok_or_else(|| {
@@ -74,24 +73,22 @@ fn release_asset_url(client: &Client, tag: &str) -> Result<String, String> {
 }
 
 /// Download and extract the model pack from a release tag.
-fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
-    let client = Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .build()
-        .map_err(|e| format!("build http client: {e}"))?;
+async fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
+    let client = Client::new();
 
-    let asset_url = release_asset_url(&client, tag)?;
+    let asset_url = release_asset_url(&client, tag).await?;
     tracing::info!(tag, url = %asset_url, "downloading model pack");
 
     let response = client
         .get(&asset_url)
         .header("User-Agent", "WoWSP-model-pack/1.0")
-        .timeout(REQUEST_TIMEOUT)
         .send()
+        .await
         .map_err(|e| format!("download {tag}: {e}"))?;
 
     let body = response
         .bytes()
+        .await
         .map_err(|e| format!("read response {tag}: {e}"))?;
     let cursor = io::Cursor::new(&body[..]);
 
@@ -126,7 +123,7 @@ fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
 ///   2. Try `res-latest` tag.
 ///   3. Fall back to `res-latest-old-1`, then `res-latest-old-2`.
 #[tauri::command]
-pub fn ensure_model_pack() -> Result<String, String> {
+pub async fn ensure_model_pack() -> Result<String, String> {
     let primary_tag = "res-latest";
     let cache_dir = models_cache_dir()?;
 
@@ -139,13 +136,13 @@ pub fn ensure_model_pack() -> Result<String, String> {
     }
 
     // Try primary tag first.
-    if let Err(e) = download_and_extract(primary_tag, &cache_dir) {
+    if let Err(e) = download_and_extract(primary_tag, &cache_dir).await {
         tracing::warn!(?e, "primary model-pack download failed, trying fallbacks");
 
         // Try fallback tags in order.
         let mut ok = false;
         for tag in FALLBACK_TAGS {
-            match download_and_extract(tag, &cache_dir) {
+            match download_and_extract(tag, &cache_dir).await {
                 Ok(()) => {
                     ok = true;
                     break;
