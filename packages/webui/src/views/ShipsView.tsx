@@ -335,6 +335,7 @@ export default defineComponent({
               </SButton>
             </div>
           ) : viewMode.value === "tree" ? (
+            <div class="ships-view__tree-body" key="tree">
               {/* nation rail — vertical list of faction crests */}
               <aside class="ships-view__nation-rail">
                 {encyclopedia.nations.map((n) => (

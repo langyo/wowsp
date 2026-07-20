@@ -1,6 +1,6 @@
 """Build the tech-tree topology data consumed by the ship tech-tree view.
 
-Outputs `packages/webui/src/res/data/tech_tree.json`: a map of shipId → a slim
+Outputs `packages/webui/src/data/tech_tree.json`: a map of shipId → a slim
 node record carrying just what the renderer needs (tier, type, name, rarity,
 archetype, and the shipIds it unlocks). Only researchable tech-tree ships
 (WG `group in {start, upgradeable}`) plus their premium/special neighbours are

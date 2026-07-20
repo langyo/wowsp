@@ -50,8 +50,8 @@ CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/sha
 GAMEPARAMS_JSON = CACHE_DIR / "GameParams.json"
 WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
-RARITY_JSON = RES_DATA / "ship_rarity.json"
-TECHTREE_JSON = RES_DATA / "tech_tree.json"
+RARITY_JSON = SRC_DATA / "ship_rarity.json"
+TECHTREE_JSON = SRC_DATA / "tech_tree.json"
 SHIPMODELS_JSON = SRC_DATA / "ship_models.json"
 
 

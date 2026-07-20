@@ -2,7 +2,7 @@
  * Ship rarity classification — matches the in-game card rarity tiers.
  *
  * The authoritative source is GameParams' `RarityCategory.name` field, mined
- * by `build_rarity_map.py` and bundled at `res/data/ship_rarity.json`. The
+ * by `build_rarity_map.py` and bundled at `data/ship_rarity.json`. The
  * game uses five bands, each with its own card-frame colour:
  *
  *   普通      Common    — white
