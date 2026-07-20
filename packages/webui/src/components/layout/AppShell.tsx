@@ -53,8 +53,10 @@ export default defineComponent({
 
     onMounted(async () => {
       void initTheme();
-      // Download model pack on first launch (best-effort, non-blocking).
-      void initModelPack(() => api.ensureModelPack()).catch(() => {});
+      // Download model pack on first launch (production only; dev uses publicDir).
+      if (!import.meta.env.DEV) {
+        void initModelPack(() => api.ensureModelPack()).catch(() => {});
+      }
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].
       void config.load().then(() => config.detect());

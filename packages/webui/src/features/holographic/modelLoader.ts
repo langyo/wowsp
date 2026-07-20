@@ -78,7 +78,9 @@ const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 // fall back to publicDir paths.
 
 function toUrl(cacheRoot: string | null, kind: "ships" | "maps", cased: string): string {
-  if (cacheRoot && _convertFileSrc) {
+  // In dev mode Vite serves models via publicDir; convertFileSrc only works
+  // in production where the webview origin is tauri://localhost.
+  if (!import.meta.env.DEV && cacheRoot && _convertFileSrc) {
     return _convertFileSrc(`${cacheRoot}/models/${kind}/${cased}.glb`);
   }
   return `/models/${kind}/${cased}.glb`;
