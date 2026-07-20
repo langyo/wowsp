@@ -149,12 +149,13 @@
    values line up vertically within a group. The help icon next to a label
    reveals a tooltip (native title attr) explaining the stat. */
 .specs-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.6rem;
+  columns: 220px;
+  column-gap: 0.6rem;
 }
 
 .specs-group {
+  break-inside: avoid;
+  margin-bottom: 0.6rem;
   background: rgb(var(--color-bg));
   border: 1px solid rgb(var(--color-border) / 12%);
   border-radius: var(--radius-sm);
