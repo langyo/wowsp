@@ -263,7 +263,8 @@
   &__tree-body {
     display: flex;
     gap: 0;
-    min-height: 400px;
+    flex: 1 1 0%;
+    min-height: 0;
   }
 
   &__nation-rail {
@@ -314,8 +315,7 @@
   &__tree-canvas {
     flex: 1;
     min-width: 0;
-    overflow-x: auto;
-    overflow-y: visible;
+    overflow: auto;
     padding-left: 0.6rem;
   }
 }
