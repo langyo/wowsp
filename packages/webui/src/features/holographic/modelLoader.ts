@@ -238,6 +238,9 @@ export function resolveShipModelForEntry(
 }
 
 // ── GLTF loading ──────────────────────────────────────────────────────────
+// Some baked GLBs have NUL-byte (0x00) JSON-chunk padding instead of the
+// spec-mandated 0x20 (space).  fetch + fix the buffer before handing it to
+// GLTFLoader so all generated models load regardless.
 
 let _loader: GLTFLoader | null = null;
 function getLoader(): GLTFLoader {
@@ -245,22 +248,58 @@ function getLoader(): GLTFLoader {
   return _loader;
 }
 
+function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
+  const view = new DataView(buffer);
+  if (buffer.byteLength < 20) return buffer;
+  const magic = String.fromCharCode(
+    view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3),
+  );
+  if (magic !== "glTF") return buffer;
+
+  // JSON chunk starts at offset 12: 4B length + 4B type
+  const jsonLen = view.getUint32(12, true);
+  const jsonStart = 20;
+  const jsonEnd = jsonStart + jsonLen;
+
+  // Replace trailing NUL bytes in the JSON chunk with spaces (0x20).
+  const bytes = new Uint8Array(buffer);
+  let fixed = false;
+  for (let i = jsonEnd - 1; i >= jsonStart && bytes[i] === 0; i--) {
+    bytes[i] = 0x20; // space
+    fixed = true;
+  }
+  if (fixed) console.log("[modelLoader] fixed GLB JSON-chunk NUL padding");
+  return buffer;
+}
+
 export function loadGlbModel(url: string): Promise<THREE.Group> {
   console.log("[modelLoader] loading:", url);
-  return new Promise((resolve, reject) => {
-    getLoader().load(
-      url,
-      (gltf) => {
-        console.log("[modelLoader] loaded:", url);
-        resolve(gltf.scene);
-      },
-      undefined,
-      (err) => {
-        console.error("[modelLoader] failed:", url, err);
-        reject(err);
-      },
-    );
-  });
+  return fetch(url)
+    .then((resp) => {
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
+      return resp.arrayBuffer();
+    })
+    .then((raw) => {
+      const fixed = fixGlbPadding(raw);
+      const blob = new Blob([fixed], { type: "model/gltf-binary" });
+      const blobUrl = URL.createObjectURL(blob);
+      return new Promise<THREE.Group>((resolve, reject) => {
+        getLoader().load(
+          blobUrl,
+          (gltf) => {
+            URL.revokeObjectURL(blobUrl);
+            console.log("[modelLoader] loaded:", url);
+            resolve(gltf.scene);
+          },
+          undefined,
+          (err) => {
+            URL.revokeObjectURL(blobUrl);
+            console.error("[modelLoader] failed:", url, err);
+            reject(err);
+          },
+        );
+      });
+    });
 }
 
 export function hasShipModels(): boolean {
