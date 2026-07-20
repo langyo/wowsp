@@ -10,7 +10,7 @@
  * is correct even when the user hasn't unpacked GameParams. Keys are the same
  * numeric ship_ids the WG encyclopedia returns (`GameParams.id == ship_id`).
  */
-import rarityRaw from "@/res/data/ship_rarity.json";
+import rarityRaw from "@/data/ship_rarity.json";
 
 const RARITY_BY_SHIP_ID = rarityRaw as Record<string, string>;
 
