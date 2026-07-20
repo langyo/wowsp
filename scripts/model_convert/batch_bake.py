@@ -25,6 +25,9 @@ import sys
 import time
 from pathlib import Path
 
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]  # scripts/model_convert/ → scripts/ → repo root
 TOOLS_DIR = REPO_ROOT / "target" / "model-tools"
