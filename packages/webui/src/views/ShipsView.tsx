@@ -4,6 +4,7 @@ import { RotateCcw } from "lucide-vue-next";
 import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
 import SSegmented from "@/components/base/SSegmented";
+import SSpinner from "@/components/base/SSpinner";
 import STag from "@/components/base/STag";
 import NationFlag from "@/components/base/NationFlag";
 import TechTreeView from "@/components/ships/TechTreeView";
@@ -216,6 +217,11 @@ export default defineComponent({
 
         {/* ── scrollable content body ── */}
         <div class="ships-view__body">
+
+        {/* ── loading state ── */}
+        {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
+          <div class="ships-view__status"><SSpinner center size="md" /></div>
+        ) : null}
 
         {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
         {viewMode.value === "tree" ? null : (
