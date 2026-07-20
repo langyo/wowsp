@@ -12,11 +12,11 @@ runs in two modes, sharing most of the Rust backend.
 Open a `.wowsreplay` and watch the whole match rendered on a holographic 3D map,
 without launching the game.
 
-```text
-.wowsreplay file
-  → Rust: parse 8-byte magic + JSON descriptor block (commands/replay.rs)
-  → Rust: decode packet stream → per-entity event timeline  (M3, TODO)
-  → webui: three.js holographic map scrubs the timeline      (features/holographic)
+```mermaid
+flowchart TD
+    A[".wowsreplay file"] --> B["Rust: parse 8-byte magic + JSON descriptor block (commands/replay.rs)"]
+    B --> C["Rust: decode packet stream → per-entity event timeline (M3, TODO)"]
+    C --> D["webui: three.js holographic map scrubs the timeline (features/holographic)"]
 ```
 
 Map and ship geometry come from GLB produced by `scripts/model_convert/`
@@ -29,14 +29,14 @@ A mod file in the game's `res_mods/` launches WoWSP when the game starts. A
 transparent always-on-top window overlays both teams' rosters, visible only
 while `Tab` is held.
 
-```text
-game starts
-  → mod launcher starts WoWSP transparent overlay window
-  → Rust: poll <game>/replays/tempArenaInfo.json for live roster (commands/arena_info.rs)
-  → user holds Tab
-    → Rust: capture game window + detect team-list region (commands/overlay.rs)
-    → webui: re-anchor rendered roster to detected rect (features/overlay)
-  → user releases Tab → overlay hides
+```mermaid
+flowchart TD
+    A["game starts"] --> B["mod launcher starts WoWSP transparent overlay window"]
+    B --> C["Rust: poll &lt;game&gt;/replays/tempArenaInfo.json for live roster (commands/arena_info.rs)"]
+    C --> D["user holds Tab"]
+    D --> E["Rust: capture game window + detect team-list region (commands/overlay.rs)"]
+    E --> F["webui: re-anchor rendered roster to detected rect (features/overlay)"]
+    F --> G["user releases Tab → overlay hides"]
 ```
 
 ## Game-install detection
