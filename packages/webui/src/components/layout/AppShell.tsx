@@ -4,6 +4,8 @@ import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { initTheme } from "@/theme/useTheme";
+import { initModelPack } from "@/features/holographic/modelLoader";
+import { api } from "@/api";
 import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
 import SCheckbox from "@/components/base/SCheckbox";
@@ -51,6 +53,8 @@ export default defineComponent({
 
     onMounted(async () => {
       void initTheme();
+      // Download model pack on first launch (best-effort, non-blocking).
+      void initModelPack(() => api.ensureModelPack()).catch(() => {});
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].
       void config.load().then(() => config.detect());

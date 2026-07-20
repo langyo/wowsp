@@ -40,6 +40,7 @@ export const RPC = {
   uninstall_overlay_mod: "uninstall_overlay_mod",
   is_overlay_mod_installed: "is_overlay_mod_installed",
   get_ranked_stats: "get_ranked_stats",
+  ensure_model_pack: "ensure_model_pack",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

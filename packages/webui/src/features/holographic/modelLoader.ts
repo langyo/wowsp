@@ -4,10 +4,13 @@
  * Ship and map models are pre-converted GLB files placed under
  * `src/res/models/ships/` and `src/res/models/maps/` (Vite's publicDir).
  * Model availability is discovered lazily: we only collect filenames from
- * glob keys without eagerly importing hundreds of binary assets.  At runtime
- * models are served via their public URL (`/models/ships/<stem>.glb`), not
- * through Vite's module graph — this avoids duplicate assets in the build
- * output and eliminates the "Assets in the public directory" warnings.
+ * glob keys without eagerly importing hundreds of binary assets.
+ *
+ * In production the Tauri shell downloads the latest model pack from GitHub
+ * Releases (tag `res-latest`) on first launch and caches it under
+ * `%LOCALAPPDATA%/WoWSP/models/`.  When the cache is available, models are
+ * served via `convertFileSrc`; during development (or when the download hasn't
+ * completed yet), publicDir paths are used as a fallback.
  *
  * ## Skin → base model dedup
  * `src/data/ship_models.json` maps each shipId to a `baseName`.
@@ -16,6 +19,29 @@
 import shipModelNames from "../../data/ship_models.json";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+// ── Model-pack cache (populated by initModelPack) ───────────────────────
+let _modelCacheRoot: string | null = null;
+let _convertFileSrc: ((path: string) => string) | null = null;
+
+/** Call once at startup to wire up the downloaded model pack.  Safe to call
+ *  multiple times — only the first invocation actually fetches. */
+export async function initModelPack(fetch: () => Promise<string>): Promise<void> {
+  if (_modelCacheRoot) return;
+  // Lazy-load convertFileSrc — only available in Tauri context.
+  try {
+    const mod = await import("@tauri-apps/api/core");
+    _convertFileSrc = mod.convertFileSrc;
+  } catch {
+    _convertFileSrc = null;
+  }
+  try {
+    _modelCacheRoot = await fetch();
+    console.log("[modelLoader] using cache:", _modelCacheRoot);
+  } catch {
+    console.warn("[modelLoader] model pack unavailable, falling back to publicDir");
+  }
+}
 
 // ── Ship model availability (lowercase → original-casing stem map) ──────
 const _shipGlobKeys = Object.keys(
@@ -48,19 +74,26 @@ interface ShipModelEntry {
 const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 
 // ── URL resolvers ────────────────────────────────────────────────────────
-// All models live under publicDir (src/res), so the public URL is the path
-// relative to the public root.  Filename casing is preserved.
+// When the model-pack cache is available, serve via convertFileSrc; otherwise
+// fall back to publicDir paths.
+
+function toUrl(cacheRoot: string | null, kind: "ships" | "maps", cased: string): string {
+  if (cacheRoot && _convertFileSrc) {
+    return _convertFileSrc(`${cacheRoot}/models/${kind}/${cased}.glb`);
+  }
+  return `/models/${kind}/${cased}.glb`;
+}
 
 function shipModelUrl(stem: string): string | null {
   const key = stem.toLowerCase();
   const cased = shipCasedByLower.get(key);
-  return cased ? `/models/ships/${cased}.glb` : null;
+  return cased ? toUrl(_modelCacheRoot, "ships", cased) : null;
 }
 
 function mapModelUrl(stem: string): string | null {
   const key = stem.toLowerCase();
   const cased = mapCasedByLower.get(key);
-  return cased ? `/models/maps/${cased}.glb` : null;
+  return cased ? toUrl(_modelCacheRoot, "maps", cased) : null;
 }
 
 export function resolveShipModelUrl(
