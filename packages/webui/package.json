@@ -21,22 +21,22 @@
     "echarts": "^6.1.0",
     "lucide-vue-next": "^1",
     "pinia": "^4",
-    "three": "^0.184",
+    "three": "^0.185",
     "uuid": "^14",
     "vue": "^3",
     "vue-i18n": "^11",
     "vue-router": "^5"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5",
+    "@vitejs/plugin-vue": "^6",
     "@vitejs/plugin-vue-jsx": "^5",
     "@vue/test-utils": "^2.4.11",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.10.2",
     "sass": "^1.100.0",
-    "typescript": "^5",
+    "typescript": "^7",
     "vite": "^8",
     "vitest": "^4.1.8",
-    "vue-tsc": "^2"
+    "vue-tsc": "^3"
   }
 }
