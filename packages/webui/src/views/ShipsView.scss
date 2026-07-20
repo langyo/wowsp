@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 1.25rem 1.5rem;
-  // overflow: parent (AppShell __main) handles scroll; filters use sticky below.
+  height: 100%;
+  overflow: hidden;
 
   &__header {
     display: flex;
@@ -12,7 +12,7 @@
     gap: 1rem;
     flex-wrap: wrap;
     flex-shrink: 0;
-    padding-bottom: 0.5rem;
+    padding: 1.25rem 1.5rem 0.5rem;
   }
 
   &__header-right {
@@ -21,7 +21,6 @@
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-  gap: 1rem;
 
   &__title {
     font-size: var(--text-xl);
@@ -67,13 +66,22 @@
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
     flex-shrink: 0;
-    padding-bottom: 0.4rem;
+    padding: 0 1.5rem 0.4rem;
 
     strong {
       color: rgb(var(--color-text));
     }
   }
 
+  // ── scrollable content body ──────────────────────────────────────────
+  &__body {
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 1.5rem 1.25rem;
+  }
+
+  // ── filter bar (grid mode, sticky inside scroll body) ────────────────
   &__filters {
     display: flex;
     flex-direction: column;
@@ -228,12 +236,12 @@
   }
 
   // ── tech-tree view layout ──
-  // The nation rail is a fixed sidebar; the tree canvas fills the rest.
+  // Header + meta are fixed at top; nation rail is sticky-left within the
+  // scrollable body; only the tree canvas drives the vertical scroll.
   &__tree-body {
     display: flex;
     gap: 0;
     min-height: 400px;
-    position: relative;
   }
 
   &__nation-rail {
@@ -246,10 +254,10 @@
     border: 1px solid rgb(var(--color-border) / 25%);
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgb(0 0 0 / 35%);
-    max-height: calc(100vh - 10rem);
-    overflow-y: auto;
-    z-index: 5;
+    position: sticky;
+    top: 0;
     align-self: flex-start;
+    z-index: 5;
   }
 
   // One compact horizontal row per nation: small horizontal flag + name inline.

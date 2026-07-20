@@ -3,20 +3,16 @@
  *
  * Ship portraits are cached under `src/res/images/ships/<shipId>.png`.
  * Since `src/res` is Vite's publicDir, images are served at root path
- * (e.g. `/images/ships/12345.png`). This module discovers which images
- * exist via a glob and constructs proper public URLs.
+ * (e.g. `/images/ships/12345.png`). We collect filenames lazily from
+ * glob keys — no eager import of hundreds of PNGs.
  */
 
-const _imgGlob = import.meta.glob("../res/images/ships/*.png", {
-  query: "?url",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
+const _imgGlobKeys = Object.keys(
+  import.meta.glob("../res/images/ships/*.png"),
+);
 const localImageIds = new Set<string>();
-for (const path of Object.keys(_imgGlob)) {
-  const stem = path.split("/").pop()!.replace(/\.png$/i, "");
-  localImageIds.add(stem);
+for (const path of _imgGlobKeys) {
+  localImageIds.add(path.split("/").pop()!.replace(/\.png$/i, ""));
 }
 
 export function resolveShipImage(

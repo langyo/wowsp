@@ -214,7 +214,10 @@ export default defineComponent({
           </div>
         ) : null}
 
-        {/* ── filter bar (hidden in tree mode) ── */}
+        {/* ── scrollable content body ── */}
+        <div class="ships-view__body">
+
+        {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
         {viewMode.value === "tree" ? null : (
           <div class="ships-view__filters">
             <div class="ships-view__filter-top">
@@ -411,6 +414,7 @@ export default defineComponent({
             </div>
           )}
         </Transition>
+        </div>
 
         {/* ── detail modal ── */}
         <ShipDetailModal
