@@ -39,12 +39,17 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
         }
     }
 
-    // 2. Look for an unpacked GameParams.json at the game root.
+    // 2. Look for an unpacked GameParams.json at the game root, or in the
+    //    extract script's LOCALAPPDATA cache.
     let root = std::path::Path::new(&game_root);
-    let json_candidates = [
+    let local_cache = dirs_next::cache_dir()
+        .unwrap_or_default()
+        .join("WoWSP-extract")
+        .join("GameParams.json");
+    let json_candidates: [std::path::PathBuf; 3] = [
         root.join("GameParams.json"),
-        // Some users keep the unpacked file next to GameParams.data:
         root.join("bin").join("GameParams.json"),
+        local_cache,
     ];
     let json_path = json_candidates.iter().find(|p| p.exists());
 
