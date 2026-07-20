@@ -73,6 +73,28 @@
     }
   }
 
+  // ── error banner (above content when data still visible) ───────────
+  &__error-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin: 0 1.5rem 0.5rem;
+    background: rgb(220 80 80 / 10%);
+    border: 1px solid rgb(220 80 80 / 25%);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    color: rgb(240 120 120);
+    flex-shrink: 0;
+
+    span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
   // ── scrollable content body ──────────────────────────────────────────
   &__body {
     flex: 1 1 0%;
