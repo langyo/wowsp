@@ -263,7 +263,9 @@ package *FLAGS:
 e2e-setup:
     @pip install -q -r scripts/requirements.txt && python -m playwright install chromium 2>/dev/null
 
-# ── preflight ─────────────────────────────────────────────────────────
+# ── check-env ─────────────────────────────────────────────────────────
+# WoWSP-specific environment check (celestia-devtools provides a generic
+# `preflight`, so we use a distinct name to avoid collision).
 
-preflight *FLAGS:
+check-env *FLAGS:
     python scripts/preflight.py {{FLAGS}}
