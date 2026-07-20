@@ -379,28 +379,56 @@ export default defineComponent({
       const size = box.getSize(new THREE.Vector3());
       const len = size.x; // ship length (after normalize, ≈ up to 200)
       const half = len / 2;
-      // Camera offset from center per zone. Distance scales with ship size.
-      const dist = Math.max(size.length() * 0.9, 160);
+      // Camera distance — closer than the default hero shot so weapon
+      // details are visible. Scales with ship size.
+      const dist = Math.max(size.x * 0.5, 120);
       const target = new THREE.Vector3(center.x, center.y, center.z);
       let camPos: THREE.Vector3;
+      // View from starboard side, elevated ~35°, so turrets/guns on the
+      // deck read clearly against the holographic hull.
+      const el = 0.55; // ~32° elevation
+      const az = 0.4;  // ~23° toward starboard
       switch (zone) {
         case "bow":
-          camPos = new THREE.Vector3(center.x + half * 0.9, center.y + size.y * 0.3, dist * 0.55);
-          target.set(center.x + half * 0.5, center.y, center.z);
+          // Focus on the forward third — main turrets live here.
+          target.set(center.x + half * 0.55, center.y + size.y * 0.18, center.z);
+          camPos = new THREE.Vector3(
+            target.x + dist * 0.35,
+            target.y + dist * el,
+            target.z + dist * az,
+          );
           break;
         case "stern":
-          camPos = new THREE.Vector3(center.x - half * 0.9, center.y + size.y * 0.3, dist * 0.55);
-          target.set(center.x - half * 0.5, center.y, center.z);
+          // Rear third — aft turrets, engine exhaust.
+          target.set(center.x - half * 0.55, center.y + size.y * 0.18, center.z);
+          camPos = new THREE.Vector3(
+            target.x - dist * 0.35,
+            target.y + dist * el,
+            target.z + dist * az,
+          );
           break;
         case "midship":
-          camPos = new THREE.Vector3(center.x, center.y + size.y * 0.15, dist * 0.6); // broadside
+          // Center — secondaries, torpedo tubes, superstructure.
+          target.set(center.x, center.y + size.y * 0.2, center.z);
+          camPos = new THREE.Vector3(
+            center.x,
+            center.y + dist * el,
+            center.z + dist * (az + 0.25),
+          );
           break;
         case "deck":
-          camPos = new THREE.Vector3(center.x, center.y + dist * 0.9, dist * 0.2); // top-down
+          // Top-down-ish — AA mounts, rangefinders across the whole deck.
+          target.set(center.x, center.y + size.y * 0.3, center.z);
+          camPos = new THREE.Vector3(center.x, center.y + dist * 1.1, center.z + dist * 0.08);
           break;
         case "waterline":
-          camPos = new THREE.Vector3(center.x - half * 0.6, center.y - size.y * 0.4, dist * 0.5);
+          // Low-angle side view — torpedo belt, hull details.
           target.set(center.x - half * 0.3, center.y - size.y * 0.2, center.z);
+          camPos = new THREE.Vector3(
+            target.x - dist * 0.4,
+            target.y + dist * 0.15,
+            target.z + dist * 0.7,
+          );
           break;
         default:
           // Starboard-bow "2 o'clock" vantage: ~60° azimuth from the bow
