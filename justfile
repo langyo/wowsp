@@ -3,7 +3,7 @@
 # Every recipe is linewise so it runs under `windows-shell` (bash.exe) on
 # Windows and the default sh on Unix.
 
-set windows-shell := ["bash.exe", "-c"]
+set windows-shell := ["C:/Program Files/Git/usr/bin/bash.exe", "-c"]
 set shell := ["bash", "-c"]
 set unstable
 set lists
