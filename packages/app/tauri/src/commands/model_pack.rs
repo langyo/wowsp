@@ -25,7 +25,7 @@ const FALLBACK_TAGS: &[&str] = &["res-latest-old-1", "res-latest-old-2"];
 fn models_cache_dir() -> Result<PathBuf, String> {
     let base = dirs_next::cache_dir()
         .ok_or_else(|| "cannot resolve LOCALAPPDATA".to_string())?;
-    Ok(base.join("WoWSP").join("models"))
+    Ok(base.join("WoWSP"))
 }
 
 fn version_file() -> Result<PathBuf, String> {
