@@ -210,7 +210,7 @@ export default defineComponent({
             nation: ship.nation,
             type: ship.type,
           };
-          const pool: ShipModelSpec[] = encyclopedia.list.map((s) => ({
+          const pool: ShipModelSpec[] = encyclopedia.ships.map((s) => ({
             shipId: s.shipId,
             tier: s.tier,
             nation: s.nation,
