@@ -47,6 +47,13 @@ export default defineComponent({
     const trends = useTrendsStore();
     const toast = useToast();
 
+    function copyText(text: string, label?: string) {
+      navigator.clipboard.writeText(text).then(
+        () => toast.info(label ? `${label} ${t("ships.copied")}` : t("ships.copied")),
+        () => {},
+      );
+    }
+
     const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
     // ── Captain skills state (shared between SkillBuilder + DataObserver) ──
@@ -307,6 +314,7 @@ const SpecsPanel = defineComponent({
     nation: { type: String, default: undefined },
   },
   setup(props) {
+    const toast = useToast();
     const groups = computed(() => buildShipSpecs(props.profile, props.nation));
     const iconFor = (name: string) => {
       switch (name) {
@@ -319,6 +327,9 @@ const SpecsPanel = defineComponent({
         default: return Shield;
       }
     };
+    function copy(val: string) {
+      navigator.clipboard.writeText(val).then(() => toast.info(t("ships.copied")), () => {});
+    }
     return () => {
       if (groups.value.length === 0) {
         return <p class="ship-detail__empty">{t("ships.detail.noSpecs")}</p>;
@@ -344,7 +355,11 @@ const SpecsPanel = defineComponent({
                           </span>
                         ) : null}
                       </dt>
-                      <dd class="specs-group__value">{row.value}</dd>
+                      <dd
+                        class="specs-group__value"
+                        title={t("ships.copied")}
+                        onClick={() => copy(String(row.value))}
+                      >{row.value}</dd>
                     </div>
                   ))}
                 </dl>
