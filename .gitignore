@@ -65,3 +65,7 @@ Cargo.lock
 
 # Vendored external Rust projects (built in-tree but not part of our workspace)
 packages/tools/wowsunpack-vendor/
+
+# celestia-devtools: staged-on-demand shared justfile recipes (celestia-devtools init / just fetch)
+/.just/
+/celestia-devtools.just
