@@ -80,7 +80,9 @@ export default defineComponent({
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
-        gpError.value = (e as Error).message;
+        const msg = (e as Error).message || String(e);
+        gpError.value = msg;
+        toast.error(`${t("ships.detail.gameparamsErrorTip")}\n${msg}`);
       } finally {
         gpLoading.value = false;
         gpFetched.value = true;
@@ -220,10 +222,7 @@ export default defineComponent({
                   <div class="ship-detail__armor" key="armor">
                     {gpError.value ? (
                     <div class="ship-detail__error-block">
-                      <p class="ship-detail__error">
-                        {t("ships.detail.gameparamsError", { error: gpError.value })}
-                      </p>
-                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
+                      <p class="ship-detail__hint">{t("ships.detail.gameparamsMissing")}</p>
                     </div>
                   ) : gameparams.value ? (
                     <>

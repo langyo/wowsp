@@ -20,6 +20,10 @@ const CLASSES: Record<ToastType, string> = {
   loading: "s-toast--loading",
 };
 
+function copyToastMsg(msg: string) {
+  navigator.clipboard.writeText(msg).catch(() => {});
+}
+
 export default defineComponent({
   name: "SToast",
   setup() {
@@ -30,13 +34,18 @@ export default defineComponent({
         <TransitionGroup name="s-toast" tag="div" class="s-toast-container">
           {toasts.map((toast) => {
             const Icon = ICONS[toast.type];
+            const copyable = toast.type === "error" || toast.type === "warning";
             return (
               <div class={["s-toast", CLASSES[toast.type]]} key={toast.id}>
                 <Icon
                   size={16}
                   class={["s-toast__icon", toast.type === "loading" ? "s-toast__icon--spin" : ""]}
                 />
-                <span class="s-toast__msg">{toast.message}</span>
+                <span
+                  class={["s-toast__msg", copyable ? "s-toast__msg--copyable" : ""]}
+                  title={copyable ? "Click to copy" : undefined}
+                  onClick={copyable ? () => copyToastMsg(toast.message) : undefined}
+                >{toast.message}</span>
                 {!toast.persistent ? (
                   <button
                     class="s-toast__close"

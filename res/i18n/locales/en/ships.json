@@ -74,6 +74,7 @@
     "gameparamsLoading": "Loading armor & ballistics...",
     "gameparamsMissing": "GameParams.data not unpacked. Run wowsunpack to see armor schemes and shell ballistics.",
     "gameparamsError": "Failed to load: {error}",
+    "gameparamsErrorTip": "Failed to load armor & ballistics — click to copy error:",
     "gameparamsHint": "Tip: place the unpacked GameParams.json at the game root (next to bin/). See https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "No specifications available for this ship.",
     "noImage": "No image available.",

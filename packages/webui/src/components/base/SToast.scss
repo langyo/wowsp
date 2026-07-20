@@ -34,6 +34,19 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+
+    &--copyable {
+      cursor: pointer;
+      user-select: text;
+      white-space: pre-wrap;
+      overflow: visible;
+      max-height: 6em;
+      overflow-y: auto;
+
+      &:hover {
+        opacity: 0.85;
+      }
+    }
   }
 
   &__close {
