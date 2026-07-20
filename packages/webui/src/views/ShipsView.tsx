@@ -1,5 +1,5 @@
 import { computed, defineComponent, ref, watch } from "vue";
-import { RotateCcw } from "lucide-vue-next";
+import { AlertTriangle, RotateCcw } from "lucide-vue-next";
 
 import SSelect from "@/components/base/SSelect";
 import SButton from "@/components/base/SButton";
@@ -215,6 +215,17 @@ export default defineComponent({
           </div>
         ) : null}
 
+        {/* ── error banner (shown above content when data already exists) ── */}
+        {encyclopedia.error && encyclopedia.ships.length > 0 ? (
+          <div class="ships-view__error-banner">
+            <AlertTriangle size={16} />
+            <span>{encyclopedia.error}</span>
+            <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+              <RotateCcw size={12} /> {t("ships.retry")}
+            </SButton>
+          </div>
+        ) : null}
+
         {/* ── scrollable content body ── */}
         <div class="ships-view__body">
 
@@ -315,10 +326,15 @@ export default defineComponent({
 
         {/* ── view body: tree or grid ── */}
         <Transition name="s-fade-slide" mode="out-in">
-          {encyclopedia.error ? (
-            <div class="ships-view__status ships-view__status--error" key="error">{encyclopedia.error}</div>
+          {encyclopedia.error && encyclopedia.ships.length === 0 ? (
+            <div class="ships-view__status ships-view__status--error" key="error">
+              <AlertTriangle size={24} />
+              <p>{encyclopedia.error}</p>
+              <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+                <RotateCcw size={12} /> {t("ships.reload")}
+              </SButton>
+            </div>
           ) : viewMode.value === "tree" ? (
-            <div class="ships-view__tree-body" key="tree">
               {/* nation rail — vertical list of faction crests */}
               <aside class="ships-view__nation-rail">
                 {encyclopedia.nations.map((n) => (
