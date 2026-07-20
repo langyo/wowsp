@@ -53,9 +53,7 @@ export default defineComponent({
     const firstLoadDone = ref(false);
 
     async function loadEncyclopedia(force = false) {
-      const toastId = toast.loading(t("ships.loading"));
       await encyclopedia.load(realm.value, force);
-      toast.dismiss(toastId);
       firstLoadDone.value = true;
       if (!treeNation.value && encyclopedia.nations.length > 0) {
         treeNation.value = encyclopedia.nations[0];
@@ -65,6 +63,21 @@ export default defineComponent({
         void shipStats.load(acc.accountId, acc.realm).catch(() => {});
       }
     }
+
+    // Show toast while encyclopedia is loading (covers both explicit loads and
+    // navigations that arrive while dashboard already started a load).
+    let loadToastId = 0;
+    watch(
+      () => encyclopedia.loading,
+      (v) => {
+        if (v && encyclopedia.ships.length === 0) {
+          loadToastId = toast.loading(t("ships.loading"));
+        } else if (loadToastId) {
+          toast.dismiss(loadToastId);
+          loadToastId = 0;
+        }
+      },
+    );
 
     // Auto-load on mount if not already loaded for this realm.
     if (encyclopedia.ships.length === 0) {
