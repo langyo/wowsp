@@ -48,23 +48,33 @@ export default defineComponent({
 
     // ── view mode (tech-tree vs list) ─────────────────────────────────
     const viewMode = ref<"tree" | "grid">("tree");
-    const treeNation = ref<string>("");
+    const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
 
     async function loadEncyclopedia(force = false) {
-      const toastId = toast.loading(t("ships.loading"));
       await encyclopedia.load(realm.value, force);
-      toast.dismiss(toastId);
       firstLoadDone.value = true;
-      if (!treeNation.value && encyclopedia.nations.length > 0) {
-        treeNation.value = encyclopedia.nations[0];
-      }
       const acc = accounts.activeAccount;
       if (acc) {
         void shipStats.load(acc.accountId, acc.realm).catch(() => {});
       }
     }
+
+    // Show toast whenever encyclopedia is loading.
+    let loadToastId = 0;
+    watch(
+      () => encyclopedia.loading,
+      (v) => {
+        if (v) {
+          loadToastId = toast.loading(t("ships.loading"));
+        } else if (loadToastId) {
+          toast.dismiss(loadToastId);
+          loadToastId = 0;
+        }
+      },
+      { immediate: true },
+    );
 
     // Auto-load on mount if not already loaded for this realm.
     if (encyclopedia.ships.length === 0) {
@@ -73,12 +83,13 @@ export default defineComponent({
     // Reload when realm changes.
     watch(realm, () => void loadEncyclopedia());
 
-    // Fallback: if encyclopedia loads while treeNation is still blank, pick first.
-    watch(() => encyclopedia.nations, (n) => {
-      if (!treeNation.value && n.length > 0) {
-        treeNation.value = n[0];
-      }
-    });
+    // When ships become available, mark first load done.
+    watch(
+      () => encyclopedia.ships.length,
+      (n) => {
+        if (n > 0) firstLoadDone.value = true;
+      },
+    );
 
     // ── filters ────────────────────────────────────────────────────────
     const searchText = ref("");

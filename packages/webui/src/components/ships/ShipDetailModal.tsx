@@ -47,6 +47,13 @@ export default defineComponent({
     const trends = useTrendsStore();
     const toast = useToast();
 
+    function copyText(text: string, label?: string) {
+      navigator.clipboard.writeText(text).then(
+        () => toast.info(label ? `${label} ${t("ships.copied")}` : t("ships.copied")),
+        () => {},
+      );
+    }
+
     const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
 
     // ── Captain skills state (shared between SkillBuilder + DataObserver) ──
@@ -73,7 +80,9 @@ export default defineComponent({
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
-        gpError.value = (e as Error).message;
+        const msg = (e as Error).message || String(e);
+        gpError.value = msg;
+        toast.error(`${t("ships.detail.gameparamsErrorTip")}\n${msg}`);
       } finally {
         gpLoading.value = false;
         gpFetched.value = true;
@@ -213,10 +222,7 @@ export default defineComponent({
                   <div class="ship-detail__armor" key="armor">
                     {gpError.value ? (
                     <div class="ship-detail__error-block">
-                      <p class="ship-detail__error">
-                        {t("ships.detail.gameparamsError", { error: gpError.value })}
-                      </p>
-                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
+                      <p class="ship-detail__hint">{t("ships.detail.gameparamsMissing")}</p>
                     </div>
                   ) : gameparams.value ? (
                     <>
@@ -307,6 +313,7 @@ const SpecsPanel = defineComponent({
     nation: { type: String, default: undefined },
   },
   setup(props) {
+    const toast = useToast();
     const groups = computed(() => buildShipSpecs(props.profile, props.nation));
     const iconFor = (name: string) => {
       switch (name) {
@@ -319,6 +326,9 @@ const SpecsPanel = defineComponent({
         default: return Shield;
       }
     };
+    function copy(val: string) {
+      navigator.clipboard.writeText(val).then(() => toast.info(t("ships.copied")), () => {});
+    }
     return () => {
       if (groups.value.length === 0) {
         return <p class="ship-detail__empty">{t("ships.detail.noSpecs")}</p>;
@@ -344,7 +354,11 @@ const SpecsPanel = defineComponent({
                           </span>
                         ) : null}
                       </dt>
-                      <dd class="specs-group__value">{row.value}</dd>
+                      <dd
+                        class="specs-group__value"
+                        title={t("ships.copied")}
+                        onClick={() => copy(String(row.value))}
+                      >{row.value}</dd>
                     </div>
                   ))}
                 </dl>
