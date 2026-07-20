@@ -73,19 +73,23 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   }
 
   /** Load the full encyclopedia for a realm. Safe to call repeatedly — the
-   *  Rust layer serves from disk cache when version+language hasn't changed. */
+   *  Rust layer serves from disk cache when version+language hasn't changed.
+   *  On failure the existing ships list is preserved so the UI doesn't go blank. */
   async function load(realm: string, forceRefresh = false) {
     const lang = useLanguage().dataLanguage.value;
     if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
     loading.value = true;
     error.value = null;
     try {
-      version.value = await api.getGameVersion();
-      ships.value = await api.getShipEncyclopedia(realm, forceRefresh, lang);
+      const ver = await api.getGameVersion();
+      const fresh = await api.getShipEncyclopedia(realm, forceRefresh, lang);
+      version.value = ver;
+      ships.value = fresh;
       loadedRealm.value = realm;
       loadedLanguage.value = lang;
     } catch (e) {
-      error.value = (e as Error).message;
+      const msg = (e as Error).message || String(e);
+      error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
     } finally {
       loading.value = false;
     }
