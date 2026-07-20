@@ -48,16 +48,13 @@ export default defineComponent({
 
     // ── view mode (tech-tree vs list) ─────────────────────────────────
     const viewMode = ref<"tree" | "grid">("tree");
-    const treeNation = ref<string>("");
+    const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
 
     async function loadEncyclopedia(force = false) {
       await encyclopedia.load(realm.value, force);
       firstLoadDone.value = true;
-      if (!treeNation.value && encyclopedia.nations.length > 0) {
-        treeNation.value = encyclopedia.nations[0];
-      }
       const acc = accounts.activeAccount;
       if (acc) {
         void shipStats.load(acc.accountId, acc.realm).catch(() => {});
@@ -86,17 +83,11 @@ export default defineComponent({
     // Reload when realm changes.
     watch(realm, () => void loadEncyclopedia());
 
-    // When ships become available (either from our own load or one already in
-    // flight from the dashboard), mark first load done and pick default nation.
+    // When ships become available, mark first load done.
     watch(
       () => encyclopedia.ships.length,
       (n) => {
-        if (n > 0) {
-          firstLoadDone.value = true;
-          if (!treeNation.value && encyclopedia.nations.length > 0) {
-            treeNation.value = encyclopedia.nations[0];
-          }
-        }
+        if (n > 0) firstLoadDone.value = true;
       },
     );
 
