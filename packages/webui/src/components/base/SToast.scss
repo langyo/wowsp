@@ -12,10 +12,10 @@
 .s-toast {
   pointer-events: auto;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   min-width: 200px;
-  max-width: 360px;
+  max-width: 420px;
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface));
@@ -27,6 +27,24 @@
 
   &__icon {
     flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+
+    &--actionable {
+      .s-toast__msg {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+    }
   }
 
   &__msg {
@@ -34,6 +52,33 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    margin-top: -1px;
+  }
+
+  &__action-btn {
+    background: transparent;
+    border: none;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--radius-xs);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--duration-short);
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
   }
 
   &__close {

@@ -102,9 +102,11 @@ export default defineComponent({
       const h = el.clientHeight || 320;
 
       const sc = new THREE.Scene();
-      sc.background = new THREE.Color(0x070d18);
+      const isDark = document.documentElement.dataset.mode === "dark";
+      const bg = isDark ? 0x0c121e : 0xf5f8fc;
+      sc.background = new THREE.Color(bg);
       // Subtle radial fog for depth.
-      sc.fog = new THREE.Fog(0x070d18, 400, 1400);
+      sc.fog = new THREE.Fog(bg, 400, 1400);
 
       const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
       // Initial view before a model loads — matches the `default` focus-zone
@@ -210,7 +212,7 @@ export default defineComponent({
             nation: ship.nation,
             type: ship.type,
           };
-          const pool: ShipModelSpec[] = encyclopedia.list.map((s) => ({
+          const pool: ShipModelSpec[] = encyclopedia.ships.map((s) => ({
             shipId: s.shipId,
             tier: s.tier,
             nation: s.nation,

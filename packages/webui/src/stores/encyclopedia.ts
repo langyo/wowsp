@@ -76,11 +76,12 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  Rust layer serves from disk cache when version+language hasn't changed.
    *  On failure the existing ships list is preserved so the UI doesn't go blank.
    *  Concurrent calls are deduplicated: if a load is already in flight the
-   *  second caller waits for it. */
+   *  second caller waits for it.
+   *  INVALID_LANGUAGE errors from the WG API are silently retried with English. */
   async function load(realm: string, forceRefresh = false) {
     const lang = useLanguage().dataLanguage.value;
     if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
-    if (loading.value) return; // Deduplicate concurrent loads.
+    if (loading.value) return;
     loading.value = true;
     error.value = null;
     try {
@@ -92,7 +93,24 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       loadedLanguage.value = lang;
     } catch (e) {
       const msg = (e as Error).message || String(e);
-      error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
+      // WG API returns INVALID_LANGUAGE for unsupported language codes — retry
+      // silently with English so data is always available. loadedLanguage
+      // stays as the user's preference to avoid a retry loop on every page visit.
+      if (/INVALID_LANGUAGE/i.test(msg) && lang !== "en") {
+        try {
+          const ver = await api.getGameVersion();
+          const fresh = await api.getShipEncyclopedia(realm, true, "en");
+          version.value = ver;
+          ships.value = fresh;
+          loadedRealm.value = realm;
+          loadedLanguage.value = lang; // stay as user's preference
+          console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
+        } catch (e2) {
+          error.value = ((e2 as Error).message || String(e2)).slice(0, 300);
+        }
+      } else {
+        error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
+      }
     } finally {
       loading.value = false;
     }

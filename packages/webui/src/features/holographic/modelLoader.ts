@@ -17,26 +17,24 @@ import shipModelNames from "../../data/ship_models.json";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-// ── Ship model availability (stem set built from glob keys only) ────────
+// ── Ship model availability (lowercase → original-casing stem map) ──────
 const _shipGlobKeys = Object.keys(
   import.meta.glob("../../res/models/ships/*.glb"),
 );
-const shipStems = new Set<string>();
+const shipCasedByLower = new Map<string, string>();
 for (const path of _shipGlobKeys) {
-  shipStems.add(
-    path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase(),
-  );
+  const original = path.split("/").pop()!.replace(/\.glb$/i, "");
+  shipCasedByLower.set(original.toLowerCase(), original);
 }
 
 // ── Map model availability ───────────────────────────────────────────────
 const _mapGlobKeys = Object.keys(
   import.meta.glob("../../res/models/maps/*.glb"),
 );
-const mapStems = new Set<string>();
+const mapCasedByLower = new Map<string, string>();
 for (const path of _mapGlobKeys) {
-  mapStems.add(
-    path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase(),
-  );
+  const original = path.split("/").pop()!.replace(/\.glb$/i, "");
+  mapCasedByLower.set(original.toLowerCase(), original);
 }
 
 // ── ship_models.json mapping ─────────────────────────────────────────────
@@ -50,17 +48,19 @@ interface ShipModelEntry {
 const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 
 // ── URL resolvers ────────────────────────────────────────────────────────
-// All models live under publicDir (src/res), so the public URL is simply
-// the path relative to the public root.
+// All models live under publicDir (src/res), so the public URL is the path
+// relative to the public root.  Filename casing is preserved.
 
 function shipModelUrl(stem: string): string | null {
   const key = stem.toLowerCase();
-  return shipStems.has(key) ? `/models/ships/${key}.glb` : null;
+  const cased = shipCasedByLower.get(key);
+  return cased ? `/models/ships/${cased}.glb` : null;
 }
 
 function mapModelUrl(stem: string): string | null {
   const key = stem.toLowerCase();
-  return mapStems.has(key) ? `/models/maps/${key}.glb` : null;
+  const cased = mapCasedByLower.get(key);
+  return cased ? `/models/maps/${cased}.glb` : null;
 }
 
 export function resolveShipModelUrl(
@@ -229,9 +229,9 @@ export function loadGlbModel(url: string): Promise<THREE.Group> {
 }
 
 export function hasShipModels(): boolean {
-  return shipStems.size > 0;
+  return shipCasedByLower.size > 0;
 }
 
 export function hasMapModels(): boolean {
-  return mapStems.size > 0;
+  return mapCasedByLower.size > 0;
 }
