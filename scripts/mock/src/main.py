@@ -176,11 +176,11 @@ async def cmd_set_overlay_visible() -> None:
 
 _TECH_TREE_PATH = (
     Path(__file__).resolve().parents[3]
-    / "packages" / "webui" / "src" / "res" / "data" / "tech_tree.json"
+    / "packages" / "webui" / "src" / "data" / "tech_tree.json"
 )
 _RARITY_PATH = (
     Path(__file__).resolve().parents[3]
-    / "packages" / "webui" / "src" / "res" / "data" / "ship_rarity.json"
+    / "packages" / "webui" / "src" / "data" / "ship_rarity.json"
 )
 
 

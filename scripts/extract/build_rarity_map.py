@@ -16,7 +16,7 @@ ship keyed by `ship_id` and includes the matching `index`. So the join is:
 Inputs:
   --gameparams  : unpacked GameParams.json (from `wowsunpack game-params`)
   --bridge      : wowsinfo.json (from github.com/wowsinfo/data, live/app/data)
-  --out         : packages/webui/src/res/data/ship_rarity.json
+   --out         : packages/webui/src/data/ship_rarity.json
 
 The emitted `{ "<ship_id>": "<rarity>" }` ships with the app and is consumed by
 `utils/shipRarityData.ts`, so the in-game colour band is correct without the

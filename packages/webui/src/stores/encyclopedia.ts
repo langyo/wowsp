@@ -74,10 +74,13 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
 
   /** Load the full encyclopedia for a realm. Safe to call repeatedly — the
    *  Rust layer serves from disk cache when version+language hasn't changed.
-   *  On failure the existing ships list is preserved so the UI doesn't go blank. */
+   *  On failure the existing ships list is preserved so the UI doesn't go blank.
+   *  Concurrent calls are deduplicated: if a load is already in flight the
+   *  second caller waits for it. */
   async function load(realm: string, forceRefresh = false) {
     const lang = useLanguage().dataLanguage.value;
     if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
+    if (loading.value) return; // Deduplicate concurrent loads.
     loading.value = true;
     error.value = null;
     try {

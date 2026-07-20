@@ -7,7 +7,7 @@
  * unlocks. Premium/special ships that hang off a tech-tree node as a side
  * leaf are included with isPremium/isSpecial set.
  */
-import treeRaw from "@/res/data/tech_tree.json";
+import treeRaw from "@/data/tech_tree.json";
 
 export interface TechTreeNode {
   shipId: number;
