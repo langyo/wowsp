@@ -3,8 +3,11 @@
  *
  * Ship and map models are pre-converted GLB files placed under
  * `src/res/models/ships/` and `src/res/models/maps/` (Vite's publicDir).
- * Model availability is discovered at build time via import.meta.glob; the
- * resolved URLs are used directly so Vite handles dev/prod URL mapping.
+ * Model availability is discovered lazily: we only collect filenames from
+ * glob keys without eagerly importing hundreds of binary assets.  At runtime
+ * models are served via their public URL (`/models/ships/<stem>.glb`), not
+ * through Vite's module graph — this avoids duplicate assets in the build
+ * output and eliminates the "Assets in the public directory" warnings.
  *
  * ## Skin → base model dedup
  * `src/data/ship_models.json` maps each shipId to a `baseName`.
@@ -14,30 +17,26 @@ import shipModelNames from "../../data/ship_models.json";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-// ── Ship model URLs (stem → Vite-resolved URL) ──────────────────────────
-const _shipGlob = import.meta.glob("../../res/models/ships/*.glb", {
-  query: "?url",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
-const shipUrlByStem = new Map<string, string>();
-for (const [path, url] of Object.entries(_shipGlob)) {
-  const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
-  shipUrlByStem.set(stem, url);
+// ── Ship model availability (stem set built from glob keys only) ────────
+const _shipGlobKeys = Object.keys(
+  import.meta.glob("../../res/models/ships/*.glb"),
+);
+const shipStems = new Set<string>();
+for (const path of _shipGlobKeys) {
+  shipStems.add(
+    path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase(),
+  );
 }
 
-// ── Map model URLs ───────────────────────────────────────────────────────
-const _mapGlob = import.meta.glob("../../res/models/maps/*.glb", {
-  query: "?url",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
-const mapUrlByStem = new Map<string, string>();
-for (const [path, url] of Object.entries(_mapGlob)) {
-  const stem = path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase();
-  mapUrlByStem.set(stem, url);
+// ── Map model availability ───────────────────────────────────────────────
+const _mapGlobKeys = Object.keys(
+  import.meta.glob("../../res/models/maps/*.glb"),
+);
+const mapStems = new Set<string>();
+for (const path of _mapGlobKeys) {
+  mapStems.add(
+    path.split("/").pop()!.replace(/\.glb$/i, "").toLowerCase(),
+  );
 }
 
 // ── ship_models.json mapping ─────────────────────────────────────────────
@@ -51,13 +50,17 @@ interface ShipModelEntry {
 const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 
 // ── URL resolvers ────────────────────────────────────────────────────────
+// All models live under publicDir (src/res), so the public URL is simply
+// the path relative to the public root.
 
 function shipModelUrl(stem: string): string | null {
-  return shipUrlByStem.get(stem.toLowerCase()) ?? null;
+  const key = stem.toLowerCase();
+  return shipStems.has(key) ? `/models/ships/${key}.glb` : null;
 }
 
 function mapModelUrl(stem: string): string | null {
-  return mapUrlByStem.get(stem.toLowerCase()) ?? null;
+  const key = stem.toLowerCase();
+  return mapStems.has(key) ? `/models/maps/${key}.glb` : null;
 }
 
 export function resolveShipModelUrl(
@@ -226,9 +229,9 @@ export function loadGlbModel(url: string): Promise<THREE.Group> {
 }
 
 export function hasShipModels(): boolean {
-  return shipUrlByStem.size > 0;
+  return shipStems.size > 0;
 }
 
 export function hasMapModels(): boolean {
-  return mapUrlByStem.size > 0;
+  return mapStems.size > 0;
 }
