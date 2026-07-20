@@ -64,13 +64,12 @@ export default defineComponent({
       }
     }
 
-    // Show toast while encyclopedia is loading (covers both explicit loads and
-    // navigations that arrive while dashboard already started a load).
+    // Show toast whenever encyclopedia is loading.
     let loadToastId = 0;
     watch(
       () => encyclopedia.loading,
       (v) => {
-        if (v && encyclopedia.ships.length === 0) {
+        if (v) {
           loadToastId = toast.loading(t("ships.loading"));
         } else if (loadToastId) {
           toast.dismiss(loadToastId);
