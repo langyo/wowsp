@@ -77,13 +77,8 @@ export default defineComponent({
     let resizeObs: ResizeObserver | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
-    /** Active highlight ring (spawned by focusZone); animated + disposed by the rAF loop. */
-    let activeRing: {
-      mesh: THREE.Mesh;
-      born: number;
-      duration: number;
-      baseScale: number;
-    } | null = null;
+    let _glowBorn = 0;
+    const DURATION_MS = 2500;
 
     // ── Holographic shader ────────────────────────────────────────────────
     // The shader source + material factory live in the shared `holoShader`
@@ -158,24 +153,16 @@ export default defineComponent({
       const tick = () => {
         const dt = clock.getDelta();
         if (uniforms.value) tickHoloUniforms(uniforms.value, dt);
-        // Animate the focus-zone highlight ring: pulse scale + fade over its
-        // lifetime, gently face the camera so the reticle stays visible, then
-        // dispose when done.
-        if (activeRing) {
-          const r = activeRing;
-          const elapsed = performance.now() - r.born;
-          const k = Math.min(1, elapsed / r.duration);
-          // Update shader time uniform for the pulsing glow.
-          const mat = r.mesh.material as THREE.ShaderMaterial;
-          if (mat.uniforms) mat.uniforms.uTime.value = elapsed * 0.001;
-          // Shrink slightly as it fades.
-          const shrink = 1 - k * 0.2;
-          r.mesh.scale.setScalar(shrink);
-          if (k >= 1) {
-            sc.remove(r.mesh);
-            (r.mesh.geometry as THREE.BufferGeometry).dispose();
-            (r.mesh.material as THREE.Material).dispose();
-            activeRing = null;
+        // Animate focus glows: update shader time, fade out after duration.
+        if (_activeGlows.length > 0) {
+          const elapsed = performance.now() - _glowBorn;
+          if (elapsed > DURATION_MS) {
+            clearGlows();
+          } else {
+            for (const m of _activeGlows) {
+              const mat = m.material as THREE.ShaderMaterial;
+              if (mat.uniforms) mat.uniforms.uTime.value = elapsed * 0.001;
+            }
           }
         }
         ctrl.update();
@@ -287,13 +274,7 @@ export default defineComponent({
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
-      // Dispose any active highlight ring.
-      if (activeRing && scene.value) {
-        scene.value.remove(activeRing.mesh);
-        (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
-        (activeRing.mesh.material as THREE.Material).dispose();
-        activeRing = null;
-      }
+      clearGlows();
       resizeObs?.disconnect();
       resizeObs = null;
       const c = controls.value;
@@ -335,12 +316,7 @@ export default defineComponent({
       () => {
         if (viewMode.value === "3d") {
           // Remove the old model + any active highlight ring, then load the new one.
-          if (activeRing && scene.value) {
-            scene.value.remove(activeRing.mesh);
-            (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
-            (activeRing.mesh.material as THREE.Material).dispose();
-            activeRing = null;
-          }
+          clearGlows();
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
@@ -351,53 +327,36 @@ export default defineComponent({
     );
 
     // ── Focus zone highlight ─────────────────────────────────────────────
-    // Spawns a soft pulsing glow at the focused ship region.  Uses a small
-    // semi-transparent sphere instead of a ring so the highlight blends into
-    // the model rather than floating obtrusively in front of it.
-    function spawnHighlightRing(zone: FocusZone, box: THREE.Box3, durationMs = 2000): void {
+    let _activeGlows: THREE.Mesh[] = [];
+
+    function clearGlows() {
       const sc = scene.value;
-      if (!sc) return;
-      if (activeRing) {
-        sc.remove(activeRing.mesh);
-        (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
-        (activeRing.mesh.material as THREE.Material).dispose();
-        activeRing = null;
+      for (const m of _activeGlows) {
+        if (sc) sc.remove(m);
+        (m.geometry as THREE.BufferGeometry).dispose();
+        (m.material as THREE.Material).dispose();
       }
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const half = size.x / 2;
-      const pos = new THREE.Vector3();
-      switch (zone) {
-        case "bow": pos.set(center.x + half * 0.7, center.y + size.y * 0.2, center.z); break;
-        case "stern": pos.set(center.x - half * 0.7, center.y + size.y * 0.2, center.z); break;
-        case "deck": pos.set(center.x, center.y + size.y * 0.7, center.z); break;
-        case "waterline": pos.set(center.x - half * 0.4, center.y - size.y * 0.2, center.z); break;
-        case "midship":
-        default: pos.set(center.x, center.y + size.y * 0.15, center.z);
-      }
-      // Small glowing sphere that pulses gently — reads as a highlight, not UI chrome.
-      const glowRadius = Math.max(size.y * 0.55, 14);
-      const geo = new THREE.SphereGeometry(glowRadius, 16, 16);
+      _activeGlows = [];
+    }
+
+    function spawnGlow(pos: THREE.Vector3, radius: number, sc: THREE.Scene): THREE.Mesh {
+      const geo = new THREE.SphereGeometry(radius, 12, 12);
       const mat = new THREE.ShaderMaterial({
         uniforms: { uTime: { value: 0 } },
         vertexShader: `
           varying vec3 vNormal;
-          varying vec3 vPosition;
           void main() {
             vNormal = normalize(normalMatrix * normal);
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            vPosition = mv.xyz;
-            gl_Position = projectionMatrix * mv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           }`,
         fragmentShader: `
           varying vec3 vNormal;
-          varying vec3 vPosition;
           uniform float uTime;
           void main() {
             float rim = 1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
             rim = pow(rim, 2.5);
-            float pulse = 0.6 + 0.4 * sin(uTime * 4.0);
-            float alpha = rim * pulse * 0.35;
+            float pulse = 0.5 + 0.5 * sin(uTime * 4.0);
+            float alpha = rim * pulse * 0.3;
             gl_FragColor = vec4(0.4, 0.93, 1.0, alpha);
           }`,
         transparent: true,
@@ -407,15 +366,10 @@ export default defineComponent({
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(pos);
       sc.add(mesh);
-      activeRing = { mesh, born: performance.now(), duration: durationMs, baseScale: glowRadius };
+      return mesh;
     }
 
-    // ── Focus zone camera tween ───────────────────────────────────────────
-    // focusZone flies the camera to a preset view of a ship region and spawns
-    // a pulsing highlight ring there. Exposed to the parent via setupState so
-    // the template ref can call it:
-    //   stageRef.value?.focusZone("bow")
-    function focusZone(zone: FocusZone): void {
+    function focusZone(zone: FocusZone, count = 1): void {
       const cam = camera.value;
       const ctrl = controls.value;
       const box = modelBox.value;
@@ -476,10 +430,23 @@ export default defineComponent({
           ctrlLocal.autoRotate = true;
         }, 750);
       }
-      // Spawn the highlight ring for real weapon-focus zones (skip the default
-      // framing call — that's just initial camera placement, not a focus action).
-      if (zone !== "default") {
-        spawnHighlightRing(zone, box);
+      // Spawn highlight glows for real weapon-focus zones.
+      if (zone !== "default" && sc) {
+        clearGlows();
+        const n = Math.max(1, count);
+        const span = size.x * 0.6;
+        const startX = center.x - span / 2;
+        const step = n > 1 ? span / (n - 1) : 0;
+        const glowR = Math.max(size.y * 0.16, 6);
+        for (let i = 0; i < n; i++) {
+          const p = new THREE.Vector3(
+            startX + step * i,
+            center.y + size.y * 0.22,
+            center.z,
+          );
+          _activeGlows.push(spawnGlow(p, glowR, sc));
+        }
+        _glowBorn = performance.now();
       }
     }
 

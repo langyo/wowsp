@@ -62,8 +62,8 @@ export default defineComponent({
 
     // ── Holographic stage ─────────────────────────────────────────────────
     const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
-    function onWeaponFocus(zone: FocusZone) {
-      stageRef.value?.focusZone(zone);
+    function onWeaponFocus(zone: FocusZone, count?: number) {
+      stageRef.value?.focusZone(zone, count ?? 1);
     }
 
     // ── Armor tab: lazy GameParams ─────────────────────────────────────────

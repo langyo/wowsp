@@ -195,7 +195,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     tag = hashlib.md5(gp_name.encode()).hexdigest()[:8]
     raw_glb = TEMP_DIR / f"raw_{tag}.glb"
 
-    # Step 1: export raw GLB (no textures, LOD2, no turrets).
+    # Step 1: export raw GLB (no textures, LOD2, include turrets).
     # Convert underscores to spaces — the exporter uses a regex pattern matcher
     # where each space-separated word becomes .*word.*, and underscores in a
     # single word won't disambiguate when the GP key itself contains both the
@@ -204,7 +204,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     try:
         rc = subprocess.call(
             [str(EXPORTER_BIN), "-W", game, "-s", exporter_ship,
-             "-o", str(raw_glb), "-t", "-T", "-L", "2"],
+             "-o", str(raw_glb), "-T", "-L", "2"],
             timeout=45,
         )
         if rc != 0 or not raw_glb.exists():

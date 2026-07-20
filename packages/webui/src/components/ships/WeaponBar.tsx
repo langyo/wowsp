@@ -23,6 +23,7 @@ interface WeaponCard {
   label: string;
   detail: string;
   zone: FocusZone;
+  count: number;
 }
 
 /** Extract a short weapon summary list from a GameParams subtree. */
@@ -53,6 +54,7 @@ function buildWeapons(gp: Gp): WeaponCard[] {
         label: t("ships.detail.weapon.mainGun"),
         detail: `${turretCount}×${Math.max(1, Math.round(barrels / turretCount))} ${(caliber * 1000).toFixed(0)}mm`,
         zone: "bow",
+        count: turretCount,
       });
     }
   }
@@ -68,6 +70,7 @@ function buildWeapons(gp: Gp): WeaponCard[] {
         label: t("ships.detail.weapon.torpedo"),
         detail: `${tubes.length} ${t("ships.detail.weapon.launchers")}`,
         zone: "midship",
+        count: tubes.length,
       });
     }
   }
@@ -82,9 +85,10 @@ function buildWeapons(gp: Gp): WeaponCard[] {
       key: "aaGun",
       icon: Wind,
       label: t("ships.detail.weapon.aaGun"),
-      detail: slots.length > 0 ? `${slots.length} ${t("ships.detail.weapon.auras")}` : "—",
-      zone: "deck",
-    });
+        detail: slots.length > 0 ? `${slots.length} ${t("ships.detail.weapon.auras")}` : "—",
+        zone: "deck",
+        count: Math.max(1, slots.length),
+      });
   }
 
   // Secondary battery — A_ATBA.
@@ -98,6 +102,7 @@ function buildWeapons(gp: Gp): WeaponCard[] {
         label: t("ships.detail.weapon.secondary"),
         detail: `${secs.length}`,
         zone: "midship",
+        count: secs.length,
       });
     }
   }
@@ -109,9 +114,10 @@ function buildWeapons(gp: Gp): WeaponCard[] {
       key: "engine",
       icon: Gauge,
       label: t("ships.detail.weapon.engine"),
-      detail: eng.engineType ? String(eng.engineType) : "—",
-      zone: "stern",
-    });
+        detail: eng.engineType ? String(eng.engineType) : "—",
+        zone: "stern",
+        count: 1,
+      });
   }
 
   // Finders (rangefinders / optics) — A_Finders.
@@ -125,6 +131,7 @@ function buildWeapons(gp: Gp): WeaponCard[] {
         label: t("ships.detail.weapon.finder"),
         detail: `${fs.length}`,
         zone: "deck",
+        count: fs.length,
       });
     }
   }
@@ -139,7 +146,7 @@ export default defineComponent({
     gameparams: { type: Object as PropType<Gp>, default: null },
   },
   emits: {
-    focus: (_zone: FocusZone) => true,
+    focus: (_zone: FocusZone, _count?: number) => true,
   },
   setup(props, { emit }) {
     const weapons = computed(() => buildWeapons(props.gameparams));
@@ -152,7 +159,7 @@ export default defineComponent({
               key={w.key}
               class="weapon-bar__btn"
               title={w.label}
-              onClick={() => emit("focus", w.zone)}
+              onClick={() => emit("focus", w.zone, w.count)}
             >
               <w.icon size={14} />
               <span class="weapon-bar__label">{w.label}</span>
