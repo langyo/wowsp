@@ -17,6 +17,7 @@ import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type Holo
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t } from "@/i18n";
+import { useToast } from "@/composables/useToast";
 import type { ShipInfo } from "@/api";
 import "./ShipStage.scss";
 
@@ -53,6 +54,7 @@ export default defineComponent({
   exposed: {} as { focusZone?: (zone: FocusZone) => void },
   setup(props) {
     const inst = getCurrentInstance();
+    const toast = useToast();
     const containerRef = ref<HTMLElement | null>(null);
     const viewMode = ref<"2d" | "3d">("3d");
     const loading = ref(false);
@@ -277,6 +279,7 @@ export default defineComponent({
         focusZone("default");
       } catch (e) {
         errorMsg.value = (e as Error).message || String(e);
+        toast.error(`3D model failed: ${errorMsg.value}`);
       } finally {
         loading.value = false;
       }
