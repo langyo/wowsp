@@ -16,9 +16,9 @@ interface WeaponCard {
   count: number;
 }
 
-/** Extract weapon cards from GameParams.  Each HP_* slot becomes its own card
- *  so multiple distinct mount groups (e.g. two secondary calibres) are listed
- *  separately.  AA auras are also shown per-range-tier when distinguishable. */
+/** Aggregate same-spec mounts into grouped cards.  Identical mounts are merged
+ *  (e.g. four 2×460mm turrets → one "4×2 460mm" card), AA auras collapse by
+ *  range tier, and distinct calibres stay separate. */
 function buildWeapons(gp: Gp): WeaponCard[] {
   if (!gp || typeof gp !== "object") return [];
 
@@ -27,18 +27,23 @@ function buildWeapons(gp: Gp): WeaponCard[] {
   // ── Main battery ── A_Artillery.HP_*
   const art = gp.A_Artillery ?? gp.Hull?.artillery;
   if (art && typeof art === "object") {
-    const mounts = Object.entries(art).filter(([k]) => k.startsWith("HP_"));
-    for (const [, m] of mounts) {
-      if (!m || typeof m !== "object") continue;
+    const groups = new Map<string, { barrels: number; cal: number; count: number }>();
+    for (const [k, m] of Object.entries(art)) {
+      if (!k.startsWith("HP_") || !m || typeof m !== "object") continue;
       const barrels = Number(m.numBarrels ?? 0) || 1;
-      const cal = (Number(m.barrelDiameter ?? 0) * 1000).toFixed(0);
+      const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
+      const key = `${barrels}_${cal}`;
+      const g = groups.get(key);
+      if (g) { g.count++; } else { groups.set(key, { barrels, cal, count: 1 }); }
+    }
+    for (const [, g] of groups) {
       out.push({
-        key: `mainGun_${out.length}`,
+        key: `mainGun_${g.cal}`,
         icon: Crosshair,
         label: t("ships.detail.weapon.mainGun"),
-        detail: `${barrels}× ${cal}mm`,
+        detail: `${g.count}×${g.barrels} ${g.cal}mm`,
         zone: "bow",
-        count: 1,
+        count: g.count,
       });
     }
   }
@@ -46,18 +51,23 @@ function buildWeapons(gp: Gp): WeaponCard[] {
   // ── Secondary battery ── A_ATBA.HP_*
   const atba = gp.A_ATBA;
   if (atba && typeof atba === "object") {
-    const mounts = Object.entries(atba).filter(([k]) => k.startsWith("HP_"));
-    for (const [, m] of mounts) {
-      if (!m || typeof m !== "object") continue;
+    const groups = new Map<string, { barrels: number; cal: number; count: number }>();
+    for (const [k, m] of Object.entries(atba)) {
+      if (!k.startsWith("HP_") || !m || typeof m !== "object") continue;
       const barrels = Number(m.numBarrels ?? 0) || 1;
-      const cal = (Number(m.barrelDiameter ?? 0) * 1000).toFixed(0);
+      const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
+      const key = `${barrels}_${cal}`;
+      const g = groups.get(key);
+      if (g) { g.count++; } else { groups.set(key, { barrels, cal, count: 1 }); }
+    }
+    for (const [, g] of groups) {
       out.push({
-        key: `secondary_${out.length}`,
+        key: `secondary_${g.cal}`,
         icon: Rocket,
         label: t("ships.detail.weapon.secondary"),
-        detail: cal ? `${barrels}× ${cal}mm` : `${barrels}×`,
+        detail: `${g.count}×${g.barrels} ${g.cal}mm`,
         zone: "midship",
-        count: 1,
+        count: g.count,
       });
     }
   }
@@ -65,112 +75,112 @@ function buildWeapons(gp: Gp): WeaponCard[] {
   // ── Torpedoes ── A_AirArmament.HP_* (tube launchers)
   const torp = gp.A_AirArmament ?? gp.Hull?.torpedoes;
   if (torp && typeof torp === "object") {
-    const tubes = Object.entries(torp).filter(([k]) => k.startsWith("HP_"));
-    for (const [, t] of tubes) {
-      if (!t || typeof t !== "object") continue;
-      const countVal = Number(t.numBarrels ?? t.count ?? 1) || 1;
+    let tubeCount = 0;
+    let tubeBarr = 0;
+    for (const [k, t] of Object.entries(torp)) {
+      if (!k.startsWith("HP_") || !t || typeof t !== "object") continue;
+      tubeCount++;
+      tubeBarr = Math.max(tubeBarr, Number(t.numBarrels ?? t.count ?? 1) || 1);
+    }
+    if (tubeCount > 0) {
       out.push({
-        key: `torpedo_${out.length}`,
+        key: "torpedo",
         icon: Target,
         label: t("ships.detail.weapon.torpedo"),
-        detail: `${countVal}×`,
+        detail: `${tubeCount}×${tubeBarr}`,
         zone: "midship",
-        count: 1,
+        count: tubeCount,
       });
     }
   }
 
-  // ── Anti-air (auras) ── A_AirDefense
+  // ── Anti-air (auras) — collapse by range tier ──
   const aa = gp.A_AirDefense;
   if (aa && typeof aa === "object") {
-    const auras = Object.entries(aa).filter(
-      ([k, v]) => (k.startsWith("HP_") || /^\d+$/.test(k)) && v && typeof v === "object",
-    );
-    // Try to extract range tiers so the user can tell long/medium/short apart.
-    for (const [, a] of auras) {
-      const maxDist = Number(a.maxDistance ?? 0);
-      const label = maxDist > 5
-        ? t("ships.detail.weapon.aaLong")
-        : maxDist > 2.5
-          ? t("ships.detail.weapon.aaMid")
-          : t("ships.detail.weapon.aaShort");
+    const tiers: Record<string, number> = { long: 0, mid: 0, short: 0 };
+    for (const [k, a] of Object.entries(aa)) {
+      if (!(k.startsWith("HP_") || /^\d+$/.test(k))) continue;
+      if (!a || typeof a !== "object") continue;
+      const dist = Number(a.maxDistance ?? 0);
+      if (dist > 5) tiers.long++;
+      else if (dist > 2.5) tiers.mid++;
+      else tiers.short++;
+    }
+    if (tiers.long > 0) {
       out.push({
-        key: `aa_${out.length}`,
+        key: "aa_long",
         icon: Wind,
-        label: `${t("ships.detail.weapon.aaGun")} ${label}`,
-        detail: maxDist > 0 ? `${maxDist.toFixed(1)}km` : "—",
+        label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaLong")}`,
+        detail: `${tiers.long} ${t("ships.detail.weapon.auras")}`,
         zone: "deck",
-        count: 1,
+        count: tiers.long,
+      });
+    }
+    if (tiers.mid > 0) {
+      out.push({
+        key: "aa_mid",
+        icon: Wind,
+        label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaMid")}`,
+        detail: `${tiers.mid} ${t("ships.detail.weapon.auras")}`,
+        zone: "deck",
+        count: tiers.mid,
+      });
+    }
+    if (tiers.short > 0) {
+      out.push({
+        key: "aa_short",
+        icon: Wind,
+        label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaShort")}`,
+        detail: `${tiers.short} ${t("ships.detail.weapon.auras")}`,
+        zone: "deck",
+        count: tiers.short,
       });
     }
   }
 
-  // ── ASW / depth charges ── A_DepthCharge
+  // ── ASW ──
   const dc = gp.A_DepthCharge;
   if (dc && typeof dc === "object") {
-    const mounts = Object.entries(dc).filter(([k]) => k.startsWith("HP_"));
-    if (mounts.length > 0) {
-      out.push({
-        key: "asw",
-        icon: Anchor,
-        label: t("ships.detail.weapon.asw"),
-        detail: `${mounts.length} ${t("ships.detail.weapon.launchers")}`,
-        zone: "stern",
-        count: mounts.length,
-      });
-    }
+    const n = Object.keys(dc).filter((k) => k.startsWith("HP_")).length;
+    if (n > 0) out.push({
+      key: "asw", icon: Anchor, label: t("ships.detail.weapon.asw"),
+      detail: `${n} ${t("ships.detail.weapon.launchers")}`, zone: "stern", count: n,
+    });
   }
 
-  // ── Aircraft ── A_Airplane
-  const plane = gp.A_Airplane;
-  if (plane && typeof plane === "object") {
-    const sq = Object.entries(plane).filter(([k]) => k.startsWith("HP_"));
-    if (sq.length > 0) {
-      out.push({
-        key: "aircraft",
-        icon: PlaneIcon,
-        label: t("ships.detail.weapon.aircraft"),
-        detail: `${sq.length} ${t("ships.detail.weapon.squadrons")}`,
-        zone: "stern",
-        count: sq.length,
-      });
-    }
+  // ── Aircraft ──
+  const ac = gp.A_Airplane;
+  if (ac && typeof ac === "object") {
+    const n = Object.keys(ac).filter((k) => k.startsWith("HP_")).length;
+    if (n > 0) out.push({
+      key: "aircraft", icon: PlaneIcon, label: t("ships.detail.weapon.aircraft"),
+      detail: `${n} ${t("ships.detail.weapon.squadrons")}`, zone: "stern", count: n,
+    });
   }
 
   // ── Engine ──
   const eng = gp.A_Engine;
   if (eng && typeof eng === "object") {
     out.push({
-      key: "engine",
-      icon: Gauge,
-      label: t("ships.detail.weapon.engine"),
-      detail: eng.engineType ? String(eng.engineType) : "—",
-      zone: "stern",
-      count: 1,
+      key: "engine", icon: Gauge, label: t("ships.detail.weapon.engine"),
+      detail: eng.engineType ? String(eng.engineType) : "—", zone: "stern", count: 1,
     });
   }
 
-  // ── Finders (rangefinders / optics) ──
+  // ── Finders ──
   const finders = gp.A_Finders;
   if (finders && typeof finders === "object") {
-    const fs = Object.keys(finders).filter((k) => k.startsWith("HP_"));
-    if (fs.length > 0) {
-      out.push({
-        key: "finder",
-        icon: Radar,
-        label: t("ships.detail.weapon.finder"),
-        detail: `${fs.length}`,
-        zone: "deck",
-        count: fs.length,
-      });
-    }
+    const n = Object.keys(finders).filter((k) => k.startsWith("HP_")).length;
+    if (n > 0) out.push({
+      key: "finder", icon: Radar, label: t("ships.detail.weapon.finder"),
+      detail: `${n}`, zone: "deck", count: n,
+    });
   }
 
   return out;
 }
 
 function PlaneIcon() {
-  // Inline SVG for aircraft — lucide doesn't have a perfect match.
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -181,12 +191,8 @@ function PlaneIcon() {
 
 export default defineComponent({
   name: "WeaponBar",
-  props: {
-    gameparams: { type: Object as PropType<Gp>, default: null },
-  },
-  emits: {
-    focus: (_zone: FocusZone, _count?: number) => true,
-  },
+  props: { gameparams: { type: Object as PropType<Gp>, default: null } },
+  emits: { focus: (_zone: FocusZone, _count?: number) => true },
   setup(props, { emit }) {
     const weapons = computed(() => buildWeapons(props.gameparams));
     return () => {
@@ -194,12 +200,8 @@ export default defineComponent({
       return (
         <div class="weapon-bar">
           {weapons.value.map((w) => (
-            <button
-              key={w.key}
-              class="weapon-bar__btn"
-              title={w.label}
-              onClick={() => emit("focus", w.zone, w.count)}
-            >
+            <button key={w.key} class="weapon-bar__btn" title={w.label}
+              onClick={() => emit("focus", w.zone, w.count)}>
               <w.icon size={14} />
               <span class="weapon-bar__label">{w.label}</span>
               <span class="weapon-bar__detail">{w.detail}</span>
