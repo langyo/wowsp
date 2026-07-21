@@ -111,7 +111,8 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
 
     def _node_matrix(node: dict) -> np.ndarray:
         if "matrix" in node:
-            return np.array(node["matrix"], dtype=np.float64).reshape(4, 4)
+            # glTF matrices are column-major.
+            return np.array(node["matrix"], dtype=np.float64).reshape(4, 4, order="F")
         m = np.eye(4, dtype=np.float64)
         if "translation" in node:
             m[:3, 3] = node["translation"]
@@ -129,21 +130,19 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
         return m
 
     node_world = [None] * len(nodes)
-    # Topological sort by parent references so parents are resolved first.
+    # Build parent→children map from both standard `children` arrays and
+    # the non-standard `parent` field some exporters emit.
     children: dict[int, list[int]] = {i: [] for i in range(len(nodes))}
-    roots = []
-    for i, n in enumerate(nodes):
-        p = n.get("parent", -1) if "parent" in n else -1
-        # glTF stores parent as an optional node index field; if absent, it's
-        # usually in a "children" array on the parent.  We handle both.
-        # First pass: use explicit parent if present.
-        pass
-    # Simpler approach: use the children arrays (glTF standard).
     for i, n in enumerate(nodes):
         for c in n.get("children", []):
             if c < len(nodes):
-                children.setdefault(i, []).append(c)
-    # Find root nodes (nodes without parents in children lists).
+                children[i].append(c)
+    # Some exporters write a `parent` field instead of `children`.
+    for i, n in enumerate(nodes):
+        p = n.get("parent")
+        if isinstance(p, int) and 0 <= p < len(nodes) and i not in children.get(p, []):
+            children[p].append(i)
+    # Find root nodes (nodes not referenced as any other node's child).
     has_parent = set()
     for kids in children.values():
         has_parent.update(kids)
@@ -160,6 +159,10 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
     for r in roots:
         _compute_world(r)
 
+    non_id = sum(1 for w in node_world if w is not None and not np.allclose(w, np.eye(4)))
+    print(f"[bake] {len(nodes)} nodes, {len(roots)} roots, {non_id} non-identity world xforms")
+
+    mesh_xforms = 0
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
@@ -169,6 +172,8 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
         for ni, n in enumerate(nodes):
             if n.get("mesh") == mesh_idx and node_world[ni] is not None:
                 world_mat = node_world[ni]
+                if not np.allclose(world_mat, np.eye(4)):
+                    mesh_xforms += 1
                 break
         for prim in mesh["primitives"]:
             if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
@@ -204,6 +209,7 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
                     if i + 2 < n_verts:
                         all_indices.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
 
+    print(f"[bake] {mesh_xforms} of {len(gjson.get('meshes',[]))} meshes have non-identity xform")
     return all_verts, all_indices
 
 
