@@ -103,9 +103,73 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
     all_verts: list[float] = []
     all_indices: list[int] = []
 
+    # Build node→world transform lookup so turret/mounted meshes are
+    # positioned correctly instead of piling up at the origin.
+    nodes = gjson.get("nodes", [])
+    # Compute the world matrix for every node (parent-chain multiply).
+    import numpy as np
+
+    def _node_matrix(node: dict) -> np.ndarray:
+        if "matrix" in node:
+            return np.array(node["matrix"], dtype=np.float64).reshape(4, 4)
+        m = np.eye(4, dtype=np.float64)
+        if "translation" in node:
+            m[:3, 3] = node["translation"]
+        if "rotation" in node:
+            q = node["rotation"]  # [x, y, z, w]
+            x, y, z, w = q
+            m[:3, :3] = np.array([
+                [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
+                [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
+                [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y],
+            ], dtype=np.float64)
+        if "scale" in node:
+            s = node["scale"]
+            m[:3, :3] *= np.array(s, dtype=np.float64)
+        return m
+
+    node_world = [None] * len(nodes)
+    # Topological sort by parent references so parents are resolved first.
+    children: dict[int, list[int]] = {i: [] for i in range(len(nodes))}
+    roots = []
+    for i, n in enumerate(nodes):
+        p = n.get("parent", -1) if "parent" in n else -1
+        # glTF stores parent as an optional node index field; if absent, it's
+        # usually in a "children" array on the parent.  We handle both.
+        # First pass: use explicit parent if present.
+        pass
+    # Simpler approach: use the children arrays (glTF standard).
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []):
+            if c < len(nodes):
+                children.setdefault(i, []).append(c)
+    # Find root nodes (nodes without parents in children lists).
+    has_parent = set()
+    for kids in children.values():
+        has_parent.update(kids)
+    roots = [i for i in range(len(nodes)) if i not in has_parent]
+
+    def _compute_world(idx: int, parent_matrix: np.ndarray = np.eye(4)):
+        n = nodes[idx]
+        local = _node_matrix(n)
+        world = parent_matrix @ local
+        node_world[idx] = world
+        for c in children.get(idx, []):
+            _compute_world(c, world)
+
+    for r in roots:
+        _compute_world(r)
+
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
+        # Find which node(s) reference this mesh.
+        mesh_idx = gjson["meshes"].index(mesh)
+        world_mat = np.eye(4)
+        for ni, n in enumerate(nodes):
+            if n.get("mesh") == mesh_idx and node_world[ni] is not None:
+                world_mat = node_world[ni]
+                break
         for prim in mesh["primitives"]:
             if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
                 continue
@@ -120,7 +184,14 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
             verts, ncomp = get_accessor_data(pos_acc)
             assert ncomp == 3
             base_vert = len(all_verts) // 3
-            all_verts.extend(verts)
+            # Apply node world transform so turrets are at their correct positions.
+            if not np.allclose(world_mat, np.eye(4)):
+                v = np.array(verts, dtype=np.float64).reshape(-1, 3)
+                v_h = np.column_stack([v, np.ones(len(v))])
+                v_t = (world_mat @ v_h.T).T[:, :3]
+                all_verts.extend(v_t.flatten().tolist())
+            else:
+                all_verts.extend(verts)
             # Get indices (or generate if missing)
             if prim.get("indices") is not None:
                 idx_vals, _ = get_accessor_data(prim["indices"])

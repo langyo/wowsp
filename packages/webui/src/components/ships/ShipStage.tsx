@@ -240,23 +240,26 @@ export default defineComponent({
         // first so we don't mutate the tree during traverse (the wireframe overlay
         // is added as a child — doing that mid-traverse would recurse forever).
         const holoMat = makeHoloMaterial();
-        const wireMat = new THREE.MeshBasicMaterial({
-          color: 0x2a8fb5,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.10,
-          depthWrite: false,
-        });
         const meshes: THREE.Mesh[] = [];
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
           mesh.material = holoMat;
-          // Faint wireframe overlay pass, as a non-traversed child.
-          const wire = new THREE.Mesh(mesh.geometry, wireMat);
-          wire.raycast = () => {}; // overlay shouldn't intercept picks
-          mesh.add(wire);
+          // Faint structural-edge overlay — only shows edges where adjacent
+          // faces meet at >20° (hides coplanar hull/deck triangles).
+          const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 20);
+          const line = new THREE.LineSegments(
+            edgeGeo,
+            new THREE.LineBasicMaterial({
+              color: 0x2a8fb5,
+              transparent: true,
+              opacity: 0.18,
+              depthWrite: false,
+            }),
+          );
+          line.raycast = () => {};
+          mesh.add(line);
         }
 
         if (scene.value) scene.value.add(model);
