@@ -343,7 +343,7 @@ export default defineComponent({
     }
 
     function spawnGlow(pos: THREE.Vector3, radius: number, sc: THREE.Scene): THREE.Mesh {
-      const geo = new THREE.SphereGeometry(radius, 12, 12);
+      const geo = new THREE.SphereGeometry(radius, 16, 16);
       const mat = new THREE.ShaderMaterial({
         uniforms: { uTime: { value: 0 } },
         vertexShader: `
@@ -357,13 +357,14 @@ export default defineComponent({
           uniform float uTime;
           void main() {
             float rim = 1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
-            rim = pow(rim, 2.5);
-            float pulse = 0.5 + 0.5 * sin(uTime * 4.0);
-            float alpha = rim * pulse * 0.3;
-            gl_FragColor = vec4(0.4, 0.93, 1.0, alpha);
+            rim = pow(rim, 1.8);
+            float pulse = 0.55 + 0.45 * sin(uTime * 5.0);
+            float alpha = rim * pulse * 0.55;
+            gl_FragColor = vec4(0.35, 0.88, 1.0, alpha);
           }`,
         transparent: true,
         depthWrite: false,
+        depthTest: false,
         blending: THREE.AdditiveBlending,
       });
       const mesh = new THREE.Mesh(geo, mat);
