@@ -86,15 +86,9 @@ def get_ship_names(game: str) -> list[str]:
 
 
 def derive_filename(gp_name: str) -> str:
-    """Derive a human-readable filename from a GameParams name.
-    e.g. PASB017_Montana_1945 → Montana.glb"""
-    parts = gp_name.split("_")
-    # Skip the prefix (e.g. PASB017) and trailing year/version.
-    readable_parts = [p for p in parts[1:] if not p.isdigit() and p != ""]
-    # Also skip common suffixes like "HW19", "H2019", "Borg", etc.
-    readable = [p for p in readable_parts if len(p) <= 4 or p[0].isupper()]
-    if not readable:
-        readable = readable_parts
+    """Use the GameParams index prefix as the GLB filename.
+    e.g. PASB017_Montana_1945 → PASB017.glb"""
+    return gp_name.split("_")[0] + ".glb"
     return "_".join(readable) + ".glb"
 
 
