@@ -248,7 +248,7 @@ export default defineComponent({
           mesh.material = holoMat;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
-          const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 20);
+          const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 8);
           const line = new THREE.LineSegments(
             edgeGeo,
             new THREE.LineBasicMaterial({
