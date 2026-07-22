@@ -40,18 +40,28 @@ function buildWeapons(gp: Gp): WeaponCard[] {
   const atbaIds = gunIds(gp.A_ATBA);
   const aaIds = gunIds(gp.A_AirDefense);
 
-  // ── Main battery ── A_Artillery.HP_*
+  // ── Main battery ── A_Artillery.HP_* (fall back to A_ATBA for DDs)
   const art = gp.A_Artillery ?? gp.Hull?.artillery;
-  if (art && typeof art === "object") {
-    const groups = new Map<string, { barrels: number; cal: number; count: number }>();
-    for (const [, m] of hpSlots(art)) {
+  const mainSource = (art && typeof art === "object" && hpSlots(art).length > 0) ? art : gp.A_ATBA;
+  // Track which ATBA slots are "promoted" to main battery so they aren't
+  // listed again under secondaries.
+  const promotedAtba = new Set<string>();
+  if (mainSource && typeof mainSource === "object") {
+    const groups = new Map<string, { barrels: number; cal: number; count: number; slots: string[] }>();
+    for (const [k, m] of hpSlots(mainSource)) {
       const barrels = Number(m.numBarrels ?? 0) || 1;
       const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
       const key = `${barrels}_${cal}`;
       const g = groups.get(key);
-      if (g) { g.count++; } else { groups.set(key, { barrels, cal, count: 1 }); }
+      if (g) { g.count++; g.slots.push(k); } else { groups.set(key, { barrels, cal, count: 1, slots: [k] }); }
     }
-    for (const [, g] of groups) {
+    // If mainSource is A_ATBA (not true A_Artillery), only promote the
+    // LARGEST caliber group to main battery — keep rest as secondaries.
+    const entries = [...groups.values()].sort((a, b) => b.cal - a.cal);
+    const promoteAll = mainSource === art; // true A_Artillery → all groups are main battery
+    for (const g of entries) {
+      if (!promoteAll && g !== entries[0]) break; // only top group from ATBA
+      for (const s of g.slots) promotedAtba.add(s);
       out.push({
         key: `mainGun_${g.cal}_${g.barrels}`,
         icon: Crosshair,
@@ -78,11 +88,11 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     if (id && atbaIds.has(id)) dpSlots.add(k);
   }
 
-  // ── Secondary battery (excluding DP guns already counted) ──
+  // ── Secondary battery (excluding DP guns + slots promoted to main) ──
   if (gp.A_ATBA && typeof gp.A_ATBA === "object") {
     const groups = new Map<string, { barrels: number; cal: number; count: number }>();
     for (const [k, m] of atbaSlots) {
-      if (dpSlots.has(k)) continue;
+      if (dpSlots.has(k) || promotedAtba.has(k)) continue;
       const barrels = Number(m.numBarrels ?? 0) || 1;
       const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
       const key = `${barrels}_${cal}`;
