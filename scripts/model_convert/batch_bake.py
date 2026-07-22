@@ -227,7 +227,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     try:
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT),
-             str(raw_glb), "-o", str(out_glb), "--triangles", "10000"],
+             str(raw_glb), "-o", str(out_glb), "--triangles", "15000"],
             timeout=30,
         )
         return rc == 0 and out_glb.exists()

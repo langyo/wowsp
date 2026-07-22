@@ -166,48 +166,54 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
-        # Find which node(s) reference this mesh.
+        # Collect ALL world matrices for nodes that reference this mesh
+        # (handles instancing — same mesh at multiple positions).
         mesh_idx = gjson["meshes"].index(mesh)
-        world_mat = np.eye(4)
+        world_mats: list[np.ndarray] = []
         for ni, n in enumerate(nodes):
             if n.get("mesh") == mesh_idx and node_world[ni] is not None:
-                world_mat = node_world[ni]
-                if not np.allclose(world_mat, np.eye(4)):
+                w = node_world[ni]
+                world_mats.append(w)
+                if not np.allclose(w, np.eye(4)):
                     mesh_xforms += 1
-                break
-        for prim in mesh["primitives"]:
-            if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
-                continue
-            # glTF primitive `mode` defaults to 4 (TRIANGLES). WoWS exports are
-            # always triangle lists, but bail on any other topology (strip/fan/
-            # lines/points) rather than mis-reading its indices as triangles.
-            mode = prim.get("mode", 4)
-            if mode != 4:
-                continue
-            # Get vertices
-            pos_acc = prim["attributes"]["POSITION"]
-            verts, ncomp = get_accessor_data(pos_acc)
-            assert ncomp == 3
-            base_vert = len(all_verts) // 3
-            # Apply node world transform so turrets are at their correct positions.
-            if not np.allclose(world_mat, np.eye(4)):
-                v = np.array(verts, dtype=np.float64).reshape(-1, 3)
-                v_h = np.column_stack([v, np.ones(len(v))])
-                v_t = (world_mat @ v_h.T).T[:, :3]
-                all_verts.extend(v_t.flatten().tolist())
-            else:
-                all_verts.extend(verts)
-            # Get indices (or generate if missing)
-            if prim.get("indices") is not None:
-                idx_vals, _ = get_accessor_data(prim["indices"])
-                # If the index accessor used UINT (5125), values are already ints
-                all_indices.extend(int(v) + base_vert for v in idx_vals)
-            else:
-                # Non-indexed: generate sequential
-                n_verts = len(verts) // 3
-                for i in range(0, n_verts, 3):
-                    if i + 2 < n_verts:
-                        all_indices.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
+        if not world_mats:
+            world_mats = [np.eye(4)]
+
+        # Duplicate the mesh's geometry for each node transform.
+        for world_mat in world_mats:
+            for prim in mesh["primitives"]:
+                if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
+                    continue
+                # glTF primitive `mode` defaults to 4 (TRIANGLES). WoWS exports are
+                # always triangle lists, but bail on any other topology (strip/fan/
+                # lines/points) rather than mis-reading its indices as triangles.
+                mode = prim.get("mode", 4)
+                if mode != 4:
+                    continue
+                # Get vertices
+                pos_acc = prim["attributes"]["POSITION"]
+                verts, ncomp = get_accessor_data(pos_acc)
+                assert ncomp == 3
+                base_vert = len(all_verts) // 3
+                # Apply node world transform so turrets are at their correct positions.
+                if not np.allclose(world_mat, np.eye(4)):
+                    v = np.array(verts, dtype=np.float64).reshape(-1, 3)
+                    v_h = np.column_stack([v, np.ones(len(v))])
+                    v_t = (world_mat @ v_h.T).T[:, :3]
+                    all_verts.extend(v_t.flatten().tolist())
+                else:
+                    all_verts.extend(verts)
+                # Get indices (or generate if missing)
+                if prim.get("indices") is not None:
+                    idx_vals, _ = get_accessor_data(prim["indices"])
+                    # If the index accessor used UINT (5125), values are already ints
+                    all_indices.extend(int(v) + base_vert for v in idx_vals)
+                else:
+                    # Non-indexed: generate sequential
+                    n_verts = len(verts) // 3
+                    for i in range(0, n_verts, 3):
+                        if i + 2 < n_verts:
+                            all_indices.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
 
     print(f"[bake] {mesh_xforms} of {len(gjson.get('meshes',[]))} meshes have non-identity xform")
     return all_verts, all_indices
