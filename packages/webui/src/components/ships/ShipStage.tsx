@@ -77,8 +77,10 @@ export default defineComponent({
     let resizeObs: ResizeObserver | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
-    let _glowBorn = 0;
-    const DURATION_MS = 2500;
+    let _turretMaterial: THREE.ShaderMaterial | null = null;
+    let _turretMaterialBright: THREE.ShaderMaterial | null = null;
+    let _turretTimer = 0;
+    const FOCUS_DURATION_MS = 2500;
 
     // ── Holographic shader ────────────────────────────────────────────────
     // The shader source + material factory live in the shared `holoShader`
@@ -153,33 +155,6 @@ export default defineComponent({
       const tick = () => {
         const dt = clock.getDelta();
         if (uniforms.value) tickHoloUniforms(uniforms.value, dt);
-        // Animate focus glows and update holo shader focus uniforms.
-        if (_activeGlows.length > 0) {
-          const elapsed = performance.now() - _glowBorn;
-          if (elapsed > DURATION_MS) {
-            clearGlows();
-          } else {
-            for (const m of _activeGlows) {
-              const mat = m.material as THREE.ShaderMaterial;
-              if (mat.uniforms) mat.uniforms.uTime.value = elapsed * 0.001;
-            }
-            // Push glow world positions to the holo shader for per-vertex
-            // brightness boost near focused weapon areas.
-            const u = uniforms.value;
-            if (u?.focusPoints?.value) {
-              u.focusCount.value = Math.min(_activeGlows.length, 8);
-              for (let i = 0; i < 8; i++) {
-                if (i < _activeGlows.length) {
-                  u.focusPoints.value[i].copy(_activeGlows[i].position);
-                } else {
-                  u.focusPoints.value[i].set(0, 0, 0);
-                }
-              }
-            }
-          }
-        } else if (uniforms.value) {
-          uniforms.value.focusCount.value = 0;
-        }
         ctrl.update();
         rnd.render(sc, cam);
         rafId = requestAnimationFrame(tick);
@@ -251,16 +226,23 @@ export default defineComponent({
         const normBox = new THREE.Box3().setFromObject(model);
         modelBox.value = normBox;
 
-        // Apply the holographic shader to every mesh in the model. Collect meshes
-        // first so we don't mutate the tree during traverse (the wireframe overlay
-        // is added as a child — doing that mid-traverse would recurse forever).
-        const holoMat = makeHoloMaterial();
+        // Apply holographic shader. Turret mesh gets a brighter variant.
+        const holoHull = makeHoloMaterial();
+        const holoTurret = makeHoloMaterial();
+        const holoTurretBright = makeHoloMaterial();
+        // Make the bright variant ~2× more visible.
+        holoTurretBright.uniforms.baseColor.value.set(0x15a0c8);
+        holoTurretBright.uniforms.fresnelColor.value.set(0x66eeff);
+        _turretMaterial = holoTurret;
+        _turretMaterialBright = holoTurretBright;
+
         const meshes: THREE.Mesh[] = [];
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
-          mesh.material = holoMat;
+          const isTurret = mesh.name === "turret" || (mesh.parent && mesh.parent.name === "turret");
+          mesh.material = isTurret ? holoTurret : holoHull;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
           const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 8);
@@ -292,7 +274,7 @@ export default defineComponent({
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
-      clearGlows();
+      clearTimeout(_turretTimer);
       resizeObs?.disconnect();
       resizeObs = null;
       const c = controls.value;
@@ -334,7 +316,7 @@ export default defineComponent({
       () => {
         if (viewMode.value === "3d") {
           // Remove the old model + any active highlight ring, then load the new one.
-          clearGlows();
+          clearTimeout(_turretTimer);
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
@@ -477,26 +459,27 @@ export default defineComponent({
           ctrlLocal.autoRotate = true;
         }, 750);
       }
-      // Spawn highlight glows for real weapon-focus zones.
-      if (zone !== "default" && sc) {
-        clearGlows();
-        const n = Math.max(1, count);
-        const span = size.x * 0.6;
-        const startX = center.x - span / 2;
-        const step = n > 1 ? span / (n - 1) : 0;
-        const glowR = Math.max(size.y * 0.16, 6);
-        for (let i = 0; i < n; i++) {
-          const p = new THREE.Vector3(
-            startX + step * i,
-            center.y + size.y * 0.22,
-            center.z,
-          );
-          _activeGlows.push(spawnGlow(p, glowR, sc));
+      // Swap turret mesh to bright material on weapon focus.
+      if (zone !== "default") {
+        if (_turretMaterialBright && modelGroup.value) {
+          modelGroup.value.traverse((child) => {
+            const m = child as THREE.Mesh;
+            if (m.isMesh && m.material === _turretMaterial) {
+              m.material = _turretMaterialBright;
+            }
+          });
         }
-        // Set holo shader focus radius to cover the weapon zone.
-        const u = uniforms.value;
-        if (u?.focusRadius) u.focusRadius.value = Math.max(size.y * 0.3, 18);
-        _glowBorn = performance.now();
+        clearTimeout(_turretTimer);
+        _turretTimer = window.setTimeout(() => {
+          if (_turretMaterial && modelGroup.value) {
+            modelGroup.value.traverse((child) => {
+              const m = child as THREE.Mesh;
+              if (m.isMesh && m.material === _turretMaterialBright) {
+                m.material = _turretMaterial;
+              }
+            });
+          }
+        }, FOCUS_DURATION_MS);
       }
     }
 
