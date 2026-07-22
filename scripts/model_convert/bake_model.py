@@ -200,9 +200,19 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
                     v = np.array(verts, dtype=np.float64).reshape(-1, 3)
                     v_h = np.column_stack([v, np.ones(len(v))])
                     v_t = (world_mat @ v_h.T).T[:, :3]
-                    all_verts.extend(v_t.flatten().tolist())
+                    vt = v_t
                 else:
-                    all_verts.extend(verts)
+                    vt = np.array(verts, dtype=np.float64).reshape(-1, 3)
+
+                # Skip tiny meshes (radar antennas, flag poles etc.) whose
+                # world-space bounding box is < 0.2 units in every dimension.
+                bb_min = vt.min(axis=0)
+                bb_max = vt.max(axis=0)
+                extent = bb_max - bb_min
+                if extent.max() < 0.2:
+                    continue
+
+                all_verts.extend(vt.flatten().tolist())
                 # Get indices (or generate if missing)
                 if prim.get("indices") is not None:
                     idx_vals, _ = get_accessor_data(prim["indices"])
