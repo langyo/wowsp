@@ -91,26 +91,29 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
 ///      `wowsunpack game-params` command actually emits.
 ///
 /// In cases 1/2/4 we scan entries and match by the `id` field; in case 3
-/// the key itself is the id. The per-ship AppData cache makes subsequent
-/// calls instant regardless of file size.
+/// the key itself is the id.  When multiple entries share the same id (e.g.
+/// CV hull + its plane squadrons), the one containing `A_Artillery` (or
+/// failing that, any `A_*` weapon key) is preferred — module-only entries
+/// like aircraft squadrons don't carry weapon data.
+/// The per-ship AppData cache makes subsequent calls instant regardless of
+/// file size.
 pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value, String> {
     let parsed: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("parse GameParams.json: {e}"))?;
 
+    let mut candidates: Vec<serde_json::Value> = Vec::new();
+
     if let Some(arr) = parsed.as_array() {
-        // Top-level array form (wowsunpack default).
         for entry in arr {
             if entry_matches_id(entry, ship_id) {
-                return Ok(entry.clone());
+                candidates.push(entry.clone());
             }
         }
     } else if let Some(obj) = parsed.as_object() {
-        // Some unpackers emit { "<shipId>": { ... } } or
-        // { "ships": [ ... ] }. Handle both.
         if let Some(ships) = obj.get("ships").and_then(|v| v.as_array()) {
             for entry in ships {
                 if entry_matches_id(entry, ship_id) {
-                    return Ok(entry.clone());
+                    candidates.push(entry.clone());
                 }
             }
         }
@@ -118,17 +121,35 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
         if let Some(v) = obj.get(&key) {
             return Ok(v.clone());
         }
-        // Dict-of-internal-names form (the shape wowsunpack game-params
-        // actually emits): keys are internal names, the numeric id lives as
-        // a field inside each entry. Scan values and match by id field.
         for (_name, entry) in obj {
             if entry_matches_id(entry, ship_id) {
-                return Ok(entry.clone());
+                candidates.push(entry.clone());
             }
         }
     }
 
-    Err(format!("ship_id {ship_id} not found in GameParams"))
+    if candidates.is_empty() {
+        return Err(format!("ship_id {ship_id} not found in GameParams"));
+    }
+
+    // Prefer an entry that actually has weapon keys.
+    if let Some(hull) = candidates.iter().find(|e| {
+        e.as_object()
+            .map(|o| o.contains_key("A_Artillery"))
+            .unwrap_or(false)
+    }) {
+        return Ok(hull.clone());
+    }
+    // Fall back to any entry with at least one A_* weapon key.
+    if let Some(armed) = candidates.iter().find(|e| {
+        e.as_object()
+            .map(|o| o.keys().any(|k| k.starts_with("A_")))
+            .unwrap_or(false)
+    }) {
+        return Ok(armed.clone());
+    }
+    // Absolute fallback: first match.
+    Ok(candidates[0].clone())
 }
 
 fn entry_matches_id(entry: &serde_json::Value, ship_id: i64) -> bool {
