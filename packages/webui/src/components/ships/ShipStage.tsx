@@ -241,7 +241,8 @@ export default defineComponent({
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
-          const isTurret = mesh.name === "turret" || (mesh.parent && mesh.parent.name === "turret");
+          const node = mesh.parent;
+          const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
           mesh.material = isTurret ? holoTurret : holoHull;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
@@ -464,7 +465,9 @@ export default defineComponent({
         if (_turretMaterialBright && modelGroup.value) {
           modelGroup.value.traverse((child) => {
             const m = child as THREE.Mesh;
-            if (m.isMesh && m.material === _turretMaterial) {
+            const node = m.parent;
+            const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
+            if (m.isMesh && isTurret && m.material === _turretMaterial) {
               m.material = _turretMaterialBright;
             }
           });
@@ -474,7 +477,9 @@ export default defineComponent({
           if (_turretMaterial && modelGroup.value) {
             modelGroup.value.traverse((child) => {
               const m = child as THREE.Mesh;
-              if (m.isMesh && m.material === _turretMaterialBright) {
+              const node = m.parent;
+              const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
+              if (m.isMesh && isTurret && m.material === _turretMaterialBright) {
                 m.material = _turretMaterial;
               }
             });

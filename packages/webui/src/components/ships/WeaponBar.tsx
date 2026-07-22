@@ -1,5 +1,5 @@
 import { defineComponent, computed, type PropType } from "vue";
-import { Crosshair, Target, Wind, Gauge, Rocket, Anchor } from "lucide-vue-next";
+import { Crosshair, Target, Wind, Rocket, Anchor } from "lucide-vue-next";
 
 import { t } from "@/i18n";
 import type { FocusZone } from "./ShipStage";
@@ -199,15 +199,6 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     if (n > 0) out.push({
       key: "aircraft", icon: PlaneIcon, label: t("ships.detail.weapon.aircraft"),
       detail: `${n} ${t("ships.detail.weapon.squadrons")}`, zone: "stern", count: n,
-    });
-  }
-
-  // ── Engine ──
-  const eng = gp.A_Engine;
-  if (eng && typeof eng === "object") {
-    out.push({
-      key: "engine", icon: Gauge, label: t("ships.detail.weapon.engine"),
-      detail: eng.engineType ? String(eng.engineType) : "—", zone: "stern", count: 1,
     });
   }
 
