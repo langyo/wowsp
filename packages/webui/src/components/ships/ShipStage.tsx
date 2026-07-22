@@ -165,8 +165,8 @@ export default defineComponent({
             }
             // Push glow world positions to the holo shader for per-vertex
             // brightness boost near focused weapon areas.
-            const u = uniforms.value as any;
-            if (u?.focusCount && u?.focusPoints?.value) {
+            const u = uniforms.value;
+            if (u?.focusPoints?.value) {
               u.focusCount.value = Math.min(_activeGlows.length, 8);
               for (let i = 0; i < 8; i++) {
                 if (i < _activeGlows.length) {
@@ -178,8 +178,7 @@ export default defineComponent({
             }
           }
         } else if (uniforms.value) {
-          const u = uniforms.value as any;
-          if (u?.focusCount) u.focusCount.value = 0;
+          uniforms.value.focusCount.value = 0;
         }
         ctrl.update();
         rnd.render(sc, cam);
@@ -495,7 +494,7 @@ export default defineComponent({
           _activeGlows.push(spawnGlow(p, glowR, sc));
         }
         // Set holo shader focus radius to cover the weapon zone.
-        const u = uniforms.value as any;
+        const u = uniforms.value;
         if (u?.focusRadius) u.focusRadius.value = span * 0.8;
         _glowBorn = performance.now();
       }

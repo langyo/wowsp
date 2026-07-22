@@ -23,7 +23,7 @@ export interface HoloUniforms {
   scanOffset: { value: number };
   baseColor: { value: THREE.Color };
   fresnelColor: { value: THREE.Color };
-  focusPoint0: { value: THREE.Vector3 };
+  focusPoints: { value: THREE.Vector3[] };
   focusCount: { value: number };
   focusRadius: { value: number };
   focusBoost: { value: number };
