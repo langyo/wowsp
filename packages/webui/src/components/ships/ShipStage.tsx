@@ -216,9 +216,8 @@ export default defineComponent({
             mesh.geometry.computeBoundingSphere();
           }
         });
-        console.log("[loadModel] turret meshes:", turretCount, "of", meshes.length, "parents:", parentNames);
-        // Normalize: center + uniform-scale to a 200-unit box.
-        const box = new THREE.Box3().setFromObject(model);
+        modelGroup.value = model;
+        // Frame the model.
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z, 1);
         const scale = 200 / maxDim;
@@ -240,17 +239,17 @@ export default defineComponent({
         _turretMaterialBright = holoTurretBright;
 
         const meshes: THREE.Mesh[] = [];
+        const turretNodes = new Set<THREE.Object3D>();
+        // Collect turret node references from the loaded scene.
+        model.traverse((child) => {
+          if (child.name === "turret") turretNodes.add(child);
+        });
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
-        let turretCount = 0;
-        const parentNames: string[] = [];
         for (const mesh of meshes) {
-          const node = mesh.parent;
-          const nodeName = node?.name || "(no parent)";
-          if (parentNames.length < 5) parentNames.push(nodeName);
-          const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
-          if (isTurret) turretCount++;
+          const parent = mesh.parent;
+          const isTurret = parent && turretNodes.has(parent);
           mesh.material = isTurret ? holoTurret : holoHull;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
@@ -270,7 +269,18 @@ export default defineComponent({
 
         if (scene.value) scene.value.add(model);
         modelGroup.value = model;
-        // Frame the model.
+        // Normalize: center + uniform-scale to a 200-unit box.
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z, 1);
+        const scale = 200 / maxDim;
+        model.scale.setScalar(scale);
+        const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
+        model.position.sub(center);
+        // Re-measure the normalized box for focus-zone placement.
+        const normBox = new THREE.Box3().setFromObject(model);
+        modelBox.value = normBox;
+
         focusZone("default");
       } catch (e) {
         errorMsg.value = (e as Error).message || String(e);
@@ -470,28 +480,22 @@ export default defineComponent({
       }
       // Swap turret mesh to bright material on weapon focus.
       if (zone !== "default") {
-        console.log("[focusZone] swapping turret material, modelGroup:", !!modelGroup.value, "turretMat:", !!_turretMaterialBright);
         if (_turretMaterialBright && modelGroup.value) {
-          let count = 0;
           modelGroup.value.traverse((child) => {
             const m = child as THREE.Mesh;
-            const node = m.parent;
-            const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
-            if (m.isMesh && isTurret && m.material === _turretMaterial) {
+            const p = m.parent;
+            if (m.isMesh && p && p.name === "turret" && m.material === _turretMaterial) {
               m.material = _turretMaterialBright;
-              count++;
             }
           });
-          console.log("[focusZone] swapped", count, "turret meshes");
         }
         clearTimeout(_turretTimer);
         _turretTimer = window.setTimeout(() => {
           if (_turretMaterial && modelGroup.value) {
             modelGroup.value.traverse((child) => {
               const m = child as THREE.Mesh;
-              const node = m.parent;
-              const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
-              if (m.isMesh && isTurret && m.material === _turretMaterialBright) {
+              const p = m.parent;
+              if (m.isMesh && p && p.name === "turret" && m.material === _turretMaterialBright) {
                 m.material = _turretMaterial;
               }
             });
