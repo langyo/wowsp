@@ -476,7 +476,16 @@ export default defineComponent({
       if (zone !== "default") {
         if (_turretMaterialBright && modelGroup.value) {
           let found = 0;
-          const parentNames: string[] = [];
+          const mg = modelGroup.value;
+          console.log("[focusZone] modelGroup:", !!mg, "children:", mg?.children.length);
+          if (mg) {
+            for (const c of mg.children) {
+              console.log("[focusZone]   child:", c.name, c.type, "meshChildren:", c.children.length);
+              for (const m of c.children) {
+                console.log("[focusZone]     mesh:", (m as THREE.Mesh).isMesh, "parent:", m.parent?.name);
+              }
+            }
+          }
           modelGroup.value.traverse((child) => {
             const m = child as THREE.Mesh;
             if (!m.isMesh) return;
