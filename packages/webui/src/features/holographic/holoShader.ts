@@ -50,7 +50,7 @@ export const HOLO_FRAG = /* glsl */ `
   uniform vec3 baseColor;
   uniform vec3 fresnelColor;
   uniform vec3 focusPoints[8];
-  uniform int focusCount;
+  uniform float focusCount;
   uniform float focusRadius;
   uniform float focusBoost;
   varying vec3 vWorldPos;
@@ -70,7 +70,7 @@ export const HOLO_FRAG = /* glsl */ `
     float alpha = 0.72 + 0.28 * fres;
     // Focus highlight: brighten fragments near any focus point.
     for (int i = 0; i < 8; i++) {
-      if (i >= focusCount) break;
+      if (float(i) >= focusCount) break;
       float d = distance(vWorldPos, focusPoints[i]);
       if (d < focusRadius) {
         float w = 1.0 - d / focusRadius;
