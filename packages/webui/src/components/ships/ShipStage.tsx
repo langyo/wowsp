@@ -216,6 +216,7 @@ export default defineComponent({
             mesh.geometry.computeBoundingSphere();
           }
         });
+        console.log("[loadModel] turret meshes:", turretCount, "of", meshes.length, "parents:", parentNames);
         // Normalize: center + uniform-scale to a 200-unit box.
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
@@ -233,8 +234,8 @@ export default defineComponent({
         const holoTurret = makeHoloMaterial();
         const holoTurretBright = makeHoloMaterial();
         // Make the bright variant ~2× more visible.
-        holoTurretBright.uniforms.baseColor.value.set(0x15a0c8);
-        holoTurretBright.uniforms.fresnelColor.value.set(0x66eeff);
+        holoTurretBright.uniforms.baseColor.value.set(0.3, 0.95, 1.0);
+        holoTurretBright.uniforms.fresnelColor.value.set(0.2, 1.0, 1.0);
         _turretMaterial = holoTurret;
         _turretMaterialBright = holoTurretBright;
 
@@ -242,9 +243,14 @@ export default defineComponent({
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
+        let turretCount = 0;
+        const parentNames: string[] = [];
         for (const mesh of meshes) {
           const node = mesh.parent;
+          const nodeName = node?.name || "(no parent)";
+          if (parentNames.length < 5) parentNames.push(nodeName);
           const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
+          if (isTurret) turretCount++;
           mesh.material = isTurret ? holoTurret : holoHull;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
@@ -464,15 +470,19 @@ export default defineComponent({
       }
       // Swap turret mesh to bright material on weapon focus.
       if (zone !== "default") {
+        console.log("[focusZone] swapping turret material, modelGroup:", !!modelGroup.value, "turretMat:", !!_turretMaterialBright);
         if (_turretMaterialBright && modelGroup.value) {
+          let count = 0;
           modelGroup.value.traverse((child) => {
             const m = child as THREE.Mesh;
             const node = m.parent;
             const isTurret = node && (node.name === "turret" || node.userData?.gltfName === "turret");
             if (m.isMesh && isTurret && m.material === _turretMaterial) {
               m.material = _turretMaterialBright;
+              count++;
             }
           });
+          console.log("[focusZone] swapped", count, "turret meshes");
         }
         clearTimeout(_turretTimer);
         _turretTimer = window.setTimeout(() => {
