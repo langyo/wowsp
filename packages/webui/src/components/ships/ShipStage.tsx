@@ -81,6 +81,7 @@ export default defineComponent({
     let _turretMaterialBright: THREE.ShaderMaterial | null = null;
     let _turretTimer = 0;
     const FOCUS_DURATION_MS = 2500;
+    const _allHoloUniforms: HoloUniforms[] = [];
 
     // ── Holographic shader ────────────────────────────────────────────────
     // The shader source + material factory live in the shared `holoShader`
@@ -89,7 +90,8 @@ export default defineComponent({
     // drive the scanline animation each frame via `tickHoloUniforms`.
     function makeHoloMaterial(): THREE.ShaderMaterial {
       const mat = sharedMakeHoloMaterial();
-      uniforms.value = mat.uniforms as unknown as HoloUniforms;
+      _allHoloUniforms.push(mat.uniforms as unknown as HoloUniforms);
+      if (!uniforms.value) uniforms.value = mat.uniforms as unknown as HoloUniforms;
       return mat;
     }
 
@@ -154,7 +156,7 @@ export default defineComponent({
       const clock = new THREE.Clock();
       const tick = () => {
         const dt = clock.getDelta();
-        if (uniforms.value) tickHoloUniforms(uniforms.value, dt);
+        for (const u of _allHoloUniforms) tickHoloUniforms(u, dt);
         ctrl.update();
         rnd.render(sc, cam);
         rafId = requestAnimationFrame(tick);
