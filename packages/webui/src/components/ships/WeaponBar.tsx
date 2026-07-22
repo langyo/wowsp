@@ -16,20 +16,35 @@ interface WeaponCard {
   count: number;
 }
 
-/** Aggregate same-spec mounts into grouped cards.  Identical mounts are merged
- *  (e.g. four 2×460mm turrets → one "4×2 460mm" card), AA auras collapse by
- *  range tier, and distinct calibres stay separate. */
+function hpSlots(obj: Record<string, any>): [string, Record<string, any>][] {
+  return Object.entries(obj).filter(
+    ([k, v]) => k.startsWith("HP_") && v && typeof v === "object",
+  ) as [string, Record<string, any>][];
+}
+
+/** Collect the set of gun model names/ids from an A_* block. */
+function gunIds(block: Record<string, any> | undefined): Set<string> {
+  const ids = new Set<string>();
+  if (!block || typeof block !== "object") return ids;
+  for (const [, m] of hpSlots(block)) {
+    const n = m.name ?? m.id ?? "";
+    if (n) ids.add(String(n));
+  }
+  return ids;
+}
+
 function buildWeapons(gp: Gp): WeaponCard[] {
   if (!gp || typeof gp !== "object") return [];
-
   const out: WeaponCard[] = [];
+
+  const atbaIds = gunIds(gp.A_ATBA);
+  const aaIds = gunIds(gp.A_AirDefense);
 
   // ── Main battery ── A_Artillery.HP_*
   const art = gp.A_Artillery ?? gp.Hull?.artillery;
   if (art && typeof art === "object") {
     const groups = new Map<string, { barrels: number; cal: number; count: number }>();
-    for (const [k, m] of Object.entries(art)) {
-      if (!k.startsWith("HP_") || !m || typeof m !== "object") continue;
+    for (const [, m] of hpSlots(art)) {
       const barrels = Number(m.numBarrels ?? 0) || 1;
       const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
       const key = `${barrels}_${cal}`;
@@ -38,7 +53,7 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     }
     for (const [, g] of groups) {
       out.push({
-        key: `mainGun_${g.cal}`,
+        key: `mainGun_${g.cal}_${g.barrels}`,
         icon: Crosshair,
         label: t("ships.detail.weapon.mainGun"),
         detail: `${g.count}×${g.barrels} ${g.cal}mm`,
@@ -48,12 +63,26 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     }
   }
 
-  // ── Secondary battery ── A_ATBA.HP_*
-  const atba = gp.A_ATBA;
-  if (atba && typeof atba === "object") {
+  // ── Dual-purpose (high-angle) guns ──
+  // Detect guns that appear in both A_ATBA (secondary) AND A_AirDefense (AA).
+  // These are DP mounts — show once with a combined label.
+  const atbaSlots = hpSlots(gp.A_ATBA ?? {});
+  const aaSlots = hpSlots(gp.A_AirDefense ?? {});
+  const dpSlots = new Set<string>();
+  for (const [k, m] of atbaSlots) {
+    const id = String(m.name ?? m.id ?? "");
+    if (id && aaIds.has(id)) dpSlots.add(k);
+  }
+  for (const [k, m] of aaSlots) {
+    const id = String(m.name ?? m.id ?? "");
+    if (id && atbaIds.has(id)) dpSlots.add(k);
+  }
+
+  // ── Secondary battery (excluding DP guns already counted) ──
+  if (gp.A_ATBA && typeof gp.A_ATBA === "object") {
     const groups = new Map<string, { barrels: number; cal: number; count: number }>();
-    for (const [k, m] of Object.entries(atba)) {
-      if (!k.startsWith("HP_") || !m || typeof m !== "object") continue;
+    for (const [k, m] of atbaSlots) {
+      if (dpSlots.has(k)) continue;
       const barrels = Number(m.numBarrels ?? 0) || 1;
       const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
       const key = `${barrels}_${cal}`;
@@ -72,70 +101,75 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     }
   }
 
-  // ── Torpedoes ── A_AirArmament.HP_* (tube launchers)
-  const torp = gp.A_AirArmament ?? gp.Hull?.torpedoes;
-  if (torp && typeof torp === "object") {
-    let tubeCount = 0;
-    let tubeBarr = 0;
-    for (const [k, t] of Object.entries(torp)) {
-      if (!k.startsWith("HP_") || !t || typeof t !== "object") continue;
-      tubeCount++;
-      tubeBarr = Math.max(tubeBarr, Number(t.numBarrels ?? t.count ?? 1) || 1);
+  // ── Dual-purpose guns (combined DP + AA slots) ──
+  if (dpSlots.size > 0) {
+    const groups = new Map<string, { barrels: number; cal: number; count: number }>();
+    for (const [k, m] of [...atbaSlots, ...aaSlots]) {
+      if (!dpSlots.has(k)) continue;
+      const barrels = Number(m.numBarrels ?? 0) || 1;
+      const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
+      const key = `${barrels}_${cal}`;
+      const g = groups.get(key);
+      if (g) { g.count++; } else { groups.set(key, { barrels, cal, count: 1 }); }
     }
-    if (tubeCount > 0) {
+    for (const [, g] of groups) {
       out.push({
-        key: "torpedo",
-        icon: Target,
-        label: t("ships.detail.weapon.torpedo"),
-        detail: `${tubeCount}×${tubeBarr}`,
+        key: `dp_${g.cal}`,
+        icon: Crosshair,
+        label: t("ships.detail.weapon.dp"),
+        detail: `${g.count}×${g.barrels} ${g.cal}mm`,
         zone: "midship",
-        count: tubeCount,
+        count: g.count,
       });
     }
   }
 
-  // ── Anti-air (auras) — collapse by range tier ──
+  // ── Torpedoes — group by tube count ──
+  const torp = gp.A_AirArmament ?? gp.Hull?.torpedoes;
+  if (torp && typeof torp === "object") {
+    const groups = new Map<number, number>();
+    for (const [, t] of hpSlots(torp)) {
+      const n = Number(t.numBarrels ?? t.count ?? 1) || 1;
+      groups.set(n, (groups.get(n) ?? 0) + 1);
+    }
+    for (const [tubes, count] of groups) {
+      out.push({
+        key: `torpedo_${tubes}`,
+        icon: Target,
+        label: t("ships.detail.weapon.torpedo"),
+        detail: `${count}×${tubes}`,
+        zone: "midship",
+        count,
+      });
+    }
+  }
+
+  // ── AA (non-DP only) — collapse by range tier ──
   const aa = gp.A_AirDefense;
   if (aa && typeof aa === "object") {
     const tiers: Record<string, number> = { long: 0, mid: 0, short: 0 };
-    for (const [k, a] of Object.entries(aa)) {
-      if (!(k.startsWith("HP_") || /^\d+$/.test(k))) continue;
-      if (!a || typeof a !== "object") continue;
+    for (const [k, a] of aaSlots) {
+      if (dpSlots.has(k)) continue;
       const dist = Number(a.maxDistance ?? 0);
       if (dist > 5) tiers.long++;
       else if (dist > 2.5) tiers.mid++;
       else tiers.short++;
     }
-    if (tiers.long > 0) {
-      out.push({
-        key: "aa_long",
-        icon: Wind,
-        label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaLong")}`,
-        detail: `${tiers.long} ${t("ships.detail.weapon.auras")}`,
-        zone: "deck",
-        count: tiers.long,
-      });
-    }
-    if (tiers.mid > 0) {
-      out.push({
-        key: "aa_mid",
-        icon: Wind,
-        label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaMid")}`,
-        detail: `${tiers.mid} ${t("ships.detail.weapon.auras")}`,
-        zone: "deck",
-        count: tiers.mid,
-      });
-    }
-    if (tiers.short > 0) {
-      out.push({
-        key: "aa_short",
-        icon: Wind,
-        label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaShort")}`,
-        detail: `${tiers.short} ${t("ships.detail.weapon.auras")}`,
-        zone: "deck",
-        count: tiers.short,
-      });
-    }
+    if (tiers.long > 0) out.push({
+      key: "aa_long", icon: Wind,
+      label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaLong")}`,
+      detail: `${tiers.long} ${t("ships.detail.weapon.auras")}`, zone: "deck", count: tiers.long,
+    });
+    if (tiers.mid > 0) out.push({
+      key: "aa_mid", icon: Wind,
+      label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaMid")}`,
+      detail: `${tiers.mid} ${t("ships.detail.weapon.auras")}`, zone: "deck", count: tiers.mid,
+    });
+    if (tiers.short > 0) out.push({
+      key: "aa_short", icon: Wind,
+      label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaShort")}`,
+      detail: `${tiers.short} ${t("ships.detail.weapon.auras")}`, zone: "deck", count: tiers.short,
+    });
   }
 
   // ── ASW ──
@@ -204,7 +238,10 @@ export default defineComponent({
               onClick={() => emit("focus", w.zone, w.count)}>
               <w.icon size={14} />
               <span class="weapon-bar__label">{w.label}</span>
-              <span class="weapon-bar__detail">{w.detail}</span>
+              <span class="weapon-bar__detail">
+                {w.detail}
+                <strong class="weapon-bar__count">×{w.count}</strong>
+              </span>
             </button>
           ))}
         </div>
