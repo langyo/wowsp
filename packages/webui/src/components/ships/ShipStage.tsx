@@ -496,7 +496,7 @@ export default defineComponent({
         }
         // Set holo shader focus radius to cover the weapon zone.
         const u = uniforms.value as any;
-        if (u?.focusRadius) u.focusRadius.value = span * 0.7;
+        if (u?.focusRadius) u.focusRadius.value = span * 0.8;
         _glowBorn = performance.now();
       }
     }

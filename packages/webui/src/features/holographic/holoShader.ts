@@ -96,7 +96,7 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       focusPoints: { value: [fp(0), fp(1), fp(2), fp(3), fp(4), fp(5), fp(6), fp(7)] },
       focusCount: { value: 0 },
       focusRadius: { value: 30.0 },
-      focusBoost: { value: 0.5 },
+      focusBoost: { value: 0.8 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,
