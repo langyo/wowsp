@@ -229,21 +229,11 @@ export default defineComponent({
         _turretMaterialBright = holoTurretBright;
 
         const meshes: THREE.Mesh[] = [];
-        const turretNodes = new Set<THREE.Object3D>();
-        // Collect turret node references from the loaded scene.
-        const allNames: string[] = [];
-        model.traverse((child) => {
-          if (child.name) allNames.push(child.name);
-          if (child.name === "turret") turretNodes.add(child);
-        });
-        console.log("[loadModel] scene node names:", [...new Set(allNames)]);
-        console.log("[loadModel] turret nodes found:", turretNodes.size);
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
-          const parent = mesh.parent;
-          const isTurret = parent && turretNodes.has(parent);
+          const isTurret = mesh.name === "turret" || (mesh.parent && mesh.parent.name === "turret");
           mesh.material = isTurret ? holoTurret : holoHull;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
@@ -475,37 +465,19 @@ export default defineComponent({
       // Swap turret mesh to bright material on weapon focus.
       if (zone !== "default") {
         if (_turretMaterialBright && modelGroup.value) {
-          let found = 0;
-          const mg = modelGroup.value;
-          console.log("[focusZone] modelGroup:", !!mg, "children:", mg?.children.length);
-          if (mg) {
-            for (const c of mg.children) {
-              console.log("[focusZone]   child:", c.name, c.type, "meshChildren:", c.children.length);
-              for (const m of c.children) {
-                console.log("[focusZone]     mesh:", (m as THREE.Mesh).isMesh, "parent:", m.parent?.name);
-              }
-            }
-          }
           modelGroup.value.traverse((child) => {
             const m = child as THREE.Mesh;
-            if (!m.isMesh) return;
-            parentNames.push(m.parent?.name || "(none)");
-            const p = m.parent;
-            if (p && p.name === "turret") {
-              found++;
+            if (m.isMesh && m.name === "turret") {
               m.material = _turretMaterialBright;
             }
           });
-          console.log("[focusZone] mesh parents:", [...new Set(parentNames)]);
-          console.log("[focusZone] turret meshes brightened:", found);
         }
         clearTimeout(_turretTimer);
         _turretTimer = window.setTimeout(() => {
           if (_turretMaterial && modelGroup.value) {
             modelGroup.value.traverse((child) => {
               const m = child as THREE.Mesh;
-              const p = m.parent;
-              if (m.isMesh && p && p.name === "turret" && m.material === _turretMaterialBright) {
+              if (m.isMesh && m.name === "turret") {
                 m.material = _turretMaterial;
               }
             });
