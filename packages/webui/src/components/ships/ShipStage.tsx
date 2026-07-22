@@ -223,17 +223,21 @@ export default defineComponent({
         const holoTurret = makeHoloMaterial();
         const holoTurretBright = makeHoloMaterial();
         // Make the bright variant ~2× more visible.
-        holoTurretBright.uniforms.baseColor.value.set(0.3, 0.95, 1.0);
-        holoTurretBright.uniforms.fresnelColor.value.set(0.2, 1.0, 1.0);
+        holoTurretBright.uniforms.baseColor.value.set(1.0, 0.1, 0.1);
+        holoTurretBright.uniforms.fresnelColor.value.set(1.0, 0.3, 0.3);
         _turretMaterial = holoTurret;
         _turretMaterialBright = holoTurretBright;
 
         const meshes: THREE.Mesh[] = [];
         const turretNodes = new Set<THREE.Object3D>();
         // Collect turret node references from the loaded scene.
+        const allNames: string[] = [];
         model.traverse((child) => {
+          if (child.name) allNames.push(child.name);
           if (child.name === "turret") turretNodes.add(child);
         });
+        console.log("[loadModel] scene node names:", [...new Set(allNames)]);
+        console.log("[loadModel] turret nodes found:", turretNodes.size);
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
