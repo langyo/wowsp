@@ -223,8 +223,8 @@ export default defineComponent({
         const holoTurret = makeHoloMaterial();
         const holoTurretBright = makeHoloMaterial();
         // Make the bright variant ~2× more visible.
-        holoTurretBright.uniforms.baseColor.value.set(1.0, 0.1, 0.1);
-        holoTurretBright.uniforms.fresnelColor.value.set(1.0, 0.3, 0.3);
+        holoTurretBright.uniforms.baseColor.value.set(0.15, 0.85, 1.0);
+        holoTurretBright.uniforms.fresnelColor.value.set(0.3, 0.9, 1.0);
         _turretMaterial = holoTurret;
         _turretMaterialBright = holoTurretBright;
 
@@ -475,13 +475,17 @@ export default defineComponent({
       // Swap turret mesh to bright material on weapon focus.
       if (zone !== "default") {
         if (_turretMaterialBright && modelGroup.value) {
+          let found = 0;
           modelGroup.value.traverse((child) => {
             const m = child as THREE.Mesh;
+            if (!m.isMesh) return;
             const p = m.parent;
-            if (m.isMesh && p && p.name === "turret" && m.material === _turretMaterial) {
+            if (p && p.name === "turret") {
+              found++;
               m.material = _turretMaterialBright;
             }
           });
+          console.log("[focusZone] turret meshes brightened:", found);
         }
         clearTimeout(_turretTimer);
         _turretTimer = window.setTimeout(() => {
