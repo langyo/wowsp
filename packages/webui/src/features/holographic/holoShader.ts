@@ -86,14 +86,15 @@ export const HOLO_FRAG = /* glsl */ `
 /** Create a fresh holographic ShaderMaterial with its own uniforms object.
  *  Returns the material; the uniforms are reachable via `mat.uniforms`. */
 export function makeHoloMaterial(): THREE.ShaderMaterial {
-  const fp = (i: number) => ({ value: new THREE.Vector3() });
+  const fps: THREE.Vector3[] = [];
+  for (let i = 0; i < 8; i++) fps.push(new THREE.Vector3());
   return new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },
       scanOffset: { value: 0 },
       baseColor: { value: new THREE.Color(0x0d6e8a) },
       fresnelColor: { value: new THREE.Color(0x33ccff) },
-      focusPoints: { value: [fp(0), fp(1), fp(2), fp(3), fp(4), fp(5), fp(6), fp(7)] },
+      focusPoints: { value: fps },
       focusCount: { value: 0 },
       focusRadius: { value: 30.0 },
       focusBoost: { value: 0.8 },

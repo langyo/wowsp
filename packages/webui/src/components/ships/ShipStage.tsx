@@ -166,13 +166,13 @@ export default defineComponent({
             // Push glow world positions to the holo shader for per-vertex
             // brightness boost near focused weapon areas.
             const u = uniforms.value as any;
-            if (u?.focusCount && u?.focusPoints) {
+            if (u?.focusCount && u?.focusPoints?.value) {
               u.focusCount.value = Math.min(_activeGlows.length, 8);
               for (let i = 0; i < 8; i++) {
                 if (i < _activeGlows.length) {
-                  u.focusPoints.value[i].value.copy(_activeGlows[i].position);
+                  u.focusPoints.value[i].copy(_activeGlows[i].position);
                 } else {
-                  u.focusPoints.value[i].value.set(0, 0, 0);
+                  u.focusPoints.value[i].set(0, 0, 0);
                 }
               }
             }
