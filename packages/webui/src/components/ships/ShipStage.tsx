@@ -217,16 +217,6 @@ export default defineComponent({
           }
         });
         modelGroup.value = model;
-        // Frame the model.
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 1);
-        const scale = 200 / maxDim;
-        model.scale.setScalar(scale);
-        const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
-        model.position.sub(center);
-        // Re-measure the normalized box for focus-zone placement.
-        const normBox = new THREE.Box3().setFromObject(model);
-        modelBox.value = normBox;
 
         // Apply holographic shader. Turret mesh gets a brighter variant.
         const holoHull = makeHoloMaterial();
