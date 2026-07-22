@@ -23,6 +23,10 @@ export interface HoloUniforms {
   scanOffset: { value: number };
   baseColor: { value: THREE.Color };
   fresnelColor: { value: THREE.Color };
+  focusPoint0: { value: THREE.Vector3 };
+  focusCount: { value: number };
+  focusRadius: { value: number };
+  focusBoost: { value: number };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -45,25 +49,36 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float scanOffset;
   uniform vec3 baseColor;
   uniform vec3 fresnelColor;
+  uniform vec3 focusPoints[8];
+  uniform int focusCount;
+  uniform float focusRadius;
+  uniform float focusBoost;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
   void main() {
-    // Face normal from screen-space derivatives of the world position.
     vec3 dx = dFdx(vWorldPos);
     vec3 dy = dFdy(vWorldPos);
     vec3 n = normalize(cross(dx, dy));
-    // View direction (from fragment to camera, in world space).
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    // Fresnel: bright at glancing angles.
     float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
-    // Scanlines along the model's vertical (Y) axis, sweeping over time.
     float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
     scan = smoothstep(0.82, 1.0, scan);
     vec3 col = baseColor * (0.35 + 0.25 * fres);
     col += fresnelColor * fres * 1.4;
     col += fresnelColor * scan * 0.6;
     float alpha = 0.72 + 0.28 * fres;
+    // Focus highlight: brighten fragments near any focus point.
+    for (int i = 0; i < 8; i++) {
+      if (i >= focusCount) break;
+      float d = distance(vWorldPos, focusPoints[i]);
+      if (d < focusRadius) {
+        float w = 1.0 - d / focusRadius;
+        w = w * w;
+        alpha += w * focusBoost;
+        col += fresnelColor * w * 0.6;
+      }
+    }
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -71,12 +86,17 @@ export const HOLO_FRAG = /* glsl */ `
 /** Create a fresh holographic ShaderMaterial with its own uniforms object.
  *  Returns the material; the uniforms are reachable via `mat.uniforms`. */
 export function makeHoloMaterial(): THREE.ShaderMaterial {
+  const fp = (i: number) => ({ value: new THREE.Vector3() });
   return new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },
       scanOffset: { value: 0 },
       baseColor: { value: new THREE.Color(0x0d6e8a) },
       fresnelColor: { value: new THREE.Color(0x33ccff) },
+      focusPoints: { value: [fp(0), fp(1), fp(2), fp(3), fp(4), fp(5), fp(6), fp(7)] },
+      focusCount: { value: 0 },
+      focusRadius: { value: 30.0 },
+      focusBoost: { value: 0.5 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,

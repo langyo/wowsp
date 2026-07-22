@@ -153,7 +153,7 @@ export default defineComponent({
       const tick = () => {
         const dt = clock.getDelta();
         if (uniforms.value) tickHoloUniforms(uniforms.value, dt);
-        // Animate focus glows: update shader time, fade out after duration.
+        // Animate focus glows and update holo shader focus uniforms.
         if (_activeGlows.length > 0) {
           const elapsed = performance.now() - _glowBorn;
           if (elapsed > DURATION_MS) {
@@ -163,7 +163,23 @@ export default defineComponent({
               const mat = m.material as THREE.ShaderMaterial;
               if (mat.uniforms) mat.uniforms.uTime.value = elapsed * 0.001;
             }
+            // Push glow world positions to the holo shader for per-vertex
+            // brightness boost near focused weapon areas.
+            const u = uniforms.value as any;
+            if (u?.focusCount && u?.focusPoints) {
+              u.focusCount.value = Math.min(_activeGlows.length, 8);
+              for (let i = 0; i < 8; i++) {
+                if (i < _activeGlows.length) {
+                  u.focusPoints.value[i].value.copy(_activeGlows[i].position);
+                } else {
+                  u.focusPoints.value[i].value.set(0, 0, 0);
+                }
+              }
+            }
           }
+        } else if (uniforms.value) {
+          const u = uniforms.value as any;
+          if (u?.focusCount) u.focusCount.value = 0;
         }
         ctrl.update();
         rnd.render(sc, cam);
@@ -478,6 +494,9 @@ export default defineComponent({
           );
           _activeGlows.push(spawnGlow(p, glowR, sc));
         }
+        // Set holo shader focus radius to cover the weapon zone.
+        const u = uniforms.value as any;
+        if (u?.focusRadius) u.focusRadius.value = span * 0.7;
         _glowBorn = performance.now();
       }
     }
