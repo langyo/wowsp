@@ -78,7 +78,8 @@ export default defineComponent({
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
     let _turretMaterial: THREE.ShaderMaterial | null = null;
-    let _turretMaterialBright: THREE.ShaderMaterial | null = null;
+    let _turretBaseColor: THREE.Color | null = null;
+    let _turretFresnelColor: THREE.Color | null = null;
     let _turretTimer = 0;
     const FOCUS_DURATION_MS = 2500;
     const _allHoloUniforms: HoloUniforms[] = [];
@@ -218,22 +219,20 @@ export default defineComponent({
         });
         modelGroup.value = model;
 
-        // Apply holographic shader. Turret mesh gets a brighter variant.
+        // Apply holographic shader. Turret mesh gets the same base shader —
+        // we modify its uniforms directly on focus instead of swapping material.
         const holoHull = makeHoloMaterial();
         const holoTurret = makeHoloMaterial();
-        const holoTurretBright = makeHoloMaterial();
-        // Make the bright variant ~2× more visible.
-        holoTurretBright.uniforms.baseColor.value.set(0.15, 0.85, 1.0);
-        holoTurretBright.uniforms.fresnelColor.value.set(0.3, 0.9, 1.0);
         _turretMaterial = holoTurret;
-        _turretMaterialBright = holoTurretBright;
+        _turretBaseColor = holoTurret.uniforms.baseColor.value.clone();
+        _turretFresnelColor = holoTurret.uniforms.fresnelColor.value.clone();
 
         const meshes: THREE.Mesh[] = [];
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
-          const isTurret = mesh.name === "turret" || (mesh.parent && mesh.parent.name === "turret");
+          const isTurret = mesh.name === "turret";
           mesh.material = isTurret ? holoTurret : holoHull;
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
@@ -462,25 +461,15 @@ export default defineComponent({
           ctrlLocal.autoRotate = true;
         }, 750);
       }
-      // Swap turret mesh to bright material on weapon focus.
-      if (zone !== "default") {
-        if (_turretMaterialBright && modelGroup.value) {
-          modelGroup.value.traverse((child) => {
-            const m = child as THREE.Mesh;
-            if (m.isMesh && m.name === "turret") {
-              m.material = _turretMaterialBright;
-            }
-          });
-        }
+      // Brighten turret model on weapon focus by modifying its uniforms directly.
+      if (zone !== "default" && _turretMaterial && _turretBaseColor) {
+        _turretMaterial.uniforms.baseColor.value.set(0.18, 0.92, 1.0);
+        _turretMaterial.uniforms.fresnelColor.value.set(0.35, 0.95, 1.0);
         clearTimeout(_turretTimer);
         _turretTimer = window.setTimeout(() => {
-          if (_turretMaterial && modelGroup.value) {
-            modelGroup.value.traverse((child) => {
-              const m = child as THREE.Mesh;
-              if (m.isMesh && m.name === "turret") {
-                m.material = _turretMaterial;
-              }
-            });
+          if (_turretMaterial && _turretBaseColor) {
+            _turretMaterial.uniforms.baseColor.value.copy(_turretBaseColor);
+            _turretMaterial.uniforms.fresnelColor.value.copy(_turretFresnelColor!);
           }
         }, FOCUS_DURATION_MS);
       }
