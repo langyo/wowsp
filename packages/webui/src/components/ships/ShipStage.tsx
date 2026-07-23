@@ -221,6 +221,10 @@ export default defineComponent({
         holoTurret.uniforms.baseColor.value.set(0.65, 0.50, 0.08); // warm gold
         holoTurret.uniforms.fresnelColor.value.set(1.0, 0.75, 0.15);
 
+        const meshes: THREE.Mesh[] = [];
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+        });
         console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
         for (const mesh of meshes) {
           const isTurret = mesh.name === "turret";
