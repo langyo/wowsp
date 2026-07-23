@@ -77,11 +77,6 @@ export default defineComponent({
     let resizeObs: ResizeObserver | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
-    let _turretMaterial: THREE.ShaderMaterial | null = null;
-    let _turretBaseColor: THREE.Color | null = null;
-    let _turretFresnelColor: THREE.Color | null = null;
-    let _turretTimer = 0;
-    const FOCUS_DURATION_MS = 2500;
     const _allHoloUniforms: HoloUniforms[] = [];
 
     // ── Holographic shader ────────────────────────────────────────────────
@@ -219,13 +214,12 @@ export default defineComponent({
         });
         modelGroup.value = model;
 
-        // Apply holographic shader. Turret mesh gets the same base shader —
-        // we modify its uniforms directly on focus instead of swapping material.
+        // Apply holographic shader. Hull is dim cyan; turret is bright amber-gold
+        // so weapon mounts are visually distinct at all times.
         const holoHull = makeHoloMaterial();
         const holoTurret = makeHoloMaterial();
-        _turretMaterial = holoTurret;
-        _turretBaseColor = holoTurret.uniforms.baseColor.value.clone();
-        _turretFresnelColor = holoTurret.uniforms.fresnelColor.value.clone();
+        holoTurret.uniforms.baseColor.value.set(0.65, 0.50, 0.08); // warm gold
+        holoTurret.uniforms.fresnelColor.value.set(1.0, 0.75, 0.15);
 
         const meshes: THREE.Mesh[] = [];
         model.traverse((child) => {
@@ -276,7 +270,6 @@ export default defineComponent({
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
-      clearTimeout(_turretTimer);
       resizeObs?.disconnect();
       resizeObs = null;
       const c = controls.value;
@@ -317,8 +310,7 @@ export default defineComponent({
       () => props.ship?.shipId,
       () => {
         if (viewMode.value === "3d") {
-          // Remove the old model + any active highlight ring, then load the new one.
-          clearTimeout(_turretTimer);
+          // Remove the old model, then load the new one.
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
@@ -460,18 +452,6 @@ export default defineComponent({
         window.setTimeout(() => {
           ctrlLocal.autoRotate = true;
         }, 750);
-      }
-      // Brighten turret model on weapon focus by modifying its uniforms directly.
-      if (zone !== "default" && _turretMaterial && _turretBaseColor) {
-        _turretMaterial.uniforms.baseColor.value.set(0.18, 0.92, 1.0);
-        _turretMaterial.uniforms.fresnelColor.value.set(0.35, 0.95, 1.0);
-        clearTimeout(_turretTimer);
-        _turretTimer = window.setTimeout(() => {
-          if (_turretMaterial && _turretBaseColor) {
-            _turretMaterial.uniforms.baseColor.value.copy(_turretBaseColor);
-            _turretMaterial.uniforms.fresnelColor.value.copy(_turretFresnelColor!);
-          }
-        }, FOCUS_DURATION_MS);
       }
     }
 
