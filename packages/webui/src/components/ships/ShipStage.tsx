@@ -221,13 +221,15 @@ export default defineComponent({
         holoTurret.uniforms.baseColor.value.set(0.65, 0.50, 0.08); // warm gold
         holoTurret.uniforms.fresnelColor.value.set(1.0, 0.75, 0.15);
 
-        const meshes: THREE.Mesh[] = [];
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-        });
+        console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
         for (const mesh of meshes) {
           const isTurret = mesh.name === "turret";
-          mesh.material = isTurret ? holoTurret : holoHull;
+          if (isTurret) {
+            mesh.material = holoTurret;
+            console.log("[loadModel] assigned turret material to:", mesh.name, "color:", holoTurret.uniforms.baseColor.value.getHexString());
+          } else {
+            mesh.material = holoHull;
+          }
           // Faint structural-edge overlay — only shows edges where adjacent
           // faces meet at >20° (hides coplanar hull/deck triangles).
           const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 8);
