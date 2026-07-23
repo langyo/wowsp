@@ -140,6 +140,51 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
     }) {
         return Ok(hull.clone());
     }
+
+    // The matched entry(ies) might be module-only (CV planes, etc.) while
+    // the real hull entry with weapons lives under a different id but shares
+    // the same index prefix.  Scan the full GameParams dict for sibling
+    // entries with the same prefix that DO carry weapon data.
+    if let Some(obj) = parsed.as_object() {
+        // Collect all index prefixes from the candidates.
+        let mut prefixes: Vec<String> = Vec::new();
+        for c in &candidates {
+            if let Some(name) = c.get("name").and_then(|v| v.as_str()) {
+                // GameParams index format: PASB008 → prefix is "PASB"
+                let prefix: String = name.chars().take_while(|c| c.is_ascii_uppercase()).collect();
+                if prefix.len() >= 3 {
+                    prefixes.push(prefix);
+                }
+            }
+        }
+        // Also collect prefixes from the candidate's key in the dict.
+        for (key, _entry) in obj {
+            if candidates.iter().any(|c| {
+                c.get("index").and_then(|v| v.as_str()) == Some(key.as_str())
+            }) {
+                let prefix: String = key.chars().take_while(|c| c.is_ascii_uppercase()).collect();
+                if prefix.len() >= 3 && !prefixes.contains(&prefix) {
+                    prefixes.push(prefix);
+                }
+            }
+        }
+        prefixes.sort();
+        prefixes.dedup();
+
+        for prefix in &prefixes {
+            for (key, entry) in obj {
+                if !key.starts_with(prefix.as_str()) {
+                    continue;
+                }
+                if let Some(e) = entry.as_object() {
+                    if e.contains_key("A_Artillery") {
+                        return Ok(entry.clone());
+                    }
+                }
+            }
+        }
+    }
+
     // Fall back to any entry with at least one A_* weapon key.
     if let Some(armed) = candidates.iter().find(|e| {
         e.as_object()
