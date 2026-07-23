@@ -91,6 +91,14 @@ export default defineComponent({
       },
     );
 
+    // Show a toast for encyclopedia errors (JSON parse, API failures, etc.).
+    watch(
+      () => encyclopedia.error,
+      (msg) => {
+        if (msg) toast.error(msg);
+      },
+    );
+
     // ── filters ────────────────────────────────────────────────────────
     const searchText = ref("");
     const selectedNations = ref<Set<string>>(new Set());

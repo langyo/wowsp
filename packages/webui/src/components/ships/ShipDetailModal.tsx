@@ -62,8 +62,8 @@ export default defineComponent({
 
     // ── Holographic stage ─────────────────────────────────────────────────
     const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
-    function onWeaponFocus(zone: FocusZone) {
-      stageRef.value?.focusZone(zone);
+    function onWeaponFocus(zone: FocusZone, count?: number) {
+      stageRef.value?.focusZone(zone, count ?? 1);
     }
 
     // ── Armor tab: lazy GameParams ─────────────────────────────────────────
@@ -77,6 +77,8 @@ export default defineComponent({
       gpLoading.value = true;
       gpError.value = null;
       const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
+      // Safety timeout: dismiss loading toast after 15s if still pending.
+      const timer = setTimeout(() => toast.dismiss(toastId), 15000);
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
@@ -84,6 +86,7 @@ export default defineComponent({
         gpError.value = msg;
         toast.error(`${t("ships.detail.gameparamsErrorTip")}\n${msg}`);
       } finally {
+        clearTimeout(timer);
         gpLoading.value = false;
         gpFetched.value = true;
         toast.dismiss(toastId);
@@ -159,7 +162,7 @@ export default defineComponent({
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
         title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
-        width="58rem"
+        width="80vw"
       >
         {!props.ship ? null : (
           <div class="ship-detail">

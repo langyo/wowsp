@@ -51,10 +51,16 @@ def parse_glb(path: Path) -> dict:
     return {"json": json_data, "binary": bin_data or b""}
 
 
-def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
-    """Extract all vertices + triangle indices from the GLB, merged into one
-    mesh. Returns (flat_vertices_xyz, indices) where vertices is a flat list
-    of floats [x,y,z, x,y,z, ...] and indices is a list of ints."""
+def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[float], list[int]]:
+    """Extract hull and turret geometry into two separate buffers.
+    Returns (hull_verts, hull_idx, turret_verts, turret_idx)."""
+
+    TURRET_KW = ("gun", "turret", "mount", "torpedo", "tube", "launcher",
+                 "anti", "aa", "air", "defense", "depth", "charge", "bomb")
+    def _is_turret(ni: int) -> bool:
+        if ni < 0: return False
+        name = (nodes[ni].get("name") or "").lower()
+        return any(kw in name for kw in TURRET_KW)
     gjson = gltf["json"]
     binary = gltf["binary"]
 
@@ -100,40 +106,128 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int]]:
         # UINT-specific normalization is needed.
         return values, ncomp
 
-    all_verts: list[float] = []
-    all_indices: list[int] = []
+    hull_verts: list[float] = []
+    hull_idx: list[int] = []
+    turret_verts: list[float] = []
+    turret_idx: list[int] = []
 
+    # Build node→world transform lookup so turret/mounted meshes are
+    # positioned correctly instead of piling up at the origin.
+    nodes = gjson.get("nodes", [])
+    # Compute the world matrix for every node (parent-chain multiply).
+    import numpy as np
+
+    def _node_matrix(node: dict) -> np.ndarray:
+        if "matrix" in node:
+            # glTF matrices are column-major.
+            return np.array(node["matrix"], dtype=np.float64).reshape(4, 4, order="F")
+        m = np.eye(4, dtype=np.float64)
+        if "translation" in node:
+            m[:3, 3] = node["translation"]
+        if "rotation" in node:
+            q = node["rotation"]  # [x, y, z, w]
+            x, y, z, w = q
+            m[:3, :3] = np.array([
+                [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
+                [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
+                [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y],
+            ], dtype=np.float64)
+        if "scale" in node:
+            s = node["scale"]
+            m[:3, :3] *= np.array(s, dtype=np.float64)
+        return m
+
+    node_world = [None] * len(nodes)
+    # Build parent→children map from both standard `children` arrays and
+    # the non-standard `parent` field some exporters emit.
+    children: dict[int, list[int]] = {i: [] for i in range(len(nodes))}
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []):
+            if c < len(nodes):
+                children[i].append(c)
+    # Some exporters write a `parent` field instead of `children`.
+    for i, n in enumerate(nodes):
+        p = n.get("parent")
+        if isinstance(p, int) and 0 <= p < len(nodes) and i not in children.get(p, []):
+            children[p].append(i)
+    # Find root nodes (nodes not referenced as any other node's child).
+    has_parent = set()
+    for kids in children.values():
+        has_parent.update(kids)
+    roots = [i for i in range(len(nodes)) if i not in has_parent]
+
+    def _compute_world(idx: int, parent_matrix: np.ndarray = np.eye(4)):
+        n = nodes[idx]
+        local = _node_matrix(n)
+        world = parent_matrix @ local
+        node_world[idx] = world
+        for c in children.get(idx, []):
+            _compute_world(c, world)
+
+    for r in roots:
+        _compute_world(r)
+
+    non_id = sum(1 for w in node_world if w is not None and not np.allclose(w, np.eye(4)))
+    print(f"[bake] {len(nodes)} nodes, {len(roots)} roots, {non_id} non-identity world xforms")
+
+    mesh_xforms = 0
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
-        for prim in mesh["primitives"]:
-            if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
-                continue
-            # glTF primitive `mode` defaults to 4 (TRIANGLES). WoWS exports are
-            # always triangle lists, but bail on any other topology (strip/fan/
-            # lines/points) rather than mis-reading its indices as triangles.
-            mode = prim.get("mode", 4)
-            if mode != 4:
-                continue
-            # Get vertices
-            pos_acc = prim["attributes"]["POSITION"]
-            verts, ncomp = get_accessor_data(pos_acc)
-            assert ncomp == 3
-            base_vert = len(all_verts) // 3
-            all_verts.extend(verts)
-            # Get indices (or generate if missing)
-            if prim.get("indices") is not None:
-                idx_vals, _ = get_accessor_data(prim["indices"])
-                # If the index accessor used UINT (5125), values are already ints
-                all_indices.extend(int(v) + base_vert for v in idx_vals)
-            else:
-                # Non-indexed: generate sequential
-                n_verts = len(verts) // 3
-                for i in range(0, n_verts, 3):
-                    if i + 2 < n_verts:
-                        all_indices.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
+        # Collect ALL world matrices for nodes that reference this mesh
+        # (handles instancing — same mesh at multiple positions).
+        mesh_idx = gjson["meshes"].index(mesh)
+        world_mats: list[tuple[int, np.ndarray]] = []
+        for ni, n in enumerate(nodes):
+            if n.get("mesh") == mesh_idx and node_world[ni] is not None:
+                w = node_world[ni]
+                world_mats.append((ni, w))
+                if not np.allclose(w, np.eye(4)):
+                    mesh_xforms += 1
+        if not world_mats:
+            world_mats = [(-1, np.eye(4))]
 
-    return all_verts, all_indices
+        # Duplicate the mesh's geometry for each node transform.
+        for ni, world_mat in world_mats:
+            for prim in mesh["primitives"]:
+                if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
+                    continue
+                mode = prim.get("mode", 4)
+                if mode != 4:
+                    continue
+                pos_acc = prim["attributes"]["POSITION"]
+                verts, ncomp = get_accessor_data(pos_acc)
+                assert ncomp == 3
+                if not np.allclose(world_mat, np.eye(4)):
+                    v = np.array(verts, dtype=np.float64).reshape(-1, 3)
+                    v_h = np.column_stack([v, np.ones(len(v))])
+                    vt = (world_mat @ v_h.T).T[:, :3]
+                else:
+                    vt = np.array(verts, dtype=np.float64).reshape(-1, 3)
+
+                bb_min = vt.min(axis=0)
+                bb_max = vt.max(axis=0)
+                extent = bb_max - bb_min
+                if extent.max() < 0.2:
+                    continue
+
+                is_turret = _is_turret(ni)
+                verts_target = turret_verts if is_turret else hull_verts
+                idx_target = turret_idx if is_turret else hull_idx
+                base_vert = len(verts_target) // 3
+                verts_target.extend(vt.flatten().tolist())
+
+                if prim.get("indices") is not None:
+                    idx_vals, _ = get_accessor_data(prim["indices"])
+                    idx_target.extend(int(v) + base_vert for v in idx_vals)
+                else:
+                    n_verts = len(verts) // 3
+                    for i in range(0, n_verts, 3):
+                        if i + 2 < n_verts:
+                            idx_target.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
+
+    print(f"[bake] hull:{len(hull_verts)//3}v/{len(hull_idx)//3}t  turret:{len(turret_verts)//3}v/{len(turret_idx)//3}t")
+    return hull_verts, hull_idx, turret_verts, turret_idx
 
 
 def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
@@ -505,6 +599,62 @@ def write_glb(path: Path, vertices: list[float], indices: list[int]):
         f.write(struct.pack("<II", len(bin_data), 0x004E4942))
         f.write(bin_data)
 
+def _pad4(data: bytes) -> bytes:
+    """Pad to 4-byte alignment."""
+    r = len(data) % 4
+    return data + b"\x00" * (4 - r) if r else data
+
+
+def write_glb_dual(path: Path,
+                   hull_v: list[float], hull_i: list[int],
+                   turret_v: list[float], turret_i: list[int]):
+    """Write GLB with mesh[0]=hull, mesh[1]=turrets."""
+    def _itype(indices): return 5125 if (max(indices) if indices else 0) > 65535 else 5123
+    def _pack(v, i):
+        nv = len(v)//3; ni = len(i)
+        it = _itype(i)
+        vb = _pad4(struct.pack(f"<{len(v)}f", *v)) if nv else b""
+        ib = _pad4(struct.pack(f"<{ni}{'I' if it==5125 else 'H'}", *i)) if ni else b""
+        return nv, ni, it, vb, ib
+    nvh,nih,ith,vbh,ibh = _pack(hull_v, hull_i)
+    nvt,nit,itt,vbt,ibt = _pack(turret_v, turret_i)
+    bin_data = vbh + ibh + vbt + ibt
+    off = 0
+    hv_off, hv_len = off, len(vbh); off += hv_len
+    hi_off, hi_len = off, len(ibh); off += hi_len
+    tv_off, tv_len = off, len(vbt); off += tv_len
+    ti_off, ti_len = off, len(ibt); off += ti_len
+    gjson = {
+        "asset":{"version":"2.0","generator":"WoWSP"},
+        "scene":0,"scenes":[{"nodes":[0,1]}],
+        "nodes":[{"mesh":0,"name":"hull"},{"mesh":1,"name":"turret"}],
+        "meshes":[
+            {"name":"hull","primitives":[{"attributes":{"POSITION":0},"indices":1,"mode":4,"material":0}]},
+            {"name":"turret","primitives":[{"attributes":{"POSITION":2},"indices":3,"mode":4,"material":0}]},
+        ],
+        "materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0,0.67,0.85,1],"metallicFactor":0.1,"roughnessFactor":0.7},"alphaMode":"BLEND","emissiveFactor":[0,0.3,0.4]}],
+        "buffers":[{"byteLength":len(bin_data)}],
+        "bufferViews":[
+            {"buffer":0,"byteOffset":hv_off,"byteLength":hv_len,"target":34962},
+            {"buffer":0,"byteOffset":hi_off,"byteLength":hi_len,"target":34963},
+            {"buffer":0,"byteOffset":tv_off,"byteLength":tv_len,"target":34962},
+            {"buffer":0,"byteOffset":ti_off,"byteLength":ti_len,"target":34963},
+        ],
+        "accessors":[
+            {"bufferView":0,"componentType":5126,"count":nvh,"type":"VEC3"},
+            {"bufferView":1,"componentType":ith,"count":nih,"type":"SCALAR"},
+            {"bufferView":2,"componentType":5126,"count":nvt,"type":"VEC3"},
+            {"bufferView":3,"componentType":itt,"count":nit,"type":"SCALAR"},
+        ],
+    }
+    json_bytes = _pad4(json.dumps(gjson, separators=(",",":")).encode("utf-8"))
+    total_len = 12 + 8 + len(json_bytes) + 8 + len(bin_data)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<III", 0x46546C67, 2, total_len))
+        f.write(struct.pack("<II", len(json_bytes), 0x4E4F534A))
+        f.write(json_bytes)
+        f.write(struct.pack("<II", len(bin_data), 0x004E4942))
+        f.write(bin_data)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bake (simplify) a WoWS GLB for holographic rendering")
@@ -518,14 +668,16 @@ def main() -> int:
 
     print(f"[bake] loading {inp.name} ...")
     gltf = parse_glb(inp)
-    verts, indices = extract_all_triangles(gltf)
-    print(f"[bake] raw: {len(verts)//3} verts, {len(indices)//3} tris")
+    hv, hi, tv, ti = extract_all_triangles(gltf)
+    print(f"[bake] raw: hull {len(hv)//3}v/{len(hi)//3}t  turret {len(tv)//3}v/{len(ti)//3}t")
 
-    print(f"[bake] decimating to ~{args.triangles} tris ...")
-    verts, indices = decimate(verts, indices, args.triangles)
-    print(f"[bake] baked: {len(verts)//3} verts, {len(indices)//3} tris")
+    th = int(args.triangles * 0.7)  # hull budget
+    tt = args.triangles - th         # turret budget
+    if len(hv) and len(hi): hv, hi = decimate(hv, hi, th)
+    if len(tv) and len(ti): tv, ti = decimate(tv, ti, tt)
+    print(f"[bake] baked: hull {len(hv)//3}v/{len(hi)//3}t  turret {len(tv)//3}v/{len(ti)//3}t")
 
-    write_glb(out, verts, indices)
+    write_glb_dual(out, hv, hi, tv, ti)
     print(f"[bake] wrote {out} ({out.stat().st_size // 1024} KB)")
     return 0
 

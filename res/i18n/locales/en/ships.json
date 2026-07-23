@@ -89,11 +89,18 @@
     "weapon": {
       "mainGun": "Main Battery",
       "torpedo": "Torpedoes",
-      "aaGun": "Anti-Air",
-      "secondary": "Secondaries",
+      "aaGun": "AA",
+      "aaLong": "(long)",
+      "aaMid": "(mid)",
+      "aaShort": "(short)",
+      "secondary": "Secondary",
+      "dp": "DP Gun",
       "engine": "Engine",
       "finder": "Rangefinders",
+      "asw": "ASW",
+      "aircraft": "Aircraft",
       "launchers": "launchers",
+      "squadrons": "squadrons",
       "auras": "auras"
     },
     "armor": {

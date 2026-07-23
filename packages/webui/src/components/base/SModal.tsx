@@ -32,7 +32,7 @@ export default defineComponent({
     const previouslyFocused = ref<HTMLElement | null>(null);
     const panelRef = ref<HTMLElement | null>(null);
 
-    const style = computed(() => ({ maxWidth: props.width }));
+    const style = computed(() => ({ width: props.width, maxWidth: "90vw" }));
     // Track the popup-manager handle so we unregister with the correct id on
     // close (previously passed "" which leaked the scroll-lock counter).
     let popupId = "";

@@ -25,6 +25,9 @@ import sys
 import time
 from pathlib import Path
 
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]  # scripts/model_convert/ → scripts/ → repo root
 TOOLS_DIR = REPO_ROOT / "target" / "model-tools"
@@ -83,15 +86,9 @@ def get_ship_names(game: str) -> list[str]:
 
 
 def derive_filename(gp_name: str) -> str:
-    """Derive a human-readable filename from a GameParams name.
-    e.g. PASB017_Montana_1945 → Montana.glb"""
-    parts = gp_name.split("_")
-    # Skip the prefix (e.g. PASB017) and trailing year/version.
-    readable_parts = [p for p in parts[1:] if not p.isdigit() and p != ""]
-    # Also skip common suffixes like "HW19", "H2019", "Borg", etc.
-    readable = [p for p in readable_parts if len(p) <= 4 or p[0].isupper()]
-    if not readable:
-        readable = readable_parts
+    """Use the GameParams index prefix as the GLB filename.
+    e.g. PASB017_Montana_1945 → PASB017.glb"""
+    return gp_name.split("_")[0] + ".glb"
     return "_".join(readable) + ".glb"
 
 
@@ -195,7 +192,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     tag = hashlib.md5(gp_name.encode()).hexdigest()[:8]
     raw_glb = TEMP_DIR / f"raw_{tag}.glb"
 
-    # Step 1: export raw GLB (no textures, LOD2, no turrets).
+    # Step 1: export raw GLB (no textures, LOD2, include turrets).
     # Convert underscores to spaces — the exporter uses a regex pattern matcher
     # where each space-separated word becomes .*word.*, and underscores in a
     # single word won't disambiguate when the GP key itself contains both the
@@ -204,7 +201,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     try:
         rc = subprocess.call(
             [str(EXPORTER_BIN), "-W", game, "-s", exporter_ship,
-             "-o", str(raw_glb), "-t", "-T", "-L", "2"],
+             "-o", str(raw_glb), "-T", "-L", "2"],
             timeout=45,
         )
         if rc != 0 or not raw_glb.exists():
@@ -224,7 +221,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     try:
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT),
-             str(raw_glb), "-o", str(out_glb), "--triangles", "6000"],
+             str(raw_glb), "-o", str(out_glb), "--triangles", "15000"],
             timeout=30,
         )
         return rc == 0 and out_glb.exists()

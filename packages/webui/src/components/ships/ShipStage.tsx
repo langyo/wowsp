@@ -17,6 +17,7 @@ import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type Holo
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t } from "@/i18n";
+import { useToast } from "@/composables/useToast";
 import type { ShipInfo } from "@/api";
 import "./ShipStage.scss";
 
@@ -53,6 +54,7 @@ export default defineComponent({
   exposed: {} as { focusZone?: (zone: FocusZone) => void },
   setup(props) {
     const inst = getCurrentInstance();
+    const toast = useToast();
     const containerRef = ref<HTMLElement | null>(null);
     const viewMode = ref<"2d" | "3d">("3d");
     const loading = ref(false);
@@ -75,13 +77,7 @@ export default defineComponent({
     let resizeObs: ResizeObserver | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
-    /** Active highlight ring (spawned by focusZone); animated + disposed by the rAF loop. */
-    let activeRing: {
-      mesh: THREE.Mesh;
-      born: number;
-      duration: number;
-      baseScale: number;
-    } | null = null;
+    const _allHoloUniforms: HoloUniforms[] = [];
 
     // ── Holographic shader ────────────────────────────────────────────────
     // The shader source + material factory live in the shared `holoShader`
@@ -90,7 +86,8 @@ export default defineComponent({
     // drive the scanline animation each frame via `tickHoloUniforms`.
     function makeHoloMaterial(): THREE.ShaderMaterial {
       const mat = sharedMakeHoloMaterial();
-      uniforms.value = mat.uniforms as unknown as HoloUniforms;
+      _allHoloUniforms.push(mat.uniforms as unknown as HoloUniforms);
+      if (!uniforms.value) uniforms.value = mat.uniforms as unknown as HoloUniforms;
       return mat;
     }
 
@@ -155,28 +152,7 @@ export default defineComponent({
       const clock = new THREE.Clock();
       const tick = () => {
         const dt = clock.getDelta();
-        if (uniforms.value) tickHoloUniforms(uniforms.value, dt);
-        // Animate the focus-zone highlight ring: pulse scale + fade over its
-        // lifetime, gently face the camera so the reticle stays visible, then
-        // dispose when done.
-        if (activeRing) {
-          const r = activeRing;
-          const elapsed = performance.now() - r.born;
-          const k = Math.min(1, elapsed / r.duration);
-          const pulse = 1 + 0.12 * Math.sin(elapsed * 0.014);
-          // Expand outward as it fades (energy ripple dissipating).
-          const grow = 1 + k * 0.4;
-          r.mesh.scale.setScalar(pulse * grow);
-          (r.mesh.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k * k);
-          // Keep the ring roughly facing the camera without snapping flat.
-          r.mesh.lookAt(cam.position);
-          if (k >= 1) {
-            sc.remove(r.mesh);
-            (r.mesh.geometry as THREE.BufferGeometry).dispose();
-            (r.mesh.material as THREE.Material).dispose();
-            activeRing = null;
-          }
-        }
+        for (const u of _allHoloUniforms) tickHoloUniforms(u, dt);
         ctrl.update();
         rnd.render(sc, cam);
         rafId = requestAnimationFrame(tick);
@@ -236,6 +212,46 @@ export default defineComponent({
             mesh.geometry.computeBoundingSphere();
           }
         });
+        modelGroup.value = model;
+
+        // Apply holographic shader. Hull is dim cyan; turret is bright amber-gold
+        // so weapon mounts are visually distinct at all times.
+        const holoHull = makeHoloMaterial();
+        const holoTurret = makeHoloMaterial();
+        holoTurret.uniforms.baseColor.value.set(0.65, 0.50, 0.08); // warm gold
+        holoTurret.uniforms.fresnelColor.value.set(1.0, 0.75, 0.15);
+
+        const meshes: THREE.Mesh[] = [];
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+        });
+        console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
+        for (const mesh of meshes) {
+          const isTurret = mesh.name === "turret";
+          if (isTurret) {
+            mesh.material = holoTurret;
+            console.log("[loadModel] assigned turret material to:", mesh.name, "color:", holoTurret.uniforms.baseColor.value.getHexString());
+          } else {
+            mesh.material = holoHull;
+          }
+          // Faint structural-edge overlay — only shows edges where adjacent
+          // faces meet at >20° (hides coplanar hull/deck triangles).
+          const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 8);
+          const line = new THREE.LineSegments(
+            edgeGeo,
+            new THREE.LineBasicMaterial({
+              color: 0x2a8fb5,
+              transparent: true,
+              opacity: 0.18,
+              depthWrite: false,
+            }),
+          );
+          line.raycast = () => {};
+          mesh.add(line);
+        }
+
+        if (scene.value) scene.value.add(model);
+        modelGroup.value = model;
         // Normalize: center + uniform-scale to a 200-unit box.
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
@@ -248,35 +264,10 @@ export default defineComponent({
         const normBox = new THREE.Box3().setFromObject(model);
         modelBox.value = normBox;
 
-        // Apply the holographic shader to every mesh in the model. Collect meshes
-        // first so we don't mutate the tree during traverse (the wireframe overlay
-        // is added as a child — doing that mid-traverse would recurse forever).
-        const holoMat = makeHoloMaterial();
-        const wireMat = new THREE.MeshBasicMaterial({
-          color: 0x2a8fb5,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.10,
-          depthWrite: false,
-        });
-        const meshes: THREE.Mesh[] = [];
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-        });
-        for (const mesh of meshes) {
-          mesh.material = holoMat;
-          // Faint wireframe overlay pass, as a non-traversed child.
-          const wire = new THREE.Mesh(mesh.geometry, wireMat);
-          wire.raycast = () => {}; // overlay shouldn't intercept picks
-          mesh.add(wire);
-        }
-
-        if (scene.value) scene.value.add(model);
-        modelGroup.value = model;
-        // Frame the model.
         focusZone("default");
       } catch (e) {
         errorMsg.value = (e as Error).message || String(e);
+        toast.error(`3D model failed: ${errorMsg.value}`);
       } finally {
         loading.value = false;
       }
@@ -285,13 +276,6 @@ export default defineComponent({
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
-      // Dispose any active highlight ring.
-      if (activeRing && scene.value) {
-        scene.value.remove(activeRing.mesh);
-        (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
-        (activeRing.mesh.material as THREE.Material).dispose();
-        activeRing = null;
-      }
       resizeObs?.disconnect();
       resizeObs = null;
       const c = controls.value;
@@ -332,13 +316,7 @@ export default defineComponent({
       () => props.ship?.shipId,
       () => {
         if (viewMode.value === "3d") {
-          // Remove the old model + any active highlight ring, then load the new one.
-          if (activeRing && scene.value) {
-            scene.value.remove(activeRing.mesh);
-            (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
-            (activeRing.mesh.material as THREE.Material).dispose();
-            activeRing = null;
-          }
+          // Remove the old model, then load the new one.
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
@@ -348,57 +326,51 @@ export default defineComponent({
       },
     );
 
-    // ── Focus zone highlight ring ──────────────────────────────────────────
-    // Spawns a cyan pulsing RingGeometry at the focused ship region's world
-    // position, oriented to face the camera. Animated (pulse + fade) by the
-    // rAF render loop and disposed after `durationMs`. Replaces any prior ring.
-    function spawnHighlightRing(zone: FocusZone, box: THREE.Box3, durationMs = 2000): void {
+    // ── Focus zone highlight ─────────────────────────────────────────────
+    let _activeGlows: THREE.Mesh[] = [];
+
+    function clearGlows() {
       const sc = scene.value;
-      if (!sc) return;
-      // Remove any prior ring first.
-      if (activeRing) {
-        sc.remove(activeRing.mesh);
-        (activeRing.mesh.geometry as THREE.BufferGeometry).dispose();
-        (activeRing.mesh.material as THREE.Material).dispose();
-        activeRing = null;
+      for (const m of _activeGlows) {
+        if (sc) sc.remove(m);
+        (m.geometry as THREE.BufferGeometry).dispose();
+        (m.material as THREE.Material).dispose();
       }
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const half = size.x / 2;
-      // Ring placement per zone — matches the focusZone camera target.
-      const pos = new THREE.Vector3();
-      switch (zone) {
-        case "bow": pos.set(center.x + half * 0.7, center.y + size.y * 0.2, center.z); break;
-        case "stern": pos.set(center.x - half * 0.7, center.y + size.y * 0.2, center.z); break;
-        case "deck": pos.set(center.x, center.y + size.y * 0.7, center.z); break;
-        case "waterline": pos.set(center.x - half * 0.4, center.y - size.y * 0.2, center.z); break;
-        case "midship":
-        default: pos.set(center.x, center.y + size.y * 0.15, center.z);
-      }
-      const radius = Math.max(size.y * 0.9, 20);
-      // A thin bright torus reads better as a "focus reticle" than a flat ring;
-      // use TorusGeometry so the highlight has visible thickness from any angle.
-      const tube = Math.max(radius * 0.04, 1.2);
-      const geo = new THREE.TorusGeometry(radius, tube, 12, 48);
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0x66eeff,
+      _activeGlows = [];
+    }
+
+    function spawnGlow(pos: THREE.Vector3, radius: number, sc: THREE.Scene): THREE.Mesh {
+      const geo = new THREE.SphereGeometry(radius, 16, 16);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          varying vec3 vNormal;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }`,
+        fragmentShader: `
+          varying vec3 vNormal;
+          uniform float uTime;
+          void main() {
+            float rim = 1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
+            rim = pow(rim, 1.8);
+            float pulse = 0.55 + 0.45 * sin(uTime * 5.0);
+            float alpha = rim * pulse * 0.55;
+            gl_FragColor = vec4(0.35, 0.88, 1.0, alpha);
+          }`,
         transparent: true,
-        opacity: 0.95,
         depthWrite: false,
+        depthTest: false,
         blending: THREE.AdditiveBlending,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(pos);
       sc.add(mesh);
-      activeRing = { mesh, born: performance.now(), duration: durationMs, baseScale: radius };
+      return mesh;
     }
 
-    // ── Focus zone camera tween ───────────────────────────────────────────
-    // focusZone flies the camera to a preset view of a ship region and spawns
-    // a pulsing highlight ring there. Exposed to the parent via setupState so
-    // the template ref can call it:
-    //   stageRef.value?.focusZone("bow")
-    function focusZone(zone: FocusZone): void {
+    function focusZone(zone: FocusZone, count = 1): void {
       const cam = camera.value;
       const ctrl = controls.value;
       const box = modelBox.value;
@@ -408,28 +380,56 @@ export default defineComponent({
       const size = box.getSize(new THREE.Vector3());
       const len = size.x; // ship length (after normalize, ≈ up to 200)
       const half = len / 2;
-      // Camera offset from center per zone. Distance scales with ship size.
-      const dist = Math.max(size.length() * 0.9, 160);
+      // Camera distance — closer than the default hero shot so weapon
+      // details are visible. Scales with ship size.
+      const dist = Math.max(size.x * 0.5, 120);
       const target = new THREE.Vector3(center.x, center.y, center.z);
       let camPos: THREE.Vector3;
+      // View from starboard side, elevated ~35°, so turrets/guns on the
+      // deck read clearly against the holographic hull.
+      const el = 0.55; // ~32° elevation
+      const az = 0.4;  // ~23° toward starboard
       switch (zone) {
         case "bow":
-          camPos = new THREE.Vector3(center.x + half * 0.9, center.y + size.y * 0.3, dist * 0.55);
-          target.set(center.x + half * 0.5, center.y, center.z);
+          // Focus on the forward third — main turrets live here.
+          target.set(center.x + half * 0.55, center.y + size.y * 0.18, center.z);
+          camPos = new THREE.Vector3(
+            target.x + dist * 0.35,
+            target.y + dist * el,
+            target.z + dist * az,
+          );
           break;
         case "stern":
-          camPos = new THREE.Vector3(center.x - half * 0.9, center.y + size.y * 0.3, dist * 0.55);
-          target.set(center.x - half * 0.5, center.y, center.z);
+          // Rear third — aft turrets, engine exhaust.
+          target.set(center.x - half * 0.55, center.y + size.y * 0.18, center.z);
+          camPos = new THREE.Vector3(
+            target.x - dist * 0.35,
+            target.y + dist * el,
+            target.z + dist * az,
+          );
           break;
         case "midship":
-          camPos = new THREE.Vector3(center.x, center.y + size.y * 0.15, dist * 0.6); // broadside
+          // Center — secondaries, torpedo tubes, superstructure.
+          target.set(center.x, center.y + size.y * 0.2, center.z);
+          camPos = new THREE.Vector3(
+            center.x,
+            center.y + dist * el,
+            center.z + dist * (az + 0.25),
+          );
           break;
         case "deck":
-          camPos = new THREE.Vector3(center.x, center.y + dist * 0.9, dist * 0.2); // top-down
+          // Top-down-ish — AA mounts, rangefinders across the whole deck.
+          target.set(center.x, center.y + size.y * 0.3, center.z);
+          camPos = new THREE.Vector3(center.x, center.y + dist * 1.1, center.z + dist * 0.08);
           break;
         case "waterline":
-          camPos = new THREE.Vector3(center.x - half * 0.6, center.y - size.y * 0.4, dist * 0.5);
+          // Low-angle side view — torpedo belt, hull details.
           target.set(center.x - half * 0.3, center.y - size.y * 0.2, center.z);
+          camPos = new THREE.Vector3(
+            target.x - dist * 0.4,
+            target.y + dist * 0.15,
+            target.z + dist * 0.7,
+          );
           break;
         default:
           // Starboard-bow "2 o'clock" vantage: ~60° azimuth from the bow
@@ -458,11 +458,6 @@ export default defineComponent({
         window.setTimeout(() => {
           ctrlLocal.autoRotate = true;
         }, 750);
-      }
-      // Spawn the highlight ring for real weapon-focus zones (skip the default
-      // framing call — that's just initial camera placement, not a focus action).
-      if (zone !== "default") {
-        spawnHighlightRing(zone, box);
       }
     }
 
