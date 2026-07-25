@@ -86,7 +86,98 @@ export default defineComponent({
     let gridRef: THREE.GridHelper | null = null;
     let _waterlinePlane: THREE.Mesh | null = null;
 
-    // ── Armor overlay ────────────────────────────────────────────────────
+    function disposeArmorScene() {
+      const g = armorGroup.value;
+      const sc = scene.value;
+      if (g && sc) sc.remove(g);
+      if (g) {
+        g.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.geometry) m.geometry.dispose();
+          const mat = m.material as THREE.Material | THREE.Material[];
+          if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+          else if (mat) mat.dispose();
+        });
+      }
+      armorGroup.value = null;
+      // Restore main model visibility.
+      const model = modelGroup.value;
+      if (model) {
+        model.visible = true;
+        model.traverse((c) => ((c as THREE.Mesh).visible = true));
+      }
+    }
+
+    function syncArmorOverlay() {
+      const sc = scene.value;
+      const model = modelGroup.value;
+      if (!showArmor.value || !sc || !model) {
+        disposeArmorScene();
+        return;
+      }
+      // Build a fresh armour-scene group: uniform-dark hull clones,
+      // coloured armour boxes, and a waterline plane.
+      disposeArmorScene();
+
+      // Hide the main model — the armour group replaces it visually.
+      model.visible = false;
+
+      const armorSc = new THREE.Group();
+      armorSc.name = "armor-scene";
+
+      // Clone hull meshes with a uniform dark material.
+      const hullNames = new Set(["hull_body","hull_bow","hull_mid","hull_stern","deck_house","funnel","superstructure"]);
+      const sections = new Map<string, THREE.Box3>();
+      model.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !hullNames.has(mesh.name)) return;
+        const clone = mesh.clone();
+        clone.material = _armorUniformMat;
+        clone.renderOrder = -1;
+        armorSc.add(clone);
+        // Accumulate section bounding boxes.
+        let b = sections.get(mesh.name);
+        if (!b) { b = new THREE.Box3(); sections.set(mesh.name, b); }
+        mesh.geometry.computeBoundingBox();
+        const mb = new THREE.Box3().setFromObject(mesh);
+        b.expandByPoint(mb.min).expandByPoint(mb.max);
+      });
+
+      // Armour zone boxes.
+      const boxes = buildArmorOverlay(sections, props.armorZones ?? []);
+      if (boxes) armorSc.add(boxes);
+
+      // Waterline plane + grid.
+      const midBox = sections.get("hull_mid");
+      if (midBox) {
+        const midH = midBox.max.y - midBox.min.y;
+        const wlY = midBox.min.y + midH * 0.12;
+        const wlGeo = new THREE.PlaneGeometry(600, 600);
+        const wlMat = new THREE.MeshBasicMaterial({
+          color: 0x0a3a5a, side: THREE.DoubleSide,
+          transparent: true, opacity: 0.30, depthWrite: false,
+        });
+        const plane = new THREE.Mesh(wlGeo, wlMat);
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = wlY;
+        plane.renderOrder = -2;
+        armorSc.add(plane);
+        if (gridRef) gridRef.position.y = wlY;
+      }
+
+      sc.add(armorSc);
+      armorGroup.value = armorSc;
+    }
+
+    function toggleArmor() {
+      showArmor.value = !showArmor.value;
+      syncArmorOverlay();
+    }
+
+    watch(
+      () => [props.armorZones?.length ?? 0, modelGroup.value != null] as const,
+      () => { if (showArmor.value) syncArmorOverlay(); },
+    );
     /** Standardised zone positions relative to the hull bounding box.
      *  X = bow→stern, Y = keel→mast, Z = port→starboard.
      *  Values are conservative so boxes sit INSIDE the hull silhouette. */
@@ -252,135 +343,6 @@ export default defineComponent({
 
       return group;
     }
-
-    function disposeArmorOverlay() {
-      const g = armorGroup.value;
-      if (!g) return;
-      const sc = scene.value;
-      if (sc) sc.remove(g);
-      g.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.geometry) m.geometry.dispose();
-        const mat = m.material as THREE.Material | THREE.Material[];
-        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-        else if (mat) mat.dispose();
-      });
-      armorGroup.value = null;
-    }
-
-    function syncArmorOverlay() {
-      const sc = scene.value;
-      const model = modelGroup.value;
-      disposeArmorOverlay();
-      if (!showArmor.value || !sc || !model) {
-        setShipUniformMode(false);
-        return;
-      }
-      setShipUniformMode(true);
-      const sections = collectHullSections(model);
-      // Waterline priority: GameParams draft > geometry heuristic (widest slice).
-      const midBoxWL = sections.get("hull_mid");
-      if (midBoxWL && gridRef) {
-        const midH = midBoxWL.max.y - midBoxWL.min.y;
-        let wlY: number;
-        if (props.waterlineDraft != null && props.waterlineDraft > 0) {
-          // draft is in metres; model scale is 200/maxDim ≈ 1m ≈ 1 unit for
-          // battleship-size ships. Convert draft to model Y: keel + draft.
-          wlY = midBoxWL.min.y + props.waterlineDraft;
-        } else {
-          // Heuristic: sample 5 height slices, pick the widest.
-          let bestY = midBoxWL.min.y + midH * 0.12;
-          let bestW = 0;
-          const SLICES = 5;
-          for (let s = 1; s < SLICES; s++) {
-            const y = midBoxWL.min.y + midH * (s / SLICES);
-            let xMin = Infinity, xMax = -Infinity;
-            model.traverse((child) => {
-              const mesh = child as THREE.Mesh;
-              if (!mesh.isMesh || !mesh.name.startsWith("hull_")) return;
-              mesh.geometry.computeBoundingBox();
-              const mb = new THREE.Box3().setFromObject(mesh);
-              if (mb.min.y > y || mb.max.y < y) return;
-              if (mb.min.x < xMin) xMin = mb.min.x;
-              if (mb.max.x > xMax) xMax = mb.max.x;
-            });
-            if (isFinite(xMin) && xMax - xMin > bestW) {
-              bestW = xMax - xMin;
-              bestY = y;
-            }
-          }
-          wlY = bestY;
-        }
-        gridRef.position.y = wlY;
-        gridRef.position.y = wlY;
-        // Add a thin opaque waterline plane for emphasis.
-        if (!_waterlinePlane) {
-          const planeGeo = new THREE.PlaneGeometry(600, 600);
-          const planeMat = new THREE.MeshBasicMaterial({
-            color: 0x0a3a5a, side: THREE.DoubleSide,
-            transparent: true, opacity: 0.30, depthWrite: false,
-          });
-          _waterlinePlane = new THREE.Mesh(planeGeo, planeMat);
-          _waterlinePlane.rotation.x = -Math.PI / 2;
-          _waterlinePlane.renderOrder = -2;
-          sc?.add(_waterlinePlane);
-        }
-        _waterlinePlane.position.y = wlY;
-      }
-      const g = buildArmorOverlay(sections, props.armorZones ?? []);
-      if (g) {
-        sc.add(g);
-        armorGroup.value = g;
-      }
-    }
-
-    /** On armour mode: dim all ship meshes to near-black so the
-     *  coloured armour boxes are the only visible hue. */
-    const _savedMaterials = new WeakMap<THREE.Mesh, THREE.Material>();
-    const _uniformMat = new THREE.MeshBasicMaterial({
-      color: 0x0a141e,
-      transparent: true,
-      opacity: 0.40,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-
-    function setShipUniformMode(on: boolean) {
-      const model = modelGroup.value;
-      if (!model) return;
-      model.traverse((child) => {
-        const mesh = child as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        // Don't touch armor overlay boxes.
-        if (mesh.parent?.name === "armor-overlay" || mesh.userData?.zone) return;
-        if (on) {
-          if (!_savedMaterials.has(mesh)) _savedMaterials.set(mesh, mesh.material as THREE.Material);
-          mesh.material = _uniformMat;
-          mesh.renderOrder = -1;
-          // Hide edge wireframe children in armour mode.
-          for (const c of mesh.children) {
-            if ((c as THREE.LineSegments).isLineSegments) c.visible = false;
-          }
-        } else {
-          const saved = _savedMaterials.get(mesh);
-          if (saved) { mesh.material = saved; }
-          mesh.renderOrder = WEAPON_NAMES.has(mesh.name) ? 1 : 0;
-          for (const c of mesh.children) c.visible = true;
-        }
-      });
-    }
-
-    function toggleArmor() {
-      showArmor.value = !showArmor.value;
-      syncArmorOverlay();
-    }
-
-    // Auto-rebuild when armor data arrives while toggle is on, or when the
-    // model finishes loading.
-    watch(
-      () => [props.armorZones?.length ?? 0, modelGroup.value != null] as const,
-      () => { if (showArmor.value) syncArmorOverlay(); },
-    );
 
     let rafId = 0;
     let resizeObs: ResizeObserver | null = null;
@@ -653,7 +615,7 @@ export default defineComponent({
       focusTween = null;
       resizeObs?.disconnect();
       resizeObs = null;
-      disposeArmorOverlay();
+      disposeArmorScene();
       const c = controls.value;
       const r = renderer.value;
       const sc = scene.value;
@@ -677,12 +639,7 @@ export default defineComponent({
       uniforms.value = null;
       armorGroup.value = null;
       showArmor.value = false;
-      setShipUniformMode(false);
-      if (_waterlinePlane) {
-        _waterlinePlane.geometry.dispose();
-        (_waterlinePlane.material as THREE.Material).dispose();
-        _waterlinePlane = null;
-      }
+      disposeArmorScene();
     }
 
     onMounted(() => {
