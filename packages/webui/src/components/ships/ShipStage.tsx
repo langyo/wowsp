@@ -133,14 +133,17 @@ export default defineComponent({
           try {
             const armorModel = await loadGlbModel(armorUrl);
             if (armorModel) {
-              // Normalize to match the visual model's 200-unit box.
-              const armorBox = new THREE.Box3().setFromObject(armorModel);
-              const armorSize = armorBox.getSize(new THREE.Vector3());
-              const armorMaxDim = Math.max(armorSize.x, armorSize.y, armorSize.z, 1);
-              const armorScale = 200 / armorMaxDim;
-              armorModel.scale.setScalar(armorScale);
-              const armorCenter = armorBox.getCenter(new THREE.Vector3()).multiplyScalar(armorScale);
-              armorModel.position.sub(armorCenter);
+              // Debug: compare bounding boxes.
+              const aBox = new THREE.Box3().setFromObject(armorModel);
+              const aSize = aBox.getSize(new THREE.Vector3());
+              const mBox = new THREE.Box3().setFromObject(model);
+              const mSize = mBox.getSize(new THREE.Vector3());
+              console.log("[armor] raw armor box:", aSize.toArray().map(v => v.toFixed(0)),
+                "model box (pre-norm):", mSize.toArray().map(v => v.toFixed(0)));
+
+              // Match the visual model's transform (same scale + offset).
+              armorModel.scale.copy(model.scale);
+              armorModel.position.copy(model.position);
 
               armorModel.traverse((child) => {
                 const mesh = child as THREE.Mesh;
