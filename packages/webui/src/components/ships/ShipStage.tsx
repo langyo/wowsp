@@ -208,14 +208,24 @@ export default defineComponent({
       superstructure:{ x: [0.30, 0.86], y: [0.46, 0.76], z: [-0.12, 0.12] },
     };
 
+    /** Exact 10-bucket colour scale from the game's ArmorConstants.py.
+     *  Each entry: (maxThickness_mm, r, g, b). bisect_left. */
+    const ARMOR_SCALE: [number, number, number, number][] = [
+      [14,  110, 209, 176], // teal
+      [16,  149, 210, 127], // light green
+      [24,  170, 201, 102], // yellow-green
+      [26,  192, 193,  80], // olive
+      [28,  226, 195,  62], // gold
+      [33,  225, 171,  54], // orange-gold
+      [75,  227, 144,  49], // orange
+      [160, 230, 115,  49], // dark orange
+      [399, 220,  78,  48], // red-orange
+      [999, 185,  47,  48], // dark red
+    ];
     function armorColor(mm: number): number {
-      if (mm <= 0)  return 0x4a8a9a;  // unknown — dim cyan
-      if (mm <= 25)  return 0x33aa33;  // green
-      if (mm <= 50)  return 0x88bb22;  // yellow-green
-      if (mm <= 100) return 0xcccc22;  // yellow
-      if (mm <= 200) return 0xcc8811;  // orange
-      if (mm <= 350) return 0xcc3311;  // deep orange
-      return 0xcc1111;                  // red
+      if (mm <= 0) return 0xcccccc; // light grey for unknown
+      const [r, g, b] = ARMOR_SCALE.find(([bp]) => mm <= bp) ?? ARMOR_SCALE[ARMOR_SCALE.length - 1];
+      return (r << 16) | (g << 8) | b;
     }
 
     /** Collect per-section hull bounding boxes (bow / mid / stern / deck_house). */
