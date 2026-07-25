@@ -131,16 +131,18 @@ export default defineComponent({
       const cloneMat = new THREE.MeshBasicMaterial({
         color: 0x0d4a6a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide,
       });
+      let cloneCount = 0;
       model.traverse((child) => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh || !hullNames.has(mesh.name)) return;
-        // Clone at world-space position (armorSc is at root level).
+        mesh.updateWorldMatrix(true, false);
         const clone = new THREE.Mesh(mesh.geometry, cloneMat);
         clone.position.copy(mesh.getWorldPosition(new THREE.Vector3()));
         clone.quaternion.copy(mesh.getWorldQuaternion(new THREE.Quaternion()));
         clone.scale.copy(mesh.getWorldScale(new THREE.Vector3()));
         clone.renderOrder = -1;
         armorSc.add(clone);
+        cloneCount++;
         // Accumulate section bounding boxes.
         let b = sections.get(mesh.name);
         if (!b) { b = new THREE.Box3(); sections.set(mesh.name, b); }
@@ -148,9 +150,11 @@ export default defineComponent({
         const mb = new THREE.Box3().setFromObject(mesh);
         b.expandByPoint(mb.min).expandByPoint(mb.max);
       });
+      console.log("[armor] cloned", cloneCount, "hull meshes, sections:", [...sections.keys()]);
 
       // Armour zone boxes.
       const boxes = buildArmorOverlay(sections, props.armorZones ?? []);
+      console.log("[armor] boxes:", boxes ? boxes.children.length : "null", "zones:", props.armorZones?.map(z => `${z.name}=${z.thickness}mm`) ?? []);
       if (boxes) armorSc.add(boxes);
 
       // Waterline plane + grid.
@@ -320,19 +324,19 @@ export default defineComponent({
       // Stern section (Z: 0 → b2mR)
       add("stern",     [0.00, b2mR], [0.00, 0.40], [-1.0, 1.0]);
       add("sternBelt", [0.00, b2mR * 0.85], [0.04, 0.30], [-1.0, 1.0]);
-      const PLATE_THICKNESS = 0.8; // thin shell, not a solid block
+      const PLATE_THICKNESS = 2.0; // thin shell, visible from any angle
 
       function addPlate(
         zoneName: string,
         width: number, height: number, depth: number,
         cx: number, cy: number, cz: number,
-        rotY: number, // rotation around Y axis for vertical plates
+        rotY: number,
       ) {
         const mm = byName.get(zoneName) ?? 0;
         const color = armorColor(mm);
         const geo = new THREE.BoxGeometry(width, height, depth);
         const mat = new THREE.MeshBasicMaterial({
-          color, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide,
+          color, transparent: true, opacity: 0.35, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
         });
         const box = new THREE.Mesh(geo, mat);
         box.position.set(cx, cy, cz);
@@ -378,6 +382,11 @@ export default defineComponent({
       const hullXHalf = hullXLen * 0.5;
       function xRelPort() { return hullXCtr - hullXHalf * 0.85; }
       function xRelStbd() { return hullXCtr + hullXHalf * 0.85; }
+
+      const GAP = 0.4;
+      const m0 = b2mR, m1 = m2sR;
+      const THIRD = (m1 - m0) / 3;
+      const bLen = 1.0 - m1;
 
       // Stern
       addVerticalBelt("stern",     [0.00, b2mR], [0.00, 0.40]);
