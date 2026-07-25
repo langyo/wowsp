@@ -182,17 +182,19 @@ export default defineComponent({
         const tb = (armor?.TorpedoBelt ?? armor?.TorpedoProtection) as Record<string,unknown> | undefined;
         if (tb?.factor != null) add("torpedoBelt", Math.round((1 - Number(tb.factor)) * 100));
         // Fallback: read the flat per-part armour dict (A_Hull.armor).
-        // Use median thickness for unassigned zones.
+        // Use DISTINCT sorted thicknesses for zone assignment so each
+        // zone gets a visibly different colour.
         if (zones.length === 0) {
           const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
           const dict = (hull.armor ?? hull.Armor ?? null) as Record<string, number> | null;
           if (dict) {
-            const vals = Object.values(dict).filter((v: number) => v > 0).sort((a: number, b: number) => b - a);
+            const vals = [...new Set(Object.values(dict).filter((v: number) => v > 0))]
+              .sort((a: number, b: number) => b - a);
             if (vals.length > 0) {
               add("citadel", vals[0]);
-              if (vals.length > 1) add("mainBelt", vals[Math.min(1, vals.length - 1)]);
-              if (vals.length > 2) add("deck", vals[Math.min(2, vals.length - 1)]);
-              if (vals.length > 3) add("casemate", vals[Math.min(3, vals.length - 1)]);
+              if (vals.length > 1) add("mainBelt", vals[1]);
+              if (vals.length > 2) add("deck", vals[2]);
+              if (vals.length > 3) add("casemate", vals[3]);
               if (vals.length > 4) add("bow", vals[Math.min(4, vals.length - 1)]);
               if (vals.length > 5) add("stern", vals[Math.min(5, vals.length - 1)]);
               if (vals.length > 6) add("torpedoBelt", vals[Math.min(6, vals.length - 1)]);

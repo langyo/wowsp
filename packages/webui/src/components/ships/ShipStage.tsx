@@ -326,12 +326,16 @@ export default defineComponent({
         if (on) {
           if (!_savedMaterials.has(mesh)) _savedMaterials.set(mesh, mesh.material as THREE.Material);
           mesh.material = _uniformMat;
-          mesh.renderOrder = -1; // behind armor overlay
+          mesh.renderOrder = -1;
+          // Hide edge wireframe children in armour mode.
+          for (const c of mesh.children) {
+            if ((c as THREE.LineSegments).isLineSegments) c.visible = false;
+          }
         } else {
           const saved = _savedMaterials.get(mesh);
           if (saved) { mesh.material = saved; _savedMaterials.delete(mesh); }
-          // Restore original renderOrder
           mesh.renderOrder = WEAPON_NAMES.has(mesh.name) ? 1 : 0;
+          for (const c of mesh.children) c.visible = true;
         }
       });
     }
