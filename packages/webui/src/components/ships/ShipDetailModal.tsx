@@ -207,6 +207,19 @@ export default defineComponent({
       }
     });
 
+    // ── Waterline from GameParams (optional, falls back to geometry) ──────
+    const waterlineDraft = computed<number | null>(() => {
+      const gp = gameparams.value as Record<string, any> | null;
+      if (!gp) return null;
+      function num(v: unknown): number | null {
+        if (v == null) return null;
+        const n = typeof v === "number" ? v : Number(v);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      }
+      const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+      return num(hull.draft) ?? num(hull.maxDraft) ?? num(hull.Draft) ?? num(hull.MaxDraft) ?? null;
+    });
+
     function nationLabel(code: string): string {
       return t(`ships.nation.${code}`, {}) || code;
     }
@@ -233,7 +246,7 @@ export default defineComponent({
             {/* holographic stage: shown for all tabs except skill (where data observer replaces it) */}
             {tab.value !== "skill" ? (
               <>
-                <ShipStage ref={stageRef} ship={props.ship} armorZones={armorZones.value} />
+                <ShipStage ref={stageRef} ship={props.ship} armorZones={armorZones.value} waterlineDraft={waterlineDraft.value} />
                 <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
               </>
             ) : (

@@ -54,6 +54,7 @@ export default defineComponent({
   props: {
     ship: { type: Object as () => ShipInfo | null, required: true },
     armorZones: { type: Array as () => ArmorZone[], default: () => [] },
+    waterlineDraft: { type: Number as () => number | null, default: null },
   },
   // `focusZone` is stashed on the instance from inside setup() and surfaced
   // here via `exposed` so parents can call stageRef.value?.focusZone(...).
@@ -277,11 +278,40 @@ export default defineComponent({
       }
       setShipUniformMode(true);
       const sections = collectHullSections(model);
-      // Position grid at estimated waterline (~22% up from keel).
+      // Waterline priority: GameParams draft > geometry heuristic (widest slice).
       const midBoxWL = sections.get("hull_mid");
       if (midBoxWL && gridRef) {
         const midH = midBoxWL.max.y - midBoxWL.min.y;
-        const wlY = midBoxWL.min.y + midH * 0.12;
+        let wlY: number;
+        if (props.waterlineDraft != null && props.waterlineDraft > 0) {
+          // draft is in metres; model scale is 200/maxDim ≈ 1m ≈ 1 unit for
+          // battleship-size ships. Convert draft to model Y: keel + draft.
+          wlY = midBoxWL.min.y + props.waterlineDraft;
+        } else {
+          // Heuristic: sample 5 height slices, pick the widest.
+          let bestY = midBoxWL.min.y + midH * 0.12;
+          let bestW = 0;
+          const SLICES = 5;
+          for (let s = 1; s < SLICES; s++) {
+            const y = midBoxWL.min.y + midH * (s / SLICES);
+            let xMin = Infinity, xMax = -Infinity;
+            model.traverse((child) => {
+              const mesh = child as THREE.Mesh;
+              if (!mesh.isMesh || !mesh.name.startsWith("hull_")) return;
+              mesh.geometry.computeBoundingBox();
+              const mb = new THREE.Box3().setFromObject(mesh);
+              if (mb.min.y > y || mb.max.y < y) return;
+              if (mb.min.x < xMin) xMin = mb.min.x;
+              if (mb.max.x > xMax) xMax = mb.max.x;
+            });
+            if (isFinite(xMin) && xMax - xMin > bestW) {
+              bestW = xMax - xMin;
+              bestY = y;
+            }
+          }
+          wlY = bestY;
+        }
+        gridRef.position.y = wlY;
         gridRef.position.y = wlY;
         // Add a thin opaque waterline plane for emphasis.
         if (!_waterlinePlane) {
