@@ -133,14 +133,6 @@ export default defineComponent({
           try {
             const armorModel = await loadGlbModel(armorUrl);
             if (armorModel) {
-              // Debug: compare bounding boxes.
-              const aBox = new THREE.Box3().setFromObject(armorModel);
-              const aSize = aBox.getSize(new THREE.Vector3());
-              const mBox = new THREE.Box3().setFromObject(model);
-              const mSize = mBox.getSize(new THREE.Vector3());
-              console.log("[armor] raw armor box:", aSize.toArray().map(v => v.toFixed(0)),
-                "model box (pre-norm):", mSize.toArray().map(v => v.toFixed(0)));
-
               // Match the visual model's transform (same scale + offset).
               armorModel.scale.copy(model.scale);
               armorModel.position.copy(model.position);
