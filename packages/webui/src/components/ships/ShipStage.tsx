@@ -108,7 +108,7 @@ export default defineComponent({
       }
     }
 
-    function syncArmorOverlay() {
+    async function syncArmorOverlay() {
       const sc = scene.value;
       const model = modelGroup.value;
       if (!showArmor.value || !sc || !model) {
