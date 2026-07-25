@@ -128,11 +128,17 @@ export default defineComponent({
       // Clone hull meshes with a uniform dark material.
       const hullNames = new Set(["hull_body","hull_bow","hull_mid","hull_stern","deck_house","funnel","superstructure"]);
       const sections = new Map<string, THREE.Box3>();
+      const cloneMat = new THREE.MeshBasicMaterial({
+        color: 0x0a141e, transparent: true, opacity: 0.40, depthWrite: false, side: THREE.DoubleSide,
+      });
       model.traverse((child) => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh || !hullNames.has(mesh.name)) return;
-        const clone = mesh.clone();
-        clone.material = _armorUniformMat;
+        // Clone at world-space position (armorSc is at root level).
+        const clone = new THREE.Mesh(mesh.geometry, cloneMat);
+        clone.position.copy(mesh.getWorldPosition(new THREE.Vector3()));
+        clone.quaternion.copy(mesh.getWorldQuaternion(new THREE.Quaternion()));
+        clone.scale.copy(mesh.getWorldScale(new THREE.Vector3()));
         clone.renderOrder = -1;
         armorSc.add(clone);
         // Accumulate section bounding boxes.
