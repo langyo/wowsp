@@ -133,10 +133,18 @@ export default defineComponent({
           try {
             const armorModel = await loadGlbModel(armorUrl);
             if (armorModel) {
+              // Normalize to match the visual model's 200-unit box.
+              const armorBox = new THREE.Box3().setFromObject(armorModel);
+              const armorSize = armorBox.getSize(new THREE.Vector3());
+              const armorMaxDim = Math.max(armorSize.x, armorSize.y, armorSize.z, 1);
+              const armorScale = 200 / armorMaxDim;
+              armorModel.scale.setScalar(armorScale);
+              const armorCenter = armorBox.getCenter(new THREE.Vector3()).multiplyScalar(armorScale);
+              armorModel.position.sub(armorCenter);
+
               armorModel.traverse((child) => {
                 const mesh = child as THREE.Mesh;
                 if (mesh.isMesh) {
-                  mesh.updateWorldMatrix(true, false);
                   const geo = mesh.geometry;
                   const mat = new THREE.MeshBasicMaterial({
                     vertexColors: (geo.getAttribute('color') != null),
@@ -145,12 +153,9 @@ export default defineComponent({
                     opacity: 0.75,
                     depthWrite: false,
                   });
-                  const clone = new THREE.Mesh(geo, mat);
-                  clone.position.copy(mesh.getWorldPosition(new THREE.Vector3()));
-                  clone.quaternion.copy(mesh.getWorldQuaternion(new THREE.Quaternion()));
-                  clone.scale.copy(mesh.getWorldScale(new THREE.Vector3()));
-                  clone.renderOrder = 1;
-                  armorSc.add(clone);
+                  mesh.material = mat;
+                  mesh.renderOrder = 1;
+                  armorSc.add(mesh);
                 }
               });
             }
