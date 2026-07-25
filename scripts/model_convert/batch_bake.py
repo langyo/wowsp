@@ -37,6 +37,7 @@ TEMP_DIR = REPO_ROOT / "target" / "model-tmp"
 EXPORTER_BIN = TOOLS_DIR / "wows-gltf-exporter.exe"
 LIST_SHIPS_BIN = TOOLS_DIR / "wows-list-ships.exe"
 BAKE_SCRIPT = SCRIPT_DIR / "bake_model.py"
+WOWSUNPACK_BIN = TOOLS_DIR / "wowsunpack.exe"   # built from cargo workspace
 
 EXPORTER_URL = "https://github.com/wows-tools/wows-model-exporter/releases/download/0.2.1/wows-model-exporter-windows-x86_64.zip"
 
@@ -189,14 +190,16 @@ def _is_old_dual_mesh(path: Path) -> bool:
 
 
 def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
-             resume_min_tris: int = 0) -> bool:
+             resume_min_tris: int = 0, model_dir_name: str | None = None) -> bool:
     """Convert + bake a single ship. Returns True on success (including skip).
 
     `force`           — always re-bake even if output exists.
     `resume_min_tris` — when >0 (resume mode), skip an existing GLB only if it
-                        looks current (enough triangles AND welded vertices).
-                        This makes the run safely resumable: re-invoking it
-                        only touches files still needing work.
+                         looks current (enough triangles AND welded vertices).
+                         This makes the run safely resumable: re-invoking it
+                         only touches files still needing work.
+    `model_dir_name`  — internal model directory name (e.g. 'USB001_Yukon_1941')
+                         for armor GLB export via wowsunpack.
     """
     filename = derive_filename(gp_name)
     out_glb = output_dir / filename
@@ -242,20 +245,41 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
         print(f"     ↳ exporter crashed")
         return False
 
-    # Step 2: bake to low-poly
+    # Step 2: bake visual model to low-poly.
     try:
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT),
              str(raw_glb), "-o", str(out_glb), "--triangles", "15000"],
             timeout=30,
         )
-        return rc == 0 and out_glb.exists()
+        if rc != 0 or not out_glb.exists():
+            raw_glb.unlink(missing_ok=True)
+            return False
     except subprocess.TimeoutExpired:
+        raw_glb.unlink(missing_ok=True)
         return False
     except Exception:
+        raw_glb.unlink(missing_ok=True)
         return False
     finally:
         raw_glb.unlink(missing_ok=True)
+
+    # Step 3: export armor mesh GLB (from game .geometry file).
+    prefix = gp_name.split("_")[0]
+    armor_glb = output_dir / f"{prefix}_armor.glb"
+    if WOWSUNPACK_BIN.exists() and not armor_glb.exists() and model_dir_name:
+        try:
+            rc = subprocess.call(
+                [str(WOWSUNPACK_BIN), "--game-dir", game,
+                 "export-armor-glb", "-o", str(armor_glb), model_dir_name],
+                timeout=60,
+            )
+            if rc != 0:
+                armor_glb.unlink(missing_ok=True)
+        except (subprocess.TimeoutExpired, Exception):
+            armor_glb.unlink(missing_ok=True)
+
+    return True
 
 
 def main() -> int:
@@ -336,11 +360,26 @@ def main() -> int:
         print("[batch_bake] nothing to do. Use --force to re-bake everything.")
         return 0
 
+    # Load model-directory-name mapping for armor GLB export.
+    model_name_by_prefix: dict[str, str] = {}
+    models_json = REPO_ROOT / "packages" / "webui" / "src" / "data" / "ship_models.json"
+    if models_json.exists():
+        data = json.loads(models_json.read_text(encoding="utf-8"))
+        for entry in data.values():
+            if isinstance(entry, dict):
+                idx = entry.get("index", "")
+                hm = entry.get("hullModel", "") or ""
+                parts = hm.replace("\\", "/").split("/")
+                if idx and len(parts) >= 2:
+                    model_name_by_prefix[idx] = parts[-2]
+        print(f"[batch_bake] loaded {len(model_name_by_prefix)} model dir names for armor export")
+
     ok = 0
     fail = 0
     start = time.time()
     for i, gp_name in enumerate(todo):
-        success = bake_one(game, gp_name, SHIPS_OUT, args.force, resume_min_tris)
+        success = bake_one(game, gp_name, SHIPS_OUT, args.force, resume_min_tris,
+                           model_dir_name=model_name_by_prefix.get(gp_name.split("_")[0]))
         if success:
             ok += 1
         else:

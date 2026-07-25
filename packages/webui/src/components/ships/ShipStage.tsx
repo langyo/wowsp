@@ -125,6 +125,42 @@ export default defineComponent({
       const armorSc = new THREE.Group();
       armorSc.name = "armor-scene";
 
+      // Load the pre-baked armor GLB (per-vertex coloured from game data).
+      const prefix = props.ship?.name ? "" : ""; // derive from shipId via modelLoader
+      if (props.ship) {
+        const armorUrl = resolveShipModelByShipId(props.ship.shipId, undefined)?.replace(/\.glb$/, "_armor.glb") ?? null;
+        if (armorUrl) {
+          try {
+            const armorModel = await loadGlbModel(armorUrl);
+            if (armorModel) {
+              armorModel.traverse((child) => {
+                const mesh = child as THREE.Mesh;
+                if (mesh.isMesh) {
+                  mesh.updateWorldMatrix(true, false);
+                  const geo = mesh.geometry;
+                  const mat = new THREE.MeshBasicMaterial({
+                    vertexColors: (geo.getAttribute('color') != null),
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.75,
+                    depthWrite: false,
+                  });
+                  const clone = new THREE.Mesh(geo, mat);
+                  clone.position.copy(mesh.getWorldPosition(new THREE.Vector3()));
+                  clone.quaternion.copy(mesh.getWorldQuaternion(new THREE.Quaternion()));
+                  clone.scale.copy(mesh.getWorldScale(new THREE.Vector3()));
+                  clone.renderOrder = 1;
+                  armorSc.add(clone);
+                }
+              });
+            }
+          } catch { /* fall back to heuristic */ }
+        }
+      }
+
+      // Fall back: hull clones + heuristic plates if no armor GLB.
+      if (armorSc.children.length === 0) {
+
       // Clone hull meshes with a uniform dark material.
       const hullNames = new Set(["hull_body","hull_bow","hull_mid","hull_stern","deck_house","funnel","superstructure"]);
       const sections = new Map<string, THREE.Box3>();
@@ -174,6 +210,7 @@ export default defineComponent({
         armorSc.add(plane);
         if (gridRef) gridRef.position.y = wlY;
       }
+      } // end fallback block
 
       sc.add(armorSc);
       armorGroup.value = armorSc;
