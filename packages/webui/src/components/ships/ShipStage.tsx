@@ -281,7 +281,7 @@ export default defineComponent({
       const midBoxWL = sections.get("hull_mid");
       if (midBoxWL && gridRef) {
         const midH = midBoxWL.max.y - midBoxWL.min.y;
-        const wlY = midBoxWL.min.y + midH * 0.22;
+        const wlY = midBoxWL.min.y + midH * 0.12;
         gridRef.position.y = wlY;
         // Add a thin opaque waterline plane for emphasis.
         if (!_waterlinePlane) {
@@ -333,7 +333,7 @@ export default defineComponent({
           }
         } else {
           const saved = _savedMaterials.get(mesh);
-          if (saved) { mesh.material = saved; _savedMaterials.delete(mesh); }
+          if (saved) { mesh.material = saved; }
           mesh.renderOrder = WEAPON_NAMES.has(mesh.name) ? 1 : 0;
           for (const c of mesh.children) c.visible = true;
         }
