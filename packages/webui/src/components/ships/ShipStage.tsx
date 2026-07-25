@@ -129,7 +129,7 @@ export default defineComponent({
       const hullNames = new Set(["hull_body","hull_bow","hull_mid","hull_stern","deck_house","funnel","superstructure"]);
       const sections = new Map<string, THREE.Box3>();
       const cloneMat = new THREE.MeshBasicMaterial({
-        color: 0x0a141e, transparent: true, opacity: 0.40, depthWrite: false, side: THREE.DoubleSide,
+        color: 0x0d4a6a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide,
       });
       model.traverse((child) => {
         const mesh = child as THREE.Mesh;
@@ -320,32 +320,91 @@ export default defineComponent({
       // Stern section (Z: 0 → b2mR)
       add("stern",     [0.00, b2mR], [0.00, 0.40], [-1.0, 1.0]);
       add("sternBelt", [0.00, b2mR * 0.85], [0.04, 0.30], [-1.0, 1.0]);
-      // Belt boxes laid out end-to-end along Z with small gaps.
-      const GAP = 0.4;
-      const m0 = b2mR, m1 = m2sR, mW = m1 - m0;
-      const THIRD = mW / 3;
-      function zAdd(zone: string, z0: number, z1: number, yr: [number, number], xr: [number, number]) {
-        add(zone, [Math.max(z0, m0), Math.min(z1, m1)], yr, xr);
+      const PLATE_THICKNESS = 0.8; // thin shell, not a solid block
+
+      function addPlate(
+        zoneName: string,
+        width: number, height: number, depth: number,
+        cx: number, cy: number, cz: number,
+        rotY: number, // rotation around Y axis for vertical plates
+      ) {
+        const mm = byName.get(zoneName) ?? 0;
+        const color = armorColor(mm);
+        const geo = new THREE.BoxGeometry(width, height, depth);
+        const mat = new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide,
+        });
+        const box = new THREE.Mesh(geo, mat);
+        box.position.set(cx, cy, cz);
+        box.rotation.y = rotY;
+        box.userData = { zone: zoneName, thickness: mm };
+        group.add(box);
+        const edge = new THREE.EdgesGeometry(geo);
+        const line = new THREE.LineSegments(
+          edge,
+          new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55, depthTest: false }),
+        );
+        line.raycast = () => {};
+        box.add(line);
       }
 
+      function addVerticalBelt(zoneName: string, zr: [number, number], yr: [number, number]) {
+        const [z1, z2] = zRel(zr);
+        const [y1, y2] = yRel(yr);
+        const dz = z2 - z1, dy = y2 - y1;
+        if (dz <= 0 || dy <= 0) return;
+        const cy = (y1 + y2) * 0.5;
+        const cz = (z1 + z2) * 0.5;
+        // Port plate
+        const portX = xRelPort();
+        addPlate(zoneName, PLATE_THICKNESS, dy, dz, portX, cy, cz, 0);
+        // Starboard plate
+        const stbdX = xRelStbd();
+        addPlate(zoneName, PLATE_THICKNESS, dy, dz, stbdX, cy, cz, 0);
+      }
+
+      function addHorizontal(zoneName: string, zr: [number, number], xr: [number, number]) {
+        const [z1, z2] = zRel(zr);
+        const [x1, x2] = xRel(xr);
+        const dz = z2 - z1, dx = x2 - x1;
+        if (dz <= 0 || dx <= 0) return;
+        const cy = hullYCtr + hullYLen * 0.48; // near top of mid section
+        const cz = (z1 + z2) * 0.5;
+        const cx = (x1 + x2) * 0.5;
+        addPlate(zoneName, dx, PLATE_THICKNESS, dz, cx, cy, cz, 0);
+      }
+
+      // Hull outline ports: where the vertical belt plates sit (outer hull surface).
+      const hullXHalf = hullXLen * 0.5;
+      function xRelPort() { return hullXCtr - hullXHalf * 0.85; }
+      function xRelStbd() { return hullXCtr + hullXHalf * 0.85; }
+
       // Stern
-      add("stern",     [0.00, b2mR],       [0.00, 0.40], [-1.0, 1.0]);
-      add("sternBelt", [0.00, b2mR - GAP], [0.04, 0.30], [-1.0, 1.0]);
-      // Midsection — three non-overlapping belt segments
-      add("forwardBelt", [m0, m0 + THIRD - GAP],    [0.04, 0.38], [-1.0, 1.0]);
-      add("mainBelt",    [m0 + THIRD, m1 - THIRD],  [0.04, 0.38], [-1.0, 1.0]);
-      add("aftBelt",     [m1 - THIRD + GAP, m1],    [0.04, 0.38], [-1.0, 1.0]);
-      // Interior / non-belt layers
-      add("citadel",     [m0 + THIRD * 0.5, m1 - THIRD * 0.5], [0.02, 0.34], [-0.25, 0.25]);
-      add("casemate",    [m0, m1],      [0.36, 0.50], [-0.60, 0.60]);
-      add("deck",        [m0, m1],      [0.38, 0.44], [-0.55, 0.55]);
-      add("torpedoBelt", [m0, m1],      [0.00, 0.14], [-1.0, 1.0]);
+      addVerticalBelt("stern",     [0.00, b2mR], [0.00, 0.40]);
+      addVerticalBelt("sternBelt", [0.00, b2mR - GAP], [0.04, 0.30]);
+      // Midsection belts
+      addVerticalBelt("forwardBelt", [m0, m0 + THIRD - GAP],  [0.04, 0.38]);
+      addVerticalBelt("mainBelt",    [m0 + THIRD, m1 - THIRD], [0.04, 0.38]);
+      addVerticalBelt("aftBelt",     [m1 - THIRD + GAP, m1],  [0.04, 0.38]);
+      addVerticalBelt("casemate",    [m0, m1], [0.36, 0.50]);
+      // Citadel: 4 thin walls (not a solid block)
+      const citZr: [number, number] = [m0 + THIRD * 0.5, m1 - THIRD * 0.5];
+      const citYr: [number, number] = [0.02, 0.34];
+      function _czr() { const [z1,z2]=zRel(citZr); const [y1,y2]=yRel(citYr); const cy=(y1+y2)*0.5; const cz=(z1+z2)*0.5; const dy=y2-y1, dz=z2-z1;
+        addPlate("citadel", PLATE_THICKNESS, dy, dz, hullXCtr - hullXHalf*0.28, cy, cz, 0);
+        addPlate("citadel", PLATE_THICKNESS, dy, dz, hullXCtr + hullXHalf*0.28, cy, cz, 0);
+        addPlate("citadel", dz, dy, PLATE_THICKNESS, hullXCtr, cy, z1, Math.PI/2);
+        addPlate("citadel", dz, dy, PLATE_THICKNESS, hullXCtr, cy, z2, Math.PI/2);
+      }
+      _czr();
+      addHorizontal("deck", [m0, m1], [-0.55, 0.55]);
+      // Torpedo belt — low vertical plates
+      addVerticalBelt("torpedoBelt", [m0, m1], [0.00, 0.14]);
       // Bow
-      const bLen = 1.0 - m1;
-      add("bow",     [m1, 1.00],       [0.00, 0.40], [-1.0, 1.0]);
-      add("bowBelt", [m1 + bLen * 0.15, 1.00], [0.04, 0.30], [-1.0, 1.0]);
+      addVerticalBelt("bow", [m1, 1.00], [0.00, 0.40]);
+      addVerticalBelt("bowBelt", [m1 + bLen * 0.15, 1.00], [0.04, 0.30]);
       // Superstructure
-      add("superstructure", [m0 + 0.02, m1 - 0.02], [0.44, 0.78], [-0.20, 0.20]);
+      addHorizontal("superstructure", [m0 + 0.02, m1 - 0.02], [-0.20, 0.20]);
 
       return group;
     }
