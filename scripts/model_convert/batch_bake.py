@@ -209,9 +209,10 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
             pass  # re-bake regardless
         elif resume_min_tris > 0:
             if looks_current(out_glb, resume_min_tris):
-                return True
+                # Visual model is current — still check armor.
+                return _bake_armor_if_stale(game, gp_name, output_dir, force, model_dir_name)
         else:
-            return True  # plain skip (no --force, no --resume)
+            return _bake_armor_if_stale(game, gp_name, output_dir, force, model_dir_name)
 
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     # Use a unique temp file per ship to avoid collision if a previous run
@@ -267,18 +268,29 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
     # Step 3: export armor mesh GLB (from game .geometry file).
     prefix = gp_name.split("_")[0]
     armor_glb = output_dir / f"{prefix}_armor.glb"
-    if WOWSUNPACK_BIN.exists() and not armor_glb.exists() and model_dir_name:
-        try:
-            rc = subprocess.call(
-                [str(WOWSUNPACK_BIN), "--game-dir", game,
-                 "export-armor-glb", "-o", str(armor_glb), model_dir_name],
-                timeout=60,
-            )
-            if rc != 0:
-                armor_glb.unlink(missing_ok=True)
-        except (subprocess.TimeoutExpired, Exception):
-            armor_glb.unlink(missing_ok=True)
+    return _bake_armor_if_stale(game, gp_name, output_dir, force, model_dir_name)
 
+
+def _bake_armor_if_stale(game: str, gp_name: str, output_dir: Path, force: bool,
+                          model_dir_name: str | None) -> bool:
+    prefix = gp_name.split("_")[0]
+    armor_glb = output_dir / f"{prefix}_armor.glb"
+    if WOWSUNPACK_BIN.exists() and model_dir_name:
+        armor_stale = force or not armor_glb.exists()
+        if not armor_stale:
+            at, _ = glb_mesh_stats(armor_glb)
+            armor_stale = at < 500
+        if armor_stale:
+            try:
+                rc = subprocess.call(
+                    [str(WOWSUNPACK_BIN), "--game-dir", game,
+                     "export-armor-glb", "-o", str(armor_glb), model_dir_name],
+                    timeout=60,
+                )
+                if rc != 0:
+                    armor_glb.unlink(missing_ok=True)
+            except (subprocess.TimeoutExpired, Exception):
+                armor_glb.unlink(missing_ok=True)
     return True
 
 
@@ -329,6 +341,19 @@ def main() -> int:
     #   --no-resume          → current iff the file exists
     resume_min_tris = args.resume_min_tris if args.resume else 0
 
+    # Pre-load model-name mapping for armor staleness checks.
+    model_name_by_prefix: dict[str, str] = {}
+    _models_json = REPO_ROOT / "packages" / "webui" / "src" / "data" / "ship_models.json"
+    if _models_json.exists():
+        _data = json.loads(_models_json.read_text(encoding="utf-8"))
+        for _entry in _data.values():
+            if isinstance(_entry, dict):
+                _idx = _entry.get("index", "")
+                _hm = _entry.get("hullModel", "") or ""
+                _parts = _hm.replace("\\", "/").split("/")
+                if _idx and len(_parts) >= 2:
+                    model_name_by_prefix[_idx] = _parts[-2]
+
     def needs_baking(gp_name: str) -> bool:
         if args.force:
             return True
@@ -336,7 +361,17 @@ def main() -> int:
         if not out_glb.exists():
             return True
         if resume_min_tris > 0:
-            return not looks_current(out_glb, resume_min_tris)
+            if not looks_current(out_glb, resume_min_tris):
+                return True
+        # Check armour GLB staleness too.
+        prefix = gp_name.split("_")[0]
+        armor_glb = SHIPS_OUT / f"{prefix}_armor.glb"
+        if WOWSUNPACK_BIN.exists() and model_name_by_prefix.get(prefix):
+            if not armor_glb.exists():
+                return True
+            at, _ = glb_mesh_stats(armor_glb)
+            if at < 500:  # old non-normalized armour
+                return True
         return False
 
     todo = []
@@ -359,20 +394,6 @@ def main() -> int:
     if not todo:
         print("[batch_bake] nothing to do. Use --force to re-bake everything.")
         return 0
-
-    # Load model-directory-name mapping for armor GLB export.
-    model_name_by_prefix: dict[str, str] = {}
-    models_json = REPO_ROOT / "packages" / "webui" / "src" / "data" / "ship_models.json"
-    if models_json.exists():
-        data = json.loads(models_json.read_text(encoding="utf-8"))
-        for entry in data.values():
-            if isinstance(entry, dict):
-                idx = entry.get("index", "")
-                hm = entry.get("hullModel", "") or ""
-                parts = hm.replace("\\", "/").split("/")
-                if idx and len(parts) >= 2:
-                    model_name_by_prefix[idx] = parts[-2]
-        print(f"[batch_bake] loaded {len(model_name_by_prefix)} model dir names for armor export")
 
     ok = 0
     fail = 0
