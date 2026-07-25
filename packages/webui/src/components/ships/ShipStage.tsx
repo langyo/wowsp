@@ -133,7 +133,6 @@ export default defineComponent({
           try {
             const armorModel = await loadGlbModel(armorUrl);
             if (armorModel) {
-              // Match the visual model's transform (same scale + offset).
               armorModel.scale.copy(model.scale);
               armorModel.position.copy(model.position);
 
