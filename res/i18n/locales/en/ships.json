@@ -104,6 +104,8 @@
       "auras": "auras"
     },
     "armor": {
+      "toggle": "Toggle armor belt overlay",
+      "short": "Armor",
       "noData": "No armor data available.",
       "legend": "Armor (mm)",
       "estimated": "approximate",

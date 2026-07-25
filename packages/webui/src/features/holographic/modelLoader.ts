@@ -119,6 +119,10 @@ export function resolveShipModelByShipId(
 ): string | null {
   if (shipId != null) {
     const entry = shipModelMap[String(shipId)];
+    if (entry?.index) {
+      const url = shipModelUrl(entry.index);
+      if (url) return url;
+    }
     if (entry?.baseName) {
       const url = shipModelUrl(entry.baseName);
       if (url) return url;

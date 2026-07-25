@@ -51,16 +51,113 @@ def parse_glb(path: Path) -> dict:
     return {"json": json_data, "binary": bin_data or b""}
 
 
-def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[float], list[int]]:
-    """Extract hull and turret geometry into two separate buffers.
-    Returns (hull_verts, hull_idx, turret_verts, turret_idx)."""
+# ── Node-name classification ──────────────────────────────────────────────
+# WoWS GLB node naming conventions (observed from live exports):
+#   JGM*       = main gun (e.g. JGM103_457mm50_2_RF)
+#   JGS*       = secondary / dual-purpose gun
+#   JGA*       = anti-aircraft gun
+#   JTR*       = torpedo launcher
+#   JSB* / JDD* / JCR* / JBB* / JCV* / JSS* = ship body
+#   JD*        = director (fire-control)
+#   JF*        = rangefinder
+#   JRS*       = radar
+#   *Bow*      = bow hull section
+#   *Stern*    = stern hull section
+#   *MidBack*  = midship aft
+#   *MidFront* = midship fore
+#   *DeckHouse*= superstructure
+#   *Turret_*  = turret visual part
+#   *Director_*,*Rangefinder*,*Radar_*,*Antrenna* = equipment
+#   *Funnel*,*Catapult*,*Aircraft* = other
+#   *Shield_*  = armor plate
 
-    TURRET_KW = ("gun", "turret", "mount", "torpedo", "tube", "launcher",
-                 "anti", "aa", "air", "defense", "depth", "charge", "bomb")
-    def _is_turret(ni: int) -> bool:
-        if ni < 0: return False
-        name = (nodes[ni].get("name") or "").lower()
-        return any(kw in name for kw in TURRET_KW)
+import re
+_GUN_PREFIX = re.compile(r'^[A-Z]G[MAST]', re.IGNORECASE)
+# G M = main, G S = secondary, G A = anti-air, G T = torpedo
+
+def _classify_node(node_name: str) -> str:
+    """Map a raw WoWS GLB node name to a mesh-group category.
+    Categories are the keys the frontend uses for per-group coloring."""
+    n = (node_name or "").strip()
+    if not n:
+        return "misc"
+
+    # ── Weapon classification (by WoWS gun prefix) ──
+    if _GUN_PREFIX.match(n):
+        prefix2 = n[1:3].upper() if len(n) >= 3 else ""
+        if prefix2 == "GM":
+            return "main_battery"
+        if prefix2 == "GS":
+            return "secondary_battery"
+        if prefix2 == "GA":
+            return "aa_mount"
+        if prefix2 == "GT":
+            return "torpedo"
+        # unknown gun prefix → generic weapon
+        return "weapon"
+
+    nl = n.lower()
+
+    # ── Torpedo / ASW (by keyword) ──
+    if "torpedo" in nl or "jtr" in nl or "tube" in nl:
+        return "torpedo"
+
+    # ── Aircraft ──
+    if "catapult" in nl or "aircraft" in nl or "plane" in nl or "seaplane" in nl:
+        return "aircraft"
+
+    # ── Funnel ──
+    if "funnel" in nl or "smoke" in nl:
+        return "funnel"
+
+    # ── Hull sections ──
+    if "bow" in nl:
+        return "hull_bow"
+    if "stern" in nl:
+        return "hull_stern"
+    if "midback" in nl or "mid_back" in nl:
+        return "hull_mid"
+    if "midfront" in nl or "mid_front" in nl:
+        return "hull_mid"
+    # Ship-body prefix (any nation's S, D, C, B, V, S hull)
+    # e.g. JSB, ADB, GBB, PCB, etc.
+    if re.match(r'^[A-Z][SDB]B?\d', n) or re.match(r'^[A-Z]CV\d', n):
+        return "hull_body"
+    if "deckhouse" in nl:
+        return "deck_house"
+
+    # ── Equipment / Superstructure ──
+    if "director" in nl or re.match(r'^[A-Z]D\d', n):
+        return "superstructure"
+    if "rangefinder" in nl or re.match(r'^[A-Z]F\d', n):
+        return "superstructure"
+    if "radar" in nl or re.match(r'^[A-Z]RS\d', n):
+        return "superstructure"
+    if "antrenna" in nl or "antenna" in nl:
+        return "superstructure"
+    if "sokutekiban" in nl:
+        return "superstructure"
+
+    # ── Turret / mount visual parts ──
+    if "turret" in nl:
+        return "turret_part"
+
+    # ── Shield / armor ──
+    if "shield" in nl:
+        return "hull_body"
+
+    # ── LOD mesh copies (generic names, classify by parent) ──
+    # We'll handle these via parent-chain lookup later.
+
+    return "misc"
+
+
+def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
+    """Extract geometry grouped by semantic category.
+    Returns {category_name: (flat_vertices_xyz, indices)}.
+    Categories: hull_body, hull_bow, hull_mid, hull_stern, deck_house,
+                main_battery, secondary_battery, aa_mount, torpedo, aircraft,
+                funnel, superstructure, turret_part, weapon, misc."""
     gjson = gltf["json"]
     binary = gltf["binary"]
 
@@ -106,26 +203,26 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[floa
         # UINT-specific normalization is needed.
         return values, ncomp
 
-    hull_verts: list[float] = []
-    hull_idx: list[int] = []
-    turret_verts: list[float] = []
-    turret_idx: list[int] = []
+    from collections import defaultdict
+    buckets: dict[str, tuple[list[float], list[int]]] = {}
+    for cat in ["hull_body", "hull_bow", "hull_mid", "hull_stern", "deck_house",
+                "main_battery", "secondary_battery", "aa_mount", "torpedo", "aircraft",
+                "funnel", "superstructure", "turret_part", "weapon", "misc"]:
+        buckets[cat] = ([], [])
 
     # Build node→world transform lookup so turret/mounted meshes are
     # positioned correctly instead of piling up at the origin.
     nodes = gjson.get("nodes", [])
-    # Compute the world matrix for every node (parent-chain multiply).
     import numpy as np
 
     def _node_matrix(node: dict) -> np.ndarray:
         if "matrix" in node:
-            # glTF matrices are column-major.
             return np.array(node["matrix"], dtype=np.float64).reshape(4, 4, order="F")
         m = np.eye(4, dtype=np.float64)
         if "translation" in node:
             m[:3, 3] = node["translation"]
         if "rotation" in node:
-            q = node["rotation"]  # [x, y, z, w]
+            q = node["rotation"]
             x, y, z, w = q
             m[:3, :3] = np.array([
                 [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
@@ -138,19 +235,15 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[floa
         return m
 
     node_world = [None] * len(nodes)
-    # Build parent→children map from both standard `children` arrays and
-    # the non-standard `parent` field some exporters emit.
     children: dict[int, list[int]] = {i: [] for i in range(len(nodes))}
     for i, n in enumerate(nodes):
         for c in n.get("children", []):
             if c < len(nodes):
                 children[i].append(c)
-    # Some exporters write a `parent` field instead of `children`.
     for i, n in enumerate(nodes):
         p = n.get("parent")
         if isinstance(p, int) and 0 <= p < len(nodes) and i not in children.get(p, []):
             children[p].append(i)
-    # Find root nodes (nodes not referenced as any other node's child).
     has_parent = set()
     for kids in children.values():
         has_parent.update(kids)
@@ -170,12 +263,39 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[floa
     non_id = sum(1 for w in node_world if w is not None and not np.allclose(w, np.eye(4)))
     print(f"[bake] {len(nodes)} nodes, {len(roots)} roots, {non_id} non-identity world xforms")
 
+    # Pre-compute node categories (one per node index).
+    # Also build a parent-index lookup (reverse of `children`) for walking up
+    # the scene graph to find the owning HP entity.
+    parent_of: dict[int, int] = {}
+    for pi, kids in children.items():
+        for ci in kids:
+            parent_of[ci] = pi
+    # Fill in gaps from the non-standard `parent` field.
+    for i, n in enumerate(nodes):
+        p = n.get("parent")
+        if isinstance(p, int) and 0 <= p < len(nodes) and i not in parent_of:
+            parent_of[i] = p
+
+    node_cat: list[str] = []
+    for ni, n in enumerate(nodes):
+        name = n.get("name") or ""
+        cat = _classify_node(name)
+        # LOD shapes and generic Turret_ parts have no semantic meaning on their
+        # own — inherit the category from the HP parent node instead.
+        if cat in ("turret_part", "misc"):
+            low = name.lower()
+            if "lod" in low or "turret" in low:
+                pi = parent_of.get(ni)
+                if pi is not None:
+                    parent_cat = _classify_node(nodes[pi].get("name") or "")
+                    if parent_cat not in ("turret_part", "misc"):
+                        cat = parent_cat
+        node_cat.append(cat)
+
     mesh_xforms = 0
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
-        # Collect ALL world matrices for nodes that reference this mesh
-        # (handles instancing — same mesh at multiple positions).
         mesh_idx = gjson["meshes"].index(mesh)
         world_mats: list[tuple[int, np.ndarray]] = []
         for ni, n in enumerate(nodes):
@@ -187,8 +307,12 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[floa
         if not world_mats:
             world_mats = [(-1, np.eye(4))]
 
-        # Duplicate the mesh's geometry for each node transform.
+        # All nodes referencing this mesh may have different categories
+        # (e.g. Turret_lod2Shape is shared by main, secondary, and AA gun
+        # HP nodes). Route each instance independently.
         for ni, world_mat in world_mats:
+            cat = node_cat[ni] if ni >= 0 else "misc"
+            verts_target, idx_target = buckets[cat]
             for prim in mesh["primitives"]:
                 if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
                     continue
@@ -211,9 +335,6 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[floa
                 if extent.max() < 0.2:
                     continue
 
-                is_turret = _is_turret(ni)
-                verts_target = turret_verts if is_turret else hull_verts
-                idx_target = turret_idx if is_turret else hull_idx
                 base_vert = len(verts_target) // 3
                 verts_target.extend(vt.flatten().tolist())
 
@@ -226,8 +347,14 @@ def extract_all_triangles(gltf: dict) -> tuple[list[float], list[int], list[floa
                         if i + 2 < n_verts:
                             idx_target.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
 
-    print(f"[bake] hull:{len(hull_verts)//3}v/{len(hull_idx)//3}t  turret:{len(turret_verts)//3}v/{len(turret_idx)//3}t")
-    return hull_verts, hull_idx, turret_verts, turret_idx
+    # Report
+    parts: list[str] = []
+    for cat in buckets:
+        v, idx = buckets[cat]
+        if len(idx) > 0:
+            parts.append(f"{cat}:{len(v)//3}v/{len(idx)//3}t")
+    print(f"[bake] {len(parts)} groups: {'  '.join(parts)}")
+    return {cat: (v, idx) for cat, (v, idx) in buckets.items() if len(idx) > 0}
 
 
 def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
@@ -668,16 +795,36 @@ def main() -> int:
 
     print(f"[bake] loading {inp.name} ...")
     gltf = parse_glb(inp)
-    hv, hi, tv, ti = extract_all_triangles(gltf)
-    print(f"[bake] raw: hull {len(hv)//3}v/{len(hi)//3}t  turret {len(tv)//3}v/{len(ti)//3}t")
+    buckets = extract_by_category(gltf)
 
-    th = int(args.triangles * 0.7)  # hull budget
-    tt = args.triangles - th         # turret budget
-    if len(hv) and len(hi): hv, hi = decimate(hv, hi, th)
-    if len(tv) and len(ti): tv, ti = decimate(tv, ti, tt)
-    print(f"[bake] baked: hull {len(hv)//3}v/{len(hi)//3}t  turret {len(tv)//3}v/{len(ti)//3}t")
+    # Decimate each category: proportional budget with 200-tri floor.
+    total_raw = sum(len(idx) // 3 for _, idx in buckets.values())
+    budget = max(args.triangles, 6000)
+    parts: list[tuple[str, list[float], list[int]]] = []
 
-    write_glb_dual(out, hv, hi, tv, ti)
+    if total_raw > 0:
+        # Weapon categories get colour labels so the frontend can distinguish them.
+        # Hull categories get their own labels for armour-belt separation.
+        WEAPON_CATS = {"main_battery", "secondary_battery", "aa_mount", "torpedo",
+                       "aircraft", "funnel", "turret_part", "weapon"}
+        for cat, (v, idx) in buckets.items():
+            raw_tris = len(idx) // 3
+            if raw_tris == 0:
+                continue
+            ratio = raw_tris / total_raw
+            tgt = max(int(budget * ratio), 200)
+            # Give weapons a slightly higher budget share so they're never
+            # erased by aggressive decimation of the much-larger hull groups.
+            if cat in WEAPON_CATS and ratio > 0:
+                tgt = max(tgt, int(budget * 0.04))
+            dv, di = decimate(v, idx, tgt)
+            if len(di) > 0:
+                parts.append((cat, dv, di))
+            else:
+                print(f"  [{cat}] decimated to 0 triangles — dropped")
+
+    print(f"[bake] writing {len(parts)} groups to {out.name} ...")
+    write_glb_multimesh(out, parts)
     print(f"[bake] wrote {out} ({out.stat().st_size // 1024} KB)")
     return 0
 

@@ -104,6 +104,8 @@
       "auras": "个防空圈"
     },
     "armor": {
+      "toggle": "切换装甲带覆盖视图",
+      "short": "装甲",
       "noData": "无装甲数据。",
       "legend": "装甲 (mm)",
       "estimated": "估算",

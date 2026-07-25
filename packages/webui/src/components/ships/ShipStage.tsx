@@ -21,6 +21,12 @@ import { useToast } from "@/composables/useToast";
 import type { ShipInfo } from "@/api";
 import "./ShipStage.scss";
 
+/** Armor-zone data fed from GameParams via the parent. */
+export interface ArmorZone {
+  name: string;       /** "citadel", "mainBelt", "deck", "bow", "stern", … */
+  thickness: number;  /** mm — 0 if unknown */
+}
+
 /**
  * Holographic ship viewer — the big interactive 3D stage at the top of the
  * ship detail modal.
@@ -47,6 +53,7 @@ export default defineComponent({
   name: "ShipStage",
   props: {
     ship: { type: Object as () => ShipInfo | null, required: true },
+    armorZones: { type: Array as () => ArmorZone[], default: () => [] },
   },
   // `focusZone` is stashed on the instance from inside setup() and surfaced
   // here via `exposed` so parents can call stageRef.value?.focusZone(...).
@@ -72,6 +79,251 @@ export default defineComponent({
     const uniforms = shallowRef<HoloUniforms | null>(null);
     /** Bounding box of the loaded model (for focus-zone camera placement). */
     const modelBox = shallowRef<THREE.Box3 | null>(null);
+    /** Armor-zone overlay group (visible when showArmor is true). */
+    const armorGroup = shallowRef<THREE.Group | null>(null);
+    const showArmor = ref(false);
+    let gridRef: THREE.GridHelper | null = null;
+
+    // ── Armor overlay ────────────────────────────────────────────────────
+    /** Standardised zone positions relative to the hull bounding box.
+     *  X = bow→stern, Y = keel→mast, Z = port→starboard.
+     *  Values are conservative so boxes sit INSIDE the hull silhouette. */
+    const ARMOR_ZONE_POSITIONS: Record<string, {
+      x: [number, number]; y: [number, number]; z: [number, number];
+    }> = {
+      bow:        { x: [0.00, 0.22], y: [0.00, 0.48], z: [-0.25, 0.25] },
+      bowBelt:    { x: [0.14, 0.28], y: [0.04, 0.36], z: [-0.30, 0.30] },
+      forwardBelt:{ x: [0.26, 0.48], y: [0.06, 0.40], z: [-0.34, 0.34] },
+      citadel:    { x: [0.30, 0.74], y: [0.03, 0.38], z: [-0.14, 0.14] },
+      mainBelt:   { x: [0.24, 0.84], y: [0.06, 0.42], z: [-0.36, 0.36] },
+      aftBelt:    { x: [0.58, 0.80], y: [0.06, 0.40], z: [-0.34, 0.34] },
+      casemate:   { x: [0.28, 0.84], y: [0.40, 0.56], z: [-0.26, 0.26] },
+      deck:       { x: [0.20, 0.80], y: [0.42, 0.48], z: [-0.24, 0.24] },
+      stern:      { x: [0.84, 1.00], y: [0.00, 0.44], z: [-0.25, 0.25] },
+      sternBelt:  { x: [0.74, 0.86], y: [0.04, 0.36], z: [-0.30, 0.30] },
+      torpedoBelt:{ x: [0.26, 0.80], y: [0.00, 0.18], z: [-0.38, 0.38] },
+      superstructure:{ x: [0.30, 0.86], y: [0.46, 0.76], z: [-0.12, 0.12] },
+    };
+
+    function armorColor(mm: number): number {
+      if (mm <= 0)  return 0x4a8a9a;  // unknown — dim cyan
+      if (mm <= 25)  return 0x33aa33;  // green
+      if (mm <= 50)  return 0x88bb22;  // yellow-green
+      if (mm <= 100) return 0xcccc22;  // yellow
+      if (mm <= 200) return 0xcc8811;  // orange
+      if (mm <= 350) return 0xcc3311;  // deep orange
+      return 0xcc1111;                  // red
+    }
+
+    /** Collect per-section hull bounding boxes (bow / mid / stern / deck_house). */
+    function collectHullSections(model: THREE.Group): Map<string, THREE.Box3> {
+      const map = new Map<string, THREE.Box3>();
+      model.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        const n = mesh.name;
+        if (!n.startsWith("hull_") && n !== "deck_house" && n !== "funnel") return;
+        let b = map.get(n);
+        if (!b) { b = new THREE.Box3(); map.set(n, b); }
+        mesh.geometry.computeBoundingBox();
+        const mb = new THREE.Box3().setFromObject(mesh);
+        b.expandByPoint(mb.min).expandByPoint(mb.max);
+      });
+      // Merge into a unified hull box for sections that span the full length.
+      const full = new THREE.Box3();
+      for (const b of map.values()) full.expandByPoint(b.min).expandByPoint(b.max);
+      map.set("full", full);
+      return map;
+    }
+
+    function buildArmorOverlay(
+      hullSectionBoxes: Map<string, THREE.Box3>,
+      zones: ArmorZone[],
+    ): THREE.Group | null {
+      if (!zones.length) return null;
+      const group = new THREE.Group();
+      group.name = "armor-overlay";
+      group.renderOrder = 2;
+
+      const bowBox = hullSectionBoxes.get("hull_bow");
+      const midBox = hullSectionBoxes.get("hull_mid");
+      const sternBox = hullSectionBoxes.get("hull_stern");
+      if (!bowBox || !midBox || !sternBox) return null;
+
+      // The ship model is oriented along Z (bow=+Z, stern=-Z).
+      // Use Z as the length axis, X as beam (width), Y as height.
+      const bowZ = bowBox.max.z;  // bow tip
+      const sternZ = sternBox.min.z; // stern tip
+      // Split points between sections along Z.
+      const b2mSplit = (bowBox.min.z + midBox.max.z) * 0.5;
+      const m2sSplit = (midBox.min.z + sternBox.max.z) * 0.5;
+      const hullZLen = bowZ - sternZ;
+      if (hullZLen <= 0) return null;
+
+      // X / Y extents: envelope of all hull sections.
+      const hullXMin = Math.min(bowBox.min.x, midBox.min.x, sternBox.min.x);
+      const hullXMax = Math.max(bowBox.max.x, midBox.max.x, sternBox.max.x);
+      const hullXLen = hullXMax - hullXMin;
+      const hullXCtr = (hullXMin + hullXMax) * 0.5;
+      const hullYMin = Math.min(bowBox.min.y, midBox.min.y, sternBox.min.y);
+      const hullYMax = Math.max(bowBox.max.y, midBox.max.y, sternBox.max.y);
+      const hullYLen = hullYMax - hullYMin;
+      const hullYCtr = (hullYMin + hullYMax) * 0.5;
+
+      const byName = new Map<string, number>();
+      for (const z of zones) byName.set(z.name, z.thickness);
+
+      // Z ratio: 0→stern, 1→bow.
+      function zRel(zr: [number, number]): [number, number] {
+        return [sternZ + hullZLen * zr[0], sternZ + hullZLen * zr[1]];
+      }
+      // X ratio:  centred around hullXCtr, positive→starboard.
+      function xRel(xr: [number, number]): [number, number] {
+        const half = hullXLen * 0.5;
+        return [hullXCtr + half * xr[0], hullXCtr + half * xr[1]];
+      }
+      // Y ratio:  0→keel, 1→mast (hullYMin is keel).
+      function yRel(yr: [number, number]): [number, number] {
+        return [hullYMin + hullYLen * yr[0], hullYMin + hullYLen * yr[1]];
+      }
+
+      const b2mR = (b2mSplit - sternZ) / hullZLen;
+      const m2sR = (m2sSplit - sternZ) / hullZLen;
+
+      function add(
+        zoneName: string,
+        zr: [number, number], yr: [number, number], xr: [number, number],
+      ) {
+        const [z1, z2] = zRel(zr);
+        const [y1, y2] = yRel(yr);
+        const [x1, x2] = xRel(xr);
+        const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+        if (dx <= 0 || dy <= 0 || dz <= 0) return;
+        const mm = byName.get(zoneName) ?? 0;
+        const color = armorColor(mm);
+        const geo = new THREE.BoxGeometry(dx, dy, dz);
+        const mat = new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide,
+          // Clip to hull shape via stencil.
+          stencilWrite: false,
+          stencilRef: 1,
+          stencilFunc: THREE.EqualStencilFunc,
+        });
+        const box = new THREE.Mesh(geo, mat);
+        box.position.set(x1 + dx / 2, y1 + dy / 2, z1 + dz / 2);
+        box.userData = { zone: zoneName, thickness: mm };
+        group.add(box);
+        const edge = new THREE.EdgesGeometry(geo);
+        const line = new THREE.LineSegments(
+          edge,
+          new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55, depthTest: false }),
+        );
+        line.raycast = () => {};
+        box.add(line);
+      }
+
+      // Stern section (Z: 0 → b2mR)
+      add("stern",     [0.00, b2mR], [0.00, 0.40], [-1.0, 1.0]);
+      add("sternBelt", [0.00, b2mR * 0.85], [0.04, 0.30], [-1.0, 1.0]);
+      // Midsection (Z: b2mR → m2sR)
+      const midLen = m2sR - b2mR;
+      add("citadel",      [b2mR + midLen * 0.12, m2sR - midLen * 0.10], [0.02, 0.34], [-0.25, 0.25]);
+      add("mainBelt",     [b2mR, m2sR], [0.04, 0.38], [-1.0, 1.0]);
+      add("forwardBelt",  [b2mR, b2mR + midLen * 0.35], [0.04, 0.38], [-1.0, 1.0]);
+      add("aftBelt",      [m2sR - midLen * 0.35, m2sR], [0.04, 0.38], [-1.0, 1.0]);
+      add("casemate",     [b2mR, m2sR], [0.36, 0.50], [-0.60, 0.60]);
+      add("deck",         [b2mR, m2sR], [0.38, 0.44], [-0.55, 0.55]);
+      add("torpedoBelt",  [b2mR, m2sR], [0.00, 0.14], [-1.0, 1.0]);
+      // Bow section (Z: m2sR → 1.0)
+      add("bow",     [m2sR, 1.00], [0.00, 0.40], [-1.0, 1.0]);
+      add("bowBelt", [m2sR + (1.0 - m2sR) * 0.15, 1.00], [0.04, 0.30], [-1.0, 1.0]);
+      // Superstructure
+      add("superstructure", [b2mR + 0.02, m2sR - 0.02], [0.44, 0.72], [-0.20, 0.20]);
+
+      return group;
+    }
+
+    function disposeArmorOverlay() {
+      const g = armorGroup.value;
+      if (!g) return;
+      const sc = scene.value;
+      if (sc) sc.remove(g);
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+        else if (mat) mat.dispose();
+      });
+      armorGroup.value = null;
+    }
+
+    function syncArmorOverlay() {
+      const sc = scene.value;
+      const model = modelGroup.value;
+      disposeArmorOverlay();
+      if (!showArmor.value || !sc || !model) {
+        setShipUniformMode(false);
+        return;
+      }
+      setShipUniformMode(true);
+      const sections = collectHullSections(model);
+      // Position grid at estimated waterline (~22% up from keel).
+      const midBoxWL = sections.get("hull_mid");
+      if (midBoxWL && gridRef) {
+        const midH = midBoxWL.max.y - midBoxWL.min.y;
+        gridRef.position.y = midBoxWL.min.y + midH * 0.22;
+      }
+      const g = buildArmorOverlay(sections, props.armorZones ?? []);
+      if (g) {
+        sc.add(g);
+        armorGroup.value = g;
+      }
+    }
+
+    /** On armour mode: dim all ship meshes to near-black so the
+     *  coloured armour boxes are the only visible hue. */
+    const _savedMaterials = new WeakMap<THREE.Mesh, THREE.Material>();
+    const _uniformMat = new THREE.MeshBasicMaterial({
+      color: 0x0a141e,
+      transparent: true,
+      opacity: 0.40,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    function setShipUniformMode(on: boolean) {
+      const model = modelGroup.value;
+      if (!model) return;
+      model.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        // Don't touch armor overlay boxes.
+        if (mesh.parent?.name === "armor-overlay" || mesh.userData?.zone) return;
+        if (on) {
+          if (!_savedMaterials.has(mesh)) _savedMaterials.set(mesh, mesh.material as THREE.Material);
+          mesh.material = _uniformMat;
+          mesh.renderOrder = -1; // behind armor overlay
+        } else {
+          const saved = _savedMaterials.get(mesh);
+          if (saved) { mesh.material = saved; _savedMaterials.delete(mesh); }
+          // Restore original renderOrder
+          mesh.renderOrder = WEAPON_NAMES.has(mesh.name) ? 1 : 0;
+        }
+      });
+    }
+
+    function toggleArmor() {
+      showArmor.value = !showArmor.value;
+      syncArmorOverlay();
+    }
+
+    // Auto-rebuild when armor data arrives while toggle is on, or when the
+    // model finishes loading.
+    watch(
+      () => [props.armorZones?.length ?? 0, modelGroup.value != null] as const,
+      () => { if (showArmor.value) syncArmorOverlay(); },
+    );
 
     let rafId = 0;
     let resizeObs: ResizeObserver | null = null;
@@ -111,8 +363,9 @@ export default defineComponent({
       // re-positions precisely once the model bounds are known.
       cam.position.set(230, 215, 400);
 
-      const rnd = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      const rnd = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: true });
       rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      rnd.autoClearStencil = false;
       rnd.setSize(w, h);
       el.appendChild(rnd.domElement);
 
@@ -122,12 +375,13 @@ export default defineComponent({
       key.position.set(120, 200, 120);
       sc.add(key);
 
-      // A faint ground grid for spatial reference.
+      // A faint ground grid at the ship's waterline (placed after model loads).
       const grid = new THREE.GridHelper(1200, 40, 0x1a3a55, 0x0e1f30);
       (grid.material as THREE.Material).transparent = true;
       (grid.material as THREE.Material).opacity = 0.4;
-      (grid as any).position.y = -1;
+      (grid as any).position.y = -25; // default below ship; fixed after model loads
       sc.add(grid);
+      gridRef = grid;
 
       const ctrl = new OrbitControls(cam, rnd.domElement);
       ctrl.enableDamping = true;
@@ -154,6 +408,9 @@ export default defineComponent({
         const dt = clock.getDelta();
         for (const u of _allHoloUniforms) tickHoloUniforms(u, dt);
         ctrl.update();
+        // Clear stencil so hull writes fresh mask for armour clipping.
+        const gl = rnd.getContext();
+        gl.clear(gl.STENCIL_BUFFER_BIT);
         rnd.render(sc, cam);
         rafId = requestAnimationFrame(tick);
       };
@@ -214,33 +471,98 @@ export default defineComponent({
         });
         modelGroup.value = model;
 
-        // Apply holographic shader. Hull is dim cyan; turret is bright amber-gold
-        // so weapon mounts are visually distinct at all times.
-        const holoHull = makeHoloMaterial();
-        const holoTurret = makeHoloMaterial();
-        holoTurret.uniforms.baseColor.value.set(0.65, 0.50, 0.08); // warm gold
-        holoTurret.uniforms.fresnelColor.value.set(1.0, 0.75, 0.15);
+        // ── Per-mesh-group holographic materials with deterministic colour ──
+        // Each mesh is named after its semantic category and gets a distinct hue
+        // drawn from pre-defined pools so the same part type is always the same
+        // colour across every ship, but different types are clearly separable.
+        const WEAPON_NAMES = new Set([
+          "main_battery", "secondary_battery", "aa_mount", "torpedo",
+          "weapon", "turret_part", "aircraft",
+        ]);
+
+        /** Pre-defined base hues (0-360) for known category names.  Each
+         *  category name always maps to the same hue — no hash drift. */
+        const PRESET_HUES: Record<string, number> = {
+          // Hull armour belts — cool spectrum (185°–230°, visible separation)
+          hull_bow:    185,
+          hull_mid:    205,
+          hull_stern:  170,
+          hull_body:   195,
+          deck_house:  220,
+          // Superstructure — green-cyan, distinct from blue hull body
+          superstructure: 148,
+          funnel:      240,
+          // Weapons — warm spectrum with 30–40° gaps
+          main_battery:      22,   // orange
+          secondary_battery: 55,   // amber
+          aa_mount:          6,    // red
+          torpedo:          172,   // teal
+          aircraft:         280,   // purple
+          weapon:            36,   // gold (generic)
+          turret_part:       44,   // darker gold
+          misc:             200,
+        };
+
+        function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color; edge: number } {
+          let hue: number, sat: number, lit: number;
+          if (PRESET_HUES[name] != null) {
+            hue = PRESET_HUES[name];
+          } else {
+            let h = 0;
+            for (let i = 0; i < name.length; i++) {
+              h = ((h << 5) - h) + name.charCodeAt(i);
+              h |= 0;
+            }
+            hue = (h >>> 0) % 360;
+          }
+          if (WEAPON_NAMES.has(name)) {
+            sat = 0.72;
+            lit = 0.35;
+          } else if (name.startsWith("hull_") || name === "deck_house" || name === "superstructure") {
+            sat = 0.48;
+            lit = 0.30;
+          } else if (name === "funnel") {
+            sat = 0.15; lit = 0.22;
+          } else {
+            sat = 0.50; lit = 0.32;
+          }
+          const edgeHue = (hue + 18) % 360;
+          return {
+            base: new THREE.Color().setHSL(hue / 360, sat, lit),
+            fresnel: new THREE.Color().setHSL(hue / 360, sat * 0.85, Math.min(lit * 2.0, 0.85)),
+            edge: edgeHue,
+          };
+        }
+
+        const materialCache = new Map<string, THREE.ShaderMaterial>();
 
         const meshes: THREE.Mesh[] = [];
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
+
         for (const mesh of meshes) {
-          const isTurret = mesh.name === "turret";
-          if (isTurret) {
-            mesh.material = holoTurret;
-            console.log("[loadModel] assigned turret material to:", mesh.name, "color:", holoTurret.uniforms.baseColor.value.getHexString());
-          } else {
-            mesh.material = holoHull;
+          const name = mesh.name || "misc";
+          let mat = materialCache.get(name);
+          if (!mat) {
+            mat = makeHoloMaterial();
+            const c = colorForCategory(name);
+            mat.uniforms.baseColor.value.copy(c.base);
+            mat.uniforms.fresnelColor.value.copy(c.fresnel);
+            materialCache.set(name, mat);
           }
-          // Faint structural-edge overlay — only shows edges where adjacent
-          // faces meet at >20° (hides coplanar hull/deck triangles).
+          mesh.material = mat;
+          mesh.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
+
+          // Faint structural-edge overlay — matches the part's hue.
+          const c = colorForCategory(name);
+          const edgeHex = new THREE.Color().setHSL(c.edge / 360, 0.5, 0.55).getHex();
           const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 8);
           const line = new THREE.LineSegments(
             edgeGeo,
             new THREE.LineBasicMaterial({
-              color: 0x2a8fb5,
+              color: edgeHex,
               transparent: true,
               opacity: 0.18,
               depthWrite: false,
@@ -278,6 +600,7 @@ export default defineComponent({
       focusTween = null;
       resizeObs?.disconnect();
       resizeObs = null;
+      disposeArmorOverlay();
       const c = controls.value;
       const r = renderer.value;
       const sc = scene.value;
@@ -299,6 +622,9 @@ export default defineComponent({
       modelGroup.value = null;
       modelBox.value = null;
       uniforms.value = null;
+      armorGroup.value = null;
+      showArmor.value = false;
+      setShipUniformMode(false);
     }
 
     onMounted(() => {
@@ -544,6 +870,14 @@ export default defineComponent({
             <span class="ship-stage__hint">
               {viewMode.value === "3d" ? t("ships.detail.stage.hint3d") : ""}
             </span>
+            <label
+              class={["ship-stage__armor-toggle", showArmor.value ? "ship-stage__armor-toggle--on" : ""]}
+              onClick={toggleArmor}
+              title={t("ships.detail.armor.toggle")}
+            >
+              <span class="ship-stage__armor-icon">&#x1f6e1;</span>
+              <span class="ship-stage__armor-label">{t("ships.detail.armor.short")}</span>
+            </label>
             <SSegmented
               modelValue={viewMode.value}
               onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}
