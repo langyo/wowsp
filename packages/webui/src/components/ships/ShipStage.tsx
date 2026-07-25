@@ -83,6 +83,7 @@ export default defineComponent({
     const armorGroup = shallowRef<THREE.Group | null>(null);
     const showArmor = ref(false);
     let gridRef: THREE.GridHelper | null = null;
+    let _waterlinePlane: THREE.Mesh | null = null;
 
     // ── Armor overlay ────────────────────────────────────────────────────
     /** Standardised zone positions relative to the hull bounding box.
@@ -204,10 +205,6 @@ export default defineComponent({
         const geo = new THREE.BoxGeometry(dx, dy, dz);
         const mat = new THREE.MeshBasicMaterial({
           color, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide,
-          // Clip to hull shape via stencil.
-          stencilWrite: false,
-          stencilRef: 1,
-          stencilFunc: THREE.EqualStencilFunc,
         });
         const box = new THREE.Mesh(geo, mat);
         box.position.set(x1 + dx / 2, y1 + dy / 2, z1 + dz / 2);
@@ -225,20 +222,32 @@ export default defineComponent({
       // Stern section (Z: 0 → b2mR)
       add("stern",     [0.00, b2mR], [0.00, 0.40], [-1.0, 1.0]);
       add("sternBelt", [0.00, b2mR * 0.85], [0.04, 0.30], [-1.0, 1.0]);
-      // Midsection (Z: b2mR → m2sR)
-      const midLen = m2sR - b2mR;
-      add("citadel",      [b2mR + midLen * 0.12, m2sR - midLen * 0.10], [0.02, 0.34], [-0.25, 0.25]);
-      add("mainBelt",     [b2mR, m2sR], [0.04, 0.38], [-1.0, 1.0]);
-      add("forwardBelt",  [b2mR, b2mR + midLen * 0.35], [0.04, 0.38], [-1.0, 1.0]);
-      add("aftBelt",      [m2sR - midLen * 0.35, m2sR], [0.04, 0.38], [-1.0, 1.0]);
-      add("casemate",     [b2mR, m2sR], [0.36, 0.50], [-0.60, 0.60]);
-      add("deck",         [b2mR, m2sR], [0.38, 0.44], [-0.55, 0.55]);
-      add("torpedoBelt",  [b2mR, m2sR], [0.00, 0.14], [-1.0, 1.0]);
-      // Bow section (Z: m2sR → 1.0)
-      add("bow",     [m2sR, 1.00], [0.00, 0.40], [-1.0, 1.0]);
-      add("bowBelt", [m2sR + (1.0 - m2sR) * 0.15, 1.00], [0.04, 0.30], [-1.0, 1.0]);
+      // Belt boxes laid out end-to-end along Z with small gaps.
+      const GAP = 0.4;
+      const m0 = b2mR, m1 = m2sR, mW = m1 - m0;
+      const THIRD = mW / 3;
+      function zAdd(zone: string, z0: number, z1: number, yr: [number, number], xr: [number, number]) {
+        add(zone, [Math.max(z0, m0), Math.min(z1, m1)], yr, xr);
+      }
+
+      // Stern
+      add("stern",     [0.00, b2mR],       [0.00, 0.40], [-1.0, 1.0]);
+      add("sternBelt", [0.00, b2mR - GAP], [0.04, 0.30], [-1.0, 1.0]);
+      // Midsection — three non-overlapping belt segments
+      add("forwardBelt", [m0, m0 + THIRD - GAP],    [0.04, 0.38], [-1.0, 1.0]);
+      add("mainBelt",    [m0 + THIRD, m1 - THIRD],  [0.04, 0.38], [-1.0, 1.0]);
+      add("aftBelt",     [m1 - THIRD + GAP, m1],    [0.04, 0.38], [-1.0, 1.0]);
+      // Interior / non-belt layers
+      add("citadel",     [m0 + THIRD * 0.5, m1 - THIRD * 0.5], [0.02, 0.34], [-0.25, 0.25]);
+      add("casemate",    [m0, m1],      [0.36, 0.50], [-0.60, 0.60]);
+      add("deck",        [m0, m1],      [0.38, 0.44], [-0.55, 0.55]);
+      add("torpedoBelt", [m0, m1],      [0.00, 0.14], [-1.0, 1.0]);
+      // Bow
+      const bLen = 1.0 - m1;
+      add("bow",     [m1, 1.00],       [0.00, 0.40], [-1.0, 1.0]);
+      add("bowBelt", [m1 + bLen * 0.15, 1.00], [0.04, 0.30], [-1.0, 1.0]);
       // Superstructure
-      add("superstructure", [b2mR + 0.02, m2sR - 0.02], [0.44, 0.72], [-0.20, 0.20]);
+      add("superstructure", [m0 + 0.02, m1 - 0.02], [0.44, 0.78], [-0.20, 0.20]);
 
       return group;
     }
@@ -272,7 +281,21 @@ export default defineComponent({
       const midBoxWL = sections.get("hull_mid");
       if (midBoxWL && gridRef) {
         const midH = midBoxWL.max.y - midBoxWL.min.y;
-        gridRef.position.y = midBoxWL.min.y + midH * 0.22;
+        const wlY = midBoxWL.min.y + midH * 0.22;
+        gridRef.position.y = wlY;
+        // Add a thin opaque waterline plane for emphasis.
+        if (!_waterlinePlane) {
+          const planeGeo = new THREE.PlaneGeometry(600, 600);
+          const planeMat = new THREE.MeshBasicMaterial({
+            color: 0x0a3a5a, side: THREE.DoubleSide,
+            transparent: true, opacity: 0.30, depthWrite: false,
+          });
+          _waterlinePlane = new THREE.Mesh(planeGeo, planeMat);
+          _waterlinePlane.rotation.x = -Math.PI / 2;
+          _waterlinePlane.renderOrder = -2;
+          sc?.add(_waterlinePlane);
+        }
+        _waterlinePlane.position.y = wlY;
       }
       const g = buildArmorOverlay(sections, props.armorZones ?? []);
       if (g) {
@@ -363,9 +386,8 @@ export default defineComponent({
       // re-positions precisely once the model bounds are known.
       cam.position.set(230, 215, 400);
 
-      const rnd = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: true });
+      const rnd = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      rnd.autoClearStencil = false;
       rnd.setSize(w, h);
       el.appendChild(rnd.domElement);
 
@@ -408,9 +430,6 @@ export default defineComponent({
         const dt = clock.getDelta();
         for (const u of _allHoloUniforms) tickHoloUniforms(u, dt);
         ctrl.update();
-        // Clear stencil so hull writes fresh mask for armour clipping.
-        const gl = rnd.getContext();
-        gl.clear(gl.STENCIL_BUFFER_BIT);
         rnd.render(sc, cam);
         rafId = requestAnimationFrame(tick);
       };
@@ -625,6 +644,11 @@ export default defineComponent({
       armorGroup.value = null;
       showArmor.value = false;
       setShipUniformMode(false);
+      if (_waterlinePlane) {
+        _waterlinePlane.geometry.dispose();
+        (_waterlinePlane.material as THREE.Material).dispose();
+        _waterlinePlane = null;
+      }
     }
 
     onMounted(() => {
