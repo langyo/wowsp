@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import * as THREE from "three";
 
 import { useThreeScene } from "./useThreeScene";
@@ -8,7 +8,7 @@ import {
   loadGlbModel,
   type ShipModelSpec,
 } from "./modelLoader";
-import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "./holoShader";
+import { makeHoloMaterial } from "./holoShader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
@@ -48,16 +48,7 @@ export default defineComponent({
   },
   setup(props) {
     const container = ref<HTMLElement | null>(null);
-    // Uniforms objects for the map's holographic materials (islands + terrain
-    // contour). Each material has its own uniforms; we tick all of them each
-    // frame so the scanline sweep stays in sync across both shaders.
-    const holoUniformsList: HoloUniforms[] = [];
-    const { ready, api } = useThreeScene(container, (dt) => {
-      for (const u of holoUniformsList) tickHoloUniforms(u, dt);
-      // Keep floating label positions in sync even when the camera is
-      // being panned/zoomed (Orbit-like controls aren't wired here yet,
-      // but the projection is cheap enough to run every frame for when
-      // they are).
+    const { ready, api } = useThreeScene(container, (_dt) => {
       updateLabelPositions();
     });
 
@@ -84,6 +75,7 @@ export default defineComponent({
       shipName: string;
       tier: number | null;
       type: string | null;
+      hp: number | null;
       /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
       x: number;
       y: number;
@@ -100,7 +92,7 @@ export default defineComponent({
     let markerEpoch = 0;
 
     function clearActors() {
-      markerEpoch++; // invalidate any in-flight marker loads
+      markerEpoch++;
       const scene = api.value?.scene;
       if (!scene) return;
       for (const l of trajectoryLines) {
@@ -110,20 +102,7 @@ export default defineComponent({
       }
       for (const m of shipMarkers) {
         scene.remove(m);
-        // Markers built by buildShipMarker share geometry with the global GLB
-        // cache (identical ships reuse one buffer) — only dispose materials,
-        // not geometry. Cone fallbacks own their geometry but disposeMarker
-        // only touches materials, so dispose cones' geometry explicitly.
-        if (m.userData.isCone) {
-          m.traverse((o) => {
-            if (o instanceof THREE.Mesh) {
-              o.geometry.dispose();
-              (o.material as THREE.Material).dispose();
-            }
-          });
-        } else {
-          disposeMarker(m);
-        }
+        disposeMarker(m);
       }
       trajectoryLines = [];
       shipMarkers = [];
@@ -140,7 +119,6 @@ export default defineComponent({
           }
         });
         mapModel = null;
-        holoUniformsList.length = 0;
       }
     }
 
@@ -174,10 +152,6 @@ export default defineComponent({
         // time/scanOffset uniforms so one onFrame tick animates everything.
         const islandMat = makeHoloMaterial();
         const contourMat = makeHoloContourMaterial();
-        holoUniformsList.push(
-          islandMat.uniforms as unknown as HoloUniforms,
-          contourMat.uniforms as unknown as HoloUniforms,
-        );
         const wireMat = new THREE.MeshBasicMaterial({
           color: 0x2a8fb5,
           wireframe: true,
@@ -330,47 +304,30 @@ export default defineComponent({
         scene.add(line);
         trajectoryLines.push(line);
 
-        // Marker: start as a cone, optionally upgraded to a ship model.
+        // Marker: create an empty group (invisible until the ship model
+        // loads). No cone fallback — the map only shows real ship tokens.
         const marker = new THREE.Group();
-        const coneGeom = new THREE.ConeGeometry(14, 36, 8);
-        const coneMat = new THREE.MeshBasicMaterial({ color });
-        const cone = new THREE.Mesh(coneGeom, coneMat);
-        cone.rotation.x = Math.PI / 2; // lie flat, point +Z at yaw 0
-        marker.add(cone);
         marker.userData.entityId = traj.entityId;
         marker.userData.role = role;
-        marker.userData.isCone = true;
+        marker.userData.modelLoaded = false;
         marker.userData.deathTime = traj.deathTime ?? null;
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
 
-        // Async: swap the cone for the real/fallback ship model.
         const modelUrl = resolveShipModelForEntry(shipInfo, encSpecs);
         if (modelUrl) {
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
-              if (epoch !== markerEpoch || !api.value?.scene) return; // stale
-              const pos = marker.position.clone();
-              const yaw = marker.rotation.y;
-              const visible = marker.visible;
-              for (const child of [...marker.children]) {
-                marker.remove(child);
-                child.traverse((o) => {
-                  if (o instanceof THREE.Mesh) {
-                    o.geometry.dispose();
-                    (o.material as THREE.Material).dispose();
-                  }
-                });
-              }
+              if (epoch !== markerEpoch || !api.value?.scene) return;
               marker.add(shipModel);
-              marker.position.copy(pos);
-              marker.rotation.y = yaw;
-              marker.visible = visible;
-              marker.userData.isCone = false;
+              marker.userData.modelLoaded = true;
+              marker.visible = true;
+              initMarkerPosition(marker, traj, current.value);
+              updateLabelPositions();
             })
             .catch(() => {
-              /* cone stays — model load failed (corrupt/missing GLB) */
+              /* marker stays invisible — model load failed */
             });
         }
 
@@ -381,6 +338,13 @@ export default defineComponent({
         const shipName = shipInfo
           ? encStore.shipDisplayName(shipInfo)
           : (rosterEntry?.shipName ?? "?");
+        const dp = shipInfo?.defaultProfile as
+          | Record<string, Record<string, unknown>>
+          | undefined;
+        const hp =
+          dp?.hull?.health != null && typeof dp.hull.health === "number"
+            ? dp.hull.health
+            : null;
         newLabels.push({
           entityId: traj.entityId,
           role,
@@ -388,6 +352,7 @@ export default defineComponent({
           shipName,
           tier: shipInfo?.tier ?? null,
           type: shipInfo?.type ?? null,
+          hp,
           x: 0, y: 0,
           visible: false,
           dead: false,
@@ -396,10 +361,24 @@ export default defineComponent({
       shipLabels.value = newLabels;
     }
 
+    /** Set a freshly-loaded marker to the correct world position at the current
+     *  playback time so it snaps to the right spot immediately. */
+    function initMarkerPosition(
+      marker: THREE.Group,
+      traj: EntityTrajectory,
+      t: number,
+    ) {
+      const s = sampleAt(traj, t);
+      if (s) {
+        marker.position.set(s.x, 0.5, s.z);
+        marker.rotation.y = s.yaw;
+      }
+    }
+
     /** Position + orient each ship marker at the current playback time.
-     *  Ships that have been destroyed (time ≥ deathTime) are frozen at their
-     *  last known position and their materials desaturated to a faint grey
-     *  tint that still hints at the original team colour. */
+     *  Ships whose model hasn't loaded yet are skipped; ships that have been
+     *  destroyed (time ≥ deathTime) are frozen at their last position and
+     *  their materials desaturated to a faint grey tint. */
     function updateMarkersAt(t: number) {
       const labels = shipLabels.value;
       for (let i = 0; i < shipMarkers.length; i++) {
@@ -423,6 +402,7 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
+        if (!marker.userData.modelLoaded) continue;
         marker.visible = true;
         marker.position.set(s.x, 0.5, s.z);
         marker.rotation.y = s.yaw;
@@ -437,11 +417,16 @@ export default defineComponent({
           const deadFresnel = new THREE.Color(fresnelColor).lerp(new THREE.Color(0x666666), 0.65);
           marker.traverse((o) => {
             const m = o as THREE.Mesh;
-            if (m.material && (m.material as any).uniforms) {
-              const u = (m.material as any).uniforms;
-              if (u.baseColor) u.baseColor.value.set(deadBase);
-              if (u.fresnelColor) u.fresnelColor.value.set(deadFresnel);
-              (m.material as THREE.Material).opacity = 0.35;
+            const mat = m.material as THREE.ShaderMaterial | null;
+            if (mat?.uniforms) {
+              const u = mat.uniforms;
+              if (u.baseColor) {
+                (u.baseColor.value as THREE.Color).set(deadBase);
+              }
+              if (u.fresnelColor) {
+                (u.fresnelColor.value as THREE.Color).set(deadFresnel);
+              }
+              mat.opacity = 0.35;
             }
           });
         }
@@ -638,6 +623,9 @@ export default defineComponent({
                 ) : null}
                 {lbl.shipName}
               </span>
+              {lbl.hp != null ? (
+                <span class="holo-label__hp">HP: {lbl.hp.toLocaleString()}</span>
+              ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
             </div>
           ))}

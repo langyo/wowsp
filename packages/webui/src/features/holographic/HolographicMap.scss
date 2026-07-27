@@ -195,4 +195,11 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+
+  &__hp {
+    color: rgb(var(--color-success));
+    font-family: var(--font-mono);
+    font-size: 0.7em;
+    font-weight: 600;
+  }
 }
