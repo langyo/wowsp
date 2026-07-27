@@ -324,7 +324,7 @@ export default defineComponent({
         // Marker: place a small dot immediately so there's always a visual
         // token even before the ship model loads asynchronously.
         const marker = new THREE.Group();
-        const dotGeom = new THREE.SphereGeometry(10, 6, 6);
+        const dotGeom = new THREE.SphereGeometry(12, 16, 8);
         const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 });
         const dot = new THREE.Mesh(dotGeom, dotMat);
         marker.add(dot);
@@ -365,7 +365,14 @@ export default defineComponent({
         }
 
         // Floating label: player name + ship info for the overlay.
-        const rosterEntry = props.vehicles.find((v) => v.id === traj.kind?.vehicleId);
+        // Try exact roster match by vehicleId first, then fall back to
+        // entity-ID spawn-order heuristic (team A spawns before team B).
+        const rosterEntry =
+          props.vehicles.find((v) => v.id === traj.kind?.vehicleId) ??
+          props.vehicles.find((_, i) => {
+            const idx = shipEntityIds.indexOf(traj.entityId);
+            return idx >= 0 && i === idx;
+          });
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
         const encStore = useEncyclopediaStore();
         const shipName = shipInfo
