@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, Transition } from "vue";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";

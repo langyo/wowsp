@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";

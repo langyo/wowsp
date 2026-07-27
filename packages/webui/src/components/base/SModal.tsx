@@ -3,6 +3,8 @@ import {
   defineComponent,
   onBeforeUnmount,
   ref,
+  Teleport,
+  Transition,
   watch,
   type PropType,
 } from "vue";
