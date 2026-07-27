@@ -1,4 +1,4 @@
-import { defineComponent, ref, Transition } from "vue";
+import { defineComponent, ref } from "vue";
 
 import StatsCard from "@/components/stats/StatsCard";
 import SButton from "@/components/base/SButton";

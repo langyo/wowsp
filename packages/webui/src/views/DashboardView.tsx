@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
