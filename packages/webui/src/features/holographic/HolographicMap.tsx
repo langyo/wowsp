@@ -103,7 +103,16 @@ export default defineComponent({
       }
       for (const m of shipMarkers) {
         scene.remove(m);
-        disposeMarker(m);
+        if (m.userData.isDot) {
+          m.traverse((o) => {
+            if (o instanceof THREE.Mesh) {
+              o.geometry.dispose();
+              (o.material as THREE.Material).dispose();
+            }
+          });
+        } else {
+          disposeMarker(m);
+        }
       }
       trajectoryLines = [];
       shipMarkers = [];
@@ -305,12 +314,17 @@ export default defineComponent({
         scene.add(line);
         trajectoryLines.push(line);
 
-        // Marker: create an empty group (invisible until the ship model
-        // loads). No cone fallback — the map only shows real ship tokens.
+        // Marker: place a small dot immediately so there's always a visual
+        // token even before the ship model loads asynchronously.
         const marker = new THREE.Group();
+        const dotGeom = new THREE.SphereGeometry(10, 6, 6);
+        const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 });
+        const dot = new THREE.Mesh(dotGeom, dotMat);
+        marker.add(dot);
         marker.userData.entityId = traj.entityId;
         marker.userData.role = role;
         marker.userData.modelLoaded = false;
+        marker.userData.isDot = true;
         marker.userData.deathTime = traj.deathTime ?? null;
         marker.visible = false;
         scene.add(marker);
@@ -321,14 +335,25 @@ export default defineComponent({
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
+              // Remove the dot and replace with the real model.
+              for (const child of [...marker.children]) {
+                marker.remove(child);
+                child.traverse((o) => {
+                  if (o instanceof THREE.Mesh) {
+                    o.geometry.dispose();
+                    (o.material as THREE.Material).dispose();
+                  }
+                });
+              }
               marker.add(shipModel);
               marker.userData.modelLoaded = true;
+              marker.userData.isDot = false;
               marker.visible = true;
               initMarkerPosition(marker, traj, current.value);
               updateLabelPositions();
             })
-            .catch(() => {
-              /* marker stays invisible — model load failed */
+            .catch((e) => {
+              console.warn(`[HolographicMap] failed to load marker model for entity ${traj.entityId}:`, e);
             });
         }
 
@@ -403,7 +428,11 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        if (!marker.userData.modelLoaded) continue;
+        // Show the dot marker even before the ship model loads; hide only
+        // when model is missing entirely (not dot, not loaded).
+        const hasModel = marker.userData.modelLoaded as boolean;
+        const hasDot = marker.userData.isDot as boolean;
+        if (!hasModel && !hasDot) continue;
         marker.visible = true;
         marker.position.set(s.x, 0.5, s.z);
         marker.rotation.y = s.yaw;
@@ -418,15 +447,19 @@ export default defineComponent({
           const deadFresnel = new THREE.Color(fresnelColor).lerp(new THREE.Color(0x666666), 0.65);
           marker.traverse((o) => {
             const m = o as THREE.Mesh;
-            const mat = m.material as THREE.ShaderMaterial | null;
-            if (mat?.uniforms) {
-              const u = mat.uniforms;
+            const mat = m.material as THREE.ShaderMaterial | THREE.MeshBasicMaterial | null;
+            if (!mat) return;
+            if ((mat as THREE.ShaderMaterial).uniforms) {
+              const u = (mat as THREE.ShaderMaterial).uniforms;
               if (u.baseColor) {
                 (u.baseColor.value as THREE.Color).set(deadBase);
               }
               if (u.fresnelColor) {
                 (u.fresnelColor.value as THREE.Color).set(deadFresnel);
               }
+              mat.opacity = 0.35;
+            } else if (mat instanceof THREE.MeshBasicMaterial) {
+              mat.color.set(0x444444);
               mat.opacity = 0.35;
             }
           });
