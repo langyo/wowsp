@@ -273,7 +273,7 @@ export default defineComponent({
           </div>
         </aside>
 
-        <section ref={mainRef} class="replay-view__main">
+        <section class="replay-view__main">
           {parser.current.value ? (
             <div class="replay-view__content">
               {parser.error.value ? (
