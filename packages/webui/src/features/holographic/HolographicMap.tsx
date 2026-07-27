@@ -222,15 +222,22 @@ export default defineComponent({
     }
 
     function fitCamera(b: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+      const ctrl = api.value?.controls;
       const cam = api.value?.camera;
-      if (!cam) return;
+      if (!ctrl || !cam) return;
       const cx = (b.minX + b.maxX) / 2;
       const cz = (b.minZ + b.maxZ) / 2;
       const w = b.maxX - b.minX;
       const d = b.maxZ - b.minZ;
-      const span = Math.max(w, d, 200) * 0.7; // padding + min size
+      const span = Math.max(w, d, 200);
+      const diagonal = Math.sqrt(w * w + d * d);
+      ctrl.target.set(cx, 0, cz);
+      ctrl.minDistance = span * 0.25;   // closest: see ships clearly
+      ctrl.maxDistance = diagonal * 1.5; // farthest: entire map at ~80% viewport
+      ctrl.maxPolarAngle = Math.PI / 2.1;
       cam.position.set(cx, span * 1.4, cz + span * 1.0);
       cam.lookAt(cx, 0, cz);
+      ctrl.update();
     }
 
     /** Map each ship trajectory to its roster entry (for team role + ship

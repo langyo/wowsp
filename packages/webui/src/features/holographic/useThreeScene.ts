@@ -10,11 +10,13 @@
  */
 import { onBeforeUnmount, onMounted, ref, shallowRef, type Ref } from "vue";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export interface ThreeScene {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
+  controls: OrbitControls;
 }
 
 export function useThreeScene(
@@ -41,24 +43,39 @@ export function useThreeScene(
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    // updateStyle=true (3rd arg) makes setSize write CSS width/height on the
-    // canvas, so the element matches its container instead of leaving the
-    // browser to resolve an unset inline size (which on 2× DPI lands at
-    // container × dpr and overflows the flex chain).
     renderer.setSize(width, height, true);
     el.appendChild(renderer.domElement);
 
-    // Holographic grid + a faint sea plane.
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0, 0);
+    controls.minPolarAngle = 0.1;           // nearly top-down
+    controls.maxPolarAngle = Math.PI / 2.1; // ~85°, prevent going below horizon
+    controls.minDistance = 200;
+    controls.maxDistance = 6000;
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.PAN,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
+    controls.update();
+
     const grid = new THREE.GridHelper(4000, 80, 0x00aaff, 0x004466);
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.35;
     scene.add(grid);
 
-    api.value = { scene, camera, renderer };
+    api.value = { scene, camera, renderer, controls };
     ready.value = true;
 
     const clock = new THREE.Clock();
     const tick = () => {
+      controls.update();
       if (onFrame) onFrame(clock.getDelta());
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(tick);
@@ -81,6 +98,7 @@ export function useThreeScene(
     resizeObs?.disconnect();
     const a = api.value;
     if (a) {
+      a.controls.dispose();
       a.renderer.dispose();
       a.renderer.domElement.remove();
     }
