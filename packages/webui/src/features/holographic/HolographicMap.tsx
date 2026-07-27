@@ -16,6 +16,7 @@ import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { t } from "@/i18n";
 import "./HolographicMap.scss";
 
 /**
