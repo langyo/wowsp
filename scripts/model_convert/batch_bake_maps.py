@@ -50,32 +50,46 @@ def find_game_path() -> str | None:
 
 
 def find_wowsunpack() -> Path | None:
+    # Prefer the vendored (locally-built) wowsunpack; fall back to global.
+    repo_wowsunpack = (
+        REPO_ROOT / "target" / "release" / "wowsunpack.exe"
+    )
+    if repo_wowsunpack.exists():
+        return repo_wowsunpack
     sys.path.insert(0, str(SCRIPT_DIR))
     from _common import find_wowsunpack as _fwu
-
     return _fwu()
 
 
-def list_spaces(game: str) -> list[str]:
-    """Enumerate space IDs from <game>/res/spaces/ (only directories that
-    contain a .geometry or terrain.bin — i.e. real maps, not meta-folders)."""
-    spaces_dir = Path(game) / "res" / "spaces"
-    if not spaces_dir.is_dir():
-        print(
-            f"error: spaces dir not found at {spaces_dir}",
-            file=sys.stderr,
+def list_spaces(game: str, wowsunpack: Path) -> list[str]:
+    """Enumerate space IDs via wowsunpack metadata output.
+    
+    Runs `wowsunpack metadata` to dump every file path in the game assets, then
+    extracts unique `/spaces/<id>/...` directory prefixes. This covers both
+    battle maps (e.g. `17_NA_fault_line`) and docks/scenarios."""
+    import tempfile
+    meta_path = Path(tempfile.mktemp(suffix=".txt"))
+    try:
+        result = subprocess.run(
+            [str(wowsunpack), "--game-dir", game, "metadata", str(meta_path)],
+            capture_output=True, text=True, timeout=120,
         )
-        sys.exit(1)
-    ids: list[str] = []
-    for entry in sorted(spaces_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-        # A space is real if it has a models.geometry file or terrain.bin.
-        geo = entry / "models.geometry"
-        terrain = entry / "terrain.bin"
-        if geo.exists() or terrain.exists():
-            ids.append(entry.name)
-    return ids
+        if result.returncode != 0:
+            print(f"error: wowsunpack metadata: {result.stderr}", file=sys.stderr)
+            return []
+        ids: dict[str, int] = {}  # space_id → file count
+        with meta_path.open(encoding="utf-8", errors="replace") as f:
+            import re
+            for line in f:
+                m = re.search(r'^/spaces/([^/]+)/', line)
+                if m:
+                    sid = m.group(1)
+                    ids[sid] = ids.get(sid, 0) + 1
+        # Sort by file count desc — more files = more likely a real map.
+        sorted_ids = sorted(ids, key=lambda k: ids[k], reverse=True)
+        return sorted_ids
+    finally:
+        meta_path.unlink(missing_ok=True)
 
 
 def glb_terrain_tris(path: Path) -> int:
@@ -184,7 +198,7 @@ def main() -> int:
         return 1
 
     MAPS_OUT.mkdir(parents=True, exist_ok=True)
-    space_ids = list_spaces(game)
+    space_ids = list_spaces(game, Path(wowsunpack))
     print(f"[batch_bake_maps] found {len(space_ids)} spaces in {game}")
 
     todo: list[str] = []
