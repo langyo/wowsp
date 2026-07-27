@@ -341,4 +341,7 @@ export const api = {
     transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
   getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
     transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
+  /** Download model pack from GitHub Releases to local cache. Returns the
+   *  cache directory path so the frontend can construct file URLs. */
+  ensureModelPack: () => transport.invoke<string>(RPC.ensure_model_pack),
 };

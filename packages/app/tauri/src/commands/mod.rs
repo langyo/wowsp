@@ -10,6 +10,7 @@ pub mod encyclopedia;
 pub mod game_detect;
 pub mod gameparams;
 pub mod mod_install;
+pub mod model_pack;
 pub mod overlay;
 pub mod packets;
 pub mod ranked;
