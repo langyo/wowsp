@@ -73,12 +73,67 @@
 
   &__hint {
     font-size: var(--text-2xs);
-    color: rgb(var(--color-primary) / 70%);
-    background: rgb(7 13 24 / 60%);
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-surface) / 88%);
     padding: 0.2rem 0.5rem;
     border-radius: var(--radius-xs);
-    border: 1px solid rgb(var(--color-primary) / 20%);
+    border: 1px solid rgb(var(--color-border) / 25%);
     white-space: nowrap;
     pointer-events: none;
+  }
+
+  &__armor-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.25rem 0.55rem;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-surface) / 75%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    transition: background 0.15s, border-color 0.15s;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+
+    &:hover { background: rgb(var(--color-surface) / 90%); }
+    &--on {
+      background: rgb(var(--color-primary) / 14%);
+      border-color: rgb(var(--color-primary) / 40%);
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  &__armor-icon { font-size: 1rem; }
+  &__armor-label { font-weight: 600; }
+
+  /* Legend overlay for armor zones */
+  &__armor-legend {
+    position: absolute;
+    bottom: 0.6rem;
+    right: 0.6rem;
+    background: rgb(var(--color-surface) / 85%);
+    border-radius: var(--radius-md);
+    padding: 0.4rem 0.6rem;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    border: 1px solid rgb(var(--color-border) / 25%);
+    z-index: 2;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  &__armor-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  &__armor-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid rgb(255 255 255 / 20%);
   }
 }

@@ -16,9 +16,8 @@ import { buildShipSpecs } from "./shipSpecs";
 import { buildArmorScheme, buildBallistics } from "./ballistics";
 import SkillBuilder from "./SkillBuilder";
 import DataObserver from "./DataObserver";
-import ShipStage, { type FocusZone } from "./ShipStage";
+import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
-import ArmorBelt from "./ArmorBelt";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import { tierToRoman } from "@/utils/tierRoman";
@@ -54,7 +53,7 @@ export default defineComponent({
       );
     }
 
-    const tab = ref<"specs" | "armor" | "mystats" | "community" | "skill">("specs");
+    const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
 
     // ── Captain skills state (shared between SkillBuilder + DataObserver) ──
     const skillRank = ref<Record<string, number>>({});
@@ -62,8 +61,8 @@ export default defineComponent({
 
     // ── Holographic stage ─────────────────────────────────────────────────
     const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
-    function onWeaponFocus(zone: FocusZone) {
-      stageRef.value?.focusZone(zone);
+    function onWeaponFocus(zone: FocusZone, count?: number) {
+      stageRef.value?.focusZone(zone, count ?? 1);
     }
 
     // ── Armor tab: lazy GameParams ─────────────────────────────────────────
@@ -77,6 +76,8 @@ export default defineComponent({
       gpLoading.value = true;
       gpError.value = null;
       const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
+      // Safety timeout: dismiss loading toast after 15s if still pending.
+      const timer = setTimeout(() => toast.dismiss(toastId), 15000);
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
@@ -84,6 +85,7 @@ export default defineComponent({
         gpError.value = msg;
         toast.error(`${t("ships.detail.gameparamsErrorTip")}\n${msg}`);
       } finally {
+        clearTimeout(timer);
         gpLoading.value = false;
         gpFetched.value = true;
         toast.dismiss(toastId);
@@ -140,6 +142,84 @@ export default defineComponent({
 
     const dp = computed(() => (props.ship?.defaultProfile ?? {}) as Record<string, unknown>);
 
+    // ── Armor overlay data (from GameParams, passed to ShipStage) ──────────
+    const armorZones = computed<ArmorZone[]>(() => {
+      const gp = gameparams.value as Record<string, any> | null;
+      if (!gp) return [];
+      try {
+        function num(v: unknown): number | undefined {
+          if (v == null) return undefined;
+          const n = typeof v === "number" ? v : Number(v);
+          return Number.isFinite(n) && n > 0 ? n : undefined;
+        }
+        function segThickness(seg: unknown): number | undefined {
+          if (seg == null) return undefined;
+          if (typeof seg === "number") return seg > 0 ? seg : undefined;
+          if (typeof seg === "object") {
+            const o = seg as Record<string, unknown>;
+            return num(o.max) ?? num(o.min) ?? num(o.fore) ?? num(o.aft);
+          }
+          return undefined;
+        }
+        // Probe several possible GameParams layouts (varies by unpacker).
+        const armor = (gp.ShipArmor ?? gp.Armor ?? gp.HullArmor ?? {}) as Record<string, unknown>;
+        const citadel = (armor.Citadel ?? gp.Citadel ?? (gp.A_Hull as any)?.Citadel) as Record<string, unknown> | undefined;
+        const zones: ArmorZone[] = [];
+        const add = (name: string, mm: number | undefined) => {
+          if (mm != null && mm > 0) zones.push({ name, thickness: mm });
+        };
+        add("citadel", segThickness(citadel)
+          ?? segThickness(armor?.MainBelt ?? armor?.Belt)
+          ?? segThickness(gp?.mainBelt));
+        add("casemate", segThickness(armor?.Casemate ?? armor?.CasemateArmor));
+        add("deck", segThickness(armor?.Deck ?? armor?.DeckArmor));
+        const extT = segThickness(armor?.Bow ?? armor?.Extremities ?? armor?.Ends);
+        add("bow", extT);
+        add("stern", extT);
+        add("mainBelt", segThickness(armor?.MainBelt ?? armor?.Belt ?? armor?.WaterlineBelt)
+          ?? segThickness(gp?.mainBelt));
+        // Torpedo belt — reduction % converted to a representative value.
+        const tb = (armor?.TorpedoBelt ?? armor?.TorpedoProtection) as Record<string,unknown> | undefined;
+        if (tb?.factor != null) add("torpedoBelt", Math.round((1 - Number(tb.factor)) * 100));
+        // Fallback: read the flat per-part armour dict (A_Hull.armor).
+        // Use DISTINCT sorted thicknesses for zone assignment so each
+        // zone gets a visibly different colour.
+        if (zones.length === 0) {
+          const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+          const dict = (hull.armor ?? hull.Armor ?? null) as Record<string, number> | null;
+          if (dict) {
+            const vals = [...new Set(Object.values(dict).filter((v: number) => v > 0))]
+              .sort((a: number, b: number) => b - a);
+            if (vals.length > 0) {
+              add("citadel", vals[0]);
+              if (vals.length > 1) add("mainBelt", vals[1]);
+              if (vals.length > 2) add("deck", vals[2]);
+              if (vals.length > 3) add("casemate", vals[3]);
+              if (vals.length > 4) add("bow", vals[Math.min(4, vals.length - 1)]);
+              if (vals.length > 5) add("stern", vals[Math.min(5, vals.length - 1)]);
+              if (vals.length > 6) add("torpedoBelt", vals[Math.min(6, vals.length - 1)]);
+            }
+          }
+        }
+        return zones;
+      } catch {
+        return [];
+      }
+    });
+
+    // ── Waterline from GameParams (optional, falls back to geometry) ──────
+    const waterlineDraft = computed<number | null>(() => {
+      const gp = gameparams.value as Record<string, any> | null;
+      if (!gp) return null;
+      function num(v: unknown): number | null {
+        if (v == null) return null;
+        const n = typeof v === "number" ? v : Number(v);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      }
+      const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+      return num(hull.draft) ?? num(hull.maxDraft) ?? num(hull.Draft) ?? num(hull.MaxDraft) ?? null;
+    });
+
     function nationLabel(code: string): string {
       return t(`ships.nation.${code}`, {}) || code;
     }
@@ -159,14 +239,14 @@ export default defineComponent({
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
         title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
-        width="58rem"
+        width="80vw"
       >
         {!props.ship ? null : (
           <div class="ship-detail">
             {/* holographic stage: shown for all tabs except skill (where data observer replaces it) */}
             {tab.value !== "skill" ? (
               <>
-                <ShipStage ref={stageRef} ship={props.ship} />
+                <ShipStage ref={stageRef} ship={props.ship} armorZones={armorZones.value} waterlineDraft={waterlineDraft.value} />
                 <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
               </>
             ) : (
@@ -200,7 +280,7 @@ export default defineComponent({
 
             {/* tab bar */}
             <div class="ship-detail__tabs">
-              {(["specs", "armor", "mystats", "community", "skill"] as const).map((name) => (
+              {(["specs", "mystats", "community", "skill"] as const).map((name) => (
                 <button
                   class={[
                     "ship-detail__tab",
@@ -208,7 +288,7 @@ export default defineComponent({
                   ]}
                   onClick={() => selectTab(name)}
                 >
-                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "armor" ? "Armor" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
+                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
                 </button>
               ))}
             </div>
@@ -218,25 +298,7 @@ export default defineComponent({
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
                   <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
-                ) : tab.value === "armor" ? (
-                  <div class="ship-detail__armor" key="armor">
-                    {gpError.value ? (
-                    <div class="ship-detail__error-block">
-                      <p class="ship-detail__hint">{t("ships.detail.gameparamsMissing")}</p>
-                    </div>
-                  ) : gameparams.value ? (
-                    <>
-                      <ArmorBelt gameparams={gameparams.value as Record<string, any>} />
-                      <BallisticsPanel gp={gameparams.value} />
-                    </>
-                  ) : (
-                    <div class="ship-detail__error-block">
-                      <p>{t("ships.detail.gameparamsMissing")}</p>
-                      <p class="ship-detail__hint">{t("ships.detail.gameparamsHint")}</p>
-                    </div>
-                  )}
-                </div>
-              ) : tab.value === "mystats" ? (
+                ) : tab.value === "mystats" ? (
                 <div class="ship-detail__mystats" key="mystats">
                   {myShipStats.value ? (
                     <div class="ship-detail__mystats-grid">

@@ -39,12 +39,17 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
         }
     }
 
-    // 2. Look for an unpacked GameParams.json at the game root.
+    // 2. Look for an unpacked GameParams.json at the game root, or in the
+    //    extract script's LOCALAPPDATA cache.
     let root = std::path::Path::new(&game_root);
-    let json_candidates = [
+    let local_cache = dirs_next::cache_dir()
+        .unwrap_or_default()
+        .join("WoWSP-extract")
+        .join("GameParams.json");
+    let json_candidates: [std::path::PathBuf; 3] = [
         root.join("GameParams.json"),
-        // Some users keep the unpacked file next to GameParams.data:
         root.join("bin").join("GameParams.json"),
+        local_cache,
     ];
     let json_path = json_candidates.iter().find(|p| p.exists());
 
@@ -86,26 +91,29 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
 ///      `wowsunpack game-params` command actually emits.
 ///
 /// In cases 1/2/4 we scan entries and match by the `id` field; in case 3
-/// the key itself is the id. The per-ship AppData cache makes subsequent
-/// calls instant regardless of file size.
+/// the key itself is the id.  When multiple entries share the same id (e.g.
+/// CV hull + its plane squadrons), the one containing `A_Artillery` (or
+/// failing that, any `A_*` weapon key) is preferred — module-only entries
+/// like aircraft squadrons don't carry weapon data.
+/// The per-ship AppData cache makes subsequent calls instant regardless of
+/// file size.
 pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value, String> {
     let parsed: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("parse GameParams.json: {e}"))?;
 
+    let mut candidates: Vec<serde_json::Value> = Vec::new();
+
     if let Some(arr) = parsed.as_array() {
-        // Top-level array form (wowsunpack default).
         for entry in arr {
             if entry_matches_id(entry, ship_id) {
-                return Ok(entry.clone());
+                candidates.push(entry.clone());
             }
         }
     } else if let Some(obj) = parsed.as_object() {
-        // Some unpackers emit { "<shipId>": { ... } } or
-        // { "ships": [ ... ] }. Handle both.
         if let Some(ships) = obj.get("ships").and_then(|v| v.as_array()) {
             for entry in ships {
                 if entry_matches_id(entry, ship_id) {
-                    return Ok(entry.clone());
+                    candidates.push(entry.clone());
                 }
             }
         }
@@ -113,17 +121,80 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
         if let Some(v) = obj.get(&key) {
             return Ok(v.clone());
         }
-        // Dict-of-internal-names form (the shape wowsunpack game-params
-        // actually emits): keys are internal names, the numeric id lives as
-        // a field inside each entry. Scan values and match by id field.
         for (_name, entry) in obj {
             if entry_matches_id(entry, ship_id) {
-                return Ok(entry.clone());
+                candidates.push(entry.clone());
             }
         }
     }
 
-    Err(format!("ship_id {ship_id} not found in GameParams"))
+    if candidates.is_empty() {
+        return Err(format!("ship_id {ship_id} not found in GameParams"));
+    }
+
+    // Prefer an entry that actually has weapon keys.
+    if let Some(hull) = candidates.iter().find(|e| {
+        e.as_object()
+            .map(|o| o.contains_key("A_Artillery"))
+            .unwrap_or(false)
+    }) {
+        return Ok(hull.clone());
+    }
+
+    // The matched entry(ies) might be module-only (CV planes, etc.) while
+    // the real hull entry with weapons lives under a different id but shares
+    // the same index prefix.  Scan the full GameParams dict for sibling
+    // entries with the same prefix that DO carry weapon data.
+    if let Some(obj) = parsed.as_object() {
+        // Collect all index prefixes from the candidates.
+        let mut prefixes: Vec<String> = Vec::new();
+        for c in &candidates {
+            if let Some(name) = c.get("name").and_then(|v| v.as_str()) {
+                // GameParams index format: PASB008 → prefix is "PASB"
+                let prefix: String = name.chars().take_while(|c| c.is_ascii_uppercase()).collect();
+                if prefix.len() >= 3 {
+                    prefixes.push(prefix);
+                }
+            }
+        }
+        // Also collect prefixes from the candidate's key in the dict.
+        for (key, _entry) in obj {
+            if candidates.iter().any(|c| {
+                c.get("index").and_then(|v| v.as_str()) == Some(key.as_str())
+            }) {
+                let prefix: String = key.chars().take_while(|c| c.is_ascii_uppercase()).collect();
+                if prefix.len() >= 3 && !prefixes.contains(&prefix) {
+                    prefixes.push(prefix);
+                }
+            }
+        }
+        prefixes.sort();
+        prefixes.dedup();
+
+        for prefix in &prefixes {
+            for (key, entry) in obj {
+                if !key.starts_with(prefix.as_str()) {
+                    continue;
+                }
+                if let Some(e) = entry.as_object() {
+                    if e.contains_key("A_Artillery") {
+                        return Ok(entry.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // Fall back to any entry with at least one A_* weapon key.
+    if let Some(armed) = candidates.iter().find(|e| {
+        e.as_object()
+            .map(|o| o.keys().any(|k| k.starts_with("A_")))
+            .unwrap_or(false)
+    }) {
+        return Ok(armed.clone());
+    }
+    // Absolute fallback: first match.
+    Ok(candidates[0].clone())
 }
 
 fn entry_matches_id(entry: &serde_json::Value, ship_id: i64) -> bool {

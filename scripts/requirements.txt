@@ -11,4 +11,5 @@ uvicorn~=0.34
 pydantic~=2.9
 
 # Data formats
+numpy~=2.0
 toml~=0.10

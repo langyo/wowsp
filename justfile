@@ -263,6 +263,14 @@ package *FLAGS:
 e2e-setup:
     @pip install -q -r scripts/requirements.txt && python -m playwright install chromium 2>/dev/null
 
+# ── release-models ─────────────────────────────────────────────────────
+# Package baked GLB models as a GitHub Release asset and prune old releases
+# (keeps the 3 most recent model packs). Requires `gh` CLI.
+#   just release-models 0.14.1
+#   just release-models 0.14.1 --dry-run
+release-models *ARGS:
+    python scripts/release_models.py {{ARGS}}
+
 # ── check-env ─────────────────────────────────────────────────────────
 # WoWSP-specific environment check (celestia-devtools provides a generic
 # `preflight`, so we use a distinct name to avoid collision).

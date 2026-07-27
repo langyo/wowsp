@@ -239,6 +239,7 @@ fn main() {
             commands::ship_stats::lookup_player_ship_stats,
             commands::ship_stats::snapshot_player_stats,
             commands::gameparams::get_ship_gameparams,
+            commands::model_pack::ensure_model_pack,
             commands::trends::get_player_trend,
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,
