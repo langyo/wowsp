@@ -130,10 +130,10 @@
     font-size: var(--text-2xs);
   }
 
-  /* Detail: the holographic battle map takes ~50% of the remaining height. */
+  /* Detail: the holographic battle map fills the remaining height. */
   &__detail {
     display: flex;
-    flex: 1 1 50%;
+    flex: 1;
     min-height: 0;
   }
 

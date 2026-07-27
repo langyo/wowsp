@@ -631,7 +631,7 @@ export default defineComponent({
           ))}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
-        {props.trajectories.length > 0 ? (
+        {props.replayPath ? (
           <div class="holo-map__legend">
             <span class="holo-map__legend-item">
               <span class="holo-map__legend-dot" style={{ background: "#3cb478" }} />
@@ -647,7 +647,7 @@ export default defineComponent({
             </span>
           </div>
         ) : null}
-        {props.trajectories.length > 0 ? (
+        {props.replayPath ? (
           <div class="holo-map__controls">
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? "❚❚" : "▶"}
