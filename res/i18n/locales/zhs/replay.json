@@ -13,7 +13,7 @@
   "mode": {
     "pvp": "随机战",
     "ranked": "排位战",
-    "clan": "公会战",
+    "clan": "军团战",
     "event": "活动",
     "cooperative": "联合作战",
     "pve": "联合作战",
@@ -24,7 +24,7 @@
     "ranked_sprint": "排位冲刺战",
     "pve_event": "行动",
     "convoy": "护航战",
-    "asymmetric": "非对称战",
+    "asymmetric": "非对称作战",
     "sandbox": "沙盒",
     "_fallback": "对战"
   },
