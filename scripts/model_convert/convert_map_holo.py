@@ -50,7 +50,7 @@ DEFAULT_OUT = Path(__file__).resolve().parents[2] / "packages" / "webui" / "src"
 
 # Decimation targets (triangles). Terrain needs more density than islands to
 # keep contour bands + sea-floor bathymetry readable; both stay within budget.
-TERRAIN_TARGET_TRIS = 8000
+TERRAIN_TARGET_TRIS = 15000
 ISLANDS_TARGET_TRIS = 3000
 
 
