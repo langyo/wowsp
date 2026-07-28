@@ -36,8 +36,6 @@ const WOWS_BLOWFISH_KEY: [u8; 16] = [
 /// fixed layout — does NOT need the per-version entity DB. Extended fields
 /// (health, speed, etc.) are parsed from the trailing payload when present.
 const PACKET_POSITION: u32 = 0x0a;
-/// Packet type for entity property updates (health, etc.).
-const PACKET_ENTITY_PROPERTY: u32 = 0x07;
 /// Packet type for entity property updates (health, consumables, etc.).
 const PACKET_ENTITY_PROPERTY: u32 = 0x07;
 /// Packet type for entity creation. The fixed header (entityID / type /
