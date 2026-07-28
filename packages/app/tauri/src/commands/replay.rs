@@ -105,6 +105,19 @@ fn group_by_entity(
             },
         )
         .collect();
+    // Include entities that have creation metadata but no position samples
+    // (e.g. static capture zones, entityType 14, which never emit Position packets).
+    for (eid, kind) in &kinds {
+        if !out.iter().any(|t| t.entity_id == *eid) {
+            out.push(wowsp_tauri_shared::EntityTrajectory {
+                entity_id: *eid,
+                kind: Some(kind.clone()),
+                samples: Vec::new(),
+                death_time: destroys.get(eid).copied(),
+                hp_samples: Vec::new(),
+            });
+        }
+    }
     // Largest trajectory first — ships have hundreds/thousands of samples,
     // transient entities (planes, torpedoes) have a few dozen.
     use std::cmp::Reverse;
