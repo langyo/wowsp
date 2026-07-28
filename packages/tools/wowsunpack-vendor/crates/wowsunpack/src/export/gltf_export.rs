@@ -722,12 +722,9 @@ fn generate_terrain_mesh(cfg: &TerrainConfig<'_>) -> MapMesh {
     }
 
     eprintln!(
-        "  Terrain: {}×{} grid (step {}), {} vertices, {} triangles (culled submerged)",
-        out_w,
-        out_h,
-        step,
-        positions.len(),
-        indices.len() / 3,
+        "  Terrain: {}×{} grid (step {}), {} vertices, {} triangles{}",
+        out_w, out_h, step, positions.len(), indices.len() / 3,
+        if cull_submerged { " (culled submerged)" } else { "" },
     );
 
     MapMesh {
