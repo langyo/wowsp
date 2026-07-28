@@ -92,7 +92,12 @@
     white-space: nowrap;
   }
 
-  &__time { min-width: 8ch; }
+  &__time {
+    min-width: 8ch;
+    cursor: pointer;
+    user-select: none;
+    &:hover { opacity: 0.8; }
+  }
   &__count { min-width: 7ch; }
 
   &__legend {
@@ -204,5 +209,33 @@
     font-family: var(--font-mono);
     font-size: 0.7em;
     font-weight: 600;
+  }
+}
+
+/* ── Tab roster overlay ─────────────────────────────────────────────── */
+.holo-map__roster-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(5, 8, 15, 0.9);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 3rem 0;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.9);
+
+  table { border-collapse: collapse; width: 100%; max-width: 600px; }
+  th {
+    text-align: left;
+    padding: 0.35rem 0.6rem;
+    font-size: var(--text-xs);
+    color: rgba(255, 255, 255, 0.6);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  td {
+    padding: 0.25rem 0.6rem;
+    font-size: var(--text-sm);
   }
 }

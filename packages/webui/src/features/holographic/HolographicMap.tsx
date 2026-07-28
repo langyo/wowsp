@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
 
 import { useThreeScene } from "./useThreeScene";
@@ -60,6 +60,44 @@ export default defineComponent({
     const playing = ref(false);
     let playRaf = 0;
     let lastTick = 0;
+
+    // Time display toggle: 0=elapsed, 1=remaining, 2=total
+    const timeMode = ref(0);
+    const showRoster = ref(false);
+
+    function toggleTimeMode() {
+      timeMode.value = (timeMode.value + 1) % 3;
+    }
+    function formatTime(sec: number): string {
+      const s = Math.max(0, Math.round(sec));
+      const m = Math.floor(s / 60);
+      return `${m}:${String(s % 60).padStart(2, "0")}`;
+    }
+    function displayTime(): string {
+      const d = duration.value || 0;
+      const c = current.value;
+      if (timeMode.value === 0) return formatTime(c);
+      if (timeMode.value === 1) return "-" + formatTime(d - c);
+      return formatTime(d);
+    }
+
+    onMounted(() => {
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Tab") {
+          e.preventDefault();
+          showRoster.value = true;
+        }
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        if (e.key === "Tab") showRoster.value = false;
+      };
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("keyup", onKeyUp);
+      onBeforeUnmount(() => {
+        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("keyup", onKeyUp);
+      });
+    });
 
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
@@ -881,9 +919,39 @@ export default defineComponent({
                 current.value = Number((e.target as HTMLInputElement).value);
               }}
             />
-            <span class="holo-map__time">
-              {current.value.toFixed(0)}s / {duration.value.toFixed(0)}s
+            <span class="holo-map__time" onClick={toggleTimeMode} title="Click to toggle elapsed / remaining / total">
+              {displayTime()}
             </span>
+          </div>
+        ) : null}
+        {showRoster.value ? (
+          <div class="holo-map__roster-overlay">
+            <table>
+              <thead>
+                <tr><th colspan="3">{t("replay.roster.allies")}</th></tr>
+              </thead>
+              <tbody>
+                {props.vehicles.filter(v => v.relation <= 1).map(v => (
+                  <tr key={v.id}>
+                    <td style={{color: v.relation === 0 ? "#fff" : "#3cb478"}}>{v.name}</td>
+                    <td>{v.shipName ?? ""}</td>
+                    <td></td>
+                  </tr>
+                ))}
+              </tbody>
+              <thead>
+                <tr><th colspan="3">{t("replay.roster.enemies")}</th></tr>
+              </thead>
+              <tbody>
+                {props.vehicles.filter(v => v.relation > 1).map(v => (
+                  <tr key={v.id}>
+                    <td style={{color: "#cc3333"}}>{v.name}</td>
+                    <td>{v.shipName ?? ""}</td>
+                    <td></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : null}
       </div>
