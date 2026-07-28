@@ -358,7 +358,7 @@ export default defineComponent({
             + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
         }
         if (modelUrl) {
-          buildShipMarker({ url: modelUrl, role, shipType: shipInfo?.type })
+          buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
               for (const child of [...marker.children]) {
