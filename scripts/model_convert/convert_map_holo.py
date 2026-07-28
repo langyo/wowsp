@@ -136,13 +136,10 @@ def main() -> int:
 
         meshes: list[tuple[str, list[float], list[int]]] = []
 
-        # Step 3a: decimate terrain (Y elevation preserved by vertex clustering).
+        # Step 3a: use raw terrain directly (no decimation).
         if terrain is not None:
             tv, ti = terrain
             print(f"[convert_map_holo] terrain raw: {len(tv)//3} verts, {len(ti)//3} tris")
-            tv, ti = decimate(tv, ti, TERRAIN_TARGET_TRIS)
-            print(f"[convert_map_holo] terrain baked: {len(tv)//3} verts, {len(ti)//3} tris")
-            # Report the elevation span so trench coverage is visible in the log.
             ys = tv[1::3]
             if ys:
                 print(f"[convert_map_holo] terrain elevation span: y={min(ys):.1f} .. {max(ys):.1f} "
