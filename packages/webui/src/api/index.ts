@@ -9,6 +9,7 @@ export type {
   PositionSample,
   EntityKind,
   EntityTrajectory,
+  HpSample,
   PlayerStats,
   GameVersionInfo,
   ShipInfo,

@@ -12,7 +12,7 @@ import { makeHoloMaterial } from "./holoShader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
-import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
+import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -415,6 +415,17 @@ export default defineComponent({
       }
     }
 
+    /** Find the last HP value at or before time t. */
+    function hpAtTime(samples: HpSample[] | undefined, t: number): number | null {
+      if (!samples || samples.length === 0) return null;
+      let last: number = samples[0].value;
+      for (const s of samples) {
+        if (s.time > t) break;
+        last = s.value;
+      }
+      return last;
+    }
+
     /** Position + orient each ship marker at the current playback time.
      *  Ships whose model hasn't loaded yet are skipped; ships that have been
      *  destroyed (time ≥ deathTime) are frozen at their last position and
@@ -450,6 +461,10 @@ export default defineComponent({
         marker.visible = true;
         marker.position.set(s.x, 0.5, s.z);
         marker.rotation.y = s.yaw;
+        if (label) {
+          const currentHp = hpAtTime(traj.hpSamples, tEff);
+          if (currentHp != null) label.hp = currentHp;
+        }
 
         // Grey out dead ships: desaturate every child material toward a faint
         // grey while keeping a hint of the role colour so teams remain readable.

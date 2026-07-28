@@ -197,6 +197,18 @@ pub struct EntityTrajectory {
     /// the marker here and tints it grey.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub death_time: Option<f32>,
+    /// HP timeline from EntityProperty (0x07) packets. Pairs of (time, hp_value).
+    /// Empty when the replay contains no HP data for this entity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hp_samples: Vec<HpSample>,
+}
+
+/// A single HP snapshot from the replay's property stream.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HpSample {
+    pub time: f32,
+    pub value: u32,
 }
 
 /// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.
