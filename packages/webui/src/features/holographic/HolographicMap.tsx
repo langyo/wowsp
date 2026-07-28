@@ -9,6 +9,7 @@ import {
   loadGlbModel,
   type ShipModelSpec,
 } from "./modelLoader";
+import { makeHoloMaterial } from "./holoShader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
@@ -160,6 +161,7 @@ export default defineComponent({
         // terrain gets the contour shader (topographic + bathymetric bands);
         // islands get the plain holographic shader. Both share the same
         // time/scanOffset uniforms so one onFrame tick animates everything.
+        const islandMat = makeHoloMaterial();
         const contourMat = makeHoloContourMaterial();
         const wireMat = new THREE.MeshBasicMaterial({
           color: 0x2a8fb5,
@@ -181,10 +183,10 @@ export default defineComponent({
           }
           if (isTerrain) {
             mesh.material = contourMat;
-            continue;
+          } else {
+            mesh.material = islandMat;
+            mesh.renderOrder = 1; // draw islands above terrain
           }
-          // Hide small island geometry; terrain provides the visual reference.
-          mesh.visible = false;
           const wire = new THREE.Mesh(mesh.geometry, wireMat);
           wire.raycast = () => {}; // overlay shouldn't intercept picks
           mesh.add(wire);
@@ -409,6 +411,50 @@ export default defineComponent({
         });
       }
       shipLabels.value = newLabels;
+
+      // Capture zones: entityType 14 circles on the XZ plane.
+      const capZoneNames = ["A", "B", "C", "D"];
+      let capIdx = 0;
+      for (const traj of props.trajectories) {
+        if (traj.kind?.entityType !== 14) continue;
+        const cx = traj.kind.initialX;
+        const cz = traj.kind.initialZ;
+        const ringGeom = new THREE.TorusGeometry(55, 1.5, 8, 48);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+        });
+        const ring = new THREE.Mesh(ringGeom, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(cx, 0.6, cz);
+        scene.add(ring);
+        trajectoryLines.push(ring as unknown as THREE.Line);
+        if (capIdx < 4) {
+          const canvas = document.createElement("canvas");
+          canvas.width = 64;
+          canvas.height = 64;
+          const ctx = canvas.getContext("2d")!;
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 48px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(capZoneNames[capIdx], 32, 32);
+          const tex = new THREE.CanvasTexture(canvas);
+          const spriteMat = new THREE.SpriteMaterial({
+            map: tex,
+            transparent: true,
+            depthWrite: false,
+          });
+          const sprite = new THREE.Sprite(spriteMat);
+          sprite.position.set(cx, 30, cz);
+          sprite.scale.set(40, 40, 1);
+          scene.add(sprite);
+          trajectoryLines.push(sprite as unknown as THREE.Line);
+          capIdx++;
+        }
+      }
     }
 
     /** Set a freshly-loaded marker to the correct world position at the current
