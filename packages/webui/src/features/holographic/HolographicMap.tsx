@@ -9,7 +9,7 @@ import {
   loadGlbModel,
   type ShipModelSpec,
 } from "./modelLoader";
-import { makeHoloMaterial } from "./holoShader";
+import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
 import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
@@ -160,7 +160,7 @@ export default defineComponent({
         // terrain gets the contour shader (topographic + bathymetric bands);
         // islands get the plain holographic shader. Both share the same
         // time/scanOffset uniforms so one onFrame tick animates everything.
-        const islandMat = makeHoloMaterial();
+        const contourMat = makeHoloContourMaterial();
         const wireMat = new THREE.MeshBasicMaterial({
           color: 0x2a8fb5,
           wireframe: true,
@@ -180,10 +180,11 @@ export default defineComponent({
             p = p.parent;
           }
           if (isTerrain) {
-            mesh.visible = false;
+            mesh.material = contourMat;
             continue;
           }
-          mesh.material = islandMat;
+          // Hide small island geometry; terrain provides the visual reference.
+          mesh.visible = false;
           const wire = new THREE.Mesh(mesh.geometry, wireMat);
           wire.raycast = () => {}; // overlay shouldn't intercept picks
           mesh.add(wire);
