@@ -51,6 +51,7 @@ export default defineComponent({
     const container = ref<HTMLElement | null>(null);
     const { ready, api } = useThreeScene(container, (_dt) => {
       updateLabelPositions();
+      drawMinimap();
     });
 
     // Playback state.
@@ -77,6 +78,7 @@ export default defineComponent({
       tier: number | null;
       type: string | null;
       hp: number | null;
+      maxHp: number | null;
       /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
       x: number;
       y: number;
@@ -84,8 +86,84 @@ export default defineComponent({
       dead: boolean;
     }
     const shipLabels = ref<ShipLabel[]>([]);
-    /** World-position scratch vector reused each frame for label projection. */
     const _projVec = new THREE.Vector3();
+
+    // Minimap canvas.
+    const minimapCanvas = ref<HTMLCanvasElement | null>(null);
+    let _mmCtx: CanvasRenderingContext2D | null = null;
+    const MINIMAP_SIZE = 160;
+
+    function drawMinimap() {
+      if (!bounds) return;
+      const cvs = minimapCanvas.value;
+      if (!cvs) return;
+      if (!_mmCtx) _mmCtx = cvs.getContext("2d");
+      const ctx = _mmCtx!;
+      const w = MINIMAP_SIZE;
+      const h = MINIMAP_SIZE;
+      const m = 8; // margin
+      if (cvs.width !== w) cvs.width = w;
+      if (cvs.height !== h) cvs.height = h;
+
+      const mapW = bounds.maxX - bounds.minX;
+      const mapH = bounds.maxZ - bounds.minZ;
+      const scaleX = (w - m * 2) / (mapW || 1);
+      const scaleZ = (h - m * 2) / (mapH || 1);
+      const scale = Math.min(scaleX, scaleZ);
+      const ox = (w - mapW * scale) / 2;
+      const oy = (h - mapH * scale) / 2;
+
+      function wx(x: number) { return (x - bounds!.minX) * scale + ox; }
+      function wz(z: number) { return h - ((z - bounds!.minZ) * scale + oy); }
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "rgba(0, 170, 255, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+      // Ship dots.
+      for (const m of shipMarkers) {
+        if (!m.visible) continue;
+        const role = m.userData.role as TeamRole | undefined;
+        const color = role ? TEAM_COLOR[role] : 0x888888;
+        const cx = wx(m.position.x);
+        const cz = wz(m.position.z);
+        ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+        ctx.beginPath();
+        ctx.arc(cx, cz, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Camera frustum.
+      const cam = api.value?.camera;
+      if (cam) {
+        const corners = frustumCorners(cam);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(wx(corners[0].x), wz(corners[0].z));
+        for (let i = 1; i < 4; i++) ctx.lineTo(wx(corners[i].x), wz(corners[i].z));
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    function frustumCorners(cam: THREE.PerspectiveCamera): THREE.Vector3[] {
+      const hw = 0.5;
+      const hh = hw / cam.aspect;
+      const corners: THREE.Vector3[] = [];
+      for (let i = 0; i < 4; i++) {
+        const sx = i === 0 || i === 3 ? -hw : hw;
+        const sy = i < 2 ? -hh : hh;
+        const pt = new THREE.Vector3(sx, sy, 1).unproject(cam);
+        const ray = pt.clone().sub(cam.position).normalize();
+        const t = -(cam.position.y) / ray.y;
+        corners.push(cam.position.clone().add(ray.multiplyScalar(t)));
+      }
+      return corners;
+    }
 
     /** Tokens used to cancel in-flight async marker loads when actors are
      *  rebuilt/unmounted before a GLB resolves. Each rebuild bumps the epoch;
@@ -391,13 +469,15 @@ export default defineComponent({
 
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
         const encStore = useEncyclopediaStore();
-        const shipName = shipInfo
-          ? encStore.shipDisplayName(shipInfo)
-          : (rosterEntry?.shipName ?? "?");
+        const shipName =
+          (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
+          rosterEntry?.shipName ??
+          shipInfo?.name ??
+          "?";
         const dp = shipInfo?.defaultProfile as
           | Record<string, Record<string, unknown>>
           | undefined;
-        const hp =
+        const maxHp =
           dp?.hull?.health != null && typeof dp.hull.health === "number"
             ? dp.hull.health
             : null;
@@ -408,7 +488,8 @@ export default defineComponent({
           shipName,
           tier: shipInfo?.tier ?? null,
           type: shipInfo?.type ?? null,
-          hp,
+          hp: maxHp,
+          maxHp,
           x: 0, y: 0,
           visible: false,
           dead: false,
@@ -533,6 +614,7 @@ export default defineComponent({
         if (label) {
           const currentHp = hpAtTime(traj.hpSamples, tEff);
           if (currentHp != null) label.hp = currentHp;
+          label.maxHp ??= currentHp ?? label.maxHp;
         }
 
         // Grey out dead ships: desaturate every child material toward a faint
@@ -756,13 +838,32 @@ export default defineComponent({
                 {lbl.shipName}
               </span>
               {lbl.hp != null ? (
-                <span class="holo-label__hp">HP: {lbl.hp.toLocaleString()}</span>
+                <span class="holo-label__hp">
+                  {lbl.hp.toLocaleString()}
+                  {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                </span>
               ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
             </div>
           ))}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
+        <canvas
+          ref={minimapCanvas}
+          class="holo-map__minimap"
+          width={160}
+          height={160}
+          style={{
+            width: "160px",
+            height: "160px",
+            position: "absolute",
+            right: "8px",
+            bottom: "8px",
+            zIndex: "3",
+            borderRadius: "4px",
+            pointerEvents: "none",
+          }}
+        />
         {props.replayPath ? (
           <div class="holo-map__controls">
             <button class="holo-map__play" onClick={togglePlay}>
