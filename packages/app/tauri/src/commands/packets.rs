@@ -273,13 +273,12 @@ fn parse_property(payload: &[u8], time: f32) -> Vec<PropertyChange> {
     out
 }
 
-/// Parse a Position (0x0a) payload. Minimum layout (28 bytes):
-///   i32 entity_id, i32 vehicle_id, f32×3 position, f32×1 yaw
-/// Extended (45+ bytes, newer game builds):
-///   + f32×3 position_error, + f32 pitch, + f32 roll, + i8 is_error
-/// + trailing property dict (pickled): may include "health" f32, "speed" f32
+/// Parse a Position (0x0a) payload. Layout for current WoWS builds (45 bytes):
+///   i32 entity_id, i32 vehicle_id, f32×3 position,
+///   u32 seq/flags, u32 padding, u32 flags2,
+///   f32 yaw, [u32 padding×2, i8 is_error]
 fn parse_position(payload: &[u8], time: f32) -> Option<PositionSample> {
-    if payload.len() < 28 {
+    if payload.len() < 36 {
         return None;
     }
     let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
@@ -287,7 +286,7 @@ fn parse_position(payload: &[u8], time: f32) -> Option<PositionSample> {
     let x = f32::from_le_bytes(payload[8..12].try_into().ok()?);
     let y = f32::from_le_bytes(payload[12..16].try_into().ok()?);
     let z = f32::from_le_bytes(payload[16..20].try_into().ok()?);
-    let yaw = f32::from_le_bytes(payload[24..28].try_into().ok()?);
+    let yaw = f32::from_le_bytes(payload[32..36].try_into().ok()?);
     Some(PositionSample {
         time,
         entity_id,
