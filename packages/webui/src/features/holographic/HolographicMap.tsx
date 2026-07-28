@@ -337,7 +337,13 @@ export default defineComponent({
         scene.add(marker);
         shipMarkers.push(marker);
 
-        const modelUrl = resolveShipModelForEntry(shipInfo, encSpecs);
+        const modelUrl =
+          resolveShipModelForEntry(shipInfo, encSpecs) ??
+          resolveShipModelForEntry(null, encSpecs);
+        if (!modelUrl) {
+          console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
+            + ` (ship: ${shipInfo?.name ?? "?"}, encyclopedia: ${encSpecs.length} entries)`);
+        }
         if (modelUrl) {
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
