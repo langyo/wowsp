@@ -324,12 +324,19 @@ export default defineComponent({
         scene.add(line);
         trajectoryLines.push(line);
 
-        // Marker: place a small dot immediately so there's always a visual
-        // token even before the ship model loads asynchronously.
+        // Marker: small cone + sphere so the heading is visible even before
+        // the ship model loads. Cone points +Z (forward) at yaw 0.
         const marker = new THREE.Group();
-        const dotGeom = new THREE.SphereGeometry(12, 16, 8);
-        const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 });
+        const coneGeom = new THREE.ConeGeometry(7, 18, 6);
+        const coneMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7 });
+        const cone = new THREE.Mesh(coneGeom, coneMat);
+        cone.rotation.x = Math.PI / 2; // cone tip along +Z
+        cone.position.z = 6; // shift forward so sphere is behind the tip
+        marker.add(cone);
+        const dotGeom = new THREE.SphereGeometry(8, 10, 6);
+        const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
         const dot = new THREE.Mesh(dotGeom, dotMat);
+        dot.position.z = 0;
         marker.add(dot);
         marker.userData.entityId = traj.entityId;
         marker.userData.role = role;
@@ -776,7 +783,6 @@ export default defineComponent({
             <span class="holo-map__time">
               {current.value.toFixed(0)}s / {duration.value.toFixed(0)}s
             </span>
-            <span class="holo-map__count">{props.trajectories.length} entities</span>
           </div>
         ) : null}
       </div>
