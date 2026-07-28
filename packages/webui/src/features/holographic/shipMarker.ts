@@ -44,6 +44,8 @@ interface BuildShipMarkerOpts {
   url: string;
   /** Team role — drives the holographic tint. */
   role: TeamRole;
+  /** Ship type for per-type scaling (DD/CA/BB/CV/SS). */
+  shipType?: string | null;
 }
 
 /** Build a holographic ship marker for the map. Loads (or clones from cache)
@@ -54,7 +56,7 @@ interface BuildShipMarkerOpts {
  *  The returned group's own materials are owned by the caller; geometry is
  *  shared with the cache, so DO NOT dispose geometry — use `disposeMarker()`. */
 export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.Group> {
-  const { url, role } = opts;
+  const { url, role, shipType } = opts;
 
   // Load (or reuse) the decoded scene graph.
   let source = glbCache.get(url);
@@ -79,6 +81,7 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z, 1);
+  const typeScale = TYPE_SCALE[shipType ?? ""] ?? 0.7;
   const scale = (MARKER_LENGTH * typeScale) / maxDim;
   model.scale.setScalar(scale);
   const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
