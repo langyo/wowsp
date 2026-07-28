@@ -19,14 +19,14 @@ export type TeamRole = "self" | "ally" | "enemy";
 /** Numeric (Three.js) team colors. */
 export const TEAM_COLOR: Record<TeamRole, number> = {
   self: 0xffffff, // white
-  ally: 0x0078c8, // blue
+  ally: 0x3cb478, // green
   enemy: 0xcc3333, // red
 };
 
 /** Per-role holographic tint pairs. */
 const HOLO_PAIRS: Record<TeamRole, HoloColorPair> = {
   self: { baseColor: 0x555555, fresnelColor: 0xffffff },
-  ally: { baseColor: 0x0d4570, fresnelColor: 0x3fa0ff },
+  ally: { baseColor: 0x0e5a3a, fresnelColor: 0x4fff95 },
   enemy: { baseColor: 0x4a1515, fresnelColor: 0xff4444 },
 };
 
