@@ -144,7 +144,7 @@ fn walk_frames(inflated: &[u8]) -> DecodedReplay {
                 }
             },
             PACKET_ENTITY_CREATE => {
-                if let Some(created) = parse_entity_create(payload) {
+                if let Some(created) = parse_entity_create(payload, time) {
                     let eid = created.entity_id;
                     kinds.insert(eid, created.clone_into_kind());
                 }
@@ -189,6 +189,7 @@ struct ParsedCreate {
     x: f32,
     y: f32,
     z: f32,
+    creation_time: f32,
 }
 
 impl ParsedCreate {
@@ -199,6 +200,7 @@ impl ParsedCreate {
             initial_x: self.x,
             initial_y: self.y,
             initial_z: self.z,
+            creation_time: self.creation_time,
         }
     }
 }
@@ -207,7 +209,7 @@ impl ParsedCreate {
 /// `clients/wows/network/packets/EntityCreate.py`):
 ///   i32 entity_id, i16 type, i32 vehicle_id, i32 space_id,
 ///   f32×3 position, f32×3 direction, [BinaryStream state — skipped]
-fn parse_entity_create(payload: &[u8]) -> Option<ParsedCreate> {
+fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
     // Fixed header is 4+2+4+4+12+12 = 38 bytes; trailing state is variable.
     if payload.len() < 38 {
         return None;
@@ -226,6 +228,7 @@ fn parse_entity_create(payload: &[u8]) -> Option<ParsedCreate> {
         x,
         y,
         z,
+        creation_time: time,
     })
 }
 

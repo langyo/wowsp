@@ -358,7 +358,7 @@ export default defineComponent({
             + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
         }
         if (modelUrl) {
-          buildShipMarker({ url: modelUrl, role })
+          buildShipMarker({ url: modelUrl, role, shipType: shipInfo?.type })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
               for (const child of [...marker.children]) {
@@ -493,6 +493,13 @@ export default defineComponent({
         const entityId = marker.userData.entityId as number;
         const traj = props.trajectories.find((tr) => tr.entityId === entityId);
         if (!traj || traj.samples.length === 0) {
+          marker.visible = false;
+          if (label) label.visible = false;
+          continue;
+        }
+        // Hide entities that haven't been created yet at this time.
+        const created = traj.kind?.creationTime ?? -1;
+        if (created >= 0 && t < created) {
           marker.visible = false;
           if (label) label.visible = false;
           continue;

@@ -107,6 +107,7 @@ export interface EntityKind {
   initialX: number;
   initialY: number;
   initialZ: number;
+  creationTime: number;
 }
 
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */

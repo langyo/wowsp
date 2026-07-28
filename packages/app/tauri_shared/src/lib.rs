@@ -298,7 +298,13 @@ pub struct EntityKind {
     pub initial_x: f32,
     pub initial_y: f32,
     pub initial_z: f32,
+    /// Match time (seconds) when this entity was created via EntityCreate.
+    /// Entities that existed before the replay started have time -1.0.
+    #[serde(default = "default_creation_time")]
+    pub creation_time: f32,
 }
+
+fn default_creation_time() -> f32 { -1.0 }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Ship encyclopedia + per-ship stats + trends (milestone M10)

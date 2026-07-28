@@ -26,6 +26,14 @@ import { holoColorsFor, type TeamRole } from "./teamColors";
  *  ship must read as a distinct token without swallowing its neighbors. */
 const MARKER_LENGTH = 70;
 
+const TYPE_SCALE: Record<string, number> = {
+  Destroyer: 0.55,
+  Cruiser: 0.75,
+  Battleship: 1.0,
+  Aircarrier: 1.1,
+  Submarine: 0.5,
+};
+
 /** Cache of decoded GLB root groups, keyed by resolved model URL. Cloning a
  *  cached group is far cheaper than re-parsing the GLB; identical ships in a
  *  match (common for mirror matchmaking) share one entry here. */
@@ -71,7 +79,7 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z, 1);
-  const scale = MARKER_LENGTH / maxDim;
+  const scale = (MARKER_LENGTH * typeScale) / maxDim;
   model.scale.setScalar(scale);
   const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
   model.position.sub(center);
