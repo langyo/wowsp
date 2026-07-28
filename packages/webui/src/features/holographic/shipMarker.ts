@@ -75,6 +75,8 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
   model.scale.setScalar(SHIP_SCALE);
   const center = box.getCenter(new THREE.Vector3()).multiplyScalar(SHIP_SCALE);
   model.position.sub(center);
+  // Raise so the model's keel sits at y=0 (water surface).
+  model.position.y += -box.min.y * SHIP_SCALE;
 
   // Apply the role-tinted holographic shader to every mesh. Collect first so
   // the wireframe overlay (added as a child) doesn't recurse during traverse.

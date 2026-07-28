@@ -465,7 +465,7 @@ export default defineComponent({
     ) {
       const s = sampleAt(traj, t);
       if (s) {
-        marker.position.set(s.x, 0.5, s.z);
+        marker.position.set(s.x, 0, s.z);
         marker.rotation.y = s.yaw;
       }
     }
@@ -521,7 +521,7 @@ export default defineComponent({
         const hasDot = marker.userData.isDot as boolean;
         if (!hasModel && !hasDot) continue;
         marker.visible = true;
-        marker.position.set(s.x, 0.5, s.z);
+        marker.position.set(s.x, 0, s.z);
         marker.rotation.y = s.yaw;
         if (label) {
           const currentHp = hpAtTime(traj.hpSamples, tEff);
