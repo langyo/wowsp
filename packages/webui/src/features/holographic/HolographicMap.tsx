@@ -5,6 +5,7 @@ import { useThreeScene } from "./useThreeScene";
 import {
   resolveMapModelUrl,
   resolveShipModelForEntry,
+  resolveShipModelByShipId,
   loadGlbModel,
   type ShipModelSpec,
 } from "./modelLoader";
@@ -339,10 +340,12 @@ export default defineComponent({
 
         const modelUrl =
           resolveShipModelForEntry(shipInfo, encSpecs) ??
-          resolveShipModelForEntry(null, encSpecs);
+          (rosterEntry?.shipId != null
+            ? resolveShipModelByShipId(rosterEntry.shipId)
+            : null);
         if (!modelUrl) {
           console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
-            + ` (ship: ${shipInfo?.name ?? "?"}, encyclopedia: ${encSpecs.length} entries)`);
+            + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
         }
         if (modelUrl) {
           buildShipMarker({ url: modelUrl, role })
@@ -635,6 +638,7 @@ export default defineComponent({
           updateMarkersAt(current.value);
         }
       },
+      { immediate: true },
     );
 
     // Recompute markers whenever the scrubber moves.
