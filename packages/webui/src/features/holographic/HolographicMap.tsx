@@ -233,10 +233,12 @@ export default defineComponent({
       const span = Math.max(w, d, 200);
       const diagonal = Math.sqrt(w * w + d * d);
       ctrl.target.set(cx, 0, cz);
-      ctrl.minDistance = span * 0.25;   // closest: see ships clearly
-      ctrl.maxDistance = diagonal * 1.5; // farthest: entire map at ~80% viewport
+      ctrl.minDistance = span * 0.08;    // closest: see ship silhouettes
+      ctrl.maxDistance = diagonal * 0.9; // farthest: ~80% map in viewport
       ctrl.maxPolarAngle = Math.PI / 2.1;
-      cam.position.set(cx, span * 1.4, cz + span * 1.0);
+      // Start closer — roughly half the default distance so islands fill
+      // more of the viewport on open.
+      cam.position.set(cx, span * 0.5, cz + span * 0.5);
       cam.lookAt(cx, 0, cz);
       ctrl.update();
     }
@@ -338,6 +340,14 @@ export default defineComponent({
         scene.add(marker);
         shipMarkers.push(marker);
 
+        // Floating label: player name + ship info for the overlay.
+        const rosterEntry =
+          props.vehicles.find((v) => v.id === traj.kind?.vehicleId) ??
+          props.vehicles.find((_, i) => {
+            const idx = shipEntityIds.indexOf(traj.entityId);
+            return idx >= 0 && i === idx;
+          });
+
         const modelUrl =
           resolveShipModelForEntry(shipInfo, encSpecs) ??
           (rosterEntry?.shipId != null
@@ -351,7 +361,6 @@ export default defineComponent({
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
-              // Remove the dot and replace with the real model.
               for (const child of [...marker.children]) {
                 marker.remove(child);
                 child.traverse((o) => {
@@ -373,15 +382,6 @@ export default defineComponent({
             });
         }
 
-        // Floating label: player name + ship info for the overlay.
-        // Try exact roster match by vehicleId first, then fall back to
-        // entity-ID spawn-order heuristic (team A spawns before team B).
-        const rosterEntry =
-          props.vehicles.find((v) => v.id === traj.kind?.vehicleId) ??
-          props.vehicles.find((_, i) => {
-            const idx = shipEntityIds.indexOf(traj.entityId);
-            return idx >= 0 && i === idx;
-          });
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
         const encStore = useEncyclopediaStore();
         const shipName = shipInfo
