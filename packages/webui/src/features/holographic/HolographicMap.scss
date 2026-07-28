@@ -92,6 +92,9 @@
     white-space: nowrap;
   }
 
+  &__time { min-width: 8ch; }
+  &__count { min-width: 7ch; }
+
   &__legend {
     position: absolute;
     top: 12px;

@@ -76,14 +76,6 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
   const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
   model.position.sub(center);
 
-  // Orient hull along +Z. Ships bake with bow along +X in some models; if the
-  // model is wider than it is long, rotate it 90° so the long axis points Z.
-  const scaledSize = size.multiplyScalar(scale);
-  if (scaledSize.x > scaledSize.z) {
-    model.rotation.y = Math.PI / 2;
-    // Re-center after rotation (rotation is about the model origin, already centered).
-  }
-
   // Apply the role-tinted holographic shader to every mesh. Collect first so
   // the wireframe overlay (added as a child) doesn't recurse during traverse.
   const { baseColor, fresnelColor } = holoColorsFor(role);

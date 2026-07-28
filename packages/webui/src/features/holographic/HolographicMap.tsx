@@ -10,7 +10,6 @@ import {
   type ShipModelSpec,
 } from "./modelLoader";
 import { makeHoloMaterial } from "./holoShader";
-import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
 import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
@@ -162,7 +161,6 @@ export default defineComponent({
         // islands get the plain holographic shader. Both share the same
         // time/scanOffset uniforms so one onFrame tick animates everything.
         const islandMat = makeHoloMaterial();
-        const contourMat = makeHoloContourMaterial();
         const wireMat = new THREE.MeshBasicMaterial({
           color: 0x2a8fb5,
           wireframe: true,
@@ -175,15 +173,17 @@ export default defineComponent({
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
-          // A mesh is "terrain" if it or any ancestor node is named Terrain
-          // (GLTFLoader propagates the glTF node name to the Object3D).
           let isTerrain = mesh.name === "Terrain";
           let p: THREE.Object3D | null = mesh.parent;
           while (!isTerrain && p && p !== model) {
             if (p.name === "Terrain") isTerrain = true;
             p = p.parent;
           }
-          mesh.material = isTerrain ? contourMat : islandMat;
+          if (isTerrain) {
+            mesh.visible = false;
+            continue;
+          }
+          mesh.material = islandMat;
           const wire = new THREE.Mesh(mesh.geometry, wireMat);
           wire.raycast = () => {}; // overlay shouldn't intercept picks
           mesh.add(wire);
@@ -703,22 +703,6 @@ export default defineComponent({
           ))}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
-        {props.replayPath ? (
-          <div class="holo-map__legend">
-            <span class="holo-map__legend-item">
-              <span class="holo-map__legend-dot" style={{ background: "#3cb478" }} />
-              {t("replay.legend.self")}
-            </span>
-            <span class="holo-map__legend-item">
-              <span class="holo-map__legend-dot" style={{ background: "#0078c8" }} />
-              {t("replay.legend.ally")}
-            </span>
-            <span class="holo-map__legend-item">
-              <span class="holo-map__legend-dot" style={{ background: "#e6aa32" }} />
-              {t("replay.legend.enemy")}
-            </span>
-          </div>
-        ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
             <button class="holo-map__play" onClick={togglePlay}>
