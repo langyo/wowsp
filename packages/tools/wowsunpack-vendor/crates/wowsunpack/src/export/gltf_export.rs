@@ -209,6 +209,10 @@ pub struct TerrainConfig<'a> {
     /// Sea level height. Terrain vertices below this are clamped; fully
     /// submerged cells are culled to avoid ugly seabed through translucent water.
     pub sea_level: f32,
+    /// When true, do NOT cull fully-submerged terrain cells. The entire
+    /// heightmap grid is exported so contour shaders can draw bathymetric
+    /// bands across the full map area.
+    pub keep_submerged: bool,
     /// VFS path to the lightmap shadow DDS, if available (e.g. from space.ubersettings).
     pub lightmap_path: Option<String>,
 }
@@ -680,7 +684,8 @@ fn generate_terrain_mesh(cfg: &TerrainConfig<'_>) -> MapMesh {
         }
     }
 
-    // Generate triangle indices, culling fully-submerged cells.
+    // Generate triangle indices.
+    let cull_submerged = !cfg.keep_submerged;
     let mut indices = Vec::new();
 
     for gy in 0..(out_h - 1) {
@@ -691,7 +696,12 @@ fn generate_terrain_mesh(cfg: &TerrainConfig<'_>) -> MapMesh {
             let br_idx = bl_idx + 1;
 
             // Skip cells where all four corners are at or below sea level.
-            if !above_sea[tl_idx] && !above_sea[tr_idx] && !above_sea[bl_idx] && !above_sea[br_idx] {
+            if cull_submerged
+                && !above_sea[tl_idx]
+                && !above_sea[tr_idx]
+                && !above_sea[bl_idx]
+                && !above_sea[br_idx]
+            {
                 continue;
             }
 

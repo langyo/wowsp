@@ -136,10 +136,14 @@ def main() -> int:
 
         meshes: list[tuple[str, list[float], list[int]]] = []
 
-        # Step 3a: use raw terrain directly (no decimation).
+        # Step 3a: weld terrain (deduplicate per-face vertices, no decimation).
+        # Vertex-clustering creates artefacts in flat areas; a simple weld keeps
+        # the exact geometry while shrinking the vertex buffer dramatically.
         if terrain is not None:
             tv, ti = terrain
             print(f"[convert_map_holo] terrain raw: {len(tv)//3} verts, {len(ti)//3} tris")
+            tv, ti = decimate(tv, ti, len(ti) // 3)  # weld-only (target = current count)
+            print(f"[convert_map_holo] terrain baked: {len(tv)//3} verts, {len(ti)//3} tris")
             ys = tv[1::3]
             if ys:
                 print(f"[convert_map_holo] terrain elevation span: y={min(ys):.1f} .. {max(ys):.1f} "

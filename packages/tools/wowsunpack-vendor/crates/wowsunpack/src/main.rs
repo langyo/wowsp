@@ -319,6 +319,11 @@ enum Commands {
         /// are downsampled with box filtering. Reduces GLB file size significantly.
         #[arg(long)]
         max_texture_size: Option<u32>,
+
+        /// Keep fully-submerged terrain cells instead of culling them.
+        /// Wanted for contour/bathymetric shaders that need full map coverage.
+        #[arg(long)]
+        keep_submerged: bool,
     },
     /// Inspect armor model geometry and GameParams thickness data for a ship
     Armor {
@@ -1122,21 +1127,23 @@ fn run() -> Result<(), Report> {
             vegetation_density,
             no_textures,
             max_texture_size,
+            keep_submerged,
         } => {
-            run_export_map(
-                &space_dir,
-                &output,
-                lod,
-                no_vfs,
-                vfs.as_ref(),
-                terrain_step,
-                no_terrain,
-                no_water,
-                no_vegetation,
-                vegetation_density,
-                no_textures,
-                max_texture_size,
-            )?;
+        run_export_map(
+            &space_dir,
+            &output,
+            lod,
+            no_vfs,
+            vfs.as_ref(),
+            terrain_step,
+            no_terrain,
+            no_water,
+            no_vegetation,
+            vegetation_density,
+            no_textures,
+            max_texture_size,
+            keep_submerged,
+        )?;
         }
         Commands::Armor { name, hull } => {
             let Some(vfs) = &vfs else {
@@ -1683,6 +1690,7 @@ fn run_export_map(
     vegetation_density: f32,
     no_textures: bool,
     max_texture_size: Option<u32>,
+    keep_submerged: bool,
 ) -> Result<(), Report> {
     use wowsunpack::export::gltf_export;
     use wowsunpack::export::texture;
@@ -1842,6 +1850,7 @@ fn run_export_map(
         bounds: &bounds,
         step: terrain_step,
         sea_level,
+        keep_submerged,
         lightmap_path: lightmap_path.clone(),
     });
     let water_cfg = if !no_water { Some(gltf_export::WaterConfig { bounds: &bounds, sea_level }) } else { None };
