@@ -9,7 +9,6 @@ import {
   loadGlbModel,
   type ShipModelSpec,
 } from "./modelLoader";
-import { makeHoloMaterial } from "./holoShader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
@@ -161,7 +160,6 @@ export default defineComponent({
         // terrain gets the contour shader (topographic + bathymetric bands);
         // islands get the plain holographic shader. Both share the same
         // time/scanOffset uniforms so one onFrame tick animates everything.
-        const islandMat = makeHoloMaterial();
         const contourMat = makeHoloContourMaterial();
         const wireMat = new THREE.MeshBasicMaterial({
           color: 0x2a8fb5,
@@ -184,8 +182,7 @@ export default defineComponent({
           if (isTerrain) {
             mesh.material = contourMat;
           } else {
-            mesh.material = islandMat;
-            mesh.renderOrder = 1; // draw islands above terrain
+            mesh.visible = false;
           }
           const wire = new THREE.Mesh(mesh.geometry, wireMat);
           wire.raycast = () => {}; // overlay shouldn't intercept picks
@@ -413,13 +410,18 @@ export default defineComponent({
       shipLabels.value = newLabels;
 
       // Capture zones: entityType 14 circles on the XZ plane.
+      // Capture zones are static and may have no position samples; use the
+      // initial position from EntityCreate metadata.
+      const capKinds = props.trajectories
+        .filter((t) => t.kind?.entityType === 14)
+        .map((t) => ({ x: t.kind!.initialX, z: t.kind!.initialZ }));
+      if (capKinds.length === 0) {
+        console.warn("[HolographicMap] no capture zone data found in trajectory kinds");
+      }
       const capZoneNames = ["A", "B", "C", "D"];
-      let capIdx = 0;
-      for (const traj of props.trajectories) {
-        if (traj.kind?.entityType !== 14) continue;
-        const cx = traj.kind.initialX;
-        const cz = traj.kind.initialZ;
-        const ringGeom = new THREE.TorusGeometry(55, 1.5, 8, 48);
+      for (let i = 0; i < capKinds.length && i < 4; i++) {
+        const { x: cx, z: cz } = capKinds[i];
+        const ringGeom = new THREE.TorusGeometry(60, 1.2, 8, 48);
         const ringMat = new THREE.MeshBasicMaterial({
           color: 0xffffff,
           transparent: true,
@@ -431,29 +433,26 @@ export default defineComponent({
         ring.position.set(cx, 0.6, cz);
         scene.add(ring);
         trajectoryLines.push(ring as unknown as THREE.Line);
-        if (capIdx < 4) {
-          const canvas = document.createElement("canvas");
-          canvas.width = 64;
-          canvas.height = 64;
-          const ctx = canvas.getContext("2d")!;
-          ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 48px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(capZoneNames[capIdx], 32, 32);
-          const tex = new THREE.CanvasTexture(canvas);
-          const spriteMat = new THREE.SpriteMaterial({
-            map: tex,
-            transparent: true,
-            depthWrite: false,
-          });
-          const sprite = new THREE.Sprite(spriteMat);
-          sprite.position.set(cx, 30, cz);
-          sprite.scale.set(40, 40, 1);
-          scene.add(sprite);
-          trajectoryLines.push(sprite as unknown as THREE.Line);
-          capIdx++;
-        }
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.font = "bold 48px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(capZoneNames[i], 32, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.position.set(cx, 30, cz);
+        sprite.scale.set(40, 40, 1);
+        scene.add(sprite);
+        trajectoryLines.push(sprite as unknown as THREE.Line);
       }
     }
 
