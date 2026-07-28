@@ -628,14 +628,13 @@ export default defineComponent({
       { deep: false },
     );
     watch(
-      () => props.encyclopedia,
-      () => {
-        if (ready.value) {
+      () => props.encyclopedia.size,
+      (s) => {
+        if (ready.value && s > 0) {
           rebuildActors();
           updateMarkersAt(current.value);
         }
       },
-      { deep: false },
     );
 
     // Recompute markers whenever the scrubber moves.
