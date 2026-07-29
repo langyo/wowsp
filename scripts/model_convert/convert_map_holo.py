@@ -50,8 +50,7 @@ DEFAULT_OUT = Path(__file__).resolve().parents[2] / "packages" / "webui" / "src"
 
 # Decimation targets (triangles). Terrain needs more density than islands to
 # keep contour bands + sea-floor bathymetry readable; both stay within budget.
-TERRAIN_TARGET_TRIS = 8000
-ISLANDS_TARGET_TRIS = 3000
+TERRAIN_TARGET_TRIS = 50000
 
 
 def main() -> int:
@@ -122,40 +121,21 @@ def main() -> int:
         print("[convert_map_holo] splitting terrain / islands ...")
         gltf = parse_glb(raw_glb)
         by_name = extract_meshes_by_name(gltf)
-
         terrain = by_name.pop("Terrain", None)
         if terrain is None:
-            print("warning: no 'Terrain' mesh found — exporting islands only.", file=sys.stderr)
-        # Everything remaining is treated as island/building geometry.
-        island_verts: list[float] = []
-        island_indices: list[int] = []
-        for v, i in by_name.values():
-            base = len(island_verts) // 3
-            island_verts.extend(v)
-            island_indices.extend(b + base for b in i)
+            print("warning: no 'Terrain' mesh found — exporting nothing.", file=sys.stderr)
 
         meshes: list[tuple[str, list[float], list[int]]] = []
-
-        # Step 3a: decimate terrain (Y elevation preserved by vertex clustering).
         if terrain is not None:
             tv, ti = terrain
             print(f"[convert_map_holo] terrain raw: {len(tv)//3} verts, {len(ti)//3} tris")
-            tv, ti = decimate(tv, ti, TERRAIN_TARGET_TRIS)
+            tv, ti = decimate(tv, ti, len(ti) // 3)  # weld-only (target = current count)
             print(f"[convert_map_holo] terrain baked: {len(tv)//3} verts, {len(ti)//3} tris")
-            # Report the elevation span so trench coverage is visible in the log.
             ys = tv[1::3]
             if ys:
                 print(f"[convert_map_holo] terrain elevation span: y={min(ys):.1f} .. {max(ys):.1f} "
                       f"(negative = sea floor / trenches)")
             meshes.append(("Terrain", tv, ti))
-
-        # Step 3b: decimate the merged islands.
-        if island_verts:
-            print(f"[convert_map_holo] islands raw: {len(island_verts)//3} verts, "
-                  f"{len(island_indices)//3} tris")
-            iv, ii = decimate(island_verts, island_indices, ISLANDS_TARGET_TRIS)
-            print(f"[convert_map_holo] islands baked: {len(iv)//3} verts, {len(ii)//3} tris")
-            meshes.append(("Islands", iv, ii))
 
         if not meshes:
             print("error: no geometry extracted from the map", file=sys.stderr)

@@ -21,10 +21,11 @@ import { loadGlbModel } from "./modelLoader";
 import { makeHoloMaterial } from "./holoShader";
 import { holoColorsFor, type TeamRole } from "./teamColors";
 
-/** Target length (Three.js units) of a marker's longest axis on the map.
- *  Sized down from ShipStage's 200 — the map spans thousands of units, so a
- *  ship must read as a distinct token without swallowing its neighbors. */
-const MARKER_LENGTH = 70;
+/** Uniform scale factor applied to all ship models. Raw GLBs from the
+ *  exporter preserve the ship's actual game-world proportions (BB ≈ 18u,
+ *  DD ≈ 7u). A uniform multiplier keeps relative sizes correct whereas
+ *  per-ship normalization to a fixed target makes all ships equal length. */
+const SHIP_SCALE = 5.0;
 
 /** Cache of decoded GLB root groups, keyed by resolved model URL. Cloning a
  *  cached group is far cheaper than re-parsing the GLB; identical ships in a
@@ -32,19 +33,12 @@ const MARKER_LENGTH = 70;
 const glbCache = new Map<string, THREE.Group>();
 
 interface BuildShipMarkerOpts {
-  /** Resolved GLB URL (from the model loader). */
   url: string;
-  /** Team role — drives the holographic tint. */
   role: TeamRole;
 }
 
 /** Build a holographic ship marker for the map. Loads (or clones from cache)
- *  the GLB at `url`, normalizes it to `MARKER_LENGTH` units, and applies the
- *  role-tinted holographic shader to every mesh. Resolves to the marker group,
- *  or rejects if the model fails to load (caller falls back to a cone).
- *
- *  The returned group's own materials are owned by the caller; geometry is
- *  shared with the cache, so DO NOT dispose geometry — use `disposeMarker()`. */
+ *  the GLB at `url`, applies uniform scale and role-tinted holographic shader. */
 export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.Group> {
   const { url, role } = opts;
 
@@ -67,22 +61,22 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
   // (per-role tint) and transforms.
   const model = cloneWithSharedGeometry(source);
 
-  // Normalize: center + uniform-scale so the longest axis = MARKER_LENGTH.
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z, 1);
-  const scale = MARKER_LENGTH / maxDim;
-  model.scale.setScalar(scale);
-  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
-  model.position.sub(center);
+  // Recompute bounding box (baked GLBs drop POSITION min/max).
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.geometry?.attributes.position) {
+      mesh.geometry.computeBoundingBox();
+      mesh.geometry.computeBoundingSphere();
+    }
+  });
 
-  // Orient hull along +Z. Ships bake with bow along +X in some models; if the
-  // model is wider than it is long, rotate it 90° so the long axis points Z.
-  const scaledSize = size.multiplyScalar(scale);
-  if (scaledSize.x > scaledSize.z) {
-    model.rotation.y = Math.PI / 2;
-    // Re-center after rotation (rotation is about the model origin, already centered).
-  }
+  // Apply uniform scale to preserve relative ship sizes (BB > DD).
+  const box = new THREE.Box3().setFromObject(model);
+  model.scale.setScalar(SHIP_SCALE);
+  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(SHIP_SCALE);
+  model.position.sub(center);
+  // Raise so the model's keel sits at y=0 (water surface).
+  model.position.y += -box.min.y * SHIP_SCALE;
 
   // Apply the role-tinted holographic shader to every mesh. Collect first so
   // the wireframe overlay (added as a child) doesn't recurse during traverse.

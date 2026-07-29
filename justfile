@@ -215,12 +215,16 @@ convert-map-holo *ARGS:
 # ── bake ──────────────────────────────────────────────────────────────
 #   just bake model raw.glb -o ship.glb --triangles 2000
 #   just bake ships
+#   just bake maps
 
 bake-model *ARGS:
     python scripts/model_convert/bake_model.py {{ARGS}}
 
 bake-ships *ARGS:
     python scripts/model_convert/batch_bake.py {{ARGS}}
+
+bake-maps *ARGS:
+    WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/batch_bake_maps.py {{ARGS}}
 
 # ── extract ───────────────────────────────────────────────────────────
 #   just extract                  → auto-detect game, run all modules

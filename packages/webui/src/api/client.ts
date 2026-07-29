@@ -107,6 +107,7 @@ export interface EntityKind {
   initialX: number;
   initialY: number;
   initialZ: number;
+  creationTime: number;
 }
 
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */
@@ -117,6 +118,14 @@ export interface EntityTrajectory {
   /** Match time (s) the entity was destroyed (EntityDestroy 0x06), if sunk.
    *  Undefined/null = survived. The map freezes + greys the marker from here. */
   deathTime?: number | null;
+  /** HP timeline samples from EntityProperty (0x07) packets. */
+  hpSamples?: HpSample[];
+}
+
+/** An HP value at a point in time. */
+export interface HpSample {
+  time: number;
+  value: number;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
