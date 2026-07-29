@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
 
 import { useThreeScene } from "./useThreeScene";
@@ -80,6 +80,10 @@ export default defineComponent({
       if (timeMode.value === 1) return "-" + formatTime(d - c);
       return formatTime(d);
     }
+
+    // Score bar data
+    const allyCount = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
+    const enemyCount = computed(() => props.vehicles.filter(v => v.relation > 1).length);
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -886,6 +890,19 @@ export default defineComponent({
           ))}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
+        {props.replayPath ? (
+          <div class="holo-map__scorebar">
+            <span class="holo-map__score-team holo-map__score--ally">
+              <span class="holo-map__score-dot" style="background:#3cb478" />
+              {allyCount.value}
+            </span>
+            <span class="holo-map__score-divider">:</span>
+            <span class="holo-map__score-team holo-map__score--enemy">
+              <span class="holo-map__score-dot" style="background:#cc3333" />
+              {enemyCount.value}
+            </span>
+          </div>
+        ) : null}
         <canvas
           ref={minimapCanvas}
           class="holo-map__minimap"

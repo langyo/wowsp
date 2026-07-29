@@ -212,6 +212,43 @@
   }
 }
 
+/* ── Score bar ──────────────────────────────────────────────────────── */
+.holo-map__scorebar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  background: rgba(5, 8, 15, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.holo-map__score-team {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.holo-map__score-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.holo-map__score-divider {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: var(--text-sm);
+}
+
 /* ── Tab roster overlay ─────────────────────────────────────────────── */
 .holo-map__roster-overlay {
   position: absolute;
