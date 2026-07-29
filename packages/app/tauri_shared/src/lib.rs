@@ -197,6 +197,18 @@ pub struct EntityTrajectory {
     /// the marker here and tints it grey.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub death_time: Option<f32>,
+    /// HP timeline from EntityProperty (0x07) packets. Pairs of (time, hp_value).
+    /// Empty when the replay contains no HP data for this entity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hp_samples: Vec<HpSample>,
+}
+
+/// A single HP snapshot from the replay's property stream.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HpSample {
+    pub time: f32,
+    pub value: u32,
 }
 
 /// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.
@@ -286,7 +298,13 @@ pub struct EntityKind {
     pub initial_x: f32,
     pub initial_y: f32,
     pub initial_z: f32,
+    /// Match time (seconds) when this entity was created via EntityCreate.
+    /// Entities that existed before the replay started have time -1.0.
+    #[serde(default = "default_creation_time")]
+    pub creation_time: f32,
 }
+
+fn default_creation_time() -> f32 { -1.0 }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Ship encyclopedia + per-ship stats + trends (milestone M10)

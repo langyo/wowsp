@@ -1,21 +1,22 @@
-import { defineComponent, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
 
 import { useThreeScene } from "./useThreeScene";
 import {
   resolveMapModelUrl,
   resolveShipModelForEntry,
+  resolveShipModelByShipId,
   loadGlbModel,
   type ShipModelSpec,
 } from "./modelLoader";
-import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "./holoShader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
-import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
+import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { t } from "@/i18n";
 import "./HolographicMap.scss";
 
 /**
@@ -48,17 +49,9 @@ export default defineComponent({
   },
   setup(props) {
     const container = ref<HTMLElement | null>(null);
-    // Uniforms objects for the map's holographic materials (islands + terrain
-    // contour). Each material has its own uniforms; we tick all of them each
-    // frame so the scanline sweep stays in sync across both shaders.
-    const holoUniformsList: HoloUniforms[] = [];
-    const { ready, api } = useThreeScene(container, (dt) => {
-      for (const u of holoUniformsList) tickHoloUniforms(u, dt);
-      // Keep floating label positions in sync even when the camera is
-      // being panned/zoomed (Orbit-like controls aren't wired here yet,
-      // but the projection is cheap enough to run every frame for when
-      // they are).
+    const { ready, api } = useThreeScene(container, (_dt) => {
       updateLabelPositions();
+      drawMinimap();
     });
 
     // Playback state.
@@ -67,6 +60,48 @@ export default defineComponent({
     const playing = ref(false);
     let playRaf = 0;
     let lastTick = 0;
+
+    // Time display toggle: 0=elapsed, 1=remaining, 2=total
+    const timeMode = ref(0);
+    const showRoster = ref(false);
+
+    function toggleTimeMode() {
+      timeMode.value = (timeMode.value + 1) % 3;
+    }
+    function formatTime(sec: number): string {
+      const s = Math.max(0, Math.round(sec));
+      const m = Math.floor(s / 60);
+      return `${m}:${String(s % 60).padStart(2, "0")}`;
+    }
+    function displayTime(): string {
+      const d = duration.value || 0;
+      const c = current.value;
+      if (timeMode.value === 0) return formatTime(c);
+      if (timeMode.value === 1) return "-" + formatTime(d - c);
+      return formatTime(d);
+    }
+
+    // Score bar data
+    const allyCount = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
+    const enemyCount = computed(() => props.vehicles.filter(v => v.relation > 1).length);
+
+    onMounted(() => {
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Tab") {
+          e.preventDefault();
+          showRoster.value = true;
+        }
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        if (e.key === "Tab") showRoster.value = false;
+      };
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("keyup", onKeyUp);
+      onBeforeUnmount(() => {
+        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("keyup", onKeyUp);
+      });
+    });
 
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
@@ -84,6 +119,8 @@ export default defineComponent({
       shipName: string;
       tier: number | null;
       type: string | null;
+      hp: number | null;
+      maxHp: number | null;
       /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
       x: number;
       y: number;
@@ -91,8 +128,84 @@ export default defineComponent({
       dead: boolean;
     }
     const shipLabels = ref<ShipLabel[]>([]);
-    /** World-position scratch vector reused each frame for label projection. */
     const _projVec = new THREE.Vector3();
+
+    // Minimap canvas.
+    const minimapCanvas = ref<HTMLCanvasElement | null>(null);
+    let _mmCtx: CanvasRenderingContext2D | null = null;
+    const MINIMAP_SIZE = 160;
+
+    function drawMinimap() {
+      if (!bounds) return;
+      const cvs = minimapCanvas.value;
+      if (!cvs) return;
+      if (!_mmCtx) _mmCtx = cvs.getContext("2d");
+      const ctx = _mmCtx!;
+      const w = MINIMAP_SIZE;
+      const h = MINIMAP_SIZE;
+      const m = 8; // margin
+      if (cvs.width !== w) cvs.width = w;
+      if (cvs.height !== h) cvs.height = h;
+
+      const mapW = bounds.maxX - bounds.minX;
+      const mapH = bounds.maxZ - bounds.minZ;
+      const scaleX = (w - m * 2) / (mapW || 1);
+      const scaleZ = (h - m * 2) / (mapH || 1);
+      const scale = Math.min(scaleX, scaleZ);
+      const ox = (w - mapW * scale) / 2;
+      const oy = (h - mapH * scale) / 2;
+
+      function wx(x: number) { return (x - bounds!.minX) * scale + ox; }
+      function wz(z: number) { return h - ((z - bounds!.minZ) * scale + oy); }
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "rgba(0, 170, 255, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+      // Ship dots.
+      for (const m of shipMarkers) {
+        if (!m.visible) continue;
+        const role = m.userData.role as TeamRole | undefined;
+        const color = role ? TEAM_COLOR[role] : 0x888888;
+        const cx = wx(m.position.x);
+        const cz = wz(m.position.z);
+        ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+        ctx.beginPath();
+        ctx.arc(cx, cz, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Camera frustum.
+      const cam = api.value?.camera;
+      if (cam) {
+        const corners = frustumCorners(cam);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(wx(corners[0].x), wz(corners[0].z));
+        for (let i = 1; i < 4; i++) ctx.lineTo(wx(corners[i].x), wz(corners[i].z));
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    function frustumCorners(cam: THREE.PerspectiveCamera): THREE.Vector3[] {
+      const hw = 0.5;
+      const hh = hw / cam.aspect;
+      const corners: THREE.Vector3[] = [];
+      for (let i = 0; i < 4; i++) {
+        const sx = i === 0 || i === 3 ? -hw : hw;
+        const sy = i < 2 ? -hh : hh;
+        const pt = new THREE.Vector3(sx, sy, 1).unproject(cam);
+        const ray = pt.clone().sub(cam.position).normalize();
+        const t = -(cam.position.y) / ray.y;
+        corners.push(cam.position.clone().add(ray.multiplyScalar(t)));
+      }
+      return corners;
+    }
 
     /** Tokens used to cancel in-flight async marker loads when actors are
      *  rebuilt/unmounted before a GLB resolves. Each rebuild bumps the epoch;
@@ -100,7 +213,7 @@ export default defineComponent({
     let markerEpoch = 0;
 
     function clearActors() {
-      markerEpoch++; // invalidate any in-flight marker loads
+      markerEpoch++;
       const scene = api.value?.scene;
       if (!scene) return;
       for (const l of trajectoryLines) {
@@ -110,11 +223,7 @@ export default defineComponent({
       }
       for (const m of shipMarkers) {
         scene.remove(m);
-        // Markers built by buildShipMarker share geometry with the global GLB
-        // cache (identical ships reuse one buffer) — only dispose materials,
-        // not geometry. Cone fallbacks own their geometry but disposeMarker
-        // only touches materials, so dispose cones' geometry explicitly.
-        if (m.userData.isCone) {
+        if (m.userData.isDot) {
           m.traverse((o) => {
             if (o instanceof THREE.Mesh) {
               o.geometry.dispose();
@@ -140,7 +249,6 @@ export default defineComponent({
           }
         });
         mapModel = null;
-        holoUniformsList.length = 0;
       }
     }
 
@@ -172,12 +280,7 @@ export default defineComponent({
         // terrain gets the contour shader (topographic + bathymetric bands);
         // islands get the plain holographic shader. Both share the same
         // time/scanOffset uniforms so one onFrame tick animates everything.
-        const islandMat = makeHoloMaterial();
         const contourMat = makeHoloContourMaterial();
-        holoUniformsList.push(
-          islandMat.uniforms as unknown as HoloUniforms,
-          contourMat.uniforms as unknown as HoloUniforms,
-        );
         const wireMat = new THREE.MeshBasicMaterial({
           color: 0x2a8fb5,
           wireframe: true,
@@ -190,15 +293,17 @@ export default defineComponent({
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
         for (const mesh of meshes) {
-          // A mesh is "terrain" if it or any ancestor node is named Terrain
-          // (GLTFLoader propagates the glTF node name to the Object3D).
           let isTerrain = mesh.name === "Terrain";
           let p: THREE.Object3D | null = mesh.parent;
           while (!isTerrain && p && p !== model) {
             if (p.name === "Terrain") isTerrain = true;
             p = p.parent;
           }
-          mesh.material = isTerrain ? contourMat : islandMat;
+          if (isTerrain) {
+            mesh.material = contourMat;
+          } else {
+            mesh.visible = false;
+          }
           const wire = new THREE.Mesh(mesh.geometry, wireMat);
           wire.raycast = () => {}; // overlay shouldn't intercept picks
           mesh.add(wire);
@@ -238,15 +343,24 @@ export default defineComponent({
     }
 
     function fitCamera(b: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+      const ctrl = api.value?.controls;
       const cam = api.value?.camera;
-      if (!cam) return;
+      if (!ctrl || !cam) return;
       const cx = (b.minX + b.maxX) / 2;
       const cz = (b.minZ + b.maxZ) / 2;
       const w = b.maxX - b.minX;
       const d = b.maxZ - b.minZ;
-      const span = Math.max(w, d, 200) * 0.7; // padding + min size
-      cam.position.set(cx, span * 1.4, cz + span * 1.0);
+      const span = Math.max(w, d, 200);
+      const diagonal = Math.sqrt(w * w + d * d);
+      ctrl.target.set(cx, 0, cz);
+      ctrl.minDistance = span * 0.08;    // closest: see ship silhouettes
+      ctrl.maxDistance = diagonal * 0.9; // farthest: ~80% map in viewport
+      ctrl.maxPolarAngle = Math.PI / 2.1;
+      // Start closer — roughly half the default distance so islands fill
+      // more of the viewport on open.
+      cam.position.set(cx, span * 0.5, cz + span * 0.5);
       cam.lookAt(cx, 0, cz);
+      ctrl.update();
     }
 
     /** Map each ship trajectory to its roster entry (for team role + ship
@@ -330,30 +444,50 @@ export default defineComponent({
         scene.add(line);
         trajectoryLines.push(line);
 
-        // Marker: start as a cone, optionally upgraded to a ship model.
+        // Marker: small cone + sphere so the heading is visible even before
+        // the ship model loads. Cone points +Z (forward) at yaw 0.
         const marker = new THREE.Group();
-        const coneGeom = new THREE.ConeGeometry(14, 36, 8);
-        const coneMat = new THREE.MeshBasicMaterial({ color });
+        const coneGeom = new THREE.ConeGeometry(7, 18, 6);
+        const coneMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7 });
         const cone = new THREE.Mesh(coneGeom, coneMat);
-        cone.rotation.x = Math.PI / 2; // lie flat, point +Z at yaw 0
+        cone.rotation.x = Math.PI / 2; // cone tip along +Z
+        cone.position.z = 6; // shift forward so sphere is behind the tip
         marker.add(cone);
+        const dotGeom = new THREE.SphereGeometry(8, 10, 6);
+        const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
+        const dot = new THREE.Mesh(dotGeom, dotMat);
+        dot.position.z = 0;
+        marker.add(dot);
         marker.userData.entityId = traj.entityId;
         marker.userData.role = role;
-        marker.userData.isCone = true;
+        marker.userData.modelLoaded = false;
+        marker.userData.isDot = true;
         marker.userData.deathTime = traj.deathTime ?? null;
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
 
-        // Async: swap the cone for the real/fallback ship model.
-        const modelUrl = resolveShipModelForEntry(shipInfo, encSpecs);
+        // Floating label: player name + ship info for the overlay.
+        const rosterEntry =
+          props.vehicles.find((v) => v.id === traj.kind?.vehicleId) ??
+          props.vehicles.find((_, i) => {
+            const idx = shipEntityIds.indexOf(traj.entityId);
+            return idx >= 0 && i === idx;
+          });
+
+        const modelUrl =
+          resolveShipModelForEntry(shipInfo, encSpecs) ??
+          (rosterEntry?.shipId != null
+            ? resolveShipModelByShipId(rosterEntry.shipId)
+            : null);
+        if (!modelUrl) {
+          console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
+            + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
+        }
         if (modelUrl) {
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
-              if (epoch !== markerEpoch || !api.value?.scene) return; // stale
-              const pos = marker.position.clone();
-              const yaw = marker.rotation.y;
-              const visible = marker.visible;
+              if (epoch !== markerEpoch || !api.value?.scene) return;
               for (const child of [...marker.children]) {
                 marker.remove(child);
                 child.traverse((o) => {
@@ -364,23 +498,31 @@ export default defineComponent({
                 });
               }
               marker.add(shipModel);
-              marker.position.copy(pos);
-              marker.rotation.y = yaw;
-              marker.visible = visible;
-              marker.userData.isCone = false;
+              marker.userData.modelLoaded = true;
+              marker.userData.isDot = false;
+              marker.visible = true;
+              initMarkerPosition(marker, traj, current.value);
+              updateLabelPositions();
             })
-            .catch(() => {
-              /* cone stays — model load failed (corrupt/missing GLB) */
+            .catch((e) => {
+              console.warn(`[HolographicMap] failed to load marker model for entity ${traj.entityId}:`, e);
             });
         }
 
-        // Floating label: player name + ship info for the overlay.
-        const rosterEntry = props.vehicles.find((v) => v.id === traj.kind?.vehicleId);
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
         const encStore = useEncyclopediaStore();
-        const shipName = shipInfo
-          ? encStore.shipDisplayName(shipInfo)
-          : (rosterEntry?.shipName ?? "?");
+        const shipName =
+          (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
+          rosterEntry?.shipName ??
+          shipInfo?.name ??
+          "?";
+        const dp = shipInfo?.defaultProfile as
+          | Record<string, Record<string, unknown>>
+          | undefined;
+        const maxHp =
+          dp?.hull?.health != null && typeof dp.hull.health === "number"
+            ? dp.hull.health
+            : null;
         newLabels.push({
           entityId: traj.entityId,
           role,
@@ -388,18 +530,91 @@ export default defineComponent({
           shipName,
           tier: shipInfo?.tier ?? null,
           type: shipInfo?.type ?? null,
+          hp: maxHp,
+          maxHp,
           x: 0, y: 0,
           visible: false,
           dead: false,
         });
       }
       shipLabels.value = newLabels;
+
+      // Capture zones: entityType 14 circles on the XZ plane.
+      // Capture zones are static and may have no position samples; use the
+      // initial position from EntityCreate metadata.
+      const capKinds = props.trajectories
+        .filter((t) => t.kind?.entityType === 14)
+        .map((t) => ({ x: t.kind!.initialX, z: t.kind!.initialZ }));
+      if (capKinds.length === 0) {
+        console.warn("[HolographicMap] no capture zone data found in trajectory kinds");
+      }
+      const capZoneNames = ["A", "B", "C", "D"];
+      for (let i = 0; i < capKinds.length && i < 4; i++) {
+        const { x: cx, z: cz } = capKinds[i];
+        const ringGeom = new THREE.TorusGeometry(60, 1.2, 8, 48);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+        });
+        const ring = new THREE.Mesh(ringGeom, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(cx, 0.6, cz);
+        scene.add(ring);
+        trajectoryLines.push(ring as unknown as THREE.Line);
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.font = "bold 48px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(capZoneNames[i], 32, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.position.set(cx, 30, cz);
+        sprite.scale.set(40, 40, 1);
+        scene.add(sprite);
+        trajectoryLines.push(sprite as unknown as THREE.Line);
+      }
+    }
+
+    /** Set a freshly-loaded marker to the correct world position at the current
+     *  playback time so it snaps to the right spot immediately. */
+    function initMarkerPosition(
+      marker: THREE.Group,
+      traj: EntityTrajectory,
+      t: number,
+    ) {
+      const s = sampleAt(traj, t);
+      if (s) {
+        marker.position.set(s.x, 0, s.z);
+        marker.rotation.y = s.yaw;
+      }
+    }
+
+    /** Find the last HP value at or before time t. */
+    function hpAtTime(samples: HpSample[] | undefined, t: number): number | null {
+      if (!samples || samples.length === 0) return null;
+      let last: number = samples[0].value;
+      for (const s of samples) {
+        if (s.time > t) break;
+        last = s.value;
+      }
+      return last;
     }
 
     /** Position + orient each ship marker at the current playback time.
-     *  Ships that have been destroyed (time ≥ deathTime) are frozen at their
-     *  last known position and their materials desaturated to a faint grey
-     *  tint that still hints at the original team colour. */
+     *  Ships whose model hasn't loaded yet are skipped; ships that have been
+     *  destroyed (time ≥ deathTime) are frozen at their last position and
+     *  their materials desaturated to a faint grey tint. */
     function updateMarkersAt(t: number) {
       const labels = shipLabels.value;
       for (let i = 0; i < shipMarkers.length; i++) {
@@ -408,6 +623,13 @@ export default defineComponent({
         const entityId = marker.userData.entityId as number;
         const traj = props.trajectories.find((tr) => tr.entityId === entityId);
         if (!traj || traj.samples.length === 0) {
+          marker.visible = false;
+          if (label) label.visible = false;
+          continue;
+        }
+        // Hide entities that haven't been created yet at this time.
+        const created = traj.kind?.creationTime ?? -1;
+        if (created >= 0 && t < created) {
           marker.visible = false;
           if (label) label.visible = false;
           continue;
@@ -423,9 +645,19 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
+        // Show the dot marker even before the ship model loads; hide only
+        // when model is missing entirely (not dot, not loaded).
+        const hasModel = marker.userData.modelLoaded as boolean;
+        const hasDot = marker.userData.isDot as boolean;
+        if (!hasModel && !hasDot) continue;
         marker.visible = true;
-        marker.position.set(s.x, 0.5, s.z);
+        marker.position.set(s.x, 0, s.z);
         marker.rotation.y = s.yaw;
+        if (label) {
+          const currentHp = hpAtTime(traj.hpSamples, tEff);
+          if (currentHp != null) label.hp = currentHp;
+          label.maxHp ??= currentHp ?? label.maxHp;
+        }
 
         // Grey out dead ships: desaturate every child material toward a faint
         // grey while keeping a hint of the role colour so teams remain readable.
@@ -437,11 +669,20 @@ export default defineComponent({
           const deadFresnel = new THREE.Color(fresnelColor).lerp(new THREE.Color(0x666666), 0.65);
           marker.traverse((o) => {
             const m = o as THREE.Mesh;
-            if (m.material && (m.material as any).uniforms) {
-              const u = (m.material as any).uniforms;
-              if (u.baseColor) u.baseColor.value.set(deadBase);
-              if (u.fresnelColor) u.fresnelColor.value.set(deadFresnel);
-              (m.material as THREE.Material).opacity = 0.35;
+            const mat = m.material as THREE.ShaderMaterial | THREE.MeshBasicMaterial | null;
+            if (!mat) return;
+            if ((mat as THREE.ShaderMaterial).uniforms) {
+              const u = (mat as THREE.ShaderMaterial).uniforms;
+              if (u.baseColor) {
+                (u.baseColor.value as THREE.Color).set(deadBase);
+              }
+              if (u.fresnelColor) {
+                (u.fresnelColor.value as THREE.Color).set(deadFresnel);
+              }
+              mat.opacity = 0.35;
+            } else if (mat instanceof THREE.MeshBasicMaterial) {
+              mat.color.set(0x444444);
+              mat.opacity = 0.35;
             }
           });
         }
@@ -574,14 +815,14 @@ export default defineComponent({
       { deep: false },
     );
     watch(
-      () => props.encyclopedia,
-      () => {
-        if (ready.value) {
+      () => props.encyclopedia.size,
+      (s) => {
+        if (ready.value && s > 0) {
           rebuildActors();
           updateMarkersAt(current.value);
         }
       },
-      { deep: false },
+      { immediate: true },
     );
 
     // Recompute markers whenever the scrubber moves.
@@ -638,28 +879,47 @@ export default defineComponent({
                 ) : null}
                 {lbl.shipName}
               </span>
+              {lbl.hp != null ? (
+                <span class="holo-label__hp">
+                  {lbl.hp.toLocaleString()}
+                  {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                </span>
+              ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
             </div>
           ))}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
-        {props.trajectories.length > 0 ? (
-          <div class="holo-map__legend">
-            <span class="holo-map__legend-item">
-              <span class="holo-map__legend-dot" style={{ background: "#3cb478" }} />
-              {t("replay.legend.self")}
+        {props.replayPath ? (
+          <div class="holo-map__scorebar">
+            <span class="holo-map__score-team holo-map__score--ally">
+              <span class="holo-map__score-dot" style="background:#3cb478" />
+              {allyCount.value}
             </span>
-            <span class="holo-map__legend-item">
-              <span class="holo-map__legend-dot" style={{ background: "#0078c8" }} />
-              {t("replay.legend.ally")}
-            </span>
-            <span class="holo-map__legend-item">
-              <span class="holo-map__legend-dot" style={{ background: "#e6aa32" }} />
-              {t("replay.legend.enemy")}
+            <span class="holo-map__score-divider">:</span>
+            <span class="holo-map__score-team holo-map__score--enemy">
+              <span class="holo-map__score-dot" style="background:#cc3333" />
+              {enemyCount.value}
             </span>
           </div>
         ) : null}
-        {props.trajectories.length > 0 ? (
+        <canvas
+          ref={minimapCanvas}
+          class="holo-map__minimap"
+          width={160}
+          height={160}
+          style={{
+            width: "160px",
+            height: "160px",
+            position: "absolute",
+            right: "8px",
+            bottom: "8px",
+            zIndex: "3",
+            borderRadius: "4px",
+            pointerEvents: "none",
+          }}
+        />
+        {props.replayPath ? (
           <div class="holo-map__controls">
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? "❚❚" : "▶"}
@@ -676,10 +936,39 @@ export default defineComponent({
                 current.value = Number((e.target as HTMLInputElement).value);
               }}
             />
-            <span class="holo-map__time">
-              {current.value.toFixed(0)}s / {duration.value.toFixed(0)}s
+            <span class="holo-map__time" onClick={toggleTimeMode} title="Click to toggle elapsed / remaining / total">
+              {displayTime()}
             </span>
-            <span class="holo-map__count">{props.trajectories.length} entities</span>
+          </div>
+        ) : null}
+        {showRoster.value ? (
+          <div class="holo-map__roster-overlay">
+            <table>
+              <thead>
+                <tr><th colspan="3">{t("replay.roster.allies")}</th></tr>
+              </thead>
+              <tbody>
+                {props.vehicles.filter(v => v.relation <= 1).map(v => (
+                  <tr key={v.id}>
+                    <td style={{color: v.relation === 0 ? "#fff" : "#3cb478"}}>{v.name}</td>
+                    <td>{v.shipName ?? ""}</td>
+                    <td></td>
+                  </tr>
+                ))}
+              </tbody>
+              <thead>
+                <tr><th colspan="3">{t("replay.roster.enemies")}</th></tr>
+              </thead>
+              <tbody>
+                {props.vehicles.filter(v => v.relation > 1).map(v => (
+                  <tr key={v.id}>
+                    <td style={{color: "#cc3333"}}>{v.name}</td>
+                    <td>{v.shipName ?? ""}</td>
+                    <td></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : null}
       </div>

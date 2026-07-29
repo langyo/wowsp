@@ -90,7 +90,7 @@ export const HOLO_CONTOUR_FRAG = /* glsl */ `
     col += fresnelColor * scan * 0.4;
     col += fresnelColor * fres * 1.1;
 
-    float alpha = 0.62 + 0.30 * fres + contour * 0.15;
+    float alpha = 0.42 + 0.20 * fres + contour * 0.08;
     gl_FragColor = vec4(col, alpha);
   }
 `;

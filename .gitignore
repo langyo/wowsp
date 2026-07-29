@@ -63,8 +63,9 @@ Cargo.lock
 /target/model-tools/
 /target/model-tmp/
 
-# Vendored external Rust projects (built in-tree but not part of our workspace)
-packages/tools/wowsunpack-vendor/
+# Vendored wowsunpack (maintained by us, tracked in-tree)
+# Build artifacts inside the vendor are still ignored via its own .gitignore
+packages/tools/wowsunpack-vendor/target/
 
 # celestia-devtools: staged-on-demand shared justfile recipes (celestia-devtools init / just fetch)
 /.just/

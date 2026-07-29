@@ -85,11 +85,9 @@ export default defineComponent({
           <router-view
             v-slots={{
               default: ({ Component, route }: { Component: unknown; route: { path: string } }) => (
-                <Transition name="s-fade-slide" mode="out-in">
-                  <div class="app-shell__page" key={route.path}>
-                    {Component as JSX.Element}
-                  </div>
-                </Transition>
+                <div class="app-shell__page" key={route.path}>
+                  {Component as JSX.Element}
+                </div>
               ),
             }}
           />
