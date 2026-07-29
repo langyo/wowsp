@@ -82,8 +82,13 @@ export default defineComponent({
     }
 
     // Score bar data
-    const allyCount = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
-    const enemyCount = computed(() => props.vehicles.filter(v => v.relation > 1).length);
+    const allyTotal = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
+    const enemyTotal = computed(() => props.vehicles.filter(v => v.relation > 1).length);
+    // Ships alive = total - sunk count at current time
+    const allyAlive = ref(allyTotal.value);
+    const enemyAlive = ref(enemyTotal.value);
+    // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=team1, 2=team2
+    const capStatus = ref([0, 0, 0]);
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -236,6 +241,9 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+      allyAlive.value = allyTotal.value;
+      enemyAlive.value = enemyTotal.value;
+      capStatus.value = [0, 0, 0];
     }
 
     /** Remove a previously-loaded map terrain model. */
@@ -658,6 +666,12 @@ export default defineComponent({
           if (currentHp != null) label.hp = currentHp;
           label.maxHp ??= currentHp ?? label.maxHp;
         }
+        if (dead && !marker.userData._countedDead) {
+          marker.userData._countedDead = true;
+          const role = marker.userData.role as TeamRole;
+          if (role === "ally") allyAlive.value = Math.max(0, allyAlive.value - 1);
+          else if (role === "enemy") enemyAlive.value = Math.max(0, enemyAlive.value - 1);
+        }
 
         // Grey out dead ships: desaturate every child material toward a faint
         // grey while keeping a hint of the role colour so teams remain readable.
@@ -894,12 +908,16 @@ export default defineComponent({
           <div class="holo-map__scorebar">
             <span class="holo-map__score-team holo-map__score--ally">
               <span class="holo-map__score-dot" style="background:#3cb478" />
-              {allyCount.value}
+              {allyAlive.value}/{allyTotal.value}
             </span>
-            <span class="holo-map__score-divider">:</span>
+            <span class="holo-map__score-caps">
+              {["A","B","C"].map((l,i) => (
+                <span class={["holo-map__cap", capStatus.value[i] === 1 ? "holo-map__cap--ally" : capStatus.value[i] === 2 ? "holo-map__cap--enemy" : ""]}>{l}</span>
+              ))}
+            </span>
             <span class="holo-map__score-team holo-map__score--enemy">
+              {enemyAlive.value}/{enemyTotal.value}
               <span class="holo-map__score-dot" style="background:#cc3333" />
-              {enemyCount.value}
             </span>
           </div>
         ) : null}

@@ -87,29 +87,34 @@ fn group_by_entity(
     // Build HP timelines: property index 20 ≈ current HP for ships.
     let mut hp_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
         std::collections::BTreeMap::new();
+    let mut cap_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
+        std::collections::BTreeMap::new();
     for (eid, changes) in &properties {
-        for c in changes.iter().filter(|c| c.property_index == 20) {
-            hp_map
-                .entry(*eid)
-                .or_default()
-                .push(wowsp_tauri_shared::HpSample {
-                    time: c.time,
-                    value: c.value,
-                });
+        for c in changes {
+            let sample = wowsp_tauri_shared::HpSample { time: c.time, value: c.value };
+            if c.property_index == 20 {
+                hp_map.entry(*eid).or_default().push(sample);
+            } else if c.property_index == 0 {
+                cap_map.entry(*eid).or_default().push(sample);
+            }
         }
     }
     let mut out: Vec<_> = positions
         .into_iter()
-        .map(|(entity_id, samples)| {
-            let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
-            wowsp_tauri_shared::EntityTrajectory {
-                entity_id,
-                kind: kinds.get(&entity_id).cloned(),
-                samples,
-                death_time: destroys.get(&entity_id).copied(),
-                hp_samples,
-            }
-        })
+        .map(
+            |(entity_id, samples)| {
+                let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
+                let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
+                wowsp_tauri_shared::EntityTrajectory {
+                    entity_id,
+                    kind: kinds.get(&entity_id).cloned(),
+                    samples,
+                    death_time: destroys.get(&entity_id).copied(),
+                    hp_samples,
+                    cap_samples,
+                }
+            },
+        )
         .collect();
     // Include entities that have creation metadata but no position samples
     // (e.g. static capture zones, entityType 14, which never emit Position packets).
@@ -120,7 +125,8 @@ fn group_by_entity(
                 kind: Some(kind.clone()),
                 samples: Vec::new(),
                 death_time: destroys.get(eid).copied(),
-                hp_samples: Vec::new(),
+                hp_samples: hp_map.remove(eid).unwrap_or_default(),
+                cap_samples: cap_map.remove(eid).unwrap_or_default(),
             });
         }
     }
