@@ -68,9 +68,11 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories
+          rust-version: "1.85.0"
       - name: cargo-deny (licenses)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
+          rust-version: "1.85.0"
       - name: npm audit
         run: pnpm audit --audit-level=high
