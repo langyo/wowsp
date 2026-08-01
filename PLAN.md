@@ -76,3 +76,10 @@ visible only while `Tab` is held.
 Each milestone is a focused PR against `dev`. The skeleton in this repository is
 the foundation for all of them — every TODO in the code points at the milestone
 it belongs to.
+
+## Known CI gaps
+
+- cargo-deny steps are disabled: the dockerized action trips over
+  rust-toolchain.toml (stable-musl fetch) and rejects deny.toml values.
+  Re-enable once the action/deny.toml combo is compatible. pnpm audit still
+  runs for the npm side.
