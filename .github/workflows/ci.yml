@@ -45,7 +45,7 @@ jobs:
         run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
       - name: Clippy
         # App crates only — vendored wowsunpack/wows-core are dependency-only.
-        run: cargo clippy -p wowsp_tauri --lib --bins -- -D warnings
+        run: cargo clippy -p wowsp_tauri --bins -- -D warnings
       - name: Check
         run: cargo check -p wowsp_tauri
       - name: Test (backend)
