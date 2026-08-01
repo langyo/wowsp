@@ -54,12 +54,12 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  ships (e.g. "[TS] Yamato") are hidden but still present in `byId` for
    *  replay roster and name resolution. */
   const displayShips = computed(() =>
-    ships.value.filter((s) => !/[\[\]]/.test(s.name)),
+    ships.value.filter((s) => !/[[]]/.test(s.name)),
   );
 
   /** Whether a ship name contains square brackets (an event-limited copy). */
   function isEventShip(shipName: string): boolean {
-    return /[\[\]]/.test(shipName);
+    return /[[]]/.test(shipName);
   }
 
   /** Format a ship's display name. For event ships (names with square
@@ -67,8 +67,8 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  suffix so the user can see it's a limited-time variant. */
   function shipDisplayName(ship: ShipInfo): string {
     const raw = ship.name || "";
-    if (!/[\[\]]/.test(raw)) return raw;
-    const clean = raw.replace(/[\[\]]/g, "").replace(/\s+/g, " ").trim();
+    if (!/[[]]/.test(raw)) return raw;
+    const clean = raw.replace(/[[]]/g, "").replace(/\s+/g, " ").trim();
     return `${clean} (${t("ships.label.eventLimited")})`;
   }
 

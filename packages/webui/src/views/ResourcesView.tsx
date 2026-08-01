@@ -1,5 +1,5 @@
 import { defineComponent } from "vue";
-import { Package, Palette, Volume2, Puzzle } from "lucide-vue-next";
+import { Palette, Volume2, Puzzle } from "lucide-vue-next";
 
 import { t } from "@/i18n";
 import "./ResourcesView.scss";

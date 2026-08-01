@@ -40,7 +40,6 @@ export default defineComponent({
     const GAP_X = 22;   // horizontal gap between branch columns
     const GAP_Y = 16;   // vertical gap between tier rows
     const PAD = 14;     // padding inside each type section canvas
-    const HEAD_H = 22;  // type header height
 
     // ── Build deduplicated positioned cells per type section ─────────────
     interface PosCell {

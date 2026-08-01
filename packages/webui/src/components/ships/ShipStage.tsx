@@ -84,7 +84,7 @@ export default defineComponent({
     const armorGroup = shallowRef<THREE.Group | null>(null);
     const showArmor = ref(false);
     let gridRef: THREE.GridHelper | null = null;
-    let _waterlinePlane: THREE.Mesh | null = null;
+    const _waterlinePlane: THREE.Mesh | null = null;
 
     function disposeArmorScene() {
       const g = armorGroup.value;
@@ -126,7 +126,6 @@ export default defineComponent({
       armorSc.name = "armor-scene";
 
       // Load the pre-baked armor GLB (per-vertex coloured from game data).
-      const prefix = props.ship?.name ? "" : ""; // derive from shipId via modelLoader
       if (props.ship) {
         const armorUrl = resolveShipModelByShipId(props.ship.shipId, undefined)?.replace(/\.glb$/, "_armor.glb") ?? null;
         if (armorUrl) {
@@ -224,25 +223,6 @@ export default defineComponent({
       () => [props.armorZones?.length ?? 0, modelGroup.value != null] as const,
       () => { if (showArmor.value) syncArmorOverlay(); },
     );
-    /** Standardised zone positions relative to the hull bounding box.
-     *  X = bow→stern, Y = keel→mast, Z = port→starboard.
-     *  Values are conservative so boxes sit INSIDE the hull silhouette. */
-    const ARMOR_ZONE_POSITIONS: Record<string, {
-      x: [number, number]; y: [number, number]; z: [number, number];
-    }> = {
-      bow:        { x: [0.00, 0.22], y: [0.00, 0.48], z: [-0.25, 0.25] },
-      bowBelt:    { x: [0.14, 0.28], y: [0.04, 0.36], z: [-0.30, 0.30] },
-      forwardBelt:{ x: [0.26, 0.48], y: [0.06, 0.40], z: [-0.34, 0.34] },
-      citadel:    { x: [0.30, 0.74], y: [0.03, 0.38], z: [-0.14, 0.14] },
-      mainBelt:   { x: [0.24, 0.84], y: [0.06, 0.42], z: [-0.36, 0.36] },
-      aftBelt:    { x: [0.58, 0.80], y: [0.06, 0.40], z: [-0.34, 0.34] },
-      casemate:   { x: [0.28, 0.84], y: [0.40, 0.56], z: [-0.26, 0.26] },
-      deck:       { x: [0.20, 0.80], y: [0.42, 0.48], z: [-0.24, 0.24] },
-      stern:      { x: [0.84, 1.00], y: [0.00, 0.44], z: [-0.25, 0.25] },
-      sternBelt:  { x: [0.74, 0.86], y: [0.04, 0.36], z: [-0.30, 0.30] },
-      torpedoBelt:{ x: [0.26, 0.80], y: [0.00, 0.18], z: [-0.38, 0.38] },
-      superstructure:{ x: [0.30, 0.86], y: [0.46, 0.76], z: [-0.12, 0.12] },
-    };
 
     /** Exact 10-bucket colour scale from the game's ArmorConstants.py.
      *  Each entry: (maxThickness_mm, r, g, b). bisect_left. */
@@ -264,26 +244,6 @@ export default defineComponent({
       return (r << 16) | (g << 8) | b;
     }
 
-    /** Collect per-section hull bounding boxes (bow / mid / stern / deck_house). */
-    function collectHullSections(model: THREE.Group): Map<string, THREE.Box3> {
-      const map = new Map<string, THREE.Box3>();
-      model.traverse((child) => {
-        const mesh = child as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.geometry) return;
-        const n = mesh.name;
-        if (!n.startsWith("hull_") && n !== "deck_house" && n !== "funnel") return;
-        let b = map.get(n);
-        if (!b) { b = new THREE.Box3(); map.set(n, b); }
-        mesh.geometry.computeBoundingBox();
-        const mb = new THREE.Box3().setFromObject(mesh);
-        b.expandByPoint(mb.min).expandByPoint(mb.max);
-      });
-      // Merge into a unified hull box for sections that span the full length.
-      const full = new THREE.Box3();
-      for (const b of map.values()) full.expandByPoint(b.min).expandByPoint(b.max);
-      map.set("full", full);
-      return map;
-    }
 
     function buildArmorOverlay(
       hullSectionBoxes: Map<string, THREE.Box3>,
@@ -787,51 +747,8 @@ export default defineComponent({
       },
     );
 
-    // ── Focus zone highlight ─────────────────────────────────────────────
-    let _activeGlows: THREE.Mesh[] = [];
 
-    function clearGlows() {
-      const sc = scene.value;
-      for (const m of _activeGlows) {
-        if (sc) sc.remove(m);
-        (m.geometry as THREE.BufferGeometry).dispose();
-        (m.material as THREE.Material).dispose();
-      }
-      _activeGlows = [];
-    }
-
-    function spawnGlow(pos: THREE.Vector3, radius: number, sc: THREE.Scene): THREE.Mesh {
-      const geo = new THREE.SphereGeometry(radius, 16, 16);
-      const mat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 } },
-        vertexShader: `
-          varying vec3 vNormal;
-          void main() {
-            vNormal = normalize(normalMatrix * normal);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }`,
-        fragmentShader: `
-          varying vec3 vNormal;
-          uniform float uTime;
-          void main() {
-            float rim = 1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
-            rim = pow(rim, 1.8);
-            float pulse = 0.55 + 0.45 * sin(uTime * 5.0);
-            float alpha = rim * pulse * 0.55;
-            gl_FragColor = vec4(0.35, 0.88, 1.0, alpha);
-          }`,
-        transparent: true,
-        depthWrite: false,
-        depthTest: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(pos);
-      sc.add(mesh);
-      return mesh;
-    }
-
-    function focusZone(zone: FocusZone, count = 1): void {
+    function focusZone(zone: FocusZone): void {
       const cam = camera.value;
       const ctrl = controls.value;
       const box = modelBox.value;
