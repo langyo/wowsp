@@ -1,0 +1,422 @@
+{
+  "00_CO_ocean": {
+    "maxX": 600.0,
+    "maxZ": 600.0,
+    "minX": -600.0,
+    "minZ": -600.0
+  },
+  "01_solomon_islands": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "04_Archipelago": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "05_Ring": {
+    "maxX": 600.0,
+    "maxZ": 600.0,
+    "minX": -600.0,
+    "minZ": -600.0
+  },
+  "08_NE_passage": {
+    "maxX": 600.0,
+    "maxZ": 600.0,
+    "minX": -600.0,
+    "minZ": -600.0
+  },
+  "10_NE_big_race": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "13_OC_new_dawn": {
+    "maxX": 600.0,
+    "maxZ": 600.0,
+    "minX": -600.0,
+    "minZ": -600.0
+  },
+  "14_Atlantic": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "15_NE_north": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "16_OC_bees_to_honey": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "17_NA_fault_line": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "18_NE_ice_islands": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "19_OC_prey": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "20_NE_two_brothers": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "22_tierra_del_fuego": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "23_Shards": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "25_sea_hope": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "28_naval_mission": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "33_new_tierra": {
+    "maxX": 400.0,
+    "maxZ": 400.0,
+    "minX": -400.0,
+    "minZ": -400.0
+  },
+  "34_OC_islands": {
+    "maxX": 400.0,
+    "maxZ": 400.0,
+    "minX": -400.0,
+    "minZ": -400.0
+  },
+  "35_NE_north_winter": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "37_Ridge": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "38_Canada": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "40_Okinawa": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "41_Conquest": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "42_Neighbors": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "44_Path_warrior": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "45_Zigzag": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "46_Estuary": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "47_Sleeping_Giant": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "50_Gold_harbor": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "51_Greece": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "52_Britain": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "53_Shoreside": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "54_Faroe": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "55_Seychelles": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "56_AngelWings": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "58_RidgeNew": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "Dock": {
+    "maxX": 200.0,
+    "maxZ": 200.0,
+    "minX": -200.0,
+    "minZ": -200.0
+  },
+  "Dock_BDAY2024": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "Dock_BDAY20242": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "Dock_Fjords": {
+    "maxX": 900.0,
+    "maxZ": 900.0,
+    "minX": -900.0,
+    "minZ": -900.0
+  },
+  "Dock_HSF": {
+    "maxX": 100.0,
+    "maxZ": 100.0,
+    "minX": -100.0,
+    "minZ": -100.0
+  },
+  "Dock_Kure": {
+    "maxX": 600.0,
+    "maxZ": 600.0,
+    "minX": -600.0,
+    "minZ": -600.0
+  },
+  "Dock_Rio": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "Dock_Rotterdam": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "Dock_StarTrek": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "Dock_StarTrek2": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "Dock_StarTrek3": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "Dock_Twitch": {
+    "maxX": 200.0,
+    "maxZ": 200.0,
+    "minX": -200.0,
+    "minZ": -200.0
+  },
+  "Exterior": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "Shipyard_GERZH1": {
+    "maxX": 200.0,
+    "maxZ": 200.0,
+    "minX": -200.0,
+    "minZ": -200.0
+  },
+  "dock_Hamburg": {
+    "maxX": 200.0,
+    "maxZ": 200.0,
+    "minX": -200.0,
+    "minZ": -200.0
+  },
+  "dock_Kronstadt": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "dock_Marseille": {
+    "maxX": 300.0,
+    "maxZ": 300.0,
+    "minX": -300.0,
+    "minZ": -300.0
+  },
+  "dock_Novorossiysk": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "dock_italy": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "dock_nagasaki": {
+    "maxX": 200.0,
+    "maxZ": 200.0,
+    "minX": -200.0,
+    "minZ": -200.0
+  },
+  "e14_ModernEra": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "r01_military_navigation": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "s01_NavalBase": {
+    "maxX": 600.0,
+    "maxZ": 600.0,
+    "minX": -600.0,
+    "minZ": -600.0
+  },
+  "s02_Naval_Defense": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "s03_Labyrinth": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "s06_Atoll": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "s07_Advance": {
+    "maxX": 500.0,
+    "maxZ": 500.0,
+    "minX": -500.0,
+    "minZ": -500.0
+  },
+  "s09_LePVE": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "s10_USS_CL": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "s12_WW2_OP1": {
+    "maxX": 800.0,
+    "maxZ": 800.0,
+    "minX": -800.0,
+    "minZ": -800.0
+  },
+  "s13_WW2_OP2": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  },
+  "s14_WW2_OP3": {
+    "maxX": 700.0,
+    "maxZ": 700.0,
+    "minX": -700.0,
+    "minZ": -700.0
+  }
+}
