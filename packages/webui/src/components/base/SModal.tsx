@@ -4,13 +4,11 @@ import {
   onBeforeUnmount,
   ref,
   watch,
-  type PropType,
 } from "vue";
 import { X } from "lucide-vue-next";
 import { usePopupManager } from "@/composables/usePopupManager";
 import { useReportedTransition } from "@/composables/useReportedTransition";
 import { focusFirst, trapFocus } from "@/utils/dom";
-import SButton from "./SButton";
 import "./SModal.scss";
 
 export default defineComponent({
@@ -58,7 +56,7 @@ export default defineComponent({
 
     watch(
       () => props.title,
-      (t) => {
+      () => {
         // keep registry title synced (for breadcrumb if added later)
       },
     );

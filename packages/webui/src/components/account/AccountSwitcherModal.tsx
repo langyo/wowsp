@@ -1,5 +1,5 @@
 import { defineComponent, onMounted, ref } from "vue";
-import { X, Trophy, Swords, Anchor } from "lucide-vue-next";
+import { X, Trophy, Swords } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";

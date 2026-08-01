@@ -151,7 +151,10 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
         for c in &candidates {
             if let Some(name) = c.get("name").and_then(|v| v.as_str()) {
                 // GameParams index format: PASB008 → prefix is "PASB"
-                let prefix: String = name.chars().take_while(|c| c.is_ascii_uppercase()).collect();
+                let prefix: String = name
+                    .chars()
+                    .take_while(|c| c.is_ascii_uppercase())
+                    .collect();
                 if prefix.len() >= 3 {
                     prefixes.push(prefix);
                 }
@@ -159,9 +162,10 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
         }
         // Also collect prefixes from the candidate's key in the dict.
         for (key, _entry) in obj {
-            if candidates.iter().any(|c| {
-                c.get("index").and_then(|v| v.as_str()) == Some(key.as_str())
-            }) {
+            if candidates
+                .iter()
+                .any(|c| c.get("index").and_then(|v| v.as_str()) == Some(key.as_str()))
+            {
                 let prefix: String = key.chars().take_while(|c| c.is_ascii_uppercase()).collect();
                 if prefix.len() >= 3 && !prefixes.contains(&prefix) {
                     prefixes.push(prefix);

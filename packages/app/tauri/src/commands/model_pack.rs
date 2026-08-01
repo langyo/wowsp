@@ -23,8 +23,7 @@ const ASSET_NAME: &str = "wowsp-models.tar.gz";
 const FALLBACK_TAGS: &[&str] = &["res-latest-old-1", "res-latest-old-2"];
 
 fn models_cache_dir() -> Result<PathBuf, String> {
-    let base = dirs_next::cache_dir()
-        .ok_or_else(|| "cannot resolve LOCALAPPDATA".to_string())?;
+    let base = dirs_next::cache_dir().ok_or_else(|| "cannot resolve LOCALAPPDATA".to_string())?;
     Ok(base.join("WoWSP"))
 }
 
@@ -56,9 +55,9 @@ async fn release_asset_url(client: &Client, tag: &str) -> Result<String, String>
         .await
         .map_err(|e| format!("parse release {tag}: {e}"))?;
 
-    let assets = resp["assets"].as_array().ok_or_else(|| {
-        format!("release {tag} has no assets")
-    })?;
+    let assets = resp["assets"]
+        .as_array()
+        .ok_or_else(|| format!("release {tag} has no assets"))?;
 
     for asset in assets {
         let name = asset["name"].as_str().unwrap_or("");
@@ -95,11 +94,9 @@ async fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
     // Remove existing models so we don't accumulate stale files.
     let models_root = dest.join("models");
     if models_root.exists() {
-        fs::remove_dir_all(&models_root)
-            .map_err(|e| format!("clean models dir: {e}"))?;
+        fs::remove_dir_all(&models_root).map_err(|e| format!("clean models dir: {e}"))?;
     }
-    fs::create_dir_all(&models_root)
-        .map_err(|e| format!("create models dir: {e}"))?;
+    fs::create_dir_all(&models_root).map_err(|e| format!("create models dir: {e}"))?;
 
     let gz = GzDecoder::new(cursor);
     let mut archive = Archive::new(gz);
@@ -146,10 +143,10 @@ pub async fn ensure_model_pack() -> Result<String, String> {
                 Ok(()) => {
                     ok = true;
                     break;
-                }
+                },
                 Err(e2) => {
                     tracing::warn!(?e2, tag, "fallback model-pack download failed");
-                }
+                },
             }
         }
         if !ok {

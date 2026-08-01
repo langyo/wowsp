@@ -6,10 +6,10 @@
 //! span. The frontend renders these as a per-version trend line.
 //!
 //! Patch annotations are a separate, hand-maintained JSON (`patches/index.json`
-//! + `patches/<version>.json`). When a version bucket coincides with a patch
+//! and `patches/<version>.json`). When a version bucket coincides with a patch
 //! that touched the ships being viewed, the frontend can overlay the change
 //! summary. This module just reads + returns them; content curation is out of
-//! scope (future work: scrape WG devblogs / 浩舰 patch notes).
+//! scope (future work: scrape WG devblogs / HaoJian patch notes).
 //!
 //! Community-wide per-ship trends (the "server average WR over versions"
 //! chart that wows-numbers shows) have no clean data source — WG's public API

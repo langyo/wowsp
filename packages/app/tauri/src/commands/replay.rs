@@ -78,7 +78,12 @@ fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
 fn group_by_entity(
     decoded: super::packets::DecodedReplay,
 ) -> Vec<wowsp_tauri_shared::EntityTrajectory> {
-    let super::packets::DecodedReplay { positions, kinds, destroys, properties } = decoded;
+    let super::packets::DecodedReplay {
+        positions,
+        kinds,
+        destroys,
+        properties,
+    } = decoded;
     // Build HP timelines: property index 20 ≈ current HP for ships.
     let mut hp_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
         std::collections::BTreeMap::new();
@@ -87,23 +92,24 @@ fn group_by_entity(
             hp_map
                 .entry(*eid)
                 .or_default()
-                .push(wowsp_tauri_shared::HpSample { time: c.time, value: c.value });
+                .push(wowsp_tauri_shared::HpSample {
+                    time: c.time,
+                    value: c.value,
+                });
         }
     }
     let mut out: Vec<_> = positions
         .into_iter()
-        .map(
-            |(entity_id, samples)| {
-                let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
-                wowsp_tauri_shared::EntityTrajectory {
-                    entity_id,
-                    kind: kinds.get(&entity_id).cloned(),
-                    samples,
-                    death_time: destroys.get(&entity_id).copied(),
-                    hp_samples,
-                }
-            },
-        )
+        .map(|(entity_id, samples)| {
+            let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
+            wowsp_tauri_shared::EntityTrajectory {
+                entity_id,
+                kind: kinds.get(&entity_id).cloned(),
+                samples,
+                death_time: destroys.get(&entity_id).copied(),
+                hp_samples,
+            }
+        })
         .collect();
     // Include entities that have creation metadata but no position samples
     // (e.g. static capture zones, entityType 14, which never emit Position packets).
@@ -185,7 +191,7 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 own_ship_name: None,
                 player_count: 0,
             };
-        }
+        },
     };
     let json = match extract_descriptor_json(&bytes) {
         Some(j) => j,
@@ -200,7 +206,7 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 own_ship_name: None,
                 player_count: 0,
             };
-        }
+        },
     };
     let raw: serde_json::Value = match serde_json::from_str(&json) {
         Ok(v) => v,
@@ -215,7 +221,7 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 own_ship_name: None,
                 player_count: 0,
             };
-        }
+        },
     };
     lite_from_raw(path_str, date_time, raw)
 }
@@ -475,7 +481,11 @@ mod tests {
             {"id":3,"name":"Enemy","relation":2,"shipId":4292851696}
         ]}"#;
         let raw: serde_json::Value = serde_json::from_str(json).unwrap();
-        let lite = lite_from_raw("20250622_152405_x.wowsreplay".into(), Some("20250622_152405".into()), raw);
+        let lite = lite_from_raw(
+            "20250622_152405_x.wowsreplay".into(),
+            Some("20250622_152405".into()),
+            raw,
+        );
         assert_eq!(lite.match_group.as_deref(), Some("ranked"));
         assert_eq!(lite.map_name.as_deref(), Some("15_NE_north"));
         assert_eq!(lite.player_count, 3);

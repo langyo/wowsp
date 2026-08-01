@@ -41,7 +41,7 @@ pub(crate) fn capture_window_png(
     use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, SetForegroundWindow};
 
     let hwnd_raw = win.hwnd().map_err(|e| format!("get hwnd: {e}"))?;
-    let hwnd = HWND(hwnd_raw.0 as *mut core::ffi::c_void);
+    let hwnd = HWND(hwnd_raw.0);
 
     // Bring the window to the foreground so it's not occluded during capture.
     unsafe {
