@@ -14,11 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install Linux Tauri system deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -47,13 +42,21 @@ jobs:
       - name: Rustfmt
         # Only the app crates are in-repo code; wowsunpack/wows-core are
         # vendored wows-toolkit sources that keep upstream formatting.
+        # Windows-only: windows-future 0.2.1 (pulled by tauri on Linux) fails
+        # to compile on Linux (uses windows_core::imp::marshaler behind a
+        # cfg(windows) gate — upstream bug, fixed in 0.3.x which the locked
+        # windows 0.61 doesn't accept).
+        if: runner.os == 'Windows'
         run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
       - name: Clippy
+        if: runner.os == 'Windows'
         # App crates only — vendored wowsunpack/wows-core are dependency-only.
         run: cargo clippy -p wowsp_tauri --bins -- -D warnings
       - name: Check
+        if: runner.os == 'Windows'
         run: cargo check -p wowsp_tauri
       - name: Test (backend)
+        if: runner.os == 'Windows'
         run: cargo test -p wowsp_tauri
       - name: Frontend typecheck
         run: pnpm -r typecheck
