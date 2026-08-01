@@ -513,10 +513,31 @@ mod tests {
         assert!(!meta.vehicles.is_empty(), "roster must not be empty");
         assert!(meta.map_name.is_some(), "mapDisplayName must be present");
         eprintln!(
-            "[real-replay] {} → map={}, {} players",
+            "[real-replay] {}  map={}, {} players",
             path,
             meta.map_name.unwrap(),
             meta.vehicles.len()
         );
+    }
+
+    /// Diagnostic: dump a real replay's header + trajectories to JSON, used to
+    /// feed the mock backend (`scripts/mock/fixtures/replay_dump.json`) so the
+    /// holographic map can render a real match in a browser. Run with
+    /// `WOWSP_TEST_REPLAY=<path> [WOWSP_DUMP_OUT=out.json]`.
+    #[test]
+    fn dump_replay_json() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            return;
+        };
+        let meta = read_replay_header(path.clone()).expect("header");
+        let trajs = read_replay_positions(path).expect("positions");
+        let out = serde_json::json!({
+            "meta": meta,
+            "trajectories": trajs,
+        });
+        let out_path = std::env::var("WOWSP_DUMP_OUT")
+            .unwrap_or_else(|_| "replay_dump.json".to_string());
+        std::fs::write(&out_path, serde_json::to_string(&out).unwrap()).unwrap();
+        eprintln!("dumped to {out_path}");
     }
 }
