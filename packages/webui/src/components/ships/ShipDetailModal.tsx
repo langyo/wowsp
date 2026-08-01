@@ -13,7 +13,6 @@ import { t } from "@/i18n";
 import { useToast } from "@/composables/useToast";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
-import { buildArmorScheme, buildBallistics } from "./ballistics";
 import SkillBuilder from "./SkillBuilder";
 import DataObserver from "./DataObserver";
 import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
@@ -45,13 +44,6 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const trends = useTrendsStore();
     const toast = useToast();
-
-    function copyText(text: string, label?: string) {
-      navigator.clipboard.writeText(text).then(
-        () => toast.info(label ? `${label} ${t("ships.copied")}` : t("ships.copied")),
-        () => {},
-      );
-    }
 
     const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
 
@@ -433,102 +425,7 @@ const SpecsPanel = defineComponent({
   },
 });
 
-const BallisticsPanel = defineComponent({
-  name: "BallisticsPanel",
-  props: {
-    gp: { type: Object as () => Record<string, unknown> | null, default: null },
-  },
-  setup(props) {
-    const armorGroup = computed(() => buildArmorScheme(props.gp));
-    const ballisticsGroups = computed(() => buildBallistics(props.gp));
-    const anyGroups = computed(
-      () => armorGroup.value != null || ballisticsGroups.value.length > 0,
-    );
-    function rowLabel(row: { key: string }): string {
-      const armor = t(`ships.armor.${row.key}`, {});
-      if (armor && armor !== `ships.armor.${row.key}`) return armor;
-      const ball = t(`ships.ballistics.${row.key}`, {});
-      if (ball && ball !== `ships.ballistics.${row.key}`) return ball;
-      const spec = t(`ships.spec.${row.key}`, {});
-      if (spec && spec !== `ships.spec.${row.key}`) return spec;
-      return row.key;
-    }
-    function rowHint(row: { hint?: string }): string | null {
-      if (!row.hint) return null;
-      const ball = t(`ships.ballistics.${row.hint}`, {});
-      if (ball && ball !== `ships.ballistics.${row.hint}`) return ball;
-      const spec = t(`ships.spec.${row.hint}`, {});
-      if (spec && spec !== `ships.spec.${row.hint}`) return spec;
-      return null;
-    }
-    return () => {
-      if (!anyGroups.value) {
-        return (
-          <div class="ship-detail__error-block">
-            <p>{t("ships.detail.noBallistics")}</p>
-          </div>
-        );
-      }
-      return (
-        <div class="ballistics-panel">
-          {armorGroup.value ? (
-            <section class="specs-group">
-              <header class="specs-group__head">
-                <Shield size={14} />
-                <h5 class="specs-group__title">{t("ships.armor.groupTitle")}</h5>
-              </header>
-              <dl class="specs-group__rows">
-                {armorGroup.value.rows.map((row) => {
-                  const hint = rowHint(row);
-                  return (
-                    <div class="specs-group__row" key={row.key}>
-                      <dt class="specs-group__label">
-                        {rowLabel(row)}
-                        {hint ? (
-                          <span class="specs-group__hint" title={hint}>
-                            <HelpCircle size={11} />
-                          </span>
-                        ) : null}
-                      </dt>
-                      <dd class="specs-group__value">{row.value}</dd>
-                    </div>
-                  );
-                })}
-              </dl>
-            </section>
-          ) : null}
-          {ballisticsGroups.value.map((g, gi) => (
-            <section class="specs-group" key={gi}>
-              <header class="specs-group__head">
-                <Crosshair size={14} />
-                <h5 class="specs-group__title">{t("ships.ballistics.groupTitle")}</h5>
-              </header>
-              <dl class="specs-group__rows">
-                {g.rows.map((row) => {
-                  const hint = rowHint(row);
-                  return (
-                    <div class="specs-group__row" key={row.key}>
-                      <dt class="specs-group__label">
-                        {rowLabel(row)}
-                        {hint ? (
-                          <span class="specs-group__hint" title={hint}>
-                            <HelpCircle size={11} />
-                          </span>
-                        ) : null}
-                      </dt>
-                      <dd class="specs-group__value">{row.value}</dd>
-                    </div>
-                  );
-                })}
-              </dl>
-            </section>
-          ))}
-          <p class="ballistics-panel__approx">{t("ships.detail.ballisticsApprox")}</p>
-        </div>
-      );
-    };
-  },
-});
+
 
 const Stat = defineComponent({
   name: "Stat",

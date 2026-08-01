@@ -175,11 +175,6 @@ export default defineComponent({
       if (acc) void refresh();
     }, { immediate: true });
 
-    function shipTypeName(shipId: number): string {
-      const info = encyclopedia.byId.get(shipId);
-      const code = info?.type ?? "Unknown";
-      return t(`dashboard.shipType.${code}`, {});
-    }
     function shipTypeShort(shipId: number): string {
       const info = encyclopedia.byId.get(shipId);
       return SHIP_TYPE_SHORT[info?.type ?? "Unknown"] ?? "?";

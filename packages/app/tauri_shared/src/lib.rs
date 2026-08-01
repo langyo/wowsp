@@ -304,7 +304,9 @@ pub struct EntityKind {
     pub creation_time: f32,
 }
 
-fn default_creation_time() -> f32 { -1.0 }
+fn default_creation_time() -> f32 {
+    -1.0
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Ship encyclopedia + per-ship stats + trends (milestone M10)
