@@ -201,6 +201,9 @@ pub struct EntityTrajectory {
     /// Empty when the replay contains no HP data for this entity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hp_samples: Vec<HpSample>,
+    /// Capture zone property 0 samples (0=neutral, 1=captured by team A, etc.)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cap_samples: Vec<HpSample>,
 }
 
 /// A single HP snapshot from the replay's property stream.
