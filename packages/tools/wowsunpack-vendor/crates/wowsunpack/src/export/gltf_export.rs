@@ -206,8 +206,9 @@ pub struct TerrainConfig<'a> {
     pub bounds: &'a SpaceBounds,
     /// Decimation step: 1 = full res, 4 = default (~858K tris), 8 = coarse.
     pub step: u32,
-    /// Sea level height. Terrain vertices below this are clamped; fully
-    /// submerged cells are culled to avoid ugly seabed through translucent water.
+    /// Sea level height. Terrain vertices below this are clamped (unless
+    /// `keep_submerged`) and fully submerged cells are culled to avoid ugly
+    /// seabed through translucent water.
     pub sea_level: f32,
     /// When true, do NOT cull fully-submerged terrain cells. The entire
     /// heightmap grid is exported so contour shaders can draw bathymetric
@@ -607,8 +608,14 @@ fn generate_terrain_mesh(cfg: &TerrainConfig<'_>) -> MapMesh {
     let cell_x = world_width / (src_w - 1) as f32;
     let cell_z = world_depth / (src_h - 1) as f32;
 
-    // Helper: read height from source heightmap, clamped to sea level.
-    let height_at = |sx: usize, sy: usize| -> f32 { terrain.heightmap[sy * src_w + sx].max(sea) };
+    // Helper: read height from source heightmap. Submerged vertices are
+    // clamped to sea level unless keep_submerged is set, in which case the
+    // real seabed depth is preserved so bathymetric shading sees trenches.
+    let keep_submerged = cfg.keep_submerged;
+    let height_at = |sx: usize, sy: usize| -> f32 {
+        let h = terrain.heightmap[sy * src_w + sx];
+        if keep_submerged { h } else { h.max(sea) }
+    };
 
     // First pass: determine which output grid vertices are above sea level
     // (i.e. NOT clamped flat at sea). We only emit triangles where at least

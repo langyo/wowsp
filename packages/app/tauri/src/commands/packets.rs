@@ -356,6 +356,48 @@ mod tests {
         }
     }
 
+    /// Diagnostic: walk all frames and report per-type counts, max payload
+    /// size, and whether the walk terminated early (absurd size guard).
+    /// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
+    #[test]
+    fn dump_packet_stats() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            return;
+        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        let mut cur = 8;
+        for _ in 0..block_count {
+            let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+            cur += 4 + bl;
+        }
+        let decrypted = decrypt_stream(&bytes[cur..]).expect("decrypt");
+        let inflated = inflate_zlib(&decrypted).expect("inflate");
+        let mut c = 0usize;
+        let mut counts: std::collections::BTreeMap<u32, (usize, usize)> = std::collections::BTreeMap::new();
+        let mut early_break = None;
+        while c + 12 <= inflated.len() {
+            let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
+            let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
+            let payload_end = c + 12 + size;
+            if size > 200_000 || payload_end > inflated.len() {
+                early_break = Some((c, size, ptype, inflated.len()));
+                break;
+            }
+            let e = counts.entry(ptype).or_default();
+            e.0 += 1;
+            e.1 = e.1.max(size);
+            c = payload_end;
+        }
+        eprintln!("inflated {} bytes, walked to {}", inflated.len(), c);
+        for (t, (n, max)) in &counts {
+            eprintln!("  type 0x{t:02x}: {n} packets, max size {max}");
+        }
+        if let Some((at, size, ptype, total)) = early_break {
+            eprintln!("  EARLY BREAK at {at}/{total}: declared size {size}, type 0x{ptype:02x}");
+        }
+    }
+
     /// Diagnostic: dump Position packet payload sizes from a real replay to
     /// determine if newer game builds include extra health/speed fields.
     /// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.

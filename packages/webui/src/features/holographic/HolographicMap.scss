@@ -249,6 +249,37 @@
   font-size: var(--text-sm);
 }
 
+.holo-map__score-caps {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.holo-map__cap {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.holo-map__cap--ally {
+  color: #3cb478;
+  background: rgba(60, 180, 120, 0.15);
+  border-color: rgba(60, 180, 120, 0.3);
+}
+
+.holo-map__cap--enemy {
+  color: #cc3333;
+  background: rgba(204, 51, 51, 0.15);
+  border-color: rgba(204, 51, 51, 0.3);
+}
+
 /* ── Tab roster overlay ─────────────────────────────────────────────── */
 .holo-map__roster-overlay {
   position: absolute;

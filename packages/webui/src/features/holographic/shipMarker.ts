@@ -13,7 +13,8 @@
  *
  * Marker orientation: the model is normalized so its longest hull axis lies
  * along +Z (ship bow toward +Z at yaw 0), matching WoWS heading (yaw rotates
- * about Y). The caller sets `rotation.y = yaw` each frame.
+ * about Y). The caller sets `rotation.y = Math.PI - yaw` each frame — the
+ * scene mirrors world z into three.js space, which flips the yaw sense.
  */
 import * as THREE from "three";
 

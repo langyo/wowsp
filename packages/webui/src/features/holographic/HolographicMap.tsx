@@ -4,9 +4,12 @@ import * as THREE from "three";
 import { useThreeScene } from "./useThreeScene";
 import {
   resolveMapModelUrl,
+  resolveMapMinimapUrl,
   resolveShipModelForEntry,
   resolveShipModelByShipId,
   loadGlbModel,
+  loadMapBounds,
+  type MapBounds,
   type ShipModelSpec,
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
@@ -82,8 +85,13 @@ export default defineComponent({
     }
 
     // Score bar data
-    const allyCount = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
-    const enemyCount = computed(() => props.vehicles.filter(v => v.relation > 1).length);
+    const allyTotal = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
+    const enemyTotal = computed(() => props.vehicles.filter(v => v.relation > 1).length);
+    // Ships alive = total - sunk count at current time
+    const allyAlive = ref(allyTotal.value);
+    const enemyAlive = ref(enemyTotal.value);
+    // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=team1, 2=team2
+    const capStatus = ref([0, 0, 0]);
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -130,37 +138,77 @@ export default defineComponent({
     const shipLabels = ref<ShipLabel[]>([]);
     const _projVec = new THREE.Vector3();
 
-    // Minimap canvas.
+    // Minimap canvas. The base layer is the game's own minimap art (water +
+    // land composite, extracted by `extract_minimaps.py`); positions use the
+    // map's world bounds from `minimaps.json` so ship dots sit on the same
+    // spots as the in-battle minimap. Without art/bounds for this map we fall
+    // back to the plain dark base + trajectory-derived bounds.
     const minimapCanvas = ref<HTMLCanvasElement | null>(null);
     let _mmCtx: CanvasRenderingContext2D | null = null;
     const MINIMAP_SIZE = 160;
+    let minimapImage: HTMLImageElement | null = null;
+    let minimapBounds: MapBounds | null = null;
+    /** Cancels stale minimap-base loads when the map switches mid-flight. */
+    let minimapEpoch = 0;
+
+    /** (Re)load the base art + bounds for the current mapId. */
+    function loadMinimapBase() {
+      const epoch = ++minimapEpoch;
+      minimapImage = null;
+      minimapBounds = null;
+      const url = resolveMapMinimapUrl(props.mapId);
+      if (url) {
+        const img = new Image();
+        img.onload = () => { if (epoch === minimapEpoch) minimapImage = img; };
+        img.src = url;
+      }
+      void loadMapBounds().then((all) => {
+        if (epoch !== minimapEpoch) return;
+        const key = props.mapId.replace(/^spaces\//, "");
+        minimapBounds =
+          all.get(key) ??
+          all.get(key.toLowerCase()) ??
+          [...all.entries()].find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1] ??
+          null;
+      });
+    }
 
     function drawMinimap() {
-      if (!bounds) return;
+      // Effective bounds in WORLD coordinates: the map's minimap bounds when
+      // known (matches the base art), else the trajectory bounds converted
+      // back from scene space (scene z = -world z) so the dots at least fit
+      // the canvas.
+      const b: MapBounds | null =
+        minimapBounds ??
+        (bounds
+          ? { minX: bounds.minX, maxX: bounds.maxX, minZ: -bounds.maxZ, maxZ: -bounds.minZ }
+          : null);
+      if (!b) return;
       const cvs = minimapCanvas.value;
       if (!cvs) return;
       if (!_mmCtx) _mmCtx = cvs.getContext("2d");
       const ctx = _mmCtx!;
       const w = MINIMAP_SIZE;
       const h = MINIMAP_SIZE;
-      const m = 8; // margin
       if (cvs.width !== w) cvs.width = w;
       if (cvs.height !== h) cvs.height = h;
 
-      const mapW = bounds.maxX - bounds.minX;
-      const mapH = bounds.maxZ - bounds.minZ;
-      const scaleX = (w - m * 2) / (mapW || 1);
-      const scaleZ = (h - m * 2) / (mapH || 1);
-      const scale = Math.min(scaleX, scaleZ);
-      const ox = (w - mapW * scale) / 2;
-      const oy = (h - mapH * scale) / 2;
+      const mapW = b.maxX - b.minX;
+      const mapH = b.maxZ - b.minZ;
 
-      function wx(x: number) { return (x - bounds!.minX) * scale + ox; }
-      function wz(z: number) { return h - ((z - bounds!.minZ) * scale + oy); }
+      // Markers/camera live in three.js space (z = -worldZ); convert back to
+      // world coordinates for the map projection. North (+worldZ) is up on
+      // the game's minimap (world_to_minimap flips z).
+      function wx(x: number) { return ((x - b.minX) / (mapW || 1)) * w; }
+      function wz(zScene: number) { return ((b.maxZ + zScene) / (mapH || 1)) * h; }
 
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
-      ctx.fillRect(0, 0, w, h);
+      if (minimapImage) {
+        ctx.drawImage(minimapImage, 0, 0, w, h);
+      } else {
+        ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
+        ctx.fillRect(0, 0, w, h);
+      }
       ctx.strokeStyle = "rgba(0, 170, 255, 0.3)";
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
@@ -236,6 +284,9 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+      allyAlive.value = allyTotal.value;
+      enemyAlive.value = enemyTotal.value;
+      capStatus.value = [0, 0, 0];
     }
 
     /** Remove a previously-loaded map terrain model. */
@@ -250,6 +301,27 @@ export default defineComponent({
         });
         mapModel = null;
       }
+    }
+
+    /** Deep-sea floor plane stretching far past the playable area. Without
+     *  it the terrain mesh (bounded by the space's chunk rect) ends in a hard
+     *  edge against the void, which reads as a bright square patch around the
+     *  map's center. The plane sits just below the deepest seabed and uses
+     *  the same deep-water color as the contour shader's trench zone, so the
+     *  terrain edge blends into open sea instead of clipping. Opaque on
+     *  purpose — no blend-order interaction with the transparent terrain. */
+    let waterFloor: THREE.Mesh | null = null;
+    function ensureWaterFloor() {
+      const scene = api.value?.scene;
+      if (!scene || waterFloor) return;
+      const mat = new THREE.MeshBasicMaterial({ color: 0x0f2c54 });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(24000, 24000), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = -40;
+      mesh.renderOrder = -1;
+      mesh.raycast = () => {}; // never intercept picks
+      scene.add(mesh);
+      waterFloor = mesh;
     }
 
     /** Attempt to load the terrain GLB for the current mapId and restyle it as
@@ -330,8 +402,8 @@ export default defineComponent({
           if (s.time > maxT) maxT = s.time;
           if (s.x < minX) minX = s.x;
           if (s.x > maxX) maxX = s.x;
-          if (s.z < minZ) minZ = s.z;
-          if (s.z > maxZ) maxZ = s.z;
+          if (-s.z < minZ) minZ = -s.z;
+          if (-s.z > maxZ) maxZ = -s.z;
         }
       }
       if (Number.isFinite(minT)) {
@@ -437,7 +509,10 @@ export default defineComponent({
         const color = TEAM_COLOR[role];
 
         // Trajectory line on the XZ plane (y=0.5 to hover above the grid).
-        const pts = traj.samples.map((s) => new THREE.Vector3(s.x, 0.5, s.z));
+        // World z (north+) is negated into three.js space — the baked map
+        // GLBs use the same right-handed convention (wowsunpack exports
+        // z' = -z), so ships line up with islands instead of mirroring.
+        const pts = traj.samples.map((s) => new THREE.Vector3(s.x, 0.5, -s.z));
         const geom = new THREE.BufferGeometry().setFromPoints(pts);
         const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
         const line = new THREE.Line(geom, mat);
@@ -560,7 +635,7 @@ export default defineComponent({
         });
         const ring = new THREE.Mesh(ringGeom, ringMat);
         ring.rotation.x = Math.PI / 2;
-        ring.position.set(cx, 0.6, cz);
+        ring.position.set(cx, 0.6, -cz);
         scene.add(ring);
         trajectoryLines.push(ring as unknown as THREE.Line);
         const canvas = document.createElement("canvas");
@@ -579,7 +654,7 @@ export default defineComponent({
           depthWrite: false,
         });
         const sprite = new THREE.Sprite(spriteMat);
-        sprite.position.set(cx, 30, cz);
+        sprite.position.set(cx, 30, -cz);
         sprite.scale.set(40, 40, 1);
         scene.add(sprite);
         trajectoryLines.push(sprite as unknown as THREE.Line);
@@ -595,8 +670,10 @@ export default defineComponent({
     ) {
       const s = sampleAt(traj, t);
       if (s) {
-        marker.position.set(s.x, 0, s.z);
-        marker.rotation.y = s.yaw;
+        marker.position.set(s.x, 0, -s.z);
+        // WoWS yaw: 0=north(+worldZ), clockwise. three.js north is -z, so the
+        // yaw maps to rotation.y = PI - yaw on the mirrored coordinate frame.
+        marker.rotation.y = Math.PI - s.yaw;
       }
     }
 
@@ -651,12 +728,18 @@ export default defineComponent({
         const hasDot = marker.userData.isDot as boolean;
         if (!hasModel && !hasDot) continue;
         marker.visible = true;
-        marker.position.set(s.x, 0, s.z);
-        marker.rotation.y = s.yaw;
+        marker.position.set(s.x, 0, -s.z);
+        marker.rotation.y = Math.PI - s.yaw;
         if (label) {
           const currentHp = hpAtTime(traj.hpSamples, tEff);
           if (currentHp != null) label.hp = currentHp;
           label.maxHp ??= currentHp ?? label.maxHp;
+        }
+        if (dead && !marker.userData._countedDead) {
+          marker.userData._countedDead = true;
+          const role = marker.userData.role as TeamRole;
+          if (role === "ally") allyAlive.value = Math.max(0, allyAlive.value - 1);
+          else if (role === "enemy") enemyAlive.value = Math.max(0, enemyAlive.value - 1);
         }
 
         // Grey out dead ships: desaturate every child material toward a faint
@@ -832,6 +915,8 @@ export default defineComponent({
     // and attempt to load the terrain model.
     watch(ready, (r) => {
       if (r) {
+        ensureWaterFloor();
+        loadMinimapBase();
         recomputeBoundsAndCamera();
         rebuildActors();
         updateMarkersAt(current.value);
@@ -841,13 +926,22 @@ export default defineComponent({
 
     // Reload terrain when the map changes (e.g. switching replays).
     watch(() => props.mapId, () => {
-      if (ready.value) void tryLoadMapModel();
+      if (ready.value) {
+        loadMinimapBase();
+        void tryLoadMapModel();
+      }
     });
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(playRaf);
       clearActors();
       clearMapModel();
+      if (waterFloor) {
+        api.value?.scene.remove(waterFloor);
+        waterFloor.geometry.dispose();
+        (waterFloor.material as THREE.Material).dispose();
+        waterFloor = null;
+      }
       clearShipMarkerCache();
     });
 
@@ -894,12 +988,16 @@ export default defineComponent({
           <div class="holo-map__scorebar">
             <span class="holo-map__score-team holo-map__score--ally">
               <span class="holo-map__score-dot" style="background:#3cb478" />
-              {allyCount.value}
+              {allyAlive.value}/{allyTotal.value}
             </span>
-            <span class="holo-map__score-divider">:</span>
+            <span class="holo-map__score-caps">
+              {["A","B","C"].map((l,i) => (
+                <span class={["holo-map__cap", capStatus.value[i] === 1 ? "holo-map__cap--ally" : capStatus.value[i] === 2 ? "holo-map__cap--enemy" : ""]}>{l}</span>
+              ))}
+            </span>
             <span class="holo-map__score-team holo-map__score--enemy">
+              {enemyAlive.value}/{enemyTotal.value}
               <span class="holo-map__score-dot" style="background:#cc3333" />
-              {enemyCount.value}
             </span>
           </div>
         ) : null}

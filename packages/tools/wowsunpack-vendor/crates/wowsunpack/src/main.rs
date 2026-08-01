@@ -1646,13 +1646,27 @@ fn run_export_model(params: &ExportModelParams<'_>) -> Result<(), Report> {
 
 /// Parse space.settings XML to extract world-space bounds.
 ///
-/// The `<bounds>` element has chunk coordinates (100m per chunk). We convert to
-/// world units: `min * 100`, `(max + 1) * 100`.
+/// The `<bounds>` element has chunk coordinates (100m per chunk), either as
+/// attributes (`<bounds minX="-10" .../>`) or as child elements
+/// (`<bounds><minX>-10</minX>...</bounds>`), depending on the space. We
+/// convert to world units: `min * 100`, `(max + 1) * 100`.
 fn parse_space_bounds(xml: &str) -> Option<gltf_export::SpaceBounds> {
     let doc = roxmltree::Document::parse(xml).ok()?;
     let bounds = doc.descendants().find(|n| n.has_tag_name("bounds"))?;
 
-    let attr = |name: &str| -> Option<f32> { bounds.attribute(name)?.parse().ok() };
+    let attr = |name: &str| -> Option<f32> {
+        bounds
+            .attribute(name)
+            .or_else(|| {
+                bounds
+                    .children()
+                    .find(|n| n.has_tag_name(name))
+                    .and_then(|n| n.text())
+                    .map(str::trim)
+            })?
+            .parse()
+            .ok()
+    };
 
     let min_x = attr("minX")?;
     let max_x = attr("maxX")?;

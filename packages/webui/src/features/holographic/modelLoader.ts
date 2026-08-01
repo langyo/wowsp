@@ -143,6 +143,59 @@ export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   return mapModelUrl(clean);
 }
 
+// ── Minimap base art (game minimap composite) + world bounds ────────────
+// `minimaps/<spaceId>.png` is the water+land composite the game itself draws
+// on the in-battle minimap; `minimaps.json` carries each map's world bounds
+// (space.settings chunks x100 — the same coordinate frame as replay entity
+// positions and the baked terrain GLBs). Both are produced by
+// `scripts/model_convert/extract_minimaps.py`.
+
+export interface MapBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+const _minimapGlobKeys = Object.keys(
+  import.meta.glob("../../res/models/maps/minimaps/*.png"),
+);
+const minimapCasedByLower = new Map<string, string>();
+for (const path of _minimapGlobKeys) {
+  const original = path.split("/").pop()!.replace(/\.png$/i, "");
+  minimapCasedByLower.set(original.toLowerCase(), original);
+}
+
+/** URL of the game's own minimap art for a space id, if extracted. */
+export function resolveMapMinimapUrl(spaceId: string | undefined): string | null {
+  if (!spaceId) return null;
+  const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
+  const cased = minimapCasedByLower.get(clean);
+  if (!cased) return null;
+  if (!import.meta.env.DEV && _modelCacheRoot && _convertFileSrc) {
+    return _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${cased}.png`);
+  }
+  return `/models/maps/minimaps/${cased}.png`;
+}
+
+let _mapBoundsPromise: Promise<Map<string, MapBounds>> | null = null;
+
+/** Lazy-load `minimaps.json` (space id → world bounds). Missing file or
+ *  parse failure yields an empty map — callers fall back to data bounds. */
+export function loadMapBounds(): Promise<Map<string, MapBounds>> {
+  if (!_mapBoundsPromise) {
+    const url =
+      !import.meta.env.DEV && _modelCacheRoot && _convertFileSrc
+        ? _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps.json`)
+        : "/models/maps/minimaps.json";
+    _mapBoundsPromise = fetch(url)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((j) => new Map(Object.entries(j) as [string, MapBounds][]))
+      .catch(() => new Map<string, MapBounds>());
+  }
+  return _mapBoundsPromise;
+}
+
 // ── Fallback resolution (tier / nation / type) ──────────────────────────
 
 export interface ShipModelSpec {

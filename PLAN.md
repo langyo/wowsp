@@ -66,12 +66,34 @@ visible only while `Tab` is held.
 - [ ] M1 — Real game-detection (registry + Steam), cached to `.wowsp-cache/`
 - [ ] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
 - [ ] M3 — Replay packet-stream decoder → per-entity event timeline
-- [ ] M4 — three.js holographic map renders one full match from a replay
+- [~] M4 — three.js holographic map renders one full match from a replay
 - [ ] M5 — Model converters produce GLB for at least one map + a handful of ships
 - [ ] M6 — Mod installer: launches WoWSP with the game, transparent overlay window
 - [ ] M7 — `tempArenaInfo.json` polling → live roster in overlay mode
 - [ ] M8 — Tab-triggered capture + roster re-anchoring
 - [ ] M9 — Optional Wargaming stat lookup (Vortex / WG Public API)
+
+### M4 state / known gaps
+
+- Bottom-right minimap draws the game's own minimap art (water+land composite
+  from `scripts/model_convert/extract_minimaps.py`) with ship dots projected
+  via the map's *minimap* world bounds (`minimaps.json`, `(chunks-4)*100` —
+  the terrain GLB rect is 2 chunks wider per side than the minimap art).
+- Terrain GLBs keep real seabed depth (`wowsunpack export-map
+  --keep-submerged` no longer clamps to sea level), so the contour shader's
+  bathymetric bands render; a deep-sea floor plane hides the terrain edge.
+- Entity z is mirrored into three.js space (`z' = -z`, yaw → `PI - yaw`) to
+  match the GLBs' right-handed export; verified against terrain heights.
+- vehicleId from EntityCreate/Position packets is NOT usable for roster
+  matching (packet-level field is a constant, e.g. spaceId). Team roles fall
+  back to entity-id spawn order; the recorder's own ship never gets the self
+  tint. Proper fix needs the shipConfig prop in the EntityCreate state blob
+  (per-version entity defs) or the onArenaStateReceived player list.
+- Capture zones (A/B/C rings + scorebar cap status) are missing on replays
+  that carry no InteractiveZone (type 14) EntityCreate — e.g. the 0.11.0
+  ranked fixture. Their zones live in the BattleLogic state blob / per-version
+  entity defs, or in static scenario GameParams (scenarioConfigId).
+- Dock maps Dock_Kure / Dock_Fjords fail the batch map bake (non-battle maps).
 
 Each milestone is a focused PR against `dev`. The skeleton in this repository is
 the foundation for all of them — every TODO in the code points at the milestone

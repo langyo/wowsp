@@ -83,8 +83,37 @@ async def cmd_get_os_preferences() -> dict:
 
 @app.get("/api/detect_game_install")
 async def cmd_detect_game_install() -> list[dict]:
-    # Pretend we found nothing — the webui shows the "set path manually" state.
-    return []
+    # Pretend a Steam install exists so the replay list loads in the browser.
+    return [{"kind": "steam", "path": "D:/Games/World_of_Warships", "realm": "asia"}]
+
+
+@app.post("/api/list_replays_meta")
+async def cmd_list_replays_meta(request: Request) -> list[dict]:
+    dump = _load_replay_dump()
+    if dump is not None:
+        meta = dump["meta"]
+        return [{
+            "path": meta["path"],
+            "dateTime": meta.get("dateTime"),
+            "matchGroup": meta.get("matchGroup"),
+            "mapName": meta.get("mapName"),
+            "mapId": meta.get("mapId"),
+            "ownShipId": 4183305088,
+            "ownShipName": "Yamato",
+            "playerCount": len(meta.get("vehicles", [])),
+        }]
+    return [
+        {
+            "path": "fixtures/sample.wowsreplay",
+            "dateTime": "20260712_214500",
+            "matchGroup": "pvp",
+            "mapName": "17_NA_fault_line",
+            "mapId": 17,
+            "ownShipId": 4183305088,
+            "ownShipName": "Yamato",
+            "playerCount": 6,
+        }
+    ]
 
 
 @app.post("/api/set_game_path")
@@ -121,7 +150,33 @@ async def cmd_list_replays() -> list[str]:
 @app.post("/api/read_replay_header")
 async def cmd_read_replay_header(request: Request) -> dict:
     body = await request.json()
+    dump = _load_replay_dump()
+    if dump is not None:
+        return dump["meta"]
     return _sample_meta(body.get("path", "fixtures/sample.wowsreplay"))
+
+
+_REPLAY_DUMP: dict[str, Any] | None = None
+
+
+def _load_replay_dump() -> dict[str, Any] | None:
+    """Optional real replay dump (header + trajectories) placed at
+    `fixtures/replay_dump.json` — produced by the `dump_replay_json` Rust test.
+    Lets the holographic map render a real match in the browser."""
+    global _REPLAY_DUMP
+    if _REPLAY_DUMP is None:
+        p = FIXTURES / "replay_dump.json"
+        if p.exists():
+            _REPLAY_DUMP = json.loads(p.read_text(encoding="utf-8"))
+    return _REPLAY_DUMP
+
+
+@app.post("/api/read_replay_positions")
+async def cmd_read_replay_positions(request: Request) -> list[dict]:
+    dump = _load_replay_dump()
+    if dump is not None:
+        return dump["trajectories"]
+    return []
 
 
 @app.post("/api/read_temp_arena_info")

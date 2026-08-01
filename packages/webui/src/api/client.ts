@@ -120,6 +120,8 @@ export interface EntityTrajectory {
   deathTime?: number | null;
   /** HP timeline samples from EntityProperty (0x07) packets. */
   hpSamples?: HpSample[];
+  /** Capture zone property 0 samples (neutral/captured status). */
+  capSamples?: HpSample[];
 }
 
 /** An HP value at a point in time. */
