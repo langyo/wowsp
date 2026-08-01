@@ -40,13 +40,16 @@ jobs:
       - name: Generate Tauri icons
         run: python scripts/ensure_tauri_icons.py
       - name: Rustfmt
-        run: cargo fmt --all -- --check
+        # Only the app crates are in-repo code; wowsunpack/wows-core are
+        # vendored wows-toolkit sources that keep upstream formatting.
+        run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
       - name: Clippy
-        run: cargo clippy --workspace --lib --bins -- -D warnings
+        # App crates only — vendored wowsunpack/wows-core are dependency-only.
+        run: cargo clippy -p wowsp_tauri --lib --bins -- -D warnings
       - name: Check
-        run: cargo check --workspace
+        run: cargo check -p wowsp_tauri
       - name: Test (backend)
-        run: cargo test --workspace
+        run: cargo test -p wowsp_tauri
       - name: Frontend typecheck
         run: pnpm -r typecheck
       - name: Frontend lint

@@ -177,7 +177,12 @@ fn walk_frames(inflated: &[u8]) -> DecodedReplay {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
-    DecodedReplay { positions, kinds, destroys, properties }
+    DecodedReplay {
+        positions,
+        kinds,
+        destroys,
+        properties,
+    }
 }
 
 /// Parsed EntityCreate used internally to key the kinds map; converted to
@@ -267,7 +272,12 @@ fn parse_property(payload: &[u8], time: f32) -> Vec<PropertyChange> {
             4 => u32::from_le_bytes(value_bytes.try_into().unwrap()),
             _ => 0,
         };
-        out.push(PropertyChange { time, entity_id, property_index, value });
+        out.push(PropertyChange {
+            time,
+            entity_id,
+            property_index,
+            value,
+        });
         off += 8 + value_size;
     }
     out
@@ -369,7 +379,9 @@ mod tests {
             let size = u32::from_le_bytes(inflated[pos..pos + 4].try_into().unwrap()) as usize;
             let ptype = u32::from_le_bytes(inflated[pos + 4..pos + 8].try_into().unwrap());
             let payload_end = pos + 12 + size;
-            if size > 200_000 || payload_end > inflated.len() { break; }
+            if size > 200_000 || payload_end > inflated.len() {
+                break;
+            }
             if ptype == 0x0a {
                 *sizes.entry(size).or_default() += 1;
             }
@@ -387,7 +399,9 @@ mod tests {
             let size = u32::from_le_bytes(inflated[pos..pos + 4].try_into().unwrap()) as usize;
             let ptype = u32::from_le_bytes(inflated[pos + 4..pos + 8].try_into().unwrap());
             let payload_end = pos + 12 + size;
-            if size > 200_000 || payload_end > inflated.len() { break; }
+            if size > 200_000 || payload_end > inflated.len() {
+                break;
+            }
             if ptype == 0x0a && size >= 45 {
                 let payload = &inflated[pos + 12..payload_end];
                 let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());

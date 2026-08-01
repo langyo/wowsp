@@ -146,12 +146,8 @@ pub async fn get_ship_encyclopedia(
         let url = format!("{base_url}&page_no={pn}");
         let c = client.clone();
         handles.push(tokio::spawn(async move {
-            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = c
-                .get(&url)
-                .send()
-                .await?
-                .json()
-                .await?;
+            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
+                c.get(&url).send().await?.json().await?;
             if resp.status != "ok" {
                 anyhow::bail!("{}", resp.error.message.unwrap_or_default());
             }
