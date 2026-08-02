@@ -121,6 +121,36 @@ visible only while `Tab` is held.
   border, e.g. a 1v1 fighting inside a 600x600 area), the minimap crops the
   game art to that region and re-projects dots instead of showing the whole
   map with dots compressed in a corner.
+- Aircraft/squadrons (entityType 4) position via the 0x2a packet (same
+  32-byte layout as PlayerPosition); rendered as a lightweight THREE.Points
+  cloud on the map and cyan dots + patrol polylines on the zoomed minimap.
+- Sink detection: the EntityDestroy (0x06) packet is absent on modern
+  clients; death_time is inferred from the float HP stream reaching 0.
+  Sunk ships vanish from the 3D scene (grey dot remains on the minimap), a
+  kill feed shows "+1" per sink, and the scoreboard estimates score as
+  kills + held cap points (WoWS doesn't stream score packets into replays).
+- Capture zones: ownership (capSamples prop 0: 0=neutral, 1=ally, 2=enemy)
+  drives the A/B/C letters in the top bar; the 40s capture window before
+  each ownership change is approximated as "capturing" with a live countdown
+  under the letter (replays only log ownership changes, not tick progress).
+- Top scoreboard: score + alive counts per team, cap letters with capture
+  countdowns, and elapsed/remaining/total time (click to cycle).
+- First-person follow: clicking a ship label selects it (dashed outline);
+  the camera then tracks the ship from behind along its heading. Click the
+  empty scene to release.
+- Zoomed minimap: clicking the minimap opens a full-map overlay with per-ship
+  trails (toggleable), class glyphs, sunk grey dots, and aircraft patrol
+  paths.
+- Ship labels: semi-transparent background, anti-overlap stacking, clickable,
+  and HP shows encyclopedia hull health for ships without an HP stream.
+- Sea presentation: dark sea surface (translucent) over a near-black seabed
+  floor so the water no longer reads bright blue; camera max distance raised
+  so the whole map fits when zoomed out.
+- Not renderable from replay data (documented limitation): shells/torpedoes
+  are never recorded as entities in replays (only visible entities exist),
+  and storm/thunder cells have no streamed source — both are skipped.
+- 3D trajectory lines removed; ship movement is readable via the zoomed
+  minimap trails instead.
 - Map-version drift: terrain GLBs and minimap art are baked from the current
   client, so replays from before a map rework (e.g. 2022 "North" vs 14.5)
   show tracks crossing islands. The mock fixture therefore uses a
