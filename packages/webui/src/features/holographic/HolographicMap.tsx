@@ -54,6 +54,10 @@ export default defineComponent({
     encyclopedia: { type: Object as () => Map<number, ShipInfo>, default: () => new Map() },
     /** Map space id (e.g. "15_NE_north") — used to load the terrain GLB. */
     mapId: { type: String, default: "" },
+    /** Match group from the replay descriptor (pvp/ranked/clan/brawl/...). */
+    matchGroup: { type: String, default: "" },
+    /** Map space id, for applying per-map domination scoring overrides. */
+    mapName: { type: String, default: "" },
   },
   setup(props) {
     const container = ref<HTMLElement | null>(null);
@@ -147,6 +151,8 @@ export default defineComponent({
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
     let planeCloud: THREE.Points | null = null;
+    /** Capture-zone ring meshes (repainted per frame by cap state). */
+    let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
@@ -552,6 +558,8 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+      capRings = [];
+      capSim.clear();
       if (planeCloud) {
         scene.remove(planeCloud);
         planeCloud.geometry.dispose();
@@ -1087,6 +1095,7 @@ export default defineComponent({
           ring.position.set(cx, 0.6, -cz);
           scene.add(ring);
           trajectoryLines.push(ring as unknown as THREE.Line);
+          capRings.push(ring);
           const canvas = document.createElement("canvas");
           canvas.width = 64;
           canvas.height = 64;
@@ -1234,6 +1243,16 @@ export default defineComponent({
       }
       // Capture-zone ownership + estimated score at this instant.
       updateCapsAndScore(t);
+      // Repaint the 3D cap rings by live state (owner color, capture pulse).
+      capDisplay.value.forEach((c, i) => {
+        const ring = capRings[i];
+        if (!ring) return;
+        const mat = ring.material as THREE.MeshBasicMaterial;
+        if (c.owner === 1) mat.color.set(0x4ade80);
+        else if (c.owner === 2) mat.color.set(0xcc3333);
+        else mat.color.set(0xffffff);
+        mat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
+      });
       // Aircraft positions at this instant.
       if (planeCloud) {
         const trajs = planeCloud.userData.planeTrajs as EntityTrajectory[];
@@ -1255,82 +1274,284 @@ export default defineComponent({
       updateLabelPositions();
     }
 
-    /** Time a team needs to fully capture a point (domination standard).
-     *  The replay only logs ownership CHANGES (not the tick-by-tick progress),
-     *  so the in-progress window is approximated as [changeTime - CAP_TIME,
-     *  changeTime] with a live countdown. */
-    const CAP_TIME = 40;
+    // ── Scoring rules (official: wiki.worldofwarships.com/Ship:Game_Modes) ──
+    // Domination Random/Co-op: 3 areas → start 300, +3 per completed capture,
+    // +3 every 5s per controlled area; 4 areas → start 200, +4, +4 every 9s.
+    // Capture duration 60s (1 ship) / 40s (2+ ships); contested by both teams
+    // freezes progress; being hit halves the accrued progress.
+    // Eight maps override everything: start 150, kills +40, deaths -25.
+    const SPECIAL_CAP_MAPS = new Set([
+      "13_OC_new_dawn",
+      "17_NA_fault_line",
+      "23_Shards",
+      "41_Conquest",
+      "42_Neighbors",
+      "52_Britain",
+      "53_Shoreside",
+      "54_Faroe",
+    ]);
+    // Kill/death points by ship class (Random & Co-op).
+    const KILL_PTS: Record<string, { kill: number; death: number }> = {
+      Submarine: { kill: 25, death: -40 },
+      Destroyer: { kill: 30, death: -45 },
+      Cruiser: { kill: 35, death: -50 },
+      Battleship: { kill: 40, death: -60 },
+      AirCarrier: { kill: 45, death: -65 },
+    };
 
-    /** Capture-zone display state per zone (ownership + capture progress),
-     *  recomputed every frame from the zones' capSamples. Letter names are
-     *  assigned dynamically (A, B, C, ...) in creation order — domination
-     *  maps can have 1..5 points, and PvE scenarios create new points
-     *  mid-battle, so the top bar renders whatever zones exist. */
-    const capDisplay = ref<
-      {
-        letter: string;
-        owner: number;
-        capturing: boolean;
-        progress: number;
-        remain: number;
-      }[]
-    >([]);
+    interface CapZoneState {
+      letter: string;
+      owner: number; // 0 neutral, 1 ally, 2 enemy
+      /** 0..1 progress of the current capture towards the capturing team. */
+      progress: number;
+      /** Ships of each side inside the point right now. */
+      alliesIn: number;
+      enemiesIn: number;
+      /** true when both teams are inside (progress frozen). */
+      contested: boolean;
+      /** true when a capture is actively progressing. */
+      capturing: boolean;
+      /** Capturing team's progress speed: 1/60 or 1/40 per second. */
+      speed: number;
+      /** Capturing team (1/2) when capturing. */
+      captureTeam: number;
+    }
+    const capDisplay = ref<CapZoneState[]>([]);
 
-    /** Derive cap ownership (0=neutral, 1=ally, 2=enemy), per-zone capture
-     *  progress, and the score at playback time t.
-     *
-     *  Scoring follows the game's rules: a fully completed capture awards
-     *  +10 to the capturing team (every time a point changes hands), and each
-     *  sink awards +1 to the surviving side. WoWS doesn't stream live score
-     *  packets into replays, but these two events are both observable from
-     *  the capSamples (ownership changes) and the HP streams (sinks), so the
-     *  recomputation is exact and scrubbing-safe (fully derived, never
-     *  incrementally accumulated). */
+    /** Per-zone incremental capture simulator state. `progress` is simulated
+     *  forward in ~0.5s steps while the playhead advances; scrubbing backward
+     *  resets and replays from the last ownership change. Hits inside the
+     *  zone (ship HP dropping) halve the accrued progress, matching the game. */
+    const capSim = new Map<
+      number,
+      { lastT: number; progress: number; owner: number; prevHp: Map<number, number> }
+    >();
+
+    /** Ships inside a capture point at time t (within the zone radius) with
+     *  their HP snapshots for hit-rollback detection. */
+    function shipsInZone(zone: EntityTrajectory, t: number): { ally: number; enemy: number } {
+      const cx = zone.kind!.initialX;
+      const cz = zone.kind!.initialZ;
+      const R = 60; // radius isn't recorded in replays — 60 m standard
+      let ally = 0;
+      let enemy = 0;
+      for (const m of shipMarkers) {
+        const traj = props.trajectories.find((tr) => tr.entityId === m.userData.entityId);
+        if (!traj || traj.samples.length === 0) continue;
+        const s = sampleAt(traj, t);
+        if (!s) continue;
+        const d = (s.x - cx) ** 2 + (s.z - cz) ** 2;
+        if (d > R * R) continue;
+        const role = m.userData.role as TeamRole;
+        if (role === "ally" || role === "self") ally++;
+        else if (role === "enemy") enemy++;
+      }
+      return { ally, enemy };
+    }
+
+    /** Advance a zone's capture simulation from lastSimT to t in 0.5s steps.
+     *  Ownership always follows the recorded prop0 stream; the simulation only
+     *  drives the visible progress ring (speed by ships inside, frozen when
+     *  contested, halved when an inside ship takes a hit). */
+    function simulateZone(
+      zone: EntityTrajectory,
+      eid: number,
+      t: number,
+      samples: { time: number; value: number }[],
+    ) {
+      const st = capSim.get(eid);
+      if (!st) return;
+      for (const s of samples) {
+        if (s.time > st.lastT && s.time <= t) {
+          st.owner = s.value;
+          st.progress = 0;
+          st.prevHp = new Map();
+        }
+      }
+      let simT = st.lastT;
+      const step = 0.5;
+      while (simT < t) {
+        const nxt = Math.min(simT + step, t);
+        const mid = (simT + nxt) / 2;
+        const cx = zone.kind!.initialX;
+        const cz = zone.kind!.initialZ;
+        let ally = 0;
+        let enemy = 0;
+        for (const m of shipMarkers) {
+          const traj = props.trajectories.find((tr) => tr.entityId === m.userData.entityId);
+          if (!traj || traj.samples.length === 0) continue;
+          const s = sampleAt(traj, mid);
+          if (!s) continue;
+          if ((s.x - cx) ** 2 + (s.z - cz) ** 2 > 60 * 60) continue;
+          const role = m.userData.role as TeamRole;
+          if (role === "ally" || role === "self") ally++;
+          else if (role === "enemy") enemy++;
+          // Hit rollback: HP dropped inside the zone → progress halves.
+          if (traj.hpSamples && traj.hpSamples.length > 0) {
+            const hp = hpAtTime(traj.hpSamples, mid);
+            const prev = st.prevHp.get(traj.entityId) ?? hp;
+            if (prev != null && hp != null && hp < prev - 50) {
+              st.progress *= 0.5;
+            }
+            st.prevHp.set(traj.entityId, hp ?? prev);
+          }
+        }
+        if (st.owner === 0) {
+          // Neutral: a single team present starts capturing it.
+          if ((ally > 0) !== (enemy > 0)) {
+            st.progress += step / (Math.max(ally, enemy) >= 2 ? 40 : 60);
+            if (st.progress > 1) st.progress = 1;
+          }
+        } else if (ally > 0 && enemy > 0) {
+          // Contested: frozen.
+        } else {
+          // Owned: only the enemy can (re-)capture; ring visual only, the
+          // actual ownership flip comes from the prop0 stream.
+          const attackers = st.owner === 1 ? enemy : ally;
+          if (attackers > 0) {
+            st.progress += step / (attackers >= 2 ? 40 : 60);
+            if (st.progress > 1) st.progress = 1;
+          }
+        }
+        simT = nxt;
+      }
+      st.lastT = t;
+    }
+
+    /** Recompute cap zone states + score at playback time t. Fully derived
+     *  from the replay stream (capSamples ownership changes, ship positions,
+     *  HP streams) so scrubbing reproduces the same result. */
     function updateCapsAndScore(t: number) {
       const zones = capZones.value;
-      let allyCapPts = 0;
-      let enemyCapPts = 0;
-      const display: { letter: string; owner: number; capturing: boolean; progress: number; remain: number }[] = [];
+      // Scoring parameters by mode + map.
+      const isRanked = props.matchGroup === "ranked" || props.matchGroup === "clan";
+      const special = SPECIAL_CAP_MAPS.has(props.mapName);
+      const nAreas = zones.length;
+      const startPts = special ? 150 : isRanked ? 300 : nAreas >= 4 ? 200 : 300;
+      const capCompletePts = special ? 40 : isRanked ? (nAreas >= 4 ? 2 : 9) : nAreas >= 4 ? 4 : 3;
+      // Accrual: (every N seconds, +P per controlled area).
+      let accrualEvery = 0;
+      let accrualPts = 0;
+      if (!special) {
+        if (isRanked) {
+          accrualEvery = nAreas >= 4 ? 0 : nAreas === 2 ? 10 : 3;
+          accrualPts = nAreas >= 4 ? 0 : nAreas === 2 ? 9 : 2;
+        } else {
+          accrualEvery = nAreas >= 4 ? 9 : 5;
+          accrualPts = nAreas >= 4 ? 4 : 3;
+        }
+      }
+
+      let allyScoreNow = startPts;
+      let enemyScoreNow = startPts;
+
+      // Kill / death points by ship class (classic tables; special maps
+      // override with flat +40/-25).
+      for (const m of shipMarkers) {
+        const dt = m.userData.deathTime as number | null;
+        if (dt == null || t < dt) continue;
+        const role = m.userData.role as TeamRole;
+        const killer = role === "ally" || role === "self" ? "enemy" : "ally";
+        const type = (m.userData.type as string | undefined) ?? "";
+        let kill = 0;
+        let death = 0;
+        if (special) {
+          kill = 40;
+          death = -25;
+        } else {
+          const cls =
+            type.includes("Destroyer") ? "Destroyer"
+            : type.includes("Battleship") ? "Battleship"
+            : type.includes("AirCarrier") || type.includes("AirCar") ? "AirCarrier"
+            : type.includes("Submarine") ? "Submarine"
+            : "Cruiser";
+          kill = KILL_PTS[cls].kill;
+          death = KILL_PTS[cls].death;
+        }
+        if (killer === "ally") allyScoreNow += kill;
+        else enemyScoreNow += kill;
+        if (role === "ally" || role === "self") allyScoreNow += death;
+        else enemyScoreNow += death;
+      }
+
+      // Cap completion + accrual over ownership intervals, plus per-zone
+      // live capture simulation for the UI.
+      const display: CapZoneState[] = [];
       for (let i = 0; i < zones.length; i++) {
-        const samples = zones[i].capSamples ?? [];
+        const zone = zones[i];
+        const eid = zone.entityId;
+        const samples = (zone.capSamples ?? []).map((s) => ({ time: s.time, value: s.value }));
+        // Accrual: each non-neutral ownership interval contributes
+        // floor(len / every) * pts (contested pauses can't be observed from
+        // the ownership stream alone; the game stops accrual when enemies
+        // are inside, which we approximate via the position sim below).
         let owner = 0;
-        let lastChange = -Infinity;
-        // Every ownership change up to t that left the point non-neutral
-        // completed a capture → +10 to that team.
         let prev = 0;
+        let intervalStart = 0;
         for (const s of samples) {
-          if (s.time <= t) {
-            if (s.value !== prev && s.value !== 0) {
-              if (s.value === 1) allyCapPts += 10;
-              else if (s.value === 2) enemyCapPts += 10;
+          if (s.time > t) break;
+          if (s.value !== prev) {
+            if (prev !== 0 && accrualEvery > 0) {
+              const len = s.time - intervalStart;
+              const ticks = Math.floor(len / accrualEvery);
+              if (prev === 1) allyScoreNow += ticks * accrualPts;
+              else enemyScoreNow += ticks * accrualPts;
+            }
+            if (s.value !== 0 && s.value !== prev) {
+              if (s.value === 1) allyScoreNow += capCompletePts;
+              else enemyScoreNow += capCompletePts;
             }
             prev = s.value;
             owner = s.value;
-            lastChange = s.time;
-          } else {
-            break;
+            intervalStart = s.time;
           }
         }
-        // Capture-in-progress window: the last change completed the capture;
-        // the 40s before it the zone was being captured by that team.
-        const capturing = owner !== 0 && t >= lastChange - CAP_TIME && t < lastChange;
-        capStatus.value[i] = owner;
+        if (prev !== 0 && accrualEvery > 0 && t > intervalStart) {
+          const len = t - intervalStart;
+          const ticks = Math.floor(len / accrualEvery);
+          if (prev === 1) allyScoreNow += ticks * accrualPts;
+          else enemyScoreNow += ticks * accrualPts;
+        }
+        if (owner === 1) capStatus.value[i] = 1;
+        else if (owner === 2) capStatus.value[i] = 2;
+        else capStatus.value[i] = 0;
+
+        // Capture simulation for the visual state.
+        let st = capSim.get(eid);
+        if (!st || st.lastT > t) {
+          st = { lastT: 0, progress: 0, owner: ownerAt(samples, 0), prevHp: new Map() };
+          capSim.set(eid, st);
+        }
+        simulateZone(zone, eid, t, samples);
+        const { ally, enemy } = shipsInZone(zone, t);
+        const capturing = st.progress > 0.001 && st.progress < 1 && st.owner === 0
+          ? (ally > 0) !== (enemy > 0)
+          : st.owner !== 0 && st.progress > 0.001 && st.progress < 1;
         display.push({
           letter: String.fromCharCode(65 + i),
-          owner,
+          owner: st.owner,
+          progress: st.progress,
+          alliesIn: ally,
+          enemiesIn: enemy,
+          contested: ally > 0 && enemy > 0,
           capturing,
-          progress: capturing
-            ? Math.max(0, Math.min(1, (t - (lastChange - CAP_TIME)) / CAP_TIME))
-            : owner !== 0 ? 1 : 0,
-          remain: capturing ? Math.max(0, Math.ceil(lastChange - t)) : 0,
+          speed: 1 / (Math.max(ally, enemy) >= 2 ? 40 : 60),
+          captureTeam: st.owner === 0 ? (ally > enemy ? 1 : enemy > ally ? 2 : 0) : st.owner,
         });
       }
       capDisplay.value = display;
-      // Score = kills (deaths of the opposing side) + completed captures.
-      const allyKills = enemyTotal.value - enemyAlive.value;
-      const enemyKills = allyTotal.value - allyAlive.value;
-      allyScore.value = allyKills + allyCapPts;
-      enemyScore.value = enemyKills + enemyCapPts;
+      allyScore.value = allyScoreNow;
+      enemyScore.value = enemyScoreNow;
+    }
+
+    /** Owner at time t from the raw capSamples stream. */
+    function ownerAt(samples: { time: number; value: number }[], t: number): number {
+      let o = 0;
+      for (const s of samples) {
+        if (s.time <= t) o = s.value;
+        else break;
+      }
+      return o;
     }
 
     /** First-person camera: keep the selected ship centered, camera trailing
@@ -1421,20 +1642,24 @@ export default defineComponent({
       const ss = traj.samples;
       if (t <= ss[0].time) return ss[0];
       if (t >= ss[ss.length - 1].time) return ss[ss.length - 1];
-      for (let i = 1; i < ss.length; i++) {
-        if (ss[i].time >= t) {
-          const a = ss[i - 1];
-          const b = ss[i];
-          const f = (t - a.time) / (b.time - a.time || 1);
-          return {
-            ...a,
-            x: a.x + (b.x - a.x) * f,
-            z: a.z + (b.z - a.z) * f,
-            yaw: a.yaw + angleDiff(a.yaw, b.yaw) * f,
-          };
-        }
+      // Binary search: called per frame from the capture simulation and the
+      // aircraft cloud, so keep it O(log n).
+      let lo = 0;
+      let hi = ss.length - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (ss[mid].time < t) lo = mid;
+        else hi = mid;
       }
-      return ss[ss.length - 1];
+      const a = ss[lo];
+      const b = ss[hi];
+      const f = (t - a.time) / (b.time - a.time || 1);
+      return {
+        ...a,
+        x: a.x + (b.x - a.x) * f,
+        z: a.z + (b.z - a.z) * f,
+        yaw: a.yaw + angleDiff(a.yaw, b.yaw) * f,
+      };
     }
 
     function angleDiff(a: number, b: number): number {
@@ -1627,19 +1852,57 @@ export default defineComponent({
               <span class="holo-map__score-alive">{allyAlive.value}/{allyTotal.value}</span>
             </span>
             <span class="holo-map__score-caps">
-              {capDisplay.value.map((c) => (
-                <span
-                  class={[
-                    "holo-map__cap",
-                    c.owner === 1 ? "holo-map__cap--ally" : c.owner === 2 ? "holo-map__cap--enemy" : "",
-                    c.capturing ? "holo-map__cap--capturing" : "",
-                  ]}
-                  title={c.capturing ? `${c.letter} 占领中 ${c.remain}s` : c.owner === 0 ? "中立" : c.owner === 1 ? "我方控制" : "敌方控制"}
-                >
-                  {c.letter}
-                  {c.capturing ? <em class="holo-map__cap-timer">{c.remain}s</em> : null}
-                </span>
-              ))}
+              {capDisplay.value.map((c) => {
+                const ownerColor =
+                  c.owner === 1 ? "#4ade80" : c.owner === 2 ? "#cc3333" : "rgba(255,255,255,0.6)";
+                const capColor = c.captureTeam === 1 ? "#4ade80" : c.captureTeam === 2 ? "#cc3333" : "#ffffff";
+                const active = c.capturing || c.contested;
+                return (
+                  <span
+                    class={[
+                      "holo-map__cap",
+                      c.owner === 1 ? "holo-map__cap--ally" : c.owner === 2 ? "holo-map__cap--enemy" : "",
+                      active ? "holo-map__cap--active" : "",
+                      c.contested ? "holo-map__cap--contested" : "",
+                    ]}
+                    title={
+                      c.contested
+                        ? `${c.letter} 双方压点，进度暂停`
+                        : c.capturing
+                          ? `${c.letter} 占领中（${c.alliesIn} vs ${c.enemiesIn} 船）`
+                          : c.owner === 0
+                            ? `${c.letter} 中立`
+                            : c.owner === 1
+                              ? `${c.letter} 我方控制`
+                              : `${c.letter} 敌方控制`
+                    }
+                  >
+                    <svg width="22" height="22" viewBox="0 0 22 22">
+                      {active ? (
+                        <g>
+                          {/* diamond + progress ring, clockwise from top */}
+                          <rect x="6" y="6" width="10" height="10" fill="none"
+                            stroke={ownerColor} stroke-width="1.4"
+                            transform="rotate(45 11 11)" />
+                          <circle r="5" cx="11" cy="11" fill="none"
+                            stroke={c.owner === 0 ? "rgba(255,255,255,0.35)" : ownerColor}
+                            stroke-width="2" opacity="0.45" />
+                          <circle r="5" cx="11" cy="11" fill="none"
+                            stroke={capColor} stroke-width="2" stroke-linecap="round"
+                            stroke-dasharray={`${Math.max(0.5, c.progress * 31.4)} 31.4`}
+                            transform="rotate(-90 11 11)" />
+                        </g>
+                      ) : (
+                        <rect x="6" y="6" width="10" height="10"
+                          fill={c.owner === 0 ? "rgba(255,255,255,0.06)" : ownerColor}
+                          stroke={ownerColor} stroke-width="1.4" />
+                      )}
+                      <text x="11" y="14.6" text-anchor="middle" font-size="8.5"
+                        font-weight="700" fill="#fff">{c.letter}</text>
+                    </svg>
+                  </span>
+                );
+              })}
             </span>
             <span class="holo-map__score-team holo-map__score--enemy">
               <strong class="holo-map__score-num">{enemyScore.value}</strong>
