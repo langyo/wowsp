@@ -241,11 +241,14 @@ _SHIP_MODELS_PATH = (
     Path(__file__).resolve().parents[3]
     / "packages" / "webui" / "src" / "data" / "ship_models.json"
 )
+_SHIP_NAMES_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "data" / "ship_names.json"
+)
 
 
 def _load_encyclopedia() -> list[dict[str, Any]]:
     import json
-    import re
 
     tree = {}
     if _TECH_TREE_PATH.exists():
@@ -286,32 +289,27 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 "contour": "",
             },
         })
-    # Merge ship_models.json so premium/special/event ships absent from the
-    # tech tree still resolve names in replay labels (their baseName is the
-    # real English name; code-like bases such as "PRSC709" are skipped).
-    if _SHIP_MODELS_PATH.exists():
-        models = json.loads(_SHIP_MODELS_PATH.read_text(encoding="utf-8"))
-        for sid_str, entry in models.items():
+    # Merge the offline ship-name DB (GameParams + game gettext catalogs) so
+    # premium/special/event ships absent from the tech tree still resolve
+    # real names, tiers and classes in replay labels.
+    if _SHIP_NAMES_PATH.exists():
+        import json as _json
+        names_db = _json.loads(_SHIP_NAMES_PATH.read_text(encoding="utf-8"))
+        for sid_str, entry in names_db.items():
             try:
                 sid = int(sid_str)
             except ValueError:
                 continue
             if sid in seen:
                 continue
-            base = (entry.get("baseName") or "").strip()
-            if not base or base == entry.get("index") or re.fullmatch(r"P[A-Z]{3}\d{3}", base):
-                continue
-            index = entry.get("index", "")
-            # Class from the WG index code (e.g. "PASB017": nation at [1],
-            # class at [2:4]): SB=BB, SC/CAUX=CA, SD=DD, SA=CV, SS=SS.
-            cls = {"SB": "Battleship", "SC": "Cruiser", "SD": "Destroyer",
-                   "SA": "AirCarrier", "SS": "Submarine"}.get(index[2:4], "Cruiser") if len(index) >= 4 else "Cruiser"
+            seen.add(sid)
+            name = entry.get("names", {}).get("en") or next(iter(entry.get("names", {}).values()), "")
             ships.append({
                 "shipId": sid,
-                "name": base,
-                "tier": int(index[-1]) if index[-1:].isdigit() else 5,
-                "type": cls,
-                "nation": "usa",
+                "name": name,
+                "tier": entry.get("tier") or 5,
+                "type": entry.get("type") or "Cruiser",
+                "nation": entry.get("nation") or "usa",
                 "isPremium": True,
                 "isSpecial": False,
                 "description": "",

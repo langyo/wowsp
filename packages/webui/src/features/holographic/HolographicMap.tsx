@@ -8,6 +8,8 @@ import {
   resolveShipModelForEntry,
   resolveShipModelByShipId,
   shipNameFromModelDb,
+  shipNameFromOfflineDb,
+  shipOfflineEntry,
   loadGlbModel,
   loadMapBounds,
   type MapBounds,
@@ -20,6 +22,7 @@ import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./HolographicMap.scss";
 
@@ -179,12 +182,37 @@ export default defineComponent({
       // known (matches the base art), else the trajectory bounds converted
       // back from scene space (scene z = -world z) so the dots at least fit
       // the canvas.
-      const b: MapBounds | null =
+      const full: MapBounds | null =
         minimapBounds ??
         (bounds
           ? { minX: bounds.minX, maxX: bounds.maxX, minZ: -bounds.maxZ, maxZ: -bounds.minZ }
           : null);
-      if (!b) return;
+      if (!full) return;
+      // Crop to the active battle area when the match plays out in a small
+      // region of the map (brawls/events with a restricted border): the
+      // in-game minimap shows only that region, and a full-map view would
+      // compress every ship dot into one corner. `bounds` already holds the
+      // active area in scene coords (z mirrored back to world here).
+      let db = full;
+      if (minimapBounds && bounds) {
+        const active: MapBounds = {
+          minX: bounds.minX,
+          maxX: bounds.maxX,
+          minZ: -bounds.maxZ,
+          maxZ: -bounds.minZ,
+        };
+        const mapArea = (full.maxX - full.minX) * (full.maxZ - full.minZ);
+        const activeArea =
+          (active.maxX - active.minX) * (active.maxZ - active.minZ);
+        if (activeArea > 0 && activeArea < 0.7 * mapArea) {
+          db = {
+            minX: Math.max(active.minX, full.minX),
+            maxX: Math.min(active.maxX, full.maxX),
+            minZ: Math.max(active.minZ, full.minZ),
+            maxZ: Math.min(active.maxZ, full.maxZ),
+          };
+        }
+      }
       const cvs = minimapCanvas.value;
       if (!cvs) return;
       if (!_mmCtx) _mmCtx = cvs.getContext("2d");
@@ -194,18 +222,30 @@ export default defineComponent({
       if (cvs.width !== w) cvs.width = w;
       if (cvs.height !== h) cvs.height = h;
 
-      const mapW = b.maxX - b.minX;
-      const mapH = b.maxZ - b.minZ;
+      const dbW = db.maxX - db.minX;
+      const dbH = db.maxZ - db.minZ;
 
       // Markers/camera live in three.js space (z = -worldZ); convert back to
       // world coordinates for the map projection. North (+worldZ) is up on
       // the game's minimap (world_to_minimap flips z).
-      function wx(x: number) { return ((x - b.minX) / (mapW || 1)) * w; }
-      function wz(zScene: number) { return ((b.maxZ + zScene) / (mapH || 1)) * h; }
+      function wx(x: number) { return ((x - db.minX) / (dbW || 1)) * w; }
+      function wz(zScene: number) { return ((db.maxZ + zScene) / (dbH || 1)) * h; }
 
       ctx.clearRect(0, 0, w, h);
       if (minimapImage) {
-        ctx.drawImage(minimapImage, 0, 0, w, h);
+        if (db === full) {
+          ctx.drawImage(minimapImage, 0, 0, w, h);
+        } else {
+          // Cropped: draw only the active-area slice of the art, scaled up.
+          const img = minimapImage;
+          const fullW = full.maxX - full.minX;
+          const fullH = full.maxZ - full.minZ;
+          const sx = ((db.minX - full.minX) / (fullW || 1)) * img.width;
+          const sw = ((db.maxX - db.minX) / (fullW || 1)) * img.width;
+          const sy = ((full.maxZ - db.maxZ) / (fullH || 1)) * img.height;
+          const sh = ((db.maxZ - db.minZ) / (fullH || 1)) * img.height;
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+        }
       } else {
         ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
         ctx.fillRect(0, 0, w, h);
@@ -393,25 +433,42 @@ export default defineComponent({
     function recomputeBoundsAndCamera() {
       let minT = Infinity;
       let maxT = -Infinity;
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minZ = Infinity;
-      let maxZ = -Infinity;
       for (const t of props.trajectories) {
         for (const s of t.samples) {
           if (s.time < minT) minT = s.time;
           if (s.time > maxT) maxT = s.time;
-          if (s.x < minX) minX = s.x;
-          if (s.x > maxX) maxX = s.x;
-          if (-s.z < minZ) minZ = -s.z;
-          if (-s.z > maxZ) maxZ = -s.z;
+        }
+      }
+      // Active battle area: ships (type 2) + capture zones (type 14) only.
+      // Planes/torpedoes roam far past the battle border and would stretch
+      // the view to the whole map even when the mode restricts play to a
+      // small region (e.g. brawls fight inside a 600x600 border).
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      const eat = (x: number, z: number) => {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      };
+      for (const t of props.trajectories) {
+        if (t.kind?.entityType === 2) {
+          for (const s of t.samples) eat(s.x, -s.z);
+        } else if (t.kind?.entityType === 14) {
+          eat(t.kind.initialX, -t.kind.initialZ);
         }
       }
       if (Number.isFinite(minT)) {
         duration.value = Math.max(maxT - minT, 0.1);
         if (current.value > duration.value) current.value = duration.value;
-        bounds = { minX, maxX, minZ, maxZ };
-        fitCamera(bounds);
+        if (Number.isFinite(minX)) {
+          const mx = Math.max((maxX - minX) * 0.08, 80);
+          const mz = Math.max((maxZ - minZ) * 0.08, 80);
+          bounds = { minX: minX - mx, maxX: maxX + mx, minZ: minZ - mz, maxZ: maxZ + mz };
+          fitCamera(bounds);
+        }
       }
     }
 
@@ -648,8 +705,14 @@ export default defineComponent({
 
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
         const encStore = useEncyclopediaStore();
+        const dataLang = useLanguage().dataLanguage.value;
+        // Name/tier/type: the WG encyclopedia when it knows the ship, else the
+        // complete offline DB (GameParams + game gettext catalogs — covers
+        // event/clone ships), else the baked model DB's English base name.
+        const offline = shipOfflineEntry(rosterEntry?.shipId ?? traj.kind?.shipId);
         const shipName =
           (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
+          shipNameFromOfflineDb(rosterEntry?.shipId ?? traj.kind?.shipId, dataLang) ??
           rosterEntry?.shipName ??
           shipInfo?.name ??
           shipNameFromModelDb(rosterEntry?.shipId ?? traj.kind?.shipId) ??
@@ -670,8 +733,8 @@ export default defineComponent({
           role,
           name,
           shipName,
-          tier: shipInfo?.tier ?? null,
-          type: shipInfo?.type ?? null,
+          tier: shipInfo?.tier ?? offline?.tier ?? null,
+          type: shipInfo?.type ?? offline?.type ?? null,
           hp: maxHp,
           maxHp,
           x: 0, y: 0,
@@ -1061,11 +1124,6 @@ export default defineComponent({
                     {lbl.hp.toLocaleString()}
                     {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
                   </span>
-                  {lbl.maxHp != null && lbl.hp < lbl.maxHp ? (
-                    <span class="holo-label__hp-delta">
-                      (−{(lbl.maxHp - lbl.hp).toLocaleString()})
-                    </span>
-                  ) : null}
                 </span>
               ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
@@ -1138,7 +1196,7 @@ export default defineComponent({
                 {props.vehicles.filter(v => v.relation <= 1).map(v => (
                   <tr key={v.id}>
                     <td style={{color: v.relation === 0 ? "#fff" : "#3cb478"}}>{v.name}</td>
-                    <td>{v.shipName ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
+                    <td>{v.shipName ?? shipNameFromOfflineDb(v.shipId, useLanguage().dataLanguage.value) ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
                     <td></td>
                   </tr>
                 ))}
@@ -1150,7 +1208,7 @@ export default defineComponent({
                 {props.vehicles.filter(v => v.relation > 1).map(v => (
                   <tr key={v.id}>
                     <td style={{color: "#cc3333"}}>{v.name}</td>
-                    <td>{v.shipName ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
+                    <td>{v.shipName ?? shipNameFromOfflineDb(v.shipId, useLanguage().dataLanguage.value) ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
                     <td></td>
                   </tr>
                 ))}

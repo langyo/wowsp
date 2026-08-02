@@ -17,6 +17,7 @@
  */
 
 import shipModelNames from "../../data/ship_models.json";
+import shipNamesDbRaw from "../../data/ship_names.json";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
@@ -147,6 +148,42 @@ export function shipNameFromModelDb(shipId: number | string | undefined): string
   const base = entry?.baseName?.trim();
   if (!base || base === entry?.index || /^P[A-Z]{3}\d{3}$/.test(base)) return null;
   return base;
+}
+
+// ── Offline ship-name DB (GameParams + game gettext catalogs) ───────────
+// `ship_names.json` covers EVERY ship (incl. event/clone ships the WG
+// encyclopedia misses) with localized names per WG language code, produced
+// by `scripts/model_convert/extract_ship_names.py`.
+
+interface ShipNameEntry {
+  index: string;
+  tier?: number | null;
+  type?: string | null;
+  nation?: string | null;
+  names: Record<string, string>;
+}
+const shipNameMap =
+  (shipNamesDbRaw as Record<string, ShipNameEntry>) ?? {};
+
+/** Full offline DB entry for a shipId, if present. */
+export function shipOfflineEntry(
+  shipId: number | string | undefined,
+): ShipNameEntry | null {
+  if (shipId == null) return null;
+  return shipNameMap[String(shipId)] ?? null;
+}
+
+/** Localized ship name from the complete offline DB. `lang` is the WG
+ *  language code ("zh-cn", "zh-sg", "en", ...); falls back to English. */
+export function shipNameFromOfflineDb(
+  shipId: number | string | undefined,
+  lang?: string,
+): string | null {
+  const entry = shipOfflineEntry(shipId);
+  if (!entry) return null;
+  if (lang && entry.names[lang]) return entry.names[lang];
+  const values = Object.values(entry.names);
+  return entry.names["en"] ?? (values.length > 0 ? values[0] : null);
 }
 
 export function resolveMapModelUrl(spaceId: string | undefined): string | null {
