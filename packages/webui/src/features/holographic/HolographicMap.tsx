@@ -284,6 +284,24 @@ export default defineComponent({
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
+      // Capture zones: small rings tinted by current owner, letter inside.
+      capZones.value.forEach((z, i) => {
+        const cx = wx(z.kind!.initialX);
+        const cz = wz(-z.kind!.initialZ);
+        const owner = capDisplay.value[i]?.owner ?? 0;
+        ctx.strokeStyle =
+          owner === 1 ? "rgba(74, 222, 128, 0.8)" : owner === 2 ? "rgba(204, 51, 51, 0.8)" : "rgba(255, 255, 255, 0.5)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(cx, cz, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.font = "bold 8px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
+      });
+
       // Ship dots: the game's own class glyphs (same shapes as the label
       // icons), tinted by team. Sunk ships render as small grey dots.
       const t = current.value;
@@ -1022,48 +1040,74 @@ export default defineComponent({
 
       // Capture zones: entityType 14 circles on the XZ plane.
       // Capture zones are static and may have no position samples; use the
-      // initial position from EntityCreate metadata.
-      const capKinds = props.trajectories
+      // initial position from EntityCreate metadata. Points that share the
+      // same center (concentric inner/outer-ring layouts, e.g. two cap zones
+      // on one spot) are merged visually: their rings are pushed side by side
+      // with tiered radii so both letters stay readable instead of stacking
+      // on top of each other. The number of points is data-driven (PvE
+      // scenarios create new points mid-battle).
+      const capEntries = props.trajectories
         .filter((t) => t.kind?.entityType === 14)
-        .map((t) => ({ x: t.kind!.initialX, z: t.kind!.initialZ }));
-      if (capKinds.length === 0) {
+        .map((t, idx) => ({
+          x: t.kind!.initialX,
+          z: t.kind!.initialZ,
+          order: idx,
+        }));
+      if (capEntries.length === 0) {
         console.warn("[HolographicMap] no capture zone data found in trajectory kinds");
       }
-      const capZoneNames = ["A", "B", "C", "D"];
-      for (let i = 0; i < capKinds.length && i < 4; i++) {
-        const { x: cx, z: cz } = capKinds[i];
-        const ringGeom = new THREE.TorusGeometry(60, 1.2, 8, 48);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xffffff,
-          transparent: true,
-          opacity: 0.35,
-          depthWrite: false,
-        });
-        const ring = new THREE.Mesh(ringGeom, ringMat);
-        ring.rotation.x = Math.PI / 2;
-        ring.position.set(cx, 0.6, -cz);
-        scene.add(ring);
-        trajectoryLines.push(ring as unknown as THREE.Line);
-        const canvas = document.createElement("canvas");
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d")!;
-        ctx.fillStyle = "rgba(255,255,255,0.8)";
-        ctx.font = "bold 48px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(capZoneNames[i], 32, 32);
-        const tex = new THREE.CanvasTexture(canvas);
-        const spriteMat = new THREE.SpriteMaterial({
-          map: tex,
-          transparent: true,
-          depthWrite: false,
-        });
-        const sprite = new THREE.Sprite(spriteMat);
-        sprite.position.set(cx, 30, -cz);
-        sprite.scale.set(40, 40, 1);
-        scene.add(sprite);
-        trajectoryLines.push(sprite as unknown as THREE.Line);
+      // Group by shared center (within 30 m).
+      const groups: { x: number; z: number; members: { x: number; z: number; order: number }[] }[] = [];
+      for (const e of capEntries) {
+        const g = groups.find(
+          (gr) => Math.abs(gr.x - e.x) < 30 && Math.abs(gr.z - e.z) < 30,
+        );
+        if (g) g.members.push(e);
+        else groups.push({ x: e.x, z: e.z, members: [e] });
+      }
+      groups.sort((a, b) => a.members[0].order - b.members[0].order);
+      let letterIdx = 0;
+      for (const g of groups) {
+        const n = g.members.length;
+        for (let k = 0; k < n; k++) {
+          // Concentric group: offset each member along x, outer ring larger.
+          const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
+          const radius = n > 1 ? 52 - k * 14 : 60;
+          const cx = g.x + spread;
+          const cz = g.z;
+          const ringGeom = new THREE.TorusGeometry(radius, 1.2, 8, 48);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+          });
+          const ring = new THREE.Mesh(ringGeom, ringMat);
+          ring.rotation.x = Math.PI / 2;
+          ring.position.set(cx, 0.6, -cz);
+          scene.add(ring);
+          trajectoryLines.push(ring as unknown as THREE.Line);
+          const canvas = document.createElement("canvas");
+          canvas.width = 64;
+          canvas.height = 64;
+          const ctx = canvas.getContext("2d")!;
+          ctx.fillStyle = "rgba(255,255,255,0.8)";
+          ctx.font = "bold 48px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String.fromCharCode(65 + letterIdx++), 32, 32);
+          const tex = new THREE.CanvasTexture(canvas);
+          const spriteMat = new THREE.SpriteMaterial({
+            map: tex,
+            transparent: true,
+            depthWrite: false,
+          });
+          const sprite = new THREE.Sprite(spriteMat);
+          sprite.position.set(cx, 30, -cz);
+          sprite.scale.set(40, 40, 1);
+          scene.add(sprite);
+          trajectoryLines.push(sprite as unknown as THREE.Line);
+        }
       }
     }
 
@@ -1218,41 +1262,61 @@ export default defineComponent({
     const CAP_TIME = 40;
 
     /** Capture-zone display state per zone (ownership + capture progress),
-     *  recomputed every frame from the zones' capSamples. */
+     *  recomputed every frame from the zones' capSamples. Letter names are
+     *  assigned dynamically (A, B, C, ...) in creation order — domination
+     *  maps can have 1..5 points, and PvE scenarios create new points
+     *  mid-battle, so the top bar renders whatever zones exist. */
     const capDisplay = ref<
-      { owner: number; capturing: boolean; progress: number; remain: number }[]
+      {
+        letter: string;
+        owner: number;
+        capturing: boolean;
+        progress: number;
+        remain: number;
+      }[]
     >([]);
 
-    /** Derive cap ownership (0/1/2), per-zone capture progress, and the
-     *  estimated score at playback time t from the zones' capSamples. */
+    /** Derive cap ownership (0=neutral, 1=ally, 2=enemy), per-zone capture
+     *  progress, and the score at playback time t.
+     *
+     *  Scoring follows the game's rules: a fully completed capture awards
+     *  +10 to the capturing team (every time a point changes hands), and each
+     *  sink awards +1 to the surviving side. WoWS doesn't stream live score
+     *  packets into replays, but these two events are both observable from
+     *  the capSamples (ownership changes) and the HP streams (sinks), so the
+     *  recomputation is exact and scrubbing-safe (fully derived, never
+     *  incrementally accumulated). */
     function updateCapsAndScore(t: number) {
       const zones = capZones.value;
       let allyCapPts = 0;
       let enemyCapPts = 0;
-      const display: { owner: number; capturing: boolean; progress: number; remain: number }[] = [];
-      for (let i = 0; i < zones.length && i < 3; i++) {
+      const display: { letter: string; owner: number; capturing: boolean; progress: number; remain: number }[] = [];
+      for (let i = 0; i < zones.length; i++) {
         const samples = zones[i].capSamples ?? [];
         let owner = 0;
         let lastChange = -Infinity;
+        // Every ownership change up to t that left the point non-neutral
+        // completed a capture → +10 to that team.
+        let prev = 0;
         for (const s of samples) {
           if (s.time <= t) {
+            if (s.value !== prev && s.value !== 0) {
+              if (s.value === 1) allyCapPts += 10;
+              else if (s.value === 2) enemyCapPts += 10;
+            }
+            prev = s.value;
             owner = s.value;
             lastChange = s.time;
           } else {
             break;
           }
         }
-        if (owner === 1) allyCapPts += 3;
-        else if (owner === 2) enemyCapPts += 3;
         // Capture-in-progress window: the last change completed the capture;
         // the 40s before it the zone was being captured by that team.
         const capturing = owner !== 0 && t >= lastChange - CAP_TIME && t < lastChange;
-        if (capturing) {
-          if (owner === 1) allyCapPts += 1;
-          else enemyCapPts += 1;
-        }
         capStatus.value[i] = owner;
         display.push({
+          letter: String.fromCharCode(65 + i),
           owner,
           capturing,
           progress: capturing
@@ -1262,8 +1326,7 @@ export default defineComponent({
         });
       }
       capDisplay.value = display;
-      // Score = kills (deaths of the opposing side, already counted via the
-      // sink feed) + current cap points.
+      // Score = kills (deaths of the opposing side) + completed captures.
       const allyKills = enemyTotal.value - enemyAlive.value;
       const enemyKills = allyTotal.value - allyAlive.value;
       allyScore.value = allyKills + allyCapPts;
@@ -1564,23 +1627,19 @@ export default defineComponent({
               <span class="holo-map__score-alive">{allyAlive.value}/{allyTotal.value}</span>
             </span>
             <span class="holo-map__score-caps">
-              {["A","B","C"].map((l,i) => {
-                const c = capDisplay.value[i];
-                const owner = c?.owner ?? 0;
-                return (
-                  <span
-                    class={[
-                      "holo-map__cap",
-                      owner === 1 ? "holo-map__cap--ally" : owner === 2 ? "holo-map__cap--enemy" : "",
-                      c?.capturing ? "holo-map__cap--capturing" : "",
-                    ]}
-                    title={c?.capturing ? `${l} 占领中 ${c?.remain}s` : owner === 0 ? "中立" : owner === 1 ? "我方控制" : "敌方控制"}
-                  >
-                    {l}
-                    {c?.capturing ? <em class="holo-map__cap-timer">{c.remain}s</em> : null}
-                  </span>
-                );
-              })}
+              {capDisplay.value.map((c) => (
+                <span
+                  class={[
+                    "holo-map__cap",
+                    c.owner === 1 ? "holo-map__cap--ally" : c.owner === 2 ? "holo-map__cap--enemy" : "",
+                    c.capturing ? "holo-map__cap--capturing" : "",
+                  ]}
+                  title={c.capturing ? `${c.letter} 占领中 ${c.remain}s` : c.owner === 0 ? "中立" : c.owner === 1 ? "我方控制" : "敌方控制"}
+                >
+                  {c.letter}
+                  {c.capturing ? <em class="holo-map__cap-timer">{c.remain}s</em> : null}
+                </span>
+              ))}
             </span>
             <span class="holo-map__score-team holo-map__score--enemy">
               <strong class="holo-map__score-num">{enemyScore.value}</strong>
