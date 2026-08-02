@@ -102,5 +102,9 @@
     "battles": "Battles",
     "winrate": "WR",
     "avgDamage": "Avg dmg"
+  },
+  "minimap": {
+    "zoom": "Zoomed map",
+    "trails": "Ship trails"
   }
 }
