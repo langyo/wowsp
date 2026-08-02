@@ -471,26 +471,33 @@ export default defineComponent({
       }
       if (ambiguous.length > 0) {
         let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
+        // Roster entries already taken by unique joins — ambiguous picks must
+        // not steal them, and two ambiguous entities must not share an entry.
+        const claimed = new Set<VehicleEntry>();
         for (const traj of shipTrajs) {
           const a = assignments.get(traj.entityId);
           if (!a) continue;
+          claimed.add(a);
           const s = spawnOf(traj);
           if (a.relation <= 1) { ax += s.x; az += s.z; an++; }
           else { ex += s.x; ez += s.z; en++; }
         }
         for (const { traj, entries } of ambiguous) {
-          let pick: VehicleEntry | null = null;
+          const unclaimed = entries.filter((e) => !claimed.has(e));
+          let pick: VehicleEntry;
           if (an > 0 && en > 0) {
             const s = spawnOf(traj);
             const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
             const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
             const wantAlly = dAlly < dEnemy;
             pick =
-              entries.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
+              unclaimed.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
+              unclaimed[0] ??
               entries[0];
           } else {
-            pick = entries[0];
+            pick = unclaimed[0] ?? entries[0];
           }
+          claimed.add(pick);
           assignments.set(traj.entityId, pick);
         }
       }

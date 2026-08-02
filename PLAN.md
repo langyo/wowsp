@@ -89,7 +89,9 @@ visible only while `Tab` is held.
   roster shipIds (`EntityKind.shipId`). The packet-level `vehicleId` field is
   a per-version constant (7770/10513) and useless for joins. Duplicate
   shipIds (mirror picks, bots) are broken by spawn-side centroids in the
-  frontend. Team roles and ship models are exact for all players.
+  frontend. Team roles and ship models resolve for every player; a
+  pathological 3+-way same-ship mirror may still swap player *names* within
+  the same team, never team colors.
 - The recorder's own ship emits no Position (0x0a) packets; its transform
   arrives on the PlayerPosition packet instead (0x2c on current clients,
   0x2b on older ones — Monstrofil `replays_unpack` `PlayerPosition.py`). The

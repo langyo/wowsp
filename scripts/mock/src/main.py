@@ -256,10 +256,14 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
     ships: list[dict[str, Any]] = []
     seen: set[int] = set()
     for node in tree.values():
-        sid = node.get("shipId")
-        if sid is None:
+        sid_raw = node.get("shipId")
+        if sid_raw is None:
             continue
-        seen.add(int(sid))
+        # Normalize to int: tech_tree.json mixes string/number shipIds and the
+        # webui's ShipInfo contract (and its byId Map<number> lookup) requires
+        # a JSON number.
+        sid = int(sid_raw)
+        seen.add(sid)
         ships.append({
             "shipId": sid,
             "name": node.get("name", "").replace("IDS_", ""),
@@ -298,9 +302,10 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
             if not base or base == entry.get("index") or re.fullmatch(r"P[A-Z]{3}\d{3}", base):
                 continue
             index = entry.get("index", "")
-            # Class from the WG index code: SB=BB, SC/CAUX=CA, SD=DD, SA=CV, SS=SS.
+            # Class from the WG index code (e.g. "PASB017": nation at [1],
+            # class at [2:4]): SB=BB, SC/CAUX=CA, SD=DD, SA=CV, SS=SS.
             cls = {"SB": "Battleship", "SC": "Cruiser", "SD": "Destroyer",
-                   "SA": "AirCarrier", "SS": "Submarine"}.get(index[1:3], "Cruiser") if len(index) >= 3 else "Cruiser"
+                   "SA": "AirCarrier", "SS": "Submarine"}.get(index[2:4], "Cruiser") if len(index) >= 4 else "Cruiser"
             ships.append({
                 "shipId": sid,
                 "name": base,
