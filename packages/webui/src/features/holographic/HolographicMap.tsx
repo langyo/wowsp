@@ -412,12 +412,17 @@ export default defineComponent({
         const entries = props.vehicles.filter((v) => v.shipId === sid);
         if (entries.length === 1) return roleFromRelation(entries[0].relation);
       }
-      const idx = props.trajectories
-        .filter((x) => x.kind?.entityType === 2 && x.samples.length >= 80)
+      // Fallback: entity-id spawn order (first half of ships = allies).
+      const ids = props.trajectories
+        .filter(
+          (x) =>
+            x.kind?.entityType === 2 &&
+            (x.kind?.shipId != null || x.samples.length >= 80),
+        )
         .map((x) => x.entityId)
-        .sort((a, b) => a - b)
-        .indexOf(tr.entityId);
-      return idx >= 0 && idx < 8 ? "ally" : "enemy";
+        .sort((a, b) => a - b);
+      const idx = ids.indexOf(tr.entityId);
+      return idx >= 0 && idx < ids.length / 2 ? "ally" : "enemy";
     }
 
     function frustumCorners(cam: THREE.PerspectiveCamera): THREE.Vector3[] {
@@ -536,6 +541,13 @@ export default defineComponent({
       allyAlive.value = allyTotal.value;
       enemyAlive.value = enemyTotal.value;
       capStatus.value = [0, 0, 0];
+      capDisplay.value = [];
+      allyScore.value = 0;
+      enemyScore.value = 0;
+      killFeed.value = [];
+      reportedSinks.clear();
+      minimapZoom.value = false;
+      selectedEntityId.value = null;
     }
 
     /** Remove a previously-loaded map terrain model. */
@@ -834,13 +846,17 @@ export default defineComponent({
       // Encyclopedia as the fallback pool for tier/nation/type resolution.
       const encSpecs: ShipModelSpec[] = [...props.encyclopedia.values()];
 
-      // Ships = EntityCreate type 2 with a healthy number of position samples
-      // (transient entities like planes/torpedoes have far fewer). Sorted by
-      // entity id — the client spawns team A before team B, so this order is
-      // the fallback team-split heuristic when a roster join fails.
-      const shipTrajs = props.trajectories.filter(
-        (t) => t.kind?.entityType === 2 && t.samples.length >= 80,
-      );
+      // Ships = EntityCreate type 2 with a roster shipId (the reliable
+      // marker), or enough position samples to be a real vessel rather than a
+      // transient (planes/torpedoes have far fewer). Ships that sank early may
+      // carry very few samples — the shipId join keeps them rendered and
+      // counted in the scoreboard. Sorted by entity id — the client spawns
+      // team A before team B, so this order is the fallback team-split
+      // heuristic when a roster join fails.
+      const isShip = (t: EntityTrajectory) =>
+        t.kind?.entityType === 2 &&
+        (t.kind?.shipId != null || t.samples.length >= 80);
+      const shipTrajs = props.trajectories.filter(isShip);
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
       const assignments = resolveRosterAssignments(shipTrajs);
 
@@ -882,7 +898,7 @@ export default defineComponent({
         if (traj.samples.length < 2) continue;
         // Only render ships (EntityCreate type 2 with many samples); skip
         // zones/avatars/planes/torpedoes.
-        if (traj.kind?.entityType !== 2 || traj.samples.length < 80) continue;
+        if (!isShip(traj)) continue;
 
         const { role, shipInfo, entry: rosterEntry } = resolveMarkerContext(
           traj,
@@ -1077,6 +1093,20 @@ export default defineComponent({
      *  their materials desaturated to a faint grey tint. */
     function updateMarkersAt(t: number) {
       const labels = shipLabels.value;
+      // Alive counts are recomputed every frame from the markers' death times
+      // (not incremented) so scrubbing backward restores sunk ships.
+      let allyAliveNow = 0;
+      let enemyAliveNow = 0;
+      for (const m of shipMarkers) {
+        const dt = m.userData.deathTime as number | null;
+        if (dt == null || t < dt) {
+          const role = m.userData.role as TeamRole;
+          if (role === "ally" || role === "self") allyAliveNow++;
+          else if (role === "enemy") enemyAliveNow++;
+        }
+      }
+      allyAlive.value = allyAliveNow;
+      enemyAlive.value = enemyAliveNow;
       for (let i = 0; i < shipMarkers.length; i++) {
         const marker = shipMarkers[i];
         const label = labels[i];
@@ -1122,16 +1152,12 @@ export default defineComponent({
           if (!marker.userData._countedDead) {
             marker.userData._countedDead = true;
             const role = marker.userData.role as TeamRole;
-            if (role === "ally") allyAlive.value = Math.max(0, allyAlive.value - 1);
-            else if (role === "enemy") enemyAlive.value = Math.max(0, enemyAlive.value - 1);
             // Kill feed + score tick. The killer is unknown from the replay
             // stream, so the feed names the victim only.
             if (!reportedSinks.has(entityId)) {
               reportedSinks.add(entityId);
               const who = label?.name ?? `#${entityId}`;
               const victimRole = role === "ally" ? "enemy" : "ally";
-              if (victimRole === "ally") allyScore.value += 1;
-              else enemyScore.value += 1;
               const feedId = ++killSeq;
               killFeed.value.unshift({
                 id: feedId,
@@ -1238,7 +1264,12 @@ export default defineComponent({
     }
 
     /** First-person camera: keep the selected ship centered, camera trailing
-     *  behind it along its heading. Called every render frame. */
+     *  behind it along its heading. Called every render frame.
+     *
+     *  The marker's model points along local +Z and carries rotation.y =
+     *  PI - yaw, so its world forward is (sin(yaw), 0, -cos(yaw)) in
+     *  three.js space (north = -Z). The camera sits behind that: minus the
+     *  forward vector. */
     function followSelected() {
       const id = selectedEntityId.value;
       if (id == null) return;
@@ -1248,13 +1279,12 @@ export default defineComponent({
       const marker = shipMarkers.find((m) => m.userData.entityId === id);
       if (!marker || !marker.visible) return;
       const pos = marker.position;
-      const yaw = marker.rotation.y; // three.js yaw (already mirrored)
-      // Behind the ship: opposite its heading, slightly above.
+      const yaw = marker.rotation.y;
       const dist = 90;
       const behind = new THREE.Vector3(
         pos.x - Math.sin(yaw) * dist,
         35,
-        pos.z - Math.cos(yaw) * dist,
+        pos.z + Math.cos(yaw) * dist,
       );
       cam.position.copy(behind);
       ctrl.target.copy(pos);
