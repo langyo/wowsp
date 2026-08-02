@@ -285,7 +285,7 @@ pub struct PlayerStats {
 
 /// Entity metadata from an EntityCreate (0x05) packet. The fixed header is
 /// readable without the per-version entity DB; the trailing `state` BinaryStream
-/// (entity properties) is skipped.
+/// (entity properties) is scanned for the roster shipId (see `ship_id`).
 ///
 /// `entity_type` semantics (empirically observed on WoWS 14.5):
 ///   2 = vehicle (ships, planes, projectiles — ships have the most position
@@ -297,6 +297,8 @@ pub struct PlayerStats {
 #[serde(rename_all = "camelCase")]
 pub struct EntityKind {
     pub entity_type: i16,
+    /// Per-version constant in current clients (7770 / 10513) — NOT a player
+    /// id. Kept for diagnostics only; use `ship_id` for the roster join.
     pub vehicle_id: i32,
     pub initial_x: f32,
     pub initial_y: f32,
@@ -305,6 +307,12 @@ pub struct EntityKind {
     /// Entities that existed before the replay started have time -1.0.
     #[serde(default = "default_creation_time")]
     pub creation_time: f32,
+    /// Roster shipId recovered from the EntityCreate state stream (the ship's
+    /// GameParams id, matching `ReplayMeta.vehicles[].shipId`). This is the
+    /// only reliable entity → player join key: `vehicle_id` is a per-version
+    /// constant and the entity-id spawn order is not team-grouped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ship_id: Option<i64>,
 }
 
 fn default_creation_time() -> f32 {

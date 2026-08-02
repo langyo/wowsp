@@ -237,20 +237,36 @@ _RARITY_PATH = (
     Path(__file__).resolve().parents[3]
     / "packages" / "webui" / "src" / "data" / "ship_rarity.json"
 )
+_SHIP_MODELS_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "data" / "ship_models.json"
+)
+_SHIP_NAMES_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "data" / "ship_names.json"
+)
 
 
 def _load_encyclopedia() -> list[dict[str, Any]]:
     import json
 
-    if not _TECH_TREE_PATH.exists():
-        return []
-    tree = json.loads(_TECH_TREE_PATH.read_text(encoding="utf-8"))
+    tree = {}
+    if _TECH_TREE_PATH.exists():
+        tree = json.loads(_TECH_TREE_PATH.read_text(encoding="utf-8"))
     rarity = {}
     if _RARITY_PATH.exists():
         rarity = json.loads(_RARITY_PATH.read_text(encoding="utf-8"))
     ships: list[dict[str, Any]] = []
+    seen: set[int] = set()
     for node in tree.values():
-        sid = node.get("shipId")
+        sid_raw = node.get("shipId")
+        if sid_raw is None:
+            continue
+        # Normalize to int: tech_tree.json mixes string/number shipIds and the
+        # webui's ShipInfo contract (and its byId Map<number> lookup) requires
+        # a JSON number.
+        sid = int(sid_raw)
+        seen.add(sid)
         ships.append({
             "shipId": sid,
             "name": node.get("name", "").replace("IDS_", ""),
@@ -273,6 +289,38 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 "contour": "",
             },
         })
+    # Merge the offline ship-name DB (GameParams + game gettext catalogs) so
+    # premium/special/event ships absent from the tech tree still resolve
+    # real names, tiers and classes in replay labels.
+    if _SHIP_NAMES_PATH.exists():
+        import json as _json
+        names_db = _json.loads(_SHIP_NAMES_PATH.read_text(encoding="utf-8"))
+        for sid_str, entry in names_db.items():
+            try:
+                sid = int(sid_str)
+            except ValueError:
+                continue
+            if sid in seen:
+                continue
+            seen.add(sid)
+            name = entry.get("names", {}).get("en") or next(iter(entry.get("names", {}).values()), "")
+            ships.append({
+                "shipId": sid,
+                "name": name,
+                "tier": entry.get("tier") or 5,
+                "type": entry.get("type") or "Cruiser",
+                "nation": entry.get("nation") or "usa",
+                "isPremium": True,
+                "isSpecial": False,
+                "description": "",
+                "gameVersion": "mock",
+                "defaultProfile": {
+                    "hull": {"health": 30000},
+                    "mobility": {"max_speed": 30},
+                    "concealment": {"detect_distance_by_ship": 12},
+                },
+                "images": {"small": "", "medium": "", "large": "", "contour": ""},
+            })
     return ships
 
 

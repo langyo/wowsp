@@ -84,11 +84,47 @@ visible only while `Tab` is held.
   bathymetric bands render; a deep-sea floor plane hides the terrain edge.
 - Entity z is mirrored into three.js space (`z' = -z`, yaw → `PI - yaw`) to
   match the GLBs' right-handed export; verified against terrain heights.
-- vehicleId from EntityCreate/Position packets is NOT usable for roster
-  matching (packet-level field is a constant, e.g. spaceId). Team roles fall
-  back to entity-id spawn order; the recorder's own ship never gets the self
-  tint. Proper fix needs the shipConfig prop in the EntityCreate state blob
-  (per-version entity defs) or the onArenaStateReceived player list.
+- Entity -> roster join: the EntityCreate state blob embeds the ship's
+  GameParams id, so `read_replay_positions` scans it against the descriptor
+  roster shipIds (`EntityKind.shipId`). The packet-level `vehicleId` field is
+  a per-version constant (7770/10513) and useless for joins. Duplicate
+  shipIds (mirror picks, bots) are broken by spawn-side centroids in the
+  frontend. Team roles and ship models resolve for every player; a
+  pathological 3+-way same-ship mirror may still swap player *names* within
+  the same team, never team colors.
+- The recorder's own ship emits no Position (0x0a) packets; its transform
+  arrives on the PlayerPosition packet instead (0x2c on current clients,
+  0x2b on older ones — Monstrofil `replays_unpack` `PlayerPosition.py`). The
+  decoder merges both packet ids into the entity's trajectory, so the white
+  self marker/label renders like any other ship.
+- Ship HP is the EntityProperty `health` field, encoded as an f32 in a 4-byte
+  value (index 28 on 14.5, 29 on 0.11.x — drifting per version). The int
+  properties at 20/21 look HP-ish by magnitude but are noise (they alternate
+  every tick and jump +86% in one step). `detect_hp_property` scores every
+  index under both int and float interpretations — plausible range, first
+  sample >= 0.8 * entity max (streams open with a full-health sync), no
+  single-step increase above 35% of max — and rounds float HP to u32 for the
+  wire. Labels show a role-tinted HP bar plus current/max HP (absolute, no
+  delta); maxHp is the entity's own stream peak (battle-accurate incl.
+  event-mode scaling), never the encyclopedia's stock hull value.
+- Complete offline ship-name DB: `webui/src/data/ship_names.json` (1202
+  ships) baked from GameParams (id/index/level/species/nation) +
+  `res/texts/<lang>/LC_MESSAGES/global.mo` (IDS_<index> -> localized name)
+  by `scripts/model_convert/extract_ship_names.py`, covering all 9 WG
+  languages incl. event/clone ships the WG encyclopedia misses. Labels and
+  the Tab roster resolve names through encyclopedia -> offline DB -> model
+  DB; tier/type icons also come from the offline DB when the encyclopedia
+  lacks the ship.
+- Active battle area: camera fit and the minimap use ship + capture-zone
+  bounds (planes/torpedoes ignored — they roam past the border). When the
+  active area covers under 70% of the map (brawls/events with a restricted
+  border, e.g. a 1v1 fighting inside a 600x600 area), the minimap crops the
+  game art to that region and re-projects dots instead of showing the whole
+  map with dots compressed in a corner.
+- Map-version drift: terrain GLBs and minimap art are baked from the current
+  client, so replays from before a map rework (e.g. 2022 "North" vs 14.5)
+  show tracks crossing islands. The mock fixture therefore uses a
+  current-version replay. Not fixable without per-version terrain bakes.
 - Capture zones (A/B/C rings + scorebar cap status) are missing on replays
   that carry no InteractiveZone (type 14) EntityCreate — e.g. the 0.11.0
   ranked fixture. Their zones live in the BattleLogic state blob / per-version

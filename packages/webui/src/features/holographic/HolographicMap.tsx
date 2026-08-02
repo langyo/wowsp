@@ -7,6 +7,9 @@ import {
   resolveMapMinimapUrl,
   resolveShipModelForEntry,
   resolveShipModelByShipId,
+  shipNameFromModelDb,
+  shipNameFromOfflineDb,
+  shipOfflineEntry,
   loadGlbModel,
   loadMapBounds,
   type MapBounds,
@@ -19,6 +22,7 @@ import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./HolographicMap.scss";
 
@@ -178,12 +182,37 @@ export default defineComponent({
       // known (matches the base art), else the trajectory bounds converted
       // back from scene space (scene z = -world z) so the dots at least fit
       // the canvas.
-      const b: MapBounds | null =
+      const full: MapBounds | null =
         minimapBounds ??
         (bounds
           ? { minX: bounds.minX, maxX: bounds.maxX, minZ: -bounds.maxZ, maxZ: -bounds.minZ }
           : null);
-      if (!b) return;
+      if (!full) return;
+      // Crop to the active battle area when the match plays out in a small
+      // region of the map (brawls/events with a restricted border): the
+      // in-game minimap shows only that region, and a full-map view would
+      // compress every ship dot into one corner. `bounds` already holds the
+      // active area in scene coords (z mirrored back to world here).
+      let db = full;
+      if (minimapBounds && bounds) {
+        const active: MapBounds = {
+          minX: bounds.minX,
+          maxX: bounds.maxX,
+          minZ: -bounds.maxZ,
+          maxZ: -bounds.minZ,
+        };
+        const mapArea = (full.maxX - full.minX) * (full.maxZ - full.minZ);
+        const activeArea =
+          (active.maxX - active.minX) * (active.maxZ - active.minZ);
+        if (activeArea > 0 && activeArea < 0.7 * mapArea) {
+          db = {
+            minX: Math.max(active.minX, full.minX),
+            maxX: Math.min(active.maxX, full.maxX),
+            minZ: Math.max(active.minZ, full.minZ),
+            maxZ: Math.min(active.maxZ, full.maxZ),
+          };
+        }
+      }
       const cvs = minimapCanvas.value;
       if (!cvs) return;
       if (!_mmCtx) _mmCtx = cvs.getContext("2d");
@@ -193,18 +222,30 @@ export default defineComponent({
       if (cvs.width !== w) cvs.width = w;
       if (cvs.height !== h) cvs.height = h;
 
-      const mapW = b.maxX - b.minX;
-      const mapH = b.maxZ - b.minZ;
+      const dbW = db.maxX - db.minX;
+      const dbH = db.maxZ - db.minZ;
 
       // Markers/camera live in three.js space (z = -worldZ); convert back to
       // world coordinates for the map projection. North (+worldZ) is up on
       // the game's minimap (world_to_minimap flips z).
-      function wx(x: number) { return ((x - b.minX) / (mapW || 1)) * w; }
-      function wz(zScene: number) { return ((b.maxZ + zScene) / (mapH || 1)) * h; }
+      function wx(x: number) { return ((x - db.minX) / (dbW || 1)) * w; }
+      function wz(zScene: number) { return ((db.maxZ + zScene) / (dbH || 1)) * h; }
 
       ctx.clearRect(0, 0, w, h);
       if (minimapImage) {
-        ctx.drawImage(minimapImage, 0, 0, w, h);
+        if (db === full) {
+          ctx.drawImage(minimapImage, 0, 0, w, h);
+        } else {
+          // Cropped: draw only the active-area slice of the art, scaled up.
+          const img = minimapImage;
+          const fullW = full.maxX - full.minX;
+          const fullH = full.maxZ - full.minZ;
+          const sx = ((db.minX - full.minX) / (fullW || 1)) * img.width;
+          const sw = ((db.maxX - db.minX) / (fullW || 1)) * img.width;
+          const sy = ((full.maxZ - db.maxZ) / (fullH || 1)) * img.height;
+          const sh = ((db.maxZ - db.minZ) / (fullH || 1)) * img.height;
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+        }
       } else {
         ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
         ctx.fillRect(0, 0, w, h);
@@ -392,25 +433,42 @@ export default defineComponent({
     function recomputeBoundsAndCamera() {
       let minT = Infinity;
       let maxT = -Infinity;
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minZ = Infinity;
-      let maxZ = -Infinity;
       for (const t of props.trajectories) {
         for (const s of t.samples) {
           if (s.time < minT) minT = s.time;
           if (s.time > maxT) maxT = s.time;
-          if (s.x < minX) minX = s.x;
-          if (s.x > maxX) maxX = s.x;
-          if (-s.z < minZ) minZ = -s.z;
-          if (-s.z > maxZ) maxZ = -s.z;
+        }
+      }
+      // Active battle area: ships (type 2) + capture zones (type 14) only.
+      // Planes/torpedoes roam far past the battle border and would stretch
+      // the view to the whole map even when the mode restricts play to a
+      // small region (e.g. brawls fight inside a 600x600 border).
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      const eat = (x: number, z: number) => {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      };
+      for (const t of props.trajectories) {
+        if (t.kind?.entityType === 2) {
+          for (const s of t.samples) eat(s.x, -s.z);
+        } else if (t.kind?.entityType === 14) {
+          eat(t.kind.initialX, -t.kind.initialZ);
         }
       }
       if (Number.isFinite(minT)) {
         duration.value = Math.max(maxT - minT, 0.1);
         if (current.value > duration.value) current.value = duration.value;
-        bounds = { minX, maxX, minZ, maxZ };
-        fitCamera(bounds);
+        if (Number.isFinite(minX)) {
+          const mx = Math.max((maxX - minX) * 0.08, 80);
+          const mz = Math.max((maxZ - minZ) * 0.08, 80);
+          bounds = { minX: minX - mx, maxX: maxX + mx, minZ: minZ - mz, maxZ: maxZ + mz };
+          fitCamera(bounds);
+        }
       }
     }
 
@@ -435,37 +493,101 @@ export default defineComponent({
       ctrl.update();
     }
 
+    /** Assign each ship trajectory its roster entry via the EntityCreate
+     *  `shipId` (recovered from the state stream by the backend). Most shipIds
+     *  are unique per match; when two players sail the same ship (mirror
+     *  picks, bots), the collision is broken by spawn-side: centroids are
+     *  computed from the unambiguous joins, and each ambiguous entity takes
+     *  the same-side roster entry. Entities with no roster hit get `null` and
+     *  fall back to the spawn-order team heuristic in `resolveMarkerContext`. */
+    function resolveRosterAssignments(
+      shipTrajs: EntityTrajectory[],
+    ): Map<number, VehicleEntry | null> {
+      const byShipId = new Map<number, VehicleEntry[]>();
+      for (const v of props.vehicles) {
+        const arr = byShipId.get(v.shipId) ?? [];
+        arr.push(v);
+        byShipId.set(v.shipId, arr);
+      }
+      const spawnOf = (t: EntityTrajectory) => ({
+        x: t.kind?.initialX ?? t.samples[0]?.x ?? 0,
+        z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
+      });
+      const assignments = new Map<number, VehicleEntry | null>();
+      const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
+      for (const traj of shipTrajs) {
+        const sid = traj.kind?.shipId;
+        const entries = sid != null ? byShipId.get(sid) : undefined;
+        if (entries && entries.length === 1) {
+          assignments.set(traj.entityId, entries[0]);
+        } else if (entries && entries.length > 1) {
+          ambiguous.push({ traj, entries });
+        } else {
+          assignments.set(traj.entityId, null);
+        }
+      }
+      if (ambiguous.length > 0) {
+        let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
+        // Roster entries already taken by unique joins — ambiguous picks must
+        // not steal them, and two ambiguous entities must not share an entry.
+        const claimed = new Set<VehicleEntry>();
+        for (const traj of shipTrajs) {
+          const a = assignments.get(traj.entityId);
+          if (!a) continue;
+          claimed.add(a);
+          const s = spawnOf(traj);
+          if (a.relation <= 1) { ax += s.x; az += s.z; an++; }
+          else { ex += s.x; ez += s.z; en++; }
+        }
+        for (const { traj, entries } of ambiguous) {
+          const unclaimed = entries.filter((e) => !claimed.has(e));
+          let pick: VehicleEntry;
+          if (an > 0 && en > 0) {
+            const s = spawnOf(traj);
+            const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
+            const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
+            const wantAlly = dAlly < dEnemy;
+            pick =
+              unclaimed.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
+              unclaimed[0] ??
+              entries[0];
+          } else {
+            pick = unclaimed[0] ?? entries[0];
+          }
+          claimed.add(pick);
+          assignments.set(traj.entityId, pick);
+        }
+      }
+      return assignments;
+    }
+
     /** Map each ship trajectory to its roster entry (for team role + ship
-     *  model) via the EntityCreate `vehicleId`. WoWS's MM-style tooling treats
-     *  this as the player's per-match id, matching the roster `id` field. When
-     *  a trajectory has no matching roster entry (older replay, decode gap),
-     *  the role falls back to the entity-id spawn-order heuristic: the client
-     *  spawns team A before team B, so the first half of ships (by entity id)
-     *  are treated as allies. Unresolved ships never claim the "self" role, so
-     *  the recorder's own marker stays uniquely green. */
+     *  model) via the precomputed roster assignments. When a trajectory has
+     *  no matching roster entry (older replay, decode gap), the role falls
+     *  back to the entity-id spawn-order heuristic: the client spawns team A
+     *  before team B, so the first half of ships (by entity id) are treated
+     *  as allies. Unresolved ships never claim the "self" role, so the
+     *  recorder's own marker stays uniquely white. */
     function resolveMarkerContext(
       traj: EntityTrajectory,
       shipEntityIds: number[],
-    ): { role: TeamRole; shipInfo: ShipInfo | null } {
-      const vehicles = props.vehicles;
-      // 1. Exact: vehicleId (from EntityCreate) == roster id.
-      const vid = traj.kind?.vehicleId;
-      const entry =
-        vid != null ? vehicles.find((v) => v.id === vid) : undefined;
+      assignments: Map<number, VehicleEntry | null>,
+    ): { role: TeamRole; shipInfo: ShipInfo | null; entry: VehicleEntry | null } {
+      const entry = assignments.get(traj.entityId) ?? null;
       let role: TeamRole;
       let shipInfo: ShipInfo | null;
       if (entry) {
         role = roleFromRelation(entry.relation);
         shipInfo = props.encyclopedia.get(entry.shipId) ?? null;
       } else {
-        // 2. Fallback: entity-id spawn order (team A spawns before team B).
-        //    Never "self" — only the exact match earns the recorder tint.
+        // Fallback: entity-id spawn order (team A spawns before team B).
+        // Never "self" — only the exact match earns the recorder tint.
         const idx = shipEntityIds.indexOf(traj.entityId);
         const isAlly = idx >= 0 && idx < shipEntityIds.length / 2;
         role = isAlly ? "ally" : "enemy";
         shipInfo = null;
       }
-      return { role, shipInfo };
+      return { role, shipInfo, entry };
     }
 
     /** Build the trajectory lines + ship markers from the decoded data.
@@ -492,10 +614,11 @@ export default defineComponent({
       // (transient entities like planes/torpedoes have far fewer). Sorted by
       // entity id — the client spawns team A before team B, so this order is
       // the fallback team-split heuristic when a roster join fails.
-      const shipEntityIds = props.trajectories
-        .filter((t) => t.kind?.entityType === 2 && t.samples.length >= 80)
-        .map((t) => t.entityId)
-        .sort((a, b) => a - b);
+      const shipTrajs = props.trajectories.filter(
+        (t) => t.kind?.entityType === 2 && t.samples.length >= 80,
+      );
+      const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
+      const assignments = resolveRosterAssignments(shipTrajs);
 
       const newLabels: ShipLabel[] = [];
 
@@ -505,7 +628,11 @@ export default defineComponent({
         // zones/avatars/planes/torpedoes.
         if (traj.kind?.entityType !== 2 || traj.samples.length < 80) continue;
 
-        const { role, shipInfo } = resolveMarkerContext(traj, shipEntityIds);
+        const { role, shipInfo, entry: rosterEntry } = resolveMarkerContext(
+          traj,
+          shipEntityIds,
+          assignments,
+        );
         const color = TEAM_COLOR[role];
 
         // Trajectory line on the XZ plane (y=0.5 to hover above the grid).
@@ -541,14 +668,6 @@ export default defineComponent({
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
-
-        // Floating label: player name + ship info for the overlay.
-        const rosterEntry =
-          props.vehicles.find((v) => v.id === traj.kind?.vehicleId) ??
-          props.vehicles.find((_, i) => {
-            const idx = shipEntityIds.indexOf(traj.entityId);
-            return idx >= 0 && i === idx;
-          });
 
         const modelUrl =
           resolveShipModelForEntry(shipInfo, encSpecs) ??
@@ -586,25 +705,36 @@ export default defineComponent({
 
         const name = rosterEntry?.name ?? `#${traj.entityId}`;
         const encStore = useEncyclopediaStore();
+        const dataLang = useLanguage().dataLanguage.value;
+        // Name/tier/type: the WG encyclopedia when it knows the ship, else the
+        // complete offline DB (GameParams + game gettext catalogs — covers
+        // event/clone ships), else the baked model DB's English base name.
+        const offline = shipOfflineEntry(rosterEntry?.shipId ?? traj.kind?.shipId);
         const shipName =
           (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
+          shipNameFromOfflineDb(rosterEntry?.shipId ?? traj.kind?.shipId, dataLang) ??
           rosterEntry?.shipName ??
           shipInfo?.name ??
+          shipNameFromModelDb(rosterEntry?.shipId ?? traj.kind?.shipId) ??
           "?";
-        const dp = shipInfo?.defaultProfile as
-          | Record<string, Record<string, unknown>>
-          | undefined;
-        const maxHp =
-          dp?.hull?.health != null && typeof dp.hull.health === "number"
-            ? dp.hull.health
+        // Max HP: the peak of the entity's own HP stream — authoritative for
+        // the battle's actual scaling (event/asymmetric modes cut bot HP to a
+        // fraction of the encyclopedia hull value; upgraded hulls raise it).
+        // Without an HP stream we show no HP line at all: rendering the
+        // encyclopedia's stock hull value as if it were live battle HP would
+        // fabricate data.
+        const streamMax =
+          traj.hpSamples && traj.hpSamples.length > 0
+            ? Math.max(...traj.hpSamples.map((s) => s.value))
             : null;
+        const maxHp = streamMax;
         newLabels.push({
           entityId: traj.entityId,
           role,
           name,
           shipName,
-          tier: shipInfo?.tier ?? null,
-          type: shipInfo?.type ?? null,
+          tier: shipInfo?.tier ?? offline?.tier ?? null,
+          type: shipInfo?.type ?? offline?.type ?? null,
           hp: maxHp,
           maxHp,
           x: 0, y: 0,
@@ -704,9 +834,13 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        // Hide entities that haven't been created yet at this time.
+        // Hide entities that haven't been created yet at this time. Entities
+        // re-created mid-match (leaving/re-entering the observed area) may
+        // carry a later creationTime than their first sample — trust the
+        // samples in that case.
         const created = traj.kind?.creationTime ?? -1;
-        if (created >= 0 && t < created) {
+        const firstT = traj.samples[0]?.time ?? Infinity;
+        if (created >= 0 && t < created && t < firstT) {
           marker.visible = false;
           if (label) label.visible = false;
           continue;
@@ -975,8 +1109,21 @@ export default defineComponent({
               </span>
               {lbl.hp != null ? (
                 <span class="holo-label__hp">
-                  {lbl.hp.toLocaleString()}
-                  {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                  {lbl.maxHp != null ? (
+                    <span class="holo-label__hp-bar">
+                      <span
+                        class="holo-label__hp-fill"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (lbl.hp / lbl.maxHp) * 100))}%`,
+                          background: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
+                        }}
+                      />
+                    </span>
+                  ) : null}
+                  <span class="holo-label__hp-text">
+                    {lbl.hp.toLocaleString()}
+                    {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                  </span>
                 </span>
               ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
@@ -1049,7 +1196,7 @@ export default defineComponent({
                 {props.vehicles.filter(v => v.relation <= 1).map(v => (
                   <tr key={v.id}>
                     <td style={{color: v.relation === 0 ? "#fff" : "#3cb478"}}>{v.name}</td>
-                    <td>{v.shipName ?? ""}</td>
+                    <td>{v.shipName ?? shipNameFromOfflineDb(v.shipId, useLanguage().dataLanguage.value) ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
                     <td></td>
                   </tr>
                 ))}
@@ -1061,7 +1208,7 @@ export default defineComponent({
                 {props.vehicles.filter(v => v.relation > 1).map(v => (
                   <tr key={v.id}>
                     <td style={{color: "#cc3333"}}>{v.name}</td>
-                    <td>{v.shipName ?? ""}</td>
+                    <td>{v.shipName ?? shipNameFromOfflineDb(v.shipId, useLanguage().dataLanguage.value) ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
                     <td></td>
                   </tr>
                 ))}

@@ -46,6 +46,13 @@ const PACKET_ENTITY_CREATE: u32 = 0x05;
 /// emitted when a ship is sunk / a transient (plane, torpedo) expires. We
 /// record the time so the frontend can freeze + grey out sunk ships.
 const PACKET_ENTITY_DESTROY: u32 = 0x06;
+/// Packet type for the recorder's own-player position stream ("PlayerPosition"
+/// in Monstrofil's `replays_unpack`). The recorder's own ship never emits
+/// Position (0x0a) packets — its transform arrives here instead. Layout:
+///   i32 entity_id, i32 linked_entity_id, f32×3 position, f32 yaw/pitch/roll.
+/// Current clients (WoWS 12.6+) use 0x2c; older builds use 0x2b.
+const PACKET_PLAYER_POSITION: u32 = 0x2c;
+const PACKET_PLAYER_POSITION_LEGACY: u32 = 0x2b;
 
 /// A single property change sample — one field of an entity updated at a
 /// specific time. Health, speed, consumable state, etc.
@@ -55,8 +62,11 @@ pub struct PropertyChange {
     pub entity_id: i32,
     /// Property index within the entity definition (e.g. 20 = health for ships).
     pub property_index: u32,
-    /// Raw 4-byte value (uint32 or reinterpreted float).
+    /// Raw value bytes (1, 2, or 4) packed little-endian into a u32. For
+    /// size-4 float properties this is the f32 bit pattern.
     pub value: u32,
+    /// Number of value bytes on the wire (1, 2, or 4).
+    pub size: u8,
 }
 
 /// Output of decoding: per-entity trajectories plus the EntityCreate metadata
@@ -75,10 +85,18 @@ pub struct DecodedReplay {
 
 /// Decrypt + decompress the packet stream, then walk frames extracting both
 /// Position (0x0a) and EntityCreate (0x05) packets.
-pub fn decode_replay(packet_stream: &[u8]) -> Result<DecodedReplay, String> {
+///
+/// `ship_id_candidates`: roster shipIds from the descriptor JSON. Each
+/// EntityCreate's trailing state stream is scanned for these so ships can be
+/// joined to roster entries (the header `vehicle_id` field is a per-version
+/// constant and useless for that).
+pub fn decode_replay(
+    packet_stream: &[u8],
+    ship_id_candidates: &std::collections::HashSet<u32>,
+) -> Result<DecodedReplay, String> {
     let decrypted = decrypt_stream(packet_stream)?;
     let inflated = inflate_zlib(&decrypted)?;
-    Ok(walk_frames(&inflated))
+    Ok(walk_frames(&inflated, ship_id_candidates))
 }
 
 /// Blowfish-ECB decrypt with the WoWS key + XOR chain. Skips the first 8-byte
@@ -122,7 +140,10 @@ fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
 /// Walk `[u32 size][u32 type][f32 time][payload]` frames, collecting Position
 /// samples (grouped by entity id) and EntityCreate metadata. Stops cleanly if a
 /// frame header is truncated or declares an absurd size (trailing padding).
-fn walk_frames(inflated: &[u8]) -> DecodedReplay {
+fn walk_frames(
+    inflated: &[u8],
+    ship_id_candidates: &std::collections::HashSet<u32>,
+) -> DecodedReplay {
     let mut positions: BTreeMap<i32, Vec<PositionSample>> = BTreeMap::new();
     let mut kinds: BTreeMap<i32, EntityKind> = BTreeMap::new();
     let mut destroys: BTreeMap<i32, f32> = BTreeMap::new();
@@ -143,10 +164,20 @@ fn walk_frames(inflated: &[u8]) -> DecodedReplay {
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
+            PACKET_PLAYER_POSITION | PACKET_PLAYER_POSITION_LEGACY => {
+                if let Some(sample) = parse_player_position(payload, time) {
+                    positions.entry(sample.entity_id).or_default().push(sample);
+                }
+            },
             PACKET_ENTITY_CREATE => {
                 if let Some(created) = parse_entity_create(payload, time) {
                     let eid = created.entity_id;
-                    kinds.insert(eid, created.clone_into_kind());
+                    let mut kind = created.clone_into_kind();
+                    kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
+                    // Entities destroyed and re-created mid-match (leaving and
+                    // re-entering the observed area) keep their FIRST creation
+                    // time so the frontend doesn't hide them until re-creation.
+                    kinds.entry(eid).or_insert(kind);
                 }
             },
             PACKET_ENTITY_DESTROY => {
@@ -206,8 +237,30 @@ impl ParsedCreate {
             initial_y: self.y,
             initial_z: self.z,
             creation_time: self.creation_time,
+            ship_id: None,
         }
     }
+}
+
+/// Scan an EntityCreate state stream for any roster shipId (u32 LE, sliding
+/// 4-byte window). The state blob packs the entity's initial property values;
+/// one of them is the ship's GameParams id (observed at offsets ~160-260
+/// depending on game version and variable-length fields before it). Returns
+/// the first candidate found; empirically each ship entity embeds exactly one.
+fn scan_state_for_ship_id(
+    state: &[u8],
+    candidates: &std::collections::HashSet<u32>,
+) -> Option<i64> {
+    if candidates.is_empty() || state.len() < 4 {
+        return None;
+    }
+    for off in 0..=state.len() - 4 {
+        let val = u32::from_le_bytes(state[off..off + 4].try_into().ok()?);
+        if candidates.contains(&val) {
+            return Some(val as i64);
+        }
+    }
+    None
 }
 
 /// Parse an EntityCreate (0x05) payload. WoWS layout (from
@@ -277,10 +330,38 @@ fn parse_property(payload: &[u8], time: f32) -> Vec<PropertyChange> {
             entity_id,
             property_index,
             value,
+            size: value_size as u8,
         });
         off += 8 + value_size;
     }
     out
+}
+
+/// Parse a PlayerPosition (0x2b legacy / 0x2c current) payload. Layout
+/// (Monstrofil `replays_unpack` `PlayerPosition.py`, 32 bytes):
+///   i32 entity_id, i32 linked_entity_id,
+///   f32×3 position, f32 yaw, f32 pitch, f32 roll
+/// This stream carries the recorder's own ship (which never emits 0x0a) plus
+/// the camera/avatar entity; the frontend keeps only type-2 ships.
+fn parse_player_position(payload: &[u8], time: f32) -> Option<PositionSample> {
+    if payload.len() < 32 {
+        return None;
+    }
+    let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let linked_id = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let x = f32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let y = f32::from_le_bytes(payload[12..16].try_into().ok()?);
+    let z = f32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let yaw = f32::from_le_bytes(payload[20..24].try_into().ok()?);
+    Some(PositionSample {
+        time,
+        entity_id,
+        vehicle_id: linked_id,
+        x,
+        y,
+        z,
+        yaw,
+    })
 }
 
 /// Parse a Position (0x0a) payload. Layout for current WoWS builds (45 bytes):
@@ -312,6 +393,51 @@ fn parse_position(payload: &[u8], time: f32) -> Option<PositionSample> {
 mod tests {
     use super::*;
 
+    /// PlayerPosition (0x2c) parses the 32-byte layout into a position sample.
+    #[test]
+    fn parses_player_position_payload() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&962015i32.to_le_bytes());
+        payload.extend_from_slice(&962014i32.to_le_bytes());
+        payload.extend_from_slice(&(-516.4f32).to_le_bytes());
+        payload.extend_from_slice(&0.0f32.to_le_bytes());
+        payload.extend_from_slice(&500.0f32.to_le_bytes());
+        payload.extend_from_slice(&3.14f32.to_le_bytes());
+        payload.extend_from_slice(&0.0f32.to_le_bytes());
+        payload.extend_from_slice(&0.0f32.to_le_bytes());
+        let s = parse_player_position(&payload, 1.5).expect("must parse");
+        assert_eq!(s.entity_id, 962015);
+        assert_eq!(s.vehicle_id, 962014);
+        assert!((s.x - -516.4).abs() < 0.01);
+        assert!((s.z - 500.0).abs() < 0.01);
+        assert!((s.yaw - 3.14).abs() < 0.01);
+        assert!((s.time - 1.5).abs() < 0.001);
+        // Short payload is rejected.
+        assert!(parse_player_position(&payload[..20], 0.0).is_none());
+    }
+
+    /// The state-stream scanner finds a roster shipId at an arbitrary offset
+    /// and ignores everything else.
+    #[test]
+    fn scans_state_for_ship_id() {
+        let mut state = vec![0u8; 200];
+        state[168..172].copy_from_slice(&3540989648u32.to_le_bytes());
+        let candidates: std::collections::HashSet<u32> =
+            [3550394352, 3540989648, 4181702352].into_iter().collect();
+        assert_eq!(
+            scan_state_for_ship_id(&state, &candidates),
+            Some(3540989648)
+        );
+        // Unknown ids are not reported.
+        let other: std::collections::HashSet<u32> = [111, 222].into_iter().collect();
+        assert_eq!(scan_state_for_ship_id(&state, &other), None);
+        // Empty candidate set never matches.
+        assert_eq!(
+            scan_state_for_ship_id(&state, &std::collections::HashSet::new()),
+            None
+        );
+    }
+
     /// End-to-end against a real replay when `WOWSP_TEST_REPLAY` is set. Asserts
     /// positions AND EntityCreate kinds are extracted and look sane.
     #[test]
@@ -326,7 +452,8 @@ mod tests {
             let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
             cur += 4 + bl;
         }
-        let decoded = decode_replay(&bytes[cur..]).expect("decode must succeed");
+        let decoded = decode_replay(&bytes[cur..], &std::collections::HashSet::new())
+            .expect("decode must succeed");
         let total_samples: usize = decoded.positions.values().map(|v| v.len()).sum();
         assert!(total_samples > 0, "must extract position samples");
         // Ships are entity_type 2; a real match has several.
@@ -374,7 +501,8 @@ mod tests {
         let decrypted = decrypt_stream(&bytes[cur..]).expect("decrypt");
         let inflated = inflate_zlib(&decrypted).expect("inflate");
         let mut c = 0usize;
-        let mut counts: std::collections::BTreeMap<u32, (usize, usize)> = std::collections::BTreeMap::new();
+        let mut counts: std::collections::BTreeMap<u32, (usize, usize)> =
+            std::collections::BTreeMap::new();
         let mut early_break = None;
         while c + 12 <= inflated.len() {
             let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
