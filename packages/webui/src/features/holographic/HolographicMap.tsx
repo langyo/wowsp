@@ -77,6 +77,8 @@ export default defineComponent({
     // Time display toggle: 0=elapsed, 1=remaining, 2=total
     const timeMode = ref(0);
     const showRoster = ref(false);
+    // Toggle for the floating ship labels (info overlay).
+    const showLabels = ref(true);
 
     // First-person follow: the entity id whose marker the camera tracks
     // (null = free orbit). Set by clicking a ship marker/label.
@@ -1324,7 +1326,17 @@ export default defineComponent({
      *  zone (ship HP dropping) halve the accrued progress, matching the game. */
     const capSim = new Map<
       number,
-      { lastT: number; progress: number; owner: number; prevHp: Map<number, number> }
+      {
+        lastT: number;
+        progress: number;
+        owner: number;
+        prevHp: Map<number, number>;
+        /** Seconds the point has been controlled without contest (accrual). */
+        accrualT: number;
+        /** Score accumulated from this point (completion + accrual). */
+        scoreAlly: number;
+        scoreEnemy: number;
+      }
     >();
 
     /** Ships inside a capture point at time t (within the zone radius) with
@@ -1350,29 +1362,51 @@ export default defineComponent({
     }
 
     /** Advance a zone's capture simulation from lastSimT to t in 0.5s steps.
-     *  Ownership always follows the recorded prop0 stream; the simulation only
+     *  Ownership always follows the recorded prop0 stream; the simulation
      *  drives the visible progress ring (speed by ships inside, frozen when
-     *  contested, halved when an inside ship takes a hit). */
+     *  contested, halved when an inside ship takes a hit) AND the point's
+     *  score: +capComplete on every ownership change (except a pre-placed
+     *  starting zone), plus accrual points only while the point is controlled
+     *  with no enemy ship inside (the game pauses accrual while contested). */
     function simulateZone(
       zone: EntityTrajectory,
       eid: number,
       t: number,
       samples: { time: number; value: number }[],
+      capCompletePts: number,
+      accrualEvery: number,
+      accrualPts: number,
     ) {
       const st = capSim.get(eid);
       if (!st) return;
-      for (const s of samples) {
-        if (s.time > st.lastT && s.time <= t) {
-          st.owner = s.value;
-          st.progress = 0;
-          st.prevHp = new Map();
-        }
-      }
       let simT = st.lastT;
+      // Ownership changes are applied step-by-step as the sim crosses their
+      // timestamps (applying them up front would give the owner early
+      // accrual for the whole [0, changeTime) stretch).
+      let si = 0;
+      while (si < samples.length && samples[si].time <= simT) si++;
       const step = 0.5;
       while (simT < t) {
         const nxt = Math.min(simT + step, t);
         const mid = (simT + nxt) / 2;
+        while (si < samples.length && samples[si].time < nxt) {
+          const s = samples[si];
+          if (s.time > simT) {
+            const changed = s.value !== st.owner;
+            st.owner = s.value;
+            st.progress = 0;
+            st.prevHp = new Map();
+            st.accrualT = 0;
+            // A completed capture (any non-neutral change) scores
+            // +capComplete; a starting zone placed at battle start (first
+            // sample, t < 5) is not a capture event.
+            if (changed && s.value !== 0 && s.time > 5) {
+              if (s.value === 1) st.scoreAlly += capCompletePts;
+              else st.scoreEnemy += capCompletePts;
+            }
+          }
+          si++;
+        }
         const cx = zone.kind!.initialX;
         const cz = zone.kind!.initialZ;
         let ally = 0;
@@ -1402,15 +1436,25 @@ export default defineComponent({
             st.progress += step / (Math.max(ally, enemy) >= 2 ? 40 : 60);
             if (st.progress > 1) st.progress = 1;
           }
-        } else if (ally > 0 && enemy > 0) {
-          // Contested: frozen.
-        } else {
-          // Owned: only the enemy can (re-)capture; ring visual only, the
-          // actual ownership flip comes from the prop0 stream.
-          const attackers = st.owner === 1 ? enemy : ally;
-          if (attackers > 0) {
-            st.progress += step / (attackers >= 2 ? 40 : 60);
+        } else if (enemy > 0) {
+          // An enemy is inside: accrual pauses (game rule). If allies are
+          // also inside the point is contested (progress frozen); otherwise
+          // the enemy is re-capturing (ring visual only — the actual flip
+          // comes from the prop0 stream).
+          if (ally === 0) {
+            st.progress += step / (enemy >= 2 ? 40 : 60);
             if (st.progress > 1) st.progress = 1;
+          }
+        } else {
+          // No enemy inside: the owner scores accrual points; allied ships
+          // inside (or nobody) keep it ticking.
+          if (accrualEvery > 0) {
+            st.accrualT += step;
+            while (st.accrualT >= accrualEvery) {
+              st.accrualT -= accrualEvery;
+              if (st.owner === 1) st.scoreAlly += accrualPts;
+              else st.scoreEnemy += accrualPts;
+            }
           }
         }
         simT = nxt;
@@ -1474,59 +1518,36 @@ export default defineComponent({
         else enemyScoreNow += death;
       }
 
-      // Cap completion + accrual over ownership intervals, plus per-zone
-      // live capture simulation for the UI.
+      // Cap completion + accrual come from the per-zone simulation (which
+      // pauses accrual while a point is contested), plus per-zone live capture
+      // state for the UI.
       const display: CapZoneState[] = [];
       for (let i = 0; i < zones.length; i++) {
         const zone = zones[i];
         const eid = zone.entityId;
         const samples = (zone.capSamples ?? []).map((s) => ({ time: s.time, value: s.value }));
-        // Accrual: each non-neutral ownership interval contributes
-        // floor(len / every) * pts (contested pauses can't be observed from
-        // the ownership stream alone; the game stops accrual when enemies
-        // are inside, which we approximate via the position sim below).
-        let owner = 0;
-        let prev = 0;
-        let intervalStart = 0;
-        for (const s of samples) {
-          if (s.time > t) break;
-          if (s.value !== prev) {
-            if (prev !== 0 && accrualEvery > 0) {
-              const len = s.time - intervalStart;
-              const ticks = Math.floor(len / accrualEvery);
-              if (prev === 1) allyScoreNow += ticks * accrualPts;
-              else enemyScoreNow += ticks * accrualPts;
-            }
-            if (s.value !== 0 && s.value !== prev) {
-              if (s.value === 1) allyScoreNow += capCompletePts;
-              else enemyScoreNow += capCompletePts;
-            }
-            prev = s.value;
-            owner = s.value;
-            intervalStart = s.time;
-          }
-        }
-        if (prev !== 0 && accrualEvery > 0 && t > intervalStart) {
-          const len = t - intervalStart;
-          const ticks = Math.floor(len / accrualEvery);
-          if (prev === 1) allyScoreNow += ticks * accrualPts;
-          else enemyScoreNow += ticks * accrualPts;
-        }
-        if (owner === 1) capStatus.value[i] = 1;
-        else if (owner === 2) capStatus.value[i] = 2;
-        else capStatus.value[i] = 0;
-
-        // Capture simulation for the visual state.
+        // Capture simulation: replay from scratch on scrub-back, else advance.
         let st = capSim.get(eid);
         if (!st || st.lastT > t) {
-          st = { lastT: 0, progress: 0, owner: ownerAt(samples, 0), prevHp: new Map() };
+          st = {
+            lastT: 0,
+            progress: 0,
+            owner: ownerAt(samples, 0),
+            prevHp: new Map(),
+            accrualT: 0,
+            scoreAlly: 0,
+            scoreEnemy: 0,
+          };
           capSim.set(eid, st);
         }
-        simulateZone(zone, eid, t, samples);
+        simulateZone(zone, eid, t, samples, capCompletePts, accrualEvery, accrualPts);
+        allyScoreNow += st.scoreAlly;
+        enemyScoreNow += st.scoreEnemy;
         const { ally, enemy } = shipsInZone(zone, t);
-        const capturing = st.progress > 0.001 && st.progress < 1 && st.owner === 0
-          ? (ally > 0) !== (enemy > 0)
-          : st.owner !== 0 && st.progress > 0.001 && st.progress < 1;
+        const capturing =
+          st.owner === 0
+            ? st.progress > 0.001 && st.progress < 1
+            : st.progress > 0.001 && st.progress < 1 && ally + enemy > 0;
         display.push({
           letter: String.fromCharCode(65 + i),
           owner: st.owner,
@@ -1588,26 +1609,6 @@ export default defineComponent({
       selectedEntityId.value = entityId;
     }
 
-    /** Simple label anti-overlap: visible labels are sorted by screen y and
-     *  pushed down when they would cover an earlier one. */
-    function avoidLabelOverlap() {
-      const labels = shipLabels.value;
-      const vis = labels.filter((l) => l.visible);
-      vis.sort((a, b) => a.y - b.y);
-      const placed: { x: number; y: number; w: number; h: number }[] = [];
-      for (const l of vis) {
-        const w = 120;
-        const h = 46;
-        let y = l.y;
-        let guard = 0;
-        while (guard++ < 8 && placed.some((p) => Math.abs(p.x - l.x) < (p.w + w) / 2 && y < p.y + p.h && y + h > p.y)) {
-          y += h + 2;
-        }
-        l.y = y;
-        placed.push({ x: l.x, y, w, h });
-      }
-    }
-
     /** Project every visible marker's world position into screen pixels and
      *  write them into `shipLabels` so the overlay <div>s track the ships. */
     function updateLabelPositions() {
@@ -1634,7 +1635,6 @@ export default defineComponent({
         label.y = (-_projVec.y * hh) + hh;
         label.visible = _projVec.z < 1;
       }
-      avoidLabelOverlap();
     }
 
     /** Interpolate a sample at time t (linear between neighbors). */
@@ -1794,7 +1794,7 @@ export default defineComponent({
       <div class="holo-map">
         <div ref={container} class="holo-map__canvas" onClick={() => selectShip(null)} />
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
-        <div class="holo-map__labels" aria-hidden="true">
+        <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
           {shipLabels.value.map((lbl) => (
             <div
               key={lbl.entityId}
@@ -1831,12 +1831,12 @@ export default defineComponent({
                           background: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
                         }}
                       />
+                      <span class="holo-label__hp-text">
+                        {lbl.hp.toLocaleString()}
+                        {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                      </span>
                     </span>
                   ) : null}
-                  <span class="holo-label__hp-text">
-                    {lbl.hp.toLocaleString()}
-                    {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
-                  </span>
                 </span>
               ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
@@ -1963,6 +1963,13 @@ export default defineComponent({
         ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
+            <button
+              class="holo-map__lbltoggle"
+              onClick={() => { showLabels.value = !showLabels.value; }}
+              title={showLabels.value ? t("replay.labels.hide") : t("replay.labels.show")}
+            >
+              {showLabels.value ? "◉" : "◎"}
+            </button>
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? "❚❚" : "▶"}
             </button>
