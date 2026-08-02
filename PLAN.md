@@ -84,11 +84,28 @@ visible only while `Tab` is held.
   bathymetric bands render; a deep-sea floor plane hides the terrain edge.
 - Entity z is mirrored into three.js space (`z' = -z`, yaw → `PI - yaw`) to
   match the GLBs' right-handed export; verified against terrain heights.
-- vehicleId from EntityCreate/Position packets is NOT usable for roster
-  matching (packet-level field is a constant, e.g. spaceId). Team roles fall
-  back to entity-id spawn order; the recorder's own ship never gets the self
-  tint. Proper fix needs the shipConfig prop in the EntityCreate state blob
-  (per-version entity defs) or the onArenaStateReceived player list.
+- Entity -> roster join: the EntityCreate state blob embeds the ship's
+  GameParams id, so `read_replay_positions` scans it against the descriptor
+  roster shipIds (`EntityKind.shipId`). The packet-level `vehicleId` field is
+  a per-version constant (7770/10513) and useless for joins. Duplicate
+  shipIds (mirror picks, bots) are broken by spawn-side centroids in the
+  frontend. Team roles and ship models are exact for all players.
+- The recorder's own ship emits no Position (0x0a) packets; its transform
+  arrives on the PlayerPosition packet instead (0x2c on current clients,
+  0x2b on older ones — Monstrofil `replays_unpack` `PlayerPosition.py`). The
+  decoder merges both packet ids into the entity's trajectory, so the white
+  self marker/label renders like any other ship.
+- Ship HP comes from EntityProperty, but the HP property index drifts between
+  game versions (20 on 14.5, 21 on 0.11.x). `detect_hp_property` picks the
+  index whose values look like HP across ship entities (max value in
+  [1000, 200_000]) instead of hardcoding one. Labels render an HP bar plus
+  current/max and the negative delta from full HP; maxHp is the entity's own
+  stream peak (battle-accurate incl. event-mode scaling), never the
+  encyclopedia's stock hull value.
+- Map-version drift: terrain GLBs and minimap art are baked from the current
+  client, so replays from before a map rework (e.g. 2022 "North" vs 14.5)
+  show tracks crossing islands. The mock fixture therefore uses a
+  current-version replay. Not fixable without per-version terrain bakes.
 - Capture zones (A/B/C rings + scorebar cap status) are missing on replays
   that carry no InteractiveZone (type 14) EntityCreate — e.g. the 0.11.0
   ranked fixture. Their zones live in the BattleLogic state blob / per-version

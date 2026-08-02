@@ -137,6 +137,18 @@ export function resolveShipModelByShipId(
   return null;
 }
 
+/** Ship display name from the baked model DB (ship_models.json). `baseName`
+ *  is the English ship name for most entries; entries whose base is just the
+ *  WG index code (e.g. "PRSC709") yield null. Last-resort ship-name fallback
+ *  when the encyclopedia lacks the ship (event/premium ships, offline mock). */
+export function shipNameFromModelDb(shipId: number | string | undefined): string | null {
+  if (shipId == null) return null;
+  const entry = shipModelMap[String(shipId)];
+  const base = entry?.baseName?.trim();
+  if (!base || base === entry?.index || /^P[A-Z]{3}\d{3}$/.test(base)) return null;
+  return base;
+}
+
 export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   if (!spaceId) return null;
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();

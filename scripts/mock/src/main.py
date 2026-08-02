@@ -237,20 +237,29 @@ _RARITY_PATH = (
     Path(__file__).resolve().parents[3]
     / "packages" / "webui" / "src" / "data" / "ship_rarity.json"
 )
+_SHIP_MODELS_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "packages" / "webui" / "src" / "data" / "ship_models.json"
+)
 
 
 def _load_encyclopedia() -> list[dict[str, Any]]:
     import json
+    import re
 
-    if not _TECH_TREE_PATH.exists():
-        return []
-    tree = json.loads(_TECH_TREE_PATH.read_text(encoding="utf-8"))
+    tree = {}
+    if _TECH_TREE_PATH.exists():
+        tree = json.loads(_TECH_TREE_PATH.read_text(encoding="utf-8"))
     rarity = {}
     if _RARITY_PATH.exists():
         rarity = json.loads(_RARITY_PATH.read_text(encoding="utf-8"))
     ships: list[dict[str, Any]] = []
+    seen: set[int] = set()
     for node in tree.values():
         sid = node.get("shipId")
+        if sid is None:
+            continue
+        seen.add(int(sid))
         ships.append({
             "shipId": sid,
             "name": node.get("name", "").replace("IDS_", ""),
@@ -273,6 +282,42 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 "contour": "",
             },
         })
+    # Merge ship_models.json so premium/special/event ships absent from the
+    # tech tree still resolve names in replay labels (their baseName is the
+    # real English name; code-like bases such as "PRSC709" are skipped).
+    if _SHIP_MODELS_PATH.exists():
+        models = json.loads(_SHIP_MODELS_PATH.read_text(encoding="utf-8"))
+        for sid_str, entry in models.items():
+            try:
+                sid = int(sid_str)
+            except ValueError:
+                continue
+            if sid in seen:
+                continue
+            base = (entry.get("baseName") or "").strip()
+            if not base or base == entry.get("index") or re.fullmatch(r"P[A-Z]{3}\d{3}", base):
+                continue
+            index = entry.get("index", "")
+            # Class from the WG index code: SB=BB, SC/CAUX=CA, SD=DD, SA=CV, SS=SS.
+            cls = {"SB": "Battleship", "SC": "Cruiser", "SD": "Destroyer",
+                   "SA": "AirCarrier", "SS": "Submarine"}.get(index[1:3], "Cruiser") if len(index) >= 3 else "Cruiser"
+            ships.append({
+                "shipId": sid,
+                "name": base,
+                "tier": int(index[-1]) if index[-1:].isdigit() else 5,
+                "type": cls,
+                "nation": "usa",
+                "isPremium": True,
+                "isSpecial": False,
+                "description": "",
+                "gameVersion": "mock",
+                "defaultProfile": {
+                    "hull": {"health": 30000},
+                    "mobility": {"max_speed": 30},
+                    "concealment": {"detect_distance_by_ship": 12},
+                },
+                "images": {"small": "", "medium": "", "large": "", "contour": ""},
+            })
     return ships
 
 

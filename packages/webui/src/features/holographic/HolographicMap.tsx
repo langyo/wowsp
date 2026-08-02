@@ -7,6 +7,7 @@ import {
   resolveMapMinimapUrl,
   resolveShipModelForEntry,
   resolveShipModelByShipId,
+  shipNameFromModelDb,
   loadGlbModel,
   loadMapBounds,
   type MapBounds,
@@ -435,37 +436,94 @@ export default defineComponent({
       ctrl.update();
     }
 
+    /** Assign each ship trajectory its roster entry via the EntityCreate
+     *  `shipId` (recovered from the state stream by the backend). Most shipIds
+     *  are unique per match; when two players sail the same ship (mirror
+     *  picks, bots), the collision is broken by spawn-side: centroids are
+     *  computed from the unambiguous joins, and each ambiguous entity takes
+     *  the same-side roster entry. Entities with no roster hit get `null` and
+     *  fall back to the spawn-order team heuristic in `resolveMarkerContext`. */
+    function resolveRosterAssignments(
+      shipTrajs: EntityTrajectory[],
+    ): Map<number, VehicleEntry | null> {
+      const byShipId = new Map<number, VehicleEntry[]>();
+      for (const v of props.vehicles) {
+        const arr = byShipId.get(v.shipId) ?? [];
+        arr.push(v);
+        byShipId.set(v.shipId, arr);
+      }
+      const spawnOf = (t: EntityTrajectory) => ({
+        x: t.kind?.initialX ?? t.samples[0]?.x ?? 0,
+        z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
+      });
+      const assignments = new Map<number, VehicleEntry | null>();
+      const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
+      for (const traj of shipTrajs) {
+        const sid = traj.kind?.shipId;
+        const entries = sid != null ? byShipId.get(sid) : undefined;
+        if (entries && entries.length === 1) {
+          assignments.set(traj.entityId, entries[0]);
+        } else if (entries && entries.length > 1) {
+          ambiguous.push({ traj, entries });
+        } else {
+          assignments.set(traj.entityId, null);
+        }
+      }
+      if (ambiguous.length > 0) {
+        let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
+        for (const traj of shipTrajs) {
+          const a = assignments.get(traj.entityId);
+          if (!a) continue;
+          const s = spawnOf(traj);
+          if (a.relation <= 1) { ax += s.x; az += s.z; an++; }
+          else { ex += s.x; ez += s.z; en++; }
+        }
+        for (const { traj, entries } of ambiguous) {
+          let pick: VehicleEntry | null = null;
+          if (an > 0 && en > 0) {
+            const s = spawnOf(traj);
+            const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
+            const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
+            const wantAlly = dAlly < dEnemy;
+            pick =
+              entries.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
+              entries[0];
+          } else {
+            pick = entries[0];
+          }
+          assignments.set(traj.entityId, pick);
+        }
+      }
+      return assignments;
+    }
+
     /** Map each ship trajectory to its roster entry (for team role + ship
-     *  model) via the EntityCreate `vehicleId`. WoWS's MM-style tooling treats
-     *  this as the player's per-match id, matching the roster `id` field. When
-     *  a trajectory has no matching roster entry (older replay, decode gap),
-     *  the role falls back to the entity-id spawn-order heuristic: the client
-     *  spawns team A before team B, so the first half of ships (by entity id)
-     *  are treated as allies. Unresolved ships never claim the "self" role, so
-     *  the recorder's own marker stays uniquely green. */
+     *  model) via the precomputed roster assignments. When a trajectory has
+     *  no matching roster entry (older replay, decode gap), the role falls
+     *  back to the entity-id spawn-order heuristic: the client spawns team A
+     *  before team B, so the first half of ships (by entity id) are treated
+     *  as allies. Unresolved ships never claim the "self" role, so the
+     *  recorder's own marker stays uniquely white. */
     function resolveMarkerContext(
       traj: EntityTrajectory,
       shipEntityIds: number[],
-    ): { role: TeamRole; shipInfo: ShipInfo | null } {
-      const vehicles = props.vehicles;
-      // 1. Exact: vehicleId (from EntityCreate) == roster id.
-      const vid = traj.kind?.vehicleId;
-      const entry =
-        vid != null ? vehicles.find((v) => v.id === vid) : undefined;
+      assignments: Map<number, VehicleEntry | null>,
+    ): { role: TeamRole; shipInfo: ShipInfo | null; entry: VehicleEntry | null } {
+      const entry = assignments.get(traj.entityId) ?? null;
       let role: TeamRole;
       let shipInfo: ShipInfo | null;
       if (entry) {
         role = roleFromRelation(entry.relation);
         shipInfo = props.encyclopedia.get(entry.shipId) ?? null;
       } else {
-        // 2. Fallback: entity-id spawn order (team A spawns before team B).
-        //    Never "self" — only the exact match earns the recorder tint.
+        // Fallback: entity-id spawn order (team A spawns before team B).
+        // Never "self" — only the exact match earns the recorder tint.
         const idx = shipEntityIds.indexOf(traj.entityId);
         const isAlly = idx >= 0 && idx < shipEntityIds.length / 2;
         role = isAlly ? "ally" : "enemy";
         shipInfo = null;
       }
-      return { role, shipInfo };
+      return { role, shipInfo, entry };
     }
 
     /** Build the trajectory lines + ship markers from the decoded data.
@@ -492,10 +550,11 @@ export default defineComponent({
       // (transient entities like planes/torpedoes have far fewer). Sorted by
       // entity id — the client spawns team A before team B, so this order is
       // the fallback team-split heuristic when a roster join fails.
-      const shipEntityIds = props.trajectories
-        .filter((t) => t.kind?.entityType === 2 && t.samples.length >= 80)
-        .map((t) => t.entityId)
-        .sort((a, b) => a - b);
+      const shipTrajs = props.trajectories.filter(
+        (t) => t.kind?.entityType === 2 && t.samples.length >= 80,
+      );
+      const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
+      const assignments = resolveRosterAssignments(shipTrajs);
 
       const newLabels: ShipLabel[] = [];
 
@@ -505,7 +564,11 @@ export default defineComponent({
         // zones/avatars/planes/torpedoes.
         if (traj.kind?.entityType !== 2 || traj.samples.length < 80) continue;
 
-        const { role, shipInfo } = resolveMarkerContext(traj, shipEntityIds);
+        const { role, shipInfo, entry: rosterEntry } = resolveMarkerContext(
+          traj,
+          shipEntityIds,
+          assignments,
+        );
         const color = TEAM_COLOR[role];
 
         // Trajectory line on the XZ plane (y=0.5 to hover above the grid).
@@ -541,14 +604,6 @@ export default defineComponent({
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
-
-        // Floating label: player name + ship info for the overlay.
-        const rosterEntry =
-          props.vehicles.find((v) => v.id === traj.kind?.vehicleId) ??
-          props.vehicles.find((_, i) => {
-            const idx = shipEntityIds.indexOf(traj.entityId);
-            return idx >= 0 && i === idx;
-          });
 
         const modelUrl =
           resolveShipModelForEntry(shipInfo, encSpecs) ??
@@ -590,14 +645,19 @@ export default defineComponent({
           (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
           rosterEntry?.shipName ??
           shipInfo?.name ??
+          shipNameFromModelDb(rosterEntry?.shipId ?? traj.kind?.shipId) ??
           "?";
-        const dp = shipInfo?.defaultProfile as
-          | Record<string, Record<string, unknown>>
-          | undefined;
-        const maxHp =
-          dp?.hull?.health != null && typeof dp.hull.health === "number"
-            ? dp.hull.health
+        // Max HP: the peak of the entity's own HP stream — authoritative for
+        // the battle's actual scaling (event/asymmetric modes cut bot HP to a
+        // fraction of the encyclopedia hull value; upgraded hulls raise it).
+        // Without an HP stream we show no HP line at all: rendering the
+        // encyclopedia's stock hull value as if it were live battle HP would
+        // fabricate data.
+        const streamMax =
+          traj.hpSamples && traj.hpSamples.length > 0
+            ? Math.max(...traj.hpSamples.map((s) => s.value))
             : null;
+        const maxHp = streamMax;
         newLabels.push({
           entityId: traj.entityId,
           role,
@@ -704,9 +764,13 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        // Hide entities that haven't been created yet at this time.
+        // Hide entities that haven't been created yet at this time. Entities
+        // re-created mid-match (leaving/re-entering the observed area) may
+        // carry a later creationTime than their first sample — trust the
+        // samples in that case.
         const created = traj.kind?.creationTime ?? -1;
-        if (created >= 0 && t < created) {
+        const firstT = traj.samples[0]?.time ?? Infinity;
+        if (created >= 0 && t < created && t < firstT) {
           marker.visible = false;
           if (label) label.visible = false;
           continue;
@@ -975,8 +1039,26 @@ export default defineComponent({
               </span>
               {lbl.hp != null ? (
                 <span class="holo-label__hp">
-                  {lbl.hp.toLocaleString()}
-                  {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                  {lbl.maxHp != null ? (
+                    <span class="holo-label__hp-bar">
+                      <span
+                        class="holo-label__hp-fill"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (lbl.hp / lbl.maxHp) * 100))}%`,
+                          background: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
+                        }}
+                      />
+                    </span>
+                  ) : null}
+                  <span class="holo-label__hp-text">
+                    {lbl.hp.toLocaleString()}
+                    {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
+                  </span>
+                  {lbl.maxHp != null && lbl.hp < lbl.maxHp ? (
+                    <span class="holo-label__hp-delta">
+                      (−{(lbl.maxHp - lbl.hp).toLocaleString()})
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
@@ -1049,7 +1131,7 @@ export default defineComponent({
                 {props.vehicles.filter(v => v.relation <= 1).map(v => (
                   <tr key={v.id}>
                     <td style={{color: v.relation === 0 ? "#fff" : "#3cb478"}}>{v.name}</td>
-                    <td>{v.shipName ?? ""}</td>
+                    <td>{v.shipName ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
                     <td></td>
                   </tr>
                 ))}
@@ -1061,7 +1143,7 @@ export default defineComponent({
                 {props.vehicles.filter(v => v.relation > 1).map(v => (
                   <tr key={v.id}>
                     <td style={{color: "#cc3333"}}>{v.name}</td>
-                    <td>{v.shipName ?? ""}</td>
+                    <td>{v.shipName ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
                     <td></td>
                   </tr>
                 ))}

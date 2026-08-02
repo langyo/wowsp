@@ -47,7 +47,22 @@ pub fn read_replay_positions(
     let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
     let stream = packet_stream_after_blocks(&bytes)
         .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
-    let decoded = super::packets::decode_replay(stream)?;
+    // Roster shipIds from the descriptor JSON — the candidate set used to
+    // recover each entity's shipId from its EntityCreate state stream (the
+    // only reliable entity -> player join key).
+    let mut candidates = std::collections::HashSet::new();
+    if let Some(json) = extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
+                for v in arr {
+                    if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
+                        candidates.insert(id as u32);
+                    }
+                }
+            }
+        }
+    }
+    let decoded = super::packets::decode_replay(stream, &candidates)?;
     Ok(group_by_entity(decoded))
 }
 
@@ -72,6 +87,43 @@ fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
     Some(&bytes[cur..])
 }
 
+/// Pick the EntityProperty index that carries ship HP. The index shifts
+/// between game versions (21 in 0.11.x, 20 in 14.5), so score every index by
+/// how many ship entities (EntityCreate type 2) show plausible HP magnitudes
+/// (a max value in [1000, 200_000]) and take the best; ties break toward the
+/// index with more samples. Falls back to 20 (current version) when nothing
+/// looks like HP — in that case hp_samples simply stay empty.
+fn detect_hp_property(
+    kinds: &std::collections::BTreeMap<i32, wowsp_tauri_shared::EntityKind>,
+    properties: &std::collections::BTreeMap<i32, Vec<super::packets::PropertyChange>>,
+) -> u32 {
+    use std::collections::BTreeMap as Map;
+    let mut scores: Map<u32, (usize, usize)> = Map::new(); // index -> (entities, samples)
+    for (eid, changes) in properties {
+        if kinds.get(eid).map(|k| k.entity_type) != Some(2) {
+            continue;
+        }
+        let mut by_index: Map<u32, (u32, usize)> = Map::new(); // index -> (max, count)
+        for c in changes {
+            let e = by_index.entry(c.property_index).or_default();
+            e.0 = e.0.max(c.value);
+            e.1 += 1;
+        }
+        for (idx, (max, count)) in by_index {
+            if (1_000..=200_000).contains(&max) {
+                let s = scores.entry(idx).or_default();
+                s.0 += 1;
+                s.1 += count;
+            }
+        }
+    }
+    scores
+        .into_iter()
+        .max_by_key(|(_, (entities, samples))| (*entities, *samples))
+        .map(|(idx, _)| idx)
+        .unwrap_or(20)
+}
+
 /// Group the decoded per-entity positions into trajectories, attaching each
 /// entity's creation metadata (type / vehicleId / spawn position) from the
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
@@ -84,15 +136,20 @@ fn group_by_entity(
         destroys,
         properties,
     } = decoded;
-    // Build HP timelines: property index 20 ≈ current HP for ships.
+    // Build HP timelines. The property index carrying HP is version-dependent
+    // (see detect_hp_property); property 0 on capture zones tracks ownership.
+    let hp_index = detect_hp_property(&kinds, &properties);
     let mut hp_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
         std::collections::BTreeMap::new();
     let mut cap_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
         std::collections::BTreeMap::new();
     for (eid, changes) in &properties {
         for c in changes {
-            let sample = wowsp_tauri_shared::HpSample { time: c.time, value: c.value };
-            if c.property_index == 20 {
+            let sample = wowsp_tauri_shared::HpSample {
+                time: c.time,
+                value: c.value,
+            };
+            if c.property_index == hp_index {
                 hp_map.entry(*eid).or_default().push(sample);
             } else if c.property_index == 0 {
                 cap_map.entry(*eid).or_default().push(sample);
@@ -101,20 +158,18 @@ fn group_by_entity(
     }
     let mut out: Vec<_> = positions
         .into_iter()
-        .map(
-            |(entity_id, samples)| {
-                let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
-                let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
-                wowsp_tauri_shared::EntityTrajectory {
-                    entity_id,
-                    kind: kinds.get(&entity_id).cloned(),
-                    samples,
-                    death_time: destroys.get(&entity_id).copied(),
-                    hp_samples,
-                    cap_samples,
-                }
-            },
-        )
+        .map(|(entity_id, samples)| {
+            let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
+            let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
+            wowsp_tauri_shared::EntityTrajectory {
+                entity_id,
+                kind: kinds.get(&entity_id).cloned(),
+                samples,
+                death_time: destroys.get(&entity_id).copied(),
+                hp_samples,
+                cap_samples,
+            }
+        })
         .collect();
     // Include entities that have creation metadata but no position samples
     // (e.g. static capture zones, entityType 14, which never emit Position packets).
@@ -440,6 +495,51 @@ fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) 
 mod tests {
     use super::*;
 
+    /// HP property detection picks the index where ship entities show
+    /// plausible HP magnitudes, regardless of game version.
+    #[test]
+    fn detect_hp_property_scores_by_magnitude() {
+        let mut kinds = std::collections::BTreeMap::new();
+        kinds.insert(
+            1,
+            wowsp_tauri_shared::EntityKind {
+                entity_type: 2,
+                vehicle_id: 7770,
+                initial_x: 0.0,
+                initial_y: 0.0,
+                initial_z: 0.0,
+                creation_time: 0.0,
+                ship_id: None,
+            },
+        );
+        let change = |property_index: u32, value: u32| super::super::packets::PropertyChange {
+            time: 0.0,
+            entity_id: 1,
+            property_index,
+            value,
+        };
+        // Version A layout: HP at 21 (values ~20k), flags at 20 (small ints).
+        let props_a = std::collections::BTreeMap::from([(
+            1,
+            vec![
+                change(21, 20340),
+                change(21, 19800),
+                change(20, 2),
+                change(20, 0),
+            ],
+        )]);
+        assert_eq!(detect_hp_property(&kinds, &props_a), 21);
+        // Version B layout: HP at 20.
+        let props_b = std::collections::BTreeMap::from([(
+            1,
+            vec![change(20, 26650), change(20, 25100), change(21, 3)],
+        )]);
+        assert_eq!(detect_hp_property(&kinds, &props_b), 20);
+        // No plausible HP anywhere -> default 20.
+        let props_c = std::collections::BTreeMap::from([(1, vec![change(7, 5)])]);
+        assert_eq!(detect_hp_property(&kinds, &props_c), 20);
+    }
+
     /// Synthetic replay: magic + 1 block + a tiny JSON descriptor. Verifies the
     /// block-count format is parsed correctly (the bug the skeleton had).
     #[test]
@@ -535,8 +635,8 @@ mod tests {
             "meta": meta,
             "trajectories": trajs,
         });
-        let out_path = std::env::var("WOWSP_DUMP_OUT")
-            .unwrap_or_else(|_| "replay_dump.json".to_string());
+        let out_path =
+            std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
         std::fs::write(&out_path, serde_json::to_string(&out).unwrap()).unwrap();
         eprintln!("dumped to {out_path}");
     }
