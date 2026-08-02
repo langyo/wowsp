@@ -53,6 +53,10 @@ const PACKET_ENTITY_DESTROY: u32 = 0x06;
 /// Current clients (WoWS 12.6+) use 0x2c; older builds use 0x2b.
 const PACKET_PLAYER_POSITION: u32 = 0x2c;
 const PACKET_PLAYER_POSITION_LEGACY: u32 = 0x2b;
+/// Secondary position stream used by aircraft/squadrons (entityType 4) and
+/// other transient entities on current clients. Same 32-byte layout as
+/// PlayerPosition.
+const PACKET_POSITION_AUX: u32 = 0x2a;
 
 /// A single property change sample — one field of an entity updated at a
 /// specific time. Health, speed, consumable state, etc.
@@ -164,7 +168,7 @@ fn walk_frames(
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
-            PACKET_PLAYER_POSITION | PACKET_PLAYER_POSITION_LEGACY => {
+            PACKET_PLAYER_POSITION | PACKET_PLAYER_POSITION_LEGACY | PACKET_POSITION_AUX => {
                 if let Some(sample) = parse_player_position(payload, time) {
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
@@ -337,12 +341,13 @@ fn parse_property(payload: &[u8], time: f32) -> Vec<PropertyChange> {
     out
 }
 
-/// Parse a PlayerPosition (0x2b legacy / 0x2c current) payload. Layout
-/// (Monstrofil `replays_unpack` `PlayerPosition.py`, 32 bytes):
+/// Parse a PlayerPosition (0x2b legacy / 0x2c current / 0x2a aircraft) payload.
+/// Layout (Monstrofil `replays_unpack` `PlayerPosition.py`, 32 bytes):
 ///   i32 entity_id, i32 linked_entity_id,
 ///   f32×3 position, f32 yaw, f32 pitch, f32 roll
-/// This stream carries the recorder's own ship (which never emits 0x0a) plus
-/// the camera/avatar entity; the frontend keeps only type-2 ships.
+/// This stream carries the recorder's own ship (which never emits 0x0a),
+/// aircraft/squadrons, plus the camera/avatar entity; the frontend keeps only
+/// type-2 ships and type-4 aircraft.
 fn parse_player_position(payload: &[u8], time: f32) -> Option<PositionSample> {
     if payload.len() < 32 {
         return None;
