@@ -99,15 +99,19 @@ export interface PositionSample {
 }
 
 /** Entity creation metadata (mirrors `wowsp_tauri_shared::EntityKind`). The
- * fixed header of an EntityCreate (0x05) packet; the trailing state blob needs
- * the entity DB and is skipped. `entityType` 2 = vehicle (ships). */
+ * fixed header of an EntityCreate (0x05) packet plus the roster shipId
+ * recovered from its state blob. `entityType` 2 = vehicle (ships). */
 export interface EntityKind {
   entityType: number;
+  /** Per-version constant — NOT a player id. Use `shipId` for roster joins. */
   vehicleId: number;
   initialX: number;
   initialY: number;
   initialZ: number;
   creationTime: number;
+  /** Roster shipId scanned from the EntityCreate state stream — the reliable
+   *  join key into `ReplayMeta.vehicles[].shipId`. Undefined when not found. */
+  shipId?: number | null;
 }
 
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */

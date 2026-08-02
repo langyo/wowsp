@@ -1,25 +1,58 @@
 import { defineComponent, computed, type PropType } from "vue";
 
 /**
- * WoWS ship-type icon — the triangular silhouettes the game uses on its minimap
- * and battle HUD. Each hull class has a distinct notch count under the triangle
- * so ship types are readable at a glance without text:
+ * WoWS ship-class glyph, reproduced pixel-for-pixel from the game's own icon
+ * atlas (`gui/service_kit/ship_classes/icon_default_*.png`, 27×27): horizontal
+ * shapes with the arrow pointing right, solid fill plus faint (~25% opacity)
+ * internal differentiation lines, exactly like the in-game team list:
  *
- *   Destroyer  (DD) — bare triangle
- *   Cruiser    (CA) — triangle + 1 notch
- *   Battleship (BB) — triangle + 2 notches
- *   AirCarrier (CV) — wide flat-topped hull (flight-deck profile)
- *   Submarine  (SS) — teardrop
+ *   Destroyer  (DD) — plain right-pointing triangle
+ *   Cruiser    (CA) — pentagon arrow + one diagonal line
+ *   Battleship (BB) — pentagon arrow + two parallel diagonals
+ *   AirCarrier (CV) — rectangle (split into two squares by a horizontal line)
+ *                     + right-pointing triangle
+ *   Submarine  (SS) — vertical bar + right-pointing triangle
  *
  * The icon inherits `currentColor`, so tint it via the parent's `color` style.
- * `size` sets the square viewBox dimension in px (default 14).
+ * `size` sets the rendered edge in px (default 14).
  *
  * The `type` prop takes a WG ShipInfo.type string (Battleship / Cruiser /
  * Destroyer / AirCarrier / Submarine); unknown values render a "?".
  */
 
-const NOTCH_Y = 18.5; // y of the notch line(s) below the triangle base
-const TRI = "M12 3 L22 16 L2 16 Z"; // upward triangle, 24×24 viewBox
+const SEAM_OPACITY = 0.25;
+const SEAM_WIDTH = 1;
+
+// 27×27 native coordinates (the game's atlas size), traced from
+// `gui/service_kit/ship_classes/icon_default_*.png` alpha masks.
+const SHAPES: Record<"dd" | "ca" | "bb" | "cv" | "ss", { fill: string; seams: string[] }> = {
+  dd: {
+    // Right-pointing triangle: vertical left edge x4.5, tip (23, 13).
+    fill: "M4.5 8.5 L23 13 L4.5 17.5 Z",
+    seams: [],
+  },
+  ca: {
+    // Pentagonal arrow: (4.5,8) (19,8) tip (23,13) (19,18) (4.5,18).
+    fill: "M4.5 8 L19 8 L23 13 L19 18 L4.5 18 Z",
+    seams: ["M14.5 8.5 L9.5 17.5"],
+  },
+  bb: {
+    fill: "M4.5 8 L19 8 L23 13 L19 18 L4.5 18 Z",
+    seams: ["M13.5 8.5 L8.5 17.5", "M17 8.5 L12.5 17.5"],
+  },
+  cv: {
+    // Rectangle + triangle union; the horizontal line at y13 splits the
+    // rectangle into two squares, the vertical seam at x15.2 marks the
+    // rectangle/triangle boundary.
+    fill: "M4.5 8 L14.5 8 L16 8 L23 13 L16 18 L14.5 18 L4.5 18 Z",
+    seams: ["M4.5 13 L14.5 13", "M15.2 8 L15.2 18"],
+  },
+  ss: {
+    // Vertical bar + separate right-pointing triangle.
+    fill: "M4 8.5 L5.5 8.5 L5.5 17.5 L4 17.5 Z M8.5 9 L23 13 L8.5 17 Z",
+    seams: [],
+  },
+};
 
 export default defineComponent({
   name: "ShipTypeIcon",
@@ -28,7 +61,6 @@ export default defineComponent({
     size: { type: Number, default: 14 },
   },
   setup(props) {
-    /** Notch count: 0=DD, 1=CA, 2=BB; carriers & subs use custom shapes. */
     const kind = computed<"dd" | "ca" | "bb" | "cv" | "ss" | "?" | null>(() => {
       const t = props.type?.toLowerCase();
       if (!t) return "?";
@@ -42,46 +74,44 @@ export default defineComponent({
 
     return () => {
       const k = kind.value;
+      if (k === "?" || k === null) {
+        return (
+          <svg
+            width={props.size}
+            height={props.size}
+            viewBox="0 0 27 27"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <text x="13.5" y="19" text-anchor="middle" font-size="14" fill="currentColor" stroke="none">
+              ?
+            </text>
+          </svg>
+        );
+      }
+      const shape = SHAPES[k];
       return (
         <svg
           width={props.size}
           height={props.size}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+          viewBox="0 0 27 27"
+          fill="currentColor"
+          stroke="none"
           aria-hidden="true"
         >
-          {k === "dd" ? (
-            <path d={TRI} fill="currentColor" fill-opacity="0.25" />
-          ) : k === "ca" ? (
-            <g>
-              <path d={TRI} fill="currentColor" fill-opacity="0.25" />
-              <line x1="6" y1={NOTCH_Y} x2="18" y2={NOTCH_Y} />
-            </g>
-          ) : k === "bb" ? (
-            <g>
-              <path d={TRI} fill="currentColor" fill-opacity="0.25" />
-              <line x1="6" y1={NOTCH_Y} x2="18" y2={NOTCH_Y} />
-              <line x1="8" y1={NOTCH_Y + 2.5} x2="16" y2={NOTCH_Y + 2.5} />
-            </g>
-          ) : k === "cv" ? (
-            // Flat-topped flight deck: wide rectangle with an island bump.
-            <g>
-              <path d="M2 15 L22 15 L20 19 L4 19 Z" fill="currentColor" fill-opacity="0.25" />
-              <rect x="15" y="11" width="3" height="4" rx="0.5" />
-            </g>
-          ) : k === "ss" ? (
-            // Teardrop hull with a conning tower.
-            <g>
-              <path d="M3 16 C3 12 8 10 12 10 C16 10 21 12 21 16 Z" fill="currentColor" fill-opacity="0.25" />
-              <rect x="10" y="7" width="4" height="3" rx="0.5" />
-            </g>
-          ) : (
-            <text x="12" y="17" text-anchor="middle" font-size="13" fill="currentColor" stroke="none">?</text>
-          )}
+          <path d={shape.fill} />
+          {shape.seams.map((d) => (
+            <path
+              key={d}
+              d={d}
+              fill="none"
+              stroke="currentColor"
+              stroke-width={SEAM_WIDTH}
+              opacity={SEAM_OPACITY}
+            />
+          ))}
         </svg>
       );
     };

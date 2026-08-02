@@ -47,7 +47,22 @@ pub fn read_replay_positions(
     let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
     let stream = packet_stream_after_blocks(&bytes)
         .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
-    let decoded = super::packets::decode_replay(stream)?;
+    // Roster shipIds from the descriptor JSON — the candidate set used to
+    // recover each entity's shipId from its EntityCreate state stream (the
+    // only reliable entity -> player join key).
+    let mut candidates = std::collections::HashSet::new();
+    if let Some(json) = extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
+                for v in arr {
+                    if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
+                        candidates.insert(id as u32);
+                    }
+                }
+            }
+        }
+    }
+    let decoded = super::packets::decode_replay(stream, &candidates)?;
     Ok(group_by_entity(decoded))
 }
 
@@ -72,6 +87,100 @@ fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
     Some(&bytes[cur..])
 }
 
+/// How the HP property's raw 4-byte value should be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum HpValueKind {
+    /// Plain little-endian integer (any size).
+    Int,
+    /// IEEE f32 bits in a 4-byte field (the `health` property on both tested
+    /// versions — index 29 on 0.11.x, 28 on 14.5).
+    Float,
+}
+
+/// Pick the EntityProperty index that carries ship HP, plus how to read it.
+///
+/// The property index AND its encoding drift between game versions (0.11.x:
+/// float HP at 29; 14.5: float HP at 28; some builds also expose int
+/// properties that look HP-ish at 20/21 but are noise). A property qualifies
+/// per ship entity when its series:
+///   - peaks in plausible HP range (int [1k, 200k], float [5k, 150k]),
+///   - starts near the entity's own max (first >= 0.8 * max — HP streams open
+///     with a full-health sync),
+///   - never jumps UP by more than 35% of max in one step (damage/heal ticks
+///     are small; huge upward jumps are init artifacts or packed deltas).
+/// The index with the most qualifying ship entities wins (ties: more samples).
+fn detect_hp_property(
+    kinds: &std::collections::BTreeMap<i32, wowsp_tauri_shared::EntityKind>,
+    properties: &std::collections::BTreeMap<i32, Vec<super::packets::PropertyChange>>,
+) -> (u32, HpValueKind) {
+    use std::collections::BTreeMap as Map;
+    // Per (entity, index): does the series look like HP under one interpretation?
+    let mut scores: Map<(u32, HpValueKind), (usize, usize)> = Map::new();
+    for (eid, changes) in properties {
+        if kinds.get(eid).map(|k| k.entity_type) != Some(2) {
+            continue;
+        }
+        let mut by_index: Map<u32, Vec<&super::packets::PropertyChange>> = Map::new();
+        for c in changes {
+            by_index.entry(c.property_index).or_default().push(c);
+        }
+        for (idx, rows) in by_index {
+            if rows.len() < 3 {
+                continue;
+            }
+            let qualifies = |kind: HpValueKind| -> bool {
+                let vals: Vec<f64> = rows
+                    .iter()
+                    .map(|c| match kind {
+                        HpValueKind::Int => c.value as f64,
+                        HpValueKind::Float => {
+                            if c.size == 4 {
+                                f32::from_bits(c.value) as f64
+                            } else {
+                                f64::NAN
+                            }
+                        },
+                    })
+                    .collect();
+                if vals.iter().any(|v| !v.is_finite()) {
+                    return false;
+                }
+                let max = vals.iter().cloned().fold(0.0f64, f64::max);
+                let lo = if kind == HpValueKind::Int {
+                    1_000.0
+                } else {
+                    5_000.0
+                };
+                let hi = if kind == HpValueKind::Int {
+                    200_000.0
+                } else {
+                    150_000.0
+                };
+                if max < lo || max > hi {
+                    return false;
+                }
+                if vals[0] < 0.8 * max {
+                    return false;
+                }
+                let max_step_up = vals.windows(2).map(|w| w[1] - w[0]).fold(0.0f64, f64::max);
+                max_step_up <= 0.35 * max
+            };
+            for kind in [HpValueKind::Int, HpValueKind::Float] {
+                if qualifies(kind) {
+                    let s = scores.entry((idx, kind)).or_default();
+                    s.0 += 1;
+                    s.1 += rows.len();
+                }
+            }
+        }
+    }
+    scores
+        .into_iter()
+        .max_by_key(|(_, (entities, samples))| (*entities, *samples))
+        .map(|((idx, kind), _)| (idx, kind))
+        .unwrap_or((20, HpValueKind::Int))
+}
+
 /// Group the decoded per-entity positions into trajectories, attaching each
 /// entity's creation metadata (type / vehicleId / spawn position) from the
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
@@ -84,37 +193,54 @@ fn group_by_entity(
         destroys,
         properties,
     } = decoded;
-    // Build HP timelines: property index 20 ≈ current HP for ships.
+    // Build HP timelines. The property index carrying HP is version-dependent
+    // (see detect_hp_property); property 0 on capture zones tracks ownership.
+    let (hp_index, hp_kind) = detect_hp_property(&kinds, &properties);
     let mut hp_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
         std::collections::BTreeMap::new();
     let mut cap_map: std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> =
         std::collections::BTreeMap::new();
     for (eid, changes) in &properties {
         for c in changes {
-            let sample = wowsp_tauri_shared::HpSample { time: c.time, value: c.value };
-            if c.property_index == 20 {
-                hp_map.entry(*eid).or_default().push(sample);
+            if c.property_index == hp_index {
+                let value = match hp_kind {
+                    HpValueKind::Int => c.value,
+                    // Float HP streams carry whole-number values; rounding
+                    // keeps the wire format (u32) unchanged for the frontend.
+                    HpValueKind::Float => f32::from_bits(c.value).round() as u32,
+                };
+                hp_map
+                    .entry(*eid)
+                    .or_default()
+                    .push(wowsp_tauri_shared::HpSample {
+                        time: c.time,
+                        value,
+                    });
             } else if c.property_index == 0 {
-                cap_map.entry(*eid).or_default().push(sample);
+                cap_map
+                    .entry(*eid)
+                    .or_default()
+                    .push(wowsp_tauri_shared::HpSample {
+                        time: c.time,
+                        value: c.value,
+                    });
             }
         }
     }
     let mut out: Vec<_> = positions
         .into_iter()
-        .map(
-            |(entity_id, samples)| {
-                let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
-                let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
-                wowsp_tauri_shared::EntityTrajectory {
-                    entity_id,
-                    kind: kinds.get(&entity_id).cloned(),
-                    samples,
-                    death_time: destroys.get(&entity_id).copied(),
-                    hp_samples,
-                    cap_samples,
-                }
-            },
-        )
+        .map(|(entity_id, samples)| {
+            let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
+            let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
+            wowsp_tauri_shared::EntityTrajectory {
+                entity_id,
+                kind: kinds.get(&entity_id).cloned(),
+                samples,
+                death_time: destroys.get(&entity_id).copied(),
+                hp_samples,
+                cap_samples,
+            }
+        })
         .collect();
     // Include entities that have creation metadata but no position samples
     // (e.g. static capture zones, entityType 14, which never emit Position packets).
@@ -440,6 +566,73 @@ fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) 
 mod tests {
     use super::*;
 
+    /// HP property detection picks the index whose series behave like HP
+    /// (start full, plausible magnitude, no wild upward jumps) under either
+    /// int or float interpretation, regardless of game version.
+    #[test]
+    fn detect_hp_property_scores_by_magnitude() {
+        let mut kinds = std::collections::BTreeMap::new();
+        kinds.insert(
+            1,
+            wowsp_tauri_shared::EntityKind {
+                entity_type: 2,
+                vehicle_id: 7770,
+                initial_x: 0.0,
+                initial_y: 0.0,
+                initial_z: 0.0,
+                creation_time: 0.0,
+                ship_id: None,
+            },
+        );
+        let change =
+            |property_index: u32, value: u32, size: u8| super::super::packets::PropertyChange {
+                time: 0.0,
+                entity_id: 1,
+                property_index,
+                value,
+                size,
+            };
+        // Float HP at 28 (14.5 layout), int noise at 20 (starts full but jumps
+        // +86% in one step -> rejected).
+        let hp = |v: f32| change(28, v.to_bits(), 4);
+        let props = std::collections::BTreeMap::from([(
+            1,
+            vec![
+                hp(70011.0),
+                hp(65500.0),
+                hp(60100.0),
+                hp(52300.0),
+                change(20, 31454, 2),
+                change(20, 4603, 2),
+                change(20, 31737, 2),
+                change(20, 31736, 2),
+            ],
+        )]);
+        assert_eq!(detect_hp_property(&kinds, &props), (28, HpValueKind::Float));
+
+        // Int HP at 21 (0.11.x-style integer stream, smooth decline).
+        let props_int = std::collections::BTreeMap::from([(
+            1,
+            vec![
+                change(21, 20340, 4),
+                change(21, 19800, 4),
+                change(21, 18500, 4),
+                change(21, 17000, 4),
+            ],
+        )]);
+        assert_eq!(
+            detect_hp_property(&kinds, &props_int),
+            (21, HpValueKind::Int)
+        );
+
+        // No plausible HP anywhere -> default (20, Int).
+        let props_none = std::collections::BTreeMap::from([(1, vec![change(7, 5, 1)])]);
+        assert_eq!(
+            detect_hp_property(&kinds, &props_none),
+            (20, HpValueKind::Int)
+        );
+    }
+
     /// Synthetic replay: magic + 1 block + a tiny JSON descriptor. Verifies the
     /// block-count format is parsed correctly (the bug the skeleton had).
     #[test]
@@ -535,8 +728,8 @@ mod tests {
             "meta": meta,
             "trajectories": trajs,
         });
-        let out_path = std::env::var("WOWSP_DUMP_OUT")
-            .unwrap_or_else(|_| "replay_dump.json".to_string());
+        let out_path =
+            std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
         std::fs::write(&out_path, serde_json::to_string(&out).unwrap()).unwrap();
         eprintln!("dumped to {out_path}");
     }
