@@ -160,6 +160,8 @@ interface ShipNameEntry {
   tier?: number | null;
   type?: string | null;
   nation?: string | null;
+  /** Max hull HP across upgrade modules (GameParams), when available. */
+  hp?: number | null;
   names: Record<string, string>;
 }
 const shipNameMap =

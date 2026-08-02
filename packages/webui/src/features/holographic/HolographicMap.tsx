@@ -23,6 +23,7 @@ import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
+import SCheckbox from "@/components/base/SCheckbox";
 import { t } from "@/i18n";
 import "./HolographicMap.scss";
 
@@ -417,7 +418,8 @@ export default defineComponent({
         .filter(
           (x) =>
             x.kind?.entityType === 2 &&
-            (x.kind?.shipId != null || x.samples.length >= 80),
+            (x.samples.length >= 80 ||
+              (x.kind?.shipId != null && x.samples.length > 0)),
         )
         .map((x) => x.entityId)
         .sort((a, b) => a - b);
@@ -850,12 +852,15 @@ export default defineComponent({
       // marker), or enough position samples to be a real vessel rather than a
       // transient (planes/torpedoes have far fewer). Ships that sank early may
       // carry very few samples — the shipId join keeps them rendered and
-      // counted in the scoreboard. Sorted by entity id — the client spawns
-      // team A before team B, so this order is the fallback team-split
-      // heuristic when a roster join fails.
+      // counted in the scoreboard. Entities with zero position samples are
+      // re-creation duplicates (leave+re-enter) with no usable data; skipping
+      // them also prevents double-counting their player in the alive counter.
+      // Sorted by entity id — the client spawns team A before team B, so this
+      // order is the fallback team-split heuristic when a roster join fails.
       const isShip = (t: EntityTrajectory) =>
         t.kind?.entityType === 2 &&
-        (t.kind?.shipId != null || t.samples.length >= 80);
+        (t.samples.length >= 80 ||
+          (t.kind?.shipId != null && t.samples.length > 0));
       const shipTrajs = props.trajectories.filter(isShip);
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
       const assignments = resolveRosterAssignments(shipTrajs);
@@ -996,7 +1001,9 @@ export default defineComponent({
           dp?.hull?.health != null && typeof dp.hull.health === "number"
             ? dp.hull.health
             : null;
-        const maxHp = streamMax ?? encHealth;
+        // Fallback chain: battle stream (authoritative) → encyclopedia hull →
+        // offline DB hull HP (GameParams) → none (label hides the HP row).
+        const maxHp = streamMax ?? encHealth ?? offline?.hp ?? null;
         newLabels.push({
           entityId: traj.entityId,
           role,
@@ -1620,15 +1627,14 @@ export default defineComponent({
           <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
             <div class="holo-map__mmzoom-head">
               <span>{t("replay.minimap.zoom")}</span>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={minimapShowTrails.value}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => { minimapShowTrails.value = (e.target as HTMLInputElement).checked; }}
-                />
+              <SCheckbox
+                modelValue={minimapShowTrails.value}
+                variant="switch"
+                onClick={(e) => e.stopPropagation()}
+                onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
+              >
                 {t("replay.minimap.trails")}
-              </label>
+              </SCheckbox>
             </div>
             <canvas ref={zoomCanvas} width={640} height={640} class="holo-map__mmzoom-canvas" />
           </div>
