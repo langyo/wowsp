@@ -62,8 +62,11 @@ pub struct PropertyChange {
     pub entity_id: i32,
     /// Property index within the entity definition (e.g. 20 = health for ships).
     pub property_index: u32,
-    /// Raw 4-byte value (uint32 or reinterpreted float).
+    /// Raw value bytes (1, 2, or 4) packed little-endian into a u32. For
+    /// size-4 float properties this is the f32 bit pattern.
     pub value: u32,
+    /// Number of value bytes on the wire (1, 2, or 4).
+    pub size: u8,
 }
 
 /// Output of decoding: per-entity trajectories plus the EntityCreate metadata
@@ -327,6 +330,7 @@ fn parse_property(payload: &[u8], time: f32) -> Vec<PropertyChange> {
             entity_id,
             property_index,
             value,
+            size: value_size as u8,
         });
         off += 8 + value_size;
     }
