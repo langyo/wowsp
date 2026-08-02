@@ -227,16 +227,50 @@ fn group_by_entity(
             }
         }
     }
+    // Infer death from the HP stream when no EntityDestroy packet exists:
+    // a float HP series that ends at exactly 0 means the ship sank (the last
+    // sample is the sink instant; the client stops updating HP afterwards).
+    // The EntityDestroy (0x06) packet is absent on modern clients, so without
+    // this every ship would render alive until match end.
+    fn infer_death_time(
+        hp: &[wowsp_tauri_shared::HpSample],
+        existing: Option<f32>,
+    ) -> Option<f32> {
+        if existing.is_some() {
+            return existing;
+        }
+        if hp.len() < 2 {
+            return None;
+        }
+        let last = &hp[hp.len() - 1];
+        if last.value == 0 && hp[hp.len() - 2].value > 0 {
+            return Some(last.time);
+        }
+        // Trailing-zero series (HP kept updating at 0 after sinking).
+        for i in 1..hp.len() - 1 {
+            if hp[i].value == 0 && hp[i + 1].value == 0 {
+                return Some(hp[i].time);
+            }
+        }
+        None
+    }
     let mut out: Vec<_> = positions
         .into_iter()
         .map(|(entity_id, samples)| {
             let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
             let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
+            let kind = kinds.get(&entity_id).cloned();
+            // Only ships have meaningful HP streams — planes/zones never do.
+            let death_time = if kind.as_ref().map(|k| k.entity_type) == Some(2) {
+                infer_death_time(&hp_samples, destroys.get(&entity_id).copied())
+            } else {
+                destroys.get(&entity_id).copied()
+            };
             wowsp_tauri_shared::EntityTrajectory {
                 entity_id,
-                kind: kinds.get(&entity_id).cloned(),
+                kind,
                 samples,
-                death_time: destroys.get(&entity_id).copied(),
+                death_time,
                 hp_samples,
                 cap_samples,
             }

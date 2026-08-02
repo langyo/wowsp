@@ -102,5 +102,9 @@
     "battles": "场次",
     "winrate": "胜率",
     "avgDamage": "场均"
+  },
+  "minimap": {
+    "zoom": "放大地图",
+    "trails": "船只轨迹"
   }
 }

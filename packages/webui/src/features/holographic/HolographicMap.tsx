@@ -17,7 +17,7 @@ import {
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
-import { TEAM_COLOR, roleFromRelation, holoColorsFor, type TeamRole } from "./teamColors";
+import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
@@ -59,6 +59,7 @@ export default defineComponent({
     const { ready, api } = useThreeScene(container, (_dt) => {
       updateLabelPositions();
       drawMinimap();
+      followSelected();
     });
 
     // Playback state.
@@ -71,6 +72,13 @@ export default defineComponent({
     // Time display toggle: 0=elapsed, 1=remaining, 2=total
     const timeMode = ref(0);
     const showRoster = ref(false);
+
+    // First-person follow: the entity id whose marker the camera tracks
+    // (null = free orbit). Set by clicking a ship marker/label.
+    const selectedEntityId = ref<number | null>(null);
+    // 2D minimap enlarged overlay state.
+    const minimapZoom = ref(false);
+    const minimapShowTrails = ref(true);
 
     function toggleTimeMode() {
       timeMode.value = (timeMode.value + 1) % 3;
@@ -94,8 +102,27 @@ export default defineComponent({
     // Ships alive = total - sunk count at current time
     const allyAlive = ref(allyTotal.value);
     const enemyAlive = ref(enemyTotal.value);
-    // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=team1, 2=team2
+    // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
     const capStatus = ref([0, 0, 0]);
+    // Estimated match score: kills (1 pt) + fully-held cap points (3 pts each).
+    // WoWS doesn't stream score packets into replays, so this is a close
+    // approximation of the domination scoring shown in the top bar.
+    const allyScore = ref(0);
+    const enemyScore = ref(0);
+    // Transient "X sunk" feed, newest first; entries expire after a few seconds.
+    interface KillEvent {
+      id: number;
+      text: string;
+      role: TeamRole;
+    }
+    const killFeed = ref<KillEvent[]>([]);
+    let killSeq = 0;
+    // Entity ids already reported as sunk (avoid double-counting on scrub).
+    const reportedSinks = new Set<number>();
+    // The capture-zone entities + their ownership timelines.
+    const capZones = computed(() =>
+      props.trajectories.filter((t) => t.kind?.entityType === 14),
+    );
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -118,6 +145,7 @@ export default defineComponent({
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
+    let planeCloud: THREE.Points | null = null;
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
@@ -148,6 +176,7 @@ export default defineComponent({
     // spots as the in-battle minimap. Without art/bounds for this map we fall
     // back to the plain dark base + trajectory-derived bounds.
     const minimapCanvas = ref<HTMLCanvasElement | null>(null);
+    const zoomCanvas = ref<HTMLCanvasElement | null>(null);
     let _mmCtx: CanvasRenderingContext2D | null = null;
     const MINIMAP_SIZE = 160;
     let minimapImage: HTMLImageElement | null = null;
@@ -254,16 +283,34 @@ export default defineComponent({
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-      // Ship dots.
+      // Ship dots: the game's own class glyphs (same shapes as the label
+      // icons), tinted by team. Sunk ships render as small grey dots.
+      const t = current.value;
       for (const m of shipMarkers) {
-        if (!m.visible) continue;
         const role = m.userData.role as TeamRole | undefined;
-        const color = role ? TEAM_COLOR[role] : 0x888888;
+        const dead =
+          (m.userData.deathTime as number | null) != null &&
+          t >= (m.userData.deathTime as number);
         const cx = wx(m.position.x);
         const cz = wz(m.position.z);
-        ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+        if (dead) {
+          ctx.fillStyle = "rgba(150, 150, 150, 0.7)";
+          ctx.beginPath();
+          ctx.arc(cx, cz, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+          continue;
+        }
+        const color = role ? TEAM_COLOR[role] : 0x888888;
+        drawShipGlyph(ctx, m.userData.type as string | undefined, cx, cz, 5, color);
+      }
+
+      // Aircraft (entityType 4) — small cyan dots at their interpolated spot.
+      ctx.fillStyle = "rgba(120, 210, 255, 0.85)";
+      for (const tr of props.trajectories) {
+        if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
+        const s = sampleAt(tr, t);
         ctx.beginPath();
-        ctx.arc(cx, cz, 2.5, 0, Math.PI * 2);
+        ctx.arc(wx(s.x), wz(-s.z), 1.6, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -279,6 +326,103 @@ export default defineComponent({
         ctx.closePath();
         ctx.stroke();
       }
+
+      // Enlarged minimap overlay: full-map view with ship trails + glyphs.
+      const zc = zoomCanvas.value;
+      if (zc) {
+        const zctx = zc.getContext("2d");
+        if (zctx) {
+          const zw = 640;
+          zctx.clearRect(0, 0, zw, zw);
+          if (minimapImage) {
+            zctx.drawImage(minimapImage, 0, 0, zw, zw);
+          } else {
+            zctx.fillStyle = "rgba(5, 8, 15, 0.9)";
+            zctx.fillRect(0, 0, zw, zw);
+          }
+          const zwx = (x: number) => ((x - full.minX) / (full.maxX - full.minX || 1)) * zw;
+          const zwz = (zScene: number) => ((full.maxZ + zScene) / (full.maxZ - full.minZ || 1)) * zw;
+          if (minimapShowTrails.value) {
+            for (const tr of props.trajectories) {
+              if (tr.kind?.entityType !== 2 || tr.samples.length < 8) continue;
+              const role = resolveRoleQuick(tr);
+              zctx.strokeStyle =
+                role === "enemy"
+                  ? "rgba(204, 51, 51, 0.5)"
+                  : role === "self"
+                    ? "rgba(255, 255, 255, 0.6)"
+                    : "rgba(60, 180, 120, 0.5)";
+              zctx.lineWidth = 1.5;
+              zctx.beginPath();
+              tr.samples.forEach((s, i) => {
+                const px = zwx(s.x);
+                const py = zwz(-s.z);
+                if (i === 0) zctx.moveTo(px, py);
+                else zctx.lineTo(px, py);
+              });
+              zctx.stroke();
+            }
+          }
+          for (const m of shipMarkers) {
+            const role = m.userData.role as TeamRole | undefined;
+            const dead =
+              (m.userData.deathTime as number | null) != null &&
+              t >= (m.userData.deathTime as number);
+            const cx = zwx(m.position.x);
+            const cz = zwz(m.position.z);
+            if (dead) {
+              zctx.fillStyle = "rgba(150,150,150,0.7)";
+              zctx.beginPath();
+              zctx.arc(cx, cz, 5, 0, Math.PI * 2);
+              zctx.fill();
+              continue;
+            }
+            const color = role ? TEAM_COLOR[role] : 0x888888;
+            drawShipGlyph(zctx, m.userData.type as string | undefined, cx, cz, 14, color);
+          }
+          // Aircraft dots + patrol paths (thin cyan lines).
+          zctx.fillStyle = "rgba(120, 210, 255, 0.85)";
+          for (const tr of props.trajectories) {
+            if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
+            const s = sampleAt(tr, t);
+            zctx.beginPath();
+            zctx.arc(zwx(s.x), zwz(-s.z), 4, 0, Math.PI * 2);
+            zctx.fill();
+            // patrol path: polyline of the aircraft's route
+            zctx.strokeStyle = "rgba(120, 210, 255, 0.35)";
+            zctx.lineWidth = 1;
+            zctx.beginPath();
+            tr.samples.forEach((ss, i) => {
+              const px = zwx(ss.x);
+              const py = zwz(-ss.z);
+              if (i === 0) zctx.moveTo(px, py);
+              else zctx.lineTo(px, py);
+            });
+            zctx.stroke();
+          }
+        }
+      }
+    }
+
+    /** Quick team-role lookup for the zoomed minimap trails (by shipId join,
+     *  same fallbacks as the markers but without the roster-assignment pass). */
+    function resolveRoleQuick(tr: EntityTrajectory): TeamRole {
+      const sid = tr.kind?.shipId;
+      if (sid != null) {
+        const entries = props.vehicles.filter((v) => v.shipId === sid);
+        if (entries.length === 1) return roleFromRelation(entries[0].relation);
+      }
+      // Fallback: entity-id spawn order (first half of ships = allies).
+      const ids = props.trajectories
+        .filter(
+          (x) =>
+            x.kind?.entityType === 2 &&
+            (x.kind?.shipId != null || x.samples.length >= 80),
+        )
+        .map((x) => x.entityId)
+        .sort((a, b) => a - b);
+      const idx = ids.indexOf(tr.entityId);
+      return idx >= 0 && idx < ids.length / 2 ? "ally" : "enemy";
     }
 
     function frustumCorners(cam: THREE.PerspectiveCamera): THREE.Vector3[] {
@@ -294,6 +438,69 @@ export default defineComponent({
         corners.push(cam.position.clone().add(ray.multiplyScalar(t)));
       }
       return corners;
+    }
+
+    /** Draw one of the five WoWS class glyphs on a canvas context, centered at
+     *  (x, y), `size` px tall, in the given color. Same geometry as the
+     *  ShipTypeIcon component (27×27 atlas), normalized to the requested size. */
+    function drawShipGlyph(
+      ctx: CanvasRenderingContext2D,
+      type: string | undefined,
+      x: number,
+      y: number,
+      size: number,
+      color: number,
+    ) {
+      const s = size / 27;
+      const P = (pts: [number, number][]) => {
+        ctx.beginPath();
+        ctx.moveTo(x + pts[0][0] * s, y + pts[0][1] * s);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(x + pts[i][0] * s, y + pts[i][1] * s);
+        ctx.closePath();
+        ctx.fill();
+      };
+      ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+      const t = type?.toLowerCase() ?? "";
+      if (t.includes("destroyer")) {
+        P([[4.5, 8.5], [23, 13], [4.5, 17.5]]);
+      } else if (t.includes("battleship")) {
+        P([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
+        // two parallel diagonals (drawn thinner, darker)
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(1, s);
+        ctx.beginPath();
+        ctx.moveTo(x + 13.5 * s, y + 8.5 * s);
+        ctx.lineTo(x + 8.5 * s, y + 17.5 * s);
+        ctx.moveTo(x + 17 * s, y + 8.5 * s);
+        ctx.lineTo(x + 12.5 * s, y + 17.5 * s);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (t.includes("aircarrier") || t.includes("aircar")) {
+        P([[4.5, 8], [14.5, 8], [16, 8], [23, 13], [16, 18], [14.5, 18], [4.5, 18]]);
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(1, s);
+        ctx.beginPath();
+        ctx.moveTo(x + 4.5 * s, y + 13 * s);
+        ctx.lineTo(x + 14.5 * s, y + 13 * s);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (t.includes("submarine")) {
+        P([[4, 8.5], [5.5, 8.5], [5.5, 17.5], [4, 17.5]]);
+        P([[8.5, 9], [23, 13], [8.5, 17]]);
+      } else {
+        // cruiser (default) — pentagon + one diagonal
+        P([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(1, s);
+        ctx.beginPath();
+        ctx.moveTo(x + 14.5 * s, y + 8.5 * s);
+        ctx.lineTo(x + 9.5 * s, y + 17.5 * s);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
 
     /** Tokens used to cancel in-flight async marker loads when actors are
@@ -325,9 +532,22 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+      if (planeCloud) {
+        scene.remove(planeCloud);
+        planeCloud.geometry.dispose();
+        (planeCloud.material as THREE.Material).dispose();
+        planeCloud = null;
+      }
       allyAlive.value = allyTotal.value;
       enemyAlive.value = enemyTotal.value;
       capStatus.value = [0, 0, 0];
+      capDisplay.value = [];
+      allyScore.value = 0;
+      enemyScore.value = 0;
+      killFeed.value = [];
+      reportedSinks.clear();
+      minimapZoom.value = false;
+      selectedEntityId.value = null;
     }
 
     /** Remove a previously-loaded map terrain model. */
@@ -352,10 +572,11 @@ export default defineComponent({
      *  terrain edge blends into open sea instead of clipping. Opaque on
      *  purpose — no blend-order interaction with the transparent terrain. */
     let waterFloor: THREE.Mesh | null = null;
+    let seaSurface: THREE.Mesh | null = null;
     function ensureWaterFloor() {
       const scene = api.value?.scene;
       if (!scene || waterFloor) return;
-      const mat = new THREE.MeshBasicMaterial({ color: 0x0f2c54 });
+      const mat = new THREE.MeshBasicMaterial({ color: 0x05121f });
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(24000, 24000), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.y = -40;
@@ -363,6 +584,21 @@ export default defineComponent({
       mesh.raycast = () => {}; // never intercept picks
       scene.add(mesh);
       waterFloor = mesh;
+      // Translucent sea surface at y≈0: hides the seabed tint behind it and
+      // lets islands poke through, while keeping ship wake depth readable.
+      const seaMat = new THREE.MeshBasicMaterial({
+        color: 0x071827,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+      });
+      const sea = new THREE.Mesh(new THREE.PlaneGeometry(24000, 24000), seaMat);
+      sea.rotation.x = -Math.PI / 2;
+      sea.position.y = 0.6;
+      sea.renderOrder = 5;
+      sea.raycast = () => {};
+      scene.add(sea);
+      seaSurface = sea;
     }
 
     /** Attempt to load the terrain GLB for the current mapId and restyle it as
@@ -484,7 +720,7 @@ export default defineComponent({
       const diagonal = Math.sqrt(w * w + d * d);
       ctrl.target.set(cx, 0, cz);
       ctrl.minDistance = span * 0.08;    // closest: see ship silhouettes
-      ctrl.maxDistance = diagonal * 0.9; // farthest: ~80% map in viewport
+      ctrl.maxDistance = diagonal * 1.6; // farthest: whole map fits viewport
       ctrl.maxPolarAngle = Math.PI / 2.1;
       // Start closer — roughly half the default distance so islands fill
       // more of the viewport on open.
@@ -610,15 +846,51 @@ export default defineComponent({
       // Encyclopedia as the fallback pool for tier/nation/type resolution.
       const encSpecs: ShipModelSpec[] = [...props.encyclopedia.values()];
 
-      // Ships = EntityCreate type 2 with a healthy number of position samples
-      // (transient entities like planes/torpedoes have far fewer). Sorted by
-      // entity id — the client spawns team A before team B, so this order is
-      // the fallback team-split heuristic when a roster join fails.
-      const shipTrajs = props.trajectories.filter(
-        (t) => t.kind?.entityType === 2 && t.samples.length >= 80,
-      );
+      // Ships = EntityCreate type 2 with a roster shipId (the reliable
+      // marker), or enough position samples to be a real vessel rather than a
+      // transient (planes/torpedoes have far fewer). Ships that sank early may
+      // carry very few samples — the shipId join keeps them rendered and
+      // counted in the scoreboard. Sorted by entity id — the client spawns
+      // team A before team B, so this order is the fallback team-split
+      // heuristic when a roster join fails.
+      const isShip = (t: EntityTrajectory) =>
+        t.kind?.entityType === 2 &&
+        (t.kind?.shipId != null || t.samples.length >= 80);
+      const shipTrajs = props.trajectories.filter(isShip);
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
       const assignments = resolveRosterAssignments(shipTrajs);
+
+      // Aircraft (entityType 4): rendered as a lightweight THREE.Points cloud
+      // (one vertex per squadron), colored cyan. Positions update per frame.
+      const planeTrajs = props.trajectories.filter(
+        (t) => t.kind?.entityType === 4 && t.samples.length >= 2,
+      );
+      if (planeTrajs.length > 0) {
+        const positions = new Float32Array(planeTrajs.length * 3);
+        const colors = new Float32Array(planeTrajs.length * 3);
+        for (let i = 0; i < planeTrajs.length; i++) {
+          positions[i * 3 + 1] = -9999; // hidden until placed
+          colors[i * 3] = 0.45;
+          colors[i * 3 + 1] = 0.8;
+          colors[i * 3 + 2] = 1.0;
+        }
+        const pGeo = new THREE.BufferGeometry();
+        pGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        pGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        const pMat = new THREE.PointsMaterial({
+          size: 5,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.9,
+          sizeAttenuation: false,
+          depthWrite: false,
+        });
+        const points = new THREE.Points(pGeo, pMat);
+        points.userData.planeEntityIds = planeTrajs.map((t) => t.entityId);
+        points.userData.planeTrajs = planeTrajs;
+        scene.add(points);
+        planeCloud = points;
+      }
 
       const newLabels: ShipLabel[] = [];
 
@@ -626,7 +898,7 @@ export default defineComponent({
         if (traj.samples.length < 2) continue;
         // Only render ships (EntityCreate type 2 with many samples); skip
         // zones/avatars/planes/torpedoes.
-        if (traj.kind?.entityType !== 2 || traj.samples.length < 80) continue;
+        if (!isShip(traj)) continue;
 
         const { role, shipInfo, entry: rosterEntry } = resolveMarkerContext(
           traj,
@@ -634,17 +906,8 @@ export default defineComponent({
           assignments,
         );
         const color = TEAM_COLOR[role];
-
-        // Trajectory line on the XZ plane (y=0.5 to hover above the grid).
-        // World z (north+) is negated into three.js space — the baked map
-        // GLBs use the same right-handed convention (wowsunpack exports
-        // z' = -z), so ships line up with islands instead of mirroring.
-        const pts = traj.samples.map((s) => new THREE.Vector3(s.x, 0.5, -s.z));
-        const geom = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
-        const line = new THREE.Line(geom, mat);
-        scene.add(line);
-        trajectoryLines.push(line);
+        const offline = shipOfflineEntry(rosterEntry?.shipId ?? traj.kind?.shipId);
+        const shipType = shipInfo?.type ?? offline?.type ?? null;
 
         // Marker: small cone + sphere so the heading is visible even before
         // the ship model loads. Cone points +Z (forward) at yaw 0.
@@ -662,6 +925,7 @@ export default defineComponent({
         marker.add(dot);
         marker.userData.entityId = traj.entityId;
         marker.userData.role = role;
+        marker.userData.type = shipType;
         marker.userData.modelLoaded = false;
         marker.userData.isDot = true;
         marker.userData.deathTime = traj.deathTime ?? null;
@@ -709,7 +973,6 @@ export default defineComponent({
         // Name/tier/type: the WG encyclopedia when it knows the ship, else the
         // complete offline DB (GameParams + game gettext catalogs — covers
         // event/clone ships), else the baked model DB's English base name.
-        const offline = shipOfflineEntry(rosterEntry?.shipId ?? traj.kind?.shipId);
         const shipName =
           (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
           shipNameFromOfflineDb(rosterEntry?.shipId ?? traj.kind?.shipId, dataLang) ??
@@ -720,14 +983,20 @@ export default defineComponent({
         // Max HP: the peak of the entity's own HP stream — authoritative for
         // the battle's actual scaling (event/asymmetric modes cut bot HP to a
         // fraction of the encyclopedia hull value; upgraded hulls raise it).
-        // Without an HP stream we show no HP line at all: rendering the
-        // encyclopedia's stock hull value as if it were live battle HP would
-        // fabricate data.
+        // Ships without any HP stream fall back to the encyclopedia hull value
+        // so their label still shows a (static) health line.
         const streamMax =
           traj.hpSamples && traj.hpSamples.length > 0
             ? Math.max(...traj.hpSamples.map((s) => s.value))
             : null;
-        const maxHp = streamMax;
+        const dp = shipInfo?.defaultProfile as
+          | Record<string, Record<string, unknown>>
+          | undefined;
+        const encHealth =
+          dp?.hull?.health != null && typeof dp.hull.health === "number"
+            ? dp.hull.health
+            : null;
+        const maxHp = streamMax ?? encHealth;
         newLabels.push({
           entityId: traj.entityId,
           role,
@@ -824,6 +1093,20 @@ export default defineComponent({
      *  their materials desaturated to a faint grey tint. */
     function updateMarkersAt(t: number) {
       const labels = shipLabels.value;
+      // Alive counts are recomputed every frame from the markers' death times
+      // (not incremented) so scrubbing backward restores sunk ships.
+      let allyAliveNow = 0;
+      let enemyAliveNow = 0;
+      for (const m of shipMarkers) {
+        const dt = m.userData.deathTime as number | null;
+        if (dt == null || t < dt) {
+          const role = m.userData.role as TeamRole;
+          if (role === "ally" || role === "self") allyAliveNow++;
+          else if (role === "enemy") enemyAliveNow++;
+        }
+      }
+      allyAlive.value = allyAliveNow;
+      enemyAlive.value = enemyAliveNow;
       for (let i = 0; i < shipMarkers.length; i++) {
         const marker = shipMarkers[i];
         const label = labels[i];
@@ -845,7 +1128,8 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        // After death, freeze at the last sample position (no more interpolation).
+        // After death the ship is gone from the water: hide the marker and
+        // label entirely (the minimap still shows a grey dot).
         const deathTime = marker.userData.deathTime as number | null;
         const dead = deathTime != null && t >= deathTime;
         if (label) label.dead = dead;
@@ -861,6 +1145,33 @@ export default defineComponent({
         const hasModel = marker.userData.modelLoaded as boolean;
         const hasDot = marker.userData.isDot as boolean;
         if (!hasModel && !hasDot) continue;
+        if (dead) {
+          // Sunk: remove from the 3D scene.
+          marker.visible = false;
+          if (label) label.visible = false;
+          if (!marker.userData._countedDead) {
+            marker.userData._countedDead = true;
+            const role = marker.userData.role as TeamRole;
+            // Kill feed + score tick. The killer is unknown from the replay
+            // stream, so the feed names the victim only.
+            if (!reportedSinks.has(entityId)) {
+              reportedSinks.add(entityId);
+              const who = label?.name ?? `#${entityId}`;
+              const victimRole = role === "ally" ? "enemy" : "ally";
+              const feedId = ++killSeq;
+              killFeed.value.unshift({
+                id: feedId,
+                text: who,
+                role: victimRole,
+              });
+              if (killFeed.value.length > 4) killFeed.value.pop();
+              window.setTimeout(() => {
+                killFeed.value = killFeed.value.filter((k) => k.id !== feedId);
+              }, 4000);
+            }
+          }
+          continue;
+        }
         marker.visible = true;
         marker.position.set(s.x, 0, -s.z);
         marker.rotation.y = Math.PI - s.yaw;
@@ -869,43 +1180,141 @@ export default defineComponent({
           if (currentHp != null) label.hp = currentHp;
           label.maxHp ??= currentHp ?? label.maxHp;
         }
-        if (dead && !marker.userData._countedDead) {
-          marker.userData._countedDead = true;
-          const role = marker.userData.role as TeamRole;
-          if (role === "ally") allyAlive.value = Math.max(0, allyAlive.value - 1);
-          else if (role === "enemy") enemyAlive.value = Math.max(0, enemyAlive.value - 1);
+      }
+      // Capture-zone ownership + estimated score at this instant.
+      updateCapsAndScore(t);
+      // Aircraft positions at this instant.
+      if (planeCloud) {
+        const trajs = planeCloud.userData.planeTrajs as EntityTrajectory[];
+        const attr = planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute;
+        for (let i = 0; i < trajs.length; i++) {
+          const s = sampleAt(trajs[i], t);
+          const visible =
+            s != null &&
+            ((trajs[i].kind?.creationTime ?? -1) < 0 || t >= (trajs[i].kind?.creationTime ?? -1));
+          if (visible && s) {
+            attr.setXYZ(i, s.x, 2, -s.z);
+          } else {
+            attr.setXYZ(i, 0, -9999, 0);
+          }
         }
-
-        // Grey out dead ships: desaturate every child material toward a faint
-        // grey while keeping a hint of the role colour so teams remain readable.
-        if (dead) {
-          const role = marker.userData.role as TeamRole;
-          const { baseColor, fresnelColor } = holoColorsFor(role);
-          // Blend role colours with grey, reduce opacity.
-          const deadBase = new THREE.Color(baseColor).lerp(new THREE.Color(0x444444), 0.75);
-          const deadFresnel = new THREE.Color(fresnelColor).lerp(new THREE.Color(0x666666), 0.65);
-          marker.traverse((o) => {
-            const m = o as THREE.Mesh;
-            const mat = m.material as THREE.ShaderMaterial | THREE.MeshBasicMaterial | null;
-            if (!mat) return;
-            if ((mat as THREE.ShaderMaterial).uniforms) {
-              const u = (mat as THREE.ShaderMaterial).uniforms;
-              if (u.baseColor) {
-                (u.baseColor.value as THREE.Color).set(deadBase);
-              }
-              if (u.fresnelColor) {
-                (u.fresnelColor.value as THREE.Color).set(deadFresnel);
-              }
-              mat.opacity = 0.35;
-            } else if (mat instanceof THREE.MeshBasicMaterial) {
-              mat.color.set(0x444444);
-              mat.opacity = 0.35;
-            }
-          });
-        }
+        attr.needsUpdate = true;
       }
       // Update screen-space positions of floating labels from marker world positions.
       updateLabelPositions();
+    }
+
+    /** Time a team needs to fully capture a point (domination standard).
+     *  The replay only logs ownership CHANGES (not the tick-by-tick progress),
+     *  so the in-progress window is approximated as [changeTime - CAP_TIME,
+     *  changeTime] with a live countdown. */
+    const CAP_TIME = 40;
+
+    /** Capture-zone display state per zone (ownership + capture progress),
+     *  recomputed every frame from the zones' capSamples. */
+    const capDisplay = ref<
+      { owner: number; capturing: boolean; progress: number; remain: number }[]
+    >([]);
+
+    /** Derive cap ownership (0/1/2), per-zone capture progress, and the
+     *  estimated score at playback time t from the zones' capSamples. */
+    function updateCapsAndScore(t: number) {
+      const zones = capZones.value;
+      let allyCapPts = 0;
+      let enemyCapPts = 0;
+      const display: { owner: number; capturing: boolean; progress: number; remain: number }[] = [];
+      for (let i = 0; i < zones.length && i < 3; i++) {
+        const samples = zones[i].capSamples ?? [];
+        let owner = 0;
+        let lastChange = -Infinity;
+        for (const s of samples) {
+          if (s.time <= t) {
+            owner = s.value;
+            lastChange = s.time;
+          } else {
+            break;
+          }
+        }
+        if (owner === 1) allyCapPts += 3;
+        else if (owner === 2) enemyCapPts += 3;
+        // Capture-in-progress window: the last change completed the capture;
+        // the 40s before it the zone was being captured by that team.
+        const capturing = owner !== 0 && t >= lastChange - CAP_TIME && t < lastChange;
+        if (capturing) {
+          if (owner === 1) allyCapPts += 1;
+          else enemyCapPts += 1;
+        }
+        capStatus.value[i] = owner;
+        display.push({
+          owner,
+          capturing,
+          progress: capturing
+            ? Math.max(0, Math.min(1, (t - (lastChange - CAP_TIME)) / CAP_TIME))
+            : owner !== 0 ? 1 : 0,
+          remain: capturing ? Math.max(0, Math.ceil(lastChange - t)) : 0,
+        });
+      }
+      capDisplay.value = display;
+      // Score = kills (deaths of the opposing side, already counted via the
+      // sink feed) + current cap points.
+      const allyKills = enemyTotal.value - enemyAlive.value;
+      const enemyKills = allyTotal.value - allyAlive.value;
+      allyScore.value = allyKills + allyCapPts;
+      enemyScore.value = enemyKills + enemyCapPts;
+    }
+
+    /** First-person camera: keep the selected ship centered, camera trailing
+     *  behind it along its heading. Called every render frame.
+     *
+     *  The marker's model points along local +Z and carries rotation.y =
+     *  PI - yaw, so its world forward is (sin(yaw), 0, -cos(yaw)) in
+     *  three.js space (north = -Z). The camera sits behind that: minus the
+     *  forward vector. */
+    function followSelected() {
+      const id = selectedEntityId.value;
+      if (id == null) return;
+      const ctrl = api.value?.controls;
+      const cam = api.value?.camera;
+      if (!ctrl || !cam) return;
+      const marker = shipMarkers.find((m) => m.userData.entityId === id);
+      if (!marker || !marker.visible) return;
+      const pos = marker.position;
+      const yaw = marker.rotation.y;
+      const dist = 90;
+      const behind = new THREE.Vector3(
+        pos.x - Math.sin(yaw) * dist,
+        35,
+        pos.z + Math.cos(yaw) * dist,
+      );
+      cam.position.copy(behind);
+      ctrl.target.copy(pos);
+      ctrl.update();
+    }
+
+    /** Select a ship by clicking (either its 3D marker or its label). Clicking
+     *  the empty scene clears the selection. */
+    function selectShip(entityId: number | null) {
+      selectedEntityId.value = entityId;
+    }
+
+    /** Simple label anti-overlap: visible labels are sorted by screen y and
+     *  pushed down when they would cover an earlier one. */
+    function avoidLabelOverlap() {
+      const labels = shipLabels.value;
+      const vis = labels.filter((l) => l.visible);
+      vis.sort((a, b) => a.y - b.y);
+      const placed: { x: number; y: number; w: number; h: number }[] = [];
+      for (const l of vis) {
+        const w = 120;
+        const h = 46;
+        let y = l.y;
+        let guard = 0;
+        while (guard++ < 8 && placed.some((p) => Math.abs(p.x - l.x) < (p.w + w) / 2 && y < p.y + p.h && y + h > p.y)) {
+          y += h + 2;
+        }
+        l.y = y;
+        placed.push({ x: l.x, y, w, h });
+      }
     }
 
     /** Project every visible marker's world position into screen pixels and
@@ -934,6 +1343,7 @@ export default defineComponent({
         label.y = (-_projVec.y * hh) + hh;
         label.visible = _projVec.z < 1;
       }
+      avoidLabelOverlap();
     }
 
     /** Interpolate a sample at time t (linear between neighbors). */
@@ -1076,12 +1486,18 @@ export default defineComponent({
         (waterFloor.material as THREE.Material).dispose();
         waterFloor = null;
       }
+      if (seaSurface) {
+        api.value?.scene.remove(seaSurface);
+        seaSurface.geometry.dispose();
+        (seaSurface.material as THREE.Material).dispose();
+        seaSurface = null;
+      }
       clearShipMarkerCache();
     });
 
     return () => (
       <div class="holo-map">
-        <div ref={container} class="holo-map__canvas" />
+        <div ref={container} class="holo-map__canvas" onClick={() => selectShip(null)} />
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
         <div class="holo-map__labels" aria-hidden="true">
           {shipLabels.value.map((lbl) => (
@@ -1092,12 +1508,14 @@ export default defineComponent({
                 `holo-label--${lbl.role}`,
                 lbl.dead ? "holo-label--dead" : "",
                 lbl.visible ? "" : "holo-label--hidden",
+                selectedEntityId.value === lbl.entityId ? "holo-label--selected" : "",
               ]}
               style={{
                 left: `${lbl.x}px`,
                 top: `${lbl.y}px`,
                 borderColor: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
               }}
+              onClick={(e) => { e.stopPropagation(); selectShip(lbl.entityId); }}
             >
               <span class="holo-label__name" title={lbl.name}>{lbl.name}</span>
               <span class="holo-label__ship">
@@ -1135,17 +1553,48 @@ export default defineComponent({
           <div class="holo-map__scorebar">
             <span class="holo-map__score-team holo-map__score--ally">
               <span class="holo-map__score-dot" style="background:#3cb478" />
-              {allyAlive.value}/{allyTotal.value}
+              <strong class="holo-map__score-num">{allyScore.value}</strong>
+              <span class="holo-map__score-alive">{allyAlive.value}/{allyTotal.value}</span>
             </span>
             <span class="holo-map__score-caps">
-              {["A","B","C"].map((l,i) => (
-                <span class={["holo-map__cap", capStatus.value[i] === 1 ? "holo-map__cap--ally" : capStatus.value[i] === 2 ? "holo-map__cap--enemy" : ""]}>{l}</span>
-              ))}
+              {["A","B","C"].map((l,i) => {
+                const c = capDisplay.value[i];
+                const owner = c?.owner ?? 0;
+                return (
+                  <span
+                    class={[
+                      "holo-map__cap",
+                      owner === 1 ? "holo-map__cap--ally" : owner === 2 ? "holo-map__cap--enemy" : "",
+                      c?.capturing ? "holo-map__cap--capturing" : "",
+                    ]}
+                    title={c?.capturing ? `${l} 占领中 ${c?.remain}s` : owner === 0 ? "中立" : owner === 1 ? "我方控制" : "敌方控制"}
+                  >
+                    {l}
+                    {c?.capturing ? <em class="holo-map__cap-timer">{c.remain}s</em> : null}
+                  </span>
+                );
+              })}
             </span>
             <span class="holo-map__score-team holo-map__score--enemy">
-              {enemyAlive.value}/{enemyTotal.value}
+              <strong class="holo-map__score-num">{enemyScore.value}</strong>
+              <span class="holo-map__score-alive">{enemyAlive.value}/{enemyTotal.value}</span>
               <span class="holo-map__score-dot" style="background:#cc3333" />
             </span>
+            <span class="holo-map__score-time" onClick={toggleTimeMode} title="点击切换 已播放/剩余/总时长">
+              {timeMode.value === 1 ? "-" : ""}{displayTime()}
+            </span>
+          </div>
+        ) : null}
+        {/* Kill feed (sink notifications) */}
+        {killFeed.value.length > 0 ? (
+          <div class="holo-map__killfeed">
+            {killFeed.value.map((k) => (
+              <div key={k.id} class={["holo-map__kill", `holo-map__kill--${k.role}`]}>
+                <span class="holo-map__kill-cross">✕</span>
+                <span class="holo-map__kill-name">{k.text}</span>
+                <span class="holo-map__kill-pts">+1</span>
+              </div>
+            ))}
           </div>
         ) : null}
         <canvas
@@ -1153,6 +1602,7 @@ export default defineComponent({
           class="holo-map__minimap"
           width={160}
           height={160}
+          onClick={() => { minimapZoom.value = true; }}
           style={{
             width: "160px",
             height: "160px",
@@ -1161,9 +1611,28 @@ export default defineComponent({
             bottom: "8px",
             zIndex: "3",
             borderRadius: "4px",
-            pointerEvents: "none",
+            pointerEvents: "auto",
+            cursor: "zoom-in",
           }}
         />
+        {/* Enlarged minimap overlay: trails + class glyphs, closeable */}
+        {minimapZoom.value ? (
+          <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
+            <div class="holo-map__mmzoom-head">
+              <span>{t("replay.minimap.zoom")}</span>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={minimapShowTrails.value}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => { minimapShowTrails.value = (e.target as HTMLInputElement).checked; }}
+                />
+                {t("replay.minimap.trails")}
+              </label>
+            </div>
+            <canvas ref={zoomCanvas} width={640} height={640} class="holo-map__mmzoom-canvas" />
+          </div>
+        ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
             <button class="holo-map__play" onClick={togglePlay}>
