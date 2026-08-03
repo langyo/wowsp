@@ -752,8 +752,15 @@ fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Explosio
         let x = f32::from_le_bytes(args[off..off + 4].try_into().unwrap());
         let y = f32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
         let z = f32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        let params_id = u32::from_le_bytes(args[off + 12..off + 16].try_into().unwrap());
         off += 17; // pos(12) + paramsID(4) + hitType(1)
-        out.push(wowsp_tauri_shared::ExplosionEvent { time, x, y, z });
+        out.push(wowsp_tauri_shared::ExplosionEvent {
+            time,
+            x,
+            y,
+            z,
+            params_id,
+        });
     }
     out
 }

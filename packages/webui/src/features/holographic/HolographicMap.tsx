@@ -1,6 +1,7 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
 import planeTypesRaw from "../../data/plane_types.json";
+import shellTypesRaw from "../../data/shell_types.json";
 
 import { useThreeScene } from "./useThreeScene";
 import {
@@ -52,6 +53,34 @@ const PLANE_COLORS: Record<string, number> = {
   scout: 0x78d2ff,
   attack: 0x96f2d7,
 };
+
+/** Shell encyclopedia (paramsId → ammo/tint) baked from GameParams by
+ *  `scripts/model_convert/extract_shells.py`. */
+const SHELL_TYPES = shellTypesRaw as Record<
+  string,
+  { name: string; ammo: string; tint: number[] | null }
+>;
+/** Shell-flight colors per ammo type: HE yellow, AP silver, SAP grey. */
+const SHELL_COLORS: Record<string, number> = {
+  HE: 0xffcc33,
+  AP: 0xc8d0e0,
+  SAP: 0x9aa0a8,
+  CS: 0xffa07a,
+};
+
+/** Resolve a shell's ammo family (+ color) from its GameParams id. SAP shells
+ *  are stored as AP in the game data — detect them by name. */
+function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
+  if (paramsId == null) return { ammo: "unknown", color: 0xffe08a };
+  const info = SHELL_TYPES[String(paramsId)];
+  if (!info) return { ammo: "unknown", color: 0xffe08a };
+  const ammo =
+    info.ammo === "AP" && info.name.toUpperCase().includes("SAP")
+      ? "SAP"
+      : info.ammo;
+  const color = SHELL_COLORS[ammo] ?? 0xffe08a;
+  return { ammo, color };
+}
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -230,6 +259,7 @@ export default defineComponent({
       dots: THREE.Points;
       flash: THREE.Mesh;
       halo: THREE.Mesh;
+      shell: THREE.Mesh;
       t0: number;
       t1: number;
       from: () => THREE.Vector3 | null;
@@ -248,6 +278,8 @@ export default defineComponent({
     }[] = [];
     /** Transient explosion rings (splash hits). */
     let explosionFx: { ring: THREE.Mesh; born: number }[] = [];
+    const _shellUp = new THREE.Vector3(0, 1, 0);
+    const _shellDir = new THREE.Vector3();
     /** Recorder aim line to the currently locked target (SetWeaponLock). */
     let lockLine: THREE.Mesh | null = null;
     /** Big ring over the locked target (same render path as splash rings). */
@@ -716,6 +748,9 @@ export default defineComponent({
         scene.remove(st.dots);
         st.dots.geometry.dispose();
         (st.dots.material as THREE.Material).dispose();
+        scene.remove(st.shell);
+        st.shell.geometry.dispose();
+        (st.shell.material as THREE.Material).dispose();
         scene.remove(st.flash);
         st.flash.geometry.dispose();
         (st.flash.material as THREE.Material).dispose();
@@ -1157,16 +1192,21 @@ export default defineComponent({
         depthWrite: false,
       });
       const curvePts = new Float32Array(28 * 3);
+      // Shared cone geometry for in-flight shells (tip pointing +Y; oriented
+      // along the trajectory tangent each frame for a smooth補间).
+      const shellGeom = new THREE.ConeGeometry(3, 12, 8);
       for (const e of props.explosions) {
         const match = shipForImpact(e);
         if (!match) continue;
+        // Per-ammo colors: HE yellow, AP silver, SAP grey.
+        const ammo = shellAmmoOf(e.paramsId);
         const geom = new THREE.BufferGeometry();
         geom.setAttribute("position", new THREE.BufferAttribute(curvePts, 3));
         // Manual BufferGeometry has no bounding sphere; without computing one
         // (or disabling culling) the frustum culler skips these lines.
         geom.computeBoundingSphere();
         const mat = new THREE.LineBasicMaterial({
-          color: 0xffe08a,
+          color: ammo.color,
           transparent: true,
           opacity: 0.9,
           depthWrite: false,
@@ -1180,7 +1220,7 @@ export default defineComponent({
         dotGeo.setAttribute("position", new THREE.BufferAttribute(curvePts, 3));
         dotGeo.computeBoundingSphere();
         const dotMat = new THREE.PointsMaterial({
-          color: 0xffe08a,
+          color: ammo.color,
           size: 3.5,
           sizeAttenuation: false,
           transparent: true,
@@ -1190,6 +1230,17 @@ export default defineComponent({
         const dots = new THREE.Points(dotGeo, dotMat);
         dots.visible = false;
         scene.add(dots);
+        // In-flight shell: a pointed cone sliding along the arc (interpolated
+        // every frame so playback looks smooth).
+        const shellMat = new THREE.MeshBasicMaterial({
+          color: ammo.color,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+        });
+        const shell = new THREE.Mesh(shellGeom, shellMat);
+        shell.visible = false;
+        scene.add(shell);
         const flash = new THREE.Mesh(flashGeom, flashMat);
         flash.position.set(e.x, 1, -e.z);
         flash.visible = false;
@@ -1203,6 +1254,7 @@ export default defineComponent({
           dots,
           flash,
           halo: flashHalo,
+          shell,
           t0: match.t0,
           t1: e.time,
           from: () => {
@@ -1754,7 +1806,8 @@ export default defineComponent({
       }
       // Shell traces: ballistic arc from the firing ship (updated live) to
       // the impact point, shown during [t0, t1]; the impact flash lingers
-      // 1s past the impact.
+      // 1s past the impact. The in-flight shell cone is interpolated along
+      // the arc every frame (smooth補间 during playback).
       for (const st of shellTraces) {
         const inFlight = t >= st.t0 && t <= st.t1;
         const flashOn = t >= st.t1 && t <= st.t1 + 1;
@@ -1762,6 +1815,7 @@ export default defineComponent({
         st.halo.visible = flashOn;
         st.line.visible = inFlight;
         st.dots.visible = inFlight;
+        st.shell.visible = inFlight;
         if (inFlight) {
           const from = st.from();
           if (from) {
@@ -1780,9 +1834,26 @@ export default defineComponent({
             attr.needsUpdate = true;
             const dotAttr = st.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
             dotAttr.needsUpdate = true;
+            // Shell position + orientation: interpolate k across the flight,
+            // tip pointing along the local tangent.
+            const k = Math.min(1, Math.max(0, (t - st.t0) / (st.t1 - st.t0)));
+            const kx = k * 2 - 1;
+            const px = from.x + (st.to.x - from.x) * k;
+            const py = Math.max(0, st.h * (1 - kx * kx));
+            const pz = from.z + (st.to.z - from.z) * k;
+            st.shell.position.set(px, py, pz);
+            const k2 = Math.min(1, k + 0.03);
+            const kx2 = k2 * 2 - 1;
+            const tx = from.x + (st.to.x - from.x) * k2 - px;
+            const ty = Math.max(0, st.h * (1 - kx2 * kx2)) - py;
+            const tz = from.z + (st.to.z - from.z) * k2 - pz;
+            const len = Math.hypot(tx, ty, tz) || 1;
+            _shellDir.set(tx / len, ty / len, tz / len);
+            st.shell.quaternion.setFromUnitVectors(_shellUp, _shellDir);
           } else {
             st.line.visible = false;
             st.dots.visible = false;
+            st.shell.visible = false;
           }
         }
       }
