@@ -106,5 +106,9 @@
   "minimap": {
     "zoom": "Zoomed map",
     "trails": "Ship trails"
+  },
+  "labels": {
+    "hide": "Hide labels",
+    "show": "Show labels"
   }
 }
