@@ -57,6 +57,26 @@ const PACKET_PLAYER_POSITION_LEGACY: u32 = 0x2b;
 /// other transient entities on current clients. Same 32-byte layout as
 /// PlayerPosition.
 const PACKET_POSITION_AUX: u32 = 0x2a;
+/// Packet type for the recorder's own-player entity creation ("CellPlayerCreate"
+/// in Monstrofil's `replays_unpack`). The avatar (the recorder's own player)
+/// is created with this packet rather than EntityCreate (0x05); same layout.
+const PACKET_CELL_PLAYER_CREATE: u32 = 0x01;
+/// Packet type for entity method calls (0x08). Battle events that have no
+/// dedicated entity (shell explosions, torpedo launches) arrive here as
+/// method calls on the avatar (the recorder's own player entity) and the
+/// firing vehicle. Method ids are per-entity-type tables:
+///   Avatar client method 126 = receiveExplosions (world-space impact points)
+///   Vehicle client method  47 = shootTorpedo (launch direction vector)
+const PACKET_ENTITY_METHOD: u32 = 0x08;
+/// Avatar entity type id (spec index 1). Its method table drives
+/// `receiveExplosions` (id 126) parsing.
+const ENTITY_TYPE_AVATAR: i16 = 1;
+/// Avatar client-method id for `receiveExplosions` on current clients
+/// (15.x): array of {Vector3 pos, u32 paramsID, u8 hitType}.
+const METHOD_RECEIVE_EXPLOSIONS: i32 = 126;
+/// Vehicle client-method id for `shootTorpedo` on current clients (15.x):
+/// {i32 tube, Vector3 dir, i32, i32, u8}.
+const METHOD_SHOOT_TORPEDO: i32 = 47;
 
 /// A single property change sample — one field of an entity updated at a
 /// specific time. Health, speed, consumable state, etc.
@@ -85,6 +105,20 @@ pub struct DecodedReplay {
     pub destroys: BTreeMap<i32, f32>,
     /// Per-entity per-property change timelines (property_index → samples).
     pub properties: BTreeMap<i32, Vec<PropertyChange>>,
+    /// World-space shell impact points (`receiveExplosions` on the avatar).
+    pub explosions: Vec<wowsp_tauri_shared::ExplosionEvent>,
+    /// Torpedo launches (`shootTorpedo` on the firing vehicle).
+    pub torpedoes: Vec<wowsp_tauri_shared::TorpedoLaunch>,
+}
+
+/// A raw entity-method call captured from the stream, resolved into an event
+/// after the entity types are known (the avatar entity's method table differs
+/// from the vehicle table).
+struct RawMethodCall {
+    time: f32,
+    entity_id: i32,
+    method_id: i32,
+    args: Vec<u8>,
 }
 
 /// Decrypt + decompress the packet stream, then walk frames extracting both
@@ -152,6 +186,7 @@ fn walk_frames(
     let mut kinds: BTreeMap<i32, EntityKind> = BTreeMap::new();
     let mut destroys: BTreeMap<i32, f32> = BTreeMap::new();
     let mut properties: BTreeMap<i32, Vec<PropertyChange>> = BTreeMap::new();
+    let mut methods: Vec<RawMethodCall> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -184,6 +219,14 @@ fn walk_frames(
                     kinds.entry(eid).or_insert(kind);
                 }
             },
+            PACKET_CELL_PLAYER_CREATE => {
+                if let Some(created) = parse_cell_player_create(payload, time) {
+                    let eid = created.entity_id;
+                    let mut kind = created.clone_into_kind();
+                    kind.entity_type = ENTITY_TYPE_AVATAR;
+                    kinds.entry(eid).or_insert(kind);
+                }
+            },
             PACKET_ENTITY_DESTROY => {
                 if let Some(eid) = parse_entity_destroy(payload) {
                     destroys.insert(eid, time);
@@ -194,9 +237,29 @@ fn walk_frames(
                     properties.entry(change.entity_id).or_default().push(change);
                 }
             },
+            PACKET_ENTITY_METHOD => {
+                if let Some(call) = parse_entity_method(payload, time) {
+                    methods.push(call);
+                }
+            },
             _ => {},
         }
         cur = payload_end;
+    }
+    // Resolve method calls into events once the entity types are known: the
+    // method ids live in per-entity-type tables, so e.g. id 126 is only
+    // `receiveExplosions` when the receiver is the avatar entity (type 1).
+    let mut explosions: Vec<wowsp_tauri_shared::ExplosionEvent> = Vec::new();
+    let mut torpedoes: Vec<wowsp_tauri_shared::TorpedoLaunch> = Vec::new();
+    for call in &methods {
+        let entity_type = kinds.get(&call.entity_id).map(|k| k.entity_type);
+        if entity_type == Some(ENTITY_TYPE_AVATAR) && call.method_id == METHOD_RECEIVE_EXPLOSIONS {
+            explosions.extend(decode_explosions(call.time, &call.args));
+        } else if entity_type == Some(2) && call.method_id == METHOD_SHOOT_TORPEDO {
+            if let Some(t) = decode_torpedo_launch(call.time, call.entity_id, &call.args) {
+                torpedoes.push(t);
+            }
+        }
     }
     for samples in positions.values_mut() {
         samples.sort_by(|a, b| {
@@ -217,7 +280,96 @@ fn walk_frames(
         kinds,
         destroys,
         properties,
+        explosions,
+        torpedoes,
     }
+}
+
+/// Parse a CellPlayerCreate (0x01) payload — the recorder's own avatar. Layout
+/// differs from EntityCreate: `i32 entity_id, u32 space_id, u32 vehicle_id,
+/// f32×3 position, f32×3 rotation, u32 props_len, props`. The entity type is
+/// always Avatar (spec 1).
+fn parse_cell_player_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
+    if payload.len() < 38 {
+        return None;
+    }
+    let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    // space_id at [4..8] — unused.
+    let vehicle_id = i32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let x = f32::from_le_bytes(payload[12..16].try_into().ok()?);
+    let y = f32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let z = f32::from_le_bytes(payload[20..24].try_into().ok()?);
+    Some(ParsedCreate {
+        entity_id,
+        entity_type: ENTITY_TYPE_AVATAR,
+        vehicle_id,
+        x,
+        y,
+        z,
+        creation_time: time,
+        radius: None,
+    })
+}
+
+/// Parse an EntityMethod (0x08) payload: `i32 entity_id, i32 method_id`,
+/// followed by a `u32 args_len` + args blob (BigWorld RPC BinaryStream).
+/// The args are kept raw — decoding happens against the receiver's method
+/// table afterwards.
+fn parse_entity_method(payload: &[u8], time: f32) -> Option<RawMethodCall> {
+    if payload.len() < 12 {
+        return None;
+    }
+    let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let method_id = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let args_len = u32::from_le_bytes(payload[8..12].try_into().ok()?) as usize;
+    let args = payload.get(12..12 + args_len.min(payload.len() - 12))?.to_vec();
+    Some(RawMethodCall {
+        time,
+        entity_id,
+        method_id,
+        args,
+    })
+}
+
+/// Decode `receiveExplosions` args: `u8 count` × {f32×3 position, u32
+/// paramsID, u8 hitType}. Returns one event per impact point.
+fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::ExplosionEvent> {
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    let Some(&count) = args.first() else { return out };
+    off += 1;
+    for _ in 0..count {
+        if off + 17 > args.len() {
+            break;
+        }
+        let x = f32::from_le_bytes(args[off..off + 4].try_into().unwrap());
+        let y = f32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
+        let z = f32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        off += 17; // pos(12) + paramsID(4) + hitType(1)
+        out.push(wowsp_tauri_shared::ExplosionEvent { time, x, y, z });
+    }
+    out
+}
+
+/// Decode `shootTorpedo` args: `i32 tube, f32×3 direction, i32, i32, u8`.
+fn decode_torpedo_launch(
+    time: f32,
+    entity_id: i32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::TorpedoLaunch> {
+    if args.len() < 21 {
+        return None;
+    }
+    let dir_x = f32::from_le_bytes(args[4..8].try_into().ok()?);
+    let dir_y = f32::from_le_bytes(args[8..12].try_into().ok()?);
+    let dir_z = f32::from_le_bytes(args[12..16].try_into().ok()?);
+    Some(wowsp_tauri_shared::TorpedoLaunch {
+        time,
+        entity_id,
+        dir_x,
+        dir_y,
+        dir_z,
+    })
 }
 
 /// Parsed EntityCreate used internally to key the kinds map; converted to

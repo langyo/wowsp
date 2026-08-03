@@ -43,7 +43,7 @@ pub fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
 #[tauri::command]
 pub fn read_replay_positions(
     path: String,
-) -> Result<Vec<wowsp_tauri_shared::EntityTrajectory>, String> {
+) -> Result<wowsp_tauri_shared::ReplayStream, String> {
     let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
     let stream = packet_stream_after_blocks(&bytes)
         .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
@@ -186,12 +186,14 @@ fn detect_hp_property(
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
 fn group_by_entity(
     decoded: super::packets::DecodedReplay,
-) -> Vec<wowsp_tauri_shared::EntityTrajectory> {
+) -> wowsp_tauri_shared::ReplayStream {
     let super::packets::DecodedReplay {
         positions,
         kinds,
         destroys,
         properties,
+        explosions,
+        torpedoes,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -294,7 +296,11 @@ fn group_by_entity(
     // transient entities (planes, torpedoes) have a few dozen.
     use std::cmp::Reverse;
     out.sort_by_key(|t| Reverse(t.samples.len()));
-    out
+    wowsp_tauri_shared::ReplayStream {
+        trajectories: out,
+        explosions,
+        torpedoes,
+    }
 }
 
 /// List `.wowsreplay` files under a directory (defaults to the detected game's
@@ -758,10 +764,12 @@ mod tests {
             return;
         };
         let meta = read_replay_header(path.clone()).expect("header");
-        let trajs = read_replay_positions(path).expect("positions");
+        let stream = read_replay_positions(path).expect("positions");
         let out = serde_json::json!({
             "meta": meta,
-            "trajectories": trajs,
+            "trajectories": stream.trajectories,
+            "explosions": stream.explosions,
+            "torpedoes": stream.torpedoes,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());

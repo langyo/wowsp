@@ -124,6 +124,9 @@ visible only while `Tab` is held.
 - Aircraft/squadrons (entityType 4) position via the 0x2a packet (same
   32-byte layout as PlayerPosition); rendered as a lightweight THREE.Points
   cloud on the map and cyan dots + patrol polylines on the zoomed minimap.
+  NOTE: on current clients entityType 4 is SmokeScreen, not aircraft — see
+  the smoke entry below; squadrons arrive as avatar methods instead
+  (receive_addSquadron / receive_updateSquadron), not yet rendered.
 - Sink detection: the EntityDestroy (0x06) packet is absent on modern
   clients; death_time is inferred from the float HP stream reaching 0.
   Sunk ships vanish from the 3D scene (grey dot remains on the minimap), a
@@ -146,9 +149,20 @@ visible only while `Tab` is held.
 - Sea presentation: dark sea surface (translucent) over a near-black seabed
   floor so the water no longer reads bright blue; camera max distance raised
   so the whole map fits when zoomed out.
-- Not renderable from replay data (documented limitation): shells/torpedoes
-  are never recorded as entities in replays (only visible entities exist),
-  and storm/thunder cells have no streamed source — both are skipped.
+- Battle effects from the entity-method stream (0x08, decoded with the
+  per-entity-type method tables): shell impacts (`receiveExplosions` on the
+  avatar) render as expanding splash rings + impact flash; reconstructed
+  shell flights draw a ballistic arc from the nearest ship that was aimed at
+  the impact (muzzle velocity ~800 m/s estimate); torpedo launches
+  (`shootTorpedo`) render as straight capsules with wakes (~33 m/s); smoke
+  screens (entityType 4 = SmokeScreen) render as translucent grey cylinders
+  at their expanding points (~90s life). Squadrons are not yet rendered
+  (avatar receive_addSquadron / receive_updateSquadron carry their state).
+- Not renderable from replay data (documented limitation): individual shells
+  are never recorded as entities in replays (the client simulates them
+  locally — even the in-game spectator sees no shells, only impacts), and
+  storm/thunder cells have no streamed source. Both are approximated as
+  above (arcs inferred from impact + launch aim) or skipped (storms).
 - 3D trajectory lines removed; ship movement is readable via the zoomed
   minimap trails instead.
 - Map-version drift: terrain GLBs and minimap art are baked from the current
