@@ -12,6 +12,8 @@ import type {
   GameInstallKind,
   HpSample,
   NetStatsSample,
+  SquadronCreate,
+  SquadronPlane,
   TorpedoLaunch,
   WeaponLockEvent,
 } from "@/api";
@@ -160,6 +162,8 @@ export default defineComponent({
     const netStats = ref<NetStatsSample[]>([]);
     const leavesMap = ref<Record<string, number>>({});
     const cameraModes = ref<HpSample[]>([]);
+    const squadronCreates = ref<SquadronCreate[]>([]);
+    const squadronPlanes = ref<SquadronPlane[]>([]);
     const showResults = ref(false);
     const trajectoryError = ref<string | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
@@ -179,6 +183,8 @@ export default defineComponent({
         netStats.value = [];
         leavesMap.value = {};
         cameraModes.value = [];
+        squadronCreates.value = [];
+        squadronPlanes.value = [];
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -195,6 +201,8 @@ export default defineComponent({
           netStats.value = stream.netStats ?? [];
           leavesMap.value = stream.leaves ?? {};
           cameraModes.value = stream.cameraModes ?? [];
+          squadronCreates.value = stream.squadronCreates ?? [];
+          squadronPlanes.value = stream.squadronPlanes ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -381,6 +389,8 @@ export default defineComponent({
                       netStats={netStats.value}
                       leavesMap={leavesMap.value}
                       cameraModes={cameraModes.value}
+                      squadronCreates={squadronCreates.value}
+                      squadronPlanes={squadronPlanes.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId.value}
                       mapId={parser.current.value.mapName ?? ""}

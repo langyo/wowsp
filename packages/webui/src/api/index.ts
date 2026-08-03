@@ -16,6 +16,8 @@ export type {
   CameraSample,
   NetStatsSample,
   DiagnosticCounts,
+  SquadronCreate,
+  SquadronPlane,
   ReplayStream,
   PlayerStats,
   GameVersionInfo,

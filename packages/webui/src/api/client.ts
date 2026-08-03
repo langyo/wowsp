@@ -204,6 +204,26 @@ export interface DiagnosticCounts {
   gunMarkers?: number;
 }
 
+/** An aircraft-squadron creation (receive_addSquadron, avatar method 114). */
+export interface SquadronCreate {
+  time: number;
+  planeId: number;
+  paramsId: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** One aircraft position sample (receive_updateSquadron, avatar method 140). */
+export interface SquadronPlane {
+  time: number;
+  planeId: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
@@ -226,6 +246,9 @@ export interface ReplayStream {
   /** Camera-mode changes (0x27). */
   cameraModes?: HpSample[];
   diagnostics?: DiagnosticCounts;
+  /** Aircraft squadrons (avatar methods 114/140). */
+  squadronCreates?: SquadronCreate[];
+  squadronPlanes?: SquadronPlane[];
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

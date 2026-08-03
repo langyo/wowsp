@@ -116,6 +116,13 @@ const METHOD_RECEIVE_EXPLOSIONS: i32 = 126;
 /// Vehicle client-method id for `shootTorpedo` on current clients (15.x):
 /// {i32 tube, Vector3 dir, i32, i32, u8}.
 const METHOD_SHOOT_TORPEDO: i32 = 47;
+/// Avatar client-method ids for aircraft squadrons on current clients:
+/// receive_addSquadron (114) creates a squadron (u32 paramsId, u8, u64
+/// planeId, ...), receive_updateSquadron (140) streams per-plane positions
+/// (u64 planeId, f32 dt, u8 count, count × {Vector3 pos, f32 yaw, u16 time,
+/// u8 type, i8 pitch}).
+const METHOD_RECEIVE_ADD_SQUADRON: i32 = 114;
+const METHOD_RECEIVE_UPDATE_SQUADRON: i32 = 140;
 
 /// A single property change sample — one field of an entity updated at a
 /// specific time. Health, speed, consumable state, etc.
@@ -169,6 +176,9 @@ pub struct DecodedReplay {
     pub camera_modes: Vec<wowsp_tauri_shared::HpSample>,
     /// Counts of decoded system packets (diagnostics).
     pub diagnostics: wowsp_tauri_shared::DiagnosticCounts,
+    /// Aircraft squadrons (avatar methods 114 / 140).
+    pub squadron_creates: Vec<wowsp_tauri_shared::SquadronCreate>,
+    pub squadron_planes: Vec<wowsp_tauri_shared::SquadronPlane>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -266,6 +276,8 @@ fn walk_frames(
     let mut leaves: BTreeMap<i32, f32> = BTreeMap::new();
     let mut camera_modes: Vec<wowsp_tauri_shared::HpSample> = Vec::new();
     let mut diagnostics = wowsp_tauri_shared::DiagnosticCounts::default();
+    let mut squadron_creates: Vec<wowsp_tauri_shared::SquadronCreate> = Vec::new();
+    let mut squadron_planes: Vec<wowsp_tauri_shared::SquadronPlane> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -447,6 +459,16 @@ fn walk_frames(
         let entity_type = kinds.get(&call.entity_id).map(|k| k.entity_type);
         if entity_type == Some(ENTITY_TYPE_AVATAR) && call.method_id == METHOD_RECEIVE_EXPLOSIONS {
             explosions.extend(decode_explosions(call.time, &call.args));
+        } else if entity_type == Some(ENTITY_TYPE_AVATAR)
+            && call.method_id == METHOD_RECEIVE_ADD_SQUADRON
+        {
+            if let Some(s) = decode_squadron_add(call.time, &call.args) {
+                squadron_creates.push(s);
+            }
+        } else if entity_type == Some(ENTITY_TYPE_AVATAR)
+            && call.method_id == METHOD_RECEIVE_UPDATE_SQUADRON
+        {
+            squadron_planes.extend(decode_squadron_update(call.time, &call.args));
         } else if entity_type == Some(2) && call.method_id == METHOD_SHOOT_TORPEDO {
             if let Some(t) = decode_torpedo_launch(call.time, call.entity_id, &call.args) {
                 torpedoes.push(t);
@@ -484,7 +506,68 @@ fn walk_frames(
         leaves,
         camera_modes,
         diagnostics,
+        squadron_creates,
+        squadron_planes,
     }
+}
+
+/// Decode `receive_addSquadron` args: u32 paramsId, u8, u64 planeId, u32
+/// skinId, u8, u8, f32×3 position, ... Only the head fields are decoded;
+/// the rest of the fixed-dict state is ignored.
+fn decode_squadron_add(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronCreate> {
+    if args.len() < 31 {
+        return None;
+    }
+    let params_id = u32::from_le_bytes(args[0..4].try_into().ok()?);
+    let plane_id = u64::from_le_bytes(args[5..13].try_into().ok()?);
+    let x = f32::from_le_bytes(args[19..23].try_into().ok()?);
+    let y = f32::from_le_bytes(args[23..27].try_into().ok()?);
+    let z = f32::from_le_bytes(args[27..31].try_into().ok()?);
+    Some(wowsp_tauri_shared::SquadronCreate {
+        time,
+        plane_id,
+        params_id,
+        x,
+        y,
+        z,
+    })
+}
+
+/// Decode `receive_updateSquadron` args: u64 planeId, f32 dt, u8 count,
+/// then count × {f32×3 position, f32 yaw, u16 time, u8 type, i8 pitch}.
+fn decode_squadron_update(
+    time: f32,
+    args: &[u8],
+) -> Vec<wowsp_tauri_shared::SquadronPlane> {
+    let mut out = Vec::new();
+    if args.len() < 13 {
+        return out;
+    }
+    let plane_id = u64::from_le_bytes(args[0..8].try_into().unwrap());
+    let count = args[12] as usize;
+    let mut off = 13usize;
+    for _ in 0..count {
+        if off + 20 > args.len() {
+            break;
+        }
+        let x = f32::from_le_bytes(args[off..off + 4].try_into().unwrap());
+        let y = f32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
+        let z = f32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        let yaw = f32::from_le_bytes(args[off + 12..off + 16].try_into().unwrap());
+        off += 20;
+        out.push(wowsp_tauri_shared::SquadronPlane {
+            time,
+            plane_id,
+            x,
+            y,
+            z,
+            yaw,
+        });
+    }
+    out
 }
 
 /// Parse a Version (0x16) payload: u32 length + UTF-8 string.

@@ -287,6 +287,34 @@ pub struct NetStatsSample {
     pub is_lagging: bool,
 }
 
+/// An aircraft-squadron creation (`receive_addSquadron`, avatar method 114):
+/// the squadron's game-params id and its spawn position.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronCreate {
+    pub time: f32,
+    /// Composite plane id (high bits: spawn index, low bits: owner entity).
+    pub plane_id: u64,
+    /// GameParams id of the aircraft type.
+    pub params_id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+/// One aircraft position sample (`receive_updateSquadron`, avatar method 140):
+/// a per-plane point of the squadron's formation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronPlane {
+    pub time: f32,
+    pub plane_id: u64,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub yaw: f32,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -326,6 +354,12 @@ pub struct ReplayStream {
     /// Counts of the remaining decoded system packets (diagnostics).
     #[serde(default, skip_serializing_if = "DiagnosticCounts::is_default")]
     pub diagnostics: DiagnosticCounts,
+    /// Aircraft squadrons: spawn events + per-plane position streams from
+    /// the avatar's receive_addSquadron / receive_updateSquadron methods.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub squadron_creates: Vec<SquadronCreate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub squadron_planes: Vec<SquadronPlane>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
