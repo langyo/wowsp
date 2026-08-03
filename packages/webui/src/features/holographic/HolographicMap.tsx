@@ -25,6 +25,8 @@ import type {
   HpSample,
   NetStatsSample,
   ShipInfo,
+  SquadronCreate,
+  SquadronPlane,
   TorpedoLaunch,
   VehicleEntry,
   WeaponLockEvent,
@@ -76,6 +78,9 @@ export default defineComponent({
     leavesMap: { type: Object as () => Record<string, number>, default: () => ({}) },
     /** Camera-mode changes (0x27). */
     cameraModes: { type: Array as () => HpSample[], default: () => [] },
+    /** Aircraft squadrons (avatar receive_addSquadron / updateSquadron). */
+    squadronCreates: { type: Array as () => SquadronCreate[], default: () => [] },
+    squadronPlanes: { type: Array as () => SquadronPlane[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -223,6 +228,11 @@ export default defineComponent({
     let lockLine: THREE.Mesh | null = null;
     /** Big ring over the locked target (same render path as splash rings). */
     let lockRing: THREE.Mesh | null = null;
+    /** Aircraft formation cloud (one point per plane, from the avatar's
+     *  receive_updateSquadron stream). */
+    let planeCloud: THREE.Points | null = null;
+    /** Per-plane sample lists grouped by plane id, sorted by time. */
+    let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
@@ -410,6 +420,14 @@ export default defineComponent({
         ctx.arc(wx(s.x), wz(-s.z), 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
+      // Aircraft (receive_updateSquadron) — small cyan dots.
+      ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
+      for (const sp of props.squadronPlanes) {
+        if (sp.time > t || t - sp.time > 2) continue;
+        ctx.beginPath();
+        ctx.arc(wx(sp.x), wz(-sp.z), 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Camera frustum.
       const cam = api.value?.camera;
@@ -484,6 +502,14 @@ export default defineComponent({
             const s = sampleAt(tr, t);
             zctx.beginPath();
             zctx.arc(zwx(s.x), zwz(-s.z), 6, 0, Math.PI * 2);
+            zctx.fill();
+          }
+          // Aircraft — small cyan dots on the enlarged map.
+          zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
+          for (const sp of props.squadronPlanes) {
+            if (sp.time > t || t - sp.time > 2) continue;
+            zctx.beginPath();
+            zctx.arc(zwx(sp.x), zwz(-sp.z), 3.5, 0, Math.PI * 2);
             zctx.fill();
           }
         }
@@ -669,6 +695,13 @@ export default defineComponent({
         (lockRing.material as THREE.Material).dispose();
         lockRing = null;
       }
+      if (planeCloud) {
+        scene.remove(planeCloud);
+        planeCloud.geometry.dispose();
+        (planeCloud.material as THREE.Material).dispose();
+        planeCloud = null;
+      }
+      planeTrails = [];
       allyAlive.value = allyTotal.value;
       enemyAlive.value = enemyTotal.value;
       capStatus.value = [0, 0, 0];
@@ -1223,6 +1256,39 @@ export default defineComponent({
         lockLine = line as unknown as THREE.Mesh;
       }
 
+      // Aircraft squadrons: one fixed-pixel point per plane, positions come
+      // from the avatar's receive_updateSquadron stream (grouped by plane id).
+      const byPlane = new Map<number, SquadronPlane[]>();
+      for (const sp of props.squadronPlanes) {
+        let list = byPlane.get(sp.planeId);
+        if (!list) {
+          list = [];
+          byPlane.set(sp.planeId, list);
+        }
+        list.push(sp);
+      }
+      planeTrails = [...byPlane.entries()].map(([id, samples]) => ({
+        id,
+        samples: samples.sort((a, b) => a.time - b.time),
+      }));
+      if (planeTrails.length > 0) {
+        const pg = new THREE.BufferGeometry();
+        pg.setAttribute(
+          "position",
+          new THREE.BufferAttribute(new Float32Array(planeTrails.length * 3), 3),
+        );
+        pg.computeBoundingSphere();
+        const pm = new THREE.PointsMaterial({
+          color: 0x78d2ff,
+          size: 5,
+          sizeAttenuation: false,
+        });
+        const points = new THREE.Points(pg, pm);
+        points.visible = false;
+        scene.add(points);
+        planeCloud = points;
+      }
+
       const newLabels: ShipLabel[] = [];
 
       for (const traj of props.trajectories) {
@@ -1577,6 +1643,33 @@ export default defineComponent({
         const alive = s != null && created && t <= sm.endT;
         sm.mesh.visible = alive;
         if (alive && s) sm.mesh.position.set(s.x, 2.5, -s.z);
+      }
+      // Aircraft formation: each plane sits at its last recorded position.
+      if (planeCloud) {
+        const attr = planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const arr = attr.array as Float32Array;
+        let any = false;
+        for (let i = 0; i < planeTrails.length; i++) {
+          const samples = planeTrails[i].samples;
+          let s: SquadronPlane | null = null;
+          for (const sp of samples) {
+            if (sp.time > t) break;
+            s = sp;
+          }
+          // Alive between the first update and ~2 min after the last one.
+          const born = samples[0].time;
+          const expiry = samples[samples.length - 1].time + 120;
+          if (s != null && t >= born && t <= expiry) {
+            arr[i * 3] = s.x;
+            arr[i * 3 + 1] = Math.max(60, s.y);
+            arr[i * 3 + 2] = -s.z;
+            any = true;
+          } else {
+            arr[i * 3 + 1] = -9999;
+          }
+        }
+        planeCloud.visible = any;
+        attr.needsUpdate = true;
       }
       // Shell traces: ballistic arc from the firing ship (updated live) to
       // the impact point, shown during [t0, t1]; the impact flash lingers

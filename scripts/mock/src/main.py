@@ -188,6 +188,8 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "leaves": dump.get("leaves", {}),
             "cameraModes": dump.get("cameraModes", []),
             "diagnostics": dump.get("diagnostics", {}),
+            "squadronCreates": dump.get("squadronCreates", []),
+            "squadronPlanes": dump.get("squadronPlanes", []),
         }
     return {
         "trajectories": [],
@@ -202,6 +204,8 @@ async def cmd_read_replay_positions(request: Request) -> dict:
         "leaves": {},
         "cameraModes": [],
         "diagnostics": {},
+        "squadronCreates": [],
+        "squadronPlanes": [],
     }
 
 
