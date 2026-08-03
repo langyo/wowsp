@@ -71,6 +71,16 @@ const PACKET_ENTITY_METHOD: u32 = 0x08;
 /// Avatar entity type id (spec index 1). Its method table drives
 /// `receiveExplosions` (id 126) parsing.
 const ENTITY_TYPE_AVATAR: i16 = 1;
+/// NestedPropertyUpdate (0x23): nested property blob updates, used by
+/// capture zones to stream their live capture progress (0..1 fraction at the
+/// tail of the payload).
+const PACKET_NESTED_PROPERTY: u32 = 0x23;
+/// SetWeaponLock (0x30): the recorder's weapon lock state change.
+/// Payload: `u32 weapon_type, u32 lock_type, u32 target_id`.
+const PACKET_SET_WEAPON_LOCK: u32 = 0x30;
+/// BattleResults (0x22): post-battle statistics payload (a JSON string with a
+/// u32 length prefix). Emitted once near match end.
+const PACKET_BATTLE_RESULTS: u32 = 0x22;
 /// Avatar client-method id for `receiveExplosions` on current clients
 /// (15.x): array of {Vector3 pos, u32 paramsID, u8 hitType}.
 const METHOD_RECEIVE_EXPLOSIONS: i32 = 126;
@@ -109,6 +119,22 @@ pub struct DecodedReplay {
     pub explosions: Vec<wowsp_tauri_shared::ExplosionEvent>,
     /// Torpedo launches (`shootTorpedo` on the firing vehicle).
     pub torpedoes: Vec<wowsp_tauri_shared::TorpedoLaunch>,
+    /// Capture-zone progress streams (NestedPropertyUpdate 0x23, entity
+    /// type 14): 0..1 fraction of the current capture per entity.
+    pub cap_progress: BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>>,
+    /// Recorder weapon-lock timeline (SetWeaponLock 0x30).
+    pub weapon_locks: Vec<wowsp_tauri_shared::WeaponLockEvent>,
+    /// Raw post-battle statistics payload (BattleResults 0x22).
+    pub battle_results: Option<String>,
+}
+
+/// A raw nested-property update captured from the stream (entity id + the
+/// property blob); resolved against the entity types afterwards so only
+/// capture zones (type 14) keep their progress stream.
+struct RawNestedProperty {
+    time: f32,
+    entity_id: i32,
+    payload: Vec<u8>,
 }
 
 /// A raw entity-method call captured from the stream, resolved into an event
@@ -187,6 +213,9 @@ fn walk_frames(
     let mut destroys: BTreeMap<i32, f32> = BTreeMap::new();
     let mut properties: BTreeMap<i32, Vec<PropertyChange>> = BTreeMap::new();
     let mut methods: Vec<RawMethodCall> = Vec::new();
+    let mut nested: Vec<RawNestedProperty> = Vec::new();
+    let mut weapon_locks: Vec<wowsp_tauri_shared::WeaponLockEvent> = Vec::new();
+    let mut battle_results: Option<String> = None;
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -242,9 +271,52 @@ fn walk_frames(
                     methods.push(call);
                 }
             },
+            PACKET_NESTED_PROPERTY => {
+                if let Some(n) = parse_nested_property(payload, time) {
+                    nested.push(n);
+                }
+            },
+            PACKET_SET_WEAPON_LOCK => {
+                if let Some(lock) = parse_weapon_lock(payload, time) {
+                    weapon_locks.push(lock);
+                }
+            },
+            PACKET_BATTLE_RESULTS => {
+                if battle_results.is_none() {
+                    battle_results = parse_battle_results(payload);
+                }
+            },
             _ => {},
         }
         cur = payload_end;
+    }
+    // Capture-zone progress: nested-property payloads on type-14 entities
+    // carry the live capture fraction as a trailing f32 (0..1). Keep only
+    // those, keyed by entity.
+    let mut cap_progress: BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> = BTreeMap::new();
+    for n in &nested {
+        if kinds.get(&n.entity_id).map(|k| k.entity_type) != Some(14) {
+            continue;
+        }
+        if n.payload.len() >= 4 {
+            let f = f32::from_le_bytes(n.payload[n.payload.len() - 4..].try_into().unwrap());
+            if f.is_finite() && f >= 0.0 && f <= 1.5 {
+                cap_progress
+                    .entry(n.entity_id)
+                    .or_default()
+                    .push(wowsp_tauri_shared::HpSample {
+                        time: n.time,
+                        value: (f * 1000.0).round() as u32,
+                    });
+            }
+        }
+    }
+    for samples in cap_progress.values_mut() {
+        samples.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
     // Resolve method calls into events once the entity types are known: the
     // method ids live in per-entity-type tables, so e.g. id 126 is only
@@ -282,7 +354,57 @@ fn walk_frames(
         properties,
         explosions,
         torpedoes,
+        cap_progress,
+        weapon_locks,
+        battle_results,
     }
+}
+
+/// Parse a NestedPropertyUpdate (0x23) payload: `i32 entity_id, u8 is_slice,
+/// u32 payload_size, payload`. The payload blob (BigWorld nested property
+/// encoding) is kept raw; capture progress is read from its tail.
+fn parse_nested_property(payload: &[u8], time: f32) -> Option<RawNestedProperty> {
+    if payload.len() < 9 {
+        return None;
+    }
+    let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let size = u32::from_le_bytes(payload[5..9].try_into().ok()?) as usize;
+    let data = payload.get(9..9 + size.min(payload.len() - 9))?.to_vec();
+    Some(RawNestedProperty {
+        time,
+        entity_id,
+        payload: data,
+    })
+}
+
+/// Parse a SetWeaponLock (0x30) payload: three u32s (weapon_type, lock_type,
+/// target_id).
+fn parse_weapon_lock(
+    payload: &[u8],
+    time: f32,
+) -> Option<wowsp_tauri_shared::WeaponLockEvent> {
+    if payload.len() < 12 {
+        return None;
+    }
+    let weapon_type = u32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let lock_type = u32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let target_id = i32::from_le_bytes(payload[8..12].try_into().ok()?);
+    Some(wowsp_tauri_shared::WeaponLockEvent {
+        time,
+        weapon_type,
+        lock_type,
+        target_id,
+    })
+}
+
+/// Parse a BattleResults (0x22) payload: u32 length + UTF-8 string.
+fn parse_battle_results(payload: &[u8]) -> Option<String> {
+    if payload.len() < 4 {
+        return None;
+    }
+    let len = u32::from_le_bytes(payload[0..4].try_into().ok()?) as usize;
+    let body = payload.get(4..4 + len.min(payload.len() - 4))?;
+    String::from_utf8(body.to_vec()).ok()
 }
 
 /// Parse a CellPlayerCreate (0x01) payload — the recorder's own avatar. Layout

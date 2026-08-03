@@ -126,6 +126,9 @@ export interface EntityTrajectory {
   hpSamples?: HpSample[];
   /** Capture zone property 0 samples (neutral/captured status). */
   capSamples?: HpSample[];
+  /** Live capture progress (0..1000) from NestedPropertyUpdate packets —
+   *  the game's own progress, present for capture zones on modern clients. */
+  capProgress?: HpSample[];
 }
 
 /** An HP value at a point in time. */
@@ -153,12 +156,24 @@ export interface TorpedoLaunch {
   dirZ: number;
 }
 
+/** A weapon-lock state change (SetWeaponLock 0x30) by the recorder's ship. */
+export interface WeaponLockEvent {
+  time: number;
+  weaponType: number;
+  /** 0 = none, 3 = target lock. */
+  lockType: number;
+  targetId: number;
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
   trajectories: EntityTrajectory[];
   explosions?: ExplosionEvent[];
   torpedoes?: TorpedoLaunch[];
+  weaponLocks?: WeaponLockEvent[];
+  /** Raw post-battle statistics JSON (BattleResults 0x22). */
+  battleResults?: string | null;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

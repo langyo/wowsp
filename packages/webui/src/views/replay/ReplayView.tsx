@@ -5,7 +5,13 @@ import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
 import { api } from "@/api";
-import type { EntityTrajectory, ExplosionEvent, GameInstallKind, TorpedoLaunch } from "@/api";
+import type {
+  EntityTrajectory,
+  ExplosionEvent,
+  GameInstallKind,
+  TorpedoLaunch,
+  WeaponLockEvent,
+} from "@/api";
 import { t } from "@/i18n";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -143,6 +149,9 @@ export default defineComponent({
     const trajectories = ref<EntityTrajectory[]>([]);
     const explosions = ref<ExplosionEvent[]>([]);
     const torpedoes = ref<TorpedoLaunch[]>([]);
+    const weaponLocks = ref<WeaponLockEvent[]>([]);
+    const battleResults = ref<string | null>(null);
+    const showResults = ref(false);
     const trajectoryError = ref<string | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
@@ -153,6 +162,8 @@ export default defineComponent({
         trajectories.value = [];
         explosions.value = [];
         torpedoes.value = [];
+        weaponLocks.value = [];
+        battleResults.value = null;
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -161,6 +172,8 @@ export default defineComponent({
           trajectories.value = stream.trajectories;
           explosions.value = stream.explosions ?? [];
           torpedoes.value = stream.torpedoes ?? [];
+          weaponLocks.value = stream.weaponLocks ?? [];
+          battleResults.value = stream.battleResults ?? null;
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -311,7 +324,21 @@ export default defineComponent({
                     {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
                   </span>
                 ) : null}
+                {battleResults.value ? (
+                  <button
+                    class="replay-view__meta-item replay-view__pill replay-view__results"
+                    onClick={() => (showResults.value = !showResults.value)}
+                  >
+                    {t("replay.results")}
+                  </button>
+                ) : null}
               </header>
+              {showResults.value && battleResults.value ? (
+                <details class="replay-view__results-panel" open>
+                  <summary>{t("replay.results")}</summary>
+                  <pre>{battleResults.value}</pre>
+                </details>
+              ) : null}
 
               <div class="replay-view__detail">
                 <div class="replay-view__map-wrap">
@@ -325,6 +352,8 @@ export default defineComponent({
                       trajectories={trajectories.value}
                       explosions={explosions.value}
                       torpedoes={torpedoes.value}
+                      weaponLocks={weaponLocks.value}
+                      battleResults={battleResults.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId.value}
                       mapId={parser.current.value.mapName ?? ""}
