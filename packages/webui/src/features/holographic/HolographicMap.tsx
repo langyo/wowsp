@@ -130,6 +130,9 @@ export default defineComponent({
     const playing = ref(false);
     let playRaf = 0;
     let lastTick = 0;
+    /** Battle-opening phase: like the game, enemy ships aren't visible until
+     *  the opening countdown ends (~15s); allies and the recorder are. */
+    const OPENING_HIDE_T = 15;
 
     // Time display toggle: 0=elapsed, 1=remaining, 2=total
     const timeMode = ref(0);
@@ -418,6 +421,8 @@ export default defineComponent({
       const t = current.value;
       for (const m of shipMarkers) {
         const role = m.userData.role as TeamRole | undefined;
+        // Opening phase: enemies stay off the minimap like in the game.
+        if (role === "enemy" && t < OPENING_HIDE_T) continue;
         const dead =
           (m.userData.deathTime as number | null) != null &&
           t >= (m.userData.deathTime as number);
@@ -517,6 +522,7 @@ export default defineComponent({
           }
           for (const m of shipMarkers) {
             const role = m.userData.role as TeamRole | undefined;
+            if (role === "enemy" && t < OPENING_HIDE_T) continue;
             const dead =
               (m.userData.deathTime as number | null) != null &&
               t >= (m.userData.deathTime as number);
@@ -1420,7 +1426,9 @@ export default defineComponent({
               marker.add(shipModel);
               marker.userData.modelLoaded = true;
               marker.userData.isDot = false;
-              marker.visible = true;
+              // Re-run the per-frame visibility rules (opening-phase enemy
+              // hiding, creation time) instead of forcing the marker on.
+              updateMarkersAt(current.value);
               initMarkerPosition(marker, traj, current.value);
               updateLabelPositions();
             })
@@ -1620,6 +1628,14 @@ export default defineComponent({
         const entityId = marker.userData.entityId as number;
         const traj = props.trajectories.find((tr) => tr.entityId === entityId);
         if (!traj || traj.samples.length === 0) {
+          marker.visible = false;
+          if (label) label.visible = false;
+          continue;
+        }
+        // Opening phase: hide enemies like the game does until the countdown
+        // ends (allies + the recorder stay visible at spawn).
+        const role = marker.userData.role as TeamRole;
+        if (role === "enemy" && t < OPENING_HIDE_T) {
           marker.visible = false;
           if (label) label.visible = false;
           continue;
@@ -2432,7 +2448,9 @@ export default defineComponent({
                         class="holo-label__hp-fill"
                         style={{
                           width: `${Math.max(0, Math.min(100, (lbl.hp / lbl.maxHp) * 100))}%`,
-                          background: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
+                          background: `#${(
+                            lbl.role === "self" ? 0x4ade80 : TEAM_COLOR[lbl.role]
+                          ).toString(16).padStart(6, "0")}`,
                         }}
                       />
                       <span class="holo-label__hp-text">
