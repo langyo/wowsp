@@ -5,7 +5,7 @@ import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
 import { api } from "@/api";
-import type { EntityTrajectory, GameInstallKind } from "@/api";
+import type { EntityTrajectory, ExplosionEvent, GameInstallKind, TorpedoLaunch } from "@/api";
 import { t } from "@/i18n";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -141,6 +141,8 @@ export default defineComponent({
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
     // open so the header parse stays fast; the decode is the expensive step.
     const trajectories = ref<EntityTrajectory[]>([]);
+    const explosions = ref<ExplosionEvent[]>([]);
+    const torpedoes = ref<TorpedoLaunch[]>([]);
     const trajectoryError = ref<string | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
@@ -149,13 +151,18 @@ export default defineComponent({
       () => parser.current.value?.path,
       async (path) => {
         trajectories.value = [];
+        explosions.value = [];
+        torpedoes.value = [];
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
         try {
-          trajectories.value = await api.readReplayPositions(path);
+          const stream = await api.readReplayPositions(path);
+          trajectories.value = stream.trajectories;
+          explosions.value = stream.explosions ?? [];
+          torpedoes.value = stream.torpedoes ?? [];
           let maxT = 0;
-          for (const tr of trajectories.value) {
+          for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
           }
           duration.value = maxT;
@@ -316,6 +323,8 @@ export default defineComponent({
                     <HolographicMap
                       replayPath={parser.current.value.path}
                       trajectories={trajectories.value}
+                      explosions={explosions.value}
+                      torpedoes={torpedoes.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId.value}
                       mapId={parser.current.value.mapName ?? ""}
