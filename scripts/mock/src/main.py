@@ -179,8 +179,16 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "trajectories": dump.get("trajectories", []),
             "explosions": dump.get("explosions", []),
             "torpedoes": dump.get("torpedoes", []),
+            "weaponLocks": dump.get("weaponLocks", []),
+            "battleResults": dump.get("battleResults"),
         }
-    return {"trajectories": [], "explosions": [], "torpedoes": []}
+    return {
+        "trajectories": [],
+        "explosions": [],
+        "torpedoes": [],
+        "weaponLocks": [],
+        "battleResults": None,
+    }
 
 
 @app.post("/api/read_temp_arena_info")

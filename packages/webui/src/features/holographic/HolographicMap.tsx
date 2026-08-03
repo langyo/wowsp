@@ -18,7 +18,15 @@ import {
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
-import type { EntityTrajectory, ExplosionEvent, ShipInfo, TorpedoLaunch, VehicleEntry, HpSample } from "@/api";
+import type {
+  EntityTrajectory,
+  ExplosionEvent,
+  ShipInfo,
+  TorpedoLaunch,
+  VehicleEntry,
+  WeaponLockEvent,
+  HpSample,
+} from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -50,6 +58,10 @@ export default defineComponent({
     explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
     /** Torpedo launches (shootTorpedo on firing vehicles). */
     torpedoes: { type: Array as () => TorpedoLaunch[], default: () => [] },
+    /** Recorder weapon-lock timeline (SetWeaponLock 0x30). */
+    weaponLocks: { type: Array as () => WeaponLockEvent[], default: () => [] },
+    /** Raw post-battle statistics JSON (BattleResults 0x22). */
+    battleResults: { type: String, default: "" },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -184,6 +196,10 @@ export default defineComponent({
     }[] = [];
     /** Transient explosion rings (splash hits). */
     let explosionFx: { ring: THREE.Mesh; born: number }[] = [];
+    /** Recorder aim line to the currently locked target (SetWeaponLock). */
+    let lockLine: THREE.Mesh | null = null;
+    /** Big ring over the locked target (same render path as splash rings). */
+    let lockRing: THREE.Mesh | null = null;
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
@@ -618,6 +634,18 @@ export default defineComponent({
         (fx.ring.material as THREE.Material).dispose();
       }
       explosionFx = [];
+      if (lockLine) {
+        scene.remove(lockLine);
+        lockLine.geometry.dispose();
+        (lockLine.material as THREE.Material).dispose();
+        lockLine = null;
+      }
+      if (lockRing) {
+        scene.remove(lockRing);
+        lockRing.geometry.dispose();
+        (lockRing.material as THREE.Material).dispose();
+        lockRing = null;
+      }
       allyAlive.value = allyTotal.value;
       enemyAlive.value = enemyTotal.value;
       capStatus.value = [0, 0, 0];
@@ -1131,6 +1159,44 @@ export default defineComponent({
         explosionFx.push({ ring, born: -1 });
       }
 
+      // Recorder aim line: thin line from the own ship to the locked target
+      // entity (SetWeaponLock 0x30 timeline), updated per frame. Same render
+      // path as shell traces (line + bounding sphere) which is known-good.
+      if (props.weaponLocks.length > 0) {
+        const lockGeom = new THREE.BufferGeometry();
+        lockGeom.setAttribute(
+          "position",
+          new THREE.BufferAttribute(new Float32Array(6), 3),
+        );
+        lockGeom.computeBoundingSphere();
+        const lockMat = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.8,
+          depthWrite: false,
+        });
+        const line = new THREE.Line(lockGeom, lockMat);
+        line.visible = false;
+        scene.add(line);
+        // Big ring over the locked target so the lock reads at full-map zoom.
+        // RingGeometry + scale (same render path as the splash rings, which
+        // are known to render; plain torus meshes don't show in this scene).
+        const ringGeom = new THREE.RingGeometry(0.35, 1, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xffcc33,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(ringGeom, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.visible = false;
+        scene.add(ring);
+        lockRing = ring;
+        lockLine = line as unknown as THREE.Mesh;
+      }
+
       const newLabels: ShipLabel[] = [];
 
       for (const traj of props.trajectories) {
@@ -1356,6 +1422,21 @@ export default defineComponent({
       return last;
     }
 
+    /** Linear-interpolated capture progress (0..1000) at time t. */
+    function progressAtTime(samples: HpSample[] | undefined, t: number): number | null {
+      if (!samples || samples.length === 0) return null;
+      if (t <= samples[0].time) return samples[0].value;
+      for (let i = 0; i < samples.length - 1; i++) {
+        const a = samples[i];
+        const b = samples[i + 1];
+        if (t >= a.time && t <= b.time) {
+          const k = b.time === a.time ? 0 : (t - a.time) / (b.time - a.time);
+          return a.value + (b.value - a.value) * k;
+        }
+      }
+      return samples[samples.length - 1].value;
+    }
+
     /** Position + orient each ship marker at the current playback time.
      *  Ships whose model hasn't loaded yet are skipped; ships that have been
      *  destroyed (time ≥ deathTime) are frozen at their last position and
@@ -1543,6 +1624,34 @@ export default defineComponent({
         fx.ring.scale.setScalar(40 + k * 240);
         (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k);
       }
+      // Recorder aim line: from the own ship to the currently locked target.
+      if (lockLine) {
+        const cur = props.weaponLocks.filter((l) => l.time <= t);
+        const last = cur.length > 0 ? cur[cur.length - 1] : null;
+        const selfMarker = shipMarkers.find((m) => m.userData.role === "self");
+        const targetMarker = last
+          ? shipMarkers.find((m) => m.userData.entityId === last.targetId)
+          : null;
+        const on =
+          last != null &&
+          last.lockType === 3 &&
+          selfMarker != null &&
+          targetMarker != null;
+        lockLine.visible = on;
+        if (lockRing) lockRing.visible = on;
+        if (on && selfMarker && targetMarker) {
+          const a = selfMarker.position;
+          const b = targetMarker.position;
+          const attr = lockLine.geometry.getAttribute("position") as THREE.BufferAttribute;
+          attr.setXYZ(0, a.x, 30, a.z);
+          attr.setXYZ(1, b.x, 30, b.z);
+          attr.needsUpdate = true;
+          if (lockRing) {
+            lockRing.position.set(b.x, 60, b.z);
+            lockRing.scale.setScalar(90 * (1 + 0.12 * Math.sin(t * 4)));
+          }
+        }
+      }
       // Update screen-space positions of floating labels from marker world positions.
       updateLabelPositions();
     }
@@ -1650,6 +1759,9 @@ export default defineComponent({
     ) {
       const st = capSim.get(eid);
       if (!st) return;
+      // The game's own progress stream (0x23) beats position simulation.
+      const realProgress =
+        zone.capProgress != null && zone.capProgress.length >= 2;
       let simT = st.lastT;
       // Ownership changes are applied step-by-step as the sim crosses their
       // timestamps (applying them up front would give the owner early
@@ -1727,6 +1839,16 @@ export default defineComponent({
               if (st.owner === 1) st.scoreAlly += accrualPts;
               else st.scoreEnemy += accrualPts;
             }
+          }
+        }
+        // Override the simulated progress with the game's own stream when the
+        // replay carries it (NestedPropertyUpdate 0x23): far more accurate
+        // than inferring from ship positions.
+        if (realProgress) {
+          const cp = progressAtTime(zone.capProgress, nxt);
+          if (cp != null) {
+            st.progress = Math.min(1, cp / 1000);
+            st.prevHp.clear();
           }
         }
         simT = nxt;

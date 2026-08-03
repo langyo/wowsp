@@ -12,6 +12,7 @@ export type {
   HpSample,
   ExplosionEvent,
   TorpedoLaunch,
+  WeaponLockEvent,
   ReplayStream,
   PlayerStats,
   GameVersionInfo,

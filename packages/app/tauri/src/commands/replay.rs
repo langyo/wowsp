@@ -194,6 +194,9 @@ fn group_by_entity(
         properties,
         explosions,
         torpedoes,
+        mut cap_progress,
+        weapon_locks,
+        battle_results,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -261,6 +264,7 @@ fn group_by_entity(
         .map(|(entity_id, samples)| {
             let hp_samples = hp_map.remove(&entity_id).unwrap_or_default();
             let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
+            let cap_progress = cap_progress.remove(&entity_id).unwrap_or_default();
             let kind = kinds.get(&entity_id).cloned();
             // Only ships have meaningful HP streams — planes/zones never do.
             let death_time = if kind.as_ref().map(|k| k.entity_type) == Some(2) {
@@ -275,6 +279,7 @@ fn group_by_entity(
                 death_time,
                 hp_samples,
                 cap_samples,
+                cap_progress,
             }
         })
         .collect();
@@ -289,6 +294,7 @@ fn group_by_entity(
                 death_time: destroys.get(eid).copied(),
                 hp_samples: hp_map.remove(eid).unwrap_or_default(),
                 cap_samples: cap_map.remove(eid).unwrap_or_default(),
+                cap_progress: cap_progress.remove(eid).unwrap_or_default(),
             });
         }
     }
@@ -300,6 +306,8 @@ fn group_by_entity(
         trajectories: out,
         explosions,
         torpedoes,
+        weapon_locks,
+        battle_results,
     }
 }
 
@@ -770,6 +778,8 @@ mod tests {
             "trajectories": stream.trajectories,
             "explosions": stream.explosions,
             "torpedoes": stream.torpedoes,
+            "weaponLocks": stream.weapon_locks,
+            "battleResults": stream.battle_results,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
