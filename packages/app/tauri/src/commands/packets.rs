@@ -230,6 +230,9 @@ struct ParsedCreate {
     y: f32,
     z: f32,
     creation_time: f32,
+    /// Capture-zone radius (metres) recovered from the state stream when the
+    /// entity type is 14; `None` for other types or when no candidate is found.
+    radius: Option<f32>,
 }
 
 impl ParsedCreate {
@@ -242,6 +245,7 @@ impl ParsedCreate {
             initial_z: self.z,
             creation_time: self.creation_time,
             ship_id: None,
+            radius: self.radius,
         }
     }
 }
@@ -267,6 +271,25 @@ fn scan_state_for_ship_id(
     None
 }
 
+/// Scan an EntityCreate state stream for the capture-zone radius: a f32 with
+/// an integral value in the 20..150 m range. Empirically the radius is the
+/// LAST such field (observed at offset ~98 on domination, ~94 on two-brothers
+/// domination, ~18 on the 1v1 brawl layout) and every mode's state packs it
+/// as a trailing plain float, so the highest-offset candidate wins.
+fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
+    if state.len() < 4 {
+        return None;
+    }
+    let mut best: Option<(usize, f32)> = None;
+    for off in 0..=state.len() - 4 {
+        let f = f32::from_le_bytes(state[off..off + 4].try_into().ok()?);
+        if f.is_finite() && f >= 20.0 && f <= 150.0 && (f - f.round()).abs() < 0.01 {
+            best = Some((off, f));
+        }
+    }
+    best.map(|(_, f)| f)
+}
+
 /// Parse an EntityCreate (0x05) payload. WoWS layout (from
 /// `clients/wows/network/packets/EntityCreate.py`):
 ///   i32 entity_id, i16 type, i32 vehicle_id, i32 space_id,
@@ -283,6 +306,11 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
     let x = f32::from_le_bytes(payload[14..18].try_into().ok()?);
     let y = f32::from_le_bytes(payload[18..22].try_into().ok()?);
     let z = f32::from_le_bytes(payload[22..26].try_into().ok()?);
+    let radius = if entity_type == 14 && payload.len() > 38 {
+        scan_state_for_radius(&payload[38..])
+    } else {
+        None
+    };
     Some(ParsedCreate {
         entity_id,
         entity_type,
@@ -291,6 +319,7 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         y,
         z,
         creation_time: time,
+        radius,
     })
 }
 
