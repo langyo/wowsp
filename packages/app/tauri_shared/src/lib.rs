@@ -204,6 +204,12 @@ pub struct EntityTrajectory {
     /// Capture zone property 0 samples (0=neutral, 1=captured by team A, etc.)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cap_samples: Vec<HpSample>,
+    /// Capture-zone progress stream from NestedPropertyUpdate (0x23) packets:
+    /// 0..1 fraction of the current capture, reset to 0 on ownership change.
+    /// This is the game's own progress — much more accurate than simulating
+    /// it from ship positions. Only present for capture zones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cap_progress: Vec<HpSample>,
 }
 
 /// A single HP snapshot from the replay's property stream.
@@ -240,6 +246,20 @@ pub struct TorpedoLaunch {
     pub dir_z: f32,
 }
 
+/// A weapon-lock state change (`SetWeaponLock`, 0x30): the recorder's own
+/// vehicle locking/unlocking a target entity. The lock timeline lets the
+/// frontend draw an aim line to the locked ship and prefer it when
+/// reconstructing shell flights.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeaponLockEvent {
+    pub time: f32,
+    pub weapon_type: u32,
+    pub lock_type: u32,
+    /// Target entity id (0 when lock_type is not Target).
+    pub target_id: i32,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -251,6 +271,13 @@ pub struct ReplayStream {
     pub explosions: Vec<ExplosionEvent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub torpedoes: Vec<TorpedoLaunch>,
+    /// Recorder weapon-lock timeline (SetWeaponLock, 0x30).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weapon_locks: Vec<WeaponLockEvent>,
+    /// Raw battle-results payload (BattleResults, 0x22) — the server's post-
+    /// battle statistics JSON when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battle_results: Option<String>,
 }
 
 /// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.
