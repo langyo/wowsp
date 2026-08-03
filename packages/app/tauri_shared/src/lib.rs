@@ -313,6 +313,11 @@ pub struct EntityKind {
     /// constant and the entity-id spawn order is not team-grouped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ship_id: Option<i64>,
+    /// Capture-zone radius in metres, recovered from the EntityCreate state
+    /// stream (only present for entityType 14 zones). Falls back to 60 on the
+    /// frontend when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f32>,
 }
 
 fn default_creation_time() -> f32 {

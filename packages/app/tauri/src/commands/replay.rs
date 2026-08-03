@@ -616,6 +616,7 @@ mod tests {
                 initial_z: 0.0,
                 creation_time: 0.0,
                 ship_id: None,
+                radius: None,
             },
         );
         let change =

@@ -1061,13 +1061,14 @@ export default defineComponent({
         .map((t, idx) => ({
           x: t.kind!.initialX,
           z: t.kind!.initialZ,
+          radius: t.kind!.radius ?? 60,
           order: idx,
         }));
       if (capEntries.length === 0) {
         console.warn("[HolographicMap] no capture zone data found in trajectory kinds");
       }
       // Group by shared center (within 30 m).
-      const groups: { x: number; z: number; members: { x: number; z: number; order: number }[] }[] = [];
+      const groups: { x: number; z: number; members: { x: number; z: number; radius: number; order: number }[] }[] = [];
       for (const e of capEntries) {
         const g = groups.find(
           (gr) => Math.abs(gr.x - e.x) < 30 && Math.abs(gr.z - e.z) < 30,
@@ -1082,7 +1083,7 @@ export default defineComponent({
         for (let k = 0; k < n; k++) {
           // Concentric group: offset each member along x, outer ring larger.
           const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
-          const radius = n > 1 ? 52 - k * 14 : 60;
+          const radius = n > 1 ? 52 - k * 14 : g.members[k].radius;
           const cx = g.x + spread;
           const cz = g.z;
           const ringGeom = new THREE.TorusGeometry(radius, 1.2, 8, 48);
@@ -1344,7 +1345,7 @@ export default defineComponent({
     function shipsInZone(zone: EntityTrajectory, t: number): { ally: number; enemy: number } {
       const cx = zone.kind!.initialX;
       const cz = zone.kind!.initialZ;
-      const R = 60; // radius isn't recorded in replays — 60 m standard
+      const R = zone.kind!.radius ?? 60; // recovered from the EntityCreate state
       let ally = 0;
       let enemy = 0;
       for (const m of shipMarkers) {
@@ -1409,6 +1410,7 @@ export default defineComponent({
         }
         const cx = zone.kind!.initialX;
         const cz = zone.kind!.initialZ;
+        const R = zone.kind!.radius ?? 60;
         let ally = 0;
         let enemy = 0;
         for (const m of shipMarkers) {
@@ -1416,7 +1418,7 @@ export default defineComponent({
           if (!traj || traj.samples.length === 0) continue;
           const s = sampleAt(traj, mid);
           if (!s) continue;
-          if ((s.x - cx) ** 2 + (s.z - cz) ** 2 > 60 * 60) continue;
+          if ((s.x - cx) ** 2 + (s.z - cz) ** 2 > R * R) continue;
           const role = m.userData.role as TeamRole;
           if (role === "ally" || role === "self") ally++;
           else if (role === "enemy") enemy++;
