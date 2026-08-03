@@ -1265,8 +1265,11 @@ export default defineComponent({
           shell,
           t0: match.t0,
           t1: e.time,
+          // Launch point is fixed at the firing ship's position at t0 — using
+          // the live playhead position would drag the whole arc (and the
+          // shell) across the map as playback moves on.
           from: () => {
-            const s = sampleAt(match.tr, current.value);
+            const s = sampleAt(match.tr, match.t0);
             return s ? new THREE.Vector3(s.x, 0, -s.z) : null;
           },
           to: new THREE.Vector3(e.x, 0, -e.z),
@@ -1867,7 +1870,9 @@ export default defineComponent({
           }
         }
       }
-      // Torpedoes: advance straight along the launch direction.
+      // Torpedoes: advance straight along the launch direction. The capsule
+      // geometry runs along +Y, so orient it flat along the travel direction
+      // (a plain rotation.y would leave it standing upright).
       for (const tm of torpedoMeshes) {
         const age = t - tm.t0;
         const on = age >= 0 && age <= tm.life;
@@ -1876,7 +1881,7 @@ export default defineComponent({
         if (on) {
           const p = tm.base.clone().add(tm.dir.clone().multiplyScalar(33 * age));
           tm.mesh.position.set(p.x, 1.2, p.z);
-          tm.mesh.rotation.y = Math.atan2(tm.dir.x, tm.dir.z);
+          tm.mesh.quaternion.setFromUnitVectors(_shellUp, tm.dir);
           const wakeAttr = tm.wake.geometry.getAttribute("position") as THREE.BufferAttribute;
           const tail = tm.dir.clone().multiplyScalar(160);
           wakeAttr.setXYZ(0, p.x - tail.x, 0.4, p.z - tail.z);
