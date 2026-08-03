@@ -142,6 +142,15 @@ def main() -> int:
         index = entry.get("index")
         if not sid or not index:
             continue
+        # Max hull HP across upgrade modules (e.g. A_Hull/B_Hull). This gives
+        # a battle-accurate-ish full-HP fallback for ships without an HP
+        # stream in a replay; the WG encyclopedia's hull.health is equivalent.
+        max_hp: int | None = None
+        for key, val in entry.items():
+            if key.endswith("_Hull") and isinstance(val, dict):
+                hp = val.get("health")
+                if isinstance(hp, (int, float)) and hp > 0:
+                    max_hp = max(max_hp or 0, int(hp))
         ids_key = f"IDS_{index}"
         names: dict[str, str] = {}
         for code, cat in catalogs.items():
@@ -156,6 +165,7 @@ def main() -> int:
             "tier": entry.get("level"),
             "type": typeinfo.get("species"),
             "nation": (typeinfo.get("nation") or "").lower(),
+            "hp": max_hp,
             "names": names,
         }
 

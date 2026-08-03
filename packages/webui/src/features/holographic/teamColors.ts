@@ -16,17 +16,18 @@
 /** Team role of a ship on the map. `self` = the recorder; `ally`/`enemy` the rest. */
 export type TeamRole = "self" | "ally" | "enemy";
 
-/** Numeric (Three.js) team colors. */
+/** Numeric (Three.js) team colors. The ally green is tuned bright so it
+ *  separates from the dark blue sea surface instead of sinking into it. */
 export const TEAM_COLOR: Record<TeamRole, number> = {
   self: 0xffffff, // white
-  ally: 0x3cb478, // green
+  ally: 0x4ade80, // bright green
   enemy: 0xcc3333, // red
 };
 
 /** Per-role holographic tint pairs. */
 const HOLO_PAIRS: Record<TeamRole, HoloColorPair> = {
   self: { baseColor: 0x555555, fresnelColor: 0xffffff },
-  ally: { baseColor: 0x0e5a3a, fresnelColor: 0x4fff95 },
+  ally: { baseColor: 0x137a45, fresnelColor: 0x5effa8 },
   enemy: { baseColor: 0x4a1515, fresnelColor: 0xff4444 },
 };
 

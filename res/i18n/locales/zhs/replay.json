@@ -106,5 +106,9 @@
   "minimap": {
     "zoom": "放大地图",
     "trails": "船只轨迹"
+  },
+  "labels": {
+    "hide": "隐藏标签",
+    "show": "显示标签"
   }
 }
