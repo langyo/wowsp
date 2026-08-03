@@ -1,5 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
+import planeTypesRaw from "../../data/plane_types.json";
 
 import { useThreeScene } from "./useThreeScene";
 import {
@@ -31,6 +32,26 @@ import type {
   VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
+import planeIcon from "./planeIcons";
+
+/** paramsId → plane metadata (index/name/type) baked from GameParams by
+ *  `scripts/model_convert/extract_planes.py` — the type drives which in-game
+ *  aircraft icon the minimap uses. */
+const PLANE_TYPES = planeTypesRaw as Record<
+  string,
+  { index: string; name: string; type: string }
+>;
+/** 3D point color per aircraft type (matches the battle-HUD icon families). */
+const PLANE_COLORS: Record<string, number> = {
+  fighter: 0xff6b6b,
+  dive: 0xffd93d,
+  skip: 0xffa94d,
+  torpedo: 0x74c0fc,
+  rocket: 0xff8787,
+  bomber: 0xffd43b,
+  scout: 0x78d2ff,
+  attack: 0x96f2d7,
+};
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -233,6 +254,8 @@ export default defineComponent({
     let planeCloud: THREE.Points | null = null;
     /** Per-plane sample lists grouped by plane id, sorted by time. */
     let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
+    /** planeId → aircraft type (fighter/dive/torpedo/...). */
+    const planeTypesById = new Map<number, string>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
@@ -420,13 +443,27 @@ export default defineComponent({
         ctx.arc(wx(s.x), wz(-s.z), 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Aircraft (receive_updateSquadron) — small cyan dots.
-      ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
-      for (const sp of props.squadronPlanes) {
-        if (sp.time > t || t - sp.time > 2) continue;
-        ctx.beginPath();
-        ctx.arc(wx(sp.x), wz(-sp.z), 1.4, 0, Math.PI * 2);
-        ctx.fill();
+      // Aircraft (receive_updateSquadron) — in-game type icons at each
+      // plane's last known position (updates arrive every few seconds).
+      for (const trail of planeTrails) {
+        const samples = trail.samples;
+        let s: SquadronPlane | null = null;
+        for (const sp of samples) {
+          if (sp.time > t) break;
+          s = sp;
+        }
+        if (s == null) continue;
+        if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
+        const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
+        if (icon && icon.complete && icon.naturalWidth > 0) {
+          const sz = 14;
+          ctx.drawImage(icon, wx(s.x) - sz / 2, wz(-s.z) - sz / 2, sz, sz);
+        } else {
+          ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
+          ctx.beginPath();
+          ctx.arc(wx(s.x), wz(-s.z), 1.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       // Camera frustum.
@@ -504,13 +541,26 @@ export default defineComponent({
             zctx.arc(zwx(s.x), zwz(-s.z), 6, 0, Math.PI * 2);
             zctx.fill();
           }
-          // Aircraft — small cyan dots on the enlarged map.
-          zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
-          for (const sp of props.squadronPlanes) {
-            if (sp.time > t || t - sp.time > 2) continue;
-            zctx.beginPath();
-            zctx.arc(zwx(sp.x), zwz(-sp.z), 3.5, 0, Math.PI * 2);
-            zctx.fill();
+          // Aircraft — in-game type icons at last known positions.
+          for (const trail of planeTrails) {
+            const samples = trail.samples;
+            let s: SquadronPlane | null = null;
+            for (const sp of samples) {
+              if (sp.time > t) break;
+              s = sp;
+            }
+            if (s == null) continue;
+            if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
+            const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
+            if (icon && icon.complete && icon.naturalWidth > 0) {
+              const sz = 30;
+              zctx.drawImage(icon, zwx(s.x) - sz / 2, zwz(-s.z) - sz / 2, sz, sz);
+            } else {
+              zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
+              zctx.beginPath();
+              zctx.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
+              zctx.fill();
+            }
           }
         }
       }
@@ -1271,17 +1321,32 @@ export default defineComponent({
         id,
         samples: samples.sort((a, b) => a.time - b.time),
       }));
+      // planeId → aircraft type (via the squadron create's paramsId).
+      planeTypesById.clear();
+      for (const c of props.squadronCreates) {
+        planeTypesById.set(c.planeId, PLANE_TYPES[String(c.paramsId)]?.type ?? "attack");
+      }
       if (planeTrails.length > 0) {
+        const colors = new Float32Array(planeTrails.length * 3);
+        for (let i = 0; i < planeTrails.length; i++) {
+          const c = new THREE.Color(
+            PLANE_COLORS[planeTypesById.get(planeTrails[i].id) ?? "attack"] ?? 0x78d2ff,
+          );
+          colors[i * 3] = c.r;
+          colors[i * 3 + 1] = c.g;
+          colors[i * 3 + 2] = c.b;
+        }
         const pg = new THREE.BufferGeometry();
         pg.setAttribute(
           "position",
           new THREE.BufferAttribute(new Float32Array(planeTrails.length * 3), 3),
         );
+        pg.setAttribute("color", new THREE.BufferAttribute(colors, 3));
         pg.computeBoundingSphere();
         const pm = new THREE.PointsMaterial({
-          color: 0x78d2ff,
           size: 5,
           sizeAttenuation: false,
+          vertexColors: true,
         });
         const points = new THREE.Points(pg, pm);
         points.visible = false;
