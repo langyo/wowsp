@@ -204,6 +204,8 @@ fn group_by_entity(
         leaves,
         camera_modes,
         diagnostics,
+        squadron_creates,
+        squadron_planes,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -322,6 +324,8 @@ fn group_by_entity(
         leaves,
         camera_modes,
         diagnostics,
+        squadron_creates,
+        squadron_planes,
     }
 }
 
@@ -801,6 +805,8 @@ mod tests {
             "leaves": stream.leaves,
             "cameraModes": stream.camera_modes,
             "diagnostics": stream.diagnostics,
+            "squadronCreates": stream.squadron_creates,
+            "squadronPlanes": stream.squadron_planes,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
