@@ -260,6 +260,33 @@ pub struct WeaponLockEvent {
     pub target_id: i32,
 }
 
+/// One camera-state sample (Camera, 0x25): the recorder's own camera pose
+/// every tick, usable to replay the original spectating view.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraSample {
+    pub time: f32,
+    pub rot_x: f32,
+    pub rot_y: f32,
+    pub rot_z: f32,
+    pub rot_w: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Field of view in radians.
+    pub fov: f32,
+}
+
+/// One player network-stat sample (PlayerNetStats, 0x1d).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetStatsSample {
+    pub time: f32,
+    pub fps: u8,
+    pub ping: u16,
+    pub is_lagging: bool,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -278,6 +305,52 @@ pub struct ReplayStream {
     /// battle statistics JSON when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battle_results: Option<String>,
+    /// Replay protocol version string (Version, 0x16).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Map name from the Map packet (0x28) when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub map_name: Option<String>,
+    /// Recorder camera timeline (Camera, 0x25) — one pose per tick.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub camera: Vec<CameraSample>,
+    /// Player network stats (PlayerNetStats, 0x1d) — fps/ping per tick.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub net_stats: Vec<NetStatsSample>,
+    /// Entity id → last time it left the observed area (EntityLeave, 0x04).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub leaves: std::collections::BTreeMap<i32, f32>,
+    /// Camera-mode changes (0x27) — spectating view modes over time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub camera_modes: Vec<HpSample>,
+    /// Counts of the remaining decoded system packets (diagnostics).
+    #[serde(default, skip_serializing_if = "DiagnosticCounts::is_default")]
+    pub diagnostics: DiagnosticCounts,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticCounts {
+    pub server_ticks: u32,
+    pub server_timestamps: u32,
+    pub init_flags: u32,
+    pub init_markers: u32,
+    pub base_player_creates: u32,
+    pub create_stubs: u32,
+    pub entity_controls: u32,
+    pub entity_enters: u32,
+    pub camera_modes: u32,
+    pub camera_freelooks: u32,
+    pub sub_controllers: u32,
+    pub cruise_states: u32,
+    pub shot_trackings: u32,
+    pub gun_markers: u32,
+}
+
+impl DiagnosticCounts {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.

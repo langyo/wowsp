@@ -6,9 +6,12 @@ import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
 import { api } from "@/api";
 import type {
+  CameraSample,
   EntityTrajectory,
   ExplosionEvent,
   GameInstallKind,
+  HpSample,
+  NetStatsSample,
   TorpedoLaunch,
   WeaponLockEvent,
 } from "@/api";
@@ -151,6 +154,12 @@ export default defineComponent({
     const torpedoes = ref<TorpedoLaunch[]>([]);
     const weaponLocks = ref<WeaponLockEvent[]>([]);
     const battleResults = ref<string | null>(null);
+    const replayVersion = ref<string | null>(null);
+    const mapNamePkt = ref<string | null>(null);
+    const cameraFrames = ref<CameraSample[]>([]);
+    const netStats = ref<NetStatsSample[]>([]);
+    const leavesMap = ref<Record<string, number>>({});
+    const cameraModes = ref<HpSample[]>([]);
     const showResults = ref(false);
     const trajectoryError = ref<string | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
@@ -164,6 +173,12 @@ export default defineComponent({
         torpedoes.value = [];
         weaponLocks.value = [];
         battleResults.value = null;
+        replayVersion.value = null;
+        mapNamePkt.value = null;
+        cameraFrames.value = [];
+        netStats.value = [];
+        leavesMap.value = {};
+        cameraModes.value = [];
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -174,6 +189,12 @@ export default defineComponent({
           torpedoes.value = stream.torpedoes ?? [];
           weaponLocks.value = stream.weaponLocks ?? [];
           battleResults.value = stream.battleResults ?? null;
+          replayVersion.value = stream.version ?? null;
+          mapNamePkt.value = stream.mapName ?? null;
+          cameraFrames.value = stream.camera ?? [];
+          netStats.value = stream.netStats ?? [];
+          leavesMap.value = stream.leaves ?? {};
+          cameraModes.value = stream.cameraModes ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -354,6 +375,12 @@ export default defineComponent({
                       torpedoes={torpedoes.value}
                       weaponLocks={weaponLocks.value}
                       battleResults={battleResults.value}
+                      replayVersion={replayVersion.value}
+                      mapNamePkt={mapNamePkt.value}
+                      cameraFrames={cameraFrames.value}
+                      netStats={netStats.value}
+                      leavesMap={leavesMap.value}
+                      cameraModes={cameraModes.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId.value}
                       mapId={parser.current.value.mapName ?? ""}

@@ -181,6 +181,13 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "torpedoes": dump.get("torpedoes", []),
             "weaponLocks": dump.get("weaponLocks", []),
             "battleResults": dump.get("battleResults"),
+            "version": dump.get("version"),
+            "mapName": dump.get("mapName"),
+            "camera": dump.get("camera", []),
+            "netStats": dump.get("netStats", []),
+            "leaves": dump.get("leaves", {}),
+            "cameraModes": dump.get("cameraModes", []),
+            "diagnostics": dump.get("diagnostics", {}),
         }
     return {
         "trajectories": [],
@@ -188,6 +195,13 @@ async def cmd_read_replay_positions(request: Request) -> dict:
         "torpedoes": [],
         "weaponLocks": [],
         "battleResults": None,
+        "version": None,
+        "mapName": None,
+        "camera": [],
+        "netStats": [],
+        "leaves": {},
+        "cameraModes": [],
+        "diagnostics": {},
     }
 
 

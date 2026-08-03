@@ -111,5 +111,9 @@
     "hide": "Hide labels",
     "show": "Show labels"
   },
-  "results": "Battle results"
+  "results": "Battle results",
+  "origview": {
+    "on": "Original view",
+    "off": "Free view"
+  }
 }
