@@ -134,6 +134,33 @@ export interface HpSample {
   value: number;
 }
 
+/** A shell impact / explosion observed by the recorder's avatar
+ *  (receiveExplosions). World-space point in map coordinates. */
+export interface ExplosionEvent {
+  time: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** A torpedo launch (shootTorpedo): firing ship entity id + launch direction
+ *  unit vector. Torpedoes travel straight from the firing position. */
+export interface TorpedoLaunch {
+  time: number;
+  entityId: number;
+  dirX: number;
+  dirY: number;
+  dirZ: number;
+}
+
+/** Decoded packet stream: entity trajectories plus battle-effect events.
+ *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
+export interface ReplayStream {
+  trajectories: EntityTrajectory[];
+  explosions?: ExplosionEvent[];
+  torpedoes?: TorpedoLaunch[];
+}
+
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
 export interface PlayerStats {
   accountId: number;
@@ -296,7 +323,7 @@ export const api = {
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
   readReplayPositions: (path: string) =>
-    transport.invoke<EntityTrajectory[]>(RPC.read_replay_positions, { path }),
+    transport.invoke<ReplayStream>(RPC.read_replay_positions, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
   /** List replays with parsed descriptor metadata (date/mode/map/own ship).

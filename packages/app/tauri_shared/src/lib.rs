@@ -214,6 +214,45 @@ pub struct HpSample {
     pub value: u32,
 }
 
+/// An explosion event observed by the recorder's avatar (`receiveExplosions`,
+/// Avatar client-method 126 on current clients). Carries the world-space impact
+/// point, so the frontend can render shell splashes / hits even though shells
+/// themselves are client-side and never recorded.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplosionEvent {
+    pub time: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+/// A torpedo launch (`shootTorpedo`, Vehicle client-method 47): the firing
+/// ship's entity id plus the launch direction unit vector (torpedoes travel
+/// straight from the firing position).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoLaunch {
+    pub time: f32,
+    pub entity_id: i32,
+    pub dir_x: f32,
+    pub dir_y: f32,
+    pub dir_z: f32,
+}
+
+/// Everything the holographic replay viewer needs from the packet stream:
+/// entity trajectories plus battle-effect events (explosions, torpedo
+/// launches) that are broadcast as entity methods rather than entities.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayStream {
+    pub trajectories: Vec<EntityTrajectory>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub explosions: Vec<ExplosionEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub torpedoes: Vec<TorpedoLaunch>,
+}
+
 /// Player's dog tag (personalized emblem). Fetched from the WG Vortex API.
 /// Colors are ARGB-packed u32 values; texture/symbol/background IDs are
 /// entity refs to pattern assets on WG's CDN.

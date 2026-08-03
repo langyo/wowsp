@@ -172,11 +172,15 @@ def _load_replay_dump() -> dict[str, Any] | None:
 
 
 @app.post("/api/read_replay_positions")
-async def cmd_read_replay_positions(request: Request) -> list[dict]:
+async def cmd_read_replay_positions(request: Request) -> dict:
     dump = _load_replay_dump()
     if dump is not None:
-        return dump["trajectories"]
-    return []
+        return {
+            "trajectories": dump.get("trajectories", []),
+            "explosions": dump.get("explosions", []),
+            "torpedoes": dump.get("torpedoes", []),
+        }
+    return {"trajectories": [], "explosions": [], "torpedoes": []}
 
 
 @app.post("/api/read_temp_arena_info")

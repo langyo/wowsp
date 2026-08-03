@@ -18,7 +18,7 @@ import {
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
-import type { EntityTrajectory, ShipInfo, VehicleEntry, HpSample } from "@/api";
+import type { EntityTrajectory, ExplosionEvent, ShipInfo, TorpedoLaunch, VehicleEntry, HpSample } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -46,6 +46,10 @@ export default defineComponent({
   props: {
     replayPath: { type: String, default: "" },
     trajectories: { type: Array as () => EntityTrajectory[], default: () => [] },
+    /** World-space shell impacts (receiveExplosions on the avatar). */
+    explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
+    /** Torpedo launches (shootTorpedo on firing vehicles). */
+    torpedoes: { type: Array as () => TorpedoLaunch[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -152,7 +156,34 @@ export default defineComponent({
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
-    let planeCloud: THREE.Points | null = null;
+    /** Smoke-screen puffs (entityType 4 = SmokeScreen). One cylinder per
+     *  smoke entity, positioned at its expanding point each frame. */
+    let smokeMeshes: { mesh: THREE.Mesh; traj: EntityTrajectory; endT: number }[] = [];
+    /** Reconstructed shell flights: a curved trace from a nearby ship that
+     *  was aimed at the impact when it exploded. */
+    let shellTraces: {
+      line: THREE.Line;
+      dots: THREE.Points;
+      flash: THREE.Mesh;
+      halo: THREE.Mesh;
+      t0: number;
+      t1: number;
+      from: () => THREE.Vector3 | null;
+      to: THREE.Vector3;
+      h: number;
+    }[] = [];
+    /** In-flight torpedoes: straight capsules from the launch point along
+     *  the launch direction. */
+    let torpedoMeshes: {
+      mesh: THREE.Mesh;
+      wake: THREE.Line;
+      t0: number;
+      life: number;
+      base: THREE.Vector3;
+      dir: THREE.Vector3;
+    }[] = [];
+    /** Transient explosion rings (splash hits). */
+    let explosionFx: { ring: THREE.Mesh; born: number }[] = [];
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
@@ -331,13 +362,13 @@ export default defineComponent({
         drawShipGlyph(ctx, m.userData.type as string | undefined, cx, cz, 5, color);
       }
 
-      // Aircraft (entityType 4) — small cyan dots at their interpolated spot.
-      ctx.fillStyle = "rgba(120, 210, 255, 0.85)";
+      // Smoke screens (entityType 4) — translucent grey puffs.
+      ctx.fillStyle = "rgba(150, 160, 180, 0.45)";
       for (const tr of props.trajectories) {
         if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
         const s = sampleAt(tr, t);
         ctx.beginPath();
-        ctx.arc(wx(s.x), wz(-s.z), 1.6, 0, Math.PI * 2);
+        ctx.arc(wx(s.x), wz(-s.z), 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -407,25 +438,14 @@ export default defineComponent({
             const color = role ? TEAM_COLOR[role] : 0x888888;
             drawShipGlyph(zctx, m.userData.type as string | undefined, cx, cz, 14, color);
           }
-          // Aircraft dots + patrol paths (thin cyan lines).
-          zctx.fillStyle = "rgba(120, 210, 255, 0.85)";
+          // Smoke screens — translucent grey puffs on the enlarged map.
+          zctx.fillStyle = "rgba(150, 160, 180, 0.5)";
           for (const tr of props.trajectories) {
             if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
             const s = sampleAt(tr, t);
             zctx.beginPath();
-            zctx.arc(zwx(s.x), zwz(-s.z), 4, 0, Math.PI * 2);
+            zctx.arc(zwx(s.x), zwz(-s.z), 6, 0, Math.PI * 2);
             zctx.fill();
-            // patrol path: polyline of the aircraft's route
-            zctx.strokeStyle = "rgba(120, 210, 255, 0.35)";
-            zctx.lineWidth = 1;
-            zctx.beginPath();
-            tr.samples.forEach((ss, i) => {
-              const px = zwx(ss.x);
-              const py = zwz(-ss.z);
-              if (i === 0) zctx.moveTo(px, py);
-              else zctx.lineTo(px, py);
-            });
-            zctx.stroke();
           }
         }
       }
@@ -562,12 +582,42 @@ export default defineComponent({
       shipMarkers = [];
       capRings = [];
       capSim.clear();
-      if (planeCloud) {
-        scene.remove(planeCloud);
-        planeCloud.geometry.dispose();
-        (planeCloud.material as THREE.Material).dispose();
-        planeCloud = null;
+      for (const sm of smokeMeshes) {
+        scene.remove(sm.mesh);
+        sm.mesh.geometry.dispose();
+        (sm.mesh.material as THREE.Material).dispose();
       }
+      smokeMeshes = [];
+      for (const st of shellTraces) {
+        scene.remove(st.line);
+        st.line.geometry.dispose();
+        (st.line.material as THREE.Material).dispose();
+        scene.remove(st.dots);
+        st.dots.geometry.dispose();
+        (st.dots.material as THREE.Material).dispose();
+        scene.remove(st.flash);
+        st.flash.geometry.dispose();
+        (st.flash.material as THREE.Material).dispose();
+        scene.remove(st.halo);
+        st.halo.geometry.dispose();
+        (st.halo.material as THREE.Material).dispose();
+      }
+      shellTraces = [];
+      for (const tm of torpedoMeshes) {
+        scene.remove(tm.mesh);
+        tm.mesh.geometry.dispose();
+        (tm.mesh.material as THREE.Material).dispose();
+        scene.remove(tm.wake);
+        tm.wake.geometry.dispose();
+        (tm.wake.material as THREE.Material).dispose();
+      }
+      torpedoMeshes = [];
+      for (const fx of explosionFx) {
+        scene.remove(fx.ring);
+        fx.ring.geometry.dispose();
+        (fx.ring.material as THREE.Material).dispose();
+      }
+      explosionFx = [];
       allyAlive.value = allyTotal.value;
       enemyAlive.value = enemyTotal.value;
       capStatus.value = [0, 0, 0];
@@ -893,36 +943,192 @@ export default defineComponent({
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
       const assignments = resolveRosterAssignments(shipTrajs);
 
-      // Aircraft (entityType 4): rendered as a lightweight THREE.Points cloud
-      // (one vertex per squadron), colored cyan. Positions update per frame.
-      const planeTrajs = props.trajectories.filter(
+      // Smoke screens (entityType 4 = SmokeScreen): a translucent grey
+      // cylinder at the smoke's current expanding point. WoWS smoke lasts
+      // ~90s; without a destroy packet we hide each puff 90s after its last
+      // recorded position update.
+      const smokeTrajs = props.trajectories.filter(
         (t) => t.kind?.entityType === 4 && t.samples.length >= 2,
       );
-      if (planeTrajs.length > 0) {
-        const positions = new Float32Array(planeTrajs.length * 3);
-        const colors = new Float32Array(planeTrajs.length * 3);
-        for (let i = 0; i < planeTrajs.length; i++) {
-          positions[i * 3 + 1] = -9999; // hidden until placed
-          colors[i * 3] = 0.45;
-          colors[i * 3 + 1] = 0.8;
-          colors[i * 3 + 2] = 1.0;
+      const smokeGeom = new THREE.CylinderGeometry(30, 30, 10, 16, 1);
+      const smokeMat = new THREE.MeshBasicMaterial({
+        color: 0x8b93a3,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+      });
+      for (const tr of smokeTrajs) {
+        const mesh = new THREE.Mesh(smokeGeom, smokeMat);
+        mesh.position.y = 2.5;
+        mesh.visible = false;
+        scene.add(mesh);
+        smokeMeshes.push({
+          mesh,
+          traj: tr,
+          endT: tr.samples[tr.samples.length - 1].time + 90,
+        });
+      }
+
+      // Shell flights reconstructed between a launch and its impact: for
+      // every explosion find the nearest ship that was alive, within 15 km,
+      // and pointed within ~25° of the impact at the estimated launch time;
+      // draw a ballistic arc from its position to the impact point. Launch
+      // time is estimated from distance with a ~800 m/s muzzle velocity.
+      const shipForImpact = (e: ExplosionEvent) => {
+        let best: { tr: EntityTrajectory; score: number; t0: number; h: number } | null = null;
+        for (const tr of props.trajectories) {
+          if (tr.kind?.entityType !== 2 || tr.samples.length < 8) continue;
+          const s = sampleAt(tr, e.time);
+          if (!s) continue;
+          const dist = Math.hypot(s.x - e.x, s.z - e.z);
+          if (dist > 15000) continue;
+          const flightT = Math.min(8, Math.max(0.8, dist / 800));
+          const t0 = e.time - flightT;
+          const s0 = sampleAt(tr, t0);
+          if (!s0) continue;
+          const dx = e.x - s0.x;
+          const dz = e.z - s0.z;
+          const aim = Math.atan2(dx, dz);
+          let dYaw = Math.abs(aim - s0.yaw);
+          if (dYaw > Math.PI) dYaw = 2 * Math.PI - dYaw;
+          if (dYaw > 0.45) continue; // ~25°
+          const score = dist + dYaw * 4000;
+          if (!best || score < best.score) {
+            best = { tr, score, t0, h: Math.min(320, dist * 0.12) };
+          }
         }
-        const pGeo = new THREE.BufferGeometry();
-        pGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        pGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-        const pMat = new THREE.PointsMaterial({
-          size: 5,
-          vertexColors: true,
+        return best;
+      };
+      const flashGeom = new THREE.SphereGeometry(20, 10, 10);
+      const flashMat = new THREE.MeshBasicMaterial({
+        color: 0xffe08a,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+      });
+      const flashHaloGeom = new THREE.SphereGeometry(46, 10, 10);
+      const flashHaloMat = new THREE.MeshBasicMaterial({
+        color: 0xffb347,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+      });
+      const curvePts = new Float32Array(28 * 3);
+      for (const e of props.explosions) {
+        const match = shipForImpact(e);
+        if (!match) continue;
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute("position", new THREE.BufferAttribute(curvePts, 3));
+        // Manual BufferGeometry has no bounding sphere; without computing one
+        // (or disabling culling) the frustum culler skips these lines.
+        geom.computeBoundingSphere();
+        const mat = new THREE.LineBasicMaterial({
+          color: 0xffe08a,
           transparent: true,
           opacity: 0.9,
-          sizeAttenuation: false,
           depthWrite: false,
         });
-        const points = new THREE.Points(pGeo, pMat);
-        points.userData.planeEntityIds = planeTrajs.map((t) => t.entityId);
-        points.userData.planeTrajs = planeTrajs;
-        scene.add(points);
-        planeCloud = points;
+        const line = new THREE.Line(geom, mat);
+        line.visible = false;
+        scene.add(line);
+        // Same curve rendered as fixed-pixel points so the flight reads even
+        // at full-map zoom (a 1px line vanishes at that distance).
+        const dotGeo = new THREE.BufferGeometry();
+        dotGeo.setAttribute("position", new THREE.BufferAttribute(curvePts, 3));
+        dotGeo.computeBoundingSphere();
+        const dotMat = new THREE.PointsMaterial({
+          color: 0xffe08a,
+          size: 3.5,
+          sizeAttenuation: false,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+        });
+        const dots = new THREE.Points(dotGeo, dotMat);
+        dots.visible = false;
+        scene.add(dots);
+        const flash = new THREE.Mesh(flashGeom, flashMat);
+        flash.position.set(e.x, 1, -e.z);
+        flash.visible = false;
+        scene.add(flash);
+        const flashHalo = new THREE.Mesh(flashHaloGeom, flashHaloMat);
+        flashHalo.position.set(e.x, 1, -e.z);
+        flashHalo.visible = false;
+        scene.add(flashHalo);
+        shellTraces.push({
+          line,
+          dots,
+          flash,
+          halo: flashHalo,
+          t0: match.t0,
+          t1: e.time,
+          from: () => {
+            const s = sampleAt(match.tr, current.value);
+            return s ? new THREE.Vector3(s.x, 0, -s.z) : null;
+          },
+          to: new THREE.Vector3(e.x, 0, -e.z),
+          h: match.h,
+        });
+      }
+      trajectoryLines.push(...shellTraces.map((st) => st.line));
+
+      // Torpedoes: straight white capsules from the firing ship's position at
+      // launch time along the launch direction. Speed ~33 m/s (60 knots);
+      // visible until 8 km of travel (or match end). Each torpedo carries a
+      // long white wake line so it reads at full-map zoom.
+      const torpedoGeom = new THREE.CapsuleGeometry(3, 12, 2, 8);
+      const torpedoMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+      });
+      const wakeGeom = new THREE.BufferGeometry();
+      wakeGeom.setAttribute(
+        "position",
+        new THREE.BufferAttribute(new Float32Array(6), 3),
+      );
+      const wakeMat = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+      });
+      for (const tp of props.torpedoes) {
+        const traj = props.trajectories.find((tr) => tr.entityId === tp.entityId);
+        const s = traj ? sampleAt(traj, tp.time) : null;
+        if (!s) continue;
+        const mesh = new THREE.Mesh(torpedoGeom, torpedoMat);
+        const wake = new THREE.Line(wakeGeom, wakeMat);
+        mesh.visible = false;
+        wake.visible = false;
+        scene.add(mesh);
+        scene.add(wake);
+        torpedoMeshes.push({
+          mesh,
+          wake,
+          t0: tp.time,
+          life: 240,
+          base: new THREE.Vector3(s.x, 0, -s.z),
+          dir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
+        });
+      }
+
+      // Reusable explosion rings for shell impacts / splashes.
+      const ringGeomFx = new THREE.RingGeometry(0.35, 1, 24);
+      const ringMatFx = new THREE.MeshBasicMaterial({
+        color: 0xffe08a,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      for (let i = 0; i < 20; i++) {
+        const ring = new THREE.Mesh(ringGeomFx, ringMatFx);
+        ring.visible = false;
+        ring.rotation.x = -Math.PI / 2;
+        scene.add(ring);
+        explosionFx.push({ ring, born: -1 });
       }
 
       const newLabels: ShipLabel[] = [];
@@ -1256,22 +1462,86 @@ export default defineComponent({
         else mat.color.set(0xffffff);
         mat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
       });
-      // Aircraft positions at this instant.
-      if (planeCloud) {
-        const trajs = planeCloud.userData.planeTrajs as EntityTrajectory[];
-        const attr = planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute;
-        for (let i = 0; i < trajs.length; i++) {
-          const s = sampleAt(trajs[i], t);
-          const visible =
-            s != null &&
-            ((trajs[i].kind?.creationTime ?? -1) < 0 || t >= (trajs[i].kind?.creationTime ?? -1));
-          if (visible && s) {
-            attr.setXYZ(i, s.x, 2, -s.z);
+      // Smoke screens at their current expanding point (visible for 90s
+      // after the last recorded update).
+      for (const sm of smokeMeshes) {
+        const s = sampleAt(sm.traj, t);
+        const created = (sm.traj.kind?.creationTime ?? -1) >= 0 ? t >= sm.traj.kind!.creationTime : true;
+        const alive = s != null && created && t <= sm.endT;
+        sm.mesh.visible = alive;
+        if (alive && s) sm.mesh.position.set(s.x, 2.5, -s.z);
+      }
+      // Shell traces: ballistic arc from the firing ship (updated live) to
+      // the impact point, shown during [t0, t1]; the impact flash lingers
+      // 1s past the impact.
+      for (const st of shellTraces) {
+        const inFlight = t >= st.t0 && t <= st.t1;
+        const flashOn = t >= st.t1 && t <= st.t1 + 1;
+        st.flash.visible = flashOn;
+        st.halo.visible = flashOn;
+        st.line.visible = inFlight;
+        st.dots.visible = inFlight;
+        if (inFlight) {
+          const from = st.from();
+          if (from) {
+            const attr = st.line.geometry.getAttribute("position") as THREE.BufferAttribute;
+            const arr = attr.array as Float32Array;
+            for (let i = 0; i < 28; i++) {
+              const k = i / 27;
+              const kx = k * 2 - 1;
+              const px = from.x + (st.to.x - from.x) * k;
+              const pz = from.z + (st.to.z - from.z) * k;
+              const py = Math.max(0, st.h * (1 - kx * kx));
+              arr[i * 3] = px;
+              arr[i * 3 + 1] = py;
+              arr[i * 3 + 2] = pz;
+            }
+            attr.needsUpdate = true;
+            const dotAttr = st.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
+            dotAttr.needsUpdate = true;
           } else {
-            attr.setXYZ(i, 0, -9999, 0);
+            st.line.visible = false;
+            st.dots.visible = false;
           }
         }
-        attr.needsUpdate = true;
+      }
+      // Torpedoes: advance straight along the launch direction.
+      for (const tm of torpedoMeshes) {
+        const age = t - tm.t0;
+        const on = age >= 0 && age <= tm.life;
+        tm.mesh.visible = on;
+        tm.wake.visible = on;
+        if (on) {
+          const p = tm.base.clone().add(tm.dir.clone().multiplyScalar(33 * age));
+          tm.mesh.position.set(p.x, 1.2, p.z);
+          tm.mesh.rotation.y = Math.atan2(tm.dir.x, tm.dir.z);
+          const wakeAttr = tm.wake.geometry.getAttribute("position") as THREE.BufferAttribute;
+          const tail = tm.dir.clone().multiplyScalar(160);
+          wakeAttr.setXYZ(0, p.x - tail.x, 0.4, p.z - tail.z);
+          wakeAttr.setXYZ(1, p.x, 0.4, p.z);
+          wakeAttr.needsUpdate = true;
+        }
+      }
+      // Explosion rings: spawn on impacts, expand + fade over ~1.2s.
+      let nextFx = explosionFx.find((f) => !f.ring.visible);
+      for (const e of props.explosions) {
+        if (e.time > t || t - e.time > 1.2) continue;
+        if (!nextFx) break;
+        nextFx.ring.visible = true;
+        nextFx.ring.position.set(e.x, 1, -e.z);
+        nextFx.born = e.time;
+        nextFx = explosionFx.find((f) => !f.ring.visible);
+      }
+      for (const fx of explosionFx) {
+        if (!fx.ring.visible) continue;
+        const age = t - fx.born;
+        if (age > 1.2) {
+          fx.ring.visible = false;
+          continue;
+        }
+        const k = age / 1.2;
+        fx.ring.scale.setScalar(40 + k * 240);
+        (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k);
       }
       // Update screen-space positions of floating labels from marker world positions.
       updateLabelPositions();
