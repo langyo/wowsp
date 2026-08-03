@@ -64,6 +64,26 @@ for (const path of _mapGlobKeys) {
   mapCasedByLower.set(original.toLowerCase(), original);
 }
 
+// ── Plane model availability (keyed by GameParams index, e.g. PJAF206) ───
+const _planeGlobKeys = Object.keys(
+  import.meta.glob("../../res/models/planes/*.glb"),
+);
+const planeCasedByLower = new Map<string, string>();
+for (const path of _planeGlobKeys) {
+  const original = path.split("/").pop()!.replace(/\.glb$/i, "");
+  planeCasedByLower.set(original.toLowerCase(), original);
+}
+
+// ── Shared projectile props (shell, torpedo) ─────────────────────────────
+const _propGlobKeys = Object.keys(
+  import.meta.glob("../../res/models/props/*.glb"),
+);
+const propCasedByLower = new Map<string, string>();
+for (const path of _propGlobKeys) {
+  const original = path.split("/").pop()!.replace(/\.glb$/i, "");
+  propCasedByLower.set(original.toLowerCase(), original);
+}
+
 // ── ship_models.json mapping ─────────────────────────────────────────────
 interface ShipModelEntry {
   index: string;
@@ -78,7 +98,11 @@ const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 // When the model-pack cache is available, serve via convertFileSrc; otherwise
 // fall back to publicDir paths.
 
-function toUrl(cacheRoot: string | null, kind: "ships" | "maps", cased: string): string {
+function toUrl(
+  cacheRoot: string | null,
+  kind: "ships" | "maps" | "planes" | "props",
+  cased: string,
+): string {
   // In dev mode Vite serves models via publicDir; convertFileSrc only works
   // in production where the webview origin is tauri://localhost.
   if (!import.meta.env.DEV && cacheRoot && _convertFileSrc) {
@@ -192,6 +216,19 @@ export function resolveMapModelUrl(spaceId: string | undefined): string | null {
   if (!spaceId) return null;
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
   return mapModelUrl(clean);
+}
+
+/** Plane model GLB by GameParams index (e.g. "PJAF206"), if baked. */
+export function resolvePlaneModelUrl(index: string | undefined): string | null {
+  if (!index) return null;
+  const cased = planeCasedByLower.get(index.toLowerCase());
+  return cased ? toUrl(_modelCacheRoot, "planes", cased) : null;
+}
+
+/** Shared projectile prop GLB ("shell" | "torpedo"), if baked. */
+export function resolvePropModelUrl(name: "shell" | "torpedo"): string | null {
+  const cased = propCasedByLower.get(name);
+  return cased ? toUrl(_modelCacheRoot, "props", cased) : null;
 }
 
 // ── Minimap base art (game minimap composite) + world bounds ────────────

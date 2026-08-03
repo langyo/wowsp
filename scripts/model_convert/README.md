@@ -40,6 +40,36 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 |---|---|---|
 | `convert_ship.py` | `export-ship` | `GLB` under `packages/webui/src/res/models/ships/` |
 | `convert_map.py` | `export-map` | `GLB` under `packages/webui/src/res/models/maps/` |
+| `bake_planes.py` | `export-model` | `GLB` under `packages/webui/src/res/models/planes/` + `props/` |
+| `bake_missing_ships.py` | (wows-gltf-exporter) | backfills specific ship GLBs under `ships/` |
+
+## Battle-effect models (planes / shells / torpedoes)
+
+`bake_planes.py` exports the real aircraft and projectile models the replay
+viewer renders for squadrons, shell flights, and torpedoes:
+
+```bash
+# Bake the planes that appear in a replay dump (usual case):
+python scripts/model_convert/bake_planes.py --from-dump dump.json
+
+# Specific planes by GameParams name, or everything:
+python scripts/model_convert/bake_planes.py --planes PJAF206_Ryujo_top
+python scripts/model_convert/bake_planes.py --all
+
+# Just the shared shell + torpedo props:
+python scripts/model_convert/bake_planes.py --props-only
+```
+
+- Plane GLBs are named by GameParams index (`PJAF206.glb`); the frontend maps
+  a squadron's paramsId → index → GLB via `src/data/plane_types.json`.
+- `src/data/plane_models.json` (GP name → VFS `.geometry` path) comes from each
+  GameParams entry's `model` field — regenerate after a game update.
+- Props are shared game models: `props/shell.glb` (all gun shells),
+  `props/torpedo.glb`.
+- Requires the in-tree patched `wowsunpack` (`target/release/wowsunpack.exe`):
+  stock `export-model` pairs vertex/index mappings positionally, which corrupts
+  multi-buffer raw exports (most planes). The vendored patch pairs them by the
+  mappings' shared `packed_texel_density` render-set hash instead.
 
 ## Usage
 
@@ -110,6 +140,8 @@ finished in a valid state.
      (e.g. `PASB510_Montana.glb`). Both are tried in that order.
    - Maps: `<spaceId>.glb` (e.g. `15_NE_north.glb`). Any `spaces/` prefix is
      stripped before matching.
+   - Planes: `<gpIndex>.glb` under `planes/` (e.g. `PJAF206.glb`).
+   - Props: `shell.glb` / `torpedo.glb` under `props/`.
 5. No code changes are needed — placing the GLB in the right directory is
    enough. The holographic map progressively enriches: ships without models
    use procedural cone markers, maps without terrain use a grid helper.
