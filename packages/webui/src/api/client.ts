@@ -144,6 +144,8 @@ export interface ExplosionEvent {
   x: number;
   y: number;
   z: number;
+  /** GameParams id of the shell — resolves to HE/AP/SAP for colors. */
+  paramsId?: number;
 }
 
 /** A torpedo launch (shootTorpedo): firing ship entity id + launch direction
