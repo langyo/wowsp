@@ -165,6 +165,45 @@ export interface WeaponLockEvent {
   targetId: number;
 }
 
+/** One camera pose sample (Camera 0x25) — the recorder's spectating view. */
+export interface CameraSample {
+  time: number;
+  rotX: number;
+  rotY: number;
+  rotZ: number;
+  rotW: number;
+  x: number;
+  y: number;
+  z: number;
+  fov: number;
+}
+
+/** One player network-stat sample (PlayerNetStats 0x1d). */
+export interface NetStatsSample {
+  time: number;
+  fps: number;
+  ping: number;
+  isLagging: boolean;
+}
+
+/** Counts of decoded system packets (diagnostics). */
+export interface DiagnosticCounts {
+  serverTicks?: number;
+  serverTimestamps?: number;
+  initFlags?: number;
+  initMarkers?: number;
+  basePlayerCreates?: number;
+  createStubs?: number;
+  entityControls?: number;
+  entityEnters?: number;
+  cameraModes?: number;
+  cameraFreelooks?: number;
+  subControllers?: number;
+  cruiseStates?: number;
+  shotTrackings?: number;
+  gunMarkers?: number;
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
@@ -174,6 +213,19 @@ export interface ReplayStream {
   weaponLocks?: WeaponLockEvent[];
   /** Raw post-battle statistics JSON (BattleResults 0x22). */
   battleResults?: string | null;
+  /** Replay protocol version (Version 0x16). */
+  version?: string | null;
+  /** Map name from the Map packet (0x28). */
+  mapName?: string | null;
+  /** Recorder camera timeline (0x25). */
+  camera?: CameraSample[];
+  /** Player net stats (0x1d). */
+  netStats?: NetStatsSample[];
+  /** Entity id → last leave time (0x04). */
+  leaves?: Record<string, number>;
+  /** Camera-mode changes (0x27). */
+  cameraModes?: HpSample[];
+  diagnostics?: DiagnosticCounts;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

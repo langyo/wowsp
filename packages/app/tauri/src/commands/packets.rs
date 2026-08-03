@@ -81,6 +81,35 @@ const PACKET_SET_WEAPON_LOCK: u32 = 0x30;
 /// BattleResults (0x22): post-battle statistics payload (a JSON string with a
 /// u32 length prefix). Emitted once near match end.
 const PACKET_BATTLE_RESULTS: u32 = 0x22;
+/// Version (0x16): protocol version string (u32 len + utf8).
+const PACKET_VERSION: u32 = 0x16;
+/// Camera (0x25): recorder camera pose every tick (quat + pos + fov + dir).
+const PACKET_CAMERA: u32 = 0x25;
+/// PlayerNetStats (0x1d): packed u32 (fps 8b | ping 16b | isLagging 1b).
+const PACKET_NET_STATS: u32 = 0x1d;
+/// Map (0x28): arena + map-name packet (carries the map's internal name).
+const PACKET_MAP: u32 = 0x28;
+/// EntityLeave (0x04) / EntityEnter (0x03): entities leaving/entering the
+/// observed area (ships out of view, smoke/planes expiring).
+const PACKET_ENTITY_LEAVE: u32 = 0x04;
+const PACKET_ENTITY_ENTER: u32 = 0x03;
+/// System/utility packets we decode and count (diagnostics only): server
+/// tick rate, timestamp, init markers, base player create, create stub,
+/// entity control, camera mode, camera freelook, sub controller, cruise
+/// state, shot tracking, gun marker.
+const PACKET_SERVER_TICK: u32 = 0x0e;
+const PACKET_SERVER_TIMESTAMP: u32 = 0x0f;
+const PACKET_INIT_FLAG: u32 = 0x10;
+const PACKET_INIT_MARKER: u32 = 0x13;
+const PACKET_BASE_PLAYER_CREATE: u32 = 0x00;
+const PACKET_BASE_PLAYER_CREATE_STUB: u32 = 0x26;
+const PACKET_ENTITY_CONTROL: u32 = 0x02;
+const PACKET_CAMERA_MODE: u32 = 0x27;
+const PACKET_CAMERA_FREELOOK: u32 = 0x2f;
+const PACKET_SUB_CONTROLLER: u32 = 0x31;
+const PACKET_CRUISE_STATE: u32 = 0x32;
+const PACKET_SHOT_TRACKING: u32 = 0x33;
+const PACKET_GUN_MARKER: u32 = 0x18;
 /// Avatar client-method id for `receiveExplosions` on current clients
 /// (15.x): array of {Vector3 pos, u32 paramsID, u8 hitType}.
 const METHOD_RECEIVE_EXPLOSIONS: i32 = 126;
@@ -126,6 +155,20 @@ pub struct DecodedReplay {
     pub weapon_locks: Vec<wowsp_tauri_shared::WeaponLockEvent>,
     /// Raw post-battle statistics payload (BattleResults 0x22).
     pub battle_results: Option<String>,
+    /// Protocol version string (0x16).
+    pub version: Option<String>,
+    /// Map name from the Map packet (0x28).
+    pub map_name: Option<String>,
+    /// Recorder camera timeline (0x25).
+    pub camera: Vec<wowsp_tauri_shared::CameraSample>,
+    /// Player net stats (0x1d).
+    pub net_stats: Vec<wowsp_tauri_shared::NetStatsSample>,
+    /// Entity id → last leave time (0x04).
+    pub leaves: BTreeMap<i32, f32>,
+    /// Camera-mode changes (0x27): (time, mode).
+    pub camera_modes: Vec<wowsp_tauri_shared::HpSample>,
+    /// Counts of decoded system packets (diagnostics).
+    pub diagnostics: wowsp_tauri_shared::DiagnosticCounts,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -216,6 +259,13 @@ fn walk_frames(
     let mut nested: Vec<RawNestedProperty> = Vec::new();
     let mut weapon_locks: Vec<wowsp_tauri_shared::WeaponLockEvent> = Vec::new();
     let mut battle_results: Option<String> = None;
+    let mut version: Option<String> = None;
+    let mut map_name: Option<String> = None;
+    let mut camera: Vec<wowsp_tauri_shared::CameraSample> = Vec::new();
+    let mut net_stats: Vec<wowsp_tauri_shared::NetStatsSample> = Vec::new();
+    let mut leaves: BTreeMap<i32, f32> = BTreeMap::new();
+    let mut camera_modes: Vec<wowsp_tauri_shared::HpSample> = Vec::new();
+    let mut diagnostics = wowsp_tauri_shared::DiagnosticCounts::default();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -285,6 +335,76 @@ fn walk_frames(
                 if battle_results.is_none() {
                     battle_results = parse_battle_results(payload);
                 }
+            },
+            PACKET_VERSION => {
+                if version.is_none() {
+                    version = parse_version(payload);
+                }
+            },
+            PACKET_CAMERA => {
+                if let Some(s) = parse_camera(payload, time) {
+                    camera.push(s);
+                }
+            },
+            PACKET_NET_STATS => {
+                if let Some(s) = parse_net_stats(payload, time) {
+                    net_stats.push(s);
+                }
+            },
+            PACKET_MAP => {
+                if map_name.is_none() {
+                    map_name = parse_map_name(payload);
+                }
+            },
+            PACKET_ENTITY_LEAVE => {
+                if let Some(eid) = parse_entity_destroy(payload) {
+                    leaves.insert(eid, time);
+                }
+            },
+            PACKET_ENTITY_ENTER => {
+                diagnostics.entity_enters += 1;
+            },
+            PACKET_SERVER_TICK => {
+                diagnostics.server_ticks += 1;
+            },
+            PACKET_SERVER_TIMESTAMP => {
+                diagnostics.server_timestamps += 1;
+            },
+            PACKET_INIT_FLAG => {
+                diagnostics.init_flags += 1;
+            },
+            PACKET_INIT_MARKER => {
+                diagnostics.init_markers += 1;
+            },
+            PACKET_BASE_PLAYER_CREATE => {
+                diagnostics.base_player_creates += 1;
+            },
+            PACKET_BASE_PLAYER_CREATE_STUB => {
+                diagnostics.create_stubs += 1;
+            },
+            PACKET_ENTITY_CONTROL => {
+                diagnostics.entity_controls += 1;
+            },
+            PACKET_CAMERA_MODE => {
+                if let Some(mode) = parse_camera_mode(payload, time) {
+                    camera_modes.push(mode);
+                    diagnostics.camera_modes += 1;
+                }
+            },
+            PACKET_CAMERA_FREELOOK => {
+                diagnostics.camera_freelooks += 1;
+            },
+            PACKET_SUB_CONTROLLER => {
+                diagnostics.sub_controllers += 1;
+            },
+            PACKET_CRUISE_STATE => {
+                diagnostics.cruise_states += 1;
+            },
+            PACKET_SHOT_TRACKING => {
+                diagnostics.shot_trackings += 1;
+            },
+            PACKET_GUN_MARKER => {
+                diagnostics.gun_markers += 1;
             },
             _ => {},
         }
@@ -357,7 +477,89 @@ fn walk_frames(
         cap_progress,
         weapon_locks,
         battle_results,
+        version,
+        map_name,
+        camera,
+        net_stats,
+        leaves,
+        camera_modes,
+        diagnostics,
     }
+}
+
+/// Parse a Version (0x16) payload: u32 length + UTF-8 string.
+fn parse_version(payload: &[u8]) -> Option<String> {
+    if payload.len() < 4 {
+        return None;
+    }
+    let len = u32::from_le_bytes(payload[0..4].try_into().ok()?) as usize;
+    let body = payload.get(4..4 + len.min(payload.len() - 4))?;
+    String::from_utf8(body.to_vec()).ok()
+}
+
+/// Parse a Camera (0x25) payload: quaternion (4×f32), camera position (3×f32),
+/// fov (f32), [unknown f32 when ≥60 bytes], position (3×f32), direction (3×f32).
+fn parse_camera(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::CameraSample> {
+    if payload.len() < 56 {
+        return None;
+    }
+    let f = |o: usize| f32::from_le_bytes(payload[o..o + 4].try_into().unwrap());
+    Some(wowsp_tauri_shared::CameraSample {
+        time,
+        rot_x: f(0),
+        rot_y: f(4),
+        rot_z: f(8),
+        rot_w: f(12),
+        x: f(16),
+        y: f(20),
+        z: f(24),
+        fov: f(28),
+    })
+}
+
+/// Parse a PlayerNetStats (0x1d) payload: one packed u32 (fps 8b | ping 16b |
+/// isLagging 1b).
+fn parse_net_stats(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::NetStatsSample> {
+    if payload.len() < 4 {
+        return None;
+    }
+    let v = u32::from_le_bytes(payload[0..4].try_into().ok()?);
+    Some(wowsp_tauri_shared::NetStatsSample {
+        time,
+        fps: (v & 0xFF) as u8,
+        ping: ((v >> 8) & 0xFFFF) as u16,
+        is_lagging: (v >> 24) & 1 != 0,
+    })
+}
+
+/// Extract the map name from a Map (0x28) payload. Layout: u32 space_id,
+/// i64 arena_id, u32 unknown1, u32 unknown2, blob, [u32 len, C-string
+/// map_name], 64-byte matrix, u8 unknown. Rather than trusting the blob
+/// length, scan for the "spaces/" prefix and read the C-string after it.
+fn parse_map_name(payload: &[u8]) -> Option<String> {
+    let idx = payload.windows(7).position(|w| w == b"spaces/")?;
+    let off = idx;
+    let end = payload[off..]
+        .iter()
+        .position(|&b| b == 0)
+        .map(|i| off + i)
+        .unwrap_or(payload.len());
+    let name = std::str::from_utf8(&payload[off..end]).ok()?;
+    if name.is_empty() || name.len() > 120 {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// Parse a CameraMode (0x27) payload: one u32 mode id.
+fn parse_camera_mode(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::HpSample> {
+    if payload.len() < 4 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::HpSample {
+        time,
+        value: u32::from_le_bytes(payload[0..4].try_into().ok()?),
+    })
 }
 
 /// Parse a NestedPropertyUpdate (0x23) payload: `i32 entity_id, u8 is_slice,
