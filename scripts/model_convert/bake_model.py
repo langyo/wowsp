@@ -423,6 +423,16 @@ def decimate(vertices: list[float], indices: list[int], target_tris: int) -> tup
     verts = np.asarray(vertices, dtype=np.float64).reshape(-1, 3)
     faces = np.asarray(indices, dtype=np.int64).reshape(-1, 3)
 
+    # Defensive: a handful of exporter outputs (mostly multi-primitive plane
+    # models) contain a few face indices at/past the vertex-count boundary
+    # (off-by-one junk). Dropping those triangles is visually harmless;
+    # letting them through crashes np.unique's inverse indexing below.
+    in_range = (faces >= 0).all(axis=1) & (faces < len(verts)).all(axis=1)
+    if not in_range.all():
+        dropped = int((~in_range).sum())
+        faces = faces[in_range]
+        print(f"[bake] dropped {dropped} out-of-range triangles")
+
     extent = float(verts.max() - verts.min())
     if extent <= 0.0:
         return vertices, indices

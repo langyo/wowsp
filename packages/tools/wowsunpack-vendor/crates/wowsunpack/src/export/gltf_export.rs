@@ -1423,20 +1423,58 @@ pub fn export_merged_models_glb(
 
 /// Export raw geometry to GLB without a visual file.
 ///
-/// Pairs `vertices_mapping[i]` with `indices_mapping[i]` by array index. Each
-/// pair becomes a separate glTF primitive. No material names, textures, or LOD
-/// filtering are available without the visual.
+/// Without a visual there is no explicit (vertices_mapping_id,
+/// indices_mapping_id) render-set pairing, and the two mapping lists are NOT
+/// positionally aligned (extra vertex-only entries shift the lists). The
+/// `packed_texel_density` field is in practice a pairing hash shared by the
+/// vertex and index mapping of the same render set, so pair entries by that
+/// key in list order (k-th vertex mapping with key K takes the k-th index
+/// mapping with key K). Each pair becomes a separate glTF primitive. No
+/// material names, textures, or LOD filtering are available without the
+/// visual.
 pub fn export_geometry_raw(geometry: &MergedGeometry, writer: &mut impl Write) -> Result<(), Report<ExportError>> {
-    let pair_count = geometry.vertices_mapping.len().min(geometry.indices_mapping.len());
+    use std::collections::HashMap;
 
-    if geometry.vertices_mapping.len() != geometry.indices_mapping.len() {
-        eprintln!(
-            "Warning: {} vertex mappings vs {} index mappings; exporting {} pairs",
-            geometry.vertices_mapping.len(),
-            geometry.indices_mapping.len(),
-            pair_count,
-        );
+    // Group index mappings by their pairing key, preserving list order.
+    let mut im_by_key: HashMap<u16, Vec<usize>> = HashMap::new();
+    for (j, im) in geometry.indices_mapping.iter().enumerate() {
+        im_by_key.entry(im.packed_texel_density).or_default().push(j);
     }
+    let mut im_used = vec![false; geometry.indices_mapping.len()];
+
+    let mut pairs: Vec<usize> = vec![usize::MAX; geometry.vertices_mapping.len()];
+    let mut key_cursor: HashMap<u16, usize> = HashMap::new();
+    for (i, vm) in geometry.vertices_mapping.iter().enumerate() {
+        let key = vm.packed_texel_density;
+        if let Some(candidates) = im_by_key.get(&key) {
+            let pos = key_cursor.entry(key).or_insert(0);
+            if *pos < candidates.len() {
+                pairs[i] = candidates[*pos];
+                im_used[candidates[*pos]] = true;
+                *pos += 1;
+            }
+        }
+    }
+    // Vertex mappings without a key match fall back to the first unused index
+    // mapping in list order (keeps single-mapping models working).
+    let mut fallback = 0usize;
+    for (i, paired) in pairs.iter_mut().enumerate() {
+        if *paired != usize::MAX {
+            continue;
+        }
+        while fallback < geometry.indices_mapping.len() && im_used[fallback] {
+            fallback += 1;
+        }
+        if fallback < geometry.indices_mapping.len() {
+            *paired = fallback;
+            im_used[fallback] = true;
+            eprintln!(
+                "Warning: vertex mapping {i}: no texel-density key match, \
+                 falling back to index mapping {fallback}"
+            );
+        }
+    }
+    let pair_count = pairs.iter().filter(|p| **p != usize::MAX).count();
 
     if pair_count == 0 {
         eprintln!("Warning: no mapping entries found; producing empty GLB");
@@ -1454,9 +1492,12 @@ pub fn export_geometry_raw(geometry: &MergedGeometry, writer: &mut impl Write) -
     let mut bin_data: Vec<u8> = Vec::new();
     let mut gltf_primitives = Vec::new();
 
-    for i in 0..pair_count {
+    for (i, paired) in pairs.iter().enumerate() {
+        if *paired == usize::MAX {
+            continue;
+        }
         let vert_mapping = &geometry.vertices_mapping[i];
-        let idx_mapping = &geometry.indices_mapping[i];
+        let idx_mapping = &geometry.indices_mapping[*paired];
 
         // Get vertex buffer.
         let vbuf_idx = vert_mapping.merged_buffer_index as usize;
