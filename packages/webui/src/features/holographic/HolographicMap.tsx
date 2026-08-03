@@ -9,6 +9,8 @@ import {
   resolveMapMinimapUrl,
   resolveShipModelForEntry,
   resolveShipModelByShipId,
+  resolvePlaneModelUrl,
+  resolvePropModelUrl,
   shipNameFromModelDb,
   shipNameFromOfflineDb,
   shipOfflineEntry,
@@ -19,6 +21,7 @@ import {
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
+import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
   CameraSample,
@@ -267,7 +270,11 @@ export default defineComponent({
       dots: THREE.Points;
       flash: THREE.Mesh;
       halo: THREE.Mesh;
-      shell: THREE.Mesh;
+      /** In-flight projectile visual — a cone until the real shell GLB swaps
+       *  in, then a wrapped model group (driven identically). */
+      shell: THREE.Object3D;
+      /** Ammo tint (kept so the async GLB swap can re-tint the model). */
+      color: number;
       t0: number;
       t1: number;
       from: () => THREE.Vector3 | null;
@@ -275,9 +282,9 @@ export default defineComponent({
       h: number;
     }[] = [];
     /** In-flight torpedoes: straight capsules from the launch point along
-     *  the launch direction. */
+     *  the launch direction (swapped for the real torpedo GLB once loaded). */
     let torpedoMeshes: {
-      mesh: THREE.Mesh;
+      mesh: THREE.Object3D;
       wake: THREE.Line;
       t0: number;
       life: number;
@@ -293,12 +300,15 @@ export default defineComponent({
     /** Big ring over the locked target (same render path as splash rings). */
     let lockRing: THREE.Mesh | null = null;
     /** Aircraft formation cloud (one point per plane, from the avatar's
-     *  receive_updateSquadron stream). */
+     *  receive_updateSquadron stream) — fallback for planes without a baked
+     *  model; modeled planes render as GLB meshes in `planeMeshes`. */
     let planeCloud: THREE.Points | null = null;
     /** Per-plane sample lists grouped by plane id, sorted by time. */
     let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
     /** planeId → aircraft type (fighter/dive/torpedo/...). */
     const planeTypesById = new Map<number, string>();
+    /** planeId → real 3D aircraft model (once its GLB has loaded). */
+    const planeMeshes = new Map<number, THREE.Object3D>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
@@ -717,6 +727,23 @@ export default defineComponent({
      *  stale loads compare against the live epoch before mutating the scene. */
     let markerEpoch = 0;
 
+    /** Dispose an Object3D generically — primitive mesh or wrapped GLB group.
+     *  Materials are always disposed (per-instance). Geometry is disposed too,
+     *  EXCEPT for GLB-derived groups (userData.sharedGeometry): their buffers
+     *  are shared with the decode cache and must survive until the cache is
+     *  cleared on unmount. */
+    function disposeAny(obj: THREE.Object3D): void {
+      const shared = obj.userData.sharedGeometry === true;
+      obj.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        if (!shared) mesh.geometry?.dispose();
+        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (!mat) return;
+        for (const m of Array.isArray(mat) ? mat : [mat]) m.dispose();
+      });
+    }
+
     function clearActors() {
       markerEpoch++;
       const scene = api.value?.scene;
@@ -742,8 +769,7 @@ export default defineComponent({
       trajectoryLines = [];
       shipMarkers = [];
       capRings = [];
-      capSim.clear();
-      for (const sm of smokeMeshes) {
+      capSim.clear();      for (const sm of smokeMeshes) {
         scene.remove(sm.mesh);
         sm.mesh.geometry.dispose();
         (sm.mesh.material as THREE.Material).dispose();
@@ -756,9 +782,10 @@ export default defineComponent({
         scene.remove(st.dots);
         st.dots.geometry.dispose();
         (st.dots.material as THREE.Material).dispose();
+        // st.shell may be a primitive mesh or a wrapped GLB group (after the
+        // model swap) — dispose generically.
         scene.remove(st.shell);
-        st.shell.geometry.dispose();
-        (st.shell.material as THREE.Material).dispose();
+        disposeAny(st.shell);
         scene.remove(st.flash);
         st.flash.geometry.dispose();
         (st.flash.material as THREE.Material).dispose();
@@ -769,13 +796,17 @@ export default defineComponent({
       shellTraces = [];
       for (const tm of torpedoMeshes) {
         scene.remove(tm.mesh);
-        tm.mesh.geometry.dispose();
-        (tm.mesh.material as THREE.Material).dispose();
+        disposeAny(tm.mesh);
         scene.remove(tm.wake);
         tm.wake.geometry.dispose();
         (tm.wake.material as THREE.Material).dispose();
       }
       torpedoMeshes = [];
+      for (const g of planeMeshes.values()) {
+        scene.remove(g);
+        disposeAny(g);
+      }
+      planeMeshes.clear();
       for (const fx of explosionFx) {
         scene.remove(fx.ring);
         fx.ring.geometry.dispose();
@@ -1263,6 +1294,7 @@ export default defineComponent({
           flash,
           halo: flashHalo,
           shell,
+          color: ammo.color,
           t0: match.t0,
           t1: e.time,
           // Launch point is fixed at the firing ship's position at t0 — using
@@ -1318,6 +1350,42 @@ export default defineComponent({
           base: new THREE.Vector3(s.x, 0, -s.z),
           dir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
         });
+      }
+
+      // Swap the primitive placeholders for the real game models (baked GLBs
+      // from scripts/model_convert/bake_planes.py). Each swap keeps driving
+      // the replacement exactly like the primitive it replaces.
+      const shellPropUrl = resolvePropModelUrl("shell");
+      if (shellPropUrl) {
+        for (const st of shellTraces) {
+          buildPropMarker({ url: shellPropUrl, color: st.color, axis: "y", targetLen: 9 })
+            .then((g) => {
+              if (epoch !== markerEpoch || !api.value?.scene) return;
+              g.visible = st.shell.visible;
+              g.position.copy(st.shell.position);
+              g.quaternion.copy(st.shell.quaternion);
+              scene.add(g);
+              scene.remove(st.shell);
+              st.shell = g;
+            })
+            .catch(() => { /* keep the cone fallback */ });
+        }
+      }
+      const torpedoPropUrl = resolvePropModelUrl("torpedo");
+      if (torpedoPropUrl) {
+        for (const tm of torpedoMeshes) {
+          buildPropMarker({ url: torpedoPropUrl, color: 0xffffff, axis: "y", targetLen: 14, opacity: 1 })
+            .then((g) => {
+              if (epoch !== markerEpoch || !api.value?.scene) return;
+              g.visible = tm.mesh.visible;
+              g.position.copy(tm.mesh.position);
+              g.quaternion.copy(tm.mesh.quaternion);
+              scene.add(g);
+              scene.remove(tm.mesh);
+              tm.mesh = g;
+            })
+            .catch(() => { /* keep the capsule fallback */ });
+        }
       }
 
       // Reusable explosion rings for shell impacts / splashes.
@@ -1421,6 +1489,48 @@ export default defineComponent({
         points.visible = false;
         scene.add(points);
         planeCloud = points;
+      }
+
+      // Real aircraft models: one baked GLB per distinct plane type, cloned
+      // per plane. Trails whose model fails/misses keep the Points fallback.
+      planeMeshes.clear();
+      {
+        // planeId → GameParams index (via the squadron create's paramsId).
+        const indexById = new Map<number, string>();
+        for (const c of props.squadronCreates) {
+          const idx = PLANE_TYPES[String(c.paramsId)]?.index;
+          if (idx) indexById.set(c.planeId, idx);
+        }
+        const seenIdx = new Set<string>();
+        for (const trail of planeTrails) {
+          const idx = indexById.get(trail.id);
+          if (!idx) continue;
+          const url = resolvePlaneModelUrl(idx);
+          if (!url) continue;
+          const type = planeTypesById.get(trail.id) ?? "attack";
+          const color = PLANE_COLORS[type] ?? 0x78d2ff;
+          const already = seenIdx.has(idx);
+          seenIdx.add(idx);
+          // Load one model per index, then clone for every trail of that type.
+          const build = already
+            ? null
+            : buildPropMarker({ url, color, axis: "z", targetLen: 16, opacity: 0.95 })
+                .catch(() => null);
+          if (build) {
+            const trailsForIdx = planeTrails.filter((t) => indexById.get(t.id) === idx);
+            build.then((proto) => {
+              if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
+              for (const tr of trailsForIdx) {
+                if (planeMeshes.has(tr.id)) continue;
+                const inst = proto.clone(true);
+                inst.userData.sharedGeometry = true;
+                inst.visible = false;
+                scene.add(inst);
+                planeMeshes.set(tr.id, inst);
+              }
+            });
+          }
+        }
       }
 
       const newLabels: ShipLabel[] = [];
@@ -1791,10 +1901,13 @@ export default defineComponent({
         if (alive && s) sm.mesh.position.set(s.x, 2.5, -s.z);
       }
       // Aircraft formation: each plane sits at its last recorded position.
-      if (planeCloud) {
-        const attr = planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute;
-        const arr = attr.array as Float32Array;
-        let any = false;
+      // Modeled planes drive their GLB mesh; the rest fall back to Points.
+      {
+        const attr = planeCloud
+          ? (planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute)
+          : null;
+        const arr = attr ? (attr.array as Float32Array) : null;
+        let anyPoints = false;
         for (let i = 0; i < planeTrails.length; i++) {
           const samples = planeTrails[i].samples;
           let s: SquadronPlane | null = null;
@@ -1805,30 +1918,50 @@ export default defineComponent({
           // Alive between the first update and ~2 min after the last one.
           const born = samples[0].time;
           const expiry = samples[samples.length - 1].time + 120;
-          if (s != null && t >= born && t <= expiry) {
-            arr[i * 3] = s.x;
-            arr[i * 3 + 1] = Math.max(60, s.y);
-            arr[i * 3 + 2] = -s.z;
-            any = true;
-          } else {
-            arr[i * 3 + 1] = -9999;
+          const alive = s != null && t >= born && t <= expiry;
+          const model = planeMeshes.get(planeTrails[i].id);
+          if (model) {
+            model.visible = alive;
+            if (alive && s) {
+              model.position.set(s.x, Math.max(60, s.y), -s.z);
+              model.rotation.y = Math.PI - s.yaw;
+            }
+          }
+          if (arr) {
+            if (alive && s && !model) {
+              arr[i * 3] = s.x;
+              arr[i * 3 + 1] = Math.max(60, s.y);
+              arr[i * 3 + 2] = -s.z;
+              anyPoints = true;
+            } else {
+              arr[i * 3 + 1] = -9999;
+            }
           }
         }
-        planeCloud.visible = any;
-        attr.needsUpdate = true;
+        if (planeCloud && attr) {
+          planeCloud.visible = anyPoints;
+          attr.needsUpdate = true;
+        }
       }
       // Shell traces: ballistic arc from the firing ship (updated live) to
       // the impact point, shown during [t0, t1]; the impact flash lingers
       // 1s past the impact. The in-flight shell cone is interpolated along
       // the arc every frame (smooth補间 during playback).
+      // Elements outside the fitted battle bounds are stray data — hidden so
+      // they can't flash out in empty space.
+      const inBounds = (x: number, z: number) =>
+        !bounds || (x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ);
       for (const st of shellTraces) {
         const inFlight = t >= st.t0 && t <= st.t1;
         const flashOn = t >= st.t1 && t <= st.t1 + 1;
-        st.flash.visible = flashOn;
-        st.halo.visible = flashOn;
-        st.line.visible = inFlight;
-        st.dots.visible = inFlight;
-        st.shell.visible = inFlight;
+        // Traces whose impact point lies outside the fitted battle bounds are
+        // stray data — hide the whole trace so it can't flash out in space.
+        const impactIn = inBounds(st.to.x, st.to.z);
+        st.flash.visible = flashOn && impactIn;
+        st.halo.visible = flashOn && impactIn;
+        st.line.visible = inFlight && impactIn;
+        st.dots.visible = inFlight && impactIn;
+        st.shell.visible = inFlight && impactIn;
         if (inFlight) {
           const from = st.from();
           if (from) {
@@ -1889,10 +2022,13 @@ export default defineComponent({
           wakeAttr.needsUpdate = true;
         }
       }
-      // Explosion rings: spawn on impacts, expand + fade over ~1.2s.
+      // Explosion rings: spawn on impacts, expand + fade over ~1.2s. Impacts
+      // outside the fitted battle bounds are skipped so stray data points
+      // don't flash rings out in empty space.
       let nextFx = explosionFx.find((f) => !f.ring.visible);
       for (const e of props.explosions) {
         if (e.time > t || t - e.time > 1.2) continue;
+        if (!inBounds(e.x, -e.z)) continue;
         if (!nextFx) break;
         nextFx.ring.visible = true;
         nextFx.ring.position.set(e.x, 1, -e.z);
@@ -2494,6 +2630,7 @@ export default defineComponent({
         seaSurface = null;
       }
       clearShipMarkerCache();
+      clearPropMarkerCache();
     });
 
     return () => (
