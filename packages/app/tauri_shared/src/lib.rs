@@ -231,6 +231,9 @@ pub struct ExplosionEvent {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+    /// GameParams id of the shell that caused the impact — resolves to the
+    /// shell type (HE/AP/SAP) for per-type colors and trails on the frontend.
+    pub params_id: u32,
 }
 
 /// A torpedo launch (`shootTorpedo`, Vehicle client-method 47): the firing
