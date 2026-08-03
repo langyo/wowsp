@@ -79,6 +79,23 @@
     line-height: 1;
   }
 
+  &__lbltoggle {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgb(var(--color-primary) / 50%);
+    border-radius: var(--radius-sm);
+    background: rgb(0 0 0 / 40%);
+    color: rgb(var(--color-primary));
+    cursor: pointer;
+    font-size: var(--text-sm);
+    line-height: 1;
+    &--on {
+      background: rgb(var(--color-primary));
+      color: rgb(var(--color-on-solid));
+    }
+  }
+
   &__scrub {
     width: 200px;
     accent-color: rgb(var(--color-primary));

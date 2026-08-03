@@ -19,13 +19,15 @@ import { makeHoloContourMaterial } from "./holoContourShader";
 import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
+  CameraSample,
   EntityTrajectory,
   ExplosionEvent,
+  HpSample,
+  NetStatsSample,
   ShipInfo,
   TorpedoLaunch,
   VehicleEntry,
   WeaponLockEvent,
-  HpSample,
 } from "@/api";
 import { tierToRoman } from "@/utils/tierRoman";
 import ShipTypeIcon from "@/components/base/ShipTypeIcon";
@@ -62,6 +64,18 @@ export default defineComponent({
     weaponLocks: { type: Array as () => WeaponLockEvent[], default: () => [] },
     /** Raw post-battle statistics JSON (BattleResults 0x22). */
     battleResults: { type: String, default: "" },
+    /** Replay protocol version (Version 0x16). */
+    replayVersion: { type: String, default: "" },
+    /** Map name from the Map packet (0x28). */
+    mapNamePkt: { type: String, default: "" },
+    /** Recorder camera timeline (Camera 0x25) — enables the original-view mode. */
+    cameraFrames: { type: Array as () => CameraSample[], default: () => [] },
+    /** Player net stats (PlayerNetStats 0x1d). */
+    netStats: { type: Array as () => NetStatsSample[], default: () => [] },
+    /** Entity id → last leave time (EntityLeave 0x04). */
+    leavesMap: { type: Object as () => Record<string, number>, default: () => ({}) },
+    /** Camera-mode changes (0x27). */
+    cameraModes: { type: Array as () => HpSample[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -80,7 +94,8 @@ export default defineComponent({
     const { ready, api } = useThreeScene(container, (_dt) => {
       updateLabelPositions();
       drawMinimap();
-      followSelected();
+      if (originalView.value) applyOriginalCamera(current.value);
+      else followSelected();
     });
 
     // Playback state.
@@ -95,6 +110,14 @@ export default defineComponent({
     const showRoster = ref(false);
     // Toggle for the floating ship labels (info overlay).
     const showLabels = ref(true);
+    /** Replay the recorder's original spectating camera (Camera 0x25 frames). */
+    const originalView = ref(false);
+    watch(originalView, (on) => {
+      if (!on) {
+        const ctrl = api.value?.controls;
+        if (ctrl) ctrl.enabled = true;
+      }
+    });
 
     // First-person follow: the entity id whose marker the camera tracks
     // (null = free orbit). Set by clicking a ship marker/label.
@@ -990,10 +1013,13 @@ export default defineComponent({
         mesh.position.y = 2.5;
         mesh.visible = false;
         scene.add(mesh);
+        // Exact expiry when the entity left the observed area (EntityLeave
+        // 0x04); otherwise fall back to ~90s after the last recorded update.
+        const leaveT = props.leavesMap[tr.entityId];
         smokeMeshes.push({
           mesh,
           traj: tr,
-          endT: tr.samples[tr.samples.length - 1].time + 90,
+          endT: leaveT != null ? leaveT : tr.samples[tr.samples.length - 1].time + 90,
         });
       }
 
@@ -1997,6 +2023,32 @@ export default defineComponent({
       ctrl.update();
     }
 
+    /** Replay the recorder's original camera when the original-view toggle is
+     *  on: pick the camera frame at the playhead, apply pose + fov, and
+     *  disable OrbitControls so the user can't fight the replay. */
+    function applyOriginalCamera(t: number) {
+      const cam = api.value?.camera;
+      const ctrl = api.value?.controls;
+      if (!cam || !ctrl) return;
+      const frames = props.cameraFrames;
+      if (frames.length === 0) {
+        originalView.value = false;
+        ctrl.enabled = true;
+        return;
+      }
+      ctrl.enabled = false;
+      let frame = frames[frames.length - 1];
+      for (const f of frames) {
+        if (f.time > t) break;
+        frame = f;
+      }
+      // Scene z is mirrored (z' = -z), so the camera z mirrors too.
+      cam.position.set(frame.x, frame.y, -frame.z);
+      cam.quaternion.set(frame.rotX, frame.rotY, frame.rotZ, frame.rotW);
+      cam.fov = (frame.fov * 180) / Math.PI;
+      cam.updateProjectionMatrix();
+    }
+
     /** Select a ship by clicking (either its 3D marker or its label). Clicking
      *  the empty scene clears the selection. */
     function selectShip(entityId: number | null) {
@@ -2364,6 +2416,15 @@ export default defineComponent({
             >
               {showLabels.value ? "◉" : "◎"}
             </button>
+            {props.cameraFrames.length > 0 ? (
+              <button
+                class={["holo-map__lbltoggle", originalView.value ? "holo-map__lbltoggle--on" : ""]}
+                onClick={() => { originalView.value = !originalView.value; }}
+                title={originalView.value ? t("replay.origview.off") : t("replay.origview.on")}
+              >
+                {originalView.value ? "🎥" : "⛶"}
+              </button>
+            ) : null}
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? "❚❚" : "▶"}
             </button>

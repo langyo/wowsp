@@ -197,6 +197,13 @@ fn group_by_entity(
         mut cap_progress,
         weapon_locks,
         battle_results,
+        version,
+        map_name,
+        camera,
+        net_stats,
+        leaves,
+        camera_modes,
+        diagnostics,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -308,6 +315,13 @@ fn group_by_entity(
         torpedoes,
         weapon_locks,
         battle_results,
+        version,
+        map_name,
+        camera,
+        net_stats,
+        leaves,
+        camera_modes,
+        diagnostics,
     }
 }
 
@@ -780,6 +794,13 @@ mod tests {
             "torpedoes": stream.torpedoes,
             "weaponLocks": stream.weapon_locks,
             "battleResults": stream.battle_results,
+            "version": stream.version,
+            "mapName": stream.map_name,
+            "camera": stream.camera,
+            "netStats": stream.net_stats,
+            "leaves": stream.leaves,
+            "cameraModes": stream.camera_modes,
+            "diagnostics": stream.diagnostics,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
