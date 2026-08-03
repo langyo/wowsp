@@ -67,7 +67,7 @@ export const HOLO_FRAG = /* glsl */ `
     vec3 col = baseColor * (0.35 + 0.25 * fres);
     col += fresnelColor * fres * 1.4;
     col += fresnelColor * scan * 0.6;
-    float alpha = 0.72 + 0.28 * fres;
+    float alpha = 0.95 + 0.05 * fres;
     // Focus highlight: brighten fragments near any focus point.
     for (int i = 0; i < 8; i++) {
       if (float(i) >= focusCount) break;

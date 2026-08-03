@@ -319,6 +319,8 @@ export default defineComponent({
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId.value}
                       mapId={parser.current.value.mapName ?? ""}
+                      matchGroup={parser.current.value.matchGroup ?? ""}
+                      mapName={parser.current.value.mapName ?? ""}
                     />
                   )}
                 </div>

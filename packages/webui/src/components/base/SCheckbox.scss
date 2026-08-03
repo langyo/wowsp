@@ -65,3 +65,38 @@
   font-size: var(--text-sm);
   color: rgb(var(--color-text));
 }
+
+/* ── Switch variant: a pill toggle sharing the checkbox contract ──────── */
+.s-checkbox-switch {
+  display: flex;
+  align-items: center;
+  width: 2rem;
+  height: 1.125rem;
+  padding: 0.125rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-border) / 40%);
+  background: rgb(var(--color-surface) / 92%);
+  transition:
+    border-color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.s-checkbox-switch[data-checked] {
+  background: rgb(var(--color-primary));
+  border-color: rgb(var(--color-primary));
+}
+
+.s-checkbox-switch [data-el="thumb"] {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  border-radius: 50%;
+  background: rgb(var(--color-text) / 55%);
+  transition: transform var(--duration-short) var(--ease-standard);
+}
+
+.s-checkbox-switch[data-checked] [data-el="thumb"] {
+  transform: translateX(0.875rem);
+  background: rgb(var(--color-on-solid));
+}

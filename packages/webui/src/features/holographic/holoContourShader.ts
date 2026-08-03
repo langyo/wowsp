@@ -57,19 +57,23 @@ export const HOLO_CONTOUR_FRAG = /* glsl */ `
     bool isDeep = y <= trenchDepth;
 
     // ── Base tint by zone ────────────────────────────────────────────────
+    // Land stays bright (the visible "mountains"); everything underwater is
+    // darkened toward the sea-surface colour so the bathymetry barely reads
+    // through the translucent water plane — the viewer should see islands and
+    // sea, with seabed hints only as faint contour glints.
     vec3 col;
     if (isLand) {
       // Land: cyan, brightening with height.
       float t = clamp(y / 40.0, 0.0, 1.0);
       col = mix(baseColor * 0.5, fresnelColor * 0.9, t);
     } else if (isDeep) {
-      // Deep sea / trenches: deep blue, brightest in the troughs.
+      // Deep sea / trenches: near-black blue, almost invisible.
       float depth = clamp((-y) / 30.0, 0.0, 1.0);
-      col = mix(vec3(0.04, 0.10, 0.22), vec3(0.10, 0.32, 0.55), 1.0 - depth);
+      col = mix(vec3(0.010, 0.022, 0.038), vec3(0.022, 0.050, 0.080), 1.0 - depth);
     } else {
-      // Shallow sea: teal.
+      // Shallow sea: dark teal, subtle.
       float depth = clamp((-y) / (-trenchDepth + 0.001), 0.0, 1.0);
-      col = mix(vec3(0.05, 0.22, 0.30), vec3(0.08, 0.40, 0.52), depth);
+      col = mix(vec3(0.014, 0.035, 0.045), vec3(0.022, 0.060, 0.075), depth);
     }
 
     // ── Contour bands ────────────────────────────────────────────────────
@@ -82,15 +86,18 @@ export const HOLO_CONTOUR_FRAG = /* glsl */ `
     float idx = step(0.5, fract((y - seaLevel) / (interval * 5.0)));
     float contour = max(major * 0.6, idx * major);
 
-    col += fresnelColor * contour * (isLand ? 1.1 : 0.8);
+    // Underwater contours are kept very faint so the seabed doesn't compete
+    // with the sea surface; land contours stay prominent.
+    float contourGain = isLand ? 1.1 : 0.18;
+    col += fresnelColor * contour * contourGain;
 
     // ── Scanline sweep + fresnel (matches the ship hologram) ─────────────
     float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
     scan = smoothstep(0.82, 1.0, scan);
-    col += fresnelColor * scan * 0.4;
-    col += fresnelColor * fres * 1.1;
+    col += fresnelColor * scan * (isLand ? 0.4 : 0.12);
+    col += fresnelColor * fres * (isLand ? 1.1 : 0.25);
 
-    float alpha = 0.42 + 0.20 * fres + contour * 0.08;
+    float alpha = isLand ? (0.42 + 0.20 * fres + contour * 0.08) : 0.20;
     gl_FragColor = vec4(col, alpha);
   }
 `;

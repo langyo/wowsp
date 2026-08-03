@@ -304,6 +304,7 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 continue
             seen.add(sid)
             name = entry.get("names", {}).get("en") or next(iter(entry.get("names", {}).values()), "")
+            hp = entry.get("hp") or 30000
             ships.append({
                 "shipId": sid,
                 "name": name,
@@ -315,7 +316,7 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 "description": "",
                 "gameVersion": "mock",
                 "defaultProfile": {
-                    "hull": {"health": 30000},
+                    "hull": {"health": hp},
                     "mobility": {"max_speed": 30},
                     "concealment": {"detect_distance_by_ship": 12},
                 },

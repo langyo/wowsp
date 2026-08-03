@@ -160,6 +160,8 @@ interface ShipNameEntry {
   tier?: number | null;
   type?: string | null;
   nation?: string | null;
+  /** Max hull HP across upgrade modules (GameParams), when available. */
+  hp?: number | null;
   names: Record<string, string>;
 }
 const shipNameMap =
@@ -269,60 +271,54 @@ export function resolveFallbackModel(
   ships: ShipModelSpec[],
 ): string | null {
   const tier = spec.tier;
-  const nation = spec.nation?.toLowerCase();
   const type = spec.type?.toLowerCase();
 
-  // Try same tier + same nation + same type.
-  if (tier != null && nation && type) {
-    for (const s of ships) {
-      if (
-        s.tier === tier &&
-        s.nation?.toLowerCase() === nation &&
-        s.type?.toLowerCase() === type
-      ) {
-        const url = resolveExact(s);
-        if (url) return url;
-      }
-    }
+  // Pool = encyclopedia ships + the offline DB (covers event/clone ships the
+  // encyclopedia misses). A model URL only exists for shipIds that ship_models
+  // knows, so candidates that resolveExact can't find are simply skipped.
+  const pool: ShipModelSpec[] = [...ships];
+  const seen = new Set<number>();
+  for (const s of ships) seen.add(s.shipId);
+  for (const [sidStr, e] of Object.entries(shipNameMap)) {
+    const sid = Number(sidStr);
+    if (!Number.isFinite(sid) || seen.has(sid)) continue;
+    pool.push({ shipId: sid, tier: e.tier, nation: e.nation, type: e.type });
   }
+  const match = (t: number | null | undefined, n: string | null | undefined, ty: string | null | undefined) =>
+    pool.filter(
+      (s) =>
+        (t == null || s.tier === t) &&
+        (n == null || s.nation?.toLowerCase() === n) &&
+        (ty == null || s.type?.toLowerCase() === ty),
+    );
+  const firstUrl = (list: ShipModelSpec[]): string | null => {
+    for (const s of list) {
+      const url = resolveExact(s);
+      if (url) return url;
+    }
+    return null;
+  };
 
-  // Try same tier + same type (any nation).
+  // 1. Same class, nearby tier (±1).
   if (tier != null && type) {
-    for (const s of ships) {
-      if (s.tier === tier && s.type?.toLowerCase() === type) {
-        const url = resolveExact(s);
-        if (url) return url;
-      }
-    }
-  }
-
-  // Try same tier (any type/nation).
-  if (tier != null) {
-    for (const s of ships) {
-      if (s.tier === tier) {
-        const url = resolveExact(s);
-        if (url) return url;
-      }
-    }
-  }
-
-  // Try same type (any tier/nation).
-  if (type) {
-    for (const s of ships) {
-      if (s.type?.toLowerCase() === type) {
-        const url = resolveExact(s);
-        if (url) return url;
-      }
-    }
-  }
-
-  // Absolute fallback: any available model.
-  for (const s of ships) {
-    const url = resolveExact(s);
+    const nearby = match(tier, null, type);
+    const url = firstUrl(
+      nearby.sort((a, b) => Math.abs((a.tier ?? 99) - tier) - Math.abs((b.tier ?? 99) - tier)),
+    );
     if (url) return url;
   }
-
-  return null;
+  // 2. Same class, any tier.
+  if (type) {
+    const url = firstUrl(match(null, null, type));
+    if (url) return url;
+  }
+  // 3. USA tier-8 ship of the same class.
+  if (type) {
+    const url = firstUrl(match(8, "usa", type));
+    if (url) return url;
+  }
+  // 4. Absolute fallback: USA tier-8 cruiser.
+  return firstUrl(match(8, "usa", "cruiser"));
 }
 
 export function resolveShipModelForEntry(
