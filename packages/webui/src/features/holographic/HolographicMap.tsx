@@ -223,9 +223,17 @@ export default defineComponent({
     let killSeq = 0;
     // Entity ids already reported as sunk (avoid double-counting on scrub).
     const reportedSinks = new Set<number>();
-    // The capture-zone entities + their ownership timelines.
+    // The capture-zone entities + their ownership timelines. InteractiveZone
+    // (type 14) covers ALL interactive areas — capture points, strike zones,
+    // event regions — so only the ones with a capture ownership/progress
+    // stream (property 0 or the 0x23 progress) are real domination points;
+    // the rest would show phantom A..K letters otherwise.
     const capZones = computed(() =>
-      props.trajectories.filter((t) => t.kind?.entityType === 14),
+      props.trajectories.filter(
+        (t) =>
+          t.kind?.entityType === 14 &&
+          ((t.capSamples?.length ?? 0) > 0 || (t.capProgress?.length ?? 0) > 0),
+      ),
     );
 
     onMounted(() => {
@@ -1545,14 +1553,16 @@ export default defineComponent({
       // with tiered radii so both letters stay readable instead of stacking
       // on top of each other. The number of points is data-driven (PvE
       // scenarios create new points mid-battle).
-      const capEntries = props.trajectories
-        .filter((t) => t.kind?.entityType === 14)
-        .map((t, idx) => ({
-          x: t.kind!.initialX,
-          z: t.kind!.initialZ,
-          radius: t.kind!.radius ?? 60,
-          order: idx,
-        }));
+      // Only real domination points (those with an ownership/progress stream)
+      // get 3D rings + letters — non-capture InteractiveZones are filtered by
+      // capZones. The number of points is data-driven (PvE scenarios create
+      // new points mid-battle).
+      const capEntries = capZones.value.map((t, idx) => ({
+        x: t.kind!.initialX,
+        z: t.kind!.initialZ,
+        radius: t.kind!.radius ?? 60,
+        order: idx,
+      }));
       if (capEntries.length === 0) {
         console.warn("[HolographicMap] no capture zone data found in trajectory kinds");
       }
