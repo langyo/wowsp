@@ -228,15 +228,25 @@ export default defineComponent({
     const reportedSinks = new Set<number>();
     // The capture-zone entities + their ownership timelines. InteractiveZone
     // (type 14) covers ALL interactive areas — capture points, strike zones,
-    // event regions — so only the ones with a capture ownership/progress
-    // stream (property 0 or the 0x23 progress) are real domination points;
-    // the rest would show phantom A..K letters otherwise.
+    // event regions — so only real domination points survive the filter:
+    //
+    //  1. Any entity with an ownership stream (capSamples, property 0) is a
+    //     capturable zone — strike/event areas never carry one.
+    //  2. Otherwise the 0x23 capture-progress stream must START SMALL: real
+    //     points tick up from zero in ~17-unit steps (their first sample is
+    //     17–50). Strike targets instead first appear at full strength
+    //     (741–1446) and drop to zero once destroyed — the first sample alone
+    //     separates them, so no step/threshold heuristics are needed.
+    //
+    // Verified against new_dawn, military_navigation, ice_islands, and
+    // naval_mission dumps: real first samples ≤ 50, fake ones ≥ 741.
     const capZones = computed(() =>
-      props.trajectories.filter(
-        (t) =>
-          t.kind?.entityType === 14 &&
-          ((t.capSamples?.length ?? 0) > 0 || (t.capProgress?.length ?? 0) > 0),
-      ),
+      props.trajectories.filter((t) => {
+        if (t.kind?.entityType !== 14) return false;
+        if ((t.capSamples?.length ?? 0) > 0) return true;
+        const cp = t.capProgress ?? [];
+        return cp.length > 0 && cp[0].value > 0 && cp[0].value <= 200;
+      }),
     );
 
     onMounted(() => {
