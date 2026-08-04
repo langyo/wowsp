@@ -715,6 +715,7 @@ fn parse_cell_player_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         z,
         creation_time: time,
         radius: None,
+        control_point_index: None,
     })
 }
 
@@ -799,6 +800,10 @@ struct ParsedCreate {
     /// Capture-zone radius (metres) recovered from the state stream when the
     /// entity type is 14; `None` for other types or when no candidate is found.
     radius: Option<f32>,
+    /// 0-based capture-point index (A=0, B=1, ...) when the create state
+    /// carries a real `controlPoint` component; `None` otherwise (strike /
+    /// event zones have an empty componentsState).
+    control_point_index: Option<i32>,
 }
 
 impl ParsedCreate {
@@ -812,8 +817,27 @@ impl ParsedCreate {
             creation_time: self.creation_time,
             ship_id: None,
             radius: self.radius,
+            control_point_index: self.control_point_index,
         }
     }
+}
+
+/// Detect a real domination point in an InteractiveZone (type 14) create
+/// state. Real points carry the `componentsState` property (index 10) with a
+/// non-empty `controlPoint` component, packed as:
+///
+///   `0a 01 b0 c7 e5 ff ff ff ff ff 01 00 <index>`
+///
+/// (property 10 present, buoyVisualId constant 0xffe5c7b0, nextControlPoint
+/// -1, ControlPointType 1 = Control, empty timer name, 0-based point index).
+/// Strike/event zones keep componentsState empty (`0a 00`) and never match.
+/// Verified byte-identical across domination, PvE, and brawl modes.
+fn scan_state_for_control_point(state: &[u8]) -> Option<i32> {
+    const SIG: [u8; 11] = [0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
+    state
+        .windows(SIG.len() + 2)
+        .position(|w| w[..SIG.len()] == SIG)
+        .map(|i| state[i + SIG.len() + 1] as i32)
 }
 
 /// Scan an EntityCreate state stream for any roster shipId (u32 LE, sliding
@@ -877,6 +901,11 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
     } else {
         None
     };
+    let control_point_index = if entity_type == 14 && payload.len() > 38 {
+        scan_state_for_control_point(&payload[38..])
+    } else {
+        None
+    };
     Some(ParsedCreate {
         entity_id,
         entity_type,
@@ -886,6 +915,7 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         z,
         creation_time: time,
         radius,
+        control_point_index,
     })
 }
 
