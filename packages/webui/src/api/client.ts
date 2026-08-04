@@ -112,6 +112,12 @@ export interface EntityKind {
   /** Roster shipId scanned from the EntityCreate state stream — the reliable
    *  join key into `ReplayMeta.vehicles[].shipId`. Undefined when not found. */
   shipId?: number | null;
+  /** Capture-zone radius (m) from the create state (entityType 14 only). */
+  radius?: number | null;
+  /** 0-based capture-point index (A=0, B=1, ...) from the create state's
+   *  `controlPoint` component. Only real domination points carry it;
+   *  strike/event InteractiveZones leave it undefined. */
+  controlPointIndex?: number | null;
 }
 
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */

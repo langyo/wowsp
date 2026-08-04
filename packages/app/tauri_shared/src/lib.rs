@@ -494,6 +494,15 @@ pub struct EntityKind {
     /// frontend when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius: Option<f32>,
+    /// 0-based capture-point index (A=0, B=1, ...) recovered from the
+    /// EntityCreate `componentsState.controlPoint` component. Only real
+    /// domination points carry it; strike/event InteractiveZones have an
+    /// empty componentsState and yield `None`. This is the authoritative
+    /// "is a capture point" flag — it ships with the create packet itself,
+    /// so it works even when the replay records no ownership/progress
+    /// updates afterwards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_point_index: Option<i32>,
 }
 
 fn default_creation_time() -> f32 {

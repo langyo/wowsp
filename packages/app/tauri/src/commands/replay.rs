@@ -649,6 +649,7 @@ mod tests {
                 creation_time: 0.0,
                 ship_id: None,
                 radius: None,
+                control_point_index: None,
             },
         );
         let change =
