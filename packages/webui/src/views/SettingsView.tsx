@@ -52,7 +52,7 @@ export default defineComponent({
               <span class="settings-view__lang-label">{t("settings.uiLanguage")}</span>
               <SSelect
                 modelValue={lang.uiLocale.value}
-                onUpdate:modelValue={(v: string) => lang.setUiLocale(v as "en" | "zhs")}
+                onUpdate:modelValue={(v: string) => lang.setUiLocale(v as "en-US" | "zh-CN")}
                 options={lang.uiLocaleOptions.map((o) => ({ value: o.value, label: o.label }))}
                 block
               />
