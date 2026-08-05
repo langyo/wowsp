@@ -56,6 +56,15 @@ function modeLabel(group?: string | null): string {
   return lbl === key ? t("replay.mode._fallback") : lbl;
 }
 
+/** Player count label: team-vs-team modes show "12v12" (split by the roster
+ *  relation), single-sided modes (PvE, ops) show the raw count. */
+function formatPlayerCount(vehicles: { relation: number }[]): string {
+  const ally = vehicles.filter((v) => v.relation <= 1).length;
+  const enemy = vehicles.filter((v) => v.relation > 1).length;
+  if (ally > 0 && enemy > 0) return `${ally}v${enemy}`;
+  return t("replay.players", { n: vehicles.length });
+}
+
 /** Official map display names extracted from the game's gettext catalogs
  *  (`scripts/model_convert/extract_map_names.py`): space id → {lang: name}.
  *  Space ids often DON'T match the display name (WG renamed maps but kept
@@ -369,7 +378,7 @@ export default defineComponent({
                   </span>
                 ) : null}
                 <span class="replay-view__meta-item replay-view__count">
-                  {t("replay.players", { n: parser.current.value.vehicles.length })}
+                  {formatPlayerCount(parser.current.value.vehicles)}
                 </span>
                 {duration.value > 0 ? (
                   <span class="replay-view__meta-item">
