@@ -2126,7 +2126,21 @@ export default defineComponent({
         const dead = deathTime != null && t >= deathTime;
         if (label) label.dead = dead;
         const tEff = dead ? deathTime! : t;
-        const s = sampleAt(traj, tEff);
+        // Before the first position sample the ship is still at its SPAWN
+        // point (the EntityCreate position) — ships that stay unseen for
+        // minutes (first sample late, e.g. an early-hidden ally) must not
+        // appear at the first OBSERVED position, which may be halfway across
+        // the map (that read as ships teleporting into the mountains).
+        let s: ReturnType<typeof sampleAt> | null;
+        if (tEff < traj.samples[0].time) {
+          s = {
+            ...traj.samples[0],
+            x: traj.kind?.initialX ?? traj.samples[0].x,
+            z: traj.kind?.initialZ ?? traj.samples[0].z,
+          };
+        } else {
+          s = sampleAt(traj, tEff);
+        }
         if (!s) {
           marker.visible = false;
           if (label) label.visible = false;
@@ -2235,7 +2249,10 @@ export default defineComponent({
           const R = 50;
           const cx = anchor.s.x + Math.cos(ang) * R;
           const cz = anchor.s.z + Math.sin(ang) * R;
-          const yaw = anchor.s.yaw;
+          // Heading follows the patrol-circle TANGENT (the direction the
+          // formation is actually moving) so the wedge turns as it orbits
+          // instead of sliding sideways pointing at a fixed heading.
+          const yaw = Math.atan2(-Math.sin(ang), Math.cos(ang));
           const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
           const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
           const yBase = Math.max(60, anchor.s.y);
@@ -2243,17 +2260,20 @@ export default defineComponent({
             for (let i = 0; i < count; i++) {
               const mesh = pool[i];
               mesh.visible = true;
-              // Wedge (梯形): leader ahead, pairs stepping back on both sides.
+              // Tight wedge (梯形): leader ahead, pairs stepping back on both
+              // sides, with small per-slot altitude offsets (real formations
+              // fly staggered, not on one plane).
               let ox = 0, oz = 0;
               if (i > 0) {
                 const row = Math.ceil(i / 2);
                 const side = i % 2 === 1 ? -1 : 1;
-                const spacing = 26;
-                const depth = 22;
+                const spacing = 15;
+                const depth = 13;
                 ox = side * row * spacing * right.x - row * depth * fwd.x;
                 oz = side * row * spacing * right.z - row * depth * fwd.z;
               }
-              mesh.position.set(cx + ox, yBase + (i % 2) * 2, -cz + oz);
+              const yOff = (i % 3) * 2 - 2; // -2 / 0 / +2 alternating
+              mesh.position.set(cx + ox, yBase + yOff, -cz + oz);
               mesh.rotation.y = Math.PI - yaw;
             }
           } else {
