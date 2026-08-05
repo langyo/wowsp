@@ -46,18 +46,6 @@ const PLANE_TYPES = planeTypesRaw as Record<
   string,
   { index: string; name: string; type: string }
 >;
-/** 3D point color per aircraft type (matches the battle-HUD icon families). */
-const PLANE_COLORS: Record<string, number> = {
-  fighter: 0xff6b6b,
-  dive: 0xffd93d,
-  skip: 0xffa94d,
-  torpedo: 0x74c0fc,
-  rocket: 0xff8787,
-  bomber: 0xffd43b,
-  scout: 0x78d2ff,
-  attack: 0x96f2d7,
-};
-
 /** Shell encyclopedia (paramsId → ammo/tint) baked from GameParams by
  *  `scripts/model_convert/extract_shells.py`. */
 const SHELL_TYPES = shellTypesRaw as Record<
@@ -331,6 +319,11 @@ export default defineComponent({
     const planeIndexById = new Map<number, string>();
     /** Squadron label id → controlling ship's entity id (for name/HP sync). */
     const planeLabelCarriers = new Map<number, number | null>();
+    /** planeId → team role of the controlling ship (drives marker colour:
+     *  ally green, enemy red, like the battle HUD). */
+    const planeRoleById = new Map<number, string>();
+    /** planeId → the carrier card label id that shows it. */
+    const planeLabelOfPlane = new Map<number, number>();
     /** planeId → real 3D aircraft model (once its GLB has loaded). */
     const planeMeshes = new Map<number, THREE.Object3D>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
@@ -1096,7 +1089,11 @@ export default defineComponent({
       };
       for (const t of props.trajectories) {
         if (t.kind?.entityType === 2) {
+          // Sample positions AND the spawn point: ships that stay hidden
+          // early (first sample minutes in) still need their opening-phase
+          // ghost at the spawn inside the initial camera view.
           for (const s of t.samples) eat(s.x, -s.z);
+          eat(t.kind.initialX, -t.kind.initialZ);
         } else if (t.kind?.entityType === 14) {
           eat(t.kind.initialX, -t.kind.initialZ);
         }
@@ -1345,21 +1342,27 @@ export default defineComponent({
       // Shared cone geometry for in-flight shells (tip pointing +Y; oriented
       // along the trajectory tangent each frame for a smooth補间).
       const shellGeom = new THREE.ConeGeometry(3, 12, 8);
-      // The enemy ship nearest the impact point at impact time — arcs end at
-      // the TARGET SHIP (not the bare water splash) so they read as fire
-      // against the opposing fleet instead of stray shots into empty sea.
-      const targetShipAt = (e: ExplosionEvent) => {
+      // The enemy ship nearest the impact point at impact time, INSIDE the
+      // launch-direction cone — arcs end at the TARGET SHIP (not the bare
+      // water splash) so they read as fire against the opposing fleet. The
+      // cone keeps the endpoint on the shell's actual heading: a nearby enemy
+      // that is off to the side must not bend the arc sideways.
+      const targetShipAt = (e: ExplosionEvent, from: { x: number; z: number }) => {
         let best: { x: number; z: number } | null = null;
         let bestD = 500;
+        const baseAim = Math.atan2(e.x - from.x, e.z - from.z);
         for (const tr of props.trajectories) {
           if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
           const s = sampleAt(tr, e.time);
           if (!s) continue;
           const d = Math.hypot(s.x - e.x, s.z - e.z);
-          if (d < bestD) {
-            bestD = d;
-            best = { x: s.x, z: s.z };
-          }
+          if (d > bestD) continue;
+          const aim = Math.atan2(s.x - from.x, s.z - from.z);
+          let dAim = Math.abs(aim - baseAim);
+          if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
+          if (dAim > 0.35) continue; // ~20° cone around the launch heading
+          bestD = d;
+          best = { x: s.x, z: s.z };
         }
         return best;
       };
@@ -1417,7 +1420,10 @@ export default defineComponent({
         flashHalo.position.set(e.x, 1, -e.z);
         flashHalo.visible = false;
         scene.add(flashHalo);
-        const target = targetShipAt(e);
+        const target = targetShipAt(e, {
+          x: sampleAt(match.tr, match.t0)?.x ?? e.x,
+          z: sampleAt(match.tr, match.t0)?.z ?? e.z,
+        });
         shellTraces.push({
           line,
           dots,
@@ -1607,9 +1613,11 @@ export default defineComponent({
       if (planeTrails.length > 0) {
         const colors = new Float32Array(planeTrails.length * 3);
         for (let i = 0; i < planeTrails.length; i++) {
-          const c = new THREE.Color(
-            PLANE_COLORS[planeTypesById.get(planeTrails[i].id) ?? "attack"] ?? 0x78d2ff,
-          );
+          // Team colour (ally green / enemy red) instead of per-type tint —
+          // the HUD paints aircraft by allegiance, not by airframe.
+          const planeId = Math.floor(planeTrails[i].id / 16);
+          const role = planeRoleById.get(planeId) ?? "enemy";
+          const c = new THREE.Color(TEAM_COLOR[role as TeamRole] ?? 0x78d2ff);
           colors[i * 3] = c.r;
           colors[i * 3 + 1] = c.g;
           colors[i * 3 + 2] = c.b;
@@ -1642,17 +1650,25 @@ export default defineComponent({
           if (!idx) continue;
           const url = resolvePlaneModelUrl(idx);
           if (!url) continue;
-          const type = planeTypesById.get(trail.id) ?? "attack";
-          const color = PLANE_COLORS[type] ?? 0x78d2ff;
-          const already = seenIdx.has(idx);
-          seenIdx.add(idx);
-          // Load one model per index, then clone for every trail of that type.
+          // Team tint (ally green / enemy red); the same airframe can exist on
+          // both teams, so the shared model cache is keyed by type+role.
+          const planeId = Math.floor(trail.id / 16);
+          const role = planeRoleById.get(planeId) ?? "enemy";
+          const color = TEAM_COLOR[role as TeamRole] ?? 0x78d2ff;
+          const seenKey = `${idx}:${role}`;
+          const already = seenIdx.has(seenKey);
+          seenIdx.add(seenKey);
+          // Load one model per index+role, then clone for every trail of it.
           const build = already
             ? null
             : buildPropMarker({ url, color, axis: "z", targetLen: 7, opacity: 0.95 })
                 .catch(() => null);
           if (build) {
-            const trailsForIdx = planeTrails.filter((t) => planeIndexById.get(t.id) === idx);
+            const trailsForIdx = planeTrails.filter(
+              (t) =>
+                planeIndexById.get(t.id) === idx &&
+                (planeRoleById.get(Math.floor(t.id / 16)) ?? "enemy") === role,
+            );
             build.then((proto) => {
               if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
               for (const tr of trailsForIdx) {
@@ -1718,7 +1734,7 @@ export default defineComponent({
             depthWrite: false,
             side: THREE.DoubleSide,
           });
-          const ghost = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 28), ghostMat);
+          const ghost = new THREE.Mesh(new THREE.RingGeometry(26, 34, 28), ghostMat);
           ghost.rotation.x = -Math.PI / 2;
           ghost.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
           ghost.visible = false;
@@ -1811,28 +1827,60 @@ export default defineComponent({
           dead: false,
         });
       }
-      // Aircraft squadron labels: one card per squadron above the formation,
-      // carrying the controlling carrier's name + HP with the plane-type
-      // icon on the left. The carrier is the ship nearest to the squadron's
-      // spawn point (create packet carries the launch position).
+      // Aircraft labels: ONE card per controlling carrier (aircraft squadrons
+      // re-launch constantly — 100+ sorties in a carrier match — so per-
+      // squadron cards would explode the UI). The card shows the carrier's
+      // name + HP with the plane-type icon. A squadron's carrier is the ship
+      // nearest its FIRST create position (the create fires on the deck at
+      // launch; later creates are mid-air sortie positions).
       planeLabelCarriers.clear();
-      planeLabelCarriers.clear();
+      planeRoleById.clear();
+      const planeCarrierOf = new Map<number, number | null>();
+      const createFirst = new Map<number, { x: number; z: number; time: number; paramsId: number }>();
       for (const c of props.squadronCreates) {
-        let carrier: { marker: THREE.Group; entityId: number } | null = null;
+        if (!createFirst.has(c.planeId)) {
+          createFirst.set(c.planeId, { x: c.x, z: c.z, time: c.time, paramsId: c.paramsId });
+        }
+      }
+      for (const [planeId, first] of createFirst) {
+        // Match against the ship's position AT LAUNCH TIME (ships move — the
+        // current playhead position would pair a sortie with the wrong ship).
+        let carrierId: number | null = null;
         let bestD = 1500;
         for (const m of shipMarkers) {
-          const dx = m.position.x - c.x;
-          const dz = m.position.z - -c.z;
+          const tr = props.trajectories.find((t) => t.entityId === m.userData.entityId);
+          if (!tr) continue;
+          const s = sampleAt(tr, first.time);
+          if (!s) continue;
+          const dx = s.x - first.x;
+          const dz = s.z - first.z;
           const d = Math.hypot(dx, dz);
           if (d < bestD) {
             bestD = d;
-            carrier = { marker: m, entityId: m.userData.entityId as number };
+            carrierId = m.userData.entityId as number;
           }
         }
-        const planeType = PLANE_TYPES[String(c.paramsId)]?.type ?? "attack";
-        const planeIdx = PLANE_TYPES[String(c.paramsId)]?.index;
+        planeCarrierOf.set(planeId, carrierId);
+        const carrierMarker = carrierId == null
+          ? null
+          : shipMarkers.find((m) => m.userData.entityId === carrierId);
+        planeRoleById.set(planeId, carrierMarker?.userData.role ?? "enemy");
+        const firstCreate = props.squadronCreates.find((c) => c.planeId === planeId);
+        const planeIdx = PLANE_TYPES[String(firstCreate?.paramsId)]?.index;
+        if (planeIdx) planeIndexById.set(planeId * 16, planeIdx);
+      }
+      // One label per carrier that controls any aircraft.
+      const carriersOfPlanes = new Map<number, { paramsId: number }>();
+      for (const [planeId, carrierId] of planeCarrierOf) {
+        if (carrierId == null) continue;
+        const first = createFirst.get(planeId)!;
+        const acc = carriersOfPlanes.get(carrierId) ?? { paramsId: first.paramsId };
+        carriersOfPlanes.set(carrierId, acc);
+      }
+      for (const [carrierId, info] of carriersOfPlanes) {
+        const planeType = PLANE_TYPES[String(info.paramsId)]?.type ?? "attack";
         newLabels.push({
-          entityId: 2_000_000_000 + Number(c.planeId),
+          entityId: 2_000_000_000 + Number(carrierId),
           role: "self",
           name: "",
           shipName: "",
@@ -1846,8 +1894,14 @@ export default defineComponent({
           visible: false,
           dead: false,
         });
-        planeLabelCarriers.set(2_000_000_000 + Number(c.planeId), carrier?.entityId ?? null);
-        if (planeIdx) planeIndexById.set(c.planeId * 16, planeIdx);
+        planeLabelCarriers.set(2_000_000_000 + Number(carrierId), carrierId);
+      }
+      // Keep a per-plane → labelId map for the per-frame position update.
+      planeLabelOfPlane.clear();
+      for (const [planeId, carrierId] of planeCarrierOf) {
+        if (carrierId != null) {
+          planeLabelOfPlane.set(planeId, 2_000_000_000 + Number(carrierId));
+        }
       }
       shipLabels.value = newLabels;
 
@@ -2279,8 +2333,9 @@ export default defineComponent({
           }
         }
       }
-      // Aircraft squadron labels: sync name/HP from the controlling ship and
-      // drive visibility from the formation's sample window.
+      // Aircraft labels (one per carrier): sync name/HP from the carrier and
+      // show while any of its squadrons is in the air (visible window =
+      // first update .. last update + 2 min).
       {
         const labels = shipLabels.value;
         for (const [labelId, carrierId] of planeLabelCarriers) {
@@ -2298,16 +2353,20 @@ export default defineComponent({
             label.maxHp = carrierLabel.maxHp;
             label.dead = carrierLabel.dead;
           }
-          // Formation alive between its first update and ~2 min after the last.
-          const planeId = labelId - 2_000_000_000;
-          const trail = planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
-          if (!trail || trail.samples.length === 0) {
-            label.visible = false;
-            continue;
+          // Any of this carrier's squadrons airborne?
+          let visible = false;
+          for (const [planeId, labelOf] of planeLabelOfPlane) {
+            if (labelOf !== labelId) continue;
+            const trail = planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
+            if (!trail || trail.samples.length === 0) continue;
+            const first = trail.samples[0].time;
+            const last = trail.samples[trail.samples.length - 1].time;
+            if (t >= first && t <= last + 120) {
+              visible = true;
+              break;
+            }
           }
-          const first = trail.samples[0].time;
-          const last = trail.samples[trail.samples.length - 1].time;
-          label.visible = t >= first && t <= last + 120;
+          label.visible = visible;
         }
       }
       // Update screen-space positions of floating labels from marker world positions.
@@ -2748,16 +2807,21 @@ export default defineComponent({
         label.y = (-_projVec.y * hh) + hh;
         label.visible = _projVec.z < 1;
       }
-      // Aircraft squadron labels project the formation's current position
-      // (first plane of the group, raised above the flight level).
+      // Aircraft labels project above the carrier's currently airborne
+      // squadrons (the newest sample of the newest sortie).
       for (const [labelId] of planeLabelCarriers) {
         const label = labels.find((l) => l.entityId === labelId);
         if (!label || !label.visible) continue;
-        const planeId = labelId - 2_000_000_000;
-        const trail = planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
-        if (!trail || trail.samples.length === 0) { label.visible = false; continue; }
-        const sp = trail.samples[0];
-        _projVec.set(sp.x, Math.max(60, sp.y) + 30, -sp.z);
+        let anchor: SquadronPlane | null = null;
+        for (const [planeId, labelOf] of planeLabelOfPlane) {
+          if (labelOf !== labelId) continue;
+          const trail = planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
+          if (!trail || trail.samples.length === 0) continue;
+          const sp = trail.samples[trail.samples.length - 1];
+          if (!anchor || sp.time > anchor.time) anchor = sp;
+        }
+        if (!anchor) { label.visible = false; continue; }
+        _projVec.set(anchor.x, Math.max(60, anchor.y) + 30, -anchor.z);
         _projVec.project(cam);
         label.x = (_projVec.x * hw) + hw;
         label.y = (-_projVec.y * hh) + hh;
