@@ -28,8 +28,9 @@
   border-bottom: 1px solid var(--tb-border);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     sans-serif;
-  -webkit-app-region: drag;
-  app-region: drag;
+  /* Tauri v2 drag region: dragging moves the frameless window and a
+     double-click on it toggles maximize (handled by the framework; the old
+     -webkit-app-region: drag swallowed dblclick events so JS never saw them). */
 
   /* ── Light mode overrides ────────────────────────────────────── */
   [data-mode="light"] & {
@@ -69,8 +70,7 @@
 
 /* ── Caption buttons ────────────────────────────────────────────── */
 .titlebar__btns {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  /* buttons stay interactive inside the Tauri drag region */
   display: flex;
   align-items: center;
   height: 100%;
