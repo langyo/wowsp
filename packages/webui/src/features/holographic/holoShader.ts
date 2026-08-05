@@ -27,6 +27,9 @@ export interface HoloUniforms {
   focusCount: { value: number };
   focusRadius: { value: number };
   focusBoost: { value: number };
+  /** Multiplier for the output alpha — ghosts (unseen/spawned/ sunk ships)
+   *  render at a fraction of the normal opacity. */
+  ghostAlpha: { value: number };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -53,6 +56,7 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float focusCount;
   uniform float focusRadius;
   uniform float focusBoost;
+  uniform float ghostAlpha;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
@@ -79,7 +83,7 @@ export const HOLO_FRAG = /* glsl */ `
         col += fresnelColor * w * 0.6;
       }
     }
-    gl_FragColor = vec4(col, alpha);
+    gl_FragColor = vec4(col, alpha * ghostAlpha);
   }
 `;
 
@@ -98,6 +102,7 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       focusCount: { value: 0 },
       focusRadius: { value: 30.0 },
       focusBoost: { value: 0.8 },
+      ghostAlpha: { value: 1.0 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,
