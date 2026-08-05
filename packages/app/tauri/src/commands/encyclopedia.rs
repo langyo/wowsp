@@ -82,8 +82,9 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
 /// `force_refresh` bypasses the cache.
 ///
 /// **Language selection**: The frontend resolves and passes an explicit WG
-/// language code (zh-cn, zh-sg, zh-tw, en, ja, ko, ru, fr, es). Compound
-/// cache keys are `<wg-lang>-<realm>` (e.g. "zh-cn-asia", "zh-sg-asia").
+/// language code (zh-cn, zh-sg, zh-tw, en, ja, ko, ru, fr, es) converted from
+/// the canonical lang-loc data language (zh-CN, zh-SG, zh-TW, en-US, ...).
+/// Compound cache keys are `<wg-lang>-<realm>` (e.g. "zh-cn-asia").
 /// The cache is keyed by `<version>-<compound>` so switching realm or
 /// language re-fetches with the correct localization.
 #[tauri::command]
@@ -260,34 +261,14 @@ fn parse_ship_images(images: Option<&serde_json::Value>) -> wowsp_tauri_shared::
 /// Resolve the WG API `language` parameter for encyclopedia requests.
 ///
 /// The frontend sends an explicit WG language code (e.g. "zh-cn", "zh-sg",
-/// "zh-tw", "en", "ja", ...). The WG code is passed directly to the API.
-/// The compound cache key uses a **language short-code + realm** format
-/// (e.g. "zhs-cn", "zhs-asia", "zht-asia", "en-asia") to keep caches
-/// compact and aligned with the app's internal locale names.
+/// "zh-tw", "en", "ja", ...) converted from the canonical lang-loc data
+/// language. The WG code is passed directly to the API; the compound cache
+/// key is simply `<wg-lang>-<realm>` (e.g. "zh-cn-asia") — WG codes are
+/// already compact and unique per server language.
 fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> (String, String) {
     let wg_lang = data_language.unwrap_or_else(|| "en".to_string());
-    let short = wg_to_short_code(&wg_lang);
-    let compound = format!("{short}-{realm}");
+    let compound = format!("{wg_lang}-{realm}");
     (compound, wg_lang)
-}
-
-/// Map a WG API language code to the app's internal locale short-code.
-///
-/// WG codes like "zh-cn" and "zh-sg" both map to "zhs" (Simplified
-/// Chinese), "zh-tw" maps to "zht" (Traditional Chinese), and most
-/// others (en, ja, ko, ru, fr, es) are their own short code.
-fn wg_to_short_code(wg: &str) -> &str {
-    match wg {
-        "zh-cn" | "zh-sg" => "zhs",
-        "zh-tw" => "zht",
-        "en" => "en",
-        "ja" => "ja",
-        "ko" => "ko",
-        "ru" => "ru",
-        "fr" => "fr",
-        "es" => "es",
-        _ => "en",
-    }
 }
 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
@@ -427,20 +408,20 @@ mod tests {
     }
 
     #[test]
-    fn cn_realm_uses_short_code_compound() {
+    fn cn_realm_uses_wg_code_compound() {
         let (compound, wg) = resolve_encyclopedia_language("cn", Some("zh-cn".into()));
-        assert_eq!(compound, "zhs-cn");
+        assert_eq!(compound, "zh-cn-cn");
         assert_eq!(wg, "zh-cn");
     }
 
     #[test]
-    fn asia_realm_uses_short_code_compound() {
+    fn asia_realm_uses_wg_code_compound() {
         let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
-        assert_eq!(compound, "zhs-asia");
+        assert_eq!(compound, "zh-sg-asia");
         assert_eq!(wg, "zh-sg");
 
         let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
-        assert_eq!(compound, "zht-asia");
+        assert_eq!(compound, "zh-tw-asia");
         assert_eq!(wg, "zh-tw");
 
         let (compound, wg) = resolve_encyclopedia_language("asia", Some("en".into()));
@@ -449,17 +430,10 @@ mod tests {
     }
 
     #[test]
-    fn wg_code_maps_to_correct_short_code() {
-        assert_eq!(wg_to_short_code("zh-cn"), "zhs");
-        assert_eq!(wg_to_short_code("zh-sg"), "zhs");
-        assert_eq!(wg_to_short_code("zh-tw"), "zht");
-        assert_eq!(wg_to_short_code("en"), "en");
-        assert_eq!(wg_to_short_code("ja"), "ja");
-        assert_eq!(wg_to_short_code("ko"), "ko");
-        assert_eq!(wg_to_short_code("ru"), "ru");
-        assert_eq!(wg_to_short_code("fr"), "fr");
-        assert_eq!(wg_to_short_code("es"), "es");
-        assert_eq!(wg_to_short_code("unknown"), "en");
+    fn default_language_is_english() {
+        let (compound, wg) = resolve_encyclopedia_language("asia", None);
+        assert_eq!(compound, "en-asia");
+        assert_eq!(wg, "en");
     }
 
     #[test]
@@ -470,19 +444,19 @@ mod tests {
     }
 
     #[test]
-    fn cache_key_uses_short_code_and_realm() {
+    fn cache_key_uses_wg_code_and_realm() {
         let v = "15.5.0";
         const SCHEMA: u32 = 2;
         let (compound, _) = resolve_encyclopedia_language("cn", Some("zh-cn".into()));
         let cache = format!("encyclopedia/ships-{v}-{compound}-s{SCHEMA}.json");
-        assert_eq!(cache, "encyclopedia/ships-15.5.0-zhs-cn-s2.json");
+        assert_eq!(cache, "encyclopedia/ships-15.5.0-zh-cn-cn-s2.json");
 
         let (compound2, _) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
         let cache2 = format!("encyclopedia/ships-{v}-{compound2}-s{SCHEMA}.json");
-        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zhs-asia-s2.json");
+        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zh-sg-asia-s2.json");
 
         let (compound3, _) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         let cache3 = format!("encyclopedia/ships-{v}-{compound3}-s{SCHEMA}.json");
-        assert_eq!(cache3, "encyclopedia/ships-15.5.0-zht-asia-s2.json");
+        assert_eq!(cache3, "encyclopedia/ships-15.5.0-zh-tw-asia-s2.json");
     }
 }

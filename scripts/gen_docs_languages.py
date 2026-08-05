@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the 7 new WoWSP docs language directories (zht, ja, ko, fr, es, ru, ar).
+"""Generate the 7 new WoWSP docs language directories (zh-TW, ja-JP, ko-KR, fr-FR, es-ES, ru-RU, ar).
 
 For each language we produce a fully translated:
   - README.md        (documentation index)
@@ -10,7 +10,7 @@ For each language we produce a fully translated:
 The deeper technical guides (architecture.md, building.md, fundamentals.md) and
 the design docs are mirrored from docs/en/ verbatim — they share the same
 code/asset references and the en text is the canonical source, matching how
-docs/zhs/ is structured (only the index/hub/CONTRIBUTING are localized).
+docs/zh-CN/ is structured (only the index/hub/CONTRIBUTING are localized).
 
 The full 9-language README-wowsp switcher row is generated for every language,
 with the current language bolded.
@@ -30,7 +30,7 @@ DOCS = REPO / "docs"
 # doc_index_heading: the localized "Documentation Index" + section headers
 LANGS = [
     {
-        "code": "zht",
+        "code": "zh-TW",
         "name": "繁體中文",
         "tagline": "戰艦世界戰況分析儀表板 — 錄像回顧與遊戲內覆蓋層",
         "intro": "WoWSP 是面向《戰艦世界》的新一代戰況分析儀表板。它有兩種工作模式：獨立的錄像回顧（全息 3D 地圖）與遊戲內透明覆蓋層。",
@@ -201,14 +201,14 @@ LANGS = [
 
 # The full 9-language switcher. Order matches lagrange.toml `order`.
 ALL_LANGS = [
-    ("en", "English"),
-    ("zhs", "简体中文"),
-    ("zht", "繁體中文"),
-    ("ja", "日本語"),
-    ("ko", "한국어"),
-    ("fr", "Français"),
-    ("es", "Español"),
-    ("ru", "Русский"),
+    ("en-US", "English"),
+    ("zh-CN", "简体中文"),
+    ("zh-TW", "繁體中文"),
+    ("ja-JP", "日本語"),
+    ("ko-KR", "한국어"),
+    ("fr-FR", "Français"),
+    ("es-ES", "Español"),
+    ("ru-RU", "Русский"),
     ("ar", "العربية"),
 ]
 

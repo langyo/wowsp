@@ -56,20 +56,6 @@ export const LANG_LOCS: LangLoc[] = [
 
 const LANG_LOC_BY_CODE = new Map(LANG_LOCS.map((l) => [l.code, l]));
 
-/** Legacy pre-standardization codes → canonical lang-loc (migration). */
-const LEGACY_MIGRATION: Record<string, string> = {
-  "zh-cn": "zh-CN",
-  "zh-sg": "zh-SG",
-  "zh-tw": "zh-TW",
-  en: "en-US",
-  ja: "ja-JP",
-  ko: "ko-KR",
-  ru: "ru-RU",
-  fr: "fr-FR",
-  es: "es-ES",
-  zhs: "zh-CN",
-};
-
 /** WG API language parameter for a canonical lang-loc ("zh-CN" → "zh-cn"). */
 export function wgApiLanguage(code: string): string {
   return LANG_LOC_BY_CODE.get(code)?.wgApi ?? code;
@@ -111,29 +97,15 @@ export function determineDataLanguage(ui: Locale, realm: string): string {
 
 function loadUiLocale(): Locale {
   const saved = localStorage.getItem(UI_KEY) as string | null;
-  if (saved) {
-    if ((SUPPORTED_LOCALES as readonly string[]).includes(saved)) return saved as Locale;
-    // Legacy "zhs" / "en" values from before standardization.
-    const migrated = LEGACY_MIGRATION[saved];
-    if (migrated && (SUPPORTED_LOCALES as readonly string[]).includes(migrated)) {
-      return migrated as Locale;
-    }
+  if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) {
+    return saved as Locale;
   }
   return i18n.global.locale.value as Locale;
 }
 
 function loadDataLanguage(): string {
   const saved = localStorage.getItem(DATA_KEY);
-  if (saved) {
-    if (isLangLoc(saved)) return saved;
-    // Legacy WG codes ("zh-cn" / "zh-sg" / ...) → canonical lang-loc, then
-    // persist the migration so it only happens once.
-    const migrated = LEGACY_MIGRATION[saved];
-    if (migrated) {
-      localStorage.setItem(DATA_KEY, migrated);
-      return migrated;
-    }
-  }
+  if (saved && isLangLoc(saved)) return saved;
 
   // First startup: determine from UI locale + realm, then persist.
   const ui = i18n.global.locale.value as Locale;

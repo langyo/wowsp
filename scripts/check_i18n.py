@@ -2,7 +2,7 @@
 """i18n key parity validator for WoWSP.
 
 Adapted from shittim-chest's `scripts/check_i18n.py` (trimmed). Checks that the
-two supported locales (en, zhs) have the same key set across every namespace
+two supported locales (en-US, zh-CN) have the same key set across every namespace
 JSON under `res/i18n/locales/<lang>/`.
 
 Exit codes: 0 = parity, 1 = missing keys (unless --no-fail).
@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCALES_DIR = REPO_ROOT / "res" / "i18n" / "locales"
-BASELINE_LANGS = ("en", "zhs")
+BASELINE_LANGS = ("en-US", "zh-CN")
 
 
 def flatten(obj, prefix="") -> dict:
@@ -62,11 +62,11 @@ def main() -> int:
     args = parser.parse_args()
 
     keys = {lang: load_keys(lang) for lang in BASELINE_LANGS}
-    baseline = keys["en"]
+    baseline = keys["en-US"]
 
     problems: dict[str, list[str]] = {}
     for lang in BASELINE_LANGS:
-        if lang == "en":
+        if lang == "en-US":
             continue
         missing = sorted(baseline - keys[lang])
         extra = sorted(keys[lang] - baseline)
