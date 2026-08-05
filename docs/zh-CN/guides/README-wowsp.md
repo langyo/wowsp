@@ -13,7 +13,7 @@
 
 [English](../../en/guides/README-wowsp.md) ·
 **简体中文** ·
-[繁體中文](../../zht/guides/README-wowsp.md) ·
+[繁體中文](../../zh-TW/guides/README-wowsp.md) ·
 [日本語](../../ja/guides/README-wowsp.md) ·
 [한국어](../../ko/guides/README-wowsp.md) ·
 [Français](../../fr/guides/README-wowsp.md) ·

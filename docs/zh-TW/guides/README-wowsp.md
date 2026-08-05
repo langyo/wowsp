@@ -12,7 +12,7 @@
 <div align="center">
 
 [English](../../en/guides/README-wowsp.md) ·
-[简体中文](../../zhs/guides/README-wowsp.md) ·
+[简体中文](../../zh-CN/guides/README-wowsp.md) ·
 **繁體中文** ·
 [日本語](../../ja/guides/README-wowsp.md) ·
 [한국어](../../ko/guides/README-wowsp.md) ·

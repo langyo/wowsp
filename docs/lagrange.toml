@@ -4,5 +4,5 @@ description = "World of Warship Panel — replay review & in-game overlay"
 cname = "wowsp.docs.celestia.world"
 
 [languages]
-default = "en"
-order = ["en", "zhs", "zht", "ja", "ko", "fr", "es", "ru", "ar"]
+default = "en-US"
+order = ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "fr-FR", "es-ES", "ru-RU", "ar"]
