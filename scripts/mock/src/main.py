@@ -122,6 +122,26 @@ async def cmd_set_game_path(request: Request) -> dict:
     return {"kind": "manual", "path": body.get("path", ""), "realm": "asia"}
 
 
+@app.post("/api/ribbon_skin_dir")
+async def cmd_ribbon_skin_dir(request: Request):
+    body = await request.json()
+    game = body.get("gamePath", "")
+    # Real mods live under <game>/res_mods/<ver>/gui/ribbons — surface them
+    # when present so the browser preview matches the desktop shell.
+    from pathlib import Path
+
+    root = Path(game) / "res_mods"
+    if not root.is_dir():
+        return None
+    hits = [p for p in root.rglob("gui/ribbons") if p.is_dir()]
+    if not hits:
+        return None
+    hits.sort(key=lambda p: len(p.parts), reverse=True)
+    return str(hits[0])
+
+
+
+
 @app.get("/api/is_game_running")
 async def cmd_is_game_running() -> bool:
     return False
