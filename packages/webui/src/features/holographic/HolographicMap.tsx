@@ -509,7 +509,13 @@ export default defineComponent({
         );
         if (icon && icon.complete && icon.naturalWidth > 0) {
           const sz = 15;
-          ctx.drawImage(icon, cx - sz / 2, cz - sz / 2, sz, sz);
+          // Rotate the icon to the ship's heading: the HUD art points right
+          // (+x = east); yaw is clockwise from north, so rotate(yaw - PI/2).
+          ctx.save();
+          ctx.translate(cx, cz);
+          ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+          ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+          ctx.restore();
           continue;
         }
         if (dead) {
@@ -546,7 +552,11 @@ export default defineComponent({
         const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
         if (icon && icon.complete && icon.naturalWidth > 0) {
           const sz = 10;
-          ctx.drawImage(icon, wx(s.x) - sz / 2, wz(-s.z) - sz / 2, sz, sz);
+          ctx.save();
+          ctx.translate(wx(s.x), wz(-s.z));
+          ctx.rotate(s.yaw - Math.PI / 2);
+          ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+          ctx.restore();
         } else {
           ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
           ctx.beginPath();
@@ -618,7 +628,11 @@ export default defineComponent({
             );
             if (icon && icon.complete && icon.naturalWidth > 0) {
               const sz = 26;
-              zctx.drawImage(icon, cx - sz / 2, cz - sz / 2, sz, sz);
+              zctx.save();
+              zctx.translate(cx, cz);
+              zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+              zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+              zctx.restore();
               continue;
             }
             if (dead) {
@@ -653,7 +667,11 @@ export default defineComponent({
             const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
             if (icon && icon.complete && icon.naturalWidth > 0) {
               const sz = 22;
-              zctx.drawImage(icon, zwx(s.x) - sz / 2, zwz(-s.z) - sz / 2, sz, sz);
+              zctx.save();
+              zctx.translate(zwx(s.x), zwz(-s.z));
+              zctx.rotate(s.yaw - Math.PI / 2);
+              zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+              zctx.restore();
             } else {
               zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
               zctx.beginPath();
@@ -1853,6 +1871,7 @@ export default defineComponent({
         // WoWS yaw: 0=north(+worldZ), clockwise. three.js north is -z, so the
         // yaw maps to rotation.y = PI - yaw on the mirrored coordinate frame.
         marker.rotation.y = Math.PI - s.yaw;
+        marker.userData.yaw = s.yaw;
       }
     }
 
