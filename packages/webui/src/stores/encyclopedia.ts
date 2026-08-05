@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
 import { useAccountStore } from "@/stores/account";
-import { useLanguage } from "@/i18n/useLanguage";
+import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 
 /** Ship encyclopedia store. Caches the full shipopedia in memory after the
@@ -80,13 +80,16 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  INVALID_LANGUAGE errors from the WG API are silently retried with English. */
   async function load(realm: string, forceRefresh = false) {
     const lang = useLanguage().dataLanguage.value;
+    // The WG API takes lowercase codes ("zh-cn"); the store keys caches by
+    // the canonical lang-loc ("zh-CN").
+    const apiLang = wgApiLanguage(lang);
     if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
     if (loading.value) return;
     loading.value = true;
     error.value = null;
     try {
       const ver = await api.getGameVersion();
-      const fresh = await api.getShipEncyclopedia(realm, forceRefresh, lang);
+      const fresh = await api.getShipEncyclopedia(realm, forceRefresh, apiLang);
       version.value = ver;
       ships.value = fresh;
       loadedRealm.value = realm;
@@ -96,7 +99,7 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       // WG API returns INVALID_LANGUAGE for unsupported language codes — retry
       // silently with English so data is always available. loadedLanguage
       // stays as the user's preference to avoid a retry loop on every page visit.
-      if (/INVALID_LANGUAGE/i.test(msg) && lang !== "en") {
+      if (/INVALID_LANGUAGE/i.test(msg) && lang !== "en-US") {
         try {
           const ver = await api.getGameVersion();
           const fresh = await api.getShipEncyclopedia(realm, true, "en");

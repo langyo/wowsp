@@ -39,17 +39,17 @@ OUT_PATH = (
     / "packages" / "webui" / "src" / "data" / "ship_names.json"
 )
 
-# WG API language code -> game's texts/<dir> name.
+# Canonical BCP 47 lang-loc (output key) -> game's texts/<dir> name.
 LANG_DIRS = {
-    "en": "en",
-    "zh-cn": "zh",
-    "zh-sg": "zh_sg",
-    "zh-tw": "zh_tw",
-    "ja": "ja",
-    "ko": "ko",
-    "ru": "ru",
-    "fr": "fr",
-    "es": "es",
+    "zh-CN": "zh",
+    "zh-SG": "zh_sg",
+    "zh-TW": "zh_tw",
+    "en-US": "en",
+    "ja-JP": "ja",
+    "ko-KR": "ko",
+    "ru-RU": "ru",
+    "fr-FR": "fr",
+    "es-ES": "es",
 }
 
 
@@ -94,7 +94,7 @@ def main() -> int:
     parser.add_argument("--out", default=str(OUT_PATH), help="output JSON path")
     args = parser.parse_args()
 
-    game = Path(args.game_dir) if args.game_dir else find_game_path()
+    game = Path(args.game_dir) if args.game_dir else Path(find_game_path() or "")
     if not game:
         print("error: game install not found. Set WOWSP_GAME_PATH.", file=sys.stderr)
         return 1
