@@ -18,6 +18,7 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import { t } from "@/i18n";
+import { useLanguage } from "@/i18n/useLanguage";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor } from "@/utils/modeColors";
@@ -55,16 +56,38 @@ function modeLabel(group?: string | null): string {
   return lbl === key ? t("replay.mode._fallback") : lbl;
 }
 
-/** Resolve a map's localized display name from its internal space id (e.g.
- *  "18_NE_ice_islands" → "冰之岛"/"Islands of Ice"). Space ids often DON'T
- *  match the display name (WG renamed maps but kept the internal id — e.g.
- *  "38_Canada" is "Shatter"/"碎裂"), so this lookup is authoritative. Falls
- *  back to the raw id, then to the unknown-map label. */
-function displayMapName(spaceId?: string | null): string {
+/** Official map display names extracted from the game's gettext catalogs
+ *  (`scripts/model_convert/extract_map_names.py`): space id → {lang: name}.
+ *  Space ids often DON'T match the display name (WG renamed maps but kept
+ *  the internal id — "20_NE_two_brothers" is "双峰海峡"/"Two Brothers", not
+ *  "两兄弟"), so the catalog is authoritative. */
+import mapNamesRaw from "@/data/map_names.json";
+
+const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
+
+function mapNameForLang(spaceId: string, lang: string): string | null {
+  const names = MAP_NAMES[spaceId];
+  if (!names) return null;
+  // zh-sg is the closest official catalog to the app's zhs locale; fall back
+  // through the WG language codes, then to English.
+  return (
+    names[lang] ??
+    names["zh-sg"] ??
+    names["en"] ??
+    null
+  );
+}
+
+/** Resolve a map's localized display name from its internal space id. Falls
+ *  back to the prettified id, then to the unknown-map label. */
+function displayMapName(spaceId?: string | null, lang?: string): string {
   if (!spaceId) return t("replay.map.unknown");
-  const key = `replay.map.names.${spaceId}`;
+  const clean = spaceId.replace(/^spaces\//, "");
+  const official = mapNameForLang(clean, lang ?? "");
+  if (official) return official;
+  const key = `replay.map.names.${clean}`;
   const lbl = t(key);
-  return lbl === key ? spaceId : lbl;
+  return lbl === key ? clean : lbl;
 }
 
 /** Format a `YYYYMMDD[_HHMMSS]` timestamp from the replay filename into a
@@ -92,6 +115,8 @@ export default defineComponent({
     const accounts = useAccountStore();
     const encyclopedia = useEncyclopediaStore();
     const toast = useToast();
+    const { dataLanguage } = useLanguage();
+    const mapLang = computed(() => dataLanguage.value);
 
     // Auto-manage loading toast for replay operations.
     let loadingToastId = 0;
@@ -307,7 +332,7 @@ export default defineComponent({
                       </div>
                       <div class="replay-card__row">
                         <span class="replay-card__label">{t("replay.mapLabel")}</span>
-                        <span class="replay-card__val">{displayMapName(r.mapName)}</span>
+                        <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
                       </div>
                       <div class="replay-card__foot">
                         <span class="replay-card__players">
@@ -332,7 +357,7 @@ export default defineComponent({
               ) : null}
               <header class="replay-view__meta">
                 <strong class="replay-view__map">
-                  {displayMapName(parser.current.value.mapName)}
+                  {displayMapName(parser.current.value.mapName, mapLang.value)}
                 </strong>
                 <span class="replay-view__meta-item">
                   {formatDateTime(parser.current.value.dateTime)}
