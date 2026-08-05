@@ -345,12 +345,12 @@
 .holo-map__score-team {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  min-width: 84px;
+  gap: 0.3rem;
   font-size: var(--text-sm);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.95);
   font-family: var(--font-mono);
+  /* Tight symmetric layout: ally (dot+number) · caps · enemy (number+dot). */
   &.holo-map__score--ally { justify-content: flex-end; }
   &.holo-map__score--enemy { justify-content: flex-start; }
 }
@@ -372,12 +372,12 @@
 }
 
 .holo-map__cap {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 3px;
   font-size: var(--text-2xs);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.9);
