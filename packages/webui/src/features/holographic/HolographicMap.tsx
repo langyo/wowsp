@@ -39,12 +39,12 @@ import type {
 import planeIcon from "./planeIcons";
 import { shipIcon } from "./shipIcons";
 
-/** paramsId → plane metadata (index/name/type) baked from GameParams by
+/** paramsId → plane metadata (index/name/type/count) baked from GameParams by
  *  `scripts/model_convert/extract_planes.py` — the type drives which in-game
- *  aircraft icon the minimap uses. */
+ *  aircraft icon the minimap uses; `count` is the full squadron size. */
 const PLANE_TYPES = planeTypesRaw as Record<
   string,
-  { index: string; name: string; type: string }
+  { index: string; name: string; type: string; count?: number }
 >;
 /** Shell encyclopedia (paramsId → ammo/tint) baked from GameParams by
  *  `scripts/model_convert/extract_shells.py`. */
@@ -324,8 +324,11 @@ export default defineComponent({
     const planeRoleById = new Map<number, string>();
     /** planeId → the carrier card label id that shows it. */
     const planeLabelOfPlane = new Map<number, number>();
-    /** planeId → real 3D aircraft model (once its GLB has loaded). */
-    const planeMeshes = new Map<number, THREE.Object3D>();
+    /** planeId → formation render state: the GameParams squadron size and the
+     *  per-plane model instances (one per slot in the wedge formation). */
+    const planeFormations = new Map<number, { count: number; meshes: THREE.Object3D[] }>();
+    /** planeId → 3D aircraft model pool (one per formation slot). */
+    const planeMeshes = new Map<number, THREE.Object3D[]>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
     let mapModel: THREE.Group | null = null;
@@ -560,30 +563,36 @@ export default defineComponent({
         ctx.arc(wx(s.x), wz(-s.z), 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Aircraft (receive_updateSquadron) — in-game type icons at each
-      // plane's last known position (updates arrive every few seconds).
-      for (const trail of planeTrails) {
-        const samples = trail.samples;
-        let s: SquadronPlane | null = null;
-        for (const sp of samples) {
-          if (sp.time > t) break;
-          s = sp;
-        }
-        if (s == null) continue;
-        if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
-        const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
-        if (icon && icon.complete && icon.naturalWidth > 0) {
-          const sz = 10;
-          ctx.save();
-          ctx.translate(wx(s.x), wz(-s.z));
-          ctx.rotate(s.yaw);
-          ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-          ctx.restore();
-        } else {
-          ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
-          ctx.beginPath();
-          ctx.arc(wx(s.x), wz(-s.z), 1.4, 0, Math.PI * 2);
-          ctx.fill();
+      // Aircraft — one in-game type icon per FORMATION (squadron centre),
+      // not per plane: a full 8-plane group reads as a single moving marker.
+      {
+        const drawn = new Set<number>();
+        for (const trail of planeTrails) {
+          const planeId = Math.floor(trail.id / 16);
+          if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
+          const samples = trail.samples;
+          let s: SquadronPlane | null = null;
+          for (const sp of samples) {
+            if (sp.time > t) break;
+            s = sp;
+          }
+          if (s == null) continue;
+          if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
+          drawn.add(planeId);
+          const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
+          if (icon && icon.complete && icon.naturalWidth > 0) {
+            const sz = 10;
+            ctx.save();
+            ctx.translate(wx(s.x), wz(-s.z));
+            ctx.rotate(s.yaw);
+            ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
+            ctx.beginPath();
+            ctx.arc(wx(s.x), wz(-s.z), 1.4, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
 
@@ -691,29 +700,35 @@ export default defineComponent({
             zctx.arc(zwx(s.x), zwz(-s.z), 6, 0, Math.PI * 2);
             zctx.fill();
           }
-          // Aircraft — in-game type icons at last known positions.
-          for (const trail of planeTrails) {
-            const samples = trail.samples;
-            let s: SquadronPlane | null = null;
-            for (const sp of samples) {
-              if (sp.time > t) break;
-              s = sp;
-            }
-            if (s == null) continue;
-            if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
-            const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
-            if (icon && icon.complete && icon.naturalWidth > 0) {
-              const sz = 22;
-              zctx.save();
-              zctx.translate(zwx(s.x), zwz(-s.z));
-              zctx.rotate(s.yaw);
-              zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-              zctx.restore();
-            } else {
-              zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
-              zctx.beginPath();
-              zctx.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
-              zctx.fill();
+          // Aircraft — one icon per formation (squadron centre).
+          {
+            const drawn = new Set<number>();
+            for (const trail of planeTrails) {
+              const planeId = Math.floor(trail.id / 16);
+              if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
+              const samples = trail.samples;
+              let s: SquadronPlane | null = null;
+              for (const sp of samples) {
+                if (sp.time > t) break;
+                s = sp;
+              }
+              if (s == null) continue;
+              if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
+              drawn.add(planeId);
+              const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
+              if (icon && icon.complete && icon.naturalWidth > 0) {
+                const sz = 22;
+                zctx.save();
+                zctx.translate(zwx(s.x), zwz(-s.z));
+                zctx.rotate(s.yaw);
+                zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+                zctx.restore();
+              } else {
+                zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
+                zctx.beginPath();
+                zctx.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
+                zctx.fill();
+              }
             }
           }
         }
@@ -906,11 +921,14 @@ export default defineComponent({
         (tm.wake.material as THREE.Material).dispose();
       }
       torpedoMeshes = [];
-      for (const g of planeMeshes.values()) {
-        scene.remove(g);
-        disposeAny(g);
+      for (const pool of planeMeshes.values()) {
+        for (const g of pool) {
+          scene.remove(g);
+          disposeAny(g);
+        }
       }
       planeMeshes.clear();
+      planeFormations.clear();
       for (const fx of explosionFx) {
         scene.remove(fx.ring);
         fx.ring.geometry.dispose();
@@ -1640,47 +1658,64 @@ export default defineComponent({
         planeCloud = points;
       }
 
-      // Real aircraft models: one baked GLB per distinct plane type, cloned
-      // per plane. Trails whose model fails/misses keep the Points fallback.
+      // Real aircraft models: per FORMATION (one GLB clone per squadron slot —
+      // the GameParams squadron size, e.g. 8), arranged in a wedge each frame.
+      // Trails whose model fails/misses keep the Points fallback.
       planeMeshes.clear();
+      planeFormations.clear();
       {
-        const seenIdx = new Set<string>();
+        // Group trails by planeId first.
+        const byPlane = new Map<number, { idx: string; role: string; count: number; trail: EntityTrajectory }[]>();
         for (const trail of planeTrails) {
+          const planeId = Math.floor(trail.id / 16);
           const idx = planeIndexById.get(trail.id);
           if (!idx) continue;
-          const url = resolvePlaneModelUrl(idx);
-          if (!url) continue;
-          // Team tint (ally green / enemy red); the same airframe can exist on
-          // both teams, so the shared model cache is keyed by type+role.
-          const planeId = Math.floor(trail.id / 16);
           const role = planeRoleById.get(planeId) ?? "enemy";
-          const color = TEAM_COLOR[role as TeamRole] ?? 0x78d2ff;
-          const seenKey = `${idx}:${role}`;
-          const already = seenIdx.has(seenKey);
-          seenIdx.add(seenKey);
-          // Load one model per index+role, then clone for every trail of it.
-          const build = already
-            ? null
-            : buildPropMarker({ url, color, axis: "z", targetLen: 7, opacity: 0.95 })
-                .catch(() => null);
-          if (build) {
-            const trailsForIdx = planeTrails.filter(
-              (t) =>
-                planeIndexById.get(t.id) === idx &&
-                (planeRoleById.get(Math.floor(t.id / 16)) ?? "enemy") === role,
-            );
-            build.then((proto) => {
-              if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
-              for (const tr of trailsForIdx) {
-                if (planeMeshes.has(tr.id)) continue;
-                const inst = proto.clone(true);
-                inst.userData.sharedGeometry = true;
-                inst.visible = false;
-                scene.add(inst);
-                planeMeshes.set(tr.id, inst);
-              }
-            });
+          let list = byPlane.get(planeId);
+          if (!list) {
+            list = [];
+            byPlane.set(planeId, list);
           }
+          const typeKey = PLANE_TYPES[String(
+            props.squadronCreates.find((c) => c.planeId === planeId)?.paramsId,
+          )];
+          const count = (typeKey?.count ?? 3);
+          if (list.length === 0) {
+            planeFormations.set(planeId, { count, meshes: [] });
+          }
+          list.push({ idx, role, count, trail });
+        }
+        const seenKey = new Set<string>();
+        for (const [planeId, entries] of byPlane) {
+          const first = entries[0];
+          const url = resolvePlaneModelUrl(first.idx);
+          if (!url) continue;
+          const seen = `${first.idx}:${first.role}`;
+          const build = seenKey.has(seen)
+            ? null
+            : buildPropMarker({
+                url,
+                color: TEAM_COLOR[first.role as TeamRole] ?? 0x78d2ff,
+                axis: "z",
+                targetLen: 7,
+                opacity: 0.95,
+              }).catch(() => null);
+          seenKey.add(seen);
+          if (!build) continue;
+          const formation = planeFormations.get(planeId)!;
+          build.then((proto) => {
+            if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
+            if (planeMeshes.has(planeId)) return;
+            const pool: THREE.Object3D[] = [];
+            for (let i = 0; i < formation.count; i++) {
+              const inst = proto.clone(true);
+              inst.userData.sharedGeometry = true;
+              inst.visible = false;
+              scene.add(inst);
+              pool.push(inst);
+            }
+            planeMeshes.set(planeId, pool);
+          });
         }
       }
 
@@ -2159,43 +2194,82 @@ export default defineComponent({
         sm.mesh.visible = alive;
         if (alive && s) sm.mesh.position.set(s.x, 2.5, -s.z);
       }
-      // Aircraft formation: each plane sits at its last recorded position.
-      // Modeled planes drive their GLB mesh; the rest fall back to Points.
+      // Aircraft formations: full squadrons (GameParams size, e.g. 8 planes)
+      // arranged in a wedge and slowly circling. Modeled formations drive
+      // their GLB pool; the rest fall back to Points.
       {
         const attr = planeCloud
           ? (planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute)
           : null;
         const arr = attr ? (attr.array as Float32Array) : null;
         let anyPoints = false;
-        for (let i = 0; i < planeTrails.length; i++) {
-          const samples = planeTrails[i].samples;
+        // Sample helper: last sample at or before t.
+        const sampleOf = (samples: SquadronPlane[]): SquadronPlane | null => {
           let s: SquadronPlane | null = null;
           for (const sp of samples) {
             if (sp.time > t) break;
             s = sp;
           }
-          // Alive between the first update and ~2 min after the last one.
-          const born = samples[0].time;
-          const expiry = samples[samples.length - 1].time + 120;
-          const alive = s != null && t >= born && t <= expiry;
-          const model = planeMeshes.get(planeTrails[i].id);
-          if (model) {
-            model.visible = alive;
-            if (alive && s) {
-              model.position.set(s.x, Math.max(60, s.y), -s.z);
-              model.rotation.y = Math.PI - s.yaw;
-            }
+          return s;
+        };
+        // Formation anchors: index-0 trail of each planeId (position + yaw),
+        // alive between its first update and ~2 min after the last one.
+        const formationAnchor = new Map<number, { s: SquadronPlane; born: number; expiry: number }>();
+        for (const trail of planeTrails) {
+          const planeId = Math.floor(trail.id / 16);
+          if (trail.id % 16 !== 0) continue;
+          const s = sampleOf(trail.samples);
+          if (!s) continue;
+          const born = trail.samples[0].time;
+          const expiry = trail.samples[trail.samples.length - 1].time + 120;
+          if (t >= born && t <= expiry) {
+            formationAnchor.set(planeId, { s, born, expiry });
           }
-          if (arr) {
-            if (alive && s && !model) {
-              arr[i * 3] = s.x;
-              arr[i * 3 + 1] = Math.max(60, s.y);
-              arr[i * 3 + 2] = -s.z;
+        }
+        for (const [planeId, anchor] of formationAnchor) {
+          const pool = planeMeshes.get(planeId);
+          const formation = planeFormations.get(planeId);
+          const count = formation?.count ?? 3;
+          // Slow circle so airborne squadrons visibly hold a patrol orbit.
+          const ang = t * 0.22 + (planeId % 7) * 0.9;
+          const R = 50;
+          const cx = anchor.s.x + Math.cos(ang) * R;
+          const cz = anchor.s.z + Math.sin(ang) * R;
+          const yaw = anchor.s.yaw;
+          const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
+          const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
+          const yBase = Math.max(60, anchor.s.y);
+          if (pool && pool.length >= count) {
+            for (let i = 0; i < count; i++) {
+              const mesh = pool[i];
+              mesh.visible = true;
+              // Wedge (梯形): leader ahead, pairs stepping back on both sides.
+              let ox = 0, oz = 0;
+              if (i > 0) {
+                const row = Math.ceil(i / 2);
+                const side = i % 2 === 1 ? -1 : 1;
+                const spacing = 26;
+                const depth = 22;
+                ox = side * row * spacing * right.x - row * depth * fwd.x;
+                oz = side * row * spacing * right.z - row * depth * fwd.z;
+              }
+              mesh.position.set(cx + ox, yBase + (i % 2) * 2, -cz + oz);
+              mesh.rotation.y = Math.PI - yaw;
+            }
+          } else {
+            // No model pool (yet): fall back to a point at the anchor.
+            if (arr) {
+              arr[(planeId % 16) * 3] = cx;
+              arr[(planeId % 16) * 3 + 1] = yBase;
+              arr[(planeId % 16) * 3 + 2] = -cz;
               anyPoints = true;
-            } else {
-              arr[i * 3 + 1] = -9999;
             }
           }
+        }
+        // Hide pools of formations currently not anchored.
+        for (const [planeId, pool] of planeMeshes) {
+          if (formationAnchor.has(planeId)) continue;
+          for (const m of pool) m.visible = false;
         }
         if (planeCloud && attr) {
           planeCloud.visible = anyPoints;
