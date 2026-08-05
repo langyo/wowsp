@@ -350,6 +350,9 @@ export default defineComponent({
       kind?: "ship" | "plane";
       /** Aircraft type name (fighter/dive/...) for plane labels. */
       planeType?: string | null;
+      /** Ghost (unseen/sunk) state: label gets a dashed border and the HP bar
+       *  is replaced by a "gone for N s" countdown text. */
+      ghostText?: string | null;
       /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
       x: number;
       y: number;
@@ -854,6 +857,34 @@ export default defineComponent({
         const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
         if (!mat) return;
         for (const m of Array.isArray(mat) ? mat : [mat]) m.dispose();
+      });
+    }
+
+    /** Toggle a ship marker's ghost (translucent) rendering. Only touches
+     *  materials when the state actually changes (cheap per-frame no-op). */
+    function applyGhost(marker: THREE.Group, ghost: boolean): void {
+      if (marker.userData._ghost === ghost) return;
+      marker.userData._ghost = ghost;
+      marker.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (!mat) return;
+        for (const mm of Array.isArray(mat) ? mat : [mat]) {
+          const shader = mm as THREE.ShaderMaterial;
+          if (shader.uniforms?.ghostAlpha) {
+            shader.uniforms.ghostAlpha.value = ghost ? 0.3 : 1.0;
+          } else if (mm.transparent) {
+            const basic = mm as THREE.MeshBasicMaterial;
+            if (ghost) {
+              if (basic.userData._baseOpacity == null) {
+                basic.userData._baseOpacity = basic.opacity;
+              }
+              basic.opacity = 0.12;
+            } else if (basic.userData._baseOpacity != null) {
+              basic.opacity = basic.userData._baseOpacity as number;
+            }
+          }
+        }
       });
     }
 
@@ -1857,6 +1888,7 @@ export default defineComponent({
           type: shipInfo?.type ?? offline?.type ?? null,
           hp: maxHp,
           maxHp,
+          ghostText: null,
           x: 0, y: 0,
           visible: false,
           dead: false,
@@ -2092,18 +2124,24 @@ export default defineComponent({
         }
         // Opening phase: enemies are not yet visible — but their SPAWN
         // positions are known from EntityCreate (the game briefly lights them
-        // up at start). Show a ghost marker at the spawn point so the opener
-        // still has a coordinate reference; the ghost hides after the
-        // countdown.
+        // up at start). Show the ship itself as a translucent ghost at the
+        // spawn point, plus a thin ring, so the opener has a coordinate
+        // reference; both disappear after the countdown.
         const role = marker.userData.role as TeamRole;
         if (role === "enemy" && t < OPENING_HIDE_T) {
-          const ghost = marker.userData.ghost as THREE.Mesh | undefined;
-          if (ghost) {
-            ghost.visible = true;
-            ghost.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
+          const ghostRing = marker.userData.ghost as THREE.Mesh | undefined;
+          if (ghostRing) {
+            ghostRing.visible = true;
+            ghostRing.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
           }
-          marker.visible = false;
-          if (label) label.visible = false;
+          applyGhost(marker, true);
+          marker.visible = true;
+          marker.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
+          marker.rotation.y = Math.PI - (traj.samples[0]?.yaw ?? 0);
+          if (label) {
+            label.visible = true;
+            label.ghostText = `已消失 ${t.toFixed(1)} s`;
+          }
           continue;
         }
         // Past the opening phase, ghost rings never show again.
@@ -2120,8 +2158,9 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        // After death the ship is gone from the water: hide the marker and
-        // label entirely (the minimap still shows a grey dot).
+        // After death the ship is gone from the water: show a translucent
+        // wreck ghost at the last observed position (label gets the dashed
+        // border + a live "gone for N s" counter).
         const deathTime = marker.userData.deathTime as number | null;
         const dead = deathTime != null && t >= deathTime;
         if (label) label.dead = dead;
@@ -2130,9 +2169,11 @@ export default defineComponent({
         // point (the EntityCreate position) — ships that stay unseen for
         // minutes (first sample late, e.g. an early-hidden ally) must not
         // appear at the first OBSERVED position, which may be halfway across
-        // the map (that read as ships teleporting into the mountains).
+        // the map (that read as ships teleporting into the mountains). They
+        // render as ghosts too.
         let s: ReturnType<typeof sampleAt> | null;
-        if (tEff < traj.samples[0].time) {
+        const ghostPre = !dead && tEff < traj.samples[0].time;
+        if (ghostPre) {
           s = {
             ...traj.samples[0],
             x: traj.kind?.initialX ?? traj.samples[0].x,
@@ -2152,9 +2193,15 @@ export default defineComponent({
         const hasDot = marker.userData.isDot as boolean;
         if (!hasModel && !hasDot) continue;
         if (dead) {
-          // Sunk: remove from the 3D scene.
-          marker.visible = false;
-          if (label) label.visible = false;
+          // Sunk: keep a translucent wreck ghost at the last position.
+          applyGhost(marker, true);
+          marker.visible = true;
+          marker.position.set(s.x, 0, -s.z);
+          marker.rotation.y = Math.PI - s.yaw;
+          if (label) {
+            label.visible = true;
+            label.ghostText = `已消失 ${(t - deathTime!).toFixed(1)} s`;
+          }
           if (!marker.userData._countedDead) {
             marker.userData._countedDead = true;
             const role = marker.userData.role as TeamRole;
@@ -2178,6 +2225,8 @@ export default defineComponent({
           }
           continue;
         }
+        applyGhost(marker, false);
+        if (label) label.ghostText = null;
         marker.visible = true;
         marker.position.set(s.x, 0, -s.z);
         marker.rotation.y = Math.PI - s.yaw;
@@ -3102,6 +3151,7 @@ export default defineComponent({
                 "holo-label",
                 `holo-label--${lbl.role}`,
                 lbl.dead ? "holo-label--dead" : "",
+                lbl.ghostText ? "holo-label--ghost" : "",
                 lbl.visible ? "" : "holo-label--hidden",
                 selectedEntityId.value === lbl.entityId ? "holo-label--selected" : "",
               ]}
@@ -3128,7 +3178,7 @@ export default defineComponent({
                 ) : null}
                 {lbl.shipName}
               </span>
-              {lbl.hp != null ? (
+              {lbl.hp != null && !lbl.ghostText ? (
                 <span class="holo-label__hp">
                   {lbl.maxHp != null ? (
                     <span class="holo-label__hp-bar">
@@ -3148,6 +3198,8 @@ export default defineComponent({
                     </span>
                   ) : null}
                 </span>
+              ) : lbl.ghostText ? (
+                <span class="holo-label__ghost-time">{lbl.ghostText}</span>
               ) : null}
               {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
             </div>

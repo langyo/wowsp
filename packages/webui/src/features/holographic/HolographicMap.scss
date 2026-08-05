@@ -239,6 +239,11 @@
   user-select: none;
 
   &--hidden { opacity: 0; }
+  /* Ghost (unseen / sunk) ships: dashed border + gone-time instead of HP. */
+  &--ghost {
+    border-style: dashed;
+    opacity: 0.85;
+  }
   &--dead {
     opacity: 0.55;
     filter: grayscale(0.7);
@@ -318,6 +323,19 @@
     font-weight: 700;
     color: #fff;
     text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+  }
+
+  /* Ghost labels replace the HP bar with a live "gone for N s" counter. */
+  &__ghost-time {
+    width: 100%;
+    padding: 0.1rem 0.25rem;
+    background: rgba(5, 8, 15, 0.55);
+    border-radius: 2px;
+    color: rgba(255, 255, 255, 0.75);
+    font-family: var(--font-mono);
+    font-size: 0.75em;
+    text-align: center;
     white-space: nowrap;
   }
 }
