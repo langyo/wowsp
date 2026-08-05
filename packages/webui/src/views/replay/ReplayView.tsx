@@ -68,14 +68,12 @@ const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
 function mapNameForLang(spaceId: string, lang: string): string | null {
   const names = MAP_NAMES[spaceId];
   if (!names) return null;
-  // zh-sg is the closest official catalog to the app's zhs locale; fall back
-  // through the WG language codes, then to English.
-  return (
-    names[lang] ??
-    names["zh-sg"] ??
-    names["en"] ??
-    null
-  );
+  // Take the exact server language first (国服 zh-cn and 亚服 zh-sg are
+  // different official translations, e.g. 断层线 vs 海神之击). Never fall
+  // back across servers — if the chosen language lacks an entry (e.g. the
+  // official zh-tw catalog keeps map names in English), use English, not
+  // the other server's name.
+  return names[lang] ?? names["en"] ?? null;
 }
 
 /** Resolve a map's localized display name from its internal space id. Falls
