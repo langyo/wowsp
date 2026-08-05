@@ -347,17 +347,22 @@
   left: 50%;
   translate: -50% 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.9rem;
+  gap: 0.15rem;
   padding: 0.3rem 0.9rem;
   background: rgba(5, 8, 15, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   z-index: 3;
   pointer-events: none;
-  /* Score numbers on both sides stay vertically centred against the caps —
-     the bar is one centred row:  ally · caps · enemy. */
+}
+
+.holo-map__score-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
 }
 
 .holo-map__score-team {
@@ -387,6 +392,28 @@
 .holo-map__score-caps {
   display: flex;
   gap: 0.25rem;
+}
+
+/* Ship-icon strip under the scores: left ally (green icons), right enemy
+   (red), sunk ships pushed to the far edge and greyed via the sunk art. */
+.holo-map__shiprow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  padding-top: 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  img {
+    display: block;
+    opacity: 0.9;
+  }
+}
+.holo-map__shiprow-sep {
+  width: 1px;
+  height: 12px;
+  margin: 0 0.3rem;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .holo-map__cap {
