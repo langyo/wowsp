@@ -169,21 +169,20 @@ const PostBattlePanel = defineComponent({
           </table>
           {/* Per-ribbon counters (index order follows the client's PostBattle
               list; rendered as raw numbers until the mapping is confirmed). */}
-          {rows.value.some((p) => p.ribbons.some((v) => v > 0)) ? (
+          {rows.value.some((p) => p.ribbons.some((x) => x.value > 0)) ? (
             <div class="replay-view__postbattle-ribbons">
               <div class="replay-view__postbattle-ribbon-title">勋带统计（原始计数）</div>
               {rows.value
-                .filter((p) => p.ribbons.some((v) => v > 0))
+                .filter((p) => p.ribbons.some((x) => x.value > 0))
                 .map((p) => (
                   <div key={p.accountId} class="replay-view__postbattle-ribbon-row">
                     <span class="replay-view__postbattle-ribbon-name">{p.name}</span>
                     <span class="replay-view__postbattle-ribbon-vals">
                       {p.ribbons
-                        .map((v, i) => ({ v, i }))
-                        .filter((x) => x.v > 0)
+                        .filter((x) => x.value > 0)
                         .map((x) => (
-                          <span key={x.i} class="replay-view__postbattle-ribbon-val">
-                            [{x.i}]{x.v}
+                          <span key={x.index} class="replay-view__postbattle-ribbon-val">
+                            [{x.index}]{x.value}
                           </span>
                         ))}
                     </span>

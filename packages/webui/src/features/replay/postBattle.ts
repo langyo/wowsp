@@ -70,7 +70,15 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         alive: arr[21] === true,
         damage: num(20) ?? 0,
         frags: num(32) ?? 0,
-        ribbons: arr.slice(24).filter((v): v is number => typeof v === "number"),
+        // Ribbon/counter zone: indices 24..132 hold small per-ribbon counts;
+        // beyond that the array becomes big economy/damage totals. Kept as
+        // {index, value} pairs so the UI can show the raw layout positions.
+        ribbons: arr
+          .slice(24, 133)
+          .map((v, i) => ({ index: 24 + i, value: v }))
+          .filter((x): x is { index: number; value: number } =>
+            typeof x.value === "number" && x.value > 0,
+          ),
       });
     }
   }
