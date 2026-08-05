@@ -549,7 +549,7 @@ fn decode_squadron_update(
     let plane_id = u64::from_le_bytes(args[0..8].try_into().unwrap());
     let count = args[12] as usize;
     let mut off = 13usize;
-    for _ in 0..count {
+    for index in 0..count {
         if off + 20 > args.len() {
             break;
         }
@@ -561,6 +561,7 @@ fn decode_squadron_update(
         out.push(wowsp_tauri_shared::SquadronPlane {
             time,
             plane_id,
+            index: index as u8,
             x,
             y,
             z,

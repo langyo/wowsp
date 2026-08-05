@@ -222,10 +222,13 @@ export interface SquadronCreate {
   z: number;
 }
 
-/** One aircraft position sample (receive_updateSquadron, avatar method 140). */
+/** One aircraft position sample (receive_updateSquadron, avatar method 140).
+ *  Each update packet carries `count` planes of one squadron; `index` is the
+ *  position within that formation, so (planeId, index) is one aircraft. */
 export interface SquadronPlane {
   time: number;
   planeId: number;
+  index: number;
   x: number;
   y: number;
   z: number;
