@@ -19,6 +19,9 @@ import type {
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { parsePostBattle } from "@/features/replay/postBattle";
+import BattleIcon from "@/components/base/BattleIcon";
+import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor } from "@/utils/modeColors";
@@ -106,6 +109,76 @@ function formatDateTime(dt?: string | null): string {
   const [, y, mo, d, hh, mm] = m;
   const hhmm = hh ? ` ${hh}:${mm}` : "";
   return `${y}-${mo}-${d}${hhmm}`;
+}
+
+/** Post-battle modal content: parsed player table (name, ship, damage,
+ *  survived) plus the raw payload collapsed. */
+const PostBattlePanel = defineComponent({
+  name: "PostBattlePanel",
+  props: { raw: { type: String, required: true } },
+  setup(props) {
+    const parsed = computed(() => parsePostBattle(props.raw));
+    const { dataLanguage } = useLanguage();
+    const rows = computed(() => {
+      const pb = parsed.value;
+      if (!pb) return [];
+      return pb.players.map((p) => ({
+        ...p,
+        shipName:
+          (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??
+          "",
+      }));
+    });
+    return () => {
+      const pb = parsed.value;
+      if (!pb) return <pre>{props.raw}</pre>;
+      return (
+        <div class="replay-view__postbattle">
+          <table class="replay-view__postbattle-table">
+            <thead>
+              <tr>
+                <th>玩家</th>
+                <th>舰船</th>
+                <th>伤害</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.value.map((p) => (
+                <tr key={p.accountId}>
+                  <td>
+                    <span class="replay-view__postbattle-ico">
+                      {p.shipId != null ? (
+                        <BattleIcon
+                          type={shipTypeOf(p.shipId)}
+                          variant={p.alive ? "ally" : "sunk"}
+                          size={12}
+                        />
+                      ) : null}
+                    </span>
+                    {p.name}
+                  </td>
+                  <td>{p.shipName}</td>
+                  <td class="replay-view__postbattle-num">{p.damage.toLocaleString()}</td>
+                  <td>{p.alive ? "存活" : "沉没"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <details class="replay-view__postbattle-raw">
+            <summary>原始数据</summary>
+            <pre>{props.raw}</pre>
+          </details>
+        </div>
+      );
+    };
+  },
+});
+
+/** Best-effort ship class for the icon (offline DB only — the modal lives
+ *  outside the encyclopedia store). */
+function shipTypeOf(shipId: number): string {
+  return shipOfflineEntry(shipId)?.type ?? "";
 }
 
 /**
@@ -395,10 +468,26 @@ export default defineComponent({
                 ) : null}
               </header>
               {showResults.value && battleResults.value ? (
-                <details class="replay-view__results-panel" open>
-                  <summary>{t("replay.results")}</summary>
-                  <pre>{battleResults.value}</pre>
-                </details>
+                <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
+                  <div
+                    class="replay-view__modal-panel"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div class="replay-view__modal-head">
+                      <strong>{t("replay.results")}</strong>
+                      <button
+                        class="replay-view__modal-close"
+                        onClick={() => (showResults.value = false)}
+                        aria-label="Close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div class="replay-view__modal-body">
+                      <PostBattlePanel raw={battleResults.value} />
+                    </div>
+                  </div>
+                </div>
               ) : null}
 
               <div class="replay-view__detail">

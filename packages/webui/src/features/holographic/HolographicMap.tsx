@@ -75,6 +75,7 @@ function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
 }
 import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
+import { parsePostBattle, type PostBattlePlayer } from "@/features/replay/postBattle";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
@@ -107,8 +108,7 @@ export default defineComponent({
     /** Recorder weapon-lock timeline (SetWeaponLock 0x30). */
     weaponLocks: { type: Array as () => WeaponLockEvent[], default: () => [] },
     /** Raw post-battle statistics JSON (BattleResults 0x22). */
-    battleResults: { type: String, default: "" },
-    /** Replay protocol version (Version 0x16). */
+    battleResults: { type: String, default: "" },    /** Replay protocol version (Version 0x16). */
     replayVersion: { type: String, default: "" },
     /** Map name from the Map packet (0x28). */
     mapNamePkt: { type: String, default: "" },
@@ -234,6 +234,29 @@ export default defineComponent({
       enemies.sort(sort);
       return { allies, enemies };
     });
+    // Post-battle damage board (top-right, next to the scorebar): parsed from
+    // the BattleResults payload, sorted by damage. Ships with no roster name
+    // fall back to the raw account id.
+    const postBattle = computed(() => parsePostBattle(props.battleResults || null));
+    const damageBoard = computed(() => {
+      const pb = postBattle.value;
+      if (!pb) return [];
+      const dataLang = useLanguage().dataLanguage.value;
+      return pb.players.map((p: PostBattlePlayer) => ({
+        ...p,
+        shipName: shipNameFromOfflineDb(p.shipId, dataLang) ?? "",
+      }));
+    });
+    /** Top damage value (for scaling the board's bars). */
+    const damageMax = computed(() =>
+      Math.max(1, ...damageBoard.value.map((p) => p.damage)),
+    );
+    /** Ship class for a shipId (encyclopedia → offline DB → "". */
+    function shipTypeOfShipId(shipId: number): string {
+      const info = props.encyclopedia.get(shipId) as ShipInfo | undefined;
+      if (info?.type) return info.type;
+      return shipOfflineEntry(shipId)?.type ?? "";
+    }
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
     const capStatus = ref([0, 0, 0]);
     // Estimated match score: kills (1 pt) + fully-held cap points (3 pts each).
@@ -3205,6 +3228,7 @@ export default defineComponent({
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
         {props.replayPath ? (
+          <>
           <div class="holo-map__scorebar">
             <span class="holo-map__score-main">
               <span class="holo-map__score-team holo-map__score--ally">
@@ -3291,6 +3315,38 @@ export default defineComponent({
               ))}
             </span>
           </div>
+          {/* Post-battle damage board (top-right, same height band as the
+              scorebar): each player's damage with the ship icon + name. */}
+          {damageBoard.value.length > 0 ? (
+            <div class="holo-map__damage">
+              <div class="holo-map__damage-title">战后统计</div>
+              {damageBoard.value.map((p) => (
+                <div key={p.accountId} class="holo-map__damage-row">
+                  <span class="holo-map__damage-ico">
+                    {p.shipId != null ? (
+                      <BattleIcon
+                        type={shipTypeOfShipId(p.shipId)}
+                        variant={p.alive ? "ally" : "sunk"}
+                        size={12}
+                      />
+                    ) : null}
+                  </span>
+                  <span class="holo-map__damage-name" title={p.name}>{p.name}</span>
+                  <span class="holo-map__damage-bar">
+                    <span
+                      class="holo-map__damage-fill"
+                      style={{
+                        width: `${(p.damage / damageMax.value) * 100}%`,
+                        background: p.alive ? "#3cb478" : "#666",
+                      }}
+                    />
+                  </span>
+                  <span class="holo-map__damage-num">{p.damage.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          </>
         ) : null}
         {/* Kill feed (sink notifications) */}
         {killFeed.value.length > 0 ? (
