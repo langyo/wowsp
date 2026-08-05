@@ -312,6 +312,10 @@ pub struct SquadronCreate {
 pub struct SquadronPlane {
     pub time: f32,
     pub plane_id: u64,
+    /// Position within the squadron formation (0..squadron size) — one
+    /// sample per aircraft per update, so `(plane_id, index)` uniquely
+    /// identifies a single plane. The frontend renders one model per index.
+    pub index: u8,
     pub x: f32,
     pub y: f32,
     pub z: f32,

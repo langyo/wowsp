@@ -37,6 +37,7 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import planeIcon from "./planeIcons";
+import { shipIcon } from "./shipIcons";
 
 /** paramsId → plane metadata (index/name/type) baked from GameParams by
  *  `scripts/model_convert/extract_planes.py` — the type drives which in-game
@@ -85,7 +86,7 @@ function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
   return { ammo, color };
 }
 import { tierToRoman } from "@/utils/tierRoman";
-import ShipTypeIcon from "@/components/base/ShipTypeIcon";
+import BattleIcon from "@/components/base/BattleIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
@@ -320,8 +321,12 @@ export default defineComponent({
     let planeCloud: THREE.Points | null = null;
     /** Per-plane sample lists grouped by plane id, sorted by time. */
     let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
-    /** planeId → aircraft type (fighter/dive/torpedo/...). */
+    /** planeId*16+index → aircraft type (fighter/dive/torpedo/...). */
     const planeTypesById = new Map<number, string>();
+    /** planeId*16+index → GameParams index (for the baked model GLB). */
+    const planeIndexById = new Map<number, string>();
+    /** Squadron label id → controlling ship's entity id (for name/HP sync). */
+    const planeLabelCarriers = new Map<number, number | null>();
     /** planeId → real 3D aircraft model (once its GLB has loaded). */
     const planeMeshes = new Map<number, THREE.Object3D>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
@@ -341,6 +346,10 @@ export default defineComponent({
       type: string | null;
       hp: number | null;
       maxHp: number | null;
+      /** "plane" renders the aircraft icon + carrier name instead of the ship glyph. */
+      kind?: "ship" | "plane";
+      /** Aircraft type name (fighter/dive/...) for plane labels. */
+      planeType?: string | null;
       /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
       x: number;
       y: number;
@@ -481,8 +490,9 @@ export default defineComponent({
         ctx.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
       });
 
-      // Ship dots: the game's own class glyphs (same shapes as the label
-      // icons), tinted by team. Sunk ships render as small grey dots.
+      // Ship markers: the game's own HUD class icons, tinted by team via the
+      // variant (ally/enemy/sunk). Falls back to a plain dot until the icon
+      // image decodes.
       const t = current.value;
       for (const m of shipMarkers) {
         const role = m.userData.role as TeamRole | undefined;
@@ -493,6 +503,15 @@ export default defineComponent({
           t >= (m.userData.deathTime as number);
         const cx = wx(m.position.x);
         const cz = wz(m.position.z);
+        const icon = shipIcon(
+          m.userData.type as string | undefined,
+          dead ? "sunk" : role === "self" || role === "ally" ? "ally" : role === "enemy" ? "enemy" : "white",
+        );
+        if (icon && icon.complete && icon.naturalWidth > 0) {
+          const sz = 15;
+          ctx.drawImage(icon, cx - sz / 2, cz - sz / 2, sz, sz);
+          continue;
+        }
         if (dead) {
           ctx.fillStyle = "rgba(150, 150, 150, 0.7)";
           ctx.beginPath();
@@ -526,7 +545,7 @@ export default defineComponent({
         if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
         const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
         if (icon && icon.complete && icon.naturalWidth > 0) {
-          const sz = 14;
+          const sz = 10;
           ctx.drawImage(icon, wx(s.x) - sz / 2, wz(-s.z) - sz / 2, sz, sz);
         } else {
           ctx.fillStyle = "rgba(120, 210, 255, 0.95)";
@@ -593,6 +612,15 @@ export default defineComponent({
               t >= (m.userData.deathTime as number);
             const cx = zwx(m.position.x);
             const cz = zwz(m.position.z);
+            const icon = shipIcon(
+              m.userData.type as string | undefined,
+              dead ? "sunk" : role === "self" || role === "ally" ? "ally" : role === "enemy" ? "enemy" : "white",
+            );
+            if (icon && icon.complete && icon.naturalWidth > 0) {
+              const sz = 26;
+              zctx.drawImage(icon, cx - sz / 2, cz - sz / 2, sz, sz);
+              continue;
+            }
             if (dead) {
               zctx.fillStyle = "rgba(150,150,150,0.7)";
               zctx.beginPath();
@@ -624,7 +652,7 @@ export default defineComponent({
             if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
             const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
             if (icon && icon.complete && icon.naturalWidth > 0) {
-              const sz = 30;
+              const sz = 22;
               zctx.drawImage(icon, zwx(s.x) - sz / 2, zwz(-s.z) - sz / 2, sz, sz);
             } else {
               zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
@@ -1249,6 +1277,24 @@ export default defineComponent({
       // Shared cone geometry for in-flight shells (tip pointing +Y; oriented
       // along the trajectory tangent each frame for a smooth補间).
       const shellGeom = new THREE.ConeGeometry(3, 12, 8);
+      // The enemy ship nearest the impact point at impact time — arcs end at
+      // the TARGET SHIP (not the bare water splash) so they read as fire
+      // against the opposing fleet instead of stray shots into empty sea.
+      const targetShipAt = (e: ExplosionEvent) => {
+        let best: { x: number; z: number } | null = null;
+        let bestD = 500;
+        for (const tr of props.trajectories) {
+          if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
+          const s = sampleAt(tr, e.time);
+          if (!s) continue;
+          const d = Math.hypot(s.x - e.x, s.z - e.z);
+          if (d < bestD) {
+            bestD = d;
+            best = { x: s.x, z: s.z };
+          }
+        }
+        return best;
+      };
       for (const e of props.explosions) {
         const match = shipForImpact(e);
         if (!match) continue;
@@ -1303,6 +1349,7 @@ export default defineComponent({
         flashHalo.position.set(e.x, 1, -e.z);
         flashHalo.visible = false;
         scene.add(flashHalo);
+        const target = targetShipAt(e);
         shellTraces.push({
           line,
           dots,
@@ -1319,7 +1366,7 @@ export default defineComponent({
             const s = sampleAt(match.tr, match.t0);
             return s ? new THREE.Vector3(s.x, 0, -s.z) : null;
           },
-          to: new THREE.Vector3(e.x, 0, -e.z),
+          to: new THREE.Vector3(target?.x ?? e.x, 0, -(target?.z ?? e.z)),
           h: match.h,
         });
       }
@@ -1458,14 +1505,18 @@ export default defineComponent({
         lockLine = line as unknown as THREE.Mesh;
       }
 
-      // Aircraft squadrons: one fixed-pixel point per plane, positions come
-      // from the avatar's receive_updateSquadron stream (grouped by plane id).
+      // Aircraft squadrons: one model per plane, positions come from the
+      // avatar's receive_updateSquadron stream. Each update packet carries
+      // one sample per aircraft (index 0..count-1), so (planeId, index)
+      // uniquely identifies a single plane — a squadron of N planes becomes
+      // N trails instead of one.
       const byPlane = new Map<number, SquadronPlane[]>();
       for (const sp of props.squadronPlanes) {
-        let list = byPlane.get(sp.planeId);
+        const key = sp.planeId * 16 + (sp.index ?? 0);
+        let list = byPlane.get(key);
         if (!list) {
           list = [];
-          byPlane.set(sp.planeId, list);
+          byPlane.set(key, list);
         }
         list.push(sp);
       }
@@ -1473,10 +1524,17 @@ export default defineComponent({
         id,
         samples: samples.sort((a, b) => a.time - b.time),
       }));
-      // planeId → aircraft type (via the squadron create's paramsId).
+      // (planeId, index) → aircraft type (via the squadron create's
+      // paramsId). Trails keyed by planeId*16+index, so every formation
+      // member maps to its squadron's type.
       planeTypesById.clear();
       for (const c of props.squadronCreates) {
-        planeTypesById.set(c.planeId, PLANE_TYPES[String(c.paramsId)]?.type ?? "attack");
+        const type = PLANE_TYPES[String(c.paramsId)]?.type ?? "attack";
+        const index = PLANE_TYPES[String(c.paramsId)]?.index;
+        for (let i = 0; i < 16; i++) {
+          planeTypesById.set(c.planeId * 16 + i, type);
+          if (index) planeIndexById.set(c.planeId * 16 + i, index);
+        }
       }
       if (planeTrails.length > 0) {
         const colors = new Float32Array(planeTrails.length * 3);
@@ -1510,15 +1568,9 @@ export default defineComponent({
       // per plane. Trails whose model fails/misses keep the Points fallback.
       planeMeshes.clear();
       {
-        // planeId → GameParams index (via the squadron create's paramsId).
-        const indexById = new Map<number, string>();
-        for (const c of props.squadronCreates) {
-          const idx = PLANE_TYPES[String(c.paramsId)]?.index;
-          if (idx) indexById.set(c.planeId, idx);
-        }
         const seenIdx = new Set<string>();
         for (const trail of planeTrails) {
-          const idx = indexById.get(trail.id);
+          const idx = planeIndexById.get(trail.id);
           if (!idx) continue;
           const url = resolvePlaneModelUrl(idx);
           if (!url) continue;
@@ -1529,10 +1581,10 @@ export default defineComponent({
           // Load one model per index, then clone for every trail of that type.
           const build = already
             ? null
-            : buildPropMarker({ url, color, axis: "z", targetLen: 16, opacity: 0.95 })
+            : buildPropMarker({ url, color, axis: "z", targetLen: 7, opacity: 0.95 })
                 .catch(() => null);
           if (build) {
-            const trailsForIdx = planeTrails.filter((t) => indexById.get(t.id) === idx);
+            const trailsForIdx = planeTrails.filter((t) => planeIndexById.get(t.id) === idx);
             build.then((proto) => {
               if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
               for (const tr of trailsForIdx) {
@@ -1670,6 +1722,44 @@ export default defineComponent({
           visible: false,
           dead: false,
         });
+      }
+      // Aircraft squadron labels: one card per squadron above the formation,
+      // carrying the controlling carrier's name + HP with the plane-type
+      // icon on the left. The carrier is the ship nearest to the squadron's
+      // spawn point (create packet carries the launch position).
+      planeLabelCarriers.clear();
+      planeLabelCarriers.clear();
+      for (const c of props.squadronCreates) {
+        let carrier: { marker: THREE.Group; entityId: number } | null = null;
+        let bestD = 1500;
+        for (const m of shipMarkers) {
+          const dx = m.position.x - c.x;
+          const dz = m.position.z - -c.z;
+          const d = Math.hypot(dx, dz);
+          if (d < bestD) {
+            bestD = d;
+            carrier = { marker: m, entityId: m.userData.entityId as number };
+          }
+        }
+        const planeType = PLANE_TYPES[String(c.paramsId)]?.type ?? "attack";
+        const planeIdx = PLANE_TYPES[String(c.paramsId)]?.index;
+        newLabels.push({
+          entityId: 2_000_000_000 + Number(c.planeId),
+          role: "self",
+          name: "",
+          shipName: "",
+          tier: null,
+          type: null,
+          kind: "plane",
+          planeType,
+          hp: null,
+          maxHp: null,
+          x: 0, y: 0,
+          visible: false,
+          dead: false,
+        });
+        planeLabelCarriers.set(2_000_000_000 + Number(c.planeId), carrier?.entityId ?? null);
+        if (planeIdx) planeIndexById.set(c.planeId * 16, planeIdx);
       }
       shipLabels.value = newLabels;
 
@@ -2089,6 +2179,37 @@ export default defineComponent({
           }
         }
       }
+      // Aircraft squadron labels: sync name/HP from the controlling ship and
+      // drive visibility from the formation's sample window.
+      {
+        const labels = shipLabels.value;
+        for (const [labelId, carrierId] of planeLabelCarriers) {
+          const label = labels.find((l) => l.entityId === labelId);
+          if (!label) continue;
+          const carrierIdx = carrierId == null ? -1 : shipMarkers.findIndex(
+            (m) => m.userData.entityId === carrierId,
+          );
+          const carrierLabel = carrierIdx >= 0 ? labels[carrierIdx] : null;
+          if (carrierLabel) {
+            label.name = carrierLabel.name;
+            label.shipName = carrierLabel.shipName;
+            label.tier = carrierLabel.tier;
+            label.hp = carrierLabel.hp;
+            label.maxHp = carrierLabel.maxHp;
+            label.dead = carrierLabel.dead;
+          }
+          // Formation alive between its first update and ~2 min after the last.
+          const planeId = labelId - 2_000_000_000;
+          const trail = planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
+          if (!trail || trail.samples.length === 0) {
+            label.visible = false;
+            continue;
+          }
+          const first = trail.samples[0].time;
+          const last = trail.samples[trail.samples.length - 1].time;
+          label.visible = t >= first && t <= last + 120;
+        }
+      }
       // Update screen-space positions of floating labels from marker world positions.
       updateLabelPositions();
     }
@@ -2492,6 +2613,21 @@ export default defineComponent({
         label.y = (-_projVec.y * hh) + hh;
         label.visible = _projVec.z < 1;
       }
+      // Aircraft squadron labels project the formation's current position
+      // (first plane of the group, raised above the flight level).
+      for (const [labelId] of planeLabelCarriers) {
+        const label = labels.find((l) => l.entityId === labelId);
+        if (!label || !label.visible) continue;
+        const planeId = labelId - 2_000_000_000;
+        const trail = planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
+        if (!trail || trail.samples.length === 0) { label.visible = false; continue; }
+        const sp = trail.samples[0];
+        _projVec.set(sp.x, Math.max(60, sp.y) + 30, -sp.z);
+        _projVec.project(cam);
+        label.x = (_projVec.x * hw) + hw;
+        label.y = (-_projVec.y * hh) + hh;
+        if (_projVec.z >= 1) label.visible = false;
+      }
     }
 
     /** Interpolate a sample at time t (linear between neighbors). */
@@ -2672,7 +2808,16 @@ export default defineComponent({
             >
               <span class="holo-label__name" title={lbl.name}>{lbl.name}</span>
               <span class="holo-label__ship">
-                {lbl.type ? <ShipTypeIcon type={lbl.type} size={10} /> : null}
+                {lbl.kind === "plane" ? (
+                  <BattleIcon kind="plane" type={lbl.planeType ?? "attack"} size={11} />
+                ) : lbl.type ? (
+                  <BattleIcon
+                    kind="ship"
+                    type={lbl.type}
+                    variant={lbl.role === "self" || lbl.role === "ally" ? "ally" : lbl.role === "enemy" ? "enemy" : "plain"}
+                    size={11}
+                  />
+                ) : null}
                 {lbl.tier != null ? (
                   <span class="holo-label__tier">{tierToRoman(lbl.tier)}</span>
                 ) : null}
