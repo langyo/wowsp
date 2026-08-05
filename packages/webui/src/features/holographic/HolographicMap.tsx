@@ -161,6 +161,10 @@ export default defineComponent({
     const duration = ref(0);
     const current = ref(0);
     const playing = ref(false);
+    /** Playback speed multiplier; the dropdown sits next to the clock. */
+    const playbackSpeed = ref(2);
+    const speedMenuOpen = ref(false);
+    const PLAYBACK_SPEEDS = [0.5, 1, 2, 3, 5, 10] as const;
     let playRaf = 0;
     let lastTick = 0;
     /** Battle-opening phase: like the game, enemy ships aren't visible until
@@ -496,8 +500,24 @@ export default defineComponent({
       const t = current.value;
       for (const m of shipMarkers) {
         const role = m.userData.role as TeamRole | undefined;
-        // Opening phase: enemies stay off the minimap like in the game.
-        if (role === "enemy" && t < OPENING_HIDE_T) continue;
+        // Opening phase: enemies are off the map like in the game — but their
+        // SPAWN positions are known (EntityCreate), so draw a ghost at the
+        // spawn point as a coordinate reference.
+        if (role === "enemy" && t < OPENING_HIDE_T) {
+          const gx = wx(m.userData.spawnX as number);
+          const gz = wz(-(m.userData.spawnZ as number));
+          const gicon = shipIcon(m.userData.type as string | undefined, "enemy");
+          if (gicon && gicon.complete && gicon.naturalWidth > 0) {
+            const gsz = 13;
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            ctx.translate(gx, gz);
+            ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+            ctx.drawImage(gicon, -gsz / 2, -gsz / 2, gsz, gsz);
+            ctx.restore();
+          }
+          continue;
+        }
         const dead =
           (m.userData.deathTime as number | null) != null &&
           t >= (m.userData.deathTime as number);
@@ -620,7 +640,22 @@ export default defineComponent({
           }
           for (const m of shipMarkers) {
             const role = m.userData.role as TeamRole | undefined;
-            if (role === "enemy" && t < OPENING_HIDE_T) continue;
+            // Opening phase: ghost at the enemy spawn point (see base map).
+            if (role === "enemy" && t < OPENING_HIDE_T) {
+              const gx = zwx(m.userData.spawnX as number);
+              const gz = zwz(-(m.userData.spawnZ as number));
+              const gicon = shipIcon(m.userData.type as string | undefined, "enemy");
+              if (gicon && gicon.complete && gicon.naturalWidth > 0) {
+                const gsz = 22;
+                zctx.save();
+                zctx.globalAlpha = 0.35;
+                zctx.translate(gx, gz);
+                zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+                zctx.drawImage(gicon, -gsz / 2, -gsz / 2, gsz, gsz);
+                zctx.restore();
+              }
+              continue;
+            }
             const dead =
               (m.userData.deathTime as number | null) != null &&
               t >= (m.userData.deathTime as number);
@@ -820,6 +855,12 @@ export default defineComponent({
       }
       for (const m of shipMarkers) {
         scene.remove(m);
+        const ghost = m.userData.ghost as THREE.Mesh | undefined;
+        if (ghost) {
+          scene.remove(ghost);
+          ghost.geometry.dispose();
+          (ghost.material as THREE.Material).dispose();
+        }
         if (m.userData.isDot) {
           m.traverse((o) => {
             if (o instanceof THREE.Mesh) {
@@ -1659,6 +1700,26 @@ export default defineComponent({
         marker.userData.modelLoaded = false;
         marker.userData.isDot = true;
         marker.userData.deathTime = traj.deathTime ?? null;
+        marker.userData.spawnX = traj.kind?.initialX ?? 0;
+        marker.userData.spawnZ = traj.kind?.initialZ ?? 0;
+        // Opening-phase ghost: a thin team-coloured ring at the enemy's spawn
+        // point (the game briefly lights spawns up at start), removed from
+        // the scene after the countdown.
+        if (role === "enemy") {
+          const ghostMat = new THREE.MeshBasicMaterial({
+            color: 0xcc3333,
+            transparent: true,
+            opacity: 0.45,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          });
+          const ghost = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 28), ghostMat);
+          ghost.rotation.x = -Math.PI / 2;
+          ghost.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
+          ghost.visible = false;
+          scene.add(ghost);
+          marker.userData.ghost = ghost;
+        }
         marker.visible = false;
         scene.add(marker);
         shipMarkers.push(marker);
@@ -1935,14 +1996,25 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        // Opening phase: hide enemies like the game does until the countdown
-        // ends (allies + the recorder stay visible at spawn).
+        // Opening phase: enemies are not yet visible — but their SPAWN
+        // positions are known from EntityCreate (the game briefly lights them
+        // up at start). Show a ghost marker at the spawn point so the opener
+        // still has a coordinate reference; the ghost hides after the
+        // countdown.
         const role = marker.userData.role as TeamRole;
         if (role === "enemy" && t < OPENING_HIDE_T) {
+          const ghost = marker.userData.ghost as THREE.Mesh | undefined;
+          if (ghost) {
+            ghost.visible = true;
+            ghost.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
+          }
           marker.visible = false;
           if (label) label.visible = false;
           continue;
         }
+        // Past the opening phase, ghost rings never show again.
+        const ghost = marker.userData.ghost as THREE.Mesh | undefined;
+        if (ghost) ghost.visible = false;
         // Hide entities that haven't been created yet at this time. Entities
         // re-created mid-match (leaving/re-entering the observed area) may
         // carry a later creationTime than their first sample — trust the
@@ -2604,10 +2676,45 @@ export default defineComponent({
       cam.updateProjectionMatrix();
     }
 
-    /** Select a ship by clicking (either its 3D marker or its label). Clicking
-     *  the empty scene clears the selection. */
+    /** Select a ship by clicking either its 3D marker or its label. Clicking
+     *  the empty scene clears the selection. Labels have pointer-events: none
+     *  (so they can't break OrbitControls drag), so clicks reach the canvas
+     *  and pick the nearest visible marker via raycast. */
     function selectShip(entityId: number | null) {
       selectedEntityId.value = entityId;
+    }
+
+    /** Canvas click → raycast the nearest visible ship marker (within a
+     *  generous screen distance) or clear the selection. */
+    function onCanvasClick(e: MouseEvent) {
+      speedMenuOpen.value = false;
+      const cam = api.value?.camera;
+      const rnd = api.value?.renderer;
+      const canvas = rnd?.domElement;
+      if (!cam || !canvas || shipMarkers.length === 0) {
+        selectShip(null);
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      // Pick the marker whose world position projects nearest to the click —
+      // raycasting the small marker meshes is fragile; a screen-space
+      // distance test against their projected anchors is stable.
+      let bestId: number | null = null;
+      let bestD = Infinity;
+      for (const m of shipMarkers) {
+        if (!m.visible) continue;
+        _projVec.copy(m.position);
+        _projVec.project(cam);
+        if (_projVec.z >= 1) continue;
+        const sx = (_projVec.x * rect.width) / 2 + rect.width / 2;
+        const sy = (-_projVec.y * rect.height) / 2 + rect.height / 2;
+        const d = Math.hypot(sx - e.clientX + rect.left, sy - e.clientY + rect.top);
+        if (d < bestD && d < 60) {
+          bestD = d;
+          bestId = m.userData.entityId as number;
+        }
+      }
+      selectShip(bestId);
     }
 
     /** Project every visible marker's world position into screen pixels and
@@ -2691,7 +2798,7 @@ export default defineComponent({
       if (lastTick === 0) lastTick = now;
       const dt = (now - lastTick) / 1000;
       lastTick = now;
-      current.value += dt * 8; // 8× playback speed by default
+      current.value += dt * playbackSpeed.value; // playback multiplier (0.5–10×)
       if (current.value >= duration.value) {
         current.value = duration.value;
         playing.value = false;
@@ -2809,7 +2916,7 @@ export default defineComponent({
 
     return () => (
       <div class="holo-map">
-        <div ref={container} class="holo-map__canvas" onClick={() => selectShip(null)} />
+        <div ref={container} class="holo-map__canvas" onClick={onCanvasClick} />
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
         <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
           {shipLabels.value.map((lbl) => (
@@ -2827,7 +2934,6 @@ export default defineComponent({
                 top: `${lbl.y}px`,
                 borderColor: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
               }}
-              onClick={(e) => { e.stopPropagation(); selectShip(lbl.entityId); }}
             >
               <span class="holo-label__name" title={lbl.name}>{lbl.name}</span>
               <span class="holo-label__ship">
@@ -2877,7 +2983,6 @@ export default defineComponent({
             <span class="holo-map__score-team holo-map__score--ally">
               <span class="holo-map__score-dot" style="background:#3cb478" />
               <strong class="holo-map__score-num">{allyScore.value}</strong>
-              <span class="holo-map__score-alive">{allyAlive.value}/{allyTotal.value}</span>
             </span>
             <span class="holo-map__score-caps">
               {capDisplay.value.map((c) => {
@@ -2905,28 +3010,28 @@ export default defineComponent({
                               : `${c.letter} 敌方控制`
                     }
                   >
-                    <svg width="22" height="22" viewBox="0 0 22 22">
+                    <svg width="30" height="30" viewBox="0 0 30 30">
                       {active ? (
                         <g>
-                          {/* diamond + progress ring, clockwise from top */}
-                          <rect x="6" y="6" width="10" height="10" fill="none"
-                            stroke={ownerColor} stroke-width="1.4"
-                            transform="rotate(45 11 11)" />
-                          <circle r="5" cx="11" cy="11" fill="none"
-                            stroke={c.owner === 0 ? "rgba(255,255,255,0.35)" : ownerColor}
-                            stroke-width="2" opacity="0.45" />
-                          <circle r="5" cx="11" cy="11" fill="none"
-                            stroke={capColor} stroke-width="2" stroke-linecap="round"
-                            stroke-dasharray={`${Math.max(0.5, c.progress * 31.4)} 31.4`}
-                            transform="rotate(-90 11 11)" />
+                          {/* progress ring, clockwise from top — like the
+                              in-game cap indicator, no outer box */}
+                          <circle r="11" cx="15" cy="15" fill="none"
+                            stroke={c.owner === 0 ? "rgba(255,255,255,0.25)" : ownerColor}
+                            stroke-width="2.4" opacity="0.45" />
+                          <circle r="11" cx="15" cy="15" fill="none"
+                            stroke={capColor} stroke-width="2.6" stroke-linecap="round"
+                            stroke-dasharray={`${Math.max(0.5, c.progress * 69.1)} 69.1`}
+                            transform="rotate(-90 15 15)" />
                         </g>
                       ) : (
-                        <rect x="6" y="6" width="10" height="10"
-                          fill={c.owner === 0 ? "rgba(255,255,255,0.06)" : ownerColor}
-                          stroke={ownerColor} stroke-width="1.4" />
+                        <circle r="11" cx="15" cy="15" fill="none"
+                          stroke={ownerColor} stroke-width="1.8" opacity="0.55" />
                       )}
-                      <text x="11" y="14.6" text-anchor="middle" font-size="8.5"
-                        font-weight="700" fill="#fff">{c.letter}</text>
+                      <text x="15" y="20" text-anchor="middle" font-size="15"
+                        font-weight="800" fill={c.owner === 0 ? "#fff" : ownerColor}
+                        style={{ textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}>
+                        {c.letter}
+                      </text>
                     </svg>
                   </span>
                 );
@@ -2934,7 +3039,6 @@ export default defineComponent({
             </span>
             <span class="holo-map__score-team holo-map__score--enemy">
               <strong class="holo-map__score-num">{enemyScore.value}</strong>
-              <span class="holo-map__score-alive">{enemyAlive.value}/{enemyTotal.value}</span>
               <span class="holo-map__score-dot" style="background:#cc3333" />
             </span>
             <span class="holo-map__score-time" onClick={toggleTimeMode} title="点击切换 已播放/剩余/总时长">
@@ -3025,6 +3129,31 @@ export default defineComponent({
             <span class="holo-map__time" onClick={toggleTimeMode} title="Click to toggle elapsed / remaining / total">
               {displayTime()}
             </span>
+            <div class="holo-map__speed">
+              <button
+                class="holo-map__speed-btn"
+                onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
+                title="播放速度"
+              >
+                {playbackSpeed.value}×
+              </button>
+              {speedMenuOpen.value ? (
+                <div class="holo-map__speed-menu" onClick={(e) => e.stopPropagation()}>
+                  {PLAYBACK_SPEEDS.map((sp) => (
+                    <button
+                      key={sp}
+                      class={["holo-map__speed-opt", sp === playbackSpeed.value ? "holo-map__speed-opt--on" : ""]}
+                      onClick={() => {
+                        playbackSpeed.value = sp;
+                        speedMenuOpen.value = false;
+                      }}
+                    >
+                      {sp}×
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
         {showRoster.value ? (

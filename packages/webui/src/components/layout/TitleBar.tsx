@@ -72,13 +72,6 @@ export default defineComponent({
       unlistenResize?.();
     });
 
-    function onDblClick(e: MouseEvent) {
-      if (!win) return;
-      const target = e.target as HTMLElement;
-      if (target.closest(".titlebar__btn")) return;
-      win.toggleMaximize().catch(() => {});
-    }
-
     function onMinimize() {
       win?.minimize().catch(() => {});
     }
@@ -96,7 +89,7 @@ export default defineComponent({
       const maxLabel = isMaximized.value ? "Restore" : "Maximize";
 
       return (
-        <div class="titlebar" onDblclick={onDblClick}>
+        <div class="titlebar" data-tauri-drag-region>
           <span class="titlebar__brand">
             <img class="titlebar__logo" src="/logo.webp" alt="" />
             <span class="titlebar__name">WoWSP</span>
