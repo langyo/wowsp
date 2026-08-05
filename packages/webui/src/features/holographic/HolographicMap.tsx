@@ -2795,10 +2795,11 @@ export default defineComponent({
         allyScoreNow += st.scoreAlly;
         enemyScoreNow += st.scoreEnemy;
         const { ally, enemy } = shipsInZone(zone, t);
+        // Capturing requires someone INSIDE the point — a neutral point with
+        // leftover progress (capture started, then everyone left) must not
+        // keep its diamond + ring spinning forever.
         const capturing =
-          st.owner === 0
-            ? st.progress > 0.001 && st.progress < 1
-            : st.progress > 0.001 && st.progress < 1 && ally + enemy > 0;
+          st.progress > 0.001 && st.progress < 1 && ally + enemy > 0;
         display.push({
           letter: String.fromCharCode(65 + i),
           owner: st.owner,
