@@ -362,6 +362,11 @@ export default defineComponent({
     }
     const shipLabels = ref<ShipLabel[]>([]);
     const _projVec = new THREE.Vector3();
+    /** Pointer-down position for click-vs-drag discrimination: a click that
+     *  moved more than a few px is an OrbitControls drag, and must NOT select
+     *  a ship (selecting locks the camera via followSelected — dragging would
+     *  fight the lock and feel "stuck"). */
+    let _downPt: { x: number; y: number } | null = null;
 
     // Minimap canvas. The base layer is the game's own minimap art (water +
     // land composite, extracted by `extract_minimaps.py`); positions use the
@@ -2916,7 +2921,20 @@ export default defineComponent({
 
     return () => (
       <div class="holo-map">
-        <div ref={container} class="holo-map__canvas" onClick={onCanvasClick} />
+        <div
+          ref={container}
+          class="holo-map__canvas"
+          onPointerDown={(e) => { _downPt = { x: e.clientX, y: e.clientY }; }}
+          onClick={(e) => {
+            if (_downPt && Math.hypot(e.clientX - _downPt.x, e.clientY - _downPt.y) > 6) {
+              // This was a drag, not a click — clear any selection so the
+              // camera isn't held by followSelected, then return.
+              selectShip(null);
+              return;
+            }
+            onCanvasClick(e);
+          }}
+        />
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
         <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
           {shipLabels.value.map((lbl) => (
@@ -3013,22 +3031,24 @@ export default defineComponent({
                     <svg width="30" height="30" viewBox="0 0 30 30">
                       {active ? (
                         <g>
-                          {/* progress ring, clockwise from top — like the
-                              in-game cap indicator, no outer box */}
+                          {/* capturing: the box rotates 45° into a diamond and
+                              gains a progress ring — like the in-game cap UI */}
+                          <rect x="9" y="9" width="12" height="12" fill="none"
+                            stroke={c.owner === 0 ? "rgba(255,255,255,0.35)" : ownerColor}
+                            stroke-width="1.6"
+                            transform="rotate(45 15 15)" />
                           <circle r="11" cx="15" cy="15" fill="none"
-                            stroke={c.owner === 0 ? "rgba(255,255,255,0.25)" : ownerColor}
-                            stroke-width="2.4" opacity="0.45" />
-                          <circle r="11" cx="15" cy="15" fill="none"
-                            stroke={capColor} stroke-width="2.6" stroke-linecap="round"
+                            stroke={capColor} stroke-width="2.2" stroke-linecap="round"
                             stroke-dasharray={`${Math.max(0.5, c.progress * 69.1)} 69.1`}
                             transform="rotate(-90 15 15)" />
                         </g>
                       ) : (
-                        <circle r="11" cx="15" cy="15" fill="none"
-                          stroke={ownerColor} stroke-width="1.8" opacity="0.55" />
+                        <rect x="9" y="9" width="12" height="12"
+                          fill={c.owner === 0 ? "rgba(255,255,255,0.05)" : ownerColor}
+                          stroke={ownerColor} stroke-width="1.6" />
                       )}
-                      <text x="15" y="20" text-anchor="middle" font-size="15"
-                        font-weight="800" fill={c.owner === 0 ? "#fff" : ownerColor}
+                      <text x="15" y="19.5" text-anchor="middle" font-size="13"
+                        font-weight="800" fill="#fff"
                         style={{ textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}>
                         {c.letter}
                       </text>
@@ -3040,9 +3060,6 @@ export default defineComponent({
             <span class="holo-map__score-team holo-map__score--enemy">
               <strong class="holo-map__score-num">{enemyScore.value}</strong>
               <span class="holo-map__score-dot" style="background:#cc3333" />
-            </span>
-            <span class="holo-map__score-time" onClick={toggleTimeMode} title="点击切换 已播放/剩余/总时长">
-              {timeMode.value === 1 ? "-" : ""}{displayTime()}
             </span>
           </div>
         ) : null}
