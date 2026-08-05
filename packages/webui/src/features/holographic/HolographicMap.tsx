@@ -3331,7 +3331,10 @@ export default defineComponent({
                       />
                     ) : null}
                   </span>
-                  <span class="holo-map__damage-name" title={p.name}>{p.name}</span>
+                  <span class="holo-map__damage-name" title={p.name}>
+                    {p.name}
+                    {p.frags > 0 ? <em class="holo-map__damage-frags">×{p.frags}</em> : null}
+                  </span>
                   <span class="holo-map__damage-bar">
                     <span
                       class="holo-map__damage-fill"

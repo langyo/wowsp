@@ -201,6 +201,35 @@
     font-family: var(--font-mono);
     text-align: right;
   }
+  &__postbattle-ribbons {
+    margin-top: 0.6rem;
+  }
+  &__postbattle-ribbon-title {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: var(--text-2xs);
+    margin-bottom: 4px;
+  }
+  &__postbattle-ribbon-row {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: var(--text-2xs);
+  }
+  &__postbattle-ribbon-name {
+    flex: 0 0 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__postbattle-ribbon-vals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  &__postbattle-ribbon-val {
+    color: rgba(255, 255, 255, 0.7);
+    font-family: var(--font-mono);
+  }
   &__postbattle-raw {
     margin-top: 0.6rem;
     summary { cursor: pointer; color: rgba(255, 255, 255, 0.5); }

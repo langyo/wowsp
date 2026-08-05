@@ -457,6 +457,11 @@
   white-space: nowrap;
   text-align: right;
 }
+.holo-map__damage-frags {
+  font-style: normal;
+  color: #ffd93d;
+  margin-left: 3px;
+}
 .holo-map__damage-bar {
   flex: 1 1 auto;
   height: 5px;

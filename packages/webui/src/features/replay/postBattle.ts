@@ -25,7 +25,11 @@ export interface PostBattlePlayer {
   team: 0 | 1 | 2 | null;
   alive: boolean;
   damage: number;
-  /** Per-ribbon counters (index 24..n). */
+  /** Frags (ships sunk). Index 32 — verified: the sum across players equals
+   *  the match's sunk count. */
+  frags: number;
+  /** Per-ribbon counters (index 24..n). Semantics per index follow the
+   *  client's PostBattle list; only indices with data are kept. */
   ribbons: number[];
 }
 
@@ -65,6 +69,7 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         team: team === 0 || team === 1 || team === 2 ? team : null,
         alive: arr[21] === true,
         damage: num(20) ?? 0,
+        frags: num(32) ?? 0,
         ribbons: arr.slice(24).filter((v): v is number => typeof v === "number"),
       });
     }

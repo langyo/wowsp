@@ -140,6 +140,7 @@ const PostBattlePanel = defineComponent({
                 <th>玩家</th>
                 <th>舰船</th>
                 <th>伤害</th>
+                <th>击沉</th>
                 <th>状态</th>
               </tr>
             </thead>
@@ -160,11 +161,36 @@ const PostBattlePanel = defineComponent({
                   </td>
                   <td>{p.shipName}</td>
                   <td class="replay-view__postbattle-num">{p.damage.toLocaleString()}</td>
+                  <td class="replay-view__postbattle-num">{p.frags}</td>
                   <td>{p.alive ? "存活" : "沉没"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {/* Per-ribbon counters (index order follows the client's PostBattle
+              list; rendered as raw numbers until the mapping is confirmed). */}
+          {rows.value.some((p) => p.ribbons.some((v) => v > 0)) ? (
+            <div class="replay-view__postbattle-ribbons">
+              <div class="replay-view__postbattle-ribbon-title">勋带统计（原始计数）</div>
+              {rows.value
+                .filter((p) => p.ribbons.some((v) => v > 0))
+                .map((p) => (
+                  <div key={p.accountId} class="replay-view__postbattle-ribbon-row">
+                    <span class="replay-view__postbattle-ribbon-name">{p.name}</span>
+                    <span class="replay-view__postbattle-ribbon-vals">
+                      {p.ribbons
+                        .map((v, i) => ({ v, i }))
+                        .filter((x) => x.v > 0)
+                        .map((x) => (
+                          <span key={x.i} class="replay-view__postbattle-ribbon-val">
+                            [{x.i}]{x.v}
+                          </span>
+                        ))}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          ) : null}
           <details class="replay-view__postbattle-raw">
             <summary>原始数据</summary>
             <pre>{props.raw}</pre>
