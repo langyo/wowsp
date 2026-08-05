@@ -416,6 +416,65 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Post-battle damage board — top-right, aligned with the scorebar band. */
+.holo-map__damage {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(5, 8, 15, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  font-size: var(--text-2xs);
+  color: rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  max-height: 60vh;
+  overflow-y: auto;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
+}
+.holo-map__damage-title {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+  text-align: center;
+}
+.holo-map__damage-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 230px;
+}
+.holo-map__damage-ico { flex: 0 0 auto; }
+.holo-map__damage-name {
+  flex: 0 1 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.holo-map__damage-bar {
+  flex: 1 1 auto;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.holo-map__damage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.holo-map__damage-num {
+  flex: 0 0 42px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
 .holo-map__cap {
   width: 24px;
   height: 24px;
