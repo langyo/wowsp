@@ -509,8 +509,12 @@ export default defineComponent({
         );
         if (icon && icon.complete && icon.naturalWidth > 0) {
           const sz = 15;
-          // Rotate the icon to the ship's heading: the HUD art points right
-          // (+x = east); yaw is clockwise from north, so rotate(yaw - PI/2).
+          // Rotate the icon to the ship's heading. The HUD art's pointy end
+          // faces RIGHT (+x = east; unrotated icons all pointed right, as
+          // seen before rotation was added). yaw is clockwise from north
+          // (canvas up), so the heading maps to rotate(yaw - PI/2) — the 3D
+          // marker's bow points along (sin yaw, 0, -cos yaw) in world space,
+          // which projects to the same direction on the canvas.
           ctx.save();
           ctx.translate(cx, cz);
           ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
@@ -554,7 +558,7 @@ export default defineComponent({
           const sz = 10;
           ctx.save();
           ctx.translate(wx(s.x), wz(-s.z));
-          ctx.rotate(s.yaw - Math.PI / 2);
+          ctx.rotate(s.yaw);
           ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
           ctx.restore();
         } else {
@@ -669,7 +673,7 @@ export default defineComponent({
               const sz = 22;
               zctx.save();
               zctx.translate(zwx(s.x), zwz(-s.z));
-              zctx.rotate(s.yaw - Math.PI / 2);
+              zctx.rotate(s.yaw);
               zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
               zctx.restore();
             } else {
