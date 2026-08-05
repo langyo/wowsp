@@ -155,9 +155,6 @@ export default defineComponent({
     const PLAYBACK_SPEEDS = [0.5, 1, 2, 3, 5, 10] as const;
     let playRaf = 0;
     let lastTick = 0;
-    /** Battle-opening phase: like the game, enemy ships aren't visible until
-     *  the opening countdown ends (~15s); allies and the recorder are. */
-    const OPENING_HIDE_T = 15;
 
     // Time display toggle: 0=elapsed, 1=remaining, 2=total
     const timeMode = ref(0);
@@ -202,6 +199,41 @@ export default defineComponent({
     // Ships alive = total - sunk count at current time
     const allyAlive = ref(allyTotal.value);
     const enemyAlive = ref(enemyTotal.value);
+    // Death time per roster ship (by shipId join on the trajectory kinds).
+    const deathTimeByShipId = computed(() => {
+      const m = new Map<number, number | null>();
+      for (const tr of props.trajectories) {
+        if (tr.kind?.shipId != null) m.set(tr.kind.shipId, tr.deathTime ?? null);
+      }
+      return m;
+    });
+    /** Roster rows for the ship-icon strip under the scorebar: team icons in
+     *  roster order, sunk ships pushed to the far edge and greyed out. */
+    interface ShipRowEntry {
+      key: number;
+      type: string | null;
+      dead: boolean;
+    }
+    const shipRows = computed(() => {
+      const dt = deathTimeByShipId.value;
+      const mk = (v: VehicleEntry): ShipRowEntry => {
+        const d = v.shipId != null ? dt.get(v.shipId) : undefined;
+        const dead = d != null && d <= current.value;
+        const info = props.encyclopedia.get(v.shipId) as ShipInfo | undefined;
+        const offline = shipOfflineEntry(v.shipId);
+        return {
+          key: v.id,
+          type: info?.type ?? offline?.type ?? null,
+          dead,
+        };
+      };
+      const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
+      const enemies = props.vehicles.filter((v) => v.relation > 1).map(mk);
+      const sort = (a: ShipRowEntry, b: ShipRowEntry) => Number(a.dead) - Number(b.dead);
+      allies.sort(sort);
+      enemies.sort(sort);
+      return { allies, enemies };
+    });
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
     const capStatus = ref([0, 0, 0]);
     // Estimated match score: kills (1 pt) + fully-held cap points (3 pts each).
@@ -504,22 +536,16 @@ export default defineComponent({
       const t = current.value;
       for (const m of shipMarkers) {
         const role = m.userData.role as TeamRole | undefined;
-        // Opening phase: enemies are off the map like in the game — but their
-        // SPAWN positions are known (EntityCreate), so draw a ghost at the
-        // spawn point as a coordinate reference.
-        if (role === "enemy" && t < OPENING_HIDE_T) {
+        const firstT = m.userData.firstT as number | undefined;
+        // Unobserved ships: enemies are NOT shown at all; allies show a
+        // hollow WHITE box at their spawn (same rule as the 3D scene).
+        if (t < (firstT ?? Infinity)) {
+          if (role === "enemy") continue;
           const gx = wx(m.userData.spawnX as number);
           const gz = wz(-(m.userData.spawnZ as number));
-          const gicon = shipIcon(m.userData.type as string | undefined, "enemy");
-          if (gicon && gicon.complete && gicon.naturalWidth > 0) {
-            const gsz = 13;
-            ctx.save();
-            ctx.globalAlpha = 0.35;
-            ctx.translate(gx, gz);
-            ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-            ctx.drawImage(gicon, -gsz / 2, -gsz / 2, gsz, gsz);
-            ctx.restore();
-          }
+          ctx.strokeStyle = "rgba(255,255,255,0.7)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(gx - 5, gz - 5, 10, 10);
           continue;
         }
         const dead =
@@ -580,7 +606,7 @@ export default defineComponent({
             s = sp;
           }
           if (s == null) continue;
-          if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
+          if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
           drawn.add(planeId);
           const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
           if (icon && icon.complete && icon.naturalWidth > 0) {
@@ -650,20 +676,15 @@ export default defineComponent({
           }
           for (const m of shipMarkers) {
             const role = m.userData.role as TeamRole | undefined;
-            // Opening phase: ghost at the enemy spawn point (see base map).
-            if (role === "enemy" && t < OPENING_HIDE_T) {
+            const firstT = m.userData.firstT as number | undefined;
+            // Unobserved ships: enemies not shown, allies get a hollow box.
+            if (t < (firstT ?? Infinity)) {
+              if (role === "enemy") continue;
               const gx = zwx(m.userData.spawnX as number);
               const gz = zwz(-(m.userData.spawnZ as number));
-              const gicon = shipIcon(m.userData.type as string | undefined, "enemy");
-              if (gicon && gicon.complete && gicon.naturalWidth > 0) {
-                const gsz = 22;
-                zctx.save();
-                zctx.globalAlpha = 0.35;
-                zctx.translate(gx, gz);
-                zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-                zctx.drawImage(gicon, -gsz / 2, -gsz / 2, gsz, gsz);
-                zctx.restore();
-              }
+              zctx.strokeStyle = "rgba(255,255,255,0.7)";
+              zctx.lineWidth = 1.5;
+              zctx.strokeRect(gx - 9, gz - 9, 18, 18);
               continue;
             }
             const dead =
@@ -716,7 +737,7 @@ export default defineComponent({
                 s = sp;
               }
               if (s == null) continue;
-              if (t < samples[0].time || t > samples[samples.length - 1].time + 120) continue;
+              if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
               drawn.add(planeId);
               const icon = planeIcon(planeTypesById.get(trail.id) ?? "attack");
               if (icon && icon.complete && icon.naturalWidth > 0) {
@@ -857,34 +878,6 @@ export default defineComponent({
         const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
         if (!mat) return;
         for (const m of Array.isArray(mat) ? mat : [mat]) m.dispose();
-      });
-    }
-
-    /** Toggle a ship marker's ghost (translucent) rendering. Only touches
-     *  materials when the state actually changes (cheap per-frame no-op). */
-    function applyGhost(marker: THREE.Group, ghost: boolean): void {
-      if (marker.userData._ghost === ghost) return;
-      marker.userData._ghost = ghost;
-      marker.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-        if (!mat) return;
-        for (const mm of Array.isArray(mat) ? mat : [mat]) {
-          const shader = mm as THREE.ShaderMaterial;
-          if (shader.uniforms?.ghostAlpha) {
-            shader.uniforms.ghostAlpha.value = ghost ? 0.3 : 1.0;
-          } else if (mm.transparent) {
-            const basic = mm as THREE.MeshBasicMaterial;
-            if (ghost) {
-              if (basic.userData._baseOpacity == null) {
-                basic.userData._baseOpacity = basic.opacity;
-              }
-              basic.opacity = 0.12;
-            } else if (basic.userData._baseOpacity != null) {
-              basic.opacity = basic.userData._baseOpacity as number;
-            }
-          }
-        }
       });
     }
 
@@ -1355,7 +1348,10 @@ export default defineComponent({
           const s = sampleAt(tr, e.time);
           if (!s) continue;
           const dist = Math.hypot(s.x - e.x, s.z - e.z);
-          if (dist > 15000) continue;
+          // A main-battery round can't come from 300 m away — requiring a
+          // minimum range rejects near-impact ships that merely sail past the
+          // splash (those read as short, flat, "not a shell" streaks).
+          if (dist < 300 || dist > 15000) continue;
           const flightT = Math.min(8, Math.max(0.8, dist / 800));
           const t0 = e.time - flightT;
           const s0 = sampleAt(tr, t0);
@@ -1368,7 +1364,9 @@ export default defineComponent({
           if (dYaw > 0.45) continue; // ~25°
           const score = dist + dYaw * 4000;
           if (!best || score < best.score) {
-            best = { tr, score, t0, h: Math.min(320, dist * 0.12) };
+            // Ballistic height: steep enough to read as a shell arc, growing
+            // with range (a flat 10-unit curve looks like a laser beam).
+            best = { tr, score, t0, h: Math.min(420, 60 + dist * 0.16) };
           }
         }
         return best;
@@ -1789,20 +1787,31 @@ export default defineComponent({
         marker.userData.deathTime = traj.deathTime ?? null;
         marker.userData.spawnX = traj.kind?.initialX ?? 0;
         marker.userData.spawnZ = traj.kind?.initialZ ?? 0;
-        // Opening-phase ghost: a thin team-coloured ring at the enemy's spawn
-        // point (the game briefly lights spawns up at start), removed from
-        // the scene after the countdown.
-        if (role === "enemy") {
-          const ghostMat = new THREE.MeshBasicMaterial({
-            color: 0xcc3333,
+        marker.userData.firstT = traj.samples[0]?.time ?? Infinity;
+        // Hollow outline box marking an unobserved / sunk ship's position —
+        // white for allies, red for enemies (no fill, like the game's
+        // "not spotted" outline). Only ever shown for observed-position
+        // ghosts: enemy ships that were never seen stay invisible.
+        {
+          const ghostCol = role === "enemy" ? 0xcc3333 : 0xffffff;
+          const ghostGeo = new THREE.BufferGeometry();
+          ghostGeo.setAttribute(
+            "position",
+            new THREE.BufferAttribute(new Float32Array(12), 3),
+          );
+          const ghostPos = ghostGeo.getAttribute("position") as THREE.BufferAttribute;
+          ghostPos.setXYZ(0, -30, 1, -13);
+          ghostPos.setXYZ(1, 30, 1, -13);
+          ghostPos.setXYZ(2, 30, 1, 13);
+          ghostPos.setXYZ(3, -30, 1, 13);
+          ghostGeo.computeBoundingSphere();
+          const ghost = new THREE.LineLoop(ghostGeo, new THREE.LineBasicMaterial({
+            color: ghostCol,
             transparent: true,
-            opacity: 0.45,
+            opacity: 0.85,
             depthWrite: false,
-            side: THREE.DoubleSide,
-          });
-          const ghost = new THREE.Mesh(new THREE.RingGeometry(26, 34, 28), ghostMat);
-          ghost.rotation.x = -Math.PI / 2;
-          ghost.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
+          }));
+          ghost.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
           ghost.visible = false;
           scene.add(ghost);
           marker.userData.ghost = ghost;
@@ -2122,66 +2131,55 @@ export default defineComponent({
           if (label) label.visible = false;
           continue;
         }
-        // Opening phase: enemies are not yet visible — but their SPAWN
-        // positions are known from EntityCreate (the game briefly lights them
-        // up at start). Show the ship itself as a translucent ghost at the
-        // spawn point, plus a thin ring, so the opener has a coordinate
-        // reference; both disappear after the countdown.
+        // Ghost policy: an unobserved enemy (never seen once) is NOT rendered
+        // at all; an unobserved ally shows a hollow WHITE box at its spawn.
+        // Sunk ships (observed before dying) keep a hollow box at their last
+        // position — white for allies, red for enemies.
         const role = marker.userData.role as TeamRole;
-        if (role === "enemy" && t < OPENING_HIDE_T) {
-          const ghostRing = marker.userData.ghost as THREE.Mesh | undefined;
-          if (ghostRing) {
-            ghostRing.visible = true;
-            ghostRing.position.set(traj.kind?.initialX ?? 0, 3, -(traj.kind?.initialZ ?? 0));
-          }
-          applyGhost(marker, true);
-          marker.visible = true;
-          marker.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
-          marker.rotation.y = Math.PI - (traj.samples[0]?.yaw ?? 0);
-          if (label) {
-            label.visible = true;
-            label.ghostText = `已消失 ${t.toFixed(1)} s`;
-          }
-          continue;
-        }
-        // Past the opening phase, ghost rings never show again.
-        const ghost = marker.userData.ghost as THREE.Mesh | undefined;
-        if (ghost) ghost.visible = false;
+        const ghostBox = marker.userData.ghost as THREE.LineLoop | undefined;
+        const firstT = marker.userData.firstT as number;
         // Hide entities that haven't been created yet at this time. Entities
         // re-created mid-match (leaving/re-entering the observed area) may
         // carry a later creationTime than their first sample — trust the
         // samples in that case.
         const created = traj.kind?.creationTime ?? -1;
-        const firstT = traj.samples[0]?.time ?? Infinity;
         if (created >= 0 && t < created && t < firstT) {
+          if (ghostBox) ghostBox.visible = false;
           marker.visible = false;
           if (label) label.visible = false;
           continue;
         }
-        // After death the ship is gone from the water: show a translucent
-        // wreck ghost at the last observed position (label gets the dashed
-        // border + a live "gone for N s" counter).
         const deathTime = marker.userData.deathTime as number | null;
         const dead = deathTime != null && t >= deathTime;
         if (label) label.dead = dead;
         const tEff = dead ? deathTime! : t;
-        // Before the first position sample the ship is still at its SPAWN
-        // point (the EntityCreate position) — ships that stay unseen for
-        // minutes (first sample late, e.g. an early-hidden ally) must not
-        // appear at the first OBSERVED position, which may be halfway across
-        // the map (that read as ships teleporting into the mountains). They
-        // render as ghosts too.
-        let s: ReturnType<typeof sampleAt> | null;
-        const ghostPre = !dead && tEff < traj.samples[0].time;
-        if (ghostPre) {
-          s = {
-            ...traj.samples[0],
-            x: traj.kind?.initialX ?? traj.samples[0].x,
-            z: traj.kind?.initialZ ?? traj.samples[0].z,
-          };
-        } else {
-          s = sampleAt(traj, tEff);
+        const observed = tEff >= firstT;
+
+        if (!observed) {
+          if (role === "enemy") {
+            if (ghostBox) ghostBox.visible = false;
+            marker.visible = false;
+            if (label) label.visible = false;
+          } else {
+            marker.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
+            marker.rotation.y = Math.PI - (traj.samples[0]?.yaw ?? 0);
+            marker.visible = false;
+            if (ghostBox) {
+              ghostBox.visible = true;
+              ghostBox.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
+            }
+            if (label) {
+              label.visible = true;
+              label.ghostText = `已消失 ${t.toFixed(1)} s`;
+            }
+          }
+          continue;
         }
+        if (ghostBox) ghostBox.visible = false;
+
+        // After death the ship is gone from the water: hollow box at the last
+        // observed position + a live "gone for N s" counter.
+        const s: ReturnType<typeof sampleAt> | null = sampleAt(traj, tEff);
         if (!s) {
           marker.visible = false;
           if (label) label.visible = false;
@@ -2193,11 +2191,11 @@ export default defineComponent({
         const hasDot = marker.userData.isDot as boolean;
         if (!hasModel && !hasDot) continue;
         if (dead) {
-          // Sunk: keep a translucent wreck ghost at the last position.
-          applyGhost(marker, true);
-          marker.visible = true;
-          marker.position.set(s.x, 0, -s.z);
-          marker.rotation.y = Math.PI - s.yaw;
+          if (ghostBox) {
+            ghostBox.visible = true;
+            ghostBox.position.set(s.x, 0, -s.z);
+          }
+          marker.visible = false;
           if (label) {
             label.visible = true;
             label.ghostText = `已消失 ${(t - deathTime!).toFixed(1)} s`;
@@ -2225,12 +2223,11 @@ export default defineComponent({
           }
           continue;
         }
-        applyGhost(marker, false);
-        if (label) label.ghostText = null;
         marker.visible = true;
         marker.position.set(s.x, 0, -s.z);
         marker.rotation.y = Math.PI - s.yaw;
         if (label) {
+          label.ghostText = null;
           const currentHp = hpAtTime(traj.hpSamples, tEff);
           if (currentHp != null) label.hp = currentHp;
           label.maxHp ??= currentHp ?? label.maxHp;
@@ -2284,7 +2281,7 @@ export default defineComponent({
           const s = sampleOf(trail.samples);
           if (!s) continue;
           const born = trail.samples[0].time;
-          const expiry = trail.samples[trail.samples.length - 1].time + 120;
+          const expiry = trail.samples[trail.samples.length - 1].time + 5;
           if (t >= born && t <= expiry) {
             formationAnchor.set(planeId, { s, born, expiry });
           }
@@ -3208,11 +3205,12 @@ export default defineComponent({
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
         {props.replayPath ? (
           <div class="holo-map__scorebar">
-            <span class="holo-map__score-team holo-map__score--ally">
-              <span class="holo-map__score-dot" style="background:#3cb478" />
-              <strong class="holo-map__score-num">{allyScore.value}</strong>
-            </span>
-            <span class="holo-map__score-caps">
+            <span class="holo-map__score-main">
+              <span class="holo-map__score-team holo-map__score--ally">
+                <span class="holo-map__score-dot" style="background:#3cb478" />
+                <strong class="holo-map__score-num">{allyScore.value}</strong>
+              </span>
+              <span class="holo-map__score-caps">
               {capDisplay.value.map((c) => {
                 const ownerColor =
                   c.owner === 1 ? "#4ade80" : c.owner === 2 ? "#cc3333" : "rgba(255,255,255,0.6)";
@@ -3270,6 +3268,26 @@ export default defineComponent({
             <span class="holo-map__score-team holo-map__score--enemy">
               <strong class="holo-map__score-num">{enemyScore.value}</strong>
               <span class="holo-map__score-dot" style="background:#cc3333" />
+            </span>
+            </span>
+            <span class="holo-map__shiprow">
+              {shipRows.value.allies.map((s) => (
+                <BattleIcon
+                  key={s.key}
+                  type={s.type ?? ""}
+                  variant={s.dead ? "sunk" : "ally"}
+                  size={13}
+                />
+              ))}
+              <span class="holo-map__shiprow-sep" />
+              {shipRows.value.enemies.map((s) => (
+                <BattleIcon
+                  key={s.key}
+                  type={s.type ?? ""}
+                  variant={s.dead ? "sunk" : "enemy"}
+                  size={13}
+                />
+              ))}
             </span>
           </div>
         ) : null}
