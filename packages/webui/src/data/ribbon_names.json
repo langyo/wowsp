@@ -317,5 +317,11 @@
   "ru-RU": "Попал волной",
   "fr-FR": "Touché par une vague",
   "es-ES": "La ola ha impactado"
+ },
+ "main_caliber_shots": {
+  "zh-CN": "主炮射击",
+  "zh-SG": "主炮射击",
+  "zh-TW": "主炮射擊",
+  "en-US": "Main battery shells fired"
  }
 }

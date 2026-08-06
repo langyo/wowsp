@@ -34,37 +34,32 @@ ribbons: PostBattleRibbon[];
 }
 
 /**
- * Best-effort mapping of the PostBattle counter zone (indices 24..132) to
- * ribbon kinds. Verified anchors:
- *  - 28 = MAIN_CALIBER (PT cruiser 10, U-69 sub 0, York 161 — matches each
- *    ship's main-battery activity)
- *  - 32 = FRAG (sum over players == sunk count)
- * Everything else follows the client's usual ribbon ordering and is labelled
- * "推测" in the UI until confirmed.
+ * Mapping of the PostBattle counter zone (indices 24..44) to ribbon kinds,
+ * cross-validated across two full 24-player replays (shore + naval fixtures)
+ * against each ship's armament:
+ *
+ *  - 28 = MAIN_CALIBER hits   — subs with no main battery read 0; cruisers
+ *    with high-RoF secondaries (York) read 5 vs 161 secondary hits
+ *  - 30 = main-caliber shells fired (≈3× hits, consistent hit rate ~27-36%)
+ *  - 27 = aircraft shot down (plane) — present only on AA-active ships
+ *  - 29 = torpedo hits (subs 22, York 33)
+ *  - 31 = secondary battery hits
+ *  - 32 = FRAG (verified: sum over players == sunk count)
+ *  - 26 = assist (small values, unconfirmed)
+ *  - 33..44 = larger aggregates (shell-count/damage groups) — unconfirmed
  */
 export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
-  [24, "main_caliber"],
-  [25, "secondary_caliber"],
-  [26, "torpedo"],
-  [27, "dbomb"],
+  [26, "assist"],
+  [27, "plane"],
   [28, "main_caliber"],
-  [29, "rocket"],
-  [30, "missile"],
-  [31, "plane"],
+  [29, "torpedo"],
+  [30, "main_caliber_shots"],
+  [31, "secondary_caliber"],
   [32, "frag"],
-  [33, "assist"],
-  [34, "crit"],
-  [35, "citadel"],
-  [36, "burn"],
-  [37, "flood"],
-  [38, "base_capture"],
-  [39, "base_capture_assist"],
-  [40, "base_defense"],
-  [41, "suppressed"],
-  [42, "splane"],
-  [43, "detected"],
-  [44, "wave"],
 ];
+
+/** Indices whose semantics are confirmed against replay data. */
+const RIBBON_INDEX_VERIFIED = new Set<number>([28, 29, 32]);
 
 const RIBBON_KEY_BY_INDEX = new Map<number, string>(RIBBON_INDEX_GUESS);
 
@@ -73,7 +68,7 @@ export function ribbonKeyOfIndex(index: number): string | undefined {
 }
 
 export function isRibbonIndexVerified(index: number): boolean {
-  return index === 28 || index === 32;
+  return RIBBON_INDEX_VERIFIED.has(index);
 }
 
 export interface PostBattleRibbon {

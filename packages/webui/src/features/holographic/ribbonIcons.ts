@@ -42,6 +42,7 @@ const BUNDLED: Record<string, string> = {
   demining: ribbonDemining,
   frag: ribbonFrag,
   main_caliber: ribbonMainCaliber,
+  main_caliber_shots: ribbonMainCaliber,
   missile: ribbonMissile,
   suppressed: ribbonSuppressed,
   torpedo: ribbonTorpedo,
