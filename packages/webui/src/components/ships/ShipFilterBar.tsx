@@ -15,7 +15,7 @@ import SSegmented from "@/components/base/SSegmented";
 import SSearchInput from "@/components/base/SSearchInput";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
-import { matchShipNames, toPinyin } from "@/features/search/pinyinSearch";
+import { matchShipNames } from "@/features/search/pinyinSearch";
 import { t } from "@/i18n";
 import "./ShipFilterBar.scss";
 
