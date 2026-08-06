@@ -129,12 +129,16 @@
 }
 
 .lookup-view__controlrow {
-  &--search { justify-content: flex-end; }
-  .s-search { width: 220px; }
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.lookup-view__search {
+  margin-left: auto;
+  width: 220px;
+  flex: 0 0 auto;
 }
 
 .lookup-view__sort {

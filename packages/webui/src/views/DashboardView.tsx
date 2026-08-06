@@ -329,6 +329,7 @@ export default defineComponent({
                     onPick={(v: string) => (shipQuery.value = v)}
                     placeholder={t("common.search.fuzzy")}
                     candidates={searchCandidates.value}
+                    class="dash-ship-search"
                   />
                 </div>
 

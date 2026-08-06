@@ -450,16 +450,16 @@ export default defineComponent({
                         {sortKey.value === key ? (sortDir.value === "desc" ? " ↓" : " ↑") : null}
                       </button>
                     ))}
-                  </div>
-                  {/* Ship search — its own row (aligned right), fuzzy via the
-                      shared pinyin module, with a dropdown of candidates. */}
-                  <div class="lookup-view__controlrow lookup-view__controlrow--search">
+                    {/* Ship search — same row as the sort group, right-aligned;
+                        fuzzy via the shared pinyin module, with a dropdown of
+                        candidates. */}
                     <SSearchInput
                       modelValue={shipQuery.value}
                       onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
                       onPick={(v: string) => (shipQuery.value = v)}
                       placeholder={t("common.search.fuzzy")}
                       candidates={searchCandidates.value}
+                      class="lookup-view__search"
                     />
                   </div>
                 </div>
