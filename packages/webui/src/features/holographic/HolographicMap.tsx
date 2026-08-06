@@ -75,7 +75,7 @@ function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
 }
 import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
-import { parsePostBattle, type PostBattlePlayer } from "@/features/replay/postBattle";
+import { bundledRibbonUrl } from "./ribbonIcons";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
@@ -234,29 +234,51 @@ export default defineComponent({
       enemies.sort(sort);
       return { allies, enemies };
     });
-    // Post-battle damage board (top-right, next to the scorebar): parsed from
-    // the BattleResults payload, sorted by damage. Ships with no roster name
-    // fall back to the raw account id.
-    const postBattle = computed(() => parsePostBattle(props.battleResults || null));
-    const damageBoard = computed(() => {
-      const pb = postBattle.value;
-      if (!pb) return [];
-      const dataLang = useLanguage().dataLanguage.value;
-      return pb.players.map((p: PostBattlePlayer) => ({
-        ...p,
-        shipName: shipNameFromOfflineDb(p.shipId, dataLang) ?? "",
-      }));
+    // Live self statistics (top-right): derived from the explosion stream,
+    // tracking the current playhead. An explosion counts as the recorder's
+    // when its bearing matches the own ship's heading at that moment (same
+    // heuristic as shell-arc reconstruction). Damage is the HP loss of enemy
+    // ships near the impact right after it; a sinking near an impact counts
+    // as a frag.
+    const selfStats = computed(() => {
+      const selfTraj = props.trajectories.find(
+        (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(tr) === "self",
+      );
+      if (!selfTraj || selfTraj.samples.length === 0) return null;
+      let hits = 0;
+      let damage = 0;
+      let frags = 0;
+      for (const e of props.explosions) {
+        if (e.time > current.value) continue; // not time-sorted in all dumps
+        const s = sampleAt(selfTraj, e.time);
+        if (!s) continue;
+        const dist = Math.hypot(s.x - e.x, s.z - e.z);
+        if (dist < 300 || dist > 15000) continue;
+        const aim = Math.atan2(e.x - s.x, e.z - s.z);
+        let dAim = Math.abs(aim - s.yaw);
+        if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
+        if (dAim > 0.35) continue; // ~20° firing cone
+        hits++;
+        // Damage: enemy HP drop across the impact (500 m window).
+        for (const tr of props.trajectories) {
+          if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
+          const at = sampleAt(tr, e.time);
+          if (!at) continue;
+          if (Math.hypot(at.x - e.x, at.z - e.z) > 500) continue;
+          const hpBefore = hpAtTime(tr.hpSamples, e.time - 0.4);
+          const hpAfter = hpAtTime(tr.hpSamples, e.time + 0.6);
+          if (hpBefore != null && hpAfter != null && hpBefore - hpAfter > 50) {
+            damage += hpBefore - hpAfter;
+          }
+          const death = tr.deathTime;
+          if (death != null && Math.abs(death - e.time) < 1.2) {
+            frags++;
+          }
+        }
+      }
+      return { hits, damage, frags };
     });
-    /** Top damage value (for scaling the board's bars). */
-    const damageMax = computed(() =>
-      Math.max(1, ...damageBoard.value.map((p) => p.damage)),
-    );
     /** Ship class for a shipId (encyclopedia → offline DB → "". */
-    function shipTypeOfShipId(shipId: number): string {
-      const info = props.encyclopedia.get(shipId) as ShipInfo | undefined;
-      if (info?.type) return info.type;
-      return shipOfflineEntry(shipId)?.type ?? "";
-    }
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
     const capStatus = ref([0, 0, 0]);
     // Estimated match score: kills (1 pt) + fully-held cap points (3 pts each).
@@ -2220,8 +2242,9 @@ export default defineComponent({
           }
           marker.visible = false;
           if (label) {
+            // Sunk ships keep the dead tag — no "gone for N s" counter.
             label.visible = true;
-            label.ghostText = `已消失 ${(t - deathTime!).toFixed(1)} s`;
+            label.ghostText = null;
           }
           if (!marker.userData._countedDead) {
             marker.userData._countedDead = true;
@@ -3315,38 +3338,29 @@ export default defineComponent({
               ))}
             </span>
           </div>
-          {/* Post-battle damage board (top-right, same height band as the
-              scorebar): each player's damage with the ship icon + name. */}
-          {damageBoard.value.length > 0 ? (
+          {/* Live self statistics (top-right): hits / damage / frags tracked
+              from the explosion stream at the current playhead. */}
+          {selfStats.value ? (
             <div class="holo-map__damage">
-              <div class="holo-map__damage-title">战后统计</div>
-              {damageBoard.value.map((p) => (
-                <div key={p.accountId} class="holo-map__damage-row">
-                  <span class="holo-map__damage-ico">
-                    {p.shipId != null ? (
-                      <BattleIcon
-                        type={shipTypeOfShipId(p.shipId)}
-                        variant={p.alive ? "ally" : "sunk"}
-                        size={12}
-                      />
-                    ) : null}
-                  </span>
-                  <span class="holo-map__damage-name" title={p.name}>
-                    {p.name}
-                    {p.frags > 0 ? <em class="holo-map__damage-frags">×{p.frags}</em> : null}
-                  </span>
-                  <span class="holo-map__damage-bar">
-                    <span
-                      class="holo-map__damage-fill"
-                      style={{
-                        width: `${(p.damage / damageMax.value) * 100}%`,
-                        background: p.alive ? "#3cb478" : "#666",
-                      }}
-                    />
-                  </span>
-                  <span class="holo-map__damage-num">{p.damage.toLocaleString()}</span>
-                </div>
-              ))}
+              <div class="holo-map__damage-title">{t("replay.selfStats")}</div>
+              <div class="holo-map__selfstat">
+                <span class="holo-map__selfstat-ico">
+                  <img src={bundledRibbonUrl("main_caliber") ?? ""} width={14} height={14} alt="" />
+                </span>
+                <span class="holo-map__selfstat-label">{t("replay.selfHits")}</span>
+                <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
+              </div>
+              <div class="holo-map__selfstat">
+                <span class="holo-map__selfstat-ico">
+                  <img src={bundledRibbonUrl("frag") ?? ""} width={14} height={14} alt="" />
+                </span>
+                <span class="holo-map__selfstat-label">{t("replay.selfFrags")}</span>
+                <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
+              </div>
+              <div class="holo-map__selfstat">
+                <span class="holo-map__selfstat-label">{t("replay.selfDamage")}</span>
+                <strong class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</strong>
+              </div>
             </div>
           ) : null}
           </>

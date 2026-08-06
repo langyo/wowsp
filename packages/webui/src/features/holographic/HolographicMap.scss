@@ -443,6 +443,25 @@
   margin-bottom: 2px;
   text-align: center;
 }
+.holo-map__selfstat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 0;
+}
+.holo-map__selfstat-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+.holo-map__selfstat-label {
+  flex: 1 1 auto;
+  color: rgba(255, 255, 255, 0.75);
+}
+.holo-map__selfstat-num {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  color: #fff;
+}
 .holo-map__damage-row {
   display: flex;
   align-items: center;

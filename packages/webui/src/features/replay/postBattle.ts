@@ -28,9 +28,57 @@ export interface PostBattlePlayer {
   /** Frags (ships sunk). Index 32 — verified: the sum across players equals
    *  the match's sunk count. */
   frags: number;
-  /** Per-ribbon counters (index 24..n). Semantics per index follow the
-   *  client's PostBattle list; only indices with data are kept. */
-  ribbons: number[];
+/** Per-ribbon counters (index 24..n). Semantics per index follow the
+ *  client's PostBattle list; only indices with data are kept. */
+ribbons: PostBattleRibbon[];
+}
+
+/**
+ * Best-effort mapping of the PostBattle counter zone (indices 24..132) to
+ * ribbon kinds. Verified anchors:
+ *  - 28 = MAIN_CALIBER (PT cruiser 10, U-69 sub 0, York 161 — matches each
+ *    ship's main-battery activity)
+ *  - 32 = FRAG (sum over players == sunk count)
+ * Everything else follows the client's usual ribbon ordering and is labelled
+ * "推测" in the UI until confirmed.
+ */
+export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
+  [24, "main_caliber"],
+  [25, "secondary_caliber"],
+  [26, "torpedo"],
+  [27, "dbomb"],
+  [28, "main_caliber"],
+  [29, "rocket"],
+  [30, "missile"],
+  [31, "plane"],
+  [32, "frag"],
+  [33, "assist"],
+  [34, "crit"],
+  [35, "citadel"],
+  [36, "burn"],
+  [37, "flood"],
+  [38, "base_capture"],
+  [39, "base_capture_assist"],
+  [40, "base_defense"],
+  [41, "suppressed"],
+  [42, "splane"],
+  [43, "detected"],
+  [44, "wave"],
+];
+
+const RIBBON_KEY_BY_INDEX = new Map<number, string>(RIBBON_INDEX_GUESS);
+
+export function ribbonKeyOfIndex(index: number): string | undefined {
+  return RIBBON_KEY_BY_INDEX.get(index);
+}
+
+export function isRibbonIndexVerified(index: number): boolean {
+  return index === 28 || index === 32;
+}
+
+export interface PostBattleRibbon {
+  index: number;
+  value: number;
 }
 
 export interface PostBattleData {
@@ -75,10 +123,8 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         // {index, value} pairs so the UI can show the raw layout positions.
         ribbons: arr
           .slice(24, 133)
-          .map((v, i) => ({ index: 24 + i, value: v }))
-          .filter((x): x is { index: number; value: number } =>
-            typeof x.value === "number" && x.value > 0,
-          ),
+          .map((v, i): PostBattleRibbon => ({ index: 24 + i, value: v as number }))
+          .filter((x) => x.value > 0),
       });
     }
   }

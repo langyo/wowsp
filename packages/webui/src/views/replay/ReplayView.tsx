@@ -19,7 +19,9 @@ import type {
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
-import { parsePostBattle } from "@/features/replay/postBattle";
+import { parsePostBattle, ribbonKeyOfIndex, isRibbonIndexVerified } from "@/features/replay/postBattle";
+import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
+import ribbonNames from "@/data/ribbon_names.json";
 import BattleIcon from "@/components/base/BattleIcon";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useAccountStore } from "@/stores/account";
@@ -167,24 +169,36 @@ const PostBattlePanel = defineComponent({
               ))}
             </tbody>
           </table>
-          {/* Per-ribbon counters (index order follows the client's PostBattle
-              list; rendered as raw numbers until the mapping is confirmed). */}
-          {rows.value.some((p) => p.ribbons.some((x) => x.value > 0)) ? (
+          {/* Per-ribbon counters. Frags (index 32) is verified against the
+              match's sunk count; the remaining counter indices follow the
+              client's PostBattle list and are shown raw until mapped. */}
+          {rows.value.some((p) => p.ribbons.length > 0) ? (
             <div class="replay-view__postbattle-ribbons">
-              <div class="replay-view__postbattle-ribbon-title">勋带统计（原始计数）</div>
+              <div class="replay-view__postbattle-ribbon-title">勋带</div>
               {rows.value
-                .filter((p) => p.ribbons.some((x) => x.value > 0))
+                .filter((p) => p.ribbons.length > 0)
                 .map((p) => (
                   <div key={p.accountId} class="replay-view__postbattle-ribbon-row">
                     <span class="replay-view__postbattle-ribbon-name">{p.name}</span>
                     <span class="replay-view__postbattle-ribbon-vals">
-                      {p.ribbons
-                        .filter((x) => x.value > 0)
-                        .map((x) => (
-                          <span key={x.index} class="replay-view__postbattle-ribbon-val">
-                            [{x.index}]{x.value}
+                      {p.ribbons.map((x) => {
+                        const key = ribbonKeyOfIndex(x.index);
+                        if (!key) return null;
+                        const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
+                        const verified = isRibbonIndexVerified(x.index);
+                        return (
+                          <span key={x.index} class="replay-view__postbattle-ribbon-val" title={verified ? name : `${name}（推测）`}>
+                            <img
+                              src={bundledRibbonUrl(key) ?? ""}
+                              width={13}
+                              height={13}
+                              alt=""
+                              style={{ verticalAlign: "middle", marginRight: 3 }}
+                            />
+                            {name} {x.value}
                           </span>
-                        ))}
+                        );
+                      })}
                     </span>
                   </div>
                 ))}
