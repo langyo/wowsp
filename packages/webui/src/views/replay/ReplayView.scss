@@ -120,6 +120,8 @@
     color: rgb(var(--color-accent));
     font-size: var(--text-2xs);
     text-transform: uppercase;
+    border: none;
+    cursor: pointer;
   }
 
   &__count {
@@ -137,27 +139,28 @@
     min-height: 0;
   }
 
-  /* Post-battle modal */
+  /* Post-battle modal — full-viewport, centred */
   &__modal {
-    position: absolute;
+    position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(3, 6, 12, 0.6);
-    backdrop-filter: blur(2px);
+    background: rgba(2, 4, 8, 0.72);
+    backdrop-filter: blur(3px);
   }
   &__modal-panel {
     width: min(720px, 92vw);
     max-height: 82vh;
     display: flex;
     flex-direction: column;
-    background: rgb(12 16 26 / 97%);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: #141922;
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 10px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
     overflow: hidden;
+    color: #fff;
   }
   &__modal-head {
     display: flex;
@@ -180,26 +183,177 @@
     padding: 0.6rem 1rem;
   }
 
-  /* Post-battle parsed table */
-  &__postbattle-table {
-    width: 100%;
-    border-collapse: collapse;
+  /* Post-battle: two-column team matrix + drill-down panel */
+  &__postbattle-matrix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    min-height: 0;
+  }
+  &__postbattle-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  &__postbattle-col-title {
+    color: rgba(255, 255, 255, 0.55);
     font-size: var(--text-2xs);
-    th, td {
-      padding: 4px 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-      text-align: left;
+    letter-spacing: 0.08em;
+    padding: 0 2px 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  &__postbattle-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+    font-size: var(--text-2xs);
+    transition: background 0.15s;
+    &:hover { background: rgba(255, 255, 255, 0.1); }
+    &--dead { opacity: 0.55; }
+    &--self {
+      outline: 1px solid rgba(255, 255, 255, 0.7);
+      outline-offset: -1px;
     }
-    th { color: rgba(255, 255, 255, 0.5); font-weight: 600; }
   }
-  &__postbattle-ico {
+  &__postbattle-cell-ico {
+    flex: 0 0 auto;
     display: inline-flex;
-    vertical-align: middle;
-    margin-right: 6px;
   }
-  &__postbattle-num {
+  &__postbattle-cell-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  &__postbattle-cell-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__postbattle-cell-sub {
+    color: rgba(255, 255, 255, 0.45);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__postbattle-cell-xp {
+    flex: 0 0 auto;
     font-family: var(--font-mono);
-    text-align: right;
+    color: #ffd93d;
+  }
+  &__postbattle-detail {
+    position: relative;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  &__postbattle-detail-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    border: none;
+    background: none;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    font-size: var(--text-sm);
+  }
+  &__postbattle-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  &__postbattle-detail-ico { display: inline-flex; }
+  &__postbattle-detail-name {
+    font-weight: 600;
+    font-size: var(--text-sm);
+  }
+  &__postbattle-detail-ship {
+    font-style: normal;
+    color: rgba(255, 255, 255, 0.5);
+    margin-left: 8px;
+    font-size: var(--text-2xs);
+  }
+  &__postbattle-killed {
+    color: #ff6b6b;
+    font-size: var(--text-2xs);
+    margin-bottom: 6px;
+  }
+  &__postbattle-detail-body {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  &__postbattle-detail-damage {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  &__postbattle-detail-damage-num {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+  }
+  &__postbattle-detail-damage-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: var(--text-2xs);
+    margin-top: 2px;
+  }
+  &__postbattle-detail-ribbons {
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  &__postbattle-detail-ribbon {
+    position: relative;
+    display: inline-flex;
+    img { display: block; border-radius: 2px; }
+    em {
+      position: absolute;
+      right: -4px;
+      bottom: -4px;
+      font-style: normal;
+      font-size: 9px;
+      font-weight: 700;
+      color: #111;
+      background: #ffd93d;
+      border-radius: 6px;
+      padding: 0 3px;
+      line-height: 12px;
+    }
+  }
+  &__postbattle-damage-unknown {
+    font-style: normal;
+    color: #ffd93d;
+    font-size: 16px;
+    vertical-align: super;
+    cursor: help;
+  }
+  &__postbattle-settlement {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: var(--text-2xs);
+    color: rgba(255, 255, 255, 0.7);
+    b { color: #ffd93d; font-family: var(--font-mono); margin-left: 4px; }
   }
   &__postbattle-raw {
     margin-top: 0.6rem;
@@ -213,6 +367,95 @@
       border-radius: 4px;
       font-size: 10px;
     }
+  }
+  &__postbattle-rawbtn {
+    margin-top: 8px;
+    padding: 3px 10px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    &:hover { background: rgba(255, 255, 255, 0.14); }
+  }
+  /* Level-2 modal (raw payload / player detail) */
+  &__postbattle-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 4, 8, 0.7);
+    backdrop-filter: blur(3px);
+  }
+  &__postbattle-modal-panel {
+    width: min(560px, 90vw);
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    background: #141922;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    color: #fff;
+    overflow: hidden;
+  }
+  &__postbattle-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-weight: 600;
+    button {
+      border: none;
+      background: none;
+      color: rgba(255, 255, 255, 0.6);
+      cursor: pointer;
+      font-size: var(--text-sm);
+    }
+  }
+  &__postbattle-modal-raw {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 4px;
+    font-size: 10px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  &__postbattle-global {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  &__postbattle-global-note {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: var(--text-2xs);
+  }
+  &__postbattle-global-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: var(--text-2xs);
+    color: rgba(255, 255, 255, 0.7);
+    b { color: #fff; font-family: var(--font-mono); margin-right: 3px; }
+  }
+  &__postbattle-jump {
+    margin-top: 10px;
+    padding: 5px 12px;
+    border: none;
+    border-radius: 5px;
+    background: rgb(var(--color-accent) / 22%);
+    color: rgb(var(--color-accent));
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    align-self: flex-start;
+    &:hover { background: rgb(var(--color-accent) / 35%); }
   }
 
   &__map-wrap {

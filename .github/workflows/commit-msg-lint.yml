@@ -8,4 +8,21 @@ on:
 
 jobs:
   lint-commits:
-    uses: celestia-island/celestia-devtools/.github/workflows/commit-msg-lint.yml@master
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Lint commit messages
+        run: |
+          set -e
+          base="origin/${GITHUB_BASE_REF:-master}"
+          git fetch origin "${GITHUB_BASE_REF:-master}" --quiet || true
+          git log --no-merges --format='%s' "$base..HEAD" | while read -r msg; do
+            [ -z "$msg" ] && continue
+            # <gitmoji> <Capitalized English summary.> (ends with a period)
+            if ! printf '%s' "$msg" | grep -qP '^\p{So}\s+[A-Z].*\.$'; then
+              echo "Invalid commit message: $msg" >&2
+              exit 1
+            fi
+          done

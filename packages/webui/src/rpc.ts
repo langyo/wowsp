@@ -15,6 +15,7 @@ export const RPC = {
   get_game_process: "get_game_process",
   detect_game_install: "detect_game_install",
   set_game_path: "set_game_path",
+  ribbon_skin_dir: "ribbon_skin_dir",
   read_replay_header: "read_replay_header",
   read_replay_positions: "read_replay_positions",
   list_replays: "list_replays",

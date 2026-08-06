@@ -21,17 +21,100 @@
 export interface PostBattlePlayer {
   accountId: number;
   name: string;
+  /** Realm code (playersPublicInfo[9], e.g. "asia") — for global stats. */
+  realm: string | null;
   shipId: number | null;
   team: 0 | 1 | 2 | null;
   alive: boolean;
   damage: number;
-  /** Per-ribbon counters (index 24..n). */
-  ribbons: number[];
+  /** Frags (ships sunk). Index 32 — verified: the sum across players equals
+   *  the match's sunk count. */
+  frags: number;
+  /** Remaining-HP ratio (0..100) — index 23. */
+  hpRatio: number | null;
+  /** Killer player accountId (index 408) + killer's damage (index 412). */
+  killerId: number | null;
+  killerDamage: number | null;
+/** Per-ribbon counters (index 24..n). Semantics per index follow the
+ *  client's PostBattle list; only indices with data are kept. */
+ribbons: PostBattleRibbon[];
+}
+
+/**
+ * Mapping of the PostBattle counter zone (indices 24..45) to ribbon kinds,
+ * modelled across 144 full replays / 1876 players cross-referenced against
+ * ship classes (sub/dd/ca/bb/cv from GameParams prefixes), and cross-checked
+ * against the decompiled client module (scripts/pyc_deob/ — fully
+ * deobfuscated BattleResultsUtils.pyc), whose vocabulary confirms:
+ * hits_main / shots_main_* / planes_killed / hits_atba (secondary/AA) /
+ * damage_tpd / damage_fire / module_crits_* / _killed_by_ship
+ *
+ *  - 27 = PLANE shot down       — CVs 54/54 nonzero (mean 5); = planes_killed
+ *  - 28 = main-weapon hits      — hit rate vs 30 is 27-36% across ALL classes
+ *    (dd 1.65/5.71, bb 1.22/4.32, ca 1.15/4.31, sub 12.35/24.51, cv 4.3/13.63)
+ *    = hits_main (aggregate of hits_main_ap/cs/he)
+ *  - 30 = shots fired (≈3× hits, always ≥ 28) — = shots_main
+ *  - 31 = AA/DP hits            — CVs mean 53, dd/sub 0
+ *  - 32 = FRAG (verified: sum == sunk count) — = _killed_by_ship
+ *  - 29 = torpedo hits          — CVs mean 10.5 (torpedo bombers)
+ *  - 36 = secondary battery hits — Napoli 15, Nagato 43, dd 3, cv 0
+ *    = hits_atba
+ *  - 37 = main-battery shells   — Nagato 96 (16×6), ca 105, bb 15
+ *  - 75 = ASW/depth-charge hits — subs/dds + a few BBs; values 1-8
+ *  - 45 = CV aircraft stats     — inferred (CVs only)
+ *  - 35/40/101/103 = shell aggregates (shots/hits families — NOT damage:
+ *    ratio vs player damage ≈ 0) — hidden
+ *
+ * Known but unmapped (semantics too weak to display):
+ *  - 46/47, 88/89, 92/93     CV aircraft pairs (≈equal duplicates)
+ *  - 48                     airstrike/mine slot (ZH_1 590, Dutch CAs)
+ *  - 87                     DD weapon slot (torpedo/ASW)
+ *  - 35/40/101/103          shell aggregates; 85 shell-hit class;
+ *    26 unclassified; 84 ≈2 players/battle (capture-like);
+ *    113/119 full-team slots (per-battle 9-11 players)
+ *  - paired duplicates 49/62, 50/51, 54/55, 58/59, 80/81, 96/97,
+ *    115/116, 128/129 (≈100% equal)
+ */
+export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
+  [27, "plane"],
+  [28, "main_caliber"],
+  [29, "torpedo"],
+  [30, "main_caliber_shots"],
+  [31, "aa_hits"],
+  [32, "frag"],
+  [36, "secondary_caliber"],
+  [37, "shells"],
+  [45, "plane_losses"],
+  [75, "dbomb"],
+];
+
+/** Indices whose semantics are strongly confirmed by the replay corpus. */
+const RIBBON_INDEX_VERIFIED = new Set<number>([27, 28, 32]);
+
+const RIBBON_KEY_BY_INDEX = new Map<number, string>(RIBBON_INDEX_GUESS);
+
+export function ribbonKeyOfIndex(index: number): string | undefined {
+  return RIBBON_KEY_BY_INDEX.get(index);
+}
+
+export function isRibbonIndexVerified(index: number): boolean {
+  return RIBBON_INDEX_VERIFIED.has(index);
+}
+
+export interface PostBattleRibbon {
+  index: number;
+  value: number;
 }
 
 export interface PostBattleData {
   players: PostBattlePlayer[];
   mode: string | null;
+  /** The recorder's account id (battleResults.accountDBID), when present. */
+  selfId: number | null;
+  /** The recorder's own private settlement (battleResults.privateDataList):
+   *  [credits, _, _, exp] at index 7. Only the recorder's data is streamed. */
+  selfExp: number | null;
+  selfCredits: number | null;
   raw: string;
 }
 
@@ -61,11 +144,24 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
       players.push({
         accountId: Number(pidStr) || 0,
         name: typeof arr[1] === "string" ? (arr[1] as string) : `#${pidStr}`,
+        realm: typeof arr[9] === "string" ? (arr[9] as string).toLowerCase() : null,
         shipId: shipId != null && shipId > 0 ? shipId : null,
         team: team === 0 || team === 1 || team === 2 ? team : null,
         alive: arr[21] === true,
         damage: num(20) ?? 0,
-        ribbons: arr.slice(24).filter((v): v is number => typeof v === "number"),
+        frags: num(32) ?? 0,
+        /** Remaining-HP ratio (0..100) — index 23. */
+        hpRatio: num(23) ?? null,
+        /** Killer player accountId (index 408) + killer's damage (412). */
+        killerId: num(408) ?? null,
+        killerDamage: num(412) ?? null,
+        // Ribbon/counter zone: indices 24..132 hold small per-ribbon counts;
+        // beyond that the array becomes big economy/damage totals. Kept as
+        // {index, value} pairs so the UI can show the raw layout positions.
+        ribbons: arr
+          .slice(24, 133)
+          .map((v, i): PostBattleRibbon => ({ index: 24 + i, value: v as number }))
+          .filter((x) => x.value > 0),
       });
     }
   }
@@ -77,5 +173,21 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
     const m = common.find((v) => typeof v === "string" && v.includes("_"));
     if (typeof m === "string") mode = m;
   }
-  return { players, mode, raw };
+  // Own private settlement: privateDataList[7] = [credits, _, _, exp, _].
+  let selfExp: number | null = null;
+  let selfCredits: number | null = null;
+  const pdl = (br.privateDataList as unknown[] | undefined) ?? null;
+  if (Array.isArray(pdl) && Array.isArray(pdl[7])) {
+    const p7 = pdl[7] as unknown[];
+    if (typeof p7[3] === "number") selfExp = p7[3] as number;
+    if (typeof p7[0] === "number") selfCredits = p7[0] as number;
+  }
+  return {
+    players,
+    mode,
+    selfId: typeof br.accountDBID === "number" ? (br.accountDBID as number) : null,
+    selfExp,
+    selfCredits,
+    raw,
+  };
 }

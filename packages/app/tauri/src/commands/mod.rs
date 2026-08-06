@@ -15,6 +15,7 @@ pub mod overlay;
 pub mod packets;
 pub mod ranked;
 pub mod replay;
+pub mod res_mods;
 pub mod screenshot;
 pub mod ship_stats;
 pub mod trends;

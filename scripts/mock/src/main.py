@@ -122,6 +122,26 @@ async def cmd_set_game_path(request: Request) -> dict:
     return {"kind": "manual", "path": body.get("path", ""), "realm": "asia"}
 
 
+@app.post("/api/ribbon_skin_dir")
+async def cmd_ribbon_skin_dir(request: Request):
+    body = await request.json()
+    game = body.get("gamePath", "")
+    # Real mods live under <game>/res_mods/<ver>/gui/ribbons — surface them
+    # when present so the browser preview matches the desktop shell.
+    from pathlib import Path
+
+    root = Path(game) / "res_mods"
+    if not root.is_dir():
+        return None
+    hits = [p for p in root.rglob("gui/ribbons") if p.is_dir()]
+    if not hits:
+        return None
+    hits.sort(key=lambda p: len(p.parts), reverse=True)
+    return str(hits[0])
+
+
+
+
 @app.get("/api/is_game_running")
 async def cmd_is_game_running() -> bool:
     return False
@@ -137,6 +157,30 @@ async def cmd_get_game_process() -> dict:
         "realm": None,
         "exePath": None,
         "matchedInstall": None,
+    }
+
+
+@app.post("/api/lookup_player_stats")
+async def cmd_lookup_player_stats(request: Request) -> dict:
+    body = await request.json()
+    name = body.get("name", "Unknown")
+    return {
+        "accountId": 2024711808,
+        "name": name,
+        "realm": body.get("realm", "asia"),
+        "battles": 1234,
+        "winrate": 54.3,
+        "hidden": False,
+        "clanTag": "MOCK",
+        "avgDamage": 45210,
+        "avgXp": 1120,
+        "kdRatio": 1.62,
+        "survivalRate": 41.5,
+        "hitRate": 33.1,
+        "pr": 1620,
+        "shipsPlayed": 87,
+        "levelingTier": 12,
+        "levelingPoints": 3400,
     }
 
 

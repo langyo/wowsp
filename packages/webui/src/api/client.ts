@@ -422,6 +422,9 @@ export const api = {
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
+  /** res_mods ribbon-skin directory for a game install (None if unmodded). */
+  ribbonSkinDir: (gamePath: string) =>
+    transport.invoke<string | null>(RPC.ribbon_skin_dir, { gamePath }),
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
   readReplayPositions: (path: string) =>
     transport.invoke<ReplayStream>(RPC.read_replay_positions, { path }),
