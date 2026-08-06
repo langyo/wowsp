@@ -121,10 +121,10 @@ export default defineComponent({
     const groupMode = ref<"type" | "nation" | "tier">("type");
     const sortKey = ref<"battles" | "winrate" | "avgDamage">("battles");
     const sortDir = ref<"desc" | "asc">("desc");
-    // Level-2 filters (per groupMode); "all" = null.
-    const typeFilter = ref<string | null>(null);
-    const nationFilter = ref<string | null>(null);
-    const tierFilter = ref<string | null>(null);
+    // Level-2 filters (per groupMode); "" = all.
+    const typeFilter = ref("");
+    const nationFilter = ref("");
+    const tierFilter = ref("");
     // Ship-name search — while non-empty, the type/nation/tier filters are
     // ignored (only the sort order still applies).
     const shipQuery = ref("");
@@ -386,62 +386,40 @@ export default defineComponent({
                       ]}
                     />
                   </div>
-                  {/* Level-2 filter row (per groupMode) */}
+                  {/* Level-2 filter row (per groupMode) — segmented button group */}
                   {shipQuery.value.trim() === "" ? (
                     <div class="lookup-view__controlrow">
-                      {groupMode.value === "type"
-                        ? [
-                            <button
-                              class={["lookup-view__filter", typeFilter.value === null ? "lookup-view__filter--on" : ""]}
-                              onClick={() => (typeFilter.value = null)}
-                            >
-                              全部
-                            </button>,
-                            ...TYPE_FILTERS.map(([key, label]) => (
-                              <button
-                                key={key}
-                                class={["lookup-view__filter", typeFilter.value === key ? "lookup-view__filter--on" : ""]}
-                                onClick={() => (typeFilter.value = typeFilter.value === key ? null : key)}
-                              >
-                                {label}
-                              </button>
-                            )),
-                          ]
-                        : groupMode.value === "nation"
-                          ? [
-                              <button
-                                class={["lookup-view__filter", nationFilter.value === null ? "lookup-view__filter--on" : ""]}
-                                onClick={() => (nationFilter.value = null)}
-                              >
-                                全部
-                              </button>,
-                              ...nations.value.map((n) => (
-                                <button
-                                  key={n}
-                                  class={["lookup-view__filter", nationFilter.value === n ? "lookup-view__filter--on" : ""]}
-                                  onClick={() => (nationFilter.value = nationFilter.value === n ? null : n)}
-                                >
-                                  {NATION_LABELS[n] ?? n}
-                                </button>
-                              )),
-                            ]
-                          : [
-                              <button
-                                class={["lookup-view__filter", tierFilter.value === null ? "lookup-view__filter--on" : ""]}
-                                onClick={() => (tierFilter.value = null)}
-                              >
-                                全部
-                              </button>,
-                              ...TIER_FILTERS.map(([key, label]) => (
-                                <button
-                                  key={key}
-                                  class={["lookup-view__filter", tierFilter.value === key ? "lookup-view__filter--on" : ""]}
-                                  onClick={() => (tierFilter.value = tierFilter.value === key ? null : key)}
-                                >
-                                  {label}
-                                </button>
-                              )),
-                            ]}
+                      {groupMode.value === "type" ? (
+                        <SSegmented
+                          modelValue={typeFilter.value}
+                          onUpdate:modelValue={(v: string) => (typeFilter.value = v)}
+                          options={[
+                            { value: "", label: "全部" },
+                            ...TYPE_FILTERS.map(([key, label]) => ({ value: key, label })),
+                          ]}
+                        />
+                      ) : groupMode.value === "nation" ? (
+                        <SSegmented
+                          modelValue={nationFilter.value}
+                          onUpdate:modelValue={(v: string) => (nationFilter.value = v)}
+                          options={[
+                            { value: "", label: "全部" },
+                            ...nations.value.map((n) => ({
+                              value: n,
+                              label: NATION_LABELS[n] ?? n,
+                            })),
+                          ]}
+                        />
+                      ) : (
+                        <SSegmented
+                          modelValue={tierFilter.value}
+                          onUpdate:modelValue={(v: string) => (tierFilter.value = v)}
+                          options={[
+                            { value: "", label: "全部" },
+                            ...TIER_FILTERS.map(([key, label]) => ({ value: key, label })),
+                          ]}
+                        />
+                      )}
                     </div>
                   ) : null}
                   <div class="lookup-view__controlrow">
@@ -517,7 +495,7 @@ export default defineComponent({
                               >
                                 {s.winrate.toFixed(1)}%
                               </span>
-                              <span class="lookup-view__ship-dmg">{s.avgDamage.toLocaleString()}</span>
+                              <span class="lookup-view__ship-dmg">{Math.round(s.avgDamage).toLocaleString()}</span>
                               <span class="lookup-view__ship-kd">
                                 {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                               </span>

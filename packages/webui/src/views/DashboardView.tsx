@@ -72,9 +72,33 @@ export default defineComponent({
     });
 
     // Ships filtered by the selected date range.
-    const filteredShips = computed(() =>
-      filterByDateRange(playerShips.value, dateRange.value),
-    );
+    const dateFiltered = computed(() => filterByDateRange(playerShips.value, dateRange.value));
+
+    /** Ship-name search (multilingual + pinyin via the shared module) — the
+     *  date range still applies, other filters are ignored while searching. */
+    const shipQuery = ref("");
+    const searchHits = computed(() => {
+      const hits = new Map<number, string>();
+      if (!shipQuery.value.trim()) return hits;
+      for (const s of dateFiltered.value) {
+        const info = encyclopedia.byId.get(s.shipId);
+        const names = info ? { "zh-CN": info.name } : undefined;
+        const hit = matchShipNames(shipQuery.value, names, s.shipId);
+        if (hit) hits.set(s.shipId, hit.matchedName);
+      }
+      return hits;
+    });
+    function displayShipName(s: { shipId: number; name: string }): string {
+      return searchHits.value.get(s.shipId) ?? shipName(s.shipId, s.name);
+    }
+
+    const filteredShips = computed(() => {
+      const rows = dateFiltered.value;
+      if (shipQuery.value.trim()) {
+        return rows.filter((s) => searchHits.value.has(s.shipId));
+      }
+      return rows;
+    });
 
     /** Group ships by the selected dimension (type/nation/tier bracket). */
     interface ShipGroup {
@@ -289,6 +313,13 @@ export default defineComponent({
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
                     options={rangeOptions}
                   />
+                  <input
+                    class="dash-ship-search"
+                    type="text"
+                    placeholder="搜索舰船（支持中文/拼音）…"
+                    value={shipQuery.value}
+                    onInput={(e) => (shipQuery.value = (e.target as HTMLInputElement).value)}
+                  />
                 </div>
 
                 {/* Group summary cards (compact) */}
@@ -316,7 +347,7 @@ export default defineComponent({
                           <div class="dash-ship-table__row" key={s.shipId}>
                             <span class="dash-ship-table__col-name">
                               <STag variant="primary" size="sm">{shipTypeShort(s.shipId)}</STag>
-                              <span class="dash-ship-table__ship-name">{shipName(s.shipId, s.name)}</span>
+                              <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
                             </span>
                             <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>
                             <span

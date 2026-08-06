@@ -145,6 +145,21 @@
   }
 }
 
+.dash-ship-search {
+  flex: 0 0 170px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: var(--text-2xs);
+  &:focus {
+    outline: none;
+    border-color: rgb(var(--color-accent) / 60%);
+  }
+}
+
 /* ── Ranked history cards ────────────────────────────────────────────── */
 .dash-ranked {
   display: grid;
