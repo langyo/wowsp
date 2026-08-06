@@ -2304,6 +2304,9 @@ export default defineComponent({
         marker.visible = true;
         marker.position.set(s.x, 0, -s.z);
         marker.rotation.y = Math.PI - s.yaw;
+        // Keep the minimap's heading in sync — userData.yaw must track the
+        // playhead, not just the initial load.
+        marker.userData.yaw = s.yaw;
         if (label) {
           label.ghostText = null;
           const currentHp = hpAtTime(traj.hpSamples, tEff);

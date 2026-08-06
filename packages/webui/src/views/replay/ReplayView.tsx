@@ -162,20 +162,27 @@ const PostBattlePanel = defineComponent({
     const selected = ref<ReturnType<typeof rows.value>[number] | null>(null);
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
+    const globalError = ref(false);
 
+    /** AI/bot players have no WG account — skip the global-stats lookup.
+     *  WoWS bot names follow "<fleet prefix>_<ship>" (KMS_panzership etc). */
+    const AI_NAME = /^(KMS|IJN|USN|RN|KM|US|JP|VMF|HSF|PA|EU|FR|IT|NL|CN|SE|SP)_|_ship$|_bot$/i;
     /** Load the selected player's global stats on-demand (toast while
-     *  loading; the lookup API resolves by nickname + realm). */
+     *  loading; the lookup API resolves by nickname + realm). Failures are
+     *  silent — AI names and rate-limited lookups are common, and an error
+     *  toast for every bot would be noise. */
     async function loadGlobal(p: ReturnType<typeof rows.value>[number]) {
       globalStats.value = null;
-      if (!p.realm) return;
+      globalLoading.value = false;
+      if (!p.realm || AI_NAME.test(p.name)) return;
       globalLoading.value = true;
       const tid = toast.loading(`加载 ${p.name} 全局战绩…`);
       try {
         globalStats.value = await api.lookupPlayerStats(p.name, p.realm);
         toast.dismiss(tid);
-      } catch (e) {
+      } catch {
         toast.dismiss(tid);
-        toast.error(`加载 ${p.name} 战绩失败：${(e as Error).message}`);
+        globalError.value = true;
       } finally {
         globalLoading.value = false;
       }
@@ -338,6 +345,10 @@ const PostBattlePanel = defineComponent({
                       <span><b>{globalStats.value.pr ?? "—"}</b> PR</span>
                       <span><b>{globalStats.value.survivalRate != null ? `${globalStats.value.survivalRate.toFixed(1)}%` : "—"}</b> 存活</span>
                     </div>
+                  ) : globalError.value ? (
+                    <span class="replay-view__postbattle-global-note">
+                      无法获取全局战绩（可能为 AI 玩家）
+                    </span>
                   ) : (
                     <span class="replay-view__postbattle-global-note">
                       全局战绩不可用{sel.realm ? "" : "（无服务器信息）"}
