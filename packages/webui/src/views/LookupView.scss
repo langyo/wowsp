@@ -1,52 +1,193 @@
 .lookup-view {
-  padding: 1.5rem 2rem;
-  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
   height: 100%;
+  min-height: 0;
+  padding: 16px;
+  overflow: hidden;
+}
 
-  &__title {
-    margin: 0 0 1.5rem;
-    font-size: var(--text-xl);
-  }
+.lookup-view__sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding-right: 14px;
+}
 
-  &__search {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-  }
+.lookup-view__search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
 
-  &__realm {
-    padding: 0.45rem 0.6rem;
-    border: 1px solid rgb(var(--color-border) / 20%);
-    border-radius: var(--radius-sm);
-    background: rgb(var(--color-surface));
-    color: rgb(var(--color-text));
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-
-  &__input {
-    flex: 1;
-    padding: 0.45rem 0.75rem;
-    border: 1px solid rgb(var(--color-border) / 20%);
-    border-radius: var(--radius-sm);
-    background: rgb(var(--color-surface));
-    color: rgb(var(--color-text));
-    font-size: var(--text-sm);
+.lookup-view__input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: var(--text-sm);
+  &:focus {
     outline: none;
-
-    &:focus {
-      border-color: rgb(var(--color-primary) / 60%);
-    }
-  }
-
-  &__error {
-    color: rgb(220 80 80);
-    font-size: var(--text-sm);
-    margin-bottom: 1rem;
-  }
-
-  &__result {
-    max-width: 48rem;
+    border-color: rgb(var(--color-accent) / 60%);
   }
 }
 
+.lookup-view__history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lookup-view__history-title {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.lookup-view__history-empty {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: var(--text-2xs);
+  padding: 6px 2px;
+}
+
+.lookup-view__history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  font-size: var(--text-2xs);
+  text-align: left;
+  &:hover { background: rgba(255, 255, 255, 0.1); }
+  &--active {
+    background: rgb(var(--color-accent) / 18%);
+    color: rgb(var(--color-accent));
+  }
+}
+
+.lookup-view__history-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lookup-view__history-realm {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+}
+
+.lookup-view__main {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lookup-view__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.lookup-view__error {
+  color: #ff6b6b;
+  font-size: var(--text-sm);
+}
+
+.lookup-view__result {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lookup-view__ships {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lookup-view__shipgroup-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  margin-bottom: 6px;
+  em {
+    font-style: normal;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: var(--text-2xs);
+    font-weight: 400;
+  }
+}
+
+.lookup-view__shiplist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lookup-view__ship {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: var(--text-2xs);
+  &:hover { background: rgba(255, 255, 255, 0.05); }
+}
+
+.lookup-view__ship-ico {
+  flex: 0 0 22px;
+  display: inline-flex;
+}
+
+.lookup-view__ship-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lookup-view__ship-tier {
+  font-style: normal;
+  margin-left: 6px;
+  color: #ffd93d;
+  font-family: var(--font-mono);
+}
+
+.lookup-view__ship-battles {
+  flex: 0 0 42px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-mono);
+}
+
+.lookup-view__ship-wr {
+  flex: 0 0 52px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.lookup-view__ship-dmg {
+  flex: 0 0 72px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-mono);
+}

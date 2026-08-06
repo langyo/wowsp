@@ -163,6 +163,38 @@ const PostBattlePanel = defineComponent({
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
     const globalError = ref(false);
+    /** Battles per tier (index 1..10) and per ship type — for spotting
+     *  low-tier farmers / CV-SS specialists. */
+    const shipDist = ref<{ tiers: number[]; types: Record<string, number> }>({
+      tiers: new Array(11).fill(0),
+      types: {},
+    });
+    const shipDistTotal = ref(0);
+
+    /** Load the player's per-ship stats and aggregate tier/type distribution. */
+    async function loadShipDist(p: ReturnType<typeof rows.value>[number]) {
+      shipDist.value = { tiers: new Array(11).fill(0), types: {} };
+      shipDistTotal.value = 0;
+      if (!p.realm) return;
+      try {
+        const list = await api.lookupPlayerShipStats(p.accountId, p.realm);
+        const tiers = new Array(11).fill(0);
+        const types: Record<string, number> = {};
+        let total = 0;
+        for (const s of list) {
+          const off = shipOfflineEntry(s.shipId);
+          const tier = off?.tier ?? 0;
+          if (tier >= 1 && tier <= 10) tiers[tier] += s.battles;
+          const t = (off?.type ?? "").toLowerCase();
+          if (t) types[t] = (types[t] ?? 0) + s.battles;
+          total += s.battles;
+        }
+        shipDist.value = { tiers, types };
+        shipDistTotal.value = total;
+      } catch {
+        /* distribution unavailable — hide */
+      }
+    }
 
     /** AI/bot players have no WG account — skip the global-stats lookup.
      *  In replays they appear as ":Name:" (colon-wrapped, e.g. ":Millo:"). */
@@ -192,6 +224,7 @@ const PostBattlePanel = defineComponent({
       selected.value = p;
       detailOpen.value = true;
       void loadGlobal(p);
+      void loadShipDist(p);
     }
 
     /** Jump into the lookup screen for this player, closing both modals. */
@@ -371,6 +404,32 @@ const PostBattlePanel = defineComponent({
                     </span>
                   )}
                 </div>
+                {/* Ship distribution: which tiers & types they play most — spot
+                    low-tier farmers / CV-SS specialists. */}
+                {shipDistTotal.value > 0 ? (
+                  <div class="replay-view__postbattle-dist">
+                    <div class="replay-view__postbattle-dist-title">常玩舰船</div>
+                    <div class="replay-view__postbattle-dist-row">
+                      {shipDist.value.tiers.map((n, i) => {
+                        if (i === 0 || n === 0) return null;
+                        return (
+                          <span key={i} class="replay-view__postbattle-dist-item">
+                            <b>{i}</b> 级 {Math.round((n / shipDistTotal.value) * 100)}%
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div class="replay-view__postbattle-dist-row">
+                      {Object.entries(shipDist.value.types)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([type, n]) => (
+                          <span key={type} class="replay-view__postbattle-dist-item">
+                            <b>{typeLabel(type)}</b> {Math.round((n / shipDistTotal.value) * 100)}%
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
                 <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                   查看完整战绩 →
                 </button>
@@ -387,6 +446,17 @@ const PostBattlePanel = defineComponent({
  *  outside the encyclopedia store). */
 function shipTypeOf(shipId: number): string {
   return shipOfflineEntry(shipId)?.type ?? "";
+}
+
+/** Short Chinese label for a ship-type key (battleship/cruiser/...). */
+function typeLabel(type: string): string {
+  const t = type.toLowerCase();
+  if (t.includes("battleship")) return "战列";
+  if (t.includes("aircarrier") || t.includes("aircar")) return "航母";
+  if (t.includes("cruiser")) return "巡洋";
+  if (t.includes("destroyer")) return "驱逐";
+  if (t.includes("submarine")) return "潜艇";
+  return type;
 }
 
 /**
