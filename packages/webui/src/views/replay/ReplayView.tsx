@@ -239,7 +239,7 @@ const PostBattlePanel = defineComponent({
             {p.shipId != null ? (
               <BattleIcon
                 type={shipTypeOf(p.shipId)}
-                variant={p.alive ? (p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
+                variant={p.alive ? (p.team === 2 ? "enemy" : p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
                 size={20}
               />
             ) : null}
@@ -303,7 +303,7 @@ const PostBattlePanel = defineComponent({
                       {sel.shipId != null ? (
                         <BattleIcon
                           type={shipTypeOf(sel.shipId)}
-                          variant={sel.alive ? "ally" : "sunk"}
+                          variant={sel.alive ? (sel.team === 2 ? "enemy" : "ally") : "sunk"}
                           size={24}
                         />
                       ) : null}

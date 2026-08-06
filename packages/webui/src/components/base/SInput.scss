@@ -1,0 +1,20 @@
+.s-input {
+  padding: 9px 12px;
+  min-height: 34px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: var(--text-sm);
+  &:focus {
+    outline: none;
+    border-color: rgb(var(--color-accent) / 60%);
+    box-shadow: 0 0 0 2px rgb(var(--color-accent) / 12%);
+  }
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+  }
+  &--block {
+    width: 100%;
+  }
+}

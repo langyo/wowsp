@@ -23,5 +23,8 @@
       "cn360": "CN (360)",
       "manual": "Manual"
     }
+  },
+  "search": {
+    "fuzzy": "Fuzzy search"
   }
 }

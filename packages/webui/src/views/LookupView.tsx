@@ -5,7 +5,8 @@ import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SButton from "@/components/base/SButton";
 import SSelect from "@/components/base/SSelect";
-import SSegmented from "@/components/base/SSegmented";
+import ShipFilterBar from "@/components/ships/ShipFilterBar";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useToast } from "@/composables/useToast";
@@ -56,6 +57,7 @@ const TYPE_SHORT: Record<string, string> = {
   Unknown: "?",
 };
 
+
 export default defineComponent({
   name: "LookupView",
   setup() {
@@ -68,8 +70,28 @@ export default defineComponent({
     const realms = ["ru", "eu", "na", "asia"];
     const result = ref<PlayerStats | null>(null);
     const history = ref<HistoryEntry[]>(loadHistory());
-    const groupMode = ref<"type" | "nation" | "tier">("type");
-    const sortBy = ref<"battles" | "winrate" | "avgDamage">("battles");
+    const encyclopedia = useEncyclopediaStore();
+
+    /** Unified ship metadata: encyclopedia first, offline DB fallback. */
+    const infoOf = (shipId: number) => {
+      const enc = encyclopedia.byId.get(shipId);
+      if (enc) return enc;
+      const off = shipOfflineEntry(shipId);
+      return off
+        ? { shipId, tier: off.tier ?? 0, type: off.type ?? "", nation: off.nation ?? "" }
+        : null;
+    };
+
+    /** Filtered ships + group mode + search-hit names, from ShipFilterBar. */
+    const filterState = ref<{
+      ships: PlayerShipStats[];
+      groupMode: "type" | "nation" | "tier";
+      hits: Map<number, string>;
+    }>({ ships: [], groupMode: "type", hits: new Map() });
+    const filteredShips = computed(() => filterState.value.ships);
+    function displayName(s: PlayerShipStats): string {
+      return filterState.value.hits.get(s.shipId) ?? s.name;
+    }
 
     /** Per-ship rows enriched with offline tier/type for grouping. */
     const shipRows = computed<PlayerShipStats[]>(() => {
@@ -78,19 +100,12 @@ export default defineComponent({
       return shipStats.cache.get(`${realm.value}_${acc.accountId}`) ?? [];
     });
     const grouped = computed(() => {
-      const rows = [...shipRows.value];
-      rows.sort((a, b) =>
-        sortBy.value === "battles"
-          ? b.battles - a.battles
-          : sortBy.value === "winrate"
-            ? b.winrate - a.winrate
-            : b.avgDamage - a.avgDamage,
-      );
-      if (groupMode.value === "type") {
+      const rows = [...filteredShips.value];
+      const mode = filterState.value.groupMode;
+      if (mode === "type") {
         const byType = new Map<string, PlayerShipStats[]>();
         for (const s of rows) {
-          const off = shipOfflineEntry(s.shipId);
-          const type = off?.type ?? "";
+          const type = infoOf(s.shipId)?.type ?? "";
           const key = TYPE_ORDER.find((k) => k && type.startsWith(k)) ?? "";
           if (!byType.has(key)) byType.set(key, []);
           byType.get(key)!.push(s);
@@ -101,11 +116,10 @@ export default defineComponent({
           ships: byType.get(k)!,
         }));
       }
-      if (groupMode.value === "nation") {
+      if (mode === "nation") {
         const byNation = new Map<string, PlayerShipStats[]>();
         for (const s of rows) {
-          const off = shipOfflineEntry(s.shipId);
-          const nation = off?.nation ?? "unknown";
+          const nation = infoOf(s.shipId)?.nation ?? "unknown";
           if (!byNation.has(nation)) byNation.set(nation, []);
           byNation.get(nation)!.push(s);
         }
@@ -122,17 +136,16 @@ export default defineComponent({
         .map(([key, label, tiers]) => ({
           key: key,
           label: label,
-          ships: rows.filter((s) => tiers.includes(shipOfflineEntry(s.shipId)?.tier ?? 0)),
+          ships: rows.filter((s) => tiers.includes(infoOf(s.shipId)?.tier ?? 0)),
         }))
         .filter((g) => g.ships.length > 0);
     });
     /** Per-type summary cards (battles + winrate), matching the Dashboard. */
     const typeSummary = computed(() => {
-      const rows = shipRows.value;
+      const rows = filteredShips.value;
       const m = new Map<string, { battles: number; wins: number }>();
       for (const s of rows) {
-        const off = shipOfflineEntry(s.shipId);
-        const type = off?.type ?? "";
+        const type = infoOf(s.shipId)?.type ?? "";
         const key = TYPE_ORDER.find((k) => k && type.startsWith(k)) ?? "";
         const e = m.get(key) ?? { battles: 0, wins: 0 };
         e.battles += s.battles;
@@ -253,30 +266,15 @@ export default defineComponent({
                   <div class="lookup-view__dist">
                     <div class="lookup-view__dist-title">舰船分布</div>
                     <ShipDistCharts
-                      ships={shipRows.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
+                      ships={filteredShips.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
                     />
                   </div>
                 ) : null}
-                <div class="lookup-view__controls">
-                  <SSegmented
-                    modelValue={groupMode.value}
-                    onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
-                    options={[
-                      { value: "type", label: t("dashboard.byType") },
-                      { value: "nation", label: t("dashboard.byNation") },
-                      { value: "tier", label: t("dashboard.byTier") },
-                    ]}
-                  />
-                  <SSegmented
-                    modelValue={sortBy.value}
-                    onUpdate:modelValue={(v: string) => (sortBy.value = v as typeof sortBy.value)}
-                    options={[
-                      { value: "battles", label: t("dashboard.battles") },
-                      { value: "winrate", label: t("dashboard.winrate") },
-                      { value: "avgDamage", label: t("dashboard.avgDamage") },
-                    ]}
-                  />
-                </div>
+                <ShipFilterBar
+                  ships={shipRows.value}
+                  realm={realm.value}
+                  onChange={(v) => (filterState.value = v)}
+                />
                 {/* Per-type summary cards */}
                 {typeSummary.value.length > 0 ? (
                   <div class="lookup-view__typegrid">
@@ -311,7 +309,7 @@ export default defineComponent({
                               </span>
                               <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
                               <span class="lookup-view__ship-name">
-                                {s.name}
+                                {displayName(s)}
                                 {off?.tier != null ? (
                                   <em class="lookup-view__ship-tier">{off.tier}</em>
                                 ) : null}
@@ -323,7 +321,7 @@ export default defineComponent({
                               >
                                 {s.winrate.toFixed(1)}%
                               </span>
-                              <span class="lookup-view__ship-dmg">{s.avgDamage.toLocaleString()}</span>
+                              <span class="lookup-view__ship-dmg">{Math.round(s.avgDamage).toLocaleString()}</span>
                               <span class="lookup-view__ship-kd">
                                 {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                               </span>
