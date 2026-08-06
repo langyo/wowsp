@@ -11,6 +11,7 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { useToast } from "@/composables/useToast";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
+import { searchShips } from "@/features/search/pinyinSearch";
 import { winrateColor } from "@/utils/winrate";
 import type { PlayerStats, PlayerShipStats } from "@/api";
 import { t } from "@/i18n";
@@ -148,11 +149,26 @@ export default defineComponent({
     });
 
     /** Ships after name search / level-2 filters (search wins over filters). */
+    /** Search hits (shipId → matched language/name) — set while searching. */
+    const hitNames = computed(() =>
+      searchShips(
+        shipRows.value,
+        shipQuery.value,
+        (s) => shipOfflineEntry(s.shipId)?.names,
+      ),
+    );
+    /** Display name for a ship row: the search-matched language when
+     *  searching, otherwise the plain (English) name. */
+    function displayName(s: PlayerShipStats): string {
+      const hit = hitNames.value.get(s.shipId);
+      return hit?.matchedName ?? s.name;
+    }
+
     const filteredShips = computed(() => {
       let rows = shipRows.value;
       const q = shipQuery.value.trim().toLowerCase();
       if (q) {
-        rows = rows.filter((s) => s.name.toLowerCase().includes(q));
+        rows = rows.filter((s) => hitNames.value.has(s.shipId));
       } else {
         if (typeFilter.value) {
           rows = rows.filter((s) =>
@@ -489,7 +505,7 @@ export default defineComponent({
                               </span>
                               <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
                               <span class="lookup-view__ship-name">
-                                {s.name}
+                                {displayName(s)}
                                 {off?.tier != null ? (
                                   <em class="lookup-view__ship-tier">{off.tier}</em>
                                 ) : null}
