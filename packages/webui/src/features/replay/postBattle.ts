@@ -53,11 +53,11 @@ ribbons: PostBattleRibbon[];
  *  - 45 = CV aircraft stats     — inferred
  *  - 36 = secondary battery hits — Napoli 15, Nagato 43, dd 3, cv 0
  *  - 37 = main-battery shells   — Nagato 96 (16×6), ca 105, bb 15
- *  - 39 = citadel hits (bb 11.2) — inferred
- *  - 44 = spotting/detection (dd 22, sub 27) — inferred
- *  - 45 = CV aircraft stats     — inferred
- *  - 26 = unclassified hits     — hidden (mirrors 28)
- *  - 35/40 = shell aggregate stats (unconfirmed — hidden)
+ *  - 45 = CV aircraft stats     — inferred (CVs only)
+ *  - unconfirmed & hidden: 26/39/44 (contested), 35/40/101/103 (shell
+ *    aggregates), 75 (sub sonar), 80 (CV planes), 85 (shell-hit class);
+ *    paired slots 49/62, 50/51, 54/55, 58/59, 80/81, 96/97, 115/116,
+ *    128/129 are duplicated columns (≈100% equal)
  */
 export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
   [27, "plane"],
@@ -68,8 +68,6 @@ export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
   [32, "frag"],
   [36, "secondary_caliber"],
   [37, "shells"],
-  [39, "citadel"],
-  [44, "detected"],
   [45, "plane_losses"],
 ];
 
