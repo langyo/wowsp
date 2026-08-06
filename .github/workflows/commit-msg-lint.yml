@@ -18,7 +18,7 @@ jobs:
           set -e
           base="origin/${GITHUB_BASE_REF:-master}"
           git fetch origin "${GITHUB_BASE_REF:-master}" --quiet || true
-          git log --format='%s' "$base..HEAD" | while read -r msg; do
+          git log --no-merges --format='%s' "$base..HEAD" | while read -r msg; do
             [ -z "$msg" ] && continue
             # <gitmoji> <Capitalized English summary.> (ends with a period)
             if ! printf '%s' "$msg" | grep -qP '^\p{So}\s+[A-Z].*\.$'; then
