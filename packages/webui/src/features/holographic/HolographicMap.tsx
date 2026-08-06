@@ -38,6 +38,93 @@ import type {
 } from "@/api";
 import planeIcon from "./planeIcons";
 import { shipIcon } from "./shipIcons";
+import { parsePostBattle } from "@/features/replay/postBattle";
+
+/** Per-plane local offsets inside ONE flight group (the group's own wedge):
+ *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front
+ *  and the rest trailing. Positive oz is BACKWARD along the heading (the
+ *  leader flies at the front of the formation). */
+function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
+  const p = 9;
+  if (n <= 1) return [{ ox: 0, oz: 0 }];
+  if (n === 2) return [{ ox: -p, oz: 0 }, { ox: p, oz: 0 }];
+  if (n === 3) return [{ ox: 0, oz: -p }, { ox: -p, oz: p }, { ox: p, oz: p }];
+  const out: { ox: number; oz: number }[] = [
+    { ox: -p, oz: -p },
+    { ox: p, oz: -p },
+  ];
+  for (let i = 2; i < n; i++) {
+    out.push({ ox: (i % 2 === 0 ? -1 : 1) * p, oz: p });
+  }
+  return out;
+}
+
+/** Filled-wedge layout over flight GROUPS: row r holds r+1 groups (1, 2, 3,
+ *  …); a leftover group that cannot fill the next row sits centered in it.
+ *  Examples: 6 groups → rows 1,2,3; 4 groups → 1,2,1; 7 → 1,2,3,1. */
+function formationOffsets(groupCount: number, groupSize: number): { ox: number; oz: number }[] {
+  const out: { ox: number; oz: number }[] = [];
+  let rem = groupCount;
+  const rows: number[] = [];
+  for (let r = 0; rem > 0; r++) {
+    const n = Math.min(r + 1, rem);
+    rows.push(n);
+    rem -= n;
+  }
+  const gSpacing = 20;
+  const gDepth = 15;
+  rows.forEach((n, r) => {
+    for (let k = 0; k < n; k++) {
+      const gx = (k - (n - 1) / 2) * gSpacing;
+      const gz = -r * gDepth;
+      for (const it of groupInnerOffsets(groupSize)) {
+        out.push({ ox: gx + it.ox, oz: gz + it.oz });
+      }
+    }
+  });
+  return out;
+}
+
+/** Infer the squadron's group layout by greedy-clustering the aircraft
+ *  positions right after launch: planes spawn in groups (2/group, 3/group,
+ *  …), so the median cluster size is the per-group count and the cluster
+ *  count is the number of flight groups. */
+function inferGrouping(
+  entries: { trail: EntityTrajectory }[],
+  sampleAtFn: (tr: EntityTrajectory, t: number) => { x: number; z: number } | null,
+): { groupSize: number; groupCount: number } {
+  const t0 = Math.min(...entries.map((e) => e.trail.samples[0]?.time ?? 0));
+  const pts: { x: number; z: number }[] = [];
+  for (const e of entries) {
+    const s = sampleAtFn(e.trail, t0 + 0.05);
+    if (s) pts.push(s);
+  }
+  if (pts.length < 2) return { groupSize: 1, groupCount: Math.max(1, pts.length) };
+  const clusters: { members: { x: number; z: number }[]; cx: number; cz: number }[] = [];
+  for (const p of pts) {
+    let best: (typeof clusters)[number] | null = null;
+    let bestD = 45;
+    for (const c of clusters) {
+      const d = Math.hypot(c.cx - p.x, c.cz - p.z);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    if (best) {
+      best.members.push(p);
+      best.cx = best.members.reduce((a, q) => a + q.x, 0) / best.members.length;
+      best.cz = best.members.reduce((a, q) => a + q.z, 0) / best.members.length;
+    } else {
+      clusters.push({ members: [p], cx: p.x, cz: p.z });
+    }
+  }
+  const sizes = clusters.map((c) => c.members.length).sort((a, b) => a - b);
+  return {
+    groupSize: sizes[Math.floor(sizes.length / 2)] || 1,
+    groupCount: clusters.length,
+  };
+}
 
 /** paramsId → plane metadata (index/name/type/count) baked from GameParams by
  *  `scripts/model_convert/extract_planes.py` — the type drives which in-game
@@ -329,10 +416,14 @@ export default defineComponent({
       shipName: string;
       /** Victim's ship type (for the HUD icon). */
       shipType: string | null;
+      /** Killer's player nickname (resolved from the post-battle payload). */
+      killerName: string | null;
       role: TeamRole;
     }
     const killFeed = ref<KillEvent[]>([]);
     let killSeq = 0;
+    /** Lazily parsed post-battle payload (for killer resolution). */
+    let pbCache: ReturnType<typeof parsePostBattle> | null = null;
     // Entity ids already reported as sunk (avoid double-counting on scrub).
     const reportedSinks = new Set<number>();
     // The capture-zone entities + their ownership timelines. InteractiveZone
@@ -344,15 +435,19 @@ export default defineComponent({
     // the zone spawns. The ownership/progress-stream checks below are kept
     // only as a fallback for very old replays predating the component.
     const capZones = computed(() => {
+      // Show EVERY InteractiveZone (entityType 14) — capture points AND
+      // strike/event zones. Filtering by capProgress thresholds or by the
+      // controlPoint component dropped real points in many replays: zones
+      // owned from the start (captured before any progress stream) or on
+      // older clients never carry the component and their progress can sit
+      // at any value (200..1000). Scoring below filters to real capture
+      // points only.
       const zones = props.trajectories.filter((t) => {
         if (t.kind?.entityType !== 14) return false;
-        if (t.kind.controlPointIndex != null) return true;
-        if ((t.capSamples?.length ?? 0) > 0) return true;
-        // 0x23 progress streams that START SMALL (≤200) are real capture
-        // progress (17–50 unit ticks from zero); strike targets first appear
-        // at 741–1446 and drop to zero once destroyed.
-        const cp = t.capProgress ?? [];
-        return cp.length > 0 && cp[0].value > 0 && cp[0].value <= 200;
+        if (t.kind.initialX == null && t.kind.initialZ == null && t.samples.length === 0) {
+          return false;
+        }
+        return true;
       });
       // Order letters by the game's own point index (0 = A) so the scorebar
       // matches the in-match callouts.
@@ -362,6 +457,19 @@ export default defineComponent({
       );
       return zones;
     });
+    /** Zones that actually score: real domination points (controlPoint
+     *  component or capture-state/progress streams). Strike/event zones
+     *  (progress starting around 741+ and dropping to zero once destroyed)
+     *  are rendered but never affect the score. */
+    const scoringZones = computed(() =>
+      capZones.value.filter((t) => {
+        if (t.kind?.controlPointIndex != null) return true;
+        if ((t.capSamples?.length ?? 0) > 0) return true;
+        const cp = t.capProgress ?? [];
+        if (cp.length > 0) return cp[0].value < 700;
+        return false;
+      }),
+    );
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -384,9 +492,20 @@ export default defineComponent({
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
-    /** Smoke-screen puffs (entityType 4 = SmokeScreen). One cylinder per
-     *  smoke entity, positioned at its expanding point each frame. */
-    let smokeMeshes: { mesh: THREE.Mesh; traj: EntityTrajectory; endT: number }[] = [];
+    /** Smoke-screen clusters (entityType 4 = SmokeScreen). Each cluster
+     *  holds a start ring + end ring (white circles) and a remaining-time
+     *  sprite. Puffs spawned within 300 m of each other merge into one
+     *  cluster — the one with the longest lifetime wins. */
+    let smokeClusters: {
+      traj: EntityTrajectory;
+      t0: number;
+      lastT: number;
+      endT: number;
+      sx: number;
+      sz: number;
+      rings: THREE.Mesh[];
+      timeSprite: THREE.Sprite | null;
+    }[] = [];
     /** Reconstructed shell flights: a curved trace from a nearby ship that
      *  was aimed at the impact when it exploded. */
     let shellTraces: {
@@ -439,9 +558,12 @@ export default defineComponent({
     const planeRoleById = new Map<number, string>();
     /** planeId → the carrier card label id that shows it. */
     const planeLabelOfPlane = new Map<number, number>();
-    /** planeId → formation render state: the GameParams squadron size and the
-     *  per-plane model instances (one per slot in the wedge formation). */
-    const planeFormations = new Map<number, { count: number; meshes: THREE.Object3D[] }>();
+    /** planeId → formation render state: the GameParams squadron size, the
+     *  inferred group layout and the per-plane model instances. */
+    const planeFormations = new Map<
+      number,
+      { count: number; groupSize: number; groupCount: number; meshes: THREE.Object3D[] }
+    >();
     /** planeId → 3D aircraft model pool (one per formation slot). */
     const planeMeshes = new Map<number, THREE.Object3D[]>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
@@ -595,16 +717,20 @@ export default defineComponent({
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-      // Capture zones: small rings tinted by current owner, letter inside.
+      // Capture zones: rings sized from the zone's real radius (world → px
+      // at the minimap scale, clamped to a readable minimum), tinted by
+      // current owner, letter inside.
+      const capPxScale = (w - 2) / (bounds.maxX - bounds.minX || 1);
       capZones.value.forEach((z, i) => {
         const cx = wx(z.kind!.initialX);
         const cz = wz(-z.kind!.initialZ);
         const owner = capDisplay.value[i]?.owner ?? 0;
+        const radiusPx = Math.max(3, Math.min(14, (z.kind?.radius ?? 60) * capPxScale));
         ctx.strokeStyle =
           owner === 1 ? "rgba(74, 222, 128, 0.8)" : owner === 2 ? "rgba(204, 51, 51, 0.8)" : "rgba(255, 255, 255, 0.5)";
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(cx, cz, 7, 0, Math.PI * 2);
+        ctx.arc(cx, cz, radiusPx, 0, Math.PI * 2);
         ctx.stroke();
         ctx.fillStyle = ctx.strokeStyle;
         ctx.font = "bold 8px sans-serif";
@@ -665,14 +791,40 @@ export default defineComponent({
         drawShipGlyph(ctx, m.userData.type as string | undefined, cx, cz, 5, color);
       }
 
-      // Smoke screens (entityType 4) — translucent grey puffs.
-      ctx.fillStyle = "rgba(150, 160, 180, 0.45)";
-      for (const tr of props.trajectories) {
-        if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
-        const s = sampleAt(tr, t);
-        ctx.beginPath();
-        ctx.arc(wx(s.x), wz(-s.z), 2.4, 0, Math.PI * 2);
-        ctx.fill();
+      // Smoke screens (entityType 4): white start/end rings + remaining
+      // seconds, fading out after each puff's lifetime (90s past its last
+      // update, or the recorded leave time).
+      {
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 1;
+        for (const cl of smokeClusters) {
+          if (t < cl.t0 || t > cl.endT) continue;
+          let cur = t;
+          if (t > cl.lastT) {
+            const span = Math.max(1, cl.lastT - cl.t0);
+            cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+            if (cur > cl.lastT) cur = cl.lastT;
+          }
+          const pStart = sampleAt(cl.traj, cur);
+          if (!pStart) continue;
+          const pEnd = sampleAt(cl.traj, cl.lastT);
+          const drift =
+            pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
+          const showBoth = pEnd != null && drift >= 1000;
+          ctx.beginPath();
+          ctx.arc(wx(pStart.x), wz(-pStart.z), 3, 0, Math.PI * 2);
+          ctx.stroke();
+          if (showBoth && pEnd) {
+            ctx.beginPath();
+            ctx.arc(wx(pEnd.x), wz(-pEnd.z), 3, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.font = "bold 8px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillText(`${Math.ceil(cl.endT - t)}s`, wx(pStart.x), wz(-pStart.z) - 4);
+        }
       }
       // Aircraft — one in-game type icon per FORMATION (squadron centre),
       // not per plane: a full 8-plane group reads as a single moving marker.
@@ -797,14 +949,37 @@ export default defineComponent({
             const color = role ? TEAM_COLOR[role] : 0x888888;
             drawShipGlyph(zctx, m.userData.type as string | undefined, cx, cz, 14, color);
           }
-          // Smoke screens — translucent grey puffs on the enlarged map.
-          zctx.fillStyle = "rgba(150, 160, 180, 0.5)";
-          for (const tr of props.trajectories) {
-            if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
-            const s = sampleAt(tr, t);
+          // Smoke screens — white start/end rings + remaining seconds on
+          // the enlarged map (same lifetime/dissipation rules as minimap).
+          zctx.strokeStyle = "rgba(255,255,255,0.85)";
+          zctx.fillStyle = "rgba(255,255,255,0.95)";
+          zctx.lineWidth = 1.4;
+          for (const cl of smokeClusters) {
+            if (t < cl.t0 || t > cl.endT) continue;
+            let cur = t;
+            if (t > cl.lastT) {
+              const span = Math.max(1, cl.lastT - cl.t0);
+              cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+              if (cur > cl.lastT) cur = cl.lastT;
+            }
+            const pStart = sampleAt(cl.traj, cur);
+            if (!pStart) continue;
+            const pEnd = sampleAt(cl.traj, cl.lastT);
+            const drift =
+              pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
+            const showBoth = pEnd != null && drift >= 1000;
             zctx.beginPath();
-            zctx.arc(zwx(s.x), zwz(-s.z), 6, 0, Math.PI * 2);
-            zctx.fill();
+            zctx.arc(zwx(pStart.x), zwz(-pStart.z), 6, 0, Math.PI * 2);
+            zctx.stroke();
+            if (showBoth && pEnd) {
+              zctx.beginPath();
+              zctx.arc(zwx(pEnd.x), zwz(-pEnd.z), 6, 0, Math.PI * 2);
+              zctx.stroke();
+            }
+            zctx.font = "bold 12px sans-serif";
+            zctx.textAlign = "center";
+            zctx.textBaseline = "bottom";
+            zctx.fillText(`${Math.ceil(cl.endT - t)}s`, zwx(pStart.x), zwz(-pStart.z) - 7);
           }
           // Aircraft — one icon per formation (squadron centre).
           {
@@ -994,12 +1169,19 @@ export default defineComponent({
       trajectoryLines = [];
       shipMarkers = [];
       capRings = [];
-      capSim.clear();      for (const sm of smokeMeshes) {
-        scene.remove(sm.mesh);
-        sm.mesh.geometry.dispose();
-        (sm.mesh.material as THREE.Material).dispose();
+      capSim.clear();
+      for (const cl of smokeClusters) {
+        for (const ring of cl.rings) {
+          scene.remove(ring);
+          ring.geometry.dispose();
+          (ring.material as THREE.Material).dispose();
+        }
+        if (cl.timeSprite) {
+          scene.remove(cl.timeSprite);
+          (cl.timeSprite.material as THREE.Material).dispose();
+        }
       }
-      smokeMeshes = [];
+      smokeClusters = [];
       for (const st of shellTraces) {
         scene.remove(st.line);
         st.line.geometry.dispose();
@@ -1383,33 +1565,82 @@ export default defineComponent({
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
       const assignments = resolveRosterAssignments(shipTrajs);
 
-      // Smoke screens (entityType 4 = SmokeScreen): a translucent grey
-      // cylinder at the smoke's current expanding point. WoWS smoke lasts
-      // ~90s; without a destroy packet we hide each puff 90s after its last
-      // recorded position update.
-      const smokeTrajs = props.trajectories.filter(
-        (t) => t.kind?.entityType === 4 && t.samples.length >= 2,
-      );
-      const smokeGeom = new THREE.CylinderGeometry(30, 30, 10, 16, 1);
-      const smokeMat = new THREE.MeshBasicMaterial({
-        color: 0x8b93a3,
-        transparent: true,
-        opacity: 0.45,
-        depthWrite: false,
-      });
-      for (const tr of smokeTrajs) {
-        const mesh = new THREE.Mesh(smokeGeom, smokeMat);
-        mesh.position.y = 2.5;
-        mesh.visible = false;
-        scene.add(mesh);
-        // Exact expiry when the entity left the observed area (EntityLeave
-        // 0x04); otherwise fall back to ~90s after the last recorded update.
-        const leaveT = props.leavesMap[tr.entityId];
-        smokeMeshes.push({
-          mesh,
-          traj: tr,
-          endT: leaveT != null ? leaveT : tr.samples[tr.samples.length - 1].time + 90,
+      // Smoke screens (entityType 4 = SmokeScreen): white ring markers at
+      // the smoke's START point (and END point when the drift exceeds 1 km)
+      // with a floating remaining-seconds tag. No volumetric puffs — the
+      // rings trace the smoke band. WoWS smoke lasts ~90s; without a destroy
+      // packet each puff expires 90s after its last recorded position
+      // update. While dissipating, the start ring walks from the launch
+      // point toward the end point. Clusters of puffs at (almost) the same
+      // spot collapse into one marker: the one with the longest lifetime.
+      smokeClusters.length = 0;
+      {
+        const smokes = props.trajectories
+          .filter((t) => t.kind?.entityType === 4 && t.samples.length >= 1)
+          .sort((a, b) => (a.samples[0]?.time ?? 0) - (b.samples[0]?.time ?? 0));
+        for (const tr of smokes) {
+          const t0 = tr.samples[0].time;
+          const lastT = tr.samples[tr.samples.length - 1].time;
+          const endT = props.leavesMap[tr.entityId] ?? lastT + 90;
+          const s0 = sampleAt(tr, t0);
+          if (!s0) continue;
+          let cluster = smokeClusters.find(
+            (c) => Math.hypot(c.sx - s0.x, c.sz - s0.z) < 300,
+          );
+          if (!cluster) {
+            cluster = {
+              traj: tr,
+              t0,
+              lastT,
+              endT,
+              sx: s0.x,
+              sz: s0.z,
+              rings: [],
+              timeSprite: null,
+            };
+            smokeClusters.push(cluster);
+          } else if (endT > cluster.endT) {
+            cluster.traj = tr;
+            cluster.t0 = t0;
+            cluster.lastT = lastT;
+            cluster.endT = endT;
+          }
+        }
+        const smokeRingGeom = new THREE.RingGeometry(40, 46, 36);
+        const smokeRingMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.75,
+          depthWrite: false,
+          side: THREE.DoubleSide,
         });
+        for (const cl of smokeClusters) {
+          for (let i = 0; i < 2; i++) {
+            const ring = new THREE.Mesh(smokeRingGeom, smokeRingMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.visible = false;
+            scene.add(ring);
+            cl.rings.push(ring);
+          }
+          const cvs = document.createElement("canvas");
+          cvs.width = 128;
+          cvs.height = 64;
+          const ctx = cvs.getContext("2d")!;
+          const tex = new THREE.CanvasTexture(cvs);
+          const sprite = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+              map: tex,
+              transparent: true,
+              depthWrite: false,
+            }),
+          );
+          sprite.visible = false;
+          sprite.scale.set(60, 30, 1);
+          sprite.userData.canvas = cvs;
+          sprite.userData.text = "";
+          scene.add(sprite);
+          cl.timeSprite = sprite;
+        }
       }
 
       // Shell flights reconstructed between a launch and its impact: for
@@ -1771,12 +2002,18 @@ export default defineComponent({
           )];
           const count = (typeKey?.count ?? 3);
           if (list.length === 0) {
-            planeFormations.set(planeId, { count, meshes: [] });
+            planeFormations.set(planeId, { count, groupSize: 1, groupCount: count, meshes: [] });
           }
           list.push({ idx, role, count, trail });
         }
         const seenKey = new Set<string>();
         for (const [planeId, entries] of byPlane) {
+          // Infer the group layout from the launch positions (clusters of
+          // planes spawned together = one flight group).
+          const grp = inferGrouping(entries, sampleAt);
+          const formation = planeFormations.get(planeId)!;
+          formation.groupSize = Math.max(1, Math.min(grp.groupSize, formation.count));
+          formation.groupCount = Math.max(1, grp.groupCount);
           const first = entries[0];
           const url = resolvePlaneModelUrl(first.idx);
           if (!url) continue;
@@ -2093,8 +2330,10 @@ export default defineComponent({
         const n = g.members.length;
         for (let k = 0; k < n; k++) {
           // Concentric group: offset each member along x, outer ring larger.
+          // Use the member's REAL radius (never a fixed small size) so big
+          // points read at their true footprint on the map.
           const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
-          const radius = n > 1 ? 52 - k * 14 : g.members[k].radius;
+          const radius = Math.max(g.members[k].radius, 34);
           const cx = g.x + spread;
           const cz = g.z;
           const ringGeom = new THREE.TorusGeometry(radius, 1.2, 8, 48);
@@ -2291,12 +2530,30 @@ export default defineComponent({
               reportedSinks.add(entityId);
               const who = label?.name ?? `#${entityId}`;
               const victimRole = role === "ally" ? "enemy" : "ally";
+              // Killer resolution: the killer's account id lives in the
+              // post-battle payload (index 408); map it back to a nickname
+              // via the same playersPublicInfo table.
+              let killerName: string | null = null;
+              if (props.battleResults) {
+                pbCache ??= parsePostBattle(props.battleResults);
+              }
+              if (pbCache?.players && who) {
+                const vn = who.trim().toLowerCase();
+                const victim = pbCache.players.find(
+                  (p) => (p.name ?? "").trim().toLowerCase() === vn,
+                );
+                if (victim?.killerId != null) {
+                  killerName =
+                    pbCache.players.find((p) => p.accountId === victim.killerId)?.name ?? null;
+                }
+              }
               const feedId = ++killSeq;
               killFeed.value.unshift({
                 id: feedId,
                 text: who,
                 shipName: label?.shipName ?? "",
                 shipType: label?.type ?? null,
+                killerName,
                 role: victimRole,
               });
               if (killFeed.value.length > 4) killFeed.value.pop();
@@ -2332,14 +2589,62 @@ export default defineComponent({
         else mat.color.set(0xffffff);
         mat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
       });
-      // Smoke screens at their current expanding point (visible for 90s
-      // after the last recorded update).
-      for (const sm of smokeMeshes) {
-        const s = sampleAt(sm.traj, t);
-        const created = (sm.traj.kind?.creationTime ?? -1) >= 0 ? t >= sm.traj.kind!.creationTime : true;
-        const alive = s != null && created && t <= sm.endT;
-        sm.mesh.visible = alive;
-        if (alive && s) sm.mesh.position.set(s.x, 2.5, -s.z);
+      // Smoke screens: white start/end rings + a floating remaining-seconds
+      // tag. The start ring walks toward the end while the smoke dissipates
+      // (WoWS smoke fades from the launch point); each cluster shows both
+      // endpoints only when the drift is >= 1 km, otherwise a single puff.
+      for (const cl of smokeClusters) {
+        const hide = () => {
+          cl.rings[0].visible = false;
+          cl.rings[1].visible = false;
+          if (cl.timeSprite) cl.timeSprite.visible = false;
+        };
+        if (t < cl.t0 || t > cl.endT) {
+          hide();
+          continue;
+        }
+        // Dissipation walk: after the last recorded update the start point
+        // slides from the launch position toward the end position.
+        let cur = t;
+        if (t > cl.lastT) {
+          const span = Math.max(1, cl.lastT - cl.t0);
+          cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+          if (cur > cl.lastT) cur = cl.lastT;
+        }
+        const pStart = sampleAt(cl.traj, cur);
+        if (!pStart) {
+          hide();
+          continue;
+        }
+        const pEnd = sampleAt(cl.traj, cl.lastT);
+        const drift =
+          pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
+        const showBoth = pEnd != null && drift >= 1000;
+        cl.rings[0].visible = true;
+        cl.rings[0].position.set(pStart.x, 2.5, -pStart.z);
+        cl.rings[1].visible = showBoth;
+        if (showBoth && pEnd) cl.rings[1].position.set(pEnd.x, 2.5, -pEnd.z);
+        const sprite = cl.timeSprite;
+        if (sprite) {
+          const secs = Math.ceil(cl.endT - t);
+          const text = `${secs}s`;
+          if (sprite.userData.text !== text) {
+            sprite.userData.text = text;
+            const cvs = sprite.userData.canvas as HTMLCanvasElement;
+            const ctx = cvs.getContext("2d")!;
+            ctx.clearRect(0, 0, cvs.width, cvs.height);
+            ctx.fillStyle = "rgba(255,255,255,0.9)";
+            ctx.font = "bold 40px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.shadowColor = "rgba(0,0,0,0.9)";
+            ctx.shadowBlur = 8;
+            ctx.fillText(text, 64, 32);
+            (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
+          }
+          sprite.position.set(pStart.x, 34, -pStart.z);
+          sprite.visible = true;
+        }
       }
       // Aircraft formations: full squadrons (GameParams size, e.g. 8 planes)
       // arranged in a wedge and slowly circling. Modeled formations drive
@@ -2376,41 +2681,46 @@ export default defineComponent({
         for (const [planeId, anchor] of formationAnchor) {
           const pool = planeMeshes.get(planeId);
           const formation = planeFormations.get(planeId);
-          const count = formation?.count ?? 3;
+          const total = formation?.count ?? 3;
+          const gCount = formation?.groupCount ?? total;
+          const gSize = formation?.groupSize ?? 1;
+          // Filled-wedge layout over flight groups (leader front, groups
+          // stepping back 1-2-3-…, leftover groups centered in the last row).
+          const offsets = formationOffsets(gCount, gSize);
+          const n = Math.min(total, offsets.length);
           // Slow circle so airborne squadrons visibly hold a patrol orbit.
           const ang = t * 0.22 + (planeId % 7) * 0.9;
           const R = 50;
-          const cx = anchor.s.x + Math.cos(ang) * R;
-          const cz = anchor.s.z + Math.sin(ang) * R;
           // Heading follows the patrol-circle TANGENT (the direction the
           // formation is actually moving) so the wedge turns as it orbits
           // instead of sliding sideways pointing at a fixed heading.
           const yaw = Math.atan2(-Math.sin(ang), Math.cos(ang));
           const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
           const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
+          // Orbit CENTRE = the formation's geometric centroid (not the lead
+          // plane) — a filled wedge visibly spins around its middle, like the
+          // in-game flight circle. The centroid sits at the anchor plus the
+          // (heading-rotated) mean offset of all aircraft.
+          const cxm = offsets.reduce((a, o) => a + o.ox, 0) / Math.max(1, offsets.length);
+          const czm = offsets.reduce((a, o) => a + o.oz, 0) / Math.max(1, offsets.length);
+          const ccx = anchor.s.x + cxm * right.x + czm * fwd.x;
+          const ccz = anchor.s.z + cxm * right.z + czm * fwd.z;
+          const cx = ccx + Math.cos(ang) * R;
+          const cz = ccz + Math.sin(ang) * R;
           const yBase = Math.max(60, anchor.s.y);
-          if (pool && pool.length >= count) {
-            for (let i = 0; i < count; i++) {
+          if (pool && pool.length >= n) {
+            for (let i = 0; i < n; i++) {
               const mesh = pool[i];
               mesh.visible = true;
-              // Tight wedge (梯形): leader ahead, pairs stepping back on both
-              // sides, with small per-slot altitude offsets (real formations
-              // fly staggered, not on one plane).
-              let ox = 0, oz = 0;
-              if (i > 0) {
-                const row = Math.ceil(i / 2);
-                const side = i % 2 === 1 ? -1 : 1;
-                const spacing = 15;
-                const depth = 13;
-                ox = side * row * spacing * right.x - row * depth * fwd.x;
-                oz = side * row * spacing * right.z - row * depth * fwd.z;
-              }
+              const o = offsets[i];
+              const ox = (o.ox - cxm) * right.x + (o.oz - czm) * fwd.x;
+              const oz = (o.ox - cxm) * right.z + (o.oz - czm) * fwd.z;
               const yOff = (i % 3) * 2 - 2; // -2 / 0 / +2 alternating
               mesh.position.set(cx + ox, yBase + yOff, -cz + oz);
               mesh.rotation.y = Math.PI - yaw;
             }
           } else {
-            // No model pool (yet): fall back to a point at the anchor.
+            // No model pool (yet): fall back to a point at the centroid.
             if (arr) {
               arr[(planeId % 16) * 3] = cx;
               arr[(planeId % 16) * 3 + 1] = yBase;
@@ -2805,10 +3115,11 @@ export default defineComponent({
      *  HP streams) so scrubbing reproduces the same result. */
     function updateCapsAndScore(t: number) {
       const zones = capZones.value;
-      // Scoring parameters by mode + map.
+      const scoring = scoringZones.value;
+      // Scoring parameters by mode + map (based on REAL capture points).
       const isRanked = props.matchGroup === "ranked" || props.matchGroup === "clan";
       const special = SPECIAL_CAP_MAPS.has(props.mapName);
-      const nAreas = zones.length;
+      const nAreas = scoring.length;
       const startPts = special ? 150 : isRanked ? 300 : nAreas >= 4 ? 200 : 300;
       const capCompletePts = special ? 40 : isRanked ? (nAreas >= 4 ? 2 : 9) : nAreas >= 4 ? 4 : 3;
       // Accrual: (every N seconds, +P per controlled area).
@@ -2860,10 +3171,27 @@ export default defineComponent({
       // pauses accrual while a point is contested), plus per-zone live capture
       // state for the UI.
       const display: CapZoneState[] = [];
+      const scoringSet = new Set(scoring.map((z) => z.entityId));
       for (let i = 0; i < zones.length; i++) {
         const zone = zones[i];
         const eid = zone.entityId;
         const samples = (zone.capSamples ?? []).map((s) => ({ time: s.time, value: s.value }));
+        if (!scoringSet.has(eid)) {
+          // Strike/event zone: rendered, never scored, no capture sim.
+          const { ally, enemy } = shipsInZone(zone, t);
+          display.push({
+            letter: String.fromCharCode(65 + i),
+            owner: 0,
+            progress: 0,
+            alliesIn: ally,
+            enemiesIn: enemy,
+            contested: false,
+            capturing: false,
+            speed: 1 / 60,
+            captureTeam: 0,
+          });
+          continue;
+        }
         // Capture simulation: replay from scratch on scrub-back, else advance.
         let st = capSim.get(eid);
         if (!st || st.lastT > t) {
@@ -3437,7 +3765,15 @@ export default defineComponent({
                   </span>
                   <span class="holo-map__kill-ship">{k.shipName}</span>
                 </span>
-                <span class="holo-map__kill-name">{k.text}</span>
+                <span class="holo-map__kill-name">
+                  {k.killerName ? (
+                    <>
+                      <b class="holo-map__kill-killer">{k.killerName}</b> 击沉 {k.text}
+                    </>
+                  ) : (
+                    k.text
+                  )}
+                </span>
               </div>
             ))}
           </div>

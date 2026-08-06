@@ -595,6 +595,10 @@
   color: rgba(255, 255, 255, 0.55);
   line-height: 1;
 }
+.holo-map__kill-killer {
+  color: rgb(var(--color-accent));
+  font-weight: 700;
+}
 @keyframes holo-kill-in {
   from { opacity: 0; translate: 0 -8px; }
   to { opacity: 1; translate: 0 0; }
