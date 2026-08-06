@@ -323,7 +323,7 @@
   &__postbattle-detail-ribbon {
     position: relative;
     display: inline-flex;
-    img { display: block; }
+    img { display: block; border-radius: 2px; }
     em {
       position: absolute;
       right: -4px;
@@ -337,6 +337,23 @@
       padding: 0 3px;
       line-height: 12px;
     }
+  }
+  &__postbattle-damage-unknown {
+    font-style: normal;
+    color: #ffd93d;
+    font-size: 16px;
+    vertical-align: super;
+    cursor: help;
+  }
+  &__postbattle-settlement {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: var(--text-2xs);
+    color: rgba(255, 255, 255, 0.7);
+    b { color: #ffd93d; font-family: var(--font-mono); margin-left: 4px; }
   }
   &__postbattle-raw {
     margin-top: 0.6rem;

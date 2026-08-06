@@ -307,6 +307,14 @@ const PostBattlePanel = defineComponent({
                   <div class="replay-view__postbattle-detail-damage">
                     <span class="replay-view__postbattle-detail-damage-num">
                       {sel.damage.toLocaleString()}
+                      {sel.accountId !== pb.selfId ? (
+                        <em
+                          class="replay-view__postbattle-damage-unknown"
+                          title="录像不包含完整的对局信息，部分伤害来源不可见"
+                        >
+                          *
+                        </em>
+                      ) : null}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
                       伤害 · 击沉 {sel.frags}
@@ -325,13 +333,21 @@ const PostBattlePanel = defineComponent({
                           class="replay-view__postbattle-detail-ribbon"
                           title={`${name} ×${x.value}${verified ? "" : "（推测）"}`}
                         >
-                          <img src={bundledRibbonUrl(key) ?? ""} width={22} height={22} alt="" />
+                          <img src={bundledRibbonUrl(key) ?? ""} width={40} height={15} alt="" />
                           <em>{x.value}</em>
                         </span>
                       );
                     })}
                   </div>
                 </div>
+                {/* Own full settlement data — the replay only streams the
+                    recorder's private results. */}
+                {sel.accountId === pb.selfId && (pb.selfExp != null || pb.selfCredits != null) ? (
+                  <div class="replay-view__postbattle-settlement">
+                    <span>经验 <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
+                    <span>银币 <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
+                  </div>
+                ) : null}
                 {/* On-demand global stats (toast while loading) */}
                 <div class="replay-view__postbattle-global">
                   {globalLoading.value ? (

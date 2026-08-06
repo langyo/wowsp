@@ -111,6 +111,10 @@ export interface PostBattleData {
   mode: string | null;
   /** The recorder's account id (battleResults.accountDBID), when present. */
   selfId: number | null;
+  /** The recorder's own private settlement (battleResults.privateDataList):
+   *  [credits, _, _, exp] at index 7. Only the recorder's data is streamed. */
+  selfExp: number | null;
+  selfCredits: number | null;
   raw: string;
 }
 
@@ -169,10 +173,21 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
     const m = common.find((v) => typeof v === "string" && v.includes("_"));
     if (typeof m === "string") mode = m;
   }
+  // Own private settlement: privateDataList[7] = [credits, _, _, exp, _].
+  let selfExp: number | null = null;
+  let selfCredits: number | null = null;
+  const pdl = (br.privateDataList as unknown[] | undefined) ?? null;
+  if (Array.isArray(pdl) && Array.isArray(pdl[7])) {
+    const p7 = pdl[7] as unknown[];
+    if (typeof p7[3] === "number") selfExp = p7[3] as number;
+    if (typeof p7[0] === "number") selfCredits = p7[0] as number;
+  }
   return {
     players,
     mode,
     selfId: typeof br.accountDBID === "number" ? (br.accountDBID as number) : null,
+    selfExp,
+    selfCredits,
     raw,
   };
 }
