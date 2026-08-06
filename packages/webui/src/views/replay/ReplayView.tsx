@@ -241,7 +241,6 @@ const PostBattlePanel = defineComponent({
                 type={shipTypeOf(p.shipId)}
                 variant={p.alive ? (p.team === 2 ? "enemy" : p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
                 size={20}
-                style={p.team === 2 ? { transform: "scaleX(-1)" } : undefined}
               />
             ) : null}
           </span>
@@ -306,7 +305,6 @@ const PostBattlePanel = defineComponent({
                           type={shipTypeOf(sel.shipId)}
                           variant={sel.alive ? (sel.team === 2 ? "enemy" : "ally") : "sunk"}
                           size={24}
-                          style={sel.team === 2 ? { transform: "scaleX(-1)" } : undefined}
                         />
                       ) : null}
                     </span>
