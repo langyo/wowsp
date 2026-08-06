@@ -124,8 +124,39 @@
 
 .lookup-view__controls {
   display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.lookup-view__controlrow {
+  display: flex;
+  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.lookup-view__search {
+  margin-left: auto;
+  width: 220px;
+  flex: 0 0 auto;
+}
+
+.lookup-view__sort {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  &--on {
+    background: rgb(var(--color-accent) / 22%);
+    border-color: rgb(var(--color-accent) / 50%);
+    color: rgb(var(--color-accent));
+  }
 }
 
 .lookup-view__typegrid {
