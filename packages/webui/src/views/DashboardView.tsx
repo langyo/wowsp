@@ -21,6 +21,7 @@ import {
   SHIP_TYPE_SHORT,
   type DateRange,
 } from "@/utils/shipAggregation";
+import { shipNameFromModelDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import "./DashboardView.scss";
 
@@ -175,7 +176,11 @@ export default defineComponent({
       return SHIP_TYPE_SHORT[info?.type ?? "Unknown"] ?? "?";
     }
     function shipName(shipId: number, fallbackName: string): string {
-      return encyclopedia.byId.get(shipId)?.name ?? fallbackName ?? `#${shipId}`;
+      return (
+        encyclopedia.byId.get(shipId)?.name ??
+        shipNameFromOfflineDb(shipId, "zh-CN") ??
+        (fallbackName || shipNameFromModelDb(shipId) || `#${shipId}`)
+      );
     }
     function formatDate(epochSec: number): string {
       if (!epochSec) return "—";

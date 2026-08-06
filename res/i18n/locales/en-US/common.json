@@ -25,6 +25,7 @@
     }
   },
   "search": {
-    "fuzzy": "Fuzzy search"
+    "fuzzy": "Fuzzy search",
+    "hint": "Type a ship name, pinyin, or English name"
   }
 }
