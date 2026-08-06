@@ -114,7 +114,7 @@ pickled = { version = "2.0.0-alpha9" }
 winnow = "1.0"
 paste = "1"
 roxmltree = "0.21"
-itertools = "0.14"
+itertools = "0.15"
 gettext = "0.4"
 convert_case = "0.11"
 indicatif = "0.18.4"
