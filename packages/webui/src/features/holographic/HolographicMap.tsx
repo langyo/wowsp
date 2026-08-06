@@ -323,7 +323,12 @@ export default defineComponent({
     // Transient "X sunk" feed, newest first; entries expire after a few seconds.
     interface KillEvent {
       id: number;
+      /** Victim's player nickname. */
       text: string;
+      /** Victim's ship display name. */
+      shipName: string;
+      /** Victim's ship type (for the HUD icon). */
+      shipType: string | null;
       role: TeamRole;
     }
     const killFeed = ref<KillEvent[]>([]);
@@ -417,7 +422,6 @@ export default defineComponent({
     /** Recorder aim line to the currently locked target (SetWeaponLock). */
     let lockLine: THREE.Mesh | null = null;
     /** Big ring over the locked target (same render path as splash rings). */
-    let lockRing: THREE.Mesh | null = null;
     /** Aircraft formation cloud (one point per plane, from the avatar's
      *  receive_updateSquadron stream) — fallback for planes without a baked
      *  model; modeled planes render as GLB meshes in `planeMeshes`. */
@@ -1041,12 +1045,6 @@ export default defineComponent({
         lockLine.geometry.dispose();
         (lockLine.material as THREE.Material).dispose();
         lockLine = null;
-      }
-      if (lockRing) {
-        scene.remove(lockRing);
-        lockRing.geometry.dispose();
-        (lockRing.material as THREE.Material).dispose();
-        lockRing = null;
       }
       if (planeCloud) {
         scene.remove(planeCloud);
@@ -1684,22 +1682,7 @@ export default defineComponent({
         const line = new THREE.Line(lockGeom, lockMat);
         line.visible = false;
         scene.add(line);
-        // Big ring over the locked target so the lock reads at full-map zoom.
-        // RingGeometry + scale (same render path as the splash rings, which
-        // are known to render; plain torus meshes don't show in this scene).
-        const ringGeom = new THREE.RingGeometry(0.35, 1, 32);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xffcc33,
-          transparent: true,
-          opacity: 0.9,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-        const ring = new THREE.Mesh(ringGeom, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.visible = false;
-        scene.add(ring);
-        lockRing = ring;
+        lockLine = line;
         lockLine = line as unknown as THREE.Mesh;
       }
 
@@ -2296,6 +2279,8 @@ export default defineComponent({
               killFeed.value.unshift({
                 id: feedId,
                 text: who,
+                shipName: label?.shipName ?? "",
+                shipType: label?.type ?? null,
                 role: victimRole,
               });
               if (killFeed.value.length > 4) killFeed.value.pop();
@@ -2547,7 +2532,6 @@ export default defineComponent({
           selfMarker != null &&
           targetMarker != null;
         lockLine.visible = on;
-        if (lockRing) lockRing.visible = on;
         if (on && selfMarker && targetMarker) {
           const a = selfMarker.position;
           const b = targetMarker.position;
@@ -2555,10 +2539,6 @@ export default defineComponent({
           attr.setXYZ(0, a.x, 30, a.z);
           attr.setXYZ(1, b.x, 30, b.z);
           attr.needsUpdate = true;
-          if (lockRing) {
-            lockRing.position.set(b.x, 60, b.z);
-            lockRing.scale.setScalar(90 * (1 + 0.12 * Math.sin(t * 4)));
-          }
         }
       }
       // Aircraft labels (one per carrier): sync name/HP from the carrier and
@@ -3419,14 +3399,27 @@ export default defineComponent({
           ) : null}
           </>
         ) : null}
-        {/* Kill feed (sink notifications) */}
+        {/* Kill feed (sink notifications) — bottom-left, two-line entries:
+            ship icon + ship name on top, player nickname underneath aligned
+            with the ship name. */}
         {killFeed.value.length > 0 ? (
           <div class="holo-map__killfeed">
             {killFeed.value.map((k) => (
               <div key={k.id} class={["holo-map__kill", `holo-map__kill--${k.role}`]}>
-                <span class="holo-map__kill-cross">✕</span>
+                <span class="holo-map__kill-line">
+                  <span class="holo-map__kill-ico">
+                    {k.shipType ? (
+                      <BattleIcon
+                        kind="ship"
+                        type={k.shipType}
+                        variant={k.role === "ally" ? "ally" : "enemy"}
+                        size={13}
+                      />
+                    ) : null}
+                  </span>
+                  <span class="holo-map__kill-ship">{k.shipName}</span>
+                </span>
                 <span class="holo-map__kill-name">{k.text}</span>
-                <span class="holo-map__kill-pts">+1</span>
               </div>
             ))}
           </div>
