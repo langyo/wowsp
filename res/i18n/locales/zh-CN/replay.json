@@ -74,5 +74,9 @@
   "origview": {
     "on": "原视角",
     "off": "自由视角"
-  }
+  },
+  "selfStats": "本舰",
+  "selfHits": "命中",
+  "selfFrags": "击沉",
+  "selfDamage": "伤害"
 }

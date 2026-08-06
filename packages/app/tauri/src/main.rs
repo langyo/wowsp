@@ -222,6 +222,7 @@ fn main() {
             commands::appdata::get_game_process,
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
+            commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
             commands::replay::list_replays,

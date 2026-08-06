@@ -75,8 +75,9 @@ function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
 }
 import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
-import { parsePostBattle, type PostBattlePlayer } from "@/features/replay/postBattle";
+import { bundledRibbonUrl, ribbonUrl } from "./ribbonIcons";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useConfigStore } from "@/stores/config";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
 import { t } from "@/i18n";
@@ -229,34 +230,89 @@ export default defineComponent({
       };
       const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
       const enemies = props.vehicles.filter((v) => v.relation > 1).map(mk);
-      const sort = (a: ShipRowEntry, b: ShipRowEntry) => Number(a.dead) - Number(b.dead);
-      allies.sort(sort);
-      enemies.sort(sort);
+      // Ship-size weight: carriers/battleships biggest, subs smallest. Sunk
+      // ships form their own group at the outer edge of each side (allies:
+      // leftmost, enemies: rightmost); within each group the biggest ships
+      // sit at the outer edge — mirror image of each other.
+      const sizeOf = (r: ShipRowEntry): number => {
+        const t = (r.type ?? "").toLowerCase();
+        if (t.includes("aircarrier") || t.includes("aircar")) return 5;
+        if (t.includes("battleship")) return 4;
+        if (t.includes("cruiser")) return 3;
+        if (t.includes("destroyer")) return 2;
+        if (t.includes("submarine")) return 1;
+        return 0;
+      };
+      // Allies: sunk group first (left edge), then alive; big ships to the
+      // left within each group.
+      const sortAlly = (a: ShipRowEntry, b: ShipRowEntry) =>
+        Number(b.dead) - Number(a.dead) || sizeOf(b) - sizeOf(a);
+      // Enemies: alive group first, sunk group last (right edge); big ships
+      // to the right within each group.
+      const sortEnemy = (a: ShipRowEntry, b: ShipRowEntry) =>
+        Number(a.dead) - Number(b.dead) || sizeOf(a) - sizeOf(b);
+      allies.sort(sortAlly);
+      enemies.sort(sortEnemy);
       return { allies, enemies };
     });
-    // Post-battle damage board (top-right, next to the scorebar): parsed from
-    // the BattleResults payload, sorted by damage. Ships with no roster name
-    // fall back to the raw account id.
-    const postBattle = computed(() => parsePostBattle(props.battleResults || null));
-    const damageBoard = computed(() => {
-      const pb = postBattle.value;
-      if (!pb) return [];
-      const dataLang = useLanguage().dataLanguage.value;
-      return pb.players.map((p: PostBattlePlayer) => ({
-        ...p,
-        shipName: shipNameFromOfflineDb(p.shipId, dataLang) ?? "",
-      }));
+    // Live self statistics (top-right): derived from the explosion stream,
+    // tracking the current playhead. An explosion counts as the recorder's
+    // when its bearing matches the own ship's heading at that moment (same
+    // heuristic as shell-arc reconstruction). Damage is the HP loss of enemy
+    // ships near the impact right after it; a sinking near an impact counts
+    // as a frag.
+    const selfStats = computed(() => {
+      const selfTraj = props.trajectories.find(
+        (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(tr) === "self",
+      );      if (!selfTraj || selfTraj.samples.length === 0) return null;
+      let hits = 0;
+      let damage = 0;
+      let frags = 0;
+      for (const e of props.explosions) {
+        if (e.time > current.value) continue; // not time-sorted in all dumps
+        const s = sampleAt(selfTraj, e.time);
+        if (!s) continue;
+        const dist = Math.hypot(s.x - e.x, s.z - e.z);
+        if (dist < 300 || dist > 15000) continue;
+        const aim = Math.atan2(e.x - s.x, e.z - s.z);
+        let dAim = Math.abs(aim - s.yaw);
+        if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
+        if (dAim > 0.35) continue; // ~20° firing cone
+        hits++;
+        // Damage: enemy HP drop across the impact (500 m window).
+        for (const tr of props.trajectories) {
+          if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
+          const at = sampleAt(tr, e.time);
+          if (!at) continue;
+          if (Math.hypot(at.x - e.x, at.z - e.z) > 500) continue;
+          const hpBefore = hpAtTime(tr.hpSamples, e.time - 0.4);
+          const hpAfter = hpAtTime(tr.hpSamples, e.time + 0.6);
+          if (hpBefore != null && hpAfter != null && hpBefore - hpAfter > 50) {
+            damage += hpBefore - hpAfter;
+          }
+          const death = tr.deathTime;
+          if (death != null && Math.abs(death - e.time) < 1.2) {
+            frags++;
+          }
+        }
+      }
+      return { hits, damage, frags };
     });
-    /** Top damage value (for scaling the board's bars). */
-    const damageMax = computed(() =>
-      Math.max(1, ...damageBoard.value.map((p) => p.damage)),
-    );
+    /** Ribbon icon URLs for the self-stats bar, resolved from res_mods skins
+     *  (falls back to bundled art). */
+    const selfRibbonUrls = ref<{ hits: string | null; frags: string | null }>({
+      hits: null,
+      frags: null,
+    });
+    onMounted(() => {
+      const path = useConfigStore().activeInstall?.path;
+      void Promise.all([ribbonUrl("main_caliber", path), ribbonUrl("frag", path)]).then(
+        ([hits, frags]) => {
+          selfRibbonUrls.value = { hits, frags };
+        },
+      );
+    });
     /** Ship class for a shipId (encyclopedia → offline DB → "". */
-    function shipTypeOfShipId(shipId: number): string {
-      const info = props.encyclopedia.get(shipId) as ShipInfo | undefined;
-      if (info?.type) return info.type;
-      return shipOfflineEntry(shipId)?.type ?? "";
-    }
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
     const capStatus = ref([0, 0, 0]);
     // Estimated match score: kills (1 pt) + fully-held cap points (3 pts each).
@@ -583,14 +639,12 @@ export default defineComponent({
         if (icon && icon.complete && icon.naturalWidth > 0) {
           const sz = 15;
           // Rotate the icon to the ship's heading. The HUD art's pointy end
-          // faces RIGHT (+x = east; unrotated icons all pointed right, as
-          // seen before rotation was added). yaw is clockwise from north
-          // (canvas up), so the heading maps to rotate(yaw - PI/2) — the 3D
-          // marker's bow points along (sin yaw, 0, -cos yaw) in world space,
-          // which projects to the same direction on the canvas.
+          // faces UP (north) when unrotated, and yaw is clockwise from
+          // north (canvas up), so the heading maps to rotate(yaw) — matching
+          // the 3D marker (rotation.y = PI - yaw on the mirrored frame).
           ctx.save();
           ctx.translate(cx, cz);
-          ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+          ctx.rotate(m.userData.yaw as number ?? 0);
           ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
           ctx.restore();
           continue;
@@ -636,7 +690,7 @@ export default defineComponent({
             const sz = 10;
             ctx.save();
             ctx.translate(wx(s.x), wz(-s.z));
-            ctx.rotate(s.yaw);
+            // Aircraft icons stay upright on the minimap (no rotation).
             ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
             ctx.restore();
           } else {
@@ -723,7 +777,7 @@ export default defineComponent({
               const sz = 26;
               zctx.save();
               zctx.translate(cx, cz);
-              zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+              zctx.rotate(m.userData.yaw as number ?? 0);
               zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
               zctx.restore();
               continue;
@@ -767,7 +821,7 @@ export default defineComponent({
                 const sz = 22;
                 zctx.save();
                 zctx.translate(zwx(s.x), zwz(-s.z));
-                zctx.rotate(s.yaw);
+                // Aircraft icons stay upright on the minimap (no rotation).
                 zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
                 zctx.restore();
               } else {
@@ -2220,8 +2274,9 @@ export default defineComponent({
           }
           marker.visible = false;
           if (label) {
+            // Sunk ships keep the dead tag — no "gone for N s" counter.
             label.visible = true;
-            label.ghostText = `已消失 ${(t - deathTime!).toFixed(1)} s`;
+            label.ghostText = null;
           }
           if (!marker.userData._countedDead) {
             marker.userData._countedDead = true;
@@ -2249,6 +2304,9 @@ export default defineComponent({
         marker.visible = true;
         marker.position.set(s.x, 0, -s.z);
         marker.rotation.y = Math.PI - s.yaw;
+        // Keep the minimap's heading in sync — userData.yaw must track the
+        // playhead, not just the initial load.
+        marker.userData.yaw = s.yaw;
         if (label) {
           label.ghostText = null;
           const currentHp = hpAtTime(traj.hpSamples, tEff);
@@ -2376,9 +2434,11 @@ export default defineComponent({
       for (const st of shellTraces) {
         const inFlight = t >= st.t0 && t <= st.t1;
         const flashOn = t >= st.t1 && t <= st.t1 + 1;
-        // Traces whose impact point lies outside the fitted battle bounds are
-        // stray data — hide the whole trace so it can't flash out in space.
-        const impactIn = inBounds(st.to.x, st.to.z);
+        // Traces whose launch OR impact point lies outside the fitted battle
+        // bounds are stray data — hide the whole trace so it can't flash out
+        // in empty space (both endpoints must be in-bounds).
+        const fromP = st.from();
+        const impactIn = inBounds(st.to.x, st.to.z) && !!fromP && inBounds(fromP.x, fromP.z);
         st.flash.visible = flashOn && impactIn;
         st.halo.visible = flashOn && impactIn;
         st.line.visible = inFlight && impactIn;
@@ -2524,7 +2584,8 @@ export default defineComponent({
             if (!trail || trail.samples.length === 0) continue;
             const first = trail.samples[0].time;
             const last = trail.samples[trail.samples.length - 1].time;
-            if (t >= first && t <= last + 120) {
+            // Squadron is gone 5s after its last sample — no lingering labels.
+            if (t >= first && t <= last + 5) {
               visible = true;
               break;
             }
@@ -3199,7 +3260,7 @@ export default defineComponent({
                 ) : null}
                 {lbl.shipName}
               </span>
-              {lbl.hp != null && !lbl.ghostText ? (
+              {lbl.hp != null && !lbl.ghostText && !lbl.dead ? (
                 <span class="holo-label__hp">
                   {lbl.maxHp != null ? (
                     <span class="holo-label__hp-bar">
@@ -3315,35 +3376,31 @@ export default defineComponent({
               ))}
             </span>
           </div>
-          {/* Post-battle damage board (top-right, same height band as the
-              scorebar): each player's damage with the ship icon + name. */}
-          {damageBoard.value.length > 0 ? (
+          {/* Live self statistics (top-right): a slim long bar matching the
+              in-game strip, using res_mods ribbon skins when available. */}
+          {selfStats.value ? (
             <div class="holo-map__damage">
-              <div class="holo-map__damage-title">战后统计</div>
-              {damageBoard.value.map((p) => (
-                <div key={p.accountId} class="holo-map__damage-row">
-                  <span class="holo-map__damage-ico">
-                    {p.shipId != null ? (
-                      <BattleIcon
-                        type={shipTypeOfShipId(p.shipId)}
-                        variant={p.alive ? "ally" : "sunk"}
-                        size={12}
-                      />
-                    ) : null}
-                  </span>
-                  <span class="holo-map__damage-name" title={p.name}>{p.name}</span>
-                  <span class="holo-map__damage-bar">
-                    <span
-                      class="holo-map__damage-fill"
-                      style={{
-                        width: `${(p.damage / damageMax.value) * 100}%`,
-                        background: p.alive ? "#3cb478" : "#666",
-                      }}
-                    />
-                  </span>
-                  <span class="holo-map__damage-num">{p.damage.toLocaleString()}</span>
-                </div>
-              ))}
+              <div class="holo-map__selfstat">
+                <img
+                  src={selfRibbonUrls.value.hits ?? bundledRibbonUrl("main_caliber") ?? ""}
+                  width={26}
+                  height={10}
+                  alt=""
+                />
+                <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
+              </div>
+              <div class="holo-map__selfstat">
+                <img
+                  src={selfRibbonUrls.value.frags ?? bundledRibbonUrl("frag") ?? ""}
+                  width={26}
+                  height={10}
+                  alt=""
+                />
+                <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
+              </div>
+              <div class="holo-map__selfstat holo-map__selfstat--dmg">
+                <strong class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</strong>
+              </div>
             </div>
           ) : null}
           </>
