@@ -10,6 +10,7 @@
  */
 import { computed, defineComponent, onMounted, ref, watch } from "vue";
 import type { PlayerShipStats } from "@/api";
+import { ArrowDown, ArrowUp } from "lucide-vue-next";
 
 import SSegmented from "@/components/base/SSegmented";
 import SSearchInput from "@/components/base/SSearchInput";
@@ -255,12 +256,12 @@ export default defineComponent({
             modelValue={minBattles.value}
             onUpdate:modelValue={(v: string) => (minBattles.value = v)}
             options={[
-              { value: "", label: "全部场次" },
-              { value: "10", label: "≥10 场" },
-              { value: "50", label: "≥50 场" },
-              { value: "100", label: "≥100 场" },
+              { value: "", label: "全部" },
+              { value: "30", label: "≥30 场" },
+              { value: "60", label: "≥60 场" },
             ]}
           />
+          {/* Sort — segmented group; clicking the active key flips direction. */}
           <div class="ship-filter-bar__sort">
             {(
               [
@@ -268,14 +269,24 @@ export default defineComponent({
                 ["winrate", t("dashboard.winrate")],
                 ["avgDamage", t("dashboard.avgDamage")],
               ] as [typeof sortKey.value, string][]
-            ).map(([key, label]) => (
+            ).map(([key, label], idx) => (
               <button
                 key={key}
-                class={["ship-filter-bar__sort-btn", sortKey.value === key ? "ship-filter-bar__sort-btn--on" : ""]}
+                class={[
+                  "ship-filter-bar__sort-btn",
+                  sortKey.value === key ? "ship-filter-bar__sort-btn--on" : "",
+                ]}
+                style={idx === 0 ? { borderRadius: "6px 0 0 6px" } : idx === 2 ? { borderRadius: "0 6px 6px 0" } : undefined}
                 onClick={() => toggleSort(key)}
               >
                 {label}
-                {sortKey.value === key ? (sortDir.value === "desc" ? " ↓" : " ↑") : null}
+                {sortKey.value === key ? (
+                  sortDir.value === "desc" ? (
+                    <ArrowDown size={11} class="ship-filter-bar__sort-arrow" />
+                  ) : (
+                    <ArrowUp size={11} class="ship-filter-bar__sort-arrow" />
+                  )
+                ) : null}
               </button>
             ))}
           </div>

@@ -34,25 +34,36 @@
 
 .ship-filter-bar__sort {
   display: inline-flex;
-  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .ship-filter-bar__sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 4px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.75);
   font-size: var(--text-2xs);
   cursor: pointer;
+  &:last-child {
+    border-right: none;
+  }
   &:hover {
     background: rgba(255, 255, 255, 0.1);
   }
   &--on {
     background: rgb(var(--color-accent) / 22%);
-    border-color: rgb(var(--color-accent) / 50%);
     color: rgb(var(--color-accent));
   }
+}
+
+.ship-filter-bar__sort-arrow {
+  opacity: 0.85;
 }
 
 .ship-filter-bar__search {
