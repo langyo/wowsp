@@ -29,6 +29,8 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor } from "@/utils/modeColors";
 import { useToast } from "@/composables/useToast";
 import { useRouter } from "vue-router";
+import StatsCard from "@/components/stats/StatsCard";
+import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
 import SButton from "@/components/base/SButton";
 import SSelect, { type SelectOption } from "@/components/base/SSelect";
@@ -163,6 +165,21 @@ const PostBattlePanel = defineComponent({
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
     const globalError = ref(false);
+    /** Battles per tier (index 1..10) and per ship type — for spotting
+     *  low-tier farmers / CV-SS specialists. */
+    const shipDistList = ref<DistDatum[]>([]);
+
+    /** Load the player's per-ship stats and aggregate tier/type distribution. */
+    async function loadShipDist(p: ReturnType<typeof rows.value>[number]) {
+      shipDistList.value = [];
+      if (!p.realm) return;
+      try {
+        const list = await api.lookupPlayerShipStats(p.accountId, p.realm);
+        shipDistList.value = list.map((s) => ({ shipId: s.shipId, battles: s.battles }));
+      } catch {
+        /* distribution unavailable — hide */
+      }
+    }
 
     /** AI/bot players have no WG account — skip the global-stats lookup.
      *  In replays they appear as ":Name:" (colon-wrapped, e.g. ":Millo:"). */
@@ -192,6 +209,7 @@ const PostBattlePanel = defineComponent({
       selected.value = p;
       detailOpen.value = true;
       void loadGlobal(p);
+      void loadShipDist(p);
     }
 
     /** Jump into the lookup screen for this player, closing both modals. */
@@ -353,14 +371,7 @@ const PostBattlePanel = defineComponent({
                   {globalLoading.value ? (
                     <span class="replay-view__postbattle-global-note">正在加载全局战绩…</span>
                   ) : globalStats.value ? (
-                    <div class="replay-view__postbattle-global-grid">
-                      <span><b>{globalStats.value.battles ?? "—"}</b> 场次</span>
-                      <span><b>{globalStats.value.winrate != null ? `${globalStats.value.winrate.toFixed(1)}%` : "—"}</b> 胜率</span>
-                      <span><b>{globalStats.value.avgDamage != null ? globalStats.value.avgDamage.toLocaleString() : "—"}</b> 均伤</span>
-                      <span><b>{globalStats.value.kdRatio != null ? globalStats.value.kdRatio.toFixed(2) : "—"}</b> K/D</span>
-                      <span><b>{globalStats.value.pr ?? "—"}</b> PR</span>
-                      <span><b>{globalStats.value.survivalRate != null ? `${globalStats.value.survivalRate.toFixed(1)}%` : "—"}</b> 存活</span>
-                    </div>
+                    <StatsCard stats={globalStats.value} />
                   ) : globalError.value ? (
                     <span class="replay-view__postbattle-global-note">
                       无法获取全局战绩（可能为 AI 玩家）
@@ -371,6 +382,14 @@ const PostBattlePanel = defineComponent({
                     </span>
                   )}
                 </div>
+                {/* Ship distribution: tier histogram + class pie — spot
+                    low-tier farmers / CV-SS specialists. */}
+                {shipDistList.value.length > 0 ? (
+                  <div class="replay-view__postbattle-dist">
+                    <div class="replay-view__postbattle-dist-title">常玩等级分布</div>
+                    <ShipDistCharts ships={shipDistList.value} />
+                  </div>
+                ) : null}
                 <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                   查看完整战绩 →
                 </button>

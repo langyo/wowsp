@@ -184,6 +184,25 @@ async def cmd_lookup_player_stats(request: Request) -> dict:
     }
 
 
+@app.post("/api/lookup_player_ship_stats")
+async def cmd_lookup_player_ship_stats(request: Request) -> list:
+    body = await request.json()
+    return [
+        {"shipId": 4265588720, "name": "Nagato", "battles": 320, "wins": 176,
+         "damageCaused": 0, "frags": 0, "survivedBattles": 120,
+         "winrate": 55.0, "avgDamage": 68200, "lastBattleTime": 0},
+        {"shipId": 4287542992, "name": "Zao", "battles": 210, "wins": 110,
+         "damageCaused": 0, "frags": 0, "survivedBattles": 80,
+         "winrate": 52.4, "avgDamage": 78500, "lastBattleTime": 0},
+        {"shipId": 4078352176, "name": "U-69", "battles": 150, "wins": 68,
+         "damageCaused": 0, "frags": 0, "survivedBattles": 55,
+         "winrate": 45.3, "avgDamage": 21000, "lastBattleTime": 0},
+        {"shipId": 4267685872, "name": "Shinano", "battles": 40, "wins": 18,
+         "damageCaused": 0, "frags": 0, "survivedBattles": 10,
+         "winrate": 45.0, "avgDamage": 0, "lastBattleTime": 0},
+    ]
+
+
 @app.get("/api/list_replays")
 async def cmd_list_replays() -> list[str]:
     return [str(p) for p in sorted(FIXTURES.glob("*.wowsreplay"))] or [
