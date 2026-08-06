@@ -74,5 +74,9 @@
   "origview": {
     "on": "Original view",
     "off": "Free view"
-  }
+  },
+  "selfStats": "Self",
+  "selfHits": "Hits",
+  "selfFrags": "Frags",
+  "selfDamage": "Damage"
 }
