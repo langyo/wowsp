@@ -59,7 +59,7 @@ reqwest = { version = "^0.12", default-features = false, features = [
 ] }
 
 # File system watching (poll tempArenaInfo.json, replay dir, dev hot-reload)
-notify = "^7"
+notify = "^8"
 
 # Replay packet-stream decryption (Blowfish ECB + zlib). The WoWS replay
 # payload is Blowfish-encrypted with a hardcoded 16-byte game key, XOR-chained
