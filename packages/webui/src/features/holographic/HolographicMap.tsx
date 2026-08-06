@@ -231,9 +231,9 @@ export default defineComponent({
       const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
       const enemies = props.vehicles.filter((v) => v.relation > 1).map(mk);
       // Ship-size weight: carriers/battleships biggest, subs smallest. Sunk
-      // ships form their own group (pushed to the outer edge, greyed out);
-      // within each group the biggest ships sit at the outer edge (allies:
-      // left edge, enemies: right edge — mirror image).
+      // ships form their own group at the outer edge of each side (allies:
+      // leftmost, enemies: rightmost); within each group the biggest ships
+      // sit at the outer edge — mirror image of each other.
       const sizeOf = (r: ShipRowEntry): number => {
         const t = (r.type ?? "").toLowerCase();
         if (t.includes("aircarrier") || t.includes("aircar")) return 5;
@@ -243,8 +243,12 @@ export default defineComponent({
         if (t.includes("submarine")) return 1;
         return 0;
       };
+      // Allies: sunk group first (left edge), then alive; big ships to the
+      // left within each group.
       const sortAlly = (a: ShipRowEntry, b: ShipRowEntry) =>
-        Number(a.dead) - Number(b.dead) || sizeOf(b) - sizeOf(a);
+        Number(b.dead) - Number(a.dead) || sizeOf(b) - sizeOf(a);
+      // Enemies: alive group first, sunk group last (right edge); big ships
+      // to the right within each group.
       const sortEnemy = (a: ShipRowEntry, b: ShipRowEntry) =>
         Number(a.dead) - Number(b.dead) || sizeOf(a) - sizeOf(b);
       allies.sort(sortAlly);
@@ -635,14 +639,12 @@ export default defineComponent({
         if (icon && icon.complete && icon.naturalWidth > 0) {
           const sz = 15;
           // Rotate the icon to the ship's heading. The HUD art's pointy end
-          // faces RIGHT (+x = east; unrotated icons all pointed right, as
-          // seen before rotation was added). yaw is clockwise from north
-          // (canvas up), so the heading maps to rotate(yaw - PI/2) — the 3D
-          // marker's bow points along (sin yaw, 0, -cos yaw) in world space,
-          // which projects to the same direction on the canvas.
+          // faces UP (north) when unrotated, and yaw is clockwise from
+          // north (canvas up), so the heading maps to rotate(yaw) — matching
+          // the 3D marker (rotation.y = PI - yaw on the mirrored frame).
           ctx.save();
           ctx.translate(cx, cz);
-          ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+          ctx.rotate(m.userData.yaw as number ?? 0);
           ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
           ctx.restore();
           continue;
@@ -688,7 +690,7 @@ export default defineComponent({
             const sz = 10;
             ctx.save();
             ctx.translate(wx(s.x), wz(-s.z));
-            ctx.rotate(s.yaw);
+            // Aircraft icons stay upright on the minimap (no rotation).
             ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
             ctx.restore();
           } else {
@@ -775,7 +777,7 @@ export default defineComponent({
               const sz = 26;
               zctx.save();
               zctx.translate(cx, cz);
-              zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+              zctx.rotate(m.userData.yaw as number ?? 0);
               zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
               zctx.restore();
               continue;
@@ -819,7 +821,7 @@ export default defineComponent({
                 const sz = 22;
                 zctx.save();
                 zctx.translate(zwx(s.x), zwz(-s.z));
-                zctx.rotate(s.yaw);
+                // Aircraft icons stay upright on the minimap (no rotation).
                 zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
                 zctx.restore();
               } else {
@@ -2429,9 +2431,11 @@ export default defineComponent({
       for (const st of shellTraces) {
         const inFlight = t >= st.t0 && t <= st.t1;
         const flashOn = t >= st.t1 && t <= st.t1 + 1;
-        // Traces whose impact point lies outside the fitted battle bounds are
-        // stray data — hide the whole trace so it can't flash out in space.
-        const impactIn = inBounds(st.to.x, st.to.z);
+        // Traces whose launch OR impact point lies outside the fitted battle
+        // bounds are stray data — hide the whole trace so it can't flash out
+        // in empty space (both endpoints must be in-bounds).
+        const fromP = st.from();
+        const impactIn = inBounds(st.to.x, st.to.z) && !!fromP && inBounds(fromP.x, fromP.z);
         st.flash.visible = flashOn && impactIn;
         st.halo.visible = flashOn && impactIn;
         st.line.visible = inFlight && impactIn;
@@ -2577,7 +2581,8 @@ export default defineComponent({
             if (!trail || trail.samples.length === 0) continue;
             const first = trail.samples[0].time;
             const last = trail.samples[trail.samples.length - 1].time;
-            if (t >= first && t <= last + 120) {
+            // Squadron is gone 5s after its last sample — no lingering labels.
+            if (t >= first && t <= last + 5) {
               visible = true;
               break;
             }
@@ -3252,7 +3257,7 @@ export default defineComponent({
                 ) : null}
                 {lbl.shipName}
               </span>
-              {lbl.hp != null && !lbl.ghostText ? (
+              {lbl.hp != null && !lbl.ghostText && !lbl.dead ? (
                 <span class="holo-label__hp">
                   {lbl.maxHp != null ? (
                     <span class="holo-label__hp-bar">
@@ -3375,8 +3380,8 @@ export default defineComponent({
               <div class="holo-map__selfstat">
                 <img
                   src={selfRibbonUrls.value.hits ?? bundledRibbonUrl("main_caliber") ?? ""}
-                  width={16}
-                  height={16}
+                  width={26}
+                  height={10}
                   alt=""
                 />
                 <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
@@ -3384,8 +3389,8 @@ export default defineComponent({
               <div class="holo-map__selfstat">
                 <img
                   src={selfRibbonUrls.value.frags ?? bundledRibbonUrl("frag") ?? ""}
-                  width={16}
-                  height={16}
+                  width={26}
+                  height={10}
                   alt=""
                 />
                 <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
