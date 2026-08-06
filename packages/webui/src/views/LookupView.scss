@@ -124,8 +124,49 @@
 
 .lookup-view__controls {
   display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.lookup-view__controlrow {
+  display: flex;
+  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.lookup-view__filter,
+.lookup-view__sort {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  &--on {
+    background: rgb(var(--color-accent) / 22%);
+    border-color: rgb(var(--color-accent) / 50%);
+    color: rgb(var(--color-accent));
+  }
+}
+
+.lookup-view__shipsearch {
+  flex: 0 0 150px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: var(--text-2xs);
+  &:focus {
+    outline: none;
+    border-color: rgb(var(--color-accent) / 60%);
+  }
 }
 
 .lookup-view__typegrid {

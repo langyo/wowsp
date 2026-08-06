@@ -56,6 +56,55 @@ const TYPE_SHORT: Record<string, string> = {
   Unknown: "?",
 };
 
+/** Full Chinese names for the type filter row. */
+const TYPE_FILTERS: [string, string][] = [
+  ["AirCarrier", "航母"],
+  ["Battleship", "战列"],
+  ["Cruiser", "巡洋"],
+  ["Destroyer", "驱逐"],
+  ["Submarine", "潜艇"],
+];
+
+const NATION_LABELS: Record<string, string> = {
+  usa: "美国",
+  japan: "日本",
+  germany: "德国",
+  uk: "英国",
+  france: "法国",
+  ussr: "苏联",
+  italy: "意大利",
+  pan_asia: "泛亚",
+  pan_europe: "泛欧",
+  pan_america: "泛美",
+  netherlands: "荷兰",
+  sweden: "瑞典",
+  poland: "波兰",
+  europe: "欧洲",
+  commonwealth: "英联邦",
+  spain: "西班牙",
+};
+
+const TIER_FILTERS: [string, string][] = [
+  ["I–V", "I – V"],
+  ["VI–VII", "VI – VII"],
+  ["VIII–IX", "VIII – IX"],
+  ["X–★", "X – ★"],
+];
+
+function bracketTiers(key: string): number[] {
+  switch (key) {
+    case "I–V":
+      return [1, 2, 3, 4, 5];
+    case "VI–VII":
+      return [6, 7];
+    case "VIII–IX":
+      return [8, 9];
+    case "X–★":
+      return [10, 11];
+  }
+  return [];
+}
+
 export default defineComponent({
   name: "LookupView",
   setup() {
@@ -69,7 +118,58 @@ export default defineComponent({
     const result = ref<PlayerStats | null>(null);
     const history = ref<HistoryEntry[]>(loadHistory());
     const groupMode = ref<"type" | "nation" | "tier">("type");
-    const sortBy = ref<"battles" | "winrate" | "avgDamage">("battles");
+    const sortKey = ref<"battles" | "winrate" | "avgDamage">("battles");
+    const sortDir = ref<"desc" | "asc">("desc");
+    // Level-2 filters (per groupMode); "all" = null.
+    const typeFilter = ref<string | null>(null);
+    const nationFilter = ref<string | null>(null);
+    const tierFilter = ref<string | null>(null);
+    // Ship-name search — while non-empty, the type/nation/tier filters are
+    // ignored (only the sort order still applies).
+    const shipQuery = ref("");
+
+    function toggleSort(key: typeof sortKey.value) {
+      if (sortKey.value === key) {
+        sortDir.value = sortDir.value === "desc" ? "asc" : "desc";
+      } else {
+        sortKey.value = key;
+        sortDir.value = "desc";
+      }
+    }
+
+    /** Nations present in the current result (for the nation filter row). */
+    const nations = computed(() => {
+      const set = new Set<string>();
+      for (const s of shipRows.value) {
+        const off = shipOfflineEntry(s.shipId);
+        if (off?.nation) set.add(off.nation);
+      }
+      return [...set].sort();
+    });
+
+    /** Ships after name search / level-2 filters (search wins over filters). */
+    const filteredShips = computed(() => {
+      let rows = shipRows.value;
+      const q = shipQuery.value.trim().toLowerCase();
+      if (q) {
+        rows = rows.filter((s) => s.name.toLowerCase().includes(q));
+      } else {
+        if (typeFilter.value) {
+          rows = rows.filter((s) =>
+            (shipOfflineEntry(s.shipId)?.type ?? "").startsWith(typeFilter.value!),
+          );
+        }
+        if (nationFilter.value) {
+          rows = rows.filter((s) => shipOfflineEntry(s.shipId)?.nation === nationFilter.value);
+        }
+        if (tierFilter.value) {
+          const bracket = TIER_FILTERS.find(([k]) => k === tierFilter.value);
+          const tiers = bracket ? bracketTiers(bracket[0]) : [];
+          rows = rows.filter((s) => tiers.includes(shipOfflineEntry(s.shipId)?.tier ?? 0));
+        }
+      }
+      return rows;
+    });
 
     /** Per-ship rows enriched with offline tier/type for grouping. */
     const shipRows = computed<PlayerShipStats[]>(() => {
@@ -78,13 +178,14 @@ export default defineComponent({
       return shipStats.cache.get(`${realm.value}_${acc.accountId}`) ?? [];
     });
     const grouped = computed(() => {
-      const rows = [...shipRows.value];
+      const rows = [...filteredShips.value];
+      const dir = sortDir.value === "desc" ? -1 : 1;
       rows.sort((a, b) =>
-        sortBy.value === "battles"
-          ? b.battles - a.battles
-          : sortBy.value === "winrate"
-            ? b.winrate - a.winrate
-            : b.avgDamage - a.avgDamage,
+        sortKey.value === "battles"
+          ? (b.battles - a.battles) * dir
+          : sortKey.value === "winrate"
+            ? (b.winrate - a.winrate) * dir
+            : (b.avgDamage - a.avgDamage) * dir,
       );
       if (groupMode.value === "type") {
         const byType = new Map<string, PlayerShipStats[]>();
@@ -128,7 +229,7 @@ export default defineComponent({
     });
     /** Per-type summary cards (battles + winrate), matching the Dashboard. */
     const typeSummary = computed(() => {
-      const rows = shipRows.value;
+      const rows = filteredShips.value;
       const m = new Map<string, { battles: number; wins: number }>();
       for (const s of rows) {
         const off = shipOfflineEntry(s.shipId);
@@ -258,24 +359,101 @@ export default defineComponent({
                   </div>
                 ) : null}
                 <div class="lookup-view__controls">
-                  <SSegmented
-                    modelValue={groupMode.value}
-                    onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
-                    options={[
-                      { value: "type", label: t("dashboard.byType") },
-                      { value: "nation", label: t("dashboard.byNation") },
-                      { value: "tier", label: t("dashboard.byTier") },
-                    ]}
-                  />
-                  <SSegmented
-                    modelValue={sortBy.value}
-                    onUpdate:modelValue={(v: string) => (sortBy.value = v as typeof sortBy.value)}
-                    options={[
-                      { value: "battles", label: t("dashboard.battles") },
-                      { value: "winrate", label: t("dashboard.winrate") },
-                      { value: "avgDamage", label: t("dashboard.avgDamage") },
-                    ]}
-                  />
+                  <div class="lookup-view__controlrow">
+                    <SSegmented
+                      modelValue={groupMode.value}
+                      onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
+                      options={[
+                        { value: "type", label: t("dashboard.byType") },
+                        { value: "nation", label: t("dashboard.byNation") },
+                        { value: "tier", label: t("dashboard.byTier") },
+                      ]}
+                    />
+                  </div>
+                  {/* Level-2 filter row (per groupMode) */}
+                  {shipQuery.value.trim() === "" ? (
+                    <div class="lookup-view__controlrow">
+                      {groupMode.value === "type"
+                        ? [
+                            <button
+                              class={["lookup-view__filter", typeFilter.value === null ? "lookup-view__filter--on" : ""]}
+                              onClick={() => (typeFilter.value = null)}
+                            >
+                              全部
+                            </button>,
+                            ...TYPE_FILTERS.map(([key, label]) => (
+                              <button
+                                key={key}
+                                class={["lookup-view__filter", typeFilter.value === key ? "lookup-view__filter--on" : ""]}
+                                onClick={() => (typeFilter.value = typeFilter.value === key ? null : key)}
+                              >
+                                {label}
+                              </button>
+                            )),
+                          ]
+                        : groupMode.value === "nation"
+                          ? [
+                              <button
+                                class={["lookup-view__filter", nationFilter.value === null ? "lookup-view__filter--on" : ""]}
+                                onClick={() => (nationFilter.value = null)}
+                              >
+                                全部
+                              </button>,
+                              ...nations.value.map((n) => (
+                                <button
+                                  key={n}
+                                  class={["lookup-view__filter", nationFilter.value === n ? "lookup-view__filter--on" : ""]}
+                                  onClick={() => (nationFilter.value = nationFilter.value === n ? null : n)}
+                                >
+                                  {NATION_LABELS[n] ?? n}
+                                </button>
+                              )),
+                            ]
+                          : [
+                              <button
+                                class={["lookup-view__filter", tierFilter.value === null ? "lookup-view__filter--on" : ""]}
+                                onClick={() => (tierFilter.value = null)}
+                              >
+                                全部
+                              </button>,
+                              ...TIER_FILTERS.map(([key, label]) => (
+                                <button
+                                  key={key}
+                                  class={["lookup-view__filter", tierFilter.value === key ? "lookup-view__filter--on" : ""]}
+                                  onClick={() => (tierFilter.value = tierFilter.value === key ? null : key)}
+                                >
+                                  {label}
+                                </button>
+                              )),
+                            ]}
+                    </div>
+                  ) : null}
+                  <div class="lookup-view__controlrow">
+                    {/* Sort keys with asc/desc toggle */}
+                    {(
+                      [
+                        ["battles", t("dashboard.battles")],
+                        ["winrate", t("dashboard.winrate")],
+                        ["avgDamage", t("dashboard.avgDamage")],
+                      ] as [typeof sortKey.value, string][]
+                    ).map(([key, label]) => (
+                      <button
+                        key={key}
+                        class={["lookup-view__sort", sortKey.value === key ? "lookup-view__sort--on" : ""]}
+                        onClick={() => toggleSort(key)}
+                      >
+                        {label}
+                        {sortKey.value === key ? (sortDir.value === "desc" ? " ↓" : " ↑") : null}
+                      </button>
+                    ))}
+                    <input
+                      class="lookup-view__shipsearch"
+                      type="text"
+                      placeholder="搜索舰船…"
+                      value={shipQuery.value}
+                      onInput={(e) => (shipQuery.value = (e.target as HTMLInputElement).value)}
+                    />
+                  </div>
                 </div>
                 {/* Per-type summary cards */}
                 {typeSummary.value.length > 0 ? (
