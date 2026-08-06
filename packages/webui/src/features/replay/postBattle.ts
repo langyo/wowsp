@@ -53,11 +53,18 @@ ribbons: PostBattleRibbon[];
  *  - 45 = CV aircraft stats     — inferred
  *  - 36 = secondary battery hits — Napoli 15, Nagato 43, dd 3, cv 0
  *  - 37 = main-battery shells   — Nagato 96 (16×6), ca 105, bb 15
+ *  - 75 = ASW/depth-charge hits — subs/dds + a few BBs; values 1-8
  *  - 45 = CV aircraft stats     — inferred (CVs only)
- *  - unconfirmed & hidden: 26/39/44 (contested), 35/40/101/103 (shell
- *    aggregates), 75 (sub sonar), 80 (CV planes), 85 (shell-hit class);
- *    paired slots 49/62, 50/51, 54/55, 58/59, 80/81, 96/97, 115/116,
- *    128/129 are duplicated columns (≈100% equal)
+ *
+ * Known but unmapped (semantics too weak to display):
+ *  - 46/47, 88/89, 92/93     CV aircraft pairs (≈equal duplicates)
+ *  - 48                     airstrike/mine slot (ZH_1 590, Dutch CAs)
+ *  - 87                     DD weapon slot (torpedo/ASW)
+ *  - 35/40/101/103          shell aggregates; 85 shell-hit class;
+ *    26 unclassified; 84 ≈2 players/battle (capture-like);
+ *    113/119 full-team slots (per-battle 9-11 players)
+ *  - paired duplicates 49/62, 50/51, 54/55, 58/59, 80/81, 96/97,
+ *    115/116, 128/129 (≈100% equal)
  */
 export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
   [27, "plane"],
@@ -69,6 +76,7 @@ export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
   [36, "secondary_caliber"],
   [37, "shells"],
   [45, "plane_losses"],
+  [75, "dbomb"],
 ];
 
 /** Indices whose semantics are strongly confirmed by the replay corpus. */

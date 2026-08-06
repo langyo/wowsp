@@ -121,15 +121,9 @@
   "es-ES": "Incapacitaciones"
  },
  "dbomb": {
-  "zh-CN": "被深水炸弹击中",
-  "zh-SG": "命中",
-  "zh-TW": "命中目標",
-  "en-US": "Target hits",
-  "ja-JP": "目標に命中",
-  "ko-KR": "폭뢰 명중",
-  "ru-RU": "Попал",
-  "fr-FR": "Coups à la cible",
-  "es-ES": "Impactos en el objetivo"
+  "zh-CN": "深弹命中",
+  "zh-SG": "深弹命中",
+  "en-US": "Depth charge hits"
  },
  "dbomb_mine": {
   "zh-CN": "水雷伤害",

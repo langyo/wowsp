@@ -48,6 +48,7 @@ const BUNDLED: Record<string, string> = {
   aa_hits: ribbonPlane,
   shells: ribbonMainCaliber,
   plane_losses: ribbonPlane,
+  dbomb: ribbonTorpedo,
   missile: ribbonMissile,
   suppressed: ribbonSuppressed,
   torpedo: ribbonTorpedo,
