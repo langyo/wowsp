@@ -1,4 +1,5 @@
-import { defineComponent, ref } from "vue";
+import { defineComponent, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
 import SButton from "@/components/base/SButton";
@@ -14,6 +15,7 @@ export default defineComponent({
   setup() {
     const stats = useStatsStore();
     const toast = useToast();
+    const route = useRoute();
     const nickname = ref("");
     const realm = ref("asia");
     const realms = ["ru", "eu", "na", "asia"];
@@ -32,6 +34,19 @@ export default defineComponent({
         toast.dismiss(toastId);
       }
     }
+
+    // Jump-in support: /lookup?name=..&realm=.. (from the replay post-battle
+    // player detail) starts a search immediately.
+    onMounted(() => {
+      const q = route.query;
+      const name = typeof q.name === "string" ? q.name : "";
+      if (!name) return;
+      nickname.value = name;
+      if (typeof q.realm === "string" && realms.includes(q.realm)) {
+        realm.value = q.realm;
+      }
+      void search();
+    });
 
     return () => (
       <div class="lookup-view">

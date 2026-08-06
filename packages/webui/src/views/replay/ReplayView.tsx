@@ -28,6 +28,8 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor } from "@/utils/modeColors";
 import { useToast } from "@/composables/useToast";
+import { useRouter } from "vue-router";
+import type { PlayerStats } from "@/api";
 import SButton from "@/components/base/SButton";
 import SSelect, { type SelectOption } from "@/components/base/SSelect";
 import "./ReplayView.scss";
@@ -114,14 +116,18 @@ function formatDateTime(dt?: string | null): string {
 }
 
 /** Post-battle modal: two-column team matrix (allies left, enemies right)
- *  sorted by estimated settlement XP, with a drill-down panel per player:
- *  big damage figure, horizontal ribbon strip, and the killer line. */
+ *  sorted by estimated settlement XP. Clicking a player opens a real second-
+ *  level modal with the match result + on-demand global stats (toast while
+ *  loading) and a jump link into the lookup screen. */
 const PostBattlePanel = defineComponent({
   name: "PostBattlePanel",
   props: { raw: { type: String, required: true } },
-  setup(props) {
+  emits: ["close"],
+  setup(props, { emit }) {
     const parsed = computed(() => parsePostBattle(props.raw));
     const { dataLanguage } = useLanguage();
+    const toast = useToast();
+    const router = useRouter();
     const rows = computed(() => {
       const pb = parsed.value;
       if (!pb) return [];
@@ -139,8 +145,6 @@ const PostBattlePanel = defineComponent({
     });
     const allies = computed(() => {
       const rs = rows.value;
-      // Standard replays encode 0=self / 1=ally / 2=enemy; PvE-style battles
-      // encode 0=our team / 1=their team (no single self row).
       const teamCoded = rs.filter((p) => p.team === 0).length !== 1;
       return (teamCoded ? rs.filter((p) => p.team === 0) : rs.filter((p) => p.team !== 2)).sort(
         (a, b) => b.estXp - a.estXp,
@@ -153,11 +157,50 @@ const PostBattlePanel = defineComponent({
         (a, b) => b.estXp - a.estXp,
       );
     });
+    const detailOpen = ref(false);
+    const rawOpen = ref(false);
     const selected = ref<ReturnType<typeof rows.value>[number] | null>(null);
+    const globalStats = ref<PlayerStats | null>(null);
+    const globalLoading = ref(false);
+
+    /** Load the selected player's global stats on-demand (toast while
+     *  loading; the lookup API resolves by nickname + realm). */
+    async function loadGlobal(p: ReturnType<typeof rows.value>[number]) {
+      globalStats.value = null;
+      if (!p.realm) return;
+      globalLoading.value = true;
+      const tid = toast.loading(`加载 ${p.name} 全局战绩…`);
+      try {
+        globalStats.value = await api.lookupPlayerStats(p.name, p.realm);
+        toast.dismiss(tid);
+      } catch (e) {
+        toast.dismiss(tid);
+        toast.error(`加载 ${p.name} 战绩失败：${(e as Error).message}`);
+      } finally {
+        globalLoading.value = false;
+      }
+    }
+
+    function openDetail(p: ReturnType<typeof rows.value>[number]) {
+      selected.value = p;
+      detailOpen.value = true;
+      void loadGlobal(p);
+    }
+
+    /** Jump into the lookup screen for this player, closing both modals. */
+    function jumpToLookup() {
+      const p = selected.value;
+      detailOpen.value = false;
+      rawOpen.value = false;
+      emit("close");
+      if (p) {
+        void router.push({ path: "/lookup", query: { name: p.name, realm: p.realm ?? "asia" } });
+      }
+    }
+
     return () => {
       const pb = parsed.value;
       if (!pb) return <pre>{props.raw}</pre>;
-      const sel = selected.value;
       const cell = (p: ReturnType<typeof allies.value>[number]) => (
         <button
           class={[
@@ -165,9 +208,7 @@ const PostBattlePanel = defineComponent({
             p.alive ? "" : "replay-view__postbattle-cell--dead",
             p.accountId === pb.selfId ? "replay-view__postbattle-cell--self" : "",
           ]}
-          onClick={() => {
-            selected.value = p;
-          }}
+          onClick={() => openDetail(p)}
         >
           <span class="replay-view__postbattle-cell-ico">
             {p.shipId != null ? (
@@ -185,6 +226,7 @@ const PostBattlePanel = defineComponent({
           <span class="replay-view__postbattle-cell-xp">{p.estXp.toLocaleString()}</span>
         </button>
       );
+      const sel = selected.value;
       return (
         <div class="replay-view__postbattle">
           <div class="replay-view__postbattle-matrix">
@@ -197,69 +239,117 @@ const PostBattlePanel = defineComponent({
               {enemies.value.map(cell)}
             </div>
           </div>
-          {sel ? (
-            <div class="replay-view__postbattle-detail">
-              <button
-                class="replay-view__postbattle-detail-close"
-                onClick={() => {
-                  selected.value = null;
-                }}
+          <button
+            class="replay-view__postbattle-rawbtn"
+            onClick={() => (rawOpen.value = true)}
+          >
+            原始数据
+          </button>
+
+          {/* Level-2 modal: raw payload */}
+          {rawOpen.value ? (
+            <div class="replay-view__postbattle-modal" onClick={() => (rawOpen.value = false)}>
+              <div
+                class="replay-view__postbattle-modal-panel"
+                onClick={(e) => e.stopPropagation()}
               >
-                ✕
-              </button>
-              <div class="replay-view__postbattle-detail-head">
-                <span class="replay-view__postbattle-detail-ico">
-                  {sel.shipId != null ? (
-                    <BattleIcon
-                      type={shipTypeOf(sel.shipId)}
-                      variant={sel.alive ? "ally" : "sunk"}
-                      size={24}
-                    />
-                  ) : null}
-                </span>
-                <span class="replay-view__postbattle-detail-name">
-                  {sel.name}
-                  <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
-                </span>
-              </div>
-              {!sel.alive && sel.killerName ? (
-                <div class="replay-view__postbattle-killed">
-                  被 {sel.killerName} 摧毁
-                  {sel.killerDamage ? `（${sel.killerDamage.toLocaleString()} 伤害）` : ""}
+                <div class="replay-view__postbattle-modal-head">
+                  <span>原始数据</span>
+                  <button onClick={() => (rawOpen.value = false)}>✕</button>
                 </div>
-              ) : null}
-              <div class="replay-view__postbattle-detail-body">
-                <div class="replay-view__postbattle-detail-damage">
-                  <span class="replay-view__postbattle-detail-damage-num">
-                    {sel.damage.toLocaleString()}
-                  </span>
-                  <span class="replay-view__postbattle-detail-damage-label">伤害</span>
-                </div>
-                <div class="replay-view__postbattle-detail-ribbons">
-                  {sel.ribbons.map((x) => {
-                    const key = ribbonKeyOfIndex(x.index);
-                    if (!key) return null;
-                    const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
-                    const verified = isRibbonIndexVerified(x.index);
-                    return (
-                      <span
-                        key={x.index}
-                        class="replay-view__postbattle-detail-ribbon"
-                        title={`${name} ×${x.value}${verified ? "" : "（推测）"}`}
-                      >
-                        <img src={bundledRibbonUrl(key) ?? ""} width={22} height={22} alt="" />
-                        <em>{x.value}</em>
-                      </span>
-                    );
-                  })}
-                </div>
+                <pre class="replay-view__postbattle-modal-raw">{props.raw}</pre>
               </div>
             </div>
           ) : null}
-          <details class="replay-view__postbattle-raw">
-            <summary>原始数据</summary>
-            <pre>{props.raw}</pre>
-          </details>
+
+          {/* Level-2 modal: player detail */}
+          {detailOpen.value && sel ? (
+            <div
+              class="replay-view__postbattle-modal"
+              onClick={() => (detailOpen.value = false)}
+            >
+              <div
+                class="replay-view__postbattle-modal-panel"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div class="replay-view__postbattle-modal-head">
+                  <span class="replay-view__postbattle-detail-head">
+                    <span class="replay-view__postbattle-detail-ico">
+                      {sel.shipId != null ? (
+                        <BattleIcon
+                          type={shipTypeOf(sel.shipId)}
+                          variant={sel.alive ? "ally" : "sunk"}
+                          size={24}
+                        />
+                      ) : null}
+                    </span>
+                    <span class="replay-view__postbattle-detail-name">
+                      {sel.name}
+                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
+                    </span>
+                  </span>
+                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                </div>
+                {!sel.alive && sel.killerName ? (
+                  <div class="replay-view__postbattle-killed">
+                    被 {sel.killerName} 摧毁
+                    {sel.killerDamage ? `（${sel.killerDamage.toLocaleString()} 伤害）` : ""}
+                  </div>
+                ) : null}
+                <div class="replay-view__postbattle-detail-body">
+                  <div class="replay-view__postbattle-detail-damage">
+                    <span class="replay-view__postbattle-detail-damage-num">
+                      {sel.damage.toLocaleString()}
+                    </span>
+                    <span class="replay-view__postbattle-detail-damage-label">
+                      伤害 · 击沉 {sel.frags}
+                      {sel.hpRatio != null ? ` · 残血 ${Math.round(sel.hpRatio)}%` : ""}
+                    </span>
+                  </div>
+                  <div class="replay-view__postbattle-detail-ribbons">
+                    {sel.ribbons.map((x) => {
+                      const key = ribbonKeyOfIndex(x.index);
+                      if (!key) return null;
+                      const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
+                      const verified = isRibbonIndexVerified(x.index);
+                      return (
+                        <span
+                          key={x.index}
+                          class="replay-view__postbattle-detail-ribbon"
+                          title={`${name} ×${x.value}${verified ? "" : "（推测）"}`}
+                        >
+                          <img src={bundledRibbonUrl(key) ?? ""} width={22} height={22} alt="" />
+                          <em>{x.value}</em>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* On-demand global stats (toast while loading) */}
+                <div class="replay-view__postbattle-global">
+                  {globalLoading.value ? (
+                    <span class="replay-view__postbattle-global-note">正在加载全局战绩…</span>
+                  ) : globalStats.value ? (
+                    <div class="replay-view__postbattle-global-grid">
+                      <span><b>{globalStats.value.battles ?? "—"}</b> 场次</span>
+                      <span><b>{globalStats.value.winrate != null ? `${globalStats.value.winrate.toFixed(1)}%` : "—"}</b> 胜率</span>
+                      <span><b>{globalStats.value.avgDamage != null ? globalStats.value.avgDamage.toLocaleString() : "—"}</b> 均伤</span>
+                      <span><b>{globalStats.value.kdRatio != null ? globalStats.value.kdRatio.toFixed(2) : "—"}</b> K/D</span>
+                      <span><b>{globalStats.value.pr ?? "—"}</b> PR</span>
+                      <span><b>{globalStats.value.survivalRate != null ? `${globalStats.value.survivalRate.toFixed(1)}%` : "—"}</b> 存活</span>
+                    </div>
+                  ) : (
+                    <span class="replay-view__postbattle-global-note">
+                      全局战绩不可用{sel.realm ? "" : "（无服务器信息）"}
+                    </span>
+                  )}
+                </div>
+                <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
+                  查看完整战绩 →
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       );
     };
@@ -575,7 +665,10 @@ export default defineComponent({
                       </button>
                     </div>
                     <div class="replay-view__modal-body">
-                      <PostBattlePanel raw={battleResults.value} />
+                      <PostBattlePanel
+                        raw={battleResults.value}
+                        onClose={() => (showResults.value = false)}
+                      />
                     </div>
                   </div>
                 </div>

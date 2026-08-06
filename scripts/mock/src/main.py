@@ -160,6 +160,30 @@ async def cmd_get_game_process() -> dict:
     }
 
 
+@app.post("/api/lookup_player_stats")
+async def cmd_lookup_player_stats(request: Request) -> dict:
+    body = await request.json()
+    name = body.get("name", "Unknown")
+    return {
+        "accountId": 2024711808,
+        "name": name,
+        "realm": body.get("realm", "asia"),
+        "battles": 1234,
+        "winrate": 54.3,
+        "hidden": False,
+        "clanTag": "MOCK",
+        "avgDamage": 45210,
+        "avgXp": 1120,
+        "kdRatio": 1.62,
+        "survivalRate": 41.5,
+        "hitRate": 33.1,
+        "pr": 1620,
+        "shipsPlayed": 87,
+        "levelingTier": 12,
+        "levelingPoints": 3400,
+    }
+
+
 @app.get("/api/list_replays")
 async def cmd_list_replays() -> list[str]:
     return [str(p) for p in sorted(FIXTURES.glob("*.wowsreplay"))] or [

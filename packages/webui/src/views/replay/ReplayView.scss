@@ -351,6 +351,95 @@
       font-size: 10px;
     }
   }
+  &__postbattle-rawbtn {
+    margin-top: 8px;
+    padding: 3px 10px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    &:hover { background: rgba(255, 255, 255, 0.14); }
+  }
+  /* Level-2 modal (raw payload / player detail) */
+  &__postbattle-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 4, 8, 0.7);
+    backdrop-filter: blur(3px);
+  }
+  &__postbattle-modal-panel {
+    width: min(560px, 90vw);
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    background: #141922;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    color: #fff;
+    overflow: hidden;
+  }
+  &__postbattle-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-weight: 600;
+    button {
+      border: none;
+      background: none;
+      color: rgba(255, 255, 255, 0.6);
+      cursor: pointer;
+      font-size: var(--text-sm);
+    }
+  }
+  &__postbattle-modal-raw {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 4px;
+    font-size: 10px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  &__postbattle-global {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  &__postbattle-global-note {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: var(--text-2xs);
+  }
+  &__postbattle-global-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: var(--text-2xs);
+    color: rgba(255, 255, 255, 0.7);
+    b { color: #fff; font-family: var(--font-mono); margin-right: 3px; }
+  }
+  &__postbattle-jump {
+    margin-top: 10px;
+    padding: 5px 12px;
+    border: none;
+    border-radius: 5px;
+    background: rgb(var(--color-accent) / 22%);
+    color: rgb(var(--color-accent));
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    align-self: flex-start;
+    &:hover { background: rgb(var(--color-accent) / 35%); }
+  }
 
   &__map-wrap {
     flex: 1;

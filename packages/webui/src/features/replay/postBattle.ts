@@ -21,6 +21,8 @@
 export interface PostBattlePlayer {
   accountId: number;
   name: string;
+  /** Realm code (playersPublicInfo[9], e.g. "asia") — for global stats. */
+  realm: string | null;
   shipId: number | null;
   team: 0 | 1 | 2 | null;
   alive: boolean;
@@ -138,6 +140,7 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
       players.push({
         accountId: Number(pidStr) || 0,
         name: typeof arr[1] === "string" ? (arr[1] as string) : `#${pidStr}`,
+        realm: typeof arr[9] === "string" ? (arr[9] as string).toLowerCase() : null,
         shipId: shipId != null && shipId > 0 ? shipId : null,
         team: team === 0 || team === 1 || team === 2 ? team : null,
         alive: arr[21] === true,
