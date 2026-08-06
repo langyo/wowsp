@@ -1982,21 +1982,36 @@ export default defineComponent({
       for (const [planeId, first] of createFirst) {
         // Match against the ship's position AT LAUNCH TIME (ships move — the
         // current playhead position would pair a sortie with the wrong ship).
-        let carrierId: number | null = null;
-        let bestD = 1500;
+        // The create fires on the flight deck, so prefer a REAL carrier
+        // (AirCarrier type) within carrier range; only fall back to any ship
+        // within a much tighter radius when no CV is nearby (hybrid carriers
+        // like Ise/Tone are typed Battleship, unknown offline ships have no
+        // type). Without the type filter a sortie from a distant CV gets
+        // pinned to whatever friendly ship sails nearest — e.g. a Vladivostok
+        // ends up wearing a bomber label and squadrons flip to the wrong side.
+        let cvId: number | null = null;
+        let cvD = 1000;
+        let anyId: number | null = null;
+        let anyD = 400;
         for (const m of shipMarkers) {
           const tr = props.trajectories.find((t) => t.entityId === m.userData.entityId);
           if (!tr) continue;
           const s = sampleAt(tr, first.time);
           if (!s) continue;
-          const dx = s.x - first.x;
-          const dz = s.z - first.z;
-          const d = Math.hypot(dx, dz);
-          if (d < bestD) {
-            bestD = d;
-            carrierId = m.userData.entityId as number;
+          const d = Math.hypot(s.x - first.x, s.z - first.z);
+          if (d < cvD) {
+            const lbl = newLabels.find((l) => l.entityId === m.userData.entityId);
+            if (/^AirCarrier/i.test(lbl?.type ?? "")) {
+              cvD = d;
+              cvId = m.userData.entityId as number;
+            }
+          }
+          if (d < anyD) {
+            anyD = d;
+            anyId = m.userData.entityId as number;
           }
         }
+        const carrierId = cvId ?? anyId;
         planeCarrierOf.set(planeId, carrierId);
         const carrierMarker = carrierId == null
           ? null
@@ -2560,7 +2575,9 @@ export default defineComponent({
             label.tier = carrierLabel.tier;
             label.hp = carrierLabel.hp;
             label.maxHp = carrierLabel.maxHp;
-            label.dead = carrierLabel.dead;
+            // Aircraft have no "sunk" state — planes are simply gone when
+            // shot down, so the card never shows the ship's dead tag.
+            label.dead = false;
           }
           // Any of this carrier's squadrons airborne?
           let visible = false;

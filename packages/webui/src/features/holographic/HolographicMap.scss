@@ -551,11 +551,12 @@
   cursor: pointer;
 }
 
-/* ── Kill feed (sink notifications) — bottom-left, two-line entries ─── */
+/* ── Kill feed (sink notifications) — bottom-left, ABOVE the playback
+   controls (play/scrub bar sits at bottom:12px), two-line entries ─── */
 .holo-map__killfeed {
   position: absolute;
   left: 12px;
-  bottom: 12px;
+  bottom: 62px;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
