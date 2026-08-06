@@ -36,25 +36,27 @@ ribbons: PostBattleRibbon[];
 /**
  * Mapping of the PostBattle counter zone (indices 24..45) to ribbon kinds,
  * modelled across 144 full replays / 1876 players cross-referenced against
- * ship classes (sub/dd/ca/bb/cv from GameParams prefixes):
+ * ship classes (sub/dd/ca/bb/cv from GameParams prefixes), and cross-checked
+ * against the decompiled client module (scripts/pyc_deob/ — fully
+ * deobfuscated BattleResultsUtils.pyc), whose vocabulary confirms:
+ * hits_main / shots_main_* / planes_killed / hits_atba (secondary/AA) /
+ * damage_tpd / damage_fire / module_crits_* / _killed_by_ship
  *
- *  - 27 = PLANE shot down       — CVs 54/54 nonzero (mean 5)
- *  - 28 = main-weapon hits      — subs read torpedo/sonar hits; hit rate vs
- *    index 30 is a consistent 27-36% across ALL classes (dd 1.65/5.71,
- *    bb 1.22/4.32, ca 1.15/4.31, sub 12.35/24.51, cv 4.3/13.63)
- *  - 30 = shots fired (≈3× hits)
+ *  - 27 = PLANE shot down       — CVs 54/54 nonzero (mean 5); = planes_killed
+ *  - 28 = main-weapon hits      — hit rate vs 30 is 27-36% across ALL classes
+ *    (dd 1.65/5.71, bb 1.22/4.32, ca 1.15/4.31, sub 12.35/24.51, cv 4.3/13.63)
+ *    = hits_main (aggregate of hits_main_ap/cs/he)
+ *  - 30 = shots fired (≈3× hits, always ≥ 28) — = shots_main
  *  - 31 = AA/DP hits            — CVs mean 53, dd/sub 0
- *  - 32 = FRAG (verified: sum == sunk count)
+ *  - 32 = FRAG (verified: sum == sunk count) — = _killed_by_ship
  *  - 29 = torpedo hits          — CVs mean 10.5 (torpedo bombers)
- *  - 36 = burn                  — ca 15.2, bb 4.6, dd 3.3, cv/sub 0
- *  - 37 = main-battery salvos   — bb 15, ca 105, dd 91, cv/sub 0
- *  - 39 = citadel hits (bb 11.2) — inferred
- *  - 44 = spotting/detection (dd 22, sub 27) — inferred
- *  - 45 = CV aircraft stats     — inferred
  *  - 36 = secondary battery hits — Napoli 15, Nagato 43, dd 3, cv 0
+ *    = hits_atba
  *  - 37 = main-battery shells   — Nagato 96 (16×6), ca 105, bb 15
  *  - 75 = ASW/depth-charge hits — subs/dds + a few BBs; values 1-8
  *  - 45 = CV aircraft stats     — inferred (CVs only)
+ *  - 35/40/101/103 = shell aggregates (shots/hits families — NOT damage:
+ *    ratio vs player damage ≈ 0) — hidden
  *
  * Known but unmapped (semantics too weak to display):
  *  - 46/47, 88/89, 92/93     CV aircraft pairs (≈equal duplicates)
