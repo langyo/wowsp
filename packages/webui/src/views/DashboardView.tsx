@@ -3,7 +3,7 @@ import { computed, defineComponent, ref, watch } from "vue";
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
 import SSegmented from "@/components/base/SSegmented";
-import SSearchInput from "@/components/base/SSearchInput";
+import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import STag from "@/components/base/STag";
 import SScrollTop from "@/components/base/SScrollTop";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -54,10 +54,6 @@ export default defineComponent({
 
     const showModal = ref(false);
     const dateRange = ref<DateRange>("all");
-    /** Sort column for the ship table. */
-    const sortBy = ref<"battles" | "winrate" | "avgDamage">("battles");
-    /** Group mode for the ship table: by type, nation, or tier bracket. */
-    const groupMode = ref<"type" | "nation" | "tier">("type");
 
     const activeAccount = computed(() => accounts.activeAccount);
     const currentStats = computed(() => {
@@ -75,40 +71,16 @@ export default defineComponent({
     // Ships filtered by the selected date range.
     const dateFiltered = computed(() => filterByDateRange(playerShips.value, dateRange.value));
 
-    /** Ship-name search (multilingual + pinyin via the shared module) — the
-     *  date range still applies, other filters are ignored while searching. */
-    const shipQuery = ref("");
-    const searchHits = computed(() => {
-      const hits = new Map<number, string>();
-      if (!shipQuery.value.trim()) return hits;
-      for (const s of dateFiltered.value) {
-        const info = encyclopedia.byId.get(s.shipId);
-        const names = info ? { "zh-CN": info.name } : undefined;
-        const hit = matchShipNames(shipQuery.value, names, s.shipId);
-        if (hit) hits.set(s.shipId, hit.matchedName);
-      }
-      return hits;
-    });
+    /** Filtered ships + group mode + search-hit names, from ShipFilterBar. */
+    const filterState = ref<{
+      ships: typeof dateFiltered.value;
+      groupMode: "type" | "nation" | "tier";
+      hits: Map<number, string>;
+    }>({ ships: [], groupMode: "type", hits: new Map() });
+    const filteredShips = computed(() => filterState.value.ships);
     function displayShipName(s: { shipId: number; name: string }): string {
-      return searchHits.value.get(s.shipId) ?? shipName(s.shipId, s.name);
+      return filterState.value.hits.get(s.shipId) ?? shipName(s.shipId, s.name);
     }
-
-    /** Dropdown candidates for the search box (matched ships). */
-    const searchCandidates = computed(() =>
-      [...searchHits.value.entries()].map(([shipId, name]) => {
-        const info = encyclopedia.byId.get(shipId);
-        const tier = info?.tier != null ? `T${info.tier}` : "";
-        return { value: name, label: name, sub: tier };
-      }),
-    );
-
-    const filteredShips = computed(() => {
-      const rows = dateFiltered.value;
-      if (shipQuery.value.trim()) {
-        return rows.filter((s) => searchHits.value.has(s.shipId));
-      }
-      return rows;
-    });
 
     /** Group ships by the selected dimension (type/nation/tier bracket). */
     interface ShipGroup {
@@ -117,8 +89,8 @@ export default defineComponent({
       ships: typeof filteredShips.value;
     }
     const groupedShips = computed<ShipGroup[]>(() => {
-      const ships = sortedShips.value;
-      if (groupMode.value === "type") {
+      const ships = filteredShips.value;
+      if (filterState.value.groupMode === "type") {
         const m = new Map<string, ShipGroup>();
         for (const s of ships) {
           const type = encyclopedia.byId.get(s.shipId)?.type ?? "Unknown";
@@ -131,7 +103,7 @@ export default defineComponent({
         }
         return [...m.values()];
       }
-      if (groupMode.value === "nation") {
+      if (filterState.value.groupMode === "nation") {
         const m = new Map<string, ShipGroup>();
         for (const s of ships) {
           const nation = encyclopedia.byId.get(s.shipId)?.nation ?? "unknown";
@@ -164,17 +136,6 @@ export default defineComponent({
     const typeSummary = computed(() =>
       aggregateByType(filteredShips.value, encyclopedia.byId),
     );
-
-    // Sorted ship list for the table.
-    const sortedShips = computed(() => {
-      const list = [...filteredShips.value];
-      list.sort((a, b) => {
-        if (sortBy.value === "battles") return b.battles - a.battles;
-        if (sortBy.value === "winrate") return b.winrate - a.winrate;
-        return b.avgDamage - a.avgDamage;
-      });
-      return list;
-    });
 
     async function refresh() {
       const acc = activeAccount.value;
@@ -295,43 +256,20 @@ export default defineComponent({
                 </section>
               ) : null}
 
-              {/* ── Ship stats: group mode + sort + date range on one row (no
-                   text titles, the button groups ARE the section headers) ── */}
+              {/* ── Ship stats: date range + packaged filter bar ── */}
               <section class="dash-section">
                 <div class="dash-section__controls">
-                  <SSegmented
-                    modelValue={groupMode.value}
-                    onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
-                    options={[
-                      { value: "type", label: t("dashboard.byType") },
-                      { value: "nation", label: t("dashboard.byNation") },
-                      { value: "tier", label: t("dashboard.byTier") },
-                    ]}
-                  />
-                  <SSegmented
-                    modelValue={sortBy.value}
-                    onUpdate:modelValue={(v: string) => (sortBy.value = v as typeof sortBy.value)}
-                    options={[
-                      { value: "battles", label: t("dashboard.battles") },
-                      { value: "winrate", label: t("dashboard.winrate") },
-                      { value: "avgDamage", label: t("dashboard.avgDamage") },
-                    ]}
-                  />
-                  {/* Date range (period) selector — on the same row as the others. */}
                   <SSegmented
                     modelValue={dateRange.value}
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
                     options={rangeOptions}
                   />
-                  <SSearchInput
-                    modelValue={shipQuery.value}
-                    onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
-                    onPick={(v: string) => (shipQuery.value = v)}
-                    placeholder={t("common.search.fuzzy")}
-                    candidates={searchCandidates.value}
-                    class="dash-ship-search"
-                  />
                 </div>
+                <ShipFilterBar
+                  ships={dateFiltered.value}
+                  realm={activeAccount.value?.realm ?? ""}
+                  onChange={(v) => (filterState.value = v)}
+                />
 
                 {/* Group summary cards (compact) */}
                 {typeSummary.value.length > 0 ? (
