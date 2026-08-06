@@ -230,9 +230,25 @@ export default defineComponent({
       };
       const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
       const enemies = props.vehicles.filter((v) => v.relation > 1).map(mk);
-      const sort = (a: ShipRowEntry, b: ShipRowEntry) => Number(a.dead) - Number(b.dead);
-      allies.sort(sort);
-      enemies.sort(sort);
+      // Ship-size weight: carriers/battleships biggest, subs smallest. Sunk
+      // ships form their own group (pushed to the outer edge, greyed out);
+      // within each group the biggest ships sit at the outer edge (allies:
+      // left edge, enemies: right edge — mirror image).
+      const sizeOf = (r: ShipRowEntry): number => {
+        const t = (r.type ?? "").toLowerCase();
+        if (t.includes("aircarrier") || t.includes("aircar")) return 5;
+        if (t.includes("battleship")) return 4;
+        if (t.includes("cruiser")) return 3;
+        if (t.includes("destroyer")) return 2;
+        if (t.includes("submarine")) return 1;
+        return 0;
+      };
+      const sortAlly = (a: ShipRowEntry, b: ShipRowEntry) =>
+        Number(a.dead) - Number(b.dead) || sizeOf(b) - sizeOf(a);
+      const sortEnemy = (a: ShipRowEntry, b: ShipRowEntry) =>
+        Number(a.dead) - Number(b.dead) || sizeOf(a) - sizeOf(b);
+      allies.sort(sortAlly);
+      enemies.sort(sortEnemy);
       return { allies, enemies };
     });
     // Live self statistics (top-right): derived from the explosion stream,
