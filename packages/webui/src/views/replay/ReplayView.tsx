@@ -165,8 +165,8 @@ const PostBattlePanel = defineComponent({
     const globalError = ref(false);
 
     /** AI/bot players have no WG account — skip the global-stats lookup.
-     *  WoWS bot names follow "<fleet prefix>_<ship>" (KMS_panzership etc). */
-    const AI_NAME = /^(KMS|IJN|USN|RN|KM|US|JP|VMF|HSF|PA|EU|FR|IT|NL|CN|SE|SP)_|_ship$|_bot$/i;
+     *  In replays they appear as ":Name:" (colon-wrapped, e.g. ":Millo:"). */
+    const AI_NAME = /^:.*:$/;
     /** Load the selected player's global stats on-demand (toast while
      *  loading; the lookup API resolves by nickname + realm). Failures are
      *  silent — AI names and rate-limited lookups are common, and an error
