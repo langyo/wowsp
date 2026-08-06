@@ -3,6 +3,7 @@ import { computed, defineComponent, ref, watch } from "vue";
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
 import SSegmented from "@/components/base/SSegmented";
+import SSearchInput from "@/components/base/SSearchInput";
 import STag from "@/components/base/STag";
 import SScrollTop from "@/components/base/SScrollTop";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -91,6 +92,15 @@ export default defineComponent({
     function displayShipName(s: { shipId: number; name: string }): string {
       return searchHits.value.get(s.shipId) ?? shipName(s.shipId, s.name);
     }
+
+    /** Dropdown candidates for the search box (matched ships). */
+    const searchCandidates = computed(() =>
+      [...searchHits.value.entries()].map(([shipId, name]) => {
+        const info = encyclopedia.byId.get(shipId);
+        const tier = info?.tier != null ? `T${info.tier}` : "";
+        return { value: name, label: name, sub: tier };
+      }),
+    );
 
     const filteredShips = computed(() => {
       const rows = dateFiltered.value;
@@ -313,12 +323,12 @@ export default defineComponent({
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
                     options={rangeOptions}
                   />
-                  <input
-                    class="dash-ship-search"
-                    type="text"
-                    placeholder="搜索舰船（支持中文/拼音）…"
-                    value={shipQuery.value}
-                    onInput={(e) => (shipQuery.value = (e.target as HTMLInputElement).value)}
+                  <SSearchInput
+                    modelValue={shipQuery.value}
+                    onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
+                    onPick={(v: string) => (shipQuery.value = v)}
+                    placeholder={t("common.search.fuzzy")}
+                    candidates={searchCandidates.value}
                   />
                 </div>
 

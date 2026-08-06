@@ -129,6 +129,8 @@
 }
 
 .lookup-view__controlrow {
+  &--search { justify-content: flex-end; }
+  .s-search { width: 220px; }
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -150,21 +152,6 @@
     background: rgb(var(--color-accent) / 22%);
     border-color: rgb(var(--color-accent) / 50%);
     color: rgb(var(--color-accent));
-  }
-}
-
-.lookup-view__shipsearch {
-  flex: 0 0 150px;
-  margin-left: auto;
-  padding: 4px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  font-size: var(--text-2xs);
-  &:focus {
-    outline: none;
-    border-color: rgb(var(--color-accent) / 60%);
   }
 }
 

@@ -6,6 +6,7 @@ import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SButton from "@/components/base/SButton";
 import SSelect from "@/components/base/SSelect";
 import SSegmented from "@/components/base/SSegmented";
+import SSearchInput from "@/components/base/SSearchInput";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useToast } from "@/composables/useToast";
@@ -163,6 +164,15 @@ export default defineComponent({
       const hit = hitNames.value.get(s.shipId);
       return hit?.matchedName ?? s.name;
     }
+
+    /** Dropdown candidates for the search box (matched ships). */
+    const searchCandidates = computed(() =>
+      [...hitNames.value.entries()].map(([shipId, hit]) => {
+        const off = shipOfflineEntry(shipId);
+        const tier = off?.tier != null ? `T${off.tier}` : "";
+        return { value: hit.matchedName, label: hit.matchedName, sub: tier };
+      }),
+    );
 
     const filteredShips = computed(() => {
       let rows = shipRows.value;
@@ -440,12 +450,16 @@ export default defineComponent({
                         {sortKey.value === key ? (sortDir.value === "desc" ? " ↓" : " ↑") : null}
                       </button>
                     ))}
-                    <input
-                      class="lookup-view__shipsearch"
-                      type="text"
-                      placeholder="搜索舰船…"
-                      value={shipQuery.value}
-                      onInput={(e) => (shipQuery.value = (e.target as HTMLInputElement).value)}
+                  </div>
+                  {/* Ship search — its own row (aligned right), fuzzy via the
+                      shared pinyin module, with a dropdown of candidates. */}
+                  <div class="lookup-view__controlrow lookup-view__controlrow--search">
+                    <SSearchInput
+                      modelValue={shipQuery.value}
+                      onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
+                      onPick={(v: string) => (shipQuery.value = v)}
+                      placeholder={t("common.search.fuzzy")}
+                      candidates={searchCandidates.value}
                     />
                   </div>
                 </div>
