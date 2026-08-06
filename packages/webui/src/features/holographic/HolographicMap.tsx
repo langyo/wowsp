@@ -2254,9 +2254,10 @@ export default defineComponent({
         }
         if (ghostBox) ghostBox.visible = false;
 
-        // After death the ship is gone from the water: hollow box at the last
-        // observed position + a live "gone for N s" counter.
-        const s: ReturnType<typeof sampleAt> | null = sampleAt(traj, tEff);
+        // After death the ship is gone from the water: hollow box at the
+        // LIVE position (sinking ships keep drifting in the samples) + a
+        // "sunk" label that keeps tracking the actual coordinates.
+        const s: ReturnType<typeof sampleAt> | null = sampleAt(traj, dead ? t : tEff);
         if (!s) {
           marker.visible = false;
           if (label) label.visible = false;
@@ -2273,6 +2274,10 @@ export default defineComponent({
             ghostBox.position.set(s.x, 0, -s.z);
           }
           marker.visible = false;
+          // Keep the marker transform in sync so the floating label projects
+          // to the ship's actual position (not the death instant).
+          marker.position.set(s.x, 0, -s.z);
+          marker.rotation.y = Math.PI - s.yaw;
           if (label) {
             // Sunk ships keep the dead tag — no "gone for N s" counter.
             label.visible = true;
@@ -3021,7 +3026,16 @@ export default defineComponent({
         const label = labels[i];
         if (!label) continue;
         const marker = shipMarkers[i];
-        if (!marker.visible) { label.visible = false; continue; }
+        const dead =
+          marker.userData.deathTime != null &&
+          current.value >= (marker.userData.deathTime as number);
+        if (!marker.visible && !dead) {
+          label.visible = false;
+          continue;
+        }
+        // Sunk markers are hidden, but their position keeps tracking the live
+        // sample — project it anyway so the "sunk" label follows the actual
+        // coordinates (and the camera) instead of freezing at the death spot.
         // Project the marker's world position (offset 20 units upward so the
         // label sits above the ship silhouette, not buried inside it).
         _projVec.copy(marker.position);

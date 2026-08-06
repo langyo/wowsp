@@ -13,7 +13,7 @@ replay's world coordinates) so the frontend can project ship positions onto
 the image correctly.
 
 Outputs (next to the baked map GLBs):
-  packages/webui/src/res/models/maps/minimaps/<spaceId>.png   (512x512 RGB)
+  packages/webui/src/res/models/maps/minimaps/<spaceId>.png   (760x760 RGB, native)
   packages/webui/src/res/models/maps/minimaps.json            ({id: bounds})
 
 Usage:
@@ -37,7 +37,7 @@ MAPS_DIR = (
     Path(__file__).resolve().parents[2]
     / "packages" / "webui" / "src" / "res" / "models" / "maps"
 )
-MINIMAP_SIZE = 512  # output PNG edge; native art is 760
+MINIMAP_SIZE = 760  # native art resolution (was 512 — blurry when zoomed)
 
 def parse_bounds(settings_xml: str) -> dict[str, float] | None:
     """World bounds of the *minimap art* for a space.
