@@ -34,32 +34,47 @@ ribbons: PostBattleRibbon[];
 }
 
 /**
- * Mapping of the PostBattle counter zone (indices 24..44) to ribbon kinds,
- * cross-validated across two full 24-player replays (shore + naval fixtures)
- * against each ship's armament:
+ * Mapping of the PostBattle counter zone (indices 24..45) to ribbon kinds,
+ * modelled across 144 full replays / 1876 players cross-referenced against
+ * ship classes (sub/dd/ca/bb/cv from GameParams prefixes):
  *
- *  - 28 = MAIN_CALIBER hits   — subs with no main battery read 0; cruisers
- *    with high-RoF secondaries (York) read 5 vs 161 secondary hits
- *  - 30 = main-caliber shells fired (≈3× hits, consistent hit rate ~27-36%)
- *  - 27 = aircraft shot down (plane) — present only on AA-active ships
- *  - 29 = torpedo hits (subs 22, York 33)
- *  - 31 = secondary battery hits
- *  - 32 = FRAG (verified: sum over players == sunk count)
- *  - 26 = assist (small values, unconfirmed)
- *  - 33..44 = larger aggregates (shell-count/damage groups) — unconfirmed
+ *  - 27 = PLANE shot down       — CVs 54/54 nonzero (mean 5)
+ *  - 28 = main-weapon hits      — subs read torpedo/sonar hits; hit rate vs
+ *    index 30 is a consistent 27-36% across ALL classes (dd 1.65/5.71,
+ *    bb 1.22/4.32, ca 1.15/4.31, sub 12.35/24.51, cv 4.3/13.63)
+ *  - 30 = shots fired (≈3× hits)
+ *  - 31 = AA/DP hits            — CVs mean 53, dd/sub 0
+ *  - 32 = FRAG (verified: sum == sunk count)
+ *  - 29 = torpedo hits          — CVs mean 10.5 (torpedo bombers)
+ *  - 36 = burn                  — ca 15.2, bb 4.6, dd 3.3, cv/sub 0
+ *  - 37 = main-battery salvos   — bb 15, ca 105, dd 91, cv/sub 0
+ *  - 39 = citadel hits (bb 11.2) — inferred
+ *  - 44 = spotting/detection (dd 22, sub 27) — inferred
+ *  - 45 = CV aircraft stats     — inferred
+ *  - 36 = secondary battery hits — Napoli 15, Nagato 43, dd 3, cv 0
+ *  - 37 = main-battery shells   — Nagato 96 (16×6), ca 105, bb 15
+ *  - 39 = citadel hits (bb 11.2) — inferred
+ *  - 44 = spotting/detection (dd 22, sub 27) — inferred
+ *  - 45 = CV aircraft stats     — inferred
+ *  - 26 = unclassified hits     — hidden (mirrors 28)
+ *  - 35/40 = shell aggregate stats (unconfirmed — hidden)
  */
 export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
-  [26, "assist"],
   [27, "plane"],
   [28, "main_caliber"],
   [29, "torpedo"],
   [30, "main_caliber_shots"],
-  [31, "secondary_caliber"],
+  [31, "aa_hits"],
   [32, "frag"],
+  [36, "secondary_caliber"],
+  [37, "shells"],
+  [39, "citadel"],
+  [44, "detected"],
+  [45, "plane_losses"],
 ];
 
-/** Indices whose semantics are confirmed against replay data. */
-const RIBBON_INDEX_VERIFIED = new Set<number>([28, 29, 32]);
+/** Indices whose semantics are strongly confirmed by the replay corpus. */
+const RIBBON_INDEX_VERIFIED = new Set<number>([27, 28, 32]);
 
 const RIBBON_KEY_BY_INDEX = new Map<number, string>(RIBBON_INDEX_GUESS);
 

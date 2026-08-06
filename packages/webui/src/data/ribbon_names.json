@@ -323,5 +323,30 @@
   "zh-SG": "主炮射击",
   "zh-TW": "主炮射擊",
   "en-US": "Main battery shells fired"
+ },
+ "hits": {
+  "zh-CN": "命中",
+  "zh-SG": "命中",
+  "en-US": "Hits"
+ },
+ "aa_hits": {
+  "zh-CN": "防空命中",
+  "zh-SG": "防空命中",
+  "en-US": "AA hits"
+ },
+ "salvos": {
+  "zh-CN": "主炮齐射",
+  "zh-SG": "主炮齐射",
+  "en-US": "Main battery salvos"
+ },
+ "plane_losses": {
+  "zh-CN": "飞机损失",
+  "zh-SG": "飞机损失",
+  "en-US": "Aircraft lost"
+ },
+ "shells": {
+  "zh-CN": "弹着",
+  "zh-SG": "弹着",
+  "en-US": "Shells"
  }
 }
