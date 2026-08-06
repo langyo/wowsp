@@ -183,56 +183,160 @@
     padding: 0.6rem 1rem;
   }
 
-  /* Post-battle parsed table */
-  &__postbattle-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--text-2xs);
-    color: #fff;
-    th, td {
-      padding: 4px 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      text-align: left;
-    }
-    th { color: rgba(255, 255, 255, 0.6); font-weight: 600; }
+  /* Post-battle: two-column team matrix + drill-down panel */
+  &__postbattle-matrix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    min-height: 0;
   }
-  &__postbattle-ico {
-    display: inline-flex;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-  &__postbattle-num {
-    font-family: var(--font-mono);
-    text-align: right;
-  }
-  &__postbattle-ribbons {
-    margin-top: 0.6rem;
-  }
-  &__postbattle-ribbon-title {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: var(--text-2xs);
-    margin-bottom: 4px;
-  }
-  &__postbattle-ribbon-row {
+  &__postbattle-col {
     display: flex;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: var(--text-2xs);
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    min-height: 0;
   }
-  &__postbattle-ribbon-name {
-    flex: 0 0 110px;
+  &__postbattle-col-title {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
+    padding: 0 2px 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  &__postbattle-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+    font-size: var(--text-2xs);
+    transition: background 0.15s;
+    &:hover { background: rgba(255, 255, 255, 0.1); }
+    &--dead { opacity: 0.55; }
+    &--self {
+      outline: 1px solid rgba(255, 255, 255, 0.7);
+      outline-offset: -1px;
+    }
+  }
+  &__postbattle-cell-ico {
+    flex: 0 0 auto;
+    display: inline-flex;
+  }
+  &__postbattle-cell-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  &__postbattle-cell-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  &__postbattle-ribbon-vals {
+  &__postbattle-cell-sub {
+    color: rgba(255, 255, 255, 0.45);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__postbattle-cell-xp {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    color: #ffd93d;
+  }
+  &__postbattle-detail {
+    position: relative;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  &__postbattle-detail-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    border: none;
+    background: none;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    font-size: var(--text-sm);
+  }
+  &__postbattle-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  &__postbattle-detail-ico { display: inline-flex; }
+  &__postbattle-detail-name {
+    font-weight: 600;
+    font-size: var(--text-sm);
+  }
+  &__postbattle-detail-ship {
+    font-style: normal;
+    color: rgba(255, 255, 255, 0.5);
+    margin-left: 8px;
+    font-size: var(--text-2xs);
+  }
+  &__postbattle-killed {
+    color: #ff6b6b;
+    font-size: var(--text-2xs);
+    margin-bottom: 6px;
+  }
+  &__postbattle-detail-body {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  &__postbattle-detail-damage {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  &__postbattle-detail-damage-num {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+  }
+  &__postbattle-detail-damage-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: var(--text-2xs);
+    margin-top: 2px;
+  }
+  &__postbattle-detail-ribbons {
+    flex: 1 1 auto;
     display: flex;
     flex-wrap: wrap;
-    gap: 2px 8px;
+    gap: 6px;
   }
-  &__postbattle-ribbon-val {
-    color: rgba(255, 255, 255, 0.7);
-    font-family: var(--font-mono);
+  &__postbattle-detail-ribbon {
+    position: relative;
+    display: inline-flex;
+    img { display: block; }
+    em {
+      position: absolute;
+      right: -4px;
+      bottom: -4px;
+      font-style: normal;
+      font-size: 9px;
+      font-weight: 700;
+      color: #111;
+      background: #ffd93d;
+      border-radius: 6px;
+      padding: 0 3px;
+      line-height: 12px;
+    }
   }
   &__postbattle-raw {
     margin-top: 0.6rem;

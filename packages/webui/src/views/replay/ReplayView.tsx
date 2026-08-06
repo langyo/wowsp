@@ -113,8 +113,9 @@ function formatDateTime(dt?: string | null): string {
   return `${y}-${mo}-${d}${hhmm}`;
 }
 
-/** Post-battle modal content: parsed player table (name, ship, damage,
- *  survived) plus the raw payload collapsed. */
+/** Post-battle modal: two-column team matrix (allies left, enemies right)
+ *  sorted by estimated settlement XP, with a drill-down panel per player:
+ *  big damage figure, horizontal ribbon strip, and the killer line. */
 const PostBattlePanel = defineComponent({
   name: "PostBattlePanel",
   props: { raw: { type: String, required: true } },
@@ -124,84 +125,135 @@ const PostBattlePanel = defineComponent({
     const rows = computed(() => {
       const pb = parsed.value;
       if (!pb) return [];
+      const names = new Map(pb.players.map((p) => [p.accountId, p.name]));
       return pb.players.map((p) => ({
         ...p,
         shipName:
           (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??
           "",
+        killerName: p.killerId != null ? names.get(p.killerId) ?? null : null,
+        // Estimated settlement XP: damage + kills + survival bonus (the
+        // server doesn't stream per-player XP into replays).
+        estXp: Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
       }));
     });
+    const allies = computed(() => {
+      const rs = rows.value;
+      // Standard replays encode 0=self / 1=ally / 2=enemy; PvE-style battles
+      // encode 0=our team / 1=their team (no single self row).
+      const teamCoded = rs.filter((p) => p.team === 0).length !== 1;
+      return (teamCoded ? rs.filter((p) => p.team === 0) : rs.filter((p) => p.team !== 2)).sort(
+        (a, b) => b.estXp - a.estXp,
+      );
+    });
+    const enemies = computed(() => {
+      const rs = rows.value;
+      const teamCoded = rs.filter((p) => p.team === 0).length !== 1;
+      return (teamCoded ? rs.filter((p) => p.team === 1) : rs.filter((p) => p.team === 2)).sort(
+        (a, b) => b.estXp - a.estXp,
+      );
+    });
+    const selected = ref<ReturnType<typeof rows.value>[number] | null>(null);
     return () => {
       const pb = parsed.value;
       if (!pb) return <pre>{props.raw}</pre>;
+      const sel = selected.value;
+      const cell = (p: ReturnType<typeof allies.value>[number]) => (
+        <button
+          class={[
+            "replay-view__postbattle-cell",
+            p.alive ? "" : "replay-view__postbattle-cell--dead",
+            p.accountId === pb.selfId ? "replay-view__postbattle-cell--self" : "",
+          ]}
+          onClick={() => {
+            selected.value = p;
+          }}
+        >
+          <span class="replay-view__postbattle-cell-ico">
+            {p.shipId != null ? (
+              <BattleIcon
+                type={shipTypeOf(p.shipId)}
+                variant={p.alive ? (p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
+                size={20}
+              />
+            ) : null}
+          </span>
+          <span class="replay-view__postbattle-cell-main">
+            <span class="replay-view__postbattle-cell-name">{p.name}</span>
+            <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
+          </span>
+          <span class="replay-view__postbattle-cell-xp">{p.estXp.toLocaleString()}</span>
+        </button>
+      );
       return (
         <div class="replay-view__postbattle">
-          <table class="replay-view__postbattle-table">
-            <thead>
-              <tr>
-                <th>玩家</th>
-                <th>舰船</th>
-                <th>伤害</th>
-                <th>击沉</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.value.map((p) => (
-                <tr key={p.accountId}>
-                  <td>
-                    <span class="replay-view__postbattle-ico">
-                      {p.shipId != null ? (
-                        <BattleIcon
-                          type={shipTypeOf(p.shipId)}
-                          variant={p.alive ? "ally" : "sunk"}
-                          size={12}
-                        />
-                      ) : null}
-                    </span>
-                    {p.name}
-                  </td>
-                  <td>{p.shipName}</td>
-                  <td class="replay-view__postbattle-num">{p.damage.toLocaleString()}</td>
-                  <td class="replay-view__postbattle-num">{p.frags}</td>
-                  <td>{p.alive ? "存活" : "沉没"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {/* Per-ribbon counters. Frags (index 32) is verified against the
-              match's sunk count; the remaining counter indices follow the
-              client's PostBattle list and are shown raw until mapped. */}
-          {rows.value.some((p) => p.ribbons.length > 0) ? (
-            <div class="replay-view__postbattle-ribbons">
-              <div class="replay-view__postbattle-ribbon-title">勋带</div>
-              {rows.value
-                .filter((p) => p.ribbons.length > 0)
-                .map((p) => (
-                  <div key={p.accountId} class="replay-view__postbattle-ribbon-row">
-                    <span class="replay-view__postbattle-ribbon-name">{p.name}</span>
-                    <span class="replay-view__postbattle-ribbon-vals">
-                      {p.ribbons.map((x) => {
-                        const key = ribbonKeyOfIndex(x.index);
-                        if (!key) return null;
-                        const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
-                        const verified = isRibbonIndexVerified(x.index);
-                        return (
-                          <span key={x.index} class="replay-view__postbattle-ribbon-val" title={verified ? name : `${name}（推测）`}>
-                            <img
-                              src={bundledRibbonUrl(key) ?? ""}
-                              width={13}
-                              height={13}
-                              alt=""
-                              style={{ verticalAlign: "middle", marginRight: 3 }}
-                            />
-                            {name} {x.value}
-                          </span>
-                        );
-                      })}
-                    </span>
-                  </div>
-                ))}
+          <div class="replay-view__postbattle-matrix">
+            <div class="replay-view__postbattle-col">
+              <div class="replay-view__postbattle-col-title">友方</div>
+              {allies.value.map(cell)}
+            </div>
+            <div class="replay-view__postbattle-col">
+              <div class="replay-view__postbattle-col-title">敌方</div>
+              {enemies.value.map(cell)}
+            </div>
+          </div>
+          {sel ? (
+            <div class="replay-view__postbattle-detail">
+              <button
+                class="replay-view__postbattle-detail-close"
+                onClick={() => {
+                  selected.value = null;
+                }}
+              >
+                ✕
+              </button>
+              <div class="replay-view__postbattle-detail-head">
+                <span class="replay-view__postbattle-detail-ico">
+                  {sel.shipId != null ? (
+                    <BattleIcon
+                      type={shipTypeOf(sel.shipId)}
+                      variant={sel.alive ? "ally" : "sunk"}
+                      size={24}
+                    />
+                  ) : null}
+                </span>
+                <span class="replay-view__postbattle-detail-name">
+                  {sel.name}
+                  <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
+                </span>
+              </div>
+              {!sel.alive && sel.killerName ? (
+                <div class="replay-view__postbattle-killed">
+                  被 {sel.killerName} 摧毁
+                  {sel.killerDamage ? `（${sel.killerDamage.toLocaleString()} 伤害）` : ""}
+                </div>
+              ) : null}
+              <div class="replay-view__postbattle-detail-body">
+                <div class="replay-view__postbattle-detail-damage">
+                  <span class="replay-view__postbattle-detail-damage-num">
+                    {sel.damage.toLocaleString()}
+                  </span>
+                  <span class="replay-view__postbattle-detail-damage-label">伤害</span>
+                </div>
+                <div class="replay-view__postbattle-detail-ribbons">
+                  {sel.ribbons.map((x) => {
+                    const key = ribbonKeyOfIndex(x.index);
+                    if (!key) return null;
+                    const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
+                    const verified = isRibbonIndexVerified(x.index);
+                    return (
+                      <span
+                        key={x.index}
+                        class="replay-view__postbattle-detail-ribbon"
+                        title={`${name} ×${x.value}${verified ? "" : "（推测）"}`}
+                      >
+                        <img src={bundledRibbonUrl(key) ?? ""} width={22} height={22} alt="" />
+                        <em>{x.value}</em>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           ) : null}
           <details class="replay-view__postbattle-raw">

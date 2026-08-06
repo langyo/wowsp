@@ -416,50 +416,38 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Post-battle damage board — top-right, aligned with the scorebar band. */
+/* Live self-stats — a slim horizontal bar (top-right), mirroring the
+   in-game strip's proportions at a smaller scale. */
 .holo-map__damage {
   position: absolute;
   top: 10px;
   right: 8px;
   z-index: 3;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-  background: rgba(5, 8, 15, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 12px;
+  background: rgba(5, 8, 15, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
   font-size: var(--text-2xs);
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
   pointer-events: none;
-  max-height: 60vh;
-  overflow-y: auto;
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
-}
-.holo-map__damage-title {
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  margin-bottom: 2px;
-  text-align: center;
 }
 .holo-map__selfstat {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 0;
-}
-.holo-map__selfstat-ico {
-  flex: 0 0 auto;
   display: inline-flex;
-}
-.holo-map__selfstat-label {
-  flex: 1 1 auto;
-  color: rgba(255, 255, 255, 0.75);
+  align-items: center;
+  gap: 5px;
+  img { display: block; }
+  &--dmg {
+    padding-left: 12px;
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
+  }
 }
 .holo-map__selfstat-num {
-  flex: 0 0 auto;
   font-family: var(--font-mono);
+  font-size: 12px;
   color: #fff;
 }
 .holo-map__damage-row {

@@ -75,8 +75,9 @@ function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
 }
 import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
-import { bundledRibbonUrl } from "./ribbonIcons";
+import { bundledRibbonUrl, ribbonUrl } from "./ribbonIcons";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useConfigStore } from "@/stores/config";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
 import { t } from "@/i18n";
@@ -243,8 +244,7 @@ export default defineComponent({
     const selfStats = computed(() => {
       const selfTraj = props.trajectories.find(
         (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(tr) === "self",
-      );
-      if (!selfTraj || selfTraj.samples.length === 0) return null;
+      );      if (!selfTraj || selfTraj.samples.length === 0) return null;
       let hits = 0;
       let damage = 0;
       let frags = 0;
@@ -277,6 +277,20 @@ export default defineComponent({
         }
       }
       return { hits, damage, frags };
+    });
+    /** Ribbon icon URLs for the self-stats bar, resolved from res_mods skins
+     *  (falls back to bundled art). */
+    const selfRibbonUrls = ref<{ hits: string | null; frags: string | null }>({
+      hits: null,
+      frags: null,
+    });
+    onMounted(() => {
+      const path = useConfigStore().activeInstall?.path;
+      void Promise.all([ribbonUrl("main_caliber", path), ribbonUrl("frag", path)]).then(
+        ([hits, frags]) => {
+          selfRibbonUrls.value = { hits, frags };
+        },
+      );
     });
     /** Ship class for a shipId (encyclopedia → offline DB → "". */
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
@@ -3338,27 +3352,29 @@ export default defineComponent({
               ))}
             </span>
           </div>
-          {/* Live self statistics (top-right): hits / damage / frags tracked
-              from the explosion stream at the current playhead. */}
+          {/* Live self statistics (top-right): a slim long bar matching the
+              in-game strip, using res_mods ribbon skins when available. */}
           {selfStats.value ? (
             <div class="holo-map__damage">
-              <div class="holo-map__damage-title">{t("replay.selfStats")}</div>
               <div class="holo-map__selfstat">
-                <span class="holo-map__selfstat-ico">
-                  <img src={bundledRibbonUrl("main_caliber") ?? ""} width={14} height={14} alt="" />
-                </span>
-                <span class="holo-map__selfstat-label">{t("replay.selfHits")}</span>
+                <img
+                  src={selfRibbonUrls.value.hits ?? bundledRibbonUrl("main_caliber") ?? ""}
+                  width={16}
+                  height={16}
+                  alt=""
+                />
                 <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
               </div>
               <div class="holo-map__selfstat">
-                <span class="holo-map__selfstat-ico">
-                  <img src={bundledRibbonUrl("frag") ?? ""} width={14} height={14} alt="" />
-                </span>
-                <span class="holo-map__selfstat-label">{t("replay.selfFrags")}</span>
+                <img
+                  src={selfRibbonUrls.value.frags ?? bundledRibbonUrl("frag") ?? ""}
+                  width={16}
+                  height={16}
+                  alt=""
+                />
                 <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
               </div>
-              <div class="holo-map__selfstat">
-                <span class="holo-map__selfstat-label">{t("replay.selfDamage")}</span>
+              <div class="holo-map__selfstat holo-map__selfstat--dmg">
                 <strong class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</strong>
               </div>
             </div>

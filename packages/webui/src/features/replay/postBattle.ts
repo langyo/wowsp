@@ -28,6 +28,11 @@ export interface PostBattlePlayer {
   /** Frags (ships sunk). Index 32 — verified: the sum across players equals
    *  the match's sunk count. */
   frags: number;
+  /** Remaining-HP ratio (0..100) — index 23. */
+  hpRatio: number | null;
+  /** Killer player accountId (index 408) + killer's damage (index 412). */
+  killerId: number | null;
+  killerDamage: number | null;
 /** Per-ribbon counters (index 24..n). Semantics per index follow the
  *  client's PostBattle list; only indices with data are kept. */
 ribbons: PostBattleRibbon[];
@@ -102,6 +107,8 @@ export interface PostBattleRibbon {
 export interface PostBattleData {
   players: PostBattlePlayer[];
   mode: string | null;
+  /** The recorder's account id (battleResults.accountDBID), when present. */
+  selfId: number | null;
   raw: string;
 }
 
@@ -136,6 +143,11 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         alive: arr[21] === true,
         damage: num(20) ?? 0,
         frags: num(32) ?? 0,
+        /** Remaining-HP ratio (0..100) — index 23. */
+        hpRatio: num(23) ?? null,
+        /** Killer player accountId (index 408) + killer's damage (412). */
+        killerId: num(408) ?? null,
+        killerDamage: num(412) ?? null,
         // Ribbon/counter zone: indices 24..132 hold small per-ribbon counts;
         // beyond that the array becomes big economy/damage totals. Kept as
         // {index, value} pairs so the UI can show the raw layout positions.
@@ -154,5 +166,10 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
     const m = common.find((v) => typeof v === "string" && v.includes("_"));
     if (typeof m === "string") mode = m;
   }
-  return { players, mode, raw };
+  return {
+    players,
+    mode,
+    selfId: typeof br.accountDBID === "number" ? (br.accountDBID as number) : null,
+    raw,
+  };
 }
