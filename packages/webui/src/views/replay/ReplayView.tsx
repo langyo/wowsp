@@ -29,6 +29,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor } from "@/utils/modeColors";
 import { useToast } from "@/composables/useToast";
 import { useRouter } from "vue-router";
+import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
 import SButton from "@/components/base/SButton";
@@ -370,14 +371,7 @@ const PostBattlePanel = defineComponent({
                   {globalLoading.value ? (
                     <span class="replay-view__postbattle-global-note">正在加载全局战绩…</span>
                   ) : globalStats.value ? (
-                    <div class="replay-view__postbattle-global-grid">
-                      <span><b>{globalStats.value.battles ?? "—"}</b> 场次</span>
-                      <span><b>{globalStats.value.winrate != null ? `${globalStats.value.winrate.toFixed(1)}%` : "—"}</b> 胜率</span>
-                      <span><b>{globalStats.value.avgDamage != null ? globalStats.value.avgDamage.toLocaleString() : "—"}</b> 均伤</span>
-                      <span><b>{globalStats.value.kdRatio != null ? globalStats.value.kdRatio.toFixed(2) : "—"}</b> K/D</span>
-                      <span><b>{globalStats.value.pr ?? "—"}</b> PR</span>
-                      <span><b>{globalStats.value.survivalRate != null ? `${globalStats.value.survivalRate.toFixed(1)}%` : "—"}</b> 存活</span>
-                    </div>
+                    <StatsCard stats={globalStats.value} />
                   ) : globalError.value ? (
                     <span class="replay-view__postbattle-global-note">
                       无法获取全局战绩（可能为 AI 玩家）
@@ -392,7 +386,7 @@ const PostBattlePanel = defineComponent({
                     low-tier farmers / CV-SS specialists. */}
                 {shipDistList.value.length > 0 ? (
                   <div class="replay-view__postbattle-dist">
-                    <div class="replay-view__postbattle-dist-title">常玩舰船</div>
+                    <div class="replay-view__postbattle-dist-title">常玩等级分布</div>
                     <ShipDistCharts ships={shipDistList.value} />
                   </div>
                 ) : null}
