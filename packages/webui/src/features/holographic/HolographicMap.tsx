@@ -439,16 +439,17 @@ export default defineComponent({
      *  multiple versions, so game resources alone can't be trusted):
      *  - controlPoint component (create state) — always a real point
      *  - capSamples (ownership stream) — real point on older clients
-     *  - capProgress starting BELOW 1000 — capture progress; strike/event
-     *    targets start at 1000+ (observed 741..1446) and drop to zero
-     *    once destroyed
-     *  - nothing at all — event/decor zone, not a capture point
+     *  - capProgress starting BELOW 1000 that does NOT collapse to zero —
+     *    capture progress; strike/event targets start high (741..1446) or
+     *    mid-range and drop to 0 once destroyed (155 of 158 observed
+     *    zero-ending low-progress zones are strike targets)
      */
     function isCaptureZone(t: EntityTrajectory): boolean {
       if (t.kind?.controlPointIndex != null) return true;
       if ((t.capSamples?.length ?? 0) > 0) return true;
       const cp = t.capProgress ?? [];
-      return cp.length > 0 && cp[0].value < 1000;
+      if (cp.length === 0) return false;
+      return cp[0].value < 1000 && cp[cp.length - 1].value > 0;
     }
     const capZones = computed(() => {
       const zones = props.trajectories.filter((t) => {
