@@ -434,16 +434,26 @@ export default defineComponent({
     // holds even for replays that record no ownership/progress updates after
     // the zone spawns. The ownership/progress-stream checks below are kept
     // only as a fallback for very old replays predating the component.
+    /** True capture point vs event/strike zone, from the replay streams
+     *  themselves (the authoritative per-match source — a map can ship in
+     *  multiple versions, so game resources alone can't be trusted):
+     *  - controlPoint component (create state) — always a real point
+     *  - capSamples (ownership stream) — real point on older clients
+     *  - capProgress starting BELOW 1000 — capture progress; strike/event
+     *    targets start at 1000+ (observed 741..1446) and drop to zero
+     *    once destroyed
+     *  - nothing at all — event/decor zone, not a capture point
+     */
+    function isCaptureZone(t: EntityTrajectory): boolean {
+      if (t.kind?.controlPointIndex != null) return true;
+      if ((t.capSamples?.length ?? 0) > 0) return true;
+      const cp = t.capProgress ?? [];
+      return cp.length > 0 && cp[0].value < 1000;
+    }
     const capZones = computed(() => {
-      // Show EVERY InteractiveZone (entityType 14) — capture points AND
-      // strike/event zones. Filtering by capProgress thresholds or by the
-      // controlPoint component dropped real points in many replays: zones
-      // owned from the start (captured before any progress stream) or on
-      // older clients never carry the component and their progress can sit
-      // at any value (200..1000). Scoring below filters to real capture
-      // points only.
       const zones = props.trajectories.filter((t) => {
         if (t.kind?.entityType !== 14) return false;
+        if (!isCaptureZone(t)) return false;
         if (t.kind.initialX == null && t.kind.initialZ == null && t.samples.length === 0) {
           return false;
         }
@@ -457,19 +467,9 @@ export default defineComponent({
       );
       return zones;
     });
-    /** Zones that actually score: real domination points (controlPoint
-     *  component or capture-state/progress streams). Strike/event zones
-     *  (progress starting around 741+ and dropping to zero once destroyed)
-     *  are rendered but never affect the score. */
-    const scoringZones = computed(() =>
-      capZones.value.filter((t) => {
-        if (t.kind?.controlPointIndex != null) return true;
-        if ((t.capSamples?.length ?? 0) > 0) return true;
-        const cp = t.capProgress ?? [];
-        if (cp.length > 0) return cp[0].value < 700;
-        return false;
-      }),
-    );
+    /** Zones that actually score: same set as the visible capture points —
+     *  strike/event zones never reach this list. */
+    const scoringZones = computed(() => capZones.value);
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
