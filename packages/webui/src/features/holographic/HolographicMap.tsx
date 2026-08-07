@@ -271,14 +271,14 @@ export default defineComponent({
     function formatTime(sec: number): string {
       const s = Math.max(0, Math.round(sec));
       const m = Math.floor(s / 60);
-      return `${m}:${String(s % 60).padStart(2, "0")}`;
+      return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
     }
     function displayTime(): string {
       const d = duration.value || 0;
       const c = current.value;
-      if (timeMode.value === 0) return formatTime(c);
-      if (timeMode.value === 1) return "-" + formatTime(d - c);
-      return formatTime(d);
+      if (timeMode.value === 1) return `-${formatTime(d - c)} / ${formatTime(d)}`;
+      if (timeMode.value === 2) return formatTime(d);
+      return `${formatTime(c)} / ${formatTime(d)}`;
     }
 
     // Score bar data
@@ -727,7 +727,7 @@ export default defineComponent({
         const cx = wx(z.kind!.initialX);
         const cz = wz(-z.kind!.initialZ);
         const owner = capDisplay.value[i]?.owner ?? 0;
-        const radiusPx = capRadiusPx(z.kind?.radius ?? 300);
+        const radiusPx = capRadiusPx(Math.max(z.kind?.radius ?? 300, 200));
         ctx.strokeStyle =
           owner === 1 ? "rgba(74, 222, 128, 0.8)" : owner === 2 ? "rgba(204, 51, 51, 0.8)" : "rgba(255, 255, 255, 0.5)";
         ctx.lineWidth = 1.2;
@@ -2296,6 +2296,10 @@ export default defineComponent({
       }
       shipLabels.value = newLabels;
 
+      // Opening view: aim the camera at the allied fleet and skip any
+      // pre-battle countdown (ships frozen before the first movement).
+      openSceneDefaults();
+
       // Capture zones: entityType 14 circles on the XZ plane.
       // Capture zones are static and may have no position samples; use the
       // initial position from EntityCreate metadata. Points that share the
@@ -2334,9 +2338,11 @@ export default defineComponent({
         const n = g.members.length;
         for (let k = 0; k < n; k++) {
           // Concentric group: offset each member along x, outer ring larger.
-          // Use each member's REAL radius so point sizes stay distinct.
+          // The create-state radius is the capture/trigger radius (often
+          // 20..60 m); the VISIBLE ring the game draws is larger, so clamp
+          // to a readable minimum while keeping big points at true size.
           const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
-          const radius = g.members[k].radius;
+          const radius = Math.max(g.members[k].radius, 200);
           const cx = g.x + spread;
           const cz = g.z;
           const ringGeom = new THREE.TorusGeometry(radius, 2.4, 8, 48);
@@ -3116,6 +3122,65 @@ export default defineComponent({
     /** Recompute cap zone states + score at playback time t. Fully derived
      *  from the replay stream (capSamples ownership changes, ship positions,
      *  HP streams) so scrubbing reproduces the same result. */
+    /** Point the opening camera at the allied fleet (not map centre) and pull
+     *  back far enough that every friendly ship is in view. Runs once after
+     *  the scene is built. */
+    function fitCameraToAllies() {
+      const ctrl = api.value?.controls;
+      const cam = api.value?.camera;
+      if (!ctrl || !cam || shipMarkers.length === 0) return;
+      const set = shipMarkers.filter((m) => {
+        const r = m.userData.role as TeamRole;
+        return r === "self" || r === "ally";
+      });
+      const use = set.length > 0 ? set : shipMarkers;
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const m of use) {
+        const p = m.position;
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.z < minZ) minZ = p.z;
+        if (p.z > maxZ) maxZ = p.z;
+      }
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      const span = Math.max(maxX - minX, maxZ - minZ, 500);
+      const dist = Math.min(4500, Math.max(900, span * 1.3));
+      ctrl.target.set(cx, 0, cz);
+      cam.position.set(cx, dist * 0.55, cz + dist);
+      ctrl.update();
+    }
+
+    /** Earliest moment any ship actually MOVES (>3 m between samples) —
+     *  the pre-battle countdown has ships frozen, and scrubbing past it on
+     *  load means the match opens on the action instead of an empty sea. */
+    function findMatchStart(): number {
+      let earliest = Number.POSITIVE_INFINITY;
+      for (const m of shipMarkers) {
+        const tr = props.trajectories.find((t) => t.entityId === m.userData.entityId);
+        if (!tr) continue;
+        const smp = tr.samples;
+        for (let i = 1; i < smp.length; i++) {
+          const dx = smp[i].x - smp[i - 1].x;
+          const dz = smp[i].z - smp[i - 1].z;
+          if (Math.hypot(dx, dz) > 3) {
+            if (smp[i].time < earliest) earliest = smp[i].time;
+            break;
+          }
+        }
+      }
+      return Number.isFinite(earliest) ? earliest : 0;
+    }
+
+    function openSceneDefaults() {
+      fitCameraToAllies();
+      const startT = findMatchStart();
+      if (startT > 2) {
+        current.value = Math.max(0, startT - 1);
+        playing.value = true;
+      }
+    }
+
     function updateCapsAndScore(t: number) {
       const zones = capZones.value;
       const scoring = scoringZones.value;
@@ -3851,8 +3916,7 @@ export default defineComponent({
             />
             <span class="holo-map__time" onClick={toggleTimeMode} title="Click to toggle elapsed / remaining / total">
               {displayTime()}
-            </span>
-            <div class="holo-map__speed">
+            </span>            <div class="holo-map__speed">
               <button
                 class="holo-map__speed-btn"
                 onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
