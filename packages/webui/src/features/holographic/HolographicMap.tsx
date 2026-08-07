@@ -422,8 +422,15 @@ export default defineComponent({
     }
     const killFeed = ref<KillEvent[]>([]);
     let killSeq = 0;
-    /** Lazily parsed post-battle payload (for killer resolution). */
+    /** Lazily parsed post-battle payload (killer resolution + self team). */
     let pbCache: ReturnType<typeof parsePostBattle> | null = null;
+    /** The recorder's own 0/1 side from the post-battle payload — maps a
+     *  zone's teamId to the owner code (1 = own side, 2 = enemy). */
+    const selfTeam = computed(() => {
+      const pb = pbCache;
+      if (!pb?.players || pb.selfId == null) return null;
+      return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
+    });
     // Entity ids already reported as sunk (avoid double-counting on scrub).
     const reportedSinks = new Set<number>();
     // The capture-zone entities + their ownership timelines. InteractiveZone
@@ -3180,6 +3187,8 @@ export default defineComponent({
     }
 
     function openSceneDefaults() {
+      // Eager post-battle parse: opening cap colours need the recorder's team.
+      if (props.battleResults) pbCache ??= parsePostBattle(props.battleResults);
       fitCameraToAllies();
       const startT = findMatchStart();
       if (startT > 2) {
@@ -3310,7 +3319,9 @@ export default defineComponent({
     /** Owner at time t from the raw capSamples stream; before the first
      *  ownership sample (or with no stream at all) fall back to the zone's
      *  initial team from the create state — zones captured from match start
-     *  never emit ownership updates. */
+     *  never emit ownership updates. teamId is a 0/1 SIDE number, so it maps
+     *  to the owner code (1 = recorder's side) via the recorder's own team
+     *  from the post-battle payload. */
     function ownerAt(
       samples: { time: number; value: number }[],
       t: number,
@@ -3325,7 +3336,8 @@ export default defineComponent({
         } else break;
       }
       if (!seen && initialTeam != null && initialTeam >= 0) {
-        o = initialTeam;
+        const st = selfTeam.value;
+        o = st != null ? (initialTeam === st ? 1 : 2) : 0;
       }
       return o;
     }
