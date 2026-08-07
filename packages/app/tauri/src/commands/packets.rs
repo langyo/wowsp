@@ -863,10 +863,12 @@ fn scan_state_for_ship_id(
 }
 
 /// Scan an EntityCreate state stream for the capture-zone radius: a f32 with
-/// an integral value in the 20..150 m range. Empirically the radius is the
+/// an integral value in the 20..700 m range. Empirically the radius is the
 /// LAST such field (observed at offset ~98 on domination, ~94 on two-brothers
 /// domination, ~18 on the 1v1 brawl layout) and every mode's state packs it
-/// as a trailing plain float, so the highest-offset candidate wins.
+/// as a trailing plain float, so the highest-offset candidate wins. Note the
+/// range: classic points are 20..150 m but modern domination points carry
+/// ~490 m rings ("Zone_in_port_ally"), so the scan must not cap at 150.
 fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
     if state.len() < 4 {
         return None;
@@ -874,7 +876,7 @@ fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
     let mut best: Option<(usize, f32)> = None;
     for off in 0..=state.len() - 4 {
         let f = f32::from_le_bytes(state[off..off + 4].try_into().ok()?);
-        if f.is_finite() && f >= 20.0 && f <= 150.0 && (f - f.round()).abs() < 0.01 {
+        if f.is_finite() && f >= 20.0 && f <= 700.0 && (f - f.round()).abs() < 0.01 {
             best = Some((off, f));
         }
     }

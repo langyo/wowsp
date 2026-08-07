@@ -717,15 +717,17 @@ export default defineComponent({
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-      // Capture zones: rings sized from the zone's real radius (world → px
-      // at the minimap scale, clamped to a readable minimum), tinted by
-      // current owner, letter inside.
-      const capPxScale = (w - 2) / (dbW || 1);
+      // Capture zones: rings sized from the zone's REAL radius. On a 160px
+      // thumb of a 30 km map even 140 m is sub-pixel, so use a relative
+      // scale — bigger radius → visibly bigger ring (sqrt keeps 20 m and
+      // 140 m points clearly distinct) — tinted by owner, letter inside.
+      const capRadiusPx = (radius: number) =>
+        Math.max(4, Math.min(22, 3 + Math.sqrt(radius / 20) * 5));
       capZones.value.forEach((z, i) => {
         const cx = wx(z.kind!.initialX);
         const cz = wz(-z.kind!.initialZ);
         const owner = capDisplay.value[i]?.owner ?? 0;
-        const radiusPx = Math.max(3, Math.min(14, (z.kind?.radius ?? 60) * capPxScale));
+        const radiusPx = capRadiusPx(z.kind?.radius ?? 300);
         ctx.strokeStyle =
           owner === 1 ? "rgba(74, 222, 128, 0.8)" : owner === 2 ? "rgba(204, 51, 51, 0.8)" : "rgba(255, 255, 255, 0.5)";
         ctx.lineWidth = 1.2;
@@ -2309,7 +2311,9 @@ export default defineComponent({
       const capEntries = capZones.value.map((t, idx) => ({
         x: t.kind!.initialX,
         z: t.kind!.initialZ,
-        radius: t.kind!.radius ?? 60,
+        // Modern domination points carry ~490 m rings; fall back to a large
+        // default when the create state yields no radius candidate.
+        radius: t.kind!.radius ?? 300,
         order: idx,
       }));
       if (capEntries.length === 0) {
@@ -2330,10 +2334,9 @@ export default defineComponent({
         const n = g.members.length;
         for (let k = 0; k < n; k++) {
           // Concentric group: offset each member along x, outer ring larger.
-          // Use the member's REAL radius (never a fixed small size) so big
-          // points read at their true footprint on the map.
+          // Use each member's REAL radius so point sizes stay distinct.
           const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
-          const radius = Math.max(g.members[k].radius, 34);
+          const radius = g.members[k].radius;
           const cx = g.x + spread;
           const cz = g.z;
           const ringGeom = new THREE.TorusGeometry(radius, 1.2, 8, 48);
