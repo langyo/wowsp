@@ -681,7 +681,10 @@ export default defineComponent({
         const mapArea = (full.maxX - full.minX) * (full.maxZ - full.minZ);
         const activeArea =
           (active.maxX - active.minX) * (active.maxZ - active.minZ);
-        if (activeArea > 0 && activeArea < 0.7 * mapArea) {
+        // Crop whenever the active area is smaller than the full map —
+        // mode-restricted matches (duels/brawls on one side of a ridge)
+        // must not render as full-map thumbnails.
+        if (activeArea > 0 && activeArea < 0.95 * mapArea) {
           db = {
             minX: Math.max(active.minX, full.minX),
             maxX: Math.min(active.maxX, full.maxX),
@@ -3165,9 +3168,11 @@ export default defineComponent({
       ctrl.update();
     }
 
-    /** Earliest moment any ship actually MOVES (>3 m between samples) —
-     *  the pre-battle countdown has ships frozen, and scrubbing past it on
-     *  load means the match opens on the action instead of an empty sea. */
+    /** Earliest moment any ship actually gets underway — the pre-battle
+     *  countdown has ships frozen except for a few metres of anchor drift,
+     *  so a small threshold would fire on that drift (observed 3-4 m at
+     *  ~60 s in matches that really start at ~190 s) and skip too far.
+     *  Uses >10 m: a real departure step is 50-100 m+ between samples. */
     function findMatchStart(): number {
       let earliest = Number.POSITIVE_INFINITY;
       for (const m of shipMarkers) {
@@ -3177,7 +3182,7 @@ export default defineComponent({
         for (let i = 1; i < smp.length; i++) {
           const dx = smp[i].x - smp[i - 1].x;
           const dz = smp[i].z - smp[i - 1].z;
-          if (Math.hypot(dx, dz) > 3) {
+          if (Math.hypot(dx, dz) > 10) {
             if (smp[i].time < earliest) earliest = smp[i].time;
             break;
           }
@@ -3189,7 +3194,14 @@ export default defineComponent({
     function openSceneDefaults() {
       // Eager post-battle parse: opening cap colours need the recorder's team.
       if (props.battleResults) pbCache ??= parsePostBattle(props.battleResults);
-      fitCameraToAllies();
+      // Frame the ACTIVE battle area (mode-restricted maps like brawls/duels
+      // play inside a small region of the full map) — the allies are inside
+      // it, so this also satisfies the "open on our fleet" requirement.
+      if (bounds) {
+        fitCamera(bounds);
+      } else {
+        fitCameraToAllies();
+      }
       const startT = findMatchStart();
       if (startT > 2) {
         current.value = Math.max(0, startT - 1);
