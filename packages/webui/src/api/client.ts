@@ -118,6 +118,10 @@ export interface EntityKind {
    *  `controlPoint` component. Only real domination points carry it;
    *  strike/event InteractiveZones leave it undefined. */
   controlPointIndex?: number | null;
+  /** Initial owning team (0/1, -1 = neutral) from the InteractiveZone
+   *  `teamId` property — zones owned from match start emit no capSamples
+   *  updates, so the opening colour comes from here. */
+  initialTeam?: number | null;
 }
 
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */

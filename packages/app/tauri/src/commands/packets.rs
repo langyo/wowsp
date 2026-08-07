@@ -717,6 +717,7 @@ fn parse_cell_player_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         creation_time: time,
         radius: None,
         control_point_index: None,
+        initial_team: None,
     })
 }
 
@@ -805,6 +806,8 @@ struct ParsedCreate {
     /// carries a real `controlPoint` component; `None` otherwise (strike /
     /// event zones have an empty componentsState).
     control_point_index: Option<i32>,
+    /// Initial owning team (0/1, -1 = neutral) from the `teamId` property.
+    initial_team: Option<i8>,
 }
 
 impl ParsedCreate {
@@ -819,8 +822,23 @@ impl ParsedCreate {
             ship_id: None,
             radius: self.radius,
             control_point_index: self.control_point_index,
+            initial_team: self.initial_team,
         }
     }
+}
+
+/// Initial owning team of an InteractiveZone from its create state: the
+/// InteractiveZone `teamId` property (INT8) is the first property byte of
+/// the state stream — `[u32 len][0c 00]<teamId>...` — so it sits at offset
+/// 6: -1 = neutral, 0/1 = team. Zones owned from match start never emit
+/// capSamples/capProgress updates, so the opening colour must come from
+/// here. Verified across domination/PvE/brawl and current clients.
+fn scan_state_for_team(state: &[u8]) -> Option<i8> {
+    if state.len() < 7 {
+        return None;
+    }
+    let t = state[6] as i8;
+    (t == -1 || t == 0 || t == 1).then_some(t)
 }
 
 /// Detect a real domination point in an InteractiveZone (type 14) create
@@ -909,6 +927,11 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
     } else {
         None
     };
+    let initial_team = if entity_type == 14 && payload.len() > 38 {
+        scan_state_for_team(&payload[38..])
+    } else {
+        None
+    };
     Some(ParsedCreate {
         entity_id,
         entity_type,
@@ -919,6 +942,7 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         creation_time: time,
         radius,
         control_point_index,
+        initial_team,
     })
 }
 

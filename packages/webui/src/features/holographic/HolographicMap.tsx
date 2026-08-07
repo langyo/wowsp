@@ -439,17 +439,23 @@ export default defineComponent({
      *  multiple versions, so game resources alone can't be trusted):
      *  - controlPoint component (create state) — always a real point
      *  - capSamples (ownership stream) — real point on older clients
-     *  - capProgress starting BELOW 1000 that does NOT collapse to zero —
-     *    capture progress; strike/event targets start high (741..1446) or
-     *    mid-range and drop to 0 once destroyed (155 of 158 observed
-     *    zero-ending low-progress zones are strike targets)
+     *  - capProgress: strike/event targets start high (741..1446) or
+     *    mid-range and DROP to zero once destroyed; real points either
+     *    keep progress above zero or stay at zero the whole match (owned
+     *    from the start, nobody ever contests them — no stream updates)
      */
     function isCaptureZone(t: EntityTrajectory): boolean {
       if (t.kind?.controlPointIndex != null) return true;
       if ((t.capSamples?.length ?? 0) > 0) return true;
       const cp = t.capProgress ?? [];
       if (cp.length === 0) return false;
-      return cp[0].value < 1000 && cp[cp.length - 1].value > 0;
+      const first = cp[0].value;
+      if (first >= 1000) return false;
+      const last = cp[cp.length - 1].value;
+      if (last > 0) return true;
+      // Ended at zero: a strike target shows non-zero progress BEFORE the
+      // drop; a point nobody ever touched stays zero the whole match.
+      return !cp.some((s) => s.value > 0);
     }
     const capZones = computed(() => {
       const zones = props.trajectories.filter((t) => {
@@ -728,7 +734,7 @@ export default defineComponent({
         const cx = wx(z.kind!.initialX);
         const cz = wz(-z.kind!.initialZ);
         const owner = capDisplay.value[i]?.owner ?? 0;
-        const radiusPx = capRadiusPx(Math.max(z.kind?.radius ?? 300, 200));
+        const radiusPx = capRadiusPx(Math.max(z.kind?.radius ?? 300, 25));
         ctx.strokeStyle =
           owner === 1 ? "rgba(74, 222, 128, 0.8)" : owner === 2 ? "rgba(204, 51, 51, 0.8)" : "rgba(255, 255, 255, 0.5)";
         ctx.lineWidth = 1.2;
@@ -2339,11 +2345,11 @@ export default defineComponent({
         const n = g.members.length;
         for (let k = 0; k < n; k++) {
           // Concentric group: offset each member along x, outer ring larger.
-          // The create-state radius is the capture/trigger radius (often
-          // 20..60 m); the VISIBLE ring the game draws is larger, so clamp
-          // to a readable minimum while keeping big points at true size.
+          // Use the REAL radius (create-state InteractiveZone.radius, 20..60 m
+          // typical) — clamping to a big minimum made adjacent points'
+          // rings overlap and diverged from the minimap proportions.
           const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
-          const radius = Math.max(g.members[k].radius, 200);
+          const radius = Math.max(g.members[k].radius, 25);
           const cx = g.x + spread;
           const cz = g.z;
           const ringGeom = new THREE.TorusGeometry(radius, 2.4, 8, 48);
@@ -3267,7 +3273,7 @@ export default defineComponent({
           st = {
             lastT: 0,
             progress: 0,
-            owner: ownerAt(samples, 0),
+            owner: ownerAt(samples, 0, zone.kind?.initialTeam ?? null),
             prevHp: new Map(),
             accrualT: 0,
             scoreAlly: 0,
@@ -3301,12 +3307,25 @@ export default defineComponent({
       enemyScore.value = enemyScoreNow;
     }
 
-    /** Owner at time t from the raw capSamples stream. */
-    function ownerAt(samples: { time: number; value: number }[], t: number): number {
+    /** Owner at time t from the raw capSamples stream; before the first
+     *  ownership sample (or with no stream at all) fall back to the zone's
+     *  initial team from the create state — zones captured from match start
+     *  never emit ownership updates. */
+    function ownerAt(
+      samples: { time: number; value: number }[],
+      t: number,
+      initialTeam: number | null,
+    ): number {
       let o = 0;
+      let seen = false;
       for (const s of samples) {
-        if (s.time <= t) o = s.value;
-        else break;
+        if (s.time <= t) {
+          o = s.value;
+          seen = true;
+        } else break;
+      }
+      if (!seen && initialTeam != null && initialTeam >= 0) {
+        o = initialTeam;
       }
       return o;
     }
