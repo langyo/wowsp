@@ -2339,11 +2339,11 @@ export default defineComponent({
           const radius = g.members[k].radius;
           const cx = g.x + spread;
           const cz = g.z;
-          const ringGeom = new THREE.TorusGeometry(radius, 1.2, 8, 48);
+          const ringGeom = new THREE.TorusGeometry(radius, 2.4, 8, 48);
           const ringMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.35,
+            opacity: 0.55,
             depthWrite: false,
           });
           const ring = new THREE.Mesh(ringGeom, ringMat);
