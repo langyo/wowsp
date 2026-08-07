@@ -720,7 +720,7 @@ export default defineComponent({
       // Capture zones: rings sized from the zone's real radius (world → px
       // at the minimap scale, clamped to a readable minimum), tinted by
       // current owner, letter inside.
-      const capPxScale = (w - 2) / (bounds.maxX - bounds.minX || 1);
+      const capPxScale = (w - 2) / (dbW || 1);
       capZones.value.forEach((z, i) => {
         const cx = wx(z.kind!.initialX);
         const cz = wz(-z.kind!.initialZ);
