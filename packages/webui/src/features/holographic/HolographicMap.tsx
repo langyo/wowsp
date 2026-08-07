@@ -2029,12 +2029,12 @@ export default defineComponent({
               }).catch(() => null);
           seenKey.add(seen);
           if (!build) continue;
-          const formation = planeFormations.get(planeId)!;
+          const formationForPool = planeFormations.get(planeId)!;
           build.then((proto) => {
             if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
             if (planeMeshes.has(planeId)) return;
             const pool: THREE.Object3D[] = [];
-            for (let i = 0; i < formation.count; i++) {
+            for (let i = 0; i < formationForPool.count; i++) {
               const inst = proto.clone(true);
               inst.userData.sharedGeometry = true;
               inst.visible = false;
