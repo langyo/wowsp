@@ -3168,44 +3168,17 @@ export default defineComponent({
       ctrl.update();
     }
 
-    /** Earliest moment any ship actually gets underway — the pre-battle
-     *  countdown has ships frozen except for a few metres of anchor drift,
-     *  so a small threshold would fire on that drift (observed 3-4 m at
-     *  ~60 s in matches that really start at ~190 s) and skip too far.
-     *  Uses >10 m: a real departure step is 50-100 m+ between samples. */
-    function findMatchStart(): number {
-      let earliest = Number.POSITIVE_INFINITY;
-      for (const m of shipMarkers) {
-        const tr = props.trajectories.find((t) => t.entityId === m.userData.entityId);
-        if (!tr) continue;
-        const smp = tr.samples;
-        for (let i = 1; i < smp.length; i++) {
-          const dx = smp[i].x - smp[i - 1].x;
-          const dz = smp[i].z - smp[i - 1].z;
-          if (Math.hypot(dx, dz) > 10) {
-            if (smp[i].time < earliest) earliest = smp[i].time;
-            break;
-          }
-        }
-      }
-      return Number.isFinite(earliest) ? earliest : 0;
-    }
-
     function openSceneDefaults() {
       // Eager post-battle parse: opening cap colours need the recorder's team.
       if (props.battleResults) pbCache ??= parsePostBattle(props.battleResults);
       // Frame the ACTIVE battle area (mode-restricted maps like brawls/duels
       // play inside a small region of the full map) — the allies are inside
       // it, so this also satisfies the "open on our fleet" requirement.
+      // Playback starts at the replay's raw time (no auto-skip).
       if (bounds) {
         fitCamera(bounds);
       } else {
         fitCameraToAllies();
-      }
-      const startT = findMatchStart();
-      if (startT > 2) {
-        current.value = Math.max(0, startT - 1);
-        playing.value = true;
       }
     }
 
