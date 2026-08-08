@@ -20,7 +20,7 @@ import {
   type ShipModelSpec,
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
-import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
+import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
@@ -407,7 +407,9 @@ export default defineComponent({
     // approximation of the domination scoring shown in the top bar.
     const allyScore = ref(0);
     const enemyScore = ref(0);
-    // Transient "X sunk" feed, newest first; entries expire after a few seconds.
+    // Transient "X sunk Y" feed, newest first; entries expire after a few
+    // seconds. Each side renders its own ship name with the player nickname
+    // underneath (killer left-aligned, victim right-aligned, "sank" centred).
     interface KillEvent {
       id: number;
       /** Victim's player nickname. */
@@ -416,8 +418,13 @@ export default defineComponent({
       shipName: string;
       /** Victim's ship type (for the HUD icon). */
       shipType: string | null;
+      /** Killer's ship display name. */
+      killerShipName: string;
+      /** Killer's ship type (for the HUD icon). */
+      killerShipType: string | null;
       /** Killer's player nickname (resolved from the post-battle payload). */
       killerName: string | null;
+      /** Role of the KILLER (the card tint is the killer's side). */
       role: TeamRole;
     }
     const killFeed = ref<KillEvent[]>([]);
@@ -506,6 +513,13 @@ export default defineComponent({
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
+    /** Successfully loaded ship models, one per marker build — cloned as
+     *  substitute hulls for ships whose own GLB is missing or failed to
+     *  load (a same-team stand-in beats a bare cone). */
+    let loadedModelPool: { model: THREE.Group; role: TeamRole }[] = [];
+    /** Markers still waiting for a model (no URL or load failure); filled
+     *  from `loadedModelPool` as soon as any model finishes loading. */
+    let modelWaiters: { marker: THREE.Group; traj: EntityTrajectory }[] = [];
     /** Smoke-screen clusters (entityType 4 = SmokeScreen). Each cluster
      *  holds a start ring + end ring (white circles) and a remaining-time
      *  sprite. Puffs spawned within 300 m of each other merge into one
@@ -1187,6 +1201,8 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+      loadedModelPool = [];
+      modelWaiters = [];
       capRings = [];
       capSim.clear();
       for (const cl of smokeClusters) {
@@ -2142,34 +2158,84 @@ export default defineComponent({
           (rosterEntry?.shipId != null
             ? resolveShipModelByShipId(rosterEntry.shipId)
             : null);
+        // The marker's cone stays as-is until a model arrives; ships whose
+        // own GLB is missing/unloadable still get a hull — a same-role model
+        // already loaded for another ship, cloned and re-tinted — instead of
+        // a bare cone.
+        const installModel = (target: THREE.Group, model: THREE.Group) => {
+          for (const child of [...target.children]) {
+            target.remove(child);
+            child.traverse((o) => {
+              if (o instanceof THREE.Mesh) {
+                o.geometry.dispose();
+                (o.material as THREE.Material).dispose();
+              }
+            });
+          }
+          target.add(model);
+          target.userData.modelLoaded = true;
+          target.userData.isDot = false;
+          // Re-run the per-frame visibility rules (opening-phase enemy
+          // hiding, creation time) instead of forcing the marker on.
+          updateMarkersAt(current.value);
+          initMarkerPosition(target, traj, current.value);
+          updateLabelPositions();
+        };
+        const buildFromLoadedPool = () => {
+          // Prefer a model from the same side (self/ally vs enemy).
+          const sub =
+            loadedModelPool.find((p) => p.role === role) ??
+            loadedModelPool[0];
+          if (!sub) return false;
+          try {
+            const replacement = buildMarkerFromSource(sub.model, role);
+            loadedModelPool.push({ model: replacement, role });
+            installModel(marker, replacement);
+            return true;
+          } catch (e) {
+            console.warn(`[HolographicMap] substitute model for entity ${traj.entityId} failed:`, e);
+            return false;
+          }
+        };
+        const drainModelWaiters = () => {
+          for (let i = modelWaiters.length - 1; i >= 0; i--) {
+            const w = modelWaiters[i];
+            if (w.marker.userData.modelLoaded) {
+              modelWaiters.splice(i, 1);
+              continue;
+            }
+            const sub =
+              loadedModelPool.find((p) => p.role === w.marker.userData.role) ??
+              loadedModelPool[0];
+            if (!sub) continue;
+            try {
+              const replacement = buildMarkerFromSource(sub.model, w.marker.userData.role);
+              loadedModelPool.push({ model: replacement, role: w.marker.userData.role });
+              installModel(w.marker, replacement);
+              modelWaiters.splice(i, 1);
+            } catch (e) {
+              console.warn(`[HolographicMap] substitute model for entity ${w.traj.entityId} failed:`, e);
+            }
+          }
+        };
         if (!modelUrl) {
           console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
             + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
-        }
-        if (modelUrl) {
+          if (!buildFromLoadedPool()) modelWaiters.push({ marker, traj });
+        } else {
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
-              for (const child of [...marker.children]) {
-                marker.remove(child);
-                child.traverse((o) => {
-                  if (o instanceof THREE.Mesh) {
-                    o.geometry.dispose();
-                    (o.material as THREE.Material).dispose();
-                  }
-                });
-              }
-              marker.add(shipModel);
-              marker.userData.modelLoaded = true;
-              marker.userData.isDot = false;
-              // Re-run the per-frame visibility rules (opening-phase enemy
-              // hiding, creation time) instead of forcing the marker on.
-              updateMarkersAt(current.value);
-              initMarkerPosition(marker, traj, current.value);
-              updateLabelPositions();
+              loadedModelPool.push({ model: shipModel, role });
+              installModel(marker, shipModel);
+              // Fill every marker still waiting on a hull from the model
+              // pool (same-role first), newest models included.
+              drainModelWaiters();
             })
             .catch((e) => {
               console.warn(`[HolographicMap] failed to load marker model for entity ${traj.entityId}:`, e);
+              if (epoch !== markerEpoch) return;
+              if (!buildFromLoadedPool()) modelWaiters.push({ marker, traj });
             });
         }
 
@@ -2550,16 +2616,19 @@ export default defineComponent({
           if (!marker.userData._countedDead) {
             marker.userData._countedDead = true;
             const role = marker.userData.role as TeamRole;
-            // Kill feed + score tick. The killer is unknown from the replay
-            // stream, so the feed names the victim only.
+            // Kill feed + score tick. The killer's identity lives in the
+            // post-battle payload (killerId, index 408) — resolve it to a
+            // nickname, ship name and ship type at sink time.
             if (!reportedSinks.has(entityId)) {
               reportedSinks.add(entityId);
               const who = label?.name ?? `#${entityId}`;
-              const victimRole = role === "ally" ? "enemy" : "ally";
               // Killer resolution: the killer's account id lives in the
               // post-battle payload (index 408); map it back to a nickname
               // via the same playersPublicInfo table.
               let killerName: string | null = null;
+              let killerShipId: number | null = null;
+              let killerShipName = "";
+              let killerShipType: string | null = null;
               if (props.battleResults) {
                 pbCache ??= parsePostBattle(props.battleResults);
               }
@@ -2569,9 +2638,24 @@ export default defineComponent({
                   (p) => (p.name ?? "").trim().toLowerCase() === vn,
                 );
                 if (victim?.killerId != null) {
-                  killerName =
-                    pbCache.players.find((p) => p.accountId === victim.killerId)?.name ?? null;
+                  const killer = pbCache.players.find(
+                    (p) => p.accountId === victim.killerId,
+                  );
+                  killerName = killer?.name ?? null;
+                  killerShipId = killer?.shipId ?? null;
                 }
+              }
+              if (killerShipId != null) {
+                const encStore = useEncyclopediaStore();
+                const dataLang = useLanguage().dataLanguage.value;
+                const kinfo = props.encyclopedia.get(killerShipId) as ShipInfo | undefined;
+                const koff = shipOfflineEntry(killerShipId);
+                killerShipName =
+                  (kinfo ? encStore.shipDisplayName(kinfo) : null) ??
+                  shipNameFromOfflineDb(killerShipId, dataLang) ??
+                  shipNameFromModelDb(killerShipId) ??
+                  "";
+                killerShipType = kinfo?.type ?? koff?.type ?? null;
               }
               const feedId = ++killSeq;
               killFeed.value.unshift({
@@ -2579,8 +2663,10 @@ export default defineComponent({
                 text: who,
                 shipName: label?.shipName ?? "",
                 shipType: label?.type ?? null,
+                killerShipName,
+                killerShipType,
                 killerName,
-                role: victimRole,
+                role,
               });
               if (killFeed.value.length > 4) killFeed.value.pop();
               window.setTimeout(() => {
@@ -3830,35 +3916,51 @@ export default defineComponent({
           ) : null}
           </>
         ) : null}
-        {/* Kill feed (sink notifications) — bottom-left, two-line entries:
-            ship icon + ship name on top, player nickname underneath aligned
-            with the ship name. */}
+        {/* Kill feed (sink notifications) — bottom-left. Each entry shows
+            both ships: killer ship + nickname on the left (left-aligned),
+            "击沉了" centred, victim ship + nickname on the right
+            (right-aligned). The card's accent is the killer's side. */}
         {killFeed.value.length > 0 ? (
           <div class="holo-map__killfeed">
             {killFeed.value.map((k) => (
               <div key={k.id} class={["holo-map__kill", `holo-map__kill--${k.role}`]}>
-                <span class="holo-map__kill-line">
-                  <span class="holo-map__kill-ico">
-                    {k.shipType ? (
-                      <BattleIcon
-                        kind="ship"
-                        type={k.shipType}
-                        variant={k.role === "ally" ? "ally" : "enemy"}
-                        size={13}
-                      />
-                    ) : null}
+                <div class="holo-map__kill-side holo-map__kill-side--killer">
+                  <span class="holo-map__kill-ship">
+                    <span class="holo-map__kill-ico">
+                      {k.killerShipType ? (
+                        <BattleIcon
+                          kind="ship"
+                          type={k.killerShipType}
+                          variant={k.role === "enemy" ? "enemy" : "ally"}
+                          size={13}
+                        />
+                      ) : null}
+                    </span>
+                    {k.killerShipName || k.killerName || "?"}
                   </span>
-                  <span class="holo-map__kill-ship">{k.shipName}</span>
-                </span>
-                <span class="holo-map__kill-name">
-                  {k.killerName ? (
-                    <>
-                      <b class="holo-map__kill-killer">{k.killerName}</b> 击沉 {k.text}
-                    </>
-                  ) : (
-                    k.text
-                  )}
-                </span>
+                  <span class="holo-map__kill-name">
+                    {k.killerName ?? ""}
+                  </span>
+                </div>
+                <span class="holo-map__kill-verb">击沉了</span>
+                <div class="holo-map__kill-side holo-map__kill-side--victim">
+                  <span class="holo-map__kill-ship">
+                    <span class="holo-map__kill-ico">
+                      {k.shipType ? (
+                        <BattleIcon
+                          kind="ship"
+                          type={k.shipType}
+                          variant={k.role === "ally" ? "enemy" : "ally"}
+                          size={13}
+                        />
+                      ) : null}
+                    </span>
+                    {k.shipName}
+                  </span>
+                  <span class="holo-map__kill-name">
+                    {k.text}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
