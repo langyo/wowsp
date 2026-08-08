@@ -551,29 +551,72 @@
   cursor: pointer;
 }
 
-/* ── Kill feed (sink notifications) ──────────────────────────────────── */
+/* ── Kill feed (sink notifications) — bottom-left, ABOVE the playback
+   controls (play/scrub bar sits at bottom:12px). Each entry is a 3-column
+   grid: killer (left-aligned) | "击沉了" | victim (right-aligned), with the
+   player nicknames underneath their respective ship names — no text ever
+   spills below the verb. ─── */
 .holo-map__killfeed {
   position: absolute;
-  right: 12px;
-  top: 50%;
-  translate: 0 -50%;
+  left: 12px;
+  bottom: 62px;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   z-index: 4;
   pointer-events: none;
+  max-width: min(560px, calc(100vw - 24px));
 }
 .holo-map__kill {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 0.5rem;
   padding: 0.3rem 0.55rem;
   font-size: var(--text-xs);
-  font-weight: 600;
   background: rgba(5, 8, 15, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
   animation: holo-kill-in 0.25s ease-out;
+}
+.holo-map__kill-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.holo-map__kill-side--killer { align-items: flex-start; text-align: left; }
+.holo-map__kill-side--victim { align-items: flex-end; text-align: right; }
+.holo-map__kill-verb {
+  align-self: center;
+  padding-top: 1px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+.holo-map__kill-ico {
+  flex: 0 0 13px;
+  display: inline-flex;
+}
+.holo-map__kill-ship {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holo-map__kill-name {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 @keyframes holo-kill-in {
   from { opacity: 0; translate: 0 -8px; }
@@ -581,12 +624,6 @@
 }
 .holo-map__kill--ally { border-left: 3px solid #3cb478; }
 .holo-map__kill--enemy { border-left: 3px solid #cc3333; }
-.holo-map__kill-cross {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.8em;
-}
-.holo-map__kill-name { color: rgba(255, 255, 255, 0.9); }
-.holo-map__kill-pts { color: #ffd75e; font-family: var(--font-mono); }
 
 /* ── Selected ship (first-person follow) ─────────────────────────────── */
 .holo-label--selected {
