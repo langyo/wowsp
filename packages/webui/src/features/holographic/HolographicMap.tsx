@@ -1732,7 +1732,6 @@ export default defineComponent({
           const cvs = document.createElement("canvas");
           cvs.width = 128;
           cvs.height = 64;
-          const ctx = cvs.getContext("2d")!;
           const tex = new THREE.CanvasTexture(cvs);
           const sprite = new THREE.Sprite(
             new THREE.SpriteMaterial({
