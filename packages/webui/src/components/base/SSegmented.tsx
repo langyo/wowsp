@@ -1,4 +1,4 @@
-import { computed, defineComponent, type PropType } from "vue";
+import { computed, defineComponent, type PropType, type VNode } from "vue";
 
 import "./SSegmented.scss";
 
@@ -6,6 +6,9 @@ export interface SegmentedOption {
   value: string;
   label: string;
 }
+
+/** Optional custom per-option renderer (e.g. label + direction arrow). */
+export type SegmentedOptionRender = (opt: SegmentedOption, active: boolean) => VNode | string;
 
 /**
  * iOS-style segmented control with a sliding highlight indicator. Ported from
@@ -23,6 +26,7 @@ export default defineComponent({
     modelValue: { type: String, required: true },
     options: { type: Array as PropType<SegmentedOption[]>, required: true },
     block: { type: Boolean, default: false },
+    renderOption: { type: Function as PropType<SegmentedOptionRender>, default: null },
   },
   emits: {
     "update:modelValue": (_v: string) => true,
@@ -59,7 +63,7 @@ export default defineComponent({
               ]}
               onClick={() => emit("update:modelValue", opt.value)}
             >
-              {opt.label}
+              {props.renderOption ? props.renderOption(opt, active) : opt.label}
             </button>
           );
         })}

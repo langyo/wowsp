@@ -650,6 +650,7 @@ mod tests {
                 ship_id: None,
                 radius: None,
                 control_point_index: None,
+                initial_team: None,
             },
         );
         let change =

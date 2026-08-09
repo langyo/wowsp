@@ -19,6 +19,8 @@ export default defineComponent({
     modelValue: { type: String, default: "" },
     placeholder: { type: String, default: "" },
     candidates: { type: Array as () => SearchCandidate[], default: () => [] },
+    autofocus: { type: Boolean, default: false },
+    block: { type: Boolean, default: false },
   },
   emits: {
     "update:modelValue": (_v: string) => true,
@@ -50,7 +52,8 @@ export default defineComponent({
           }}
           placeholder={props.placeholder}
           onKeydown={onKeydown}
-          block
+          block={props.block}
+          autofocus={props.autofocus}
         />
         {open.value && props.modelValue.trim() && props.candidates.length > 0 ? (
           <div class="s-search__pop">

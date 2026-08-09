@@ -6,8 +6,8 @@
  * fields that are stable across builds:
  *
  *   [1]  player name
- *   [6]  team relation (0 = self/recorder, 1 = ally, 2 = enemy) — when the
- *        recorder's own account is the match owner; otherwise best-effort
+ *   [6]  team number (0 or 1 — the recorder's own team = "allies"; NOT a
+ *        per-player relation like 0=self/1=ally/2=enemy)
  *   [7]  ship GameParams id (resolves to a localized ship name)
  *   [20] battle damage (verified magnitude across players)
  *   [21] survived (bool)

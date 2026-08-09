@@ -507,6 +507,13 @@ pub struct EntityKind {
     /// updates afterwards.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_point_index: Option<i32>,
+    /// Initial owning team of a capture zone (0/1 = team, -1 = neutral),
+    /// recovered from the InteractiveZone `teamId` property (INT8, the first
+    /// property byte of the state stream). Zones owned from match start emit
+    /// no capSamples/capProgress updates, so the opening colour must come
+    /// from the create state itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_team: Option<i8>,
 }
 
 fn default_creation_time() -> f32 {

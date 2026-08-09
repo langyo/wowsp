@@ -75,6 +75,23 @@
     "on": "原视角",
     "off": "自由视角"
   },
+  "camera": {
+    "title": "视角",
+    "free": "自由视角",
+    "original": "原视角",
+    "me": "我",
+    "allies": "友方",
+    "enemies": "敌方",
+    "battles": "场"
+  },
+  "classes": {
+    "battleship": "战列舰",
+    "cruiser": "巡洋舰",
+    "destroyer": "驱逐舰",
+    "aircarrier": "航空母舰",
+    "submarine": "潜艇",
+    "auxiliary": "辅助舰"
+  },
   "selfStats": "本舰",
   "selfHits": "命中",
   "selfFrags": "击沉",

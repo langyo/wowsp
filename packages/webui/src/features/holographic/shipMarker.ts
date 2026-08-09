@@ -116,6 +116,60 @@ function cloneWithSharedGeometry(source: THREE.Group): THREE.Group {
   return source.clone(true);
 }
 
+/** Build a marker from an ALREADY-LOADED model (e.g. a substitute hull for a
+ *  ship whose own GLB is missing or failed to load). Re-applies the same
+ *  normalization + role tint as `buildShipMarker`, so the swap looks exactly
+ *  like a real model load. The source model is not mutated. */
+export function buildMarkerFromSource(
+  source: THREE.Group,
+  role: TeamRole,
+): THREE.Group {
+  const model = cloneWithSharedGeometry(source);
+
+  // Recompute bounding box (baked GLBs drop POSITION min/max).
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.geometry?.attributes.position) {
+      mesh.geometry.computeBoundingBox();
+      mesh.geometry.computeBoundingSphere();
+    }
+  });
+
+  // Apply uniform scale to preserve relative ship sizes (BB > DD).
+  const box = new THREE.Box3().setFromObject(model);
+  model.scale.setScalar(SHIP_SCALE);
+  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(SHIP_SCALE);
+  model.position.sub(center);
+  // Raise so the model's keel sits at y=0 (water surface).
+  model.position.y += -box.min.y * SHIP_SCALE;
+
+  // Apply the role-tinted holographic shader to every mesh. Collect first so
+  // the wireframe overlay (added as a child) doesn't recurse during traverse.
+  const { baseColor, fresnelColor } = holoColorsFor(role);
+  const holoMat = makeHoloMaterial();
+  holoMat.uniforms.baseColor.value.setHex(baseColor);
+  holoMat.uniforms.fresnelColor.value.setHex(fresnelColor);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: baseColor,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.1,
+    depthWrite: false,
+  });
+  const meshes: THREE.Mesh[] = [];
+  model.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+  });
+  for (const mesh of meshes) {
+    mesh.material = holoMat;
+    const wire = new THREE.Mesh(mesh.geometry, wireMat);
+    wire.raycast = () => {}; // overlay shouldn't intercept picks
+    mesh.add(wire);
+  }
+
+  return model;
+}
+
 /** Dispose the per-marker materials on a marker built by `buildShipMarker`.
  *  Geometry is intentionally NOT disposed (it's shared via the cache); call
  *  `clearShipMarkerCache()` on unmount/replay-switch to release those. */

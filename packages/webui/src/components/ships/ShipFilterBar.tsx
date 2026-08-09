@@ -8,9 +8,9 @@
  * by realm) with the offline database as fallback — so new ships never
  * vanish from filters.
  */
-import { computed, defineComponent, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PlayerShipStats } from "@/api";
-import { ArrowDown, ArrowUp } from "lucide-vue-next";
+import { ArrowDown, ArrowUp, Search } from "lucide-vue-next";
 
 import SSegmented from "@/components/base/SSegmented";
 import SSearchInput from "@/components/base/SSearchInput";
@@ -93,6 +93,15 @@ export default defineComponent({
     const sortKey = ref<"battles" | "winrate" | "avgDamage">("battles");
     const sortDir = ref<"desc" | "asc">("desc");
     const shipQuery = ref("");
+    const searchOpen = ref(false);
+    const searchAnchor = ref<HTMLDivElement | null>(null);
+
+    function onDocMouseDown(e: MouseEvent) {
+      const el = searchAnchor.value;
+      if (el && !el.contains(e.target as Node)) searchOpen.value = false;
+    }
+    onMounted(() => document.addEventListener("mousedown", onDocMouseDown));
+    onBeforeUnmount(() => document.removeEventListener("mousedown", onDocMouseDown));
 
     onMounted(() => {
       // Pinia setup-store refs are auto-unwrapped — no `.value` here.
@@ -262,42 +271,73 @@ export default defineComponent({
             ]}
           />
           {/* Sort — segmented group; clicking the active key flips direction. */}
-          <div class="ship-filter-bar__sort">
-            {(
-              [
-                ["battles", t("dashboard.battles")],
-                ["winrate", t("dashboard.winrate")],
-                ["avgDamage", t("dashboard.avgDamage")],
-              ] as [typeof sortKey.value, string][]
-            ).map(([key, label], idx) => (
-              <button
-                key={key}
-                class={[
-                  "ship-filter-bar__sort-btn",
-                  sortKey.value === key ? "ship-filter-bar__sort-btn--on" : "",
-                ]}
-                style={idx === 0 ? { borderRadius: "6px 0 0 6px" } : idx === 2 ? { borderRadius: "0 6px 6px 0" } : undefined}
-                onClick={() => toggleSort(key)}
-              >
-                {label}
-                {sortKey.value === key ? (
+          <SSegmented
+            modelValue={sortKey.value}
+            onUpdate:modelValue={(v: string) => toggleSort(v as typeof sortKey.value)}
+            options={[
+              { value: "battles", label: t("dashboard.battles") },
+              { value: "winrate", label: t("dashboard.winrate") },
+              { value: "avgDamage", label: t("dashboard.avgDamage") },
+            ]}
+            renderOption={(opt, active) => (
+              <span class="ship-filter-bar__sort-label">
+                {opt.label}
+                {active ? (
                   sortDir.value === "desc" ? (
                     <ArrowDown size={11} class="ship-filter-bar__sort-arrow" />
                   ) : (
                     <ArrowUp size={11} class="ship-filter-bar__sort-arrow" />
                   )
                 ) : null}
-              </button>
-            ))}
-          </div>
-          <SSearchInput
-            modelValue={shipQuery.value}
-            onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
-            onPick={(v: string) => (shipQuery.value = v)}
-            placeholder={t("common.search.fuzzy")}
-            candidates={searchCandidates.value}
-            class="ship-filter-bar__search"
+              </span>
+            )}
           />
+          {/* Search — one button; the input lives in a popup panel that
+              opens leftwards from the button (roomier than an inline box). */}
+          <div ref={searchAnchor} class="ship-filter-bar__search-anchor">
+            <button
+              type="button"
+              class={[
+                "ship-filter-bar__search-btn",
+                searchOpen.value ? "ship-filter-bar__search-btn--on" : "",
+              ]}
+              onClick={() => {
+                searchOpen.value = !searchOpen.value;
+              }}
+            >
+              <Search size={13} />
+              <span>{t("common.search.fuzzy")}</span>
+            </button>
+            {searchOpen.value ? (
+              <div class="ship-filter-bar__search-panel">
+                <div class="ship-filter-bar__search-panel-head">
+                  <span>{t("common.search.fuzzy")}</span>
+                  <button
+                    type="button"
+                    class="ship-filter-bar__search-close"
+                    onClick={() => (searchOpen.value = false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <SSearchInput
+                  modelValue={shipQuery.value}
+                  onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
+                  onPick={(v: string) => {
+                    shipQuery.value = v;
+                    searchOpen.value = false;
+                  }}
+                  placeholder={t("common.search.fuzzy")}
+                  candidates={searchCandidates.value}
+                  autofocus
+                  block
+                />
+                {!shipQuery.value.trim() ? (
+                  <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     );

@@ -9,6 +9,7 @@ export default defineComponent({
     modelValue: { type: String, default: "" },
     placeholder: { type: String, default: "" },
     block: { type: Boolean, default: false },
+    autofocus: { type: Boolean, default: false },
   },
   emits: {
     "update:modelValue": (_v: string) => true,
@@ -21,6 +22,7 @@ export default defineComponent({
         type="text"
         placeholder={props.placeholder}
         value={props.modelValue}
+        autofocus={props.autofocus || undefined}
         onInput={(e) => emit("update:modelValue", (e.target as HTMLInputElement).value)}
         onKeydown={(e) => emit("keydown", e)}
       />

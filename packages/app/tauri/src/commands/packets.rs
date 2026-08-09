@@ -717,6 +717,7 @@ fn parse_cell_player_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         creation_time: time,
         radius: None,
         control_point_index: None,
+        initial_team: None,
     })
 }
 
@@ -805,6 +806,8 @@ struct ParsedCreate {
     /// carries a real `controlPoint` component; `None` otherwise (strike /
     /// event zones have an empty componentsState).
     control_point_index: Option<i32>,
+    /// Initial owning team (0/1, -1 = neutral) from the `teamId` property.
+    initial_team: Option<i8>,
 }
 
 impl ParsedCreate {
@@ -819,8 +822,23 @@ impl ParsedCreate {
             ship_id: None,
             radius: self.radius,
             control_point_index: self.control_point_index,
+            initial_team: self.initial_team,
         }
     }
+}
+
+/// Initial owning team of an InteractiveZone from its create state: the
+/// InteractiveZone `teamId` property (INT8) is the first property byte of
+/// the state stream — `[u32 len][0c 00]<teamId>...` — so it sits at offset
+/// 6: -1 = neutral, 0/1 = team. Zones owned from match start never emit
+/// capSamples/capProgress updates, so the opening colour must come from
+/// here. Verified across domination/PvE/brawl and current clients.
+fn scan_state_for_team(state: &[u8]) -> Option<i8> {
+    if state.len() < 7 {
+        return None;
+    }
+    let t = state[6] as i8;
+    (t == -1 || t == 0 || t == 1).then_some(t)
 }
 
 /// Detect a real domination point in an InteractiveZone (type 14) create
@@ -863,10 +881,12 @@ fn scan_state_for_ship_id(
 }
 
 /// Scan an EntityCreate state stream for the capture-zone radius: a f32 with
-/// an integral value in the 20..150 m range. Empirically the radius is the
+/// an integral value in the 20..700 m range. Empirically the radius is the
 /// LAST such field (observed at offset ~98 on domination, ~94 on two-brothers
 /// domination, ~18 on the 1v1 brawl layout) and every mode's state packs it
-/// as a trailing plain float, so the highest-offset candidate wins.
+/// as a trailing plain float, so the highest-offset candidate wins. Note the
+/// range: classic points are 20..150 m but modern domination points carry
+/// ~490 m rings ("Zone_in_port_ally"), so the scan must not cap at 150.
 fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
     if state.len() < 4 {
         return None;
@@ -874,7 +894,7 @@ fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
     let mut best: Option<(usize, f32)> = None;
     for off in 0..=state.len() - 4 {
         let f = f32::from_le_bytes(state[off..off + 4].try_into().ok()?);
-        if f.is_finite() && f >= 20.0 && f <= 150.0 && (f - f.round()).abs() < 0.01 {
+        if f.is_finite() && f >= 20.0 && f <= 700.0 && (f - f.round()).abs() < 0.01 {
             best = Some((off, f));
         }
     }
@@ -907,6 +927,11 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
     } else {
         None
     };
+    let initial_team = if entity_type == 14 && payload.len() > 38 {
+        scan_state_for_team(&payload[38..])
+    } else {
+        None
+    };
     Some(ParsedCreate {
         entity_id,
         entity_type,
@@ -917,6 +942,7 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
         creation_time: time,
         radius,
         control_point_index,
+        initial_team,
     })
 }
 
