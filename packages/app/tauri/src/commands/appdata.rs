@@ -6,12 +6,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-/// Resolve `<APPDATA>/WoWSP/`, creating it if missing.
+use crate::paths;
+
+/// Resolve the writable data root (`%APPDATA%/WoWSP/` locally, `<exe>/data/`
+/// in portable mode), creating it if missing.
 fn appdata_dir() -> Result<PathBuf, String> {
-    let base = dirs_next::data_dir().ok_or_else(|| "cannot resolve AppData dir".to_string())?;
-    let dir = base.join("WoWSP");
-    fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
-    Ok(dir)
+    paths::ensure_data_dir()
 }
 
 /// Read a JSON file from AppData. Returns None if the file doesn't exist yet.

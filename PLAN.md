@@ -1,7 +1,7 @@
 # WoWSP Roadmap
 
 > This file tracks the high-level plan for WoWSP (World of WarShip Panel). It is
-> living documentation — update it as work lands on the `dev` branch.
+> living documentation — update it as work lands on `master`.
 
 ## Two operating modes
 
@@ -61,17 +61,32 @@ visible only while `Tab` is held.
 - [x] Playwright e2e harness, lagrange docs (en + zhs), GitHub CI + community files
 - [x] Pure SySL-1.0 license (Synthetic Source License, no BSL/change-date), signed langyo
 
-## Feature milestones (dev branch)
+## Feature milestones
 
-- [ ] M1 — Real game-detection (registry + Steam), cached to `.wowsp-cache/`
-- [ ] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
-- [ ] M3 — Replay packet-stream decoder → per-entity event timeline
-- [~] M4 — three.js holographic map renders one full match from a replay
-- [ ] M5 — Model converters produce GLB for at least one map + a handful of ships
-- [ ] M6 — Mod installer: launches WoWSP with the game, transparent overlay window
-- [ ] M7 — `tempArenaInfo.json` polling → live roster in overlay mode
-- [ ] M8 — Tab-triggered capture + roster re-anchoring
-- [ ] M9 — Optional Wargaming stat lookup (Vortex / WG Public API)
+All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in pre-release hardening for the initial public release.
+
+- [x] M1 — Real game-detection (registry + Steam + Lesta + 360), cached to AppData
+- [x] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
+- [x] M3 — Replay packet-stream decoder → per-entity event timeline
+- [x] M4 — three.js holographic map renders one full match from a replay
+- [x] M5 — Model converters produce GLB for maps + the full ship roster
+- [x] M6 — Mod installer: launches WoWSP with the game, transparent overlay window
+- [x] M7 — `tempArenaInfo.json` polling → live roster in overlay mode
+- [x] M8 — Tab-triggered capture + roster re-anchoring
+- [x] M9 — Wargaming stat lookup (Vortex / WG Public API) + offline player-stats cache
+
+## Pre-release checklist (initial 1.0.0)
+
+- [x] Consolidated unmerged PRs; closed bot PRs
+- [x] Repo references corrected (celestia-island → langyo), updater endpoints + mirrors
+- [x] Docs site (lagrange) builds clean for all 9 languages; CNAME wowsp.langyo.xyz
+- [x] Official website (vue3 tsx + scss + vite, `packages/website`) + GitHub Pages deploy
+- [x] Auto-update: GitHub + mirror endpoints, release workflow signs `latest.json`
+- [x] Installer: WebView2 bootstrapper embedded; NSIS three-mode install (local / USB / green)
+- [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`)
+- [ ] First tagged release + model-pack `res-latest` assets
+
+## Release notes history
 
 ### M4 state / known gaps
 
@@ -175,9 +190,7 @@ visible only while `Tab` is held.
   entity defs, or in static scenario GameParams (scenarioConfigId).
 - Dock maps Dock_Kure / Dock_Fjords fail the batch map bake (non-battle maps).
 
-Each milestone is a focused PR against `dev`. The skeleton in this repository is
-the foundation for all of them — every TODO in the code points at the milestone
-it belongs to.
+Each milestone was a focused PR against `dev`; all of them now live on `master`.
 
 ## Known CI gaps
 

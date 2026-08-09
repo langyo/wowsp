@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate, type Update } from "@tauri-apps/plugin-updater";
 
 /**
@@ -10,6 +11,10 @@ import { check as checkUpdate, type Update } from "@tauri-apps/plugin-updater";
  *
  * In browser-only dev mode the plugin throws (no Tauri runtime); calls are
  * caught and surfaced via `error` so the UI degrades gracefully.
+ *
+ * Portable (USB / green) installs have no NSIS-based update path — the
+ * updater is disabled there (`portable` flag from the Rust `is_portable`
+ * command).
  */
 export const useUpdaterStore = defineStore("updater", () => {
   const available = ref(false);
@@ -19,9 +24,19 @@ export const useUpdaterStore = defineStore("updater", () => {
   const downloading = ref(false);
   const checked = ref(false);
   const error = ref<string | null>(null);
+  const portable = ref(false);
   let pendingUpdate: Update | null = null;
 
+  async function init() {
+    try {
+      portable.value = await invoke<boolean>("is_portable");
+    } catch {
+      portable.value = false;
+    }
+  }
+
   async function check() {
+    if (portable.value) return;
     checking.value = true;
     error.value = null;
     try {
@@ -46,6 +61,7 @@ export const useUpdaterStore = defineStore("updater", () => {
   }
 
   async function downloadAndInstall() {
+    if (portable.value) return;
     if (!pendingUpdate) {
       await check();
       if (!pendingUpdate) return;
@@ -61,5 +77,5 @@ export const useUpdaterStore = defineStore("updater", () => {
     }
   }
 
-  return { available, version, notes, checking, downloading, checked, error, check, downloadAndInstall };
+  return { available, version, notes, checking, downloading, checked, error, portable, init, check, downloadAndInstall };
 });

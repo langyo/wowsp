@@ -23,7 +23,7 @@ rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
 license = "MIT"
 description = "World of WarShip Panel — replay review & in-game overlay"
-repository = "https://github.com/celestia-island/wowsp"
+repository = "https://github.com/langyo/wowsp"
 
 [workspace.dependencies]
 
