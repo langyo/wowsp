@@ -86,6 +86,13 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 - [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`)
 - [ ] First tagged release + model-pack `res-latest` assets
 
+> **WebView2 note:** with the auto-updater enabled, tauri-bundler forces the
+> `downloadBootstrapper` WebView2 install mode (the updater NSIS bundle cannot
+> carry the ~1.8 MB embedded bootstrapper). The bootstrapper still installs
+> WebView2 automatically when missing — only the "carried inside the installer"
+> part is sacrificed. `webviewInstallMode` in tauri.conf.json keeps the
+> `silent: true` flag either way.
+
 ## Release notes history
 
 ### M4 state / known gaps
