@@ -9,6 +9,9 @@ export default defineComponent({
   name: "SiteNav",
   setup() {
     const { t, locale } = useI18n();
+    // Docs are served under the site base (/docs/ on the custom domain,
+    // /wowsp/docs/ on the GitHub Pages project URL).
+    const docsHref = `${import.meta.env.BASE_URL}docs/`;
 
     const langLabel = computed(() => (locale.value === "zh-CN" ? "EN" : "中文"));
 
@@ -29,7 +32,7 @@ export default defineComponent({
         <nav class="site-nav__links">
           <a href="/#features" class="site-nav__link">{t("nav.features")}</a>
           <RouterLink to="/download" class="site-nav__link">{t("nav.download")}</RouterLink>
-          <a href="/docs/" class="site-nav__link">{t("nav.docs")}</a>
+          <a href={docsHref} class="site-nav__link">{t("nav.docs")}</a>
           <a href={GITHUB} target="_blank" rel="noopener" class="site-nav__link">{t("nav.github")}</a>
         </nav>
 
