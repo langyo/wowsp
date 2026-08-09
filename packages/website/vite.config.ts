@@ -39,7 +39,11 @@ export default defineConfig({
     },
   },
   publicDir: resolve(pkgDir, "src/res"),
-  base: "/",
+  // The deploy workflow sets WOWSP_SITE_BASE for GitHub Pages project-site
+  // serving (`/wowsp/`); the custom domain wowsp.langyo.xyz serves from the
+  // root and should use `/` (the default). vue-router reads the same base
+  // via import.meta.env.BASE_URL.
+  base: process.env.WOWSP_SITE_BASE || "/",
   server: {
     port: 5174,
   },

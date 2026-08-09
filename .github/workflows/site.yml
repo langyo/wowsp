@@ -41,6 +41,11 @@ jobs:
           cache: pnpm
 
       - name: Build website
+        env:
+          # GitHub Pages project site (langyo.github.io/wowsp) needs the
+          # /wowsp/ base. When the custom domain wowsp.langyo.xyz is fully
+          # configured (DNS + Pages custom domain), switch this to "/".
+          WOWSP_SITE_BASE: /wowsp/
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @wowsp/website build
