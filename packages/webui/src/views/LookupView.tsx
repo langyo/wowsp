@@ -4,15 +4,17 @@ import { useRoute } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SButton from "@/components/base/SButton";
+import SSegmented from "@/components/base/SSegmented";
 import SSelect from "@/components/base/SSelect";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useToast } from "@/composables/useToast";
-import { shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
 import { winrateColor } from "@/utils/winrate";
+import { filterByDateRange, type DateRange } from "@/utils/shipAggregation";
 import type { PlayerStats, PlayerShipStats } from "@/api";
 import { t } from "@/i18n";
 import "./LookupView.scss";
@@ -90,8 +92,23 @@ export default defineComponent({
     }>({ ships: [], groupMode: "type", hits: new Map() });
     const filteredShips = computed(() => filterState.value.ships);
     function displayName(s: PlayerShipStats): string {
-      return filterState.value.hits.get(s.shipId) ?? s.name;
+      return (
+        filterState.value.hits.get(s.shipId) ??
+        encyclopedia.byId.get(s.shipId)?.name ??
+        shipNameFromOfflineDb(s.shipId, "zh-CN") ??
+        (s.name || shipNameFromModelDb(s.shipId) || `#${s.shipId}`)
+      );
     }
+
+    /** "Recently played" filter — same semantics as Dashboard's date range. */
+    const dateRange = ref<DateRange>("all");
+    const dateFiltered = computed(() => filterByDateRange(shipRows.value, dateRange.value));
+    const rangeOptions = [
+      { value: "1d", label: t("dashboard.range1d") },
+      { value: "7d", label: t("dashboard.range7d") },
+      { value: "30d", label: t("dashboard.range30d") },
+      { value: "all", label: t("dashboard.rangeAll") },
+    ];
 
     /** Per-ship rows enriched with offline tier/type for grouping. */
     const shipRows = computed<PlayerShipStats[]>(() => {
@@ -179,7 +196,8 @@ export default defineComponent({
       result.value = null;
       const toastId = toast.loading(t("account.searching"));
       try {
-        const acc = await stats.lookup(nm, rl);
+        // Explicit user query — always re-pull from the WG API.
+        const acc = await stats.lookup(nm, rl, { force: true });
         result.value = acc;
         pushHistory(nm, rl);
         // Per-ship stats load in the background (toast stays until done).
@@ -270,8 +288,15 @@ export default defineComponent({
                     />
                   </div>
                 ) : null}
+                <div class="lookup-view__controls">
+                  <SSegmented
+                    modelValue={dateRange.value}
+                    onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
+                    options={rangeOptions}
+                  />
+                </div>
                 <ShipFilterBar
-                  ships={shipRows.value}
+                  ships={dateFiltered.value}
                   realm={realm.value}
                   onChange={(v) => (filterState.value = v)}
                 />
