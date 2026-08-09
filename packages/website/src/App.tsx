@@ -10,6 +10,7 @@ export default defineComponent({
     return () => (
       <div class="site">
         <SiteNav />
+        <div class="site__nav-spacer" />
         <main class="site__main">
           <RouterView />
         </main>
