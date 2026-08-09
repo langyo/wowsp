@@ -62,6 +62,8 @@ jobs:
         run: pnpm -r typecheck
       - name: Frontend lint
         run: pnpm -r lint
+      - name: Website build
+        run: pnpm --filter @wowsp/website build
       - name: i18n parity
         run: python scripts/check_i18n.py --no-fail
       - name: npm audit

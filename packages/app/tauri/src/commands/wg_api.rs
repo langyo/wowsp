@@ -26,7 +26,7 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
     let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
     let host = realm_host(&realm)?;
     let client = reqwest::Client::builder()
-        .user_agent("WoWSP/0.1 (https://github.com/celestia-island/wowsp)")
+        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .build()
         .map_err(|e| format!("http client: {e}"))?;
 

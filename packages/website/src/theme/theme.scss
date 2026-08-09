@@ -1,0 +1,56 @@
+/* WoWSP website global theme tokens. A slim subset of the app's theme
+   (packages/webui/src/theme/theme.scss) tuned for a marketing page — same
+   navy-on-deep-space palette, same radius/duration tokens. */
+
+:root {
+  --radius: 12px;
+  --radius-md: 8px;
+  --radius-full: 9999px;
+
+  --font-sans: system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --bg: #0b1220;
+  --bg-elevated: #101a2e;
+  --bg-hover: #16223c;
+  --border: rgba(148, 184, 255, 0.14);
+  --border-strong: rgba(148, 184, 255, 0.28);
+
+  --fg: #cfe3ff;
+  --fg-dim: #8fa6c8;
+  --fg-faint: #5f7699;
+
+  --accent: #4d9fff;
+  --accent-strong: #7cc0ff;
+  --accent-soft: rgba(77, 159, 255, 0.16);
+  --danger: #e05d5d;
+  --good: #4ade80;
+
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f8fc;
+    --bg-elevated: #ffffff;
+    --bg-hover: #eaf1fa;
+    --border: rgba(23, 55, 99, 0.14);
+    --border-strong: rgba(23, 55, 99, 0.28);
+
+    --fg: #1e2837;
+    --fg-dim: #4c607c;
+    --fg-faint: #7d90a9;
+
+    --accent: #2475d1;
+    --accent-strong: #0f5cae;
+    --accent-soft: rgba(36, 117, 209, 0.12);
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}

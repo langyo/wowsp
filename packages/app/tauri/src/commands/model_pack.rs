@@ -23,8 +23,7 @@ const ASSET_NAME: &str = "wowsp-models.tar.gz";
 const FALLBACK_TAGS: &[&str] = &["res-latest-old-1", "res-latest-old-2"];
 
 fn models_cache_dir() -> Result<PathBuf, String> {
-    let base = dirs_next::cache_dir().ok_or_else(|| "cannot resolve LOCALAPPDATA".to_string())?;
-    Ok(base.join("WoWSP"))
+    crate::paths::ensure_cache_dir()
 }
 
 fn version_file() -> Result<PathBuf, String> {

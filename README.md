@@ -14,8 +14,8 @@
 <div align="center">
 
 **English** ·
-[简体中文](./docs/zhs/guides/README-wowsp.md) ·
-[繁體中文](./docs/zht/guides/README-wowsp.md) ·
+[简体中文](./docs/zh-CN/guides/README-wowsp.md) ·
+[繁體中文](./docs/zh-TW/guides/README-wowsp.md) ·
 [日本語](./docs/ja/guides/README-wowsp.md) ·
 [한국어](./docs/ko/guides/README-wowsp.md) ·
 [Français](./docs/fr/guides/README-wowsp.md) ·
@@ -41,4 +41,4 @@ Source: [wowsp](https://github.com/langyo/wowsp).
 
 ## Status
 
-🚧 **Active scaffold** — this repository is on the `dev` branch with the build infrastructure, documentation framework, and feature skeletons in place. The functional implementations (real detection, replay packet decoding, three.js rendering, overlay capture) land incrementally on `dev`. See [`PLAN.md`](./PLAN.md) for the roadmap.
+🎉 **Ready for the initial release** — all 9 feature milestones (M1–M9) are complete: game detection, replay decoding, holographic 3D review, model converters, mod installer, live roster, Tab-triggered re-anchoring, and WG stat lookups. See [`PLAN.md`](./PLAN.md) for the roadmap history and [`docs/`](./docs) for architecture details.

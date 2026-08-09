@@ -9,7 +9,9 @@
     "build": "pnpm --filter @wowsp/webui build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "clean": "rm -rf node_modules"
+    "clean": "rm -rf node_modules",
+    "site:dev": "pnpm --filter @wowsp/website dev",
+    "site:build": "pnpm --filter @wowsp/website build"
   },
   "engines": {
     "node": ">=20",

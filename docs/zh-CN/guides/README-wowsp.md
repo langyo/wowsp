@@ -4,8 +4,8 @@
 
 <div align="center">
 
-[![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/celestia-island/wowsp/blob/master/LICENSE)
-[![GitHub](https://img.shields.io/badge/github-celestia--island%2Fwowsp-blue.svg)](https://github.com/celestia-island/wowsp)
+[![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/langyo/wowsp/blob/master/LICENSE)
+[![GitHub](https://img.shields.io/badge/github-celestia--island%2Fwowsp-blue.svg)](https://github.com/langyo/wowsp)
 
 </div>
 
@@ -32,4 +32,4 @@ WoWSP 是面向《战舰世界》的新一代战况分析仪表盘。它有两�
 
 架构、设计与指南位于仓库根目录的 [`docs/`](../../)，由 [lagrange](https://github.com/celestia-island/lagrange) 构建。
 
-源码：[wowsp](https://github.com/celestia-island/wowsp)。
+源码：[wowsp](https://github.com/langyo/wowsp)。

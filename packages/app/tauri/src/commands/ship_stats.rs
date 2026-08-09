@@ -286,7 +286,7 @@ async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
 
 fn wg_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("WoWSP/0.1 (https://github.com/celestia-island/wowsp)")
+        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .build()
         .map_err(|e| format!("http client: {e}"))
 }

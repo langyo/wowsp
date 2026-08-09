@@ -16,6 +16,7 @@
 
 mod commands;
 mod os_prefs;
+mod paths;
 #[cfg(feature = "test-harness")]
 mod test_harness;
 
@@ -215,6 +216,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_os_preferences,
+            paths::is_portable,
             commands::appdata::appdata_read,
             commands::appdata::appdata_write,
             commands::appdata::appdata_delete,

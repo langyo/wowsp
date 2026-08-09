@@ -26,7 +26,7 @@ python --version
 ## Clone and Bootstrap
 
 ```bash
-git clone https://github.com/celestia-island/wowsp.git
+git clone https://github.com/langyo/wowsp.git
 cd wowsp
 cp .env.example .env
 just init          # cargo fetch + pnpm install + gen shaders + gen icons

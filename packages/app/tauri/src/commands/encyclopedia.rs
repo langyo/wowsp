@@ -275,7 +275,7 @@ fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> 
 
 fn wg_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("WoWSP/0.1 (https://github.com/celestia-island/wowsp)")
+        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .build()
         .map_err(|e| format!("http client: {e}"))
 }
@@ -301,10 +301,7 @@ fn now_ts() -> i64 {
 // internally — we can't call the #[tauri::command] fn directly without the
 // invoke glue, so we read/write the same paths).
 fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    let base = dirs_next::data_dir().ok_or_else(|| "cannot resolve AppData dir".to_string())?;
-    let dir = base.join("WoWSP");
-    fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
-    Ok(dir)
+    crate::paths::ensure_data_dir()
 }
 
 fn appdata_read(file: String) -> Result<Option<String>, String> {

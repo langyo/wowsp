@@ -1,8 +1,10 @@
 [site]
 title = "WoWSP"
-description = "World of Warship Panel — replay review & in-game overlay"
-cname = "wowsp.docs.celestia.world"
+description = "World of WarShip Panel — replay review & in-game overlay"
+cname = "wowsp.langyo.xyz"
+favicon = "./logo.webp"
+title_template = "{title} — World of WarShip Panel"
 
 [languages]
-default = "en-US"
-order = ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "fr-FR", "es-ES", "ru-RU", "ar"]
+default = "en"
+order = ["en", "zh-CN", "zh-TW", "ja", "ko", "fr", "es", "ru", "ar"]

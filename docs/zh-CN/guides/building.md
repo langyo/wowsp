@@ -16,7 +16,7 @@
 ## 克隆与引导
 
 ```bash
-git clone https://github.com/celestia-island/wowsp.git
+git clone https://github.com/langyo/wowsp.git
 cd wowsp
 cp .env.example .env
 just init          # cargo fetch + pnpm install + 生成 shaders + 生成 icons
