@@ -20,7 +20,7 @@ overlay directly hurts players. Please read this before opening a pull request.
 See [Building](./building.md). Quick start:
 
 ```bash
-git clone https://github.com/celestia-island/wowsp.git
+git clone https://github.com/langyo/wowsp.git
 cd wowsp
 cp .env.example .env
 just init

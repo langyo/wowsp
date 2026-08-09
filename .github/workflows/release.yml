@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0). Leave empty to skip tagging.'
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build & publish Windows release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-release-
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate shader bundle + icons
+        run: |
+          python scripts/glsl_bundle.py --verbose
+          python scripts/ensure_tauri_icons.py
+
+      - name: Prepare model-pack release assets
+        # If a `res-latest` tag already exists, nothing to do (the release
+        # workflow only uploads the app artifacts). The model pack is
+        # published by scripts/publish_models.py separately.
+        shell: bash
+        run: |
+          if gh release view res-latest >/dev/null 2>&1; then
+            echo "res-latest already published — skipping model pack"
+          else
+            echo "res-latest not published — the models pack will be published on first model bake"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build & publish Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'WoWSP ${{ github.ref_name }}'
+          releaseBody: 'See the GitHub Releases page for details.'
+          releaseDraft: true
+          prerelease: false
+          args: '--target x86_64-pc-windows-msvc'

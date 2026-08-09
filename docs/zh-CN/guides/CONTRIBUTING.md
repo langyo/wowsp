@@ -15,7 +15,7 @@ WoWSP 把正确性放在首位——一个坏的录像解析器或错位的覆�
 见 [构建指南](./building.md)。快速开始：
 
 ```bash
-git clone https://github.com/celestia-island/wowsp.git
+git clone https://github.com/langyo/wowsp.git
 cd wowsp
 cp .env.example .env
 just init

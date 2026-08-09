@@ -19,7 +19,7 @@ RUN pnpm --filter @wowsp/webui build
 
 FROM scratch
 
-LABEL org.opencontainers.image.source="https://github.com/celestia-island/wowsp"
+LABEL org.opencontainers.image.source="https://github.com/langyo/wowsp"
 LABEL org.opencontainers.image.version="0.1.0"
 LABEL org.opencontainers.image.title="WoWSP"
 LABEL org.opencontainers.image.description="World of Warship Panel — replay review & in-game overlay (frontend bundle)"

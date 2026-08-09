@@ -1,0 +1,75 @@
+name: Deploy Site
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - 'packages/website/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build site (docs + website)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install lagrange
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build docs (lagrange)
+        run: |
+          cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
+          lagrange build --src docs --out _site/docs --site-url https://wowsp.langyo.xyz/docs
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Build website
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @wowsp/website build
+          cp -r dist/website/. _site/
+
+      - name: Write CNAME at site root
+        run: echo "wowsp.langyo.xyz" > _site/CNAME
+
+      # SPA fallback: GitHub Pages serves 404.html for unknown paths, and the
+      # website router (createWebHistory) renders the right route from it.
+      - name: SPA fallback (404.html)
+        run: cp _site/index.html _site/404.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://wowsp.langyo.xyz
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

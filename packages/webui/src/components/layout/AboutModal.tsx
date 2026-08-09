@@ -31,6 +31,8 @@ export default defineComponent({
       } catch {
         // Browser dev mode — keep default "0.1.0".
       }
+      // Portable installs can't self-update (NSIS-only) — probe once.
+      void updater.init();
     });
 
     return () => (
@@ -48,7 +50,9 @@ export default defineComponent({
           <p class="about-modal__subtitle">{t("about.subtitle")}</p>
           <div class="about-modal__version">
             <span>v{version.value}</span>
-            {updater.available ? (
+            {updater.portable ? (
+              <span class="about-modal__portable">Portable</span>
+            ) : updater.available ? (
               <button class="about-modal__update" onClick={() => void updater.downloadAndInstall()}>
                 <Download size={12} /> {t("about.updateAvailable")}
               </button>
@@ -72,10 +76,10 @@ export default defineComponent({
           </div>
 
           <div class="about-modal__links">
-            <a href="https://github.com/celestia-island/wowsp" target="_blank" rel="noopener">
+            <a href="https://github.com/langyo/wowsp" target="_blank" rel="noopener">
               GitHub
             </a>
-            <a href="https://github.com/celestia-island/wowsp/issues" target="_blank" rel="noopener">
+            <a href="https://github.com/langyo/wowsp/issues" target="_blank" rel="noopener">
               {t("about.issues")}
             </a>
           </div>
