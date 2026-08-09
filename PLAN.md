@@ -83,7 +83,8 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 - [x] Official website (vue3 tsx + scss + vite, `packages/website`) + GitHub Pages deploy
 - [x] Auto-update: GitHub + mirror endpoints, release workflow signs `latest.json`
 - [x] Installer: WebView2 bootstrapper embedded; NSIS three-mode install (local / USB / green)
-- [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`)
+- [x] GitHub Pages provisioned (`langyo.github.io/wowsp`); website + docs live
+- [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`) and set the custom domain in repo Pages settings; then flip `WOWSP_SITE_BASE` back to `/` in site.yml
 - [ ] First tagged release + model-pack `res-latest` assets
 
 > **WebView2 note:** with the auto-updater enabled, tauri-bundler forces the
