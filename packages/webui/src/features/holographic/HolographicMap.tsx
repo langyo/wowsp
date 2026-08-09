@@ -37,7 +37,7 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import planeIcon from "./planeIcons";
-import { shipIcon } from "./shipIcons";
+import { shipIcon, shipTypeClass } from "./shipIcons";
 import { parsePostBattle } from "@/features/replay/postBattle";
 
 /** Per-plane local offsets inside ONE flight group (the group's own wedge):
@@ -164,6 +164,8 @@ import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
 import { bundledRibbonUrl, ribbonUrl } from "./ribbonIcons";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useStatsStore } from "@/stores/stats";
+import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
@@ -257,6 +259,50 @@ export default defineComponent({
         if (ctrl) ctrl.enabled = true;
       }
     });
+
+    // Camera mode dropdown (upward-opening, replaces the old original-view
+    // toggle): "free" (orbit), "original" (recorder camera) or "follow"
+    // (chase a specific ship, picked from the grouped roster list). The
+    // original-view bit is derived from the mode so the per-frame camera
+    // dispatch (`applyOriginalCamera` vs `followSelected`) stays untouched.
+    const cameraMenuOpen = ref(false);
+    const cameraMode = ref<"free" | "original" | "follow">("free");
+    watch(cameraMode, (m) => {
+      originalView.value = m === "original";
+      if (m !== "follow") selectedEntityId.value = null;
+    });
+    /** Player stats shown in the follow menu (entityId → "WR% · battles").
+     *  Resolved lazily when the menu opens; missing/failed lookups render "—". */
+    const followStats = ref<Map<number, string>>(new Map());
+    let statsSeq = 0;
+    async function loadFollowStats() {
+      const realm = useAccountStore().activeAccount?.realm;
+      if (!realm) return;
+      const seq = ++statsSeq;
+      const store = useStatsStore();
+      const items = shipLabels.value.filter((l) => l.kind !== "plane");
+      for (let i = 0; i < items.length; i += 6) {
+        if (seq !== statsSeq) return;
+        const batch = items.slice(i, i + 6);
+        const results = await Promise.all(
+          batch.map(async (it) => {
+            if (followStats.value.has(it.entityId)) return null;
+            try {
+              const st = await store.lookup(it.name, realm);
+              if (st.hidden || st.winrate == null || st.battles == null) return null;
+              return [it.entityId, `${st.winrate.toFixed(1)}% · ${st.battles.toLocaleString()}`] as const;
+            } catch {
+              return [it.entityId, "—"] as const;
+            }
+          }),
+        );
+        if (seq !== statsSeq) return;
+        for (const r of results) {
+          if (r) followStats.value.set(r[0], r[1]);
+        }
+      }
+    }
+    watch(cameraMenuOpen, (open) => { if (open) void loadFollowStats(); });
 
     // First-person follow: the entity id whose marker the camera tracks
     // (null = free orbit). Set by clicking a ship marker/label.
@@ -625,6 +671,31 @@ export default defineComponent({
       dead: boolean;
     }
     const shipLabels = ref<ShipLabel[]>([]);
+    /** Follow-menu roster grouped by allegiance: self alone, then allies,
+     *  then enemies (roster order within each group). Plane entities are
+     *  excluded — only ships can be followed. */
+    const cameraShipGroups = computed(() => {
+      const groups: { key: string; title: string; items: ShipLabel[] }[] = [];
+      const self: ShipLabel[] = [];
+      const ally: ShipLabel[] = [];
+      const enemy: ShipLabel[] = [];
+      for (const l of shipLabels.value) {
+        if (l.kind === "plane" || !l.shipName) continue;
+        if (l.role === "self") self.push(l);
+        else if (l.role === "ally") ally.push(l);
+        else enemy.push(l);
+      }
+      if (self.length > 0) {
+        groups.push({ key: "self", title: t("replay.camera.me"), items: self });
+      }
+      if (ally.length > 0) {
+        groups.push({ key: "ally", title: t("replay.camera.allies"), items: ally });
+      }
+      if (enemy.length > 0) {
+        groups.push({ key: "enemy", title: t("replay.camera.enemies"), items: enemy });
+      }
+      return groups;
+    });
     const _projVec = new THREE.Vector3();
     /** Pointer-down position for click-vs-drag discrimination: a click that
      *  moved more than a few px is an OrbitControls drag, and must NOT select
@@ -1576,6 +1647,7 @@ export default defineComponent({
      *  name, tier, type icon, role colour, and death state. */
     function rebuildActors() {
       clearActors();
+      followStats.value.clear();
       const scene = api.value?.scene;
       if (!scene || props.trajectories.length === 0) { shipLabels.value = []; return; }
       const epoch = markerEpoch;
@@ -3473,12 +3545,16 @@ export default defineComponent({
      *  and pick the nearest visible marker via raycast. */
     function selectShip(entityId: number | null) {
       selectedEntityId.value = entityId;
+      // Clicking a ship switches to chase mode; clicking empty space returns
+      // to the free orbit camera.
+      cameraMode.value = entityId != null ? "follow" : "free";
     }
 
     /** Canvas click → raycast the nearest visible ship marker (within a
      *  generous screen distance) or clear the selection. */
     function onCanvasClick(e: MouseEvent) {
       speedMenuOpen.value = false;
+      cameraMenuOpen.value = false;
       const cam = api.value?.camera;
       const rnd = api.value?.renderer;
       const canvas = rnd?.domElement;
@@ -4009,14 +4085,81 @@ export default defineComponent({
             >
               {showLabels.value ? "◉" : "◎"}
             </button>
-            {props.cameraFrames.length > 0 ? (
-              <button
-                class={["holo-map__lbltoggle", originalView.value ? "holo-map__lbltoggle--on" : ""]}
-                onClick={() => { originalView.value = !originalView.value; }}
-                title={originalView.value ? t("replay.origview.off") : t("replay.origview.on")}
-              >
-                {originalView.value ? "🎥" : "⛶"}
-              </button>
+            {props.cameraFrames.length > 0 || cameraMode.value !== "free" ? (
+              <div class="holo-map__camera">
+                <button
+                  class={["holo-map__lbltoggle", cameraMenuOpen.value ? "holo-map__lbltoggle--on" : ""]}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cameraMenuOpen.value = !cameraMenuOpen.value;
+                  }}
+                  title={t("replay.camera.title")}
+                >
+                  {cameraMode.value === "original" ? "🎥" : cameraMode.value === "follow" ? "◎" : "⛶"}
+                </button>
+                {cameraMenuOpen.value ? (
+                  <div class="holo-map__cam-menu" onClick={(e) => e.stopPropagation()}>
+                    <div class="holo-map__cam-modes">
+                      <button
+                        class={["holo-map__cam-mode", cameraMode.value === "free" ? "holo-map__cam-mode--on" : ""]}
+                        onClick={() => { cameraMode.value = "free"; cameraMenuOpen.value = false; }}
+                      >
+                        {t("replay.camera.free")}
+                      </button>
+                      {props.cameraFrames.length > 0 ? (
+                        <button
+                          class={["holo-map__cam-mode", cameraMode.value === "original" ? "holo-map__cam-mode--on" : ""]}
+                          onClick={() => { cameraMode.value = "original"; cameraMenuOpen.value = false; }}
+                        >
+                          {t("replay.camera.original")}
+                        </button>
+                      ) : null}
+                    </div>
+                    {cameraShipGroups.value.map((g) => (
+                      <div key={g.key} class="holo-map__cam-group">
+                        <div class="holo-map__cam-group-title">{g.title}</div>
+                        {g.items.map((item) => (
+                          <button
+                            key={item.entityId}
+                            class={[
+                              "holo-map__cam-item",
+                              item.entityId === selectedEntityId.value ? "holo-map__cam-item--on" : "",
+                              item.dead ? "holo-map__cam-item--dead" : "",
+                            ]}
+                            onClick={() => {
+                              selectShip(item.entityId);
+                              cameraMenuOpen.value = false;
+                            }}
+                          >
+                            <span class="holo-map__cam-ico">
+                              {item.type ? (
+                                <BattleIcon
+                                  kind="ship"
+                                  type={item.type}
+                                  variant={item.role === "enemy" ? "enemy" : "ally"}
+                                  size={13}
+                                />
+                              ) : null}
+                            </span>
+                            <span class="holo-map__cam-body">
+                              <span class="holo-map__cam-ship">{item.shipName}</span>
+                              <span class="holo-map__cam-meta">
+                                {item.tier ? tierToRoman(item.tier) : ""}
+                                {item.type ? ` ${t(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
+                                {item.maxHp != null ? ` · ${item.maxHp.toLocaleString()} HP` : ""}
+                              </span>
+                            </span>
+                            <span class="holo-map__cam-name">{item.name}</span>
+                            <span class="holo-map__cam-stats">
+                              {followStats.value.get(item.entityId) ?? "…"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? "❚❚" : "▶"}
