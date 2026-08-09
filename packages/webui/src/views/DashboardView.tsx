@@ -148,9 +148,10 @@ export default defineComponent({
       } catch {
         // cache miss — fine
       }
-      // Phase 2: fetch fresh account stats.
+      // Phase 2: fetch fresh account stats. The own account refreshes
+      // aggressively — every dashboard open re-pulls from the API.
       try {
-        await stats.lookup(acc.nickname, acc.realm);
+        await stats.lookup(acc.nickname, acc.realm, { force: true });
       } catch {
         // surfaced via stats.error
       }

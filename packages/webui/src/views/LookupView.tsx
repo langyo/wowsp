@@ -196,7 +196,8 @@ export default defineComponent({
       result.value = null;
       const toastId = toast.loading(t("account.searching"));
       try {
-        const acc = await stats.lookup(nm, rl);
+        // Explicit user query — always re-pull from the WG API.
+        const acc = await stats.lookup(nm, rl, { force: true });
         result.value = acc;
         pushHistory(nm, rl);
         // Per-ship stats load in the background (toast stays until done).
