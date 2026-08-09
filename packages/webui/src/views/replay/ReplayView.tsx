@@ -145,19 +145,26 @@ const PostBattlePanel = defineComponent({
         estXp: Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
       }));
     });
+    /** The recorder's own team. `playersPublicInfo[6]` is a 0/1 TEAM number
+     *  (12 vs 12), NOT a 0=self/1=ally/2=enemy relation — the recorder's
+     *  team is always the "allies" column. Falls back to team 0 when the
+     *  recorder isn't in the player list (watching someone else's replay). */
+    const selfTeam = computed(() => {
+      const pb = parsed.value;
+      if (!pb) return null;
+      return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
+    });
     const allies = computed(() => {
-      const rs = rows.value;
-      const teamCoded = rs.filter((p) => p.team === 0).length !== 1;
-      return (teamCoded ? rs.filter((p) => p.team === 0) : rs.filter((p) => p.team !== 2)).sort(
-        (a, b) => b.estXp - a.estXp,
-      );
+      const st = selfTeam.value;
+      return rows.value
+        .filter((p) => (st != null ? p.team === st : p.team !== 1))
+        .sort((a, b) => b.estXp - a.estXp);
     });
     const enemies = computed(() => {
-      const rs = rows.value;
-      const teamCoded = rs.filter((p) => p.team === 0).length !== 1;
-      return (teamCoded ? rs.filter((p) => p.team === 1) : rs.filter((p) => p.team === 2)).sort(
-        (a, b) => b.estXp - a.estXp,
-      );
+      const st = selfTeam.value;
+      return rows.value
+        .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
+        .sort((a, b) => b.estXp - a.estXp);
     });
     const detailOpen = ref(false);
     const rawOpen = ref(false);
@@ -226,6 +233,9 @@ const PostBattlePanel = defineComponent({
     return () => {
       const pb = parsed.value;
       if (!pb) return <pre>{props.raw}</pre>;
+      const st = selfTeam.value;
+      const isEnemy = (p: ReturnType<typeof rows.value>[number]) =>
+        p.team !== null && (st != null ? p.team !== st : p.team === 1);
       const cell = (p: ReturnType<typeof allies.value>[number]) => (
         <button
           class={[
@@ -239,7 +249,7 @@ const PostBattlePanel = defineComponent({
             {p.shipId != null ? (
               <BattleIcon
                 type={shipTypeOf(p.shipId)}
-                variant={p.alive ? (p.team === 2 ? "enemy" : p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
+                variant={p.alive ? (isEnemy(p) ? "enemy" : p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
                 size={20}
               />
             ) : null}
@@ -303,7 +313,7 @@ const PostBattlePanel = defineComponent({
                       {sel.shipId != null ? (
                         <BattleIcon
                           type={shipTypeOf(sel.shipId)}
-                          variant={sel.alive ? (sel.team === 2 ? "enemy" : "ally") : "sunk"}
+                          variant={sel.alive ? (isEnemy(sel) ? "enemy" : "ally") : "sunk"}
                           size={24}
                         />
                       ) : null}

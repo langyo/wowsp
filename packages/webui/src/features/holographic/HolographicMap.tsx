@@ -20,7 +20,7 @@ import {
   type ShipModelSpec,
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
-import { buildShipMarker, disposeMarker, clearShipMarkerCache } from "./shipMarker";
+import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerCache } from "./shipMarker";
 import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
@@ -37,7 +37,94 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import planeIcon from "./planeIcons";
-import { shipIcon } from "./shipIcons";
+import { shipIcon, shipTypeClass } from "./shipIcons";
+import { parsePostBattle } from "@/features/replay/postBattle";
+
+/** Per-plane local offsets inside ONE flight group (the group's own wedge):
+ *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front
+ *  and the rest trailing. Positive oz is BACKWARD along the heading (the
+ *  leader flies at the front of the formation). */
+function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
+  const p = 9;
+  if (n <= 1) return [{ ox: 0, oz: 0 }];
+  if (n === 2) return [{ ox: -p, oz: 0 }, { ox: p, oz: 0 }];
+  if (n === 3) return [{ ox: 0, oz: -p }, { ox: -p, oz: p }, { ox: p, oz: p }];
+  const out: { ox: number; oz: number }[] = [
+    { ox: -p, oz: -p },
+    { ox: p, oz: -p },
+  ];
+  for (let i = 2; i < n; i++) {
+    out.push({ ox: (i % 2 === 0 ? -1 : 1) * p, oz: p });
+  }
+  return out;
+}
+
+/** Filled-wedge layout over flight GROUPS: row r holds r+1 groups (1, 2, 3,
+ *  …); a leftover group that cannot fill the next row sits centered in it.
+ *  Examples: 6 groups → rows 1,2,3; 4 groups → 1,2,1; 7 → 1,2,3,1. */
+function formationOffsets(groupCount: number, groupSize: number): { ox: number; oz: number }[] {
+  const out: { ox: number; oz: number }[] = [];
+  let rem = groupCount;
+  const rows: number[] = [];
+  for (let r = 0; rem > 0; r++) {
+    const n = Math.min(r + 1, rem);
+    rows.push(n);
+    rem -= n;
+  }
+  const gSpacing = 20;
+  const gDepth = 15;
+  rows.forEach((n, r) => {
+    for (let k = 0; k < n; k++) {
+      const gx = (k - (n - 1) / 2) * gSpacing;
+      const gz = -r * gDepth;
+      for (const it of groupInnerOffsets(groupSize)) {
+        out.push({ ox: gx + it.ox, oz: gz + it.oz });
+      }
+    }
+  });
+  return out;
+}
+
+/** Infer the squadron's group layout by greedy-clustering the aircraft
+ *  positions right after launch: planes spawn in groups (2/group, 3/group,
+ *  …), so the median cluster size is the per-group count and the cluster
+ *  count is the number of flight groups. */
+function inferGrouping(
+  entries: { trail: EntityTrajectory }[],
+  sampleAtFn: (tr: EntityTrajectory, t: number) => { x: number; z: number } | null,
+): { groupSize: number; groupCount: number } {
+  const t0 = Math.min(...entries.map((e) => e.trail.samples[0]?.time ?? 0));
+  const pts: { x: number; z: number }[] = [];
+  for (const e of entries) {
+    const s = sampleAtFn(e.trail, t0 + 0.05);
+    if (s) pts.push(s);
+  }
+  if (pts.length < 2) return { groupSize: 1, groupCount: Math.max(1, pts.length) };
+  const clusters: { members: { x: number; z: number }[]; cx: number; cz: number }[] = [];
+  for (const p of pts) {
+    let best: (typeof clusters)[number] | null = null;
+    let bestD = 45;
+    for (const c of clusters) {
+      const d = Math.hypot(c.cx - p.x, c.cz - p.z);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    if (best) {
+      best.members.push(p);
+      best.cx = best.members.reduce((a, q) => a + q.x, 0) / best.members.length;
+      best.cz = best.members.reduce((a, q) => a + q.z, 0) / best.members.length;
+    } else {
+      clusters.push({ members: [p], cx: p.x, cz: p.z });
+    }
+  }
+  const sizes = clusters.map((c) => c.members.length).sort((a, b) => a - b);
+  return {
+    groupSize: sizes[Math.floor(sizes.length / 2)] || 1,
+    groupCount: clusters.length,
+  };
+}
 
 /** paramsId → plane metadata (index/name/type/count) baked from GameParams by
  *  `scripts/model_convert/extract_planes.py` — the type drives which in-game
@@ -77,6 +164,8 @@ import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
 import { bundledRibbonUrl, ribbonUrl } from "./ribbonIcons";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useStatsStore } from "@/stores/stats";
+import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
@@ -171,6 +260,50 @@ export default defineComponent({
       }
     });
 
+    // Camera mode dropdown (upward-opening, replaces the old original-view
+    // toggle): "free" (orbit), "original" (recorder camera) or "follow"
+    // (chase a specific ship, picked from the grouped roster list). The
+    // original-view bit is derived from the mode so the per-frame camera
+    // dispatch (`applyOriginalCamera` vs `followSelected`) stays untouched.
+    const cameraMenuOpen = ref(false);
+    const cameraMode = ref<"free" | "original" | "follow">("free");
+    watch(cameraMode, (m) => {
+      originalView.value = m === "original";
+      if (m !== "follow") selectedEntityId.value = null;
+    });
+    /** Player stats shown in the follow menu (entityId → "WR% · battles").
+     *  Resolved lazily when the menu opens; missing/failed lookups render "—". */
+    const followStats = ref<Map<number, string>>(new Map());
+    let statsSeq = 0;
+    async function loadFollowStats() {
+      const realm = useAccountStore().activeAccount?.realm;
+      if (!realm) return;
+      const seq = ++statsSeq;
+      const store = useStatsStore();
+      const items = shipLabels.value.filter((l) => l.kind !== "plane");
+      for (let i = 0; i < items.length; i += 6) {
+        if (seq !== statsSeq) return;
+        const batch = items.slice(i, i + 6);
+        const results = await Promise.all(
+          batch.map(async (it) => {
+            if (followStats.value.has(it.entityId)) return null;
+            try {
+              const st = await store.lookup(it.name, realm);
+              if (st.hidden || st.winrate == null || st.battles == null) return null;
+              return [it.entityId, `${st.winrate.toFixed(1)}% · ${st.battles.toLocaleString()}`] as const;
+            } catch {
+              return [it.entityId, "—"] as const;
+            }
+          }),
+        );
+        if (seq !== statsSeq) return;
+        for (const r of results) {
+          if (r) followStats.value.set(r[0], r[1]);
+        }
+      }
+    }
+    watch(cameraMenuOpen, (open) => { if (open) void loadFollowStats(); });
+
     // First-person follow: the entity id whose marker the camera tracks
     // (null = free orbit). Set by clicking a ship marker/label.
     const selectedEntityId = ref<number | null>(null);
@@ -184,14 +317,14 @@ export default defineComponent({
     function formatTime(sec: number): string {
       const s = Math.max(0, Math.round(sec));
       const m = Math.floor(s / 60);
-      return `${m}:${String(s % 60).padStart(2, "0")}`;
+      return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
     }
     function displayTime(): string {
       const d = duration.value || 0;
       const c = current.value;
-      if (timeMode.value === 0) return formatTime(c);
-      if (timeMode.value === 1) return "-" + formatTime(d - c);
-      return formatTime(d);
+      if (timeMode.value === 1) return `-${formatTime(d - c)} / ${formatTime(d)}`;
+      if (timeMode.value === 2) return formatTime(d);
+      return `${formatTime(c)} / ${formatTime(d)}`;
     }
 
     // Score bar data
@@ -320,14 +453,37 @@ export default defineComponent({
     // approximation of the domination scoring shown in the top bar.
     const allyScore = ref(0);
     const enemyScore = ref(0);
-    // Transient "X sunk" feed, newest first; entries expire after a few seconds.
+    // Transient "X sunk Y" feed, newest first; entries expire after a few
+    // seconds. Each side renders its own ship name with the player nickname
+    // underneath (killer left-aligned, victim right-aligned, "sank" centred).
     interface KillEvent {
       id: number;
+      /** Victim's player nickname. */
       text: string;
+      /** Victim's ship display name. */
+      shipName: string;
+      /** Victim's ship type (for the HUD icon). */
+      shipType: string | null;
+      /** Killer's ship display name. */
+      killerShipName: string;
+      /** Killer's ship type (for the HUD icon). */
+      killerShipType: string | null;
+      /** Killer's player nickname (resolved from the post-battle payload). */
+      killerName: string | null;
+      /** Role of the KILLER (the card tint is the killer's side). */
       role: TeamRole;
     }
     const killFeed = ref<KillEvent[]>([]);
     let killSeq = 0;
+    /** Lazily parsed post-battle payload (killer resolution + self team). */
+    let pbCache: ReturnType<typeof parsePostBattle> | null = null;
+    /** The recorder's own 0/1 side from the post-battle payload — maps a
+     *  zone's teamId to the owner code (1 = own side, 2 = enemy). */
+    const selfTeam = computed(() => {
+      const pb = pbCache;
+      if (!pb?.players || pb.selfId == null) return null;
+      return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
+    });
     // Entity ids already reported as sunk (avoid double-counting on scrub).
     const reportedSinks = new Set<number>();
     // The capture-zone entities + their ownership timelines. InteractiveZone
@@ -338,16 +494,37 @@ export default defineComponent({
     // holds even for replays that record no ownership/progress updates after
     // the zone spawns. The ownership/progress-stream checks below are kept
     // only as a fallback for very old replays predating the component.
+    /** True capture point vs event/strike zone, from the replay streams
+     *  themselves (the authoritative per-match source — a map can ship in
+     *  multiple versions, so game resources alone can't be trusted):
+     *  - controlPoint component (create state) — always a real point
+     *  - capSamples (ownership stream) — real point on older clients
+     *  - capProgress: strike/event targets start high (741..1446) or
+     *    mid-range and DROP to zero once destroyed; real points either
+     *    keep progress above zero or stay at zero the whole match (owned
+     *    from the start, nobody ever contests them — no stream updates)
+     */
+    function isCaptureZone(t: EntityTrajectory): boolean {
+      if (t.kind?.controlPointIndex != null) return true;
+      if ((t.capSamples?.length ?? 0) > 0) return true;
+      const cp = t.capProgress ?? [];
+      if (cp.length === 0) return false;
+      const first = cp[0].value;
+      if (first >= 1000) return false;
+      const last = cp[cp.length - 1].value;
+      if (last > 0) return true;
+      // Ended at zero: a strike target shows non-zero progress BEFORE the
+      // drop; a point nobody ever touched stays zero the whole match.
+      return !cp.some((s) => s.value > 0);
+    }
     const capZones = computed(() => {
       const zones = props.trajectories.filter((t) => {
         if (t.kind?.entityType !== 14) return false;
-        if (t.kind.controlPointIndex != null) return true;
-        if ((t.capSamples?.length ?? 0) > 0) return true;
-        // 0x23 progress streams that START SMALL (≤200) are real capture
-        // progress (17–50 unit ticks from zero); strike targets first appear
-        // at 741–1446 and drop to zero once destroyed.
-        const cp = t.capProgress ?? [];
-        return cp.length > 0 && cp[0].value > 0 && cp[0].value <= 200;
+        if (!isCaptureZone(t)) return false;
+        if (t.kind.initialX == null && t.kind.initialZ == null && t.samples.length === 0) {
+          return false;
+        }
+        return true;
       });
       // Order letters by the game's own point index (0 = A) so the scorebar
       // matches the in-match callouts.
@@ -357,6 +534,9 @@ export default defineComponent({
       );
       return zones;
     });
+    /** Zones that actually score: same set as the visible capture points —
+     *  strike/event zones never reach this list. */
+    const scoringZones = computed(() => capZones.value);
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -379,9 +559,27 @@ export default defineComponent({
     // Three.js objects we own (to dispose on change/unmount).
     let trajectoryLines: THREE.Line[] = [];
     let shipMarkers: THREE.Group[] = [];
-    /** Smoke-screen puffs (entityType 4 = SmokeScreen). One cylinder per
-     *  smoke entity, positioned at its expanding point each frame. */
-    let smokeMeshes: { mesh: THREE.Mesh; traj: EntityTrajectory; endT: number }[] = [];
+    /** Successfully loaded ship models, one per marker build — cloned as
+     *  substitute hulls for ships whose own GLB is missing or failed to
+     *  load (a same-team stand-in beats a bare cone). */
+    let loadedModelPool: { model: THREE.Group; role: TeamRole }[] = [];
+    /** Markers still waiting for a model (no URL or load failure); filled
+     *  from `loadedModelPool` as soon as any model finishes loading. */
+    let modelWaiters: { marker: THREE.Group; traj: EntityTrajectory }[] = [];
+    /** Smoke-screen clusters (entityType 4 = SmokeScreen). Each cluster
+     *  holds a start ring + end ring (white circles) and a remaining-time
+     *  sprite. Puffs spawned within 300 m of each other merge into one
+     *  cluster — the one with the longest lifetime wins. */
+    let smokeClusters: {
+      traj: EntityTrajectory;
+      t0: number;
+      lastT: number;
+      endT: number;
+      sx: number;
+      sz: number;
+      rings: THREE.Mesh[];
+      timeSprite: THREE.Sprite | null;
+    }[] = [];
     /** Reconstructed shell flights: a curved trace from a nearby ship that
      *  was aimed at the impact when it exploded. */
     let shellTraces: {
@@ -417,7 +615,6 @@ export default defineComponent({
     /** Recorder aim line to the currently locked target (SetWeaponLock). */
     let lockLine: THREE.Mesh | null = null;
     /** Big ring over the locked target (same render path as splash rings). */
-    let lockRing: THREE.Mesh | null = null;
     /** Aircraft formation cloud (one point per plane, from the avatar's
      *  receive_updateSquadron stream) — fallback for planes without a baked
      *  model; modeled planes render as GLB meshes in `planeMeshes`. */
@@ -435,9 +632,12 @@ export default defineComponent({
     const planeRoleById = new Map<number, string>();
     /** planeId → the carrier card label id that shows it. */
     const planeLabelOfPlane = new Map<number, number>();
-    /** planeId → formation render state: the GameParams squadron size and the
-     *  per-plane model instances (one per slot in the wedge formation). */
-    const planeFormations = new Map<number, { count: number; meshes: THREE.Object3D[] }>();
+    /** planeId → formation render state: the GameParams squadron size, the
+     *  inferred group layout and the per-plane model instances. */
+    const planeFormations = new Map<
+      number,
+      { count: number; groupSize: number; groupCount: number; meshes: THREE.Object3D[] }
+    >();
     /** planeId → 3D aircraft model pool (one per formation slot). */
     const planeMeshes = new Map<number, THREE.Object3D[]>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
@@ -471,6 +671,31 @@ export default defineComponent({
       dead: boolean;
     }
     const shipLabels = ref<ShipLabel[]>([]);
+    /** Follow-menu roster grouped by allegiance: self alone, then allies,
+     *  then enemies (roster order within each group). Plane entities are
+     *  excluded — only ships can be followed. */
+    const cameraShipGroups = computed(() => {
+      const groups: { key: string; title: string; items: ShipLabel[] }[] = [];
+      const self: ShipLabel[] = [];
+      const ally: ShipLabel[] = [];
+      const enemy: ShipLabel[] = [];
+      for (const l of shipLabels.value) {
+        if (l.kind === "plane" || !l.shipName) continue;
+        if (l.role === "self") self.push(l);
+        else if (l.role === "ally") ally.push(l);
+        else enemy.push(l);
+      }
+      if (self.length > 0) {
+        groups.push({ key: "self", title: t("replay.camera.me"), items: self });
+      }
+      if (ally.length > 0) {
+        groups.push({ key: "ally", title: t("replay.camera.allies"), items: ally });
+      }
+      if (enemy.length > 0) {
+        groups.push({ key: "enemy", title: t("replay.camera.enemies"), items: enemy });
+      }
+      return groups;
+    });
     const _projVec = new THREE.Vector3();
     /** Pointer-down position for click-vs-drag discrimination: a click that
      *  moved more than a few px is an OrbitControls drag, and must NOT select
@@ -541,7 +766,10 @@ export default defineComponent({
         const mapArea = (full.maxX - full.minX) * (full.maxZ - full.minZ);
         const activeArea =
           (active.maxX - active.minX) * (active.maxZ - active.minZ);
-        if (activeArea > 0 && activeArea < 0.7 * mapArea) {
+        // Crop whenever the active area is smaller than the full map —
+        // mode-restricted matches (duels/brawls on one side of a ridge)
+        // must not render as full-map thumbnails.
+        if (activeArea > 0 && activeArea < 0.95 * mapArea) {
           db = {
             minX: Math.max(active.minX, full.minX),
             maxX: Math.min(active.maxX, full.maxX),
@@ -591,16 +819,22 @@ export default defineComponent({
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-      // Capture zones: small rings tinted by current owner, letter inside.
+      // Capture zones: rings sized from the zone's REAL radius. On a 160px
+      // thumb of a 30 km map even 140 m is sub-pixel, so use a relative
+      // scale — bigger radius → visibly bigger ring (sqrt keeps 20 m and
+      // 140 m points clearly distinct) — tinted by owner, letter inside.
+      const capRadiusPx = (radius: number) =>
+        Math.max(4, Math.min(22, 3 + Math.sqrt(radius / 20) * 5));
       capZones.value.forEach((z, i) => {
         const cx = wx(z.kind!.initialX);
         const cz = wz(-z.kind!.initialZ);
         const owner = capDisplay.value[i]?.owner ?? 0;
+        const radiusPx = capRadiusPx(Math.max(z.kind?.radius ?? 300, 25));
         ctx.strokeStyle =
           owner === 1 ? "rgba(74, 222, 128, 0.8)" : owner === 2 ? "rgba(204, 51, 51, 0.8)" : "rgba(255, 255, 255, 0.5)";
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(cx, cz, 7, 0, Math.PI * 2);
+        ctx.arc(cx, cz, radiusPx, 0, Math.PI * 2);
         ctx.stroke();
         ctx.fillStyle = ctx.strokeStyle;
         ctx.font = "bold 8px sans-serif";
@@ -638,13 +872,14 @@ export default defineComponent({
         );
         if (icon && icon.complete && icon.naturalWidth > 0) {
           const sz = 15;
-          // Rotate the icon to the ship's heading. The HUD art's pointy end
-          // faces UP (north) when unrotated, and yaw is clockwise from
-          // north (canvas up), so the heading maps to rotate(yaw) — matching
-          // the 3D marker (rotation.y = PI - yaw on the mirrored frame).
+          // Rotate the icon to the ship's heading. Convention: rotation 0
+          // points the icon UP (north), yaw is clockwise from north (canvas
+          // up). The HUD art's pointy end actually faces RIGHT (+x) at rest,
+          // so subtract 90° to land 0° pointing north — matching the 3D
+          // marker (rotation.y = PI - yaw on the mirrored frame).
           ctx.save();
           ctx.translate(cx, cz);
-          ctx.rotate(m.userData.yaw as number ?? 0);
+          ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
           ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
           ctx.restore();
           continue;
@@ -660,14 +895,40 @@ export default defineComponent({
         drawShipGlyph(ctx, m.userData.type as string | undefined, cx, cz, 5, color);
       }
 
-      // Smoke screens (entityType 4) — translucent grey puffs.
-      ctx.fillStyle = "rgba(150, 160, 180, 0.45)";
-      for (const tr of props.trajectories) {
-        if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
-        const s = sampleAt(tr, t);
-        ctx.beginPath();
-        ctx.arc(wx(s.x), wz(-s.z), 2.4, 0, Math.PI * 2);
-        ctx.fill();
+      // Smoke screens (entityType 4): white start/end rings + remaining
+      // seconds, fading out after each puff's lifetime (90s past its last
+      // update, or the recorded leave time).
+      {
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 1;
+        for (const cl of smokeClusters) {
+          if (t < cl.t0 || t > cl.endT) continue;
+          let cur = t;
+          if (t > cl.lastT) {
+            const span = Math.max(1, cl.lastT - cl.t0);
+            cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+            if (cur > cl.lastT) cur = cl.lastT;
+          }
+          const pStart = sampleAt(cl.traj, cur);
+          if (!pStart) continue;
+          const pEnd = sampleAt(cl.traj, cl.lastT);
+          const drift =
+            pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
+          const showBoth = pEnd != null && drift >= 1000;
+          ctx.beginPath();
+          ctx.arc(wx(pStart.x), wz(-pStart.z), 3, 0, Math.PI * 2);
+          ctx.stroke();
+          if (showBoth && pEnd) {
+            ctx.beginPath();
+            ctx.arc(wx(pEnd.x), wz(-pEnd.z), 3, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.font = "bold 8px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillText(`${Math.ceil(cl.endT - t)}s`, wx(pStart.x), wz(-pStart.z) - 4);
+        }
       }
       // Aircraft — one in-game type icon per FORMATION (squadron centre),
       // not per plane: a full 8-plane group reads as a single moving marker.
@@ -777,7 +1038,7 @@ export default defineComponent({
               const sz = 26;
               zctx.save();
               zctx.translate(cx, cz);
-              zctx.rotate(m.userData.yaw as number ?? 0);
+              zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
               zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
               zctx.restore();
               continue;
@@ -792,14 +1053,37 @@ export default defineComponent({
             const color = role ? TEAM_COLOR[role] : 0x888888;
             drawShipGlyph(zctx, m.userData.type as string | undefined, cx, cz, 14, color);
           }
-          // Smoke screens — translucent grey puffs on the enlarged map.
-          zctx.fillStyle = "rgba(150, 160, 180, 0.5)";
-          for (const tr of props.trajectories) {
-            if (tr.kind?.entityType !== 4 || tr.samples.length < 2) continue;
-            const s = sampleAt(tr, t);
+          // Smoke screens — white start/end rings + remaining seconds on
+          // the enlarged map (same lifetime/dissipation rules as minimap).
+          zctx.strokeStyle = "rgba(255,255,255,0.85)";
+          zctx.fillStyle = "rgba(255,255,255,0.95)";
+          zctx.lineWidth = 1.4;
+          for (const cl of smokeClusters) {
+            if (t < cl.t0 || t > cl.endT) continue;
+            let cur = t;
+            if (t > cl.lastT) {
+              const span = Math.max(1, cl.lastT - cl.t0);
+              cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+              if (cur > cl.lastT) cur = cl.lastT;
+            }
+            const pStart = sampleAt(cl.traj, cur);
+            if (!pStart) continue;
+            const pEnd = sampleAt(cl.traj, cl.lastT);
+            const drift =
+              pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
+            const showBoth = pEnd != null && drift >= 1000;
             zctx.beginPath();
-            zctx.arc(zwx(s.x), zwz(-s.z), 6, 0, Math.PI * 2);
-            zctx.fill();
+            zctx.arc(zwx(pStart.x), zwz(-pStart.z), 6, 0, Math.PI * 2);
+            zctx.stroke();
+            if (showBoth && pEnd) {
+              zctx.beginPath();
+              zctx.arc(zwx(pEnd.x), zwz(-pEnd.z), 6, 0, Math.PI * 2);
+              zctx.stroke();
+            }
+            zctx.font = "bold 12px sans-serif";
+            zctx.textAlign = "center";
+            zctx.textBaseline = "bottom";
+            zctx.fillText(`${Math.ceil(cl.endT - t)}s`, zwx(pStart.x), zwz(-pStart.z) - 7);
           }
           // Aircraft — one icon per formation (squadron centre).
           {
@@ -988,13 +1272,22 @@ export default defineComponent({
       }
       trajectoryLines = [];
       shipMarkers = [];
+      loadedModelPool = [];
+      modelWaiters = [];
       capRings = [];
-      capSim.clear();      for (const sm of smokeMeshes) {
-        scene.remove(sm.mesh);
-        sm.mesh.geometry.dispose();
-        (sm.mesh.material as THREE.Material).dispose();
+      capSim.clear();
+      for (const cl of smokeClusters) {
+        for (const ring of cl.rings) {
+          scene.remove(ring);
+          ring.geometry.dispose();
+          (ring.material as THREE.Material).dispose();
+        }
+        if (cl.timeSprite) {
+          scene.remove(cl.timeSprite);
+          (cl.timeSprite.material as THREE.Material).dispose();
+        }
       }
-      smokeMeshes = [];
+      smokeClusters = [];
       for (const st of shellTraces) {
         scene.remove(st.line);
         st.line.geometry.dispose();
@@ -1041,12 +1334,6 @@ export default defineComponent({
         lockLine.geometry.dispose();
         (lockLine.material as THREE.Material).dispose();
         lockLine = null;
-      }
-      if (lockRing) {
-        scene.remove(lockRing);
-        lockRing.geometry.dispose();
-        (lockRing.material as THREE.Material).dispose();
-        lockRing = null;
       }
       if (planeCloud) {
         scene.remove(planeCloud);
@@ -1360,6 +1647,7 @@ export default defineComponent({
      *  name, tier, type icon, role colour, and death state. */
     function rebuildActors() {
       clearActors();
+      followStats.value.clear();
       const scene = api.value?.scene;
       if (!scene || props.trajectories.length === 0) { shipLabels.value = []; return; }
       const epoch = markerEpoch;
@@ -1384,33 +1672,81 @@ export default defineComponent({
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
       const assignments = resolveRosterAssignments(shipTrajs);
 
-      // Smoke screens (entityType 4 = SmokeScreen): a translucent grey
-      // cylinder at the smoke's current expanding point. WoWS smoke lasts
-      // ~90s; without a destroy packet we hide each puff 90s after its last
-      // recorded position update.
-      const smokeTrajs = props.trajectories.filter(
-        (t) => t.kind?.entityType === 4 && t.samples.length >= 2,
-      );
-      const smokeGeom = new THREE.CylinderGeometry(30, 30, 10, 16, 1);
-      const smokeMat = new THREE.MeshBasicMaterial({
-        color: 0x8b93a3,
-        transparent: true,
-        opacity: 0.45,
-        depthWrite: false,
-      });
-      for (const tr of smokeTrajs) {
-        const mesh = new THREE.Mesh(smokeGeom, smokeMat);
-        mesh.position.y = 2.5;
-        mesh.visible = false;
-        scene.add(mesh);
-        // Exact expiry when the entity left the observed area (EntityLeave
-        // 0x04); otherwise fall back to ~90s after the last recorded update.
-        const leaveT = props.leavesMap[tr.entityId];
-        smokeMeshes.push({
-          mesh,
-          traj: tr,
-          endT: leaveT != null ? leaveT : tr.samples[tr.samples.length - 1].time + 90,
+      // Smoke screens (entityType 4 = SmokeScreen): white ring markers at
+      // the smoke's START point (and END point when the drift exceeds 1 km)
+      // with a floating remaining-seconds tag. No volumetric puffs — the
+      // rings trace the smoke band. WoWS smoke lasts ~90s; without a destroy
+      // packet each puff expires 90s after its last recorded position
+      // update. While dissipating, the start ring walks from the launch
+      // point toward the end point. Clusters of puffs at (almost) the same
+      // spot collapse into one marker: the one with the longest lifetime.
+      smokeClusters.length = 0;
+      {
+        const smokes = props.trajectories
+          .filter((t) => t.kind?.entityType === 4 && t.samples.length >= 1)
+          .sort((a, b) => (a.samples[0]?.time ?? 0) - (b.samples[0]?.time ?? 0));
+        for (const tr of smokes) {
+          const t0 = tr.samples[0].time;
+          const lastT = tr.samples[tr.samples.length - 1].time;
+          const endT = props.leavesMap[tr.entityId] ?? lastT + 90;
+          const s0 = sampleAt(tr, t0);
+          if (!s0) continue;
+          let cluster = smokeClusters.find(
+            (c) => Math.hypot(c.sx - s0.x, c.sz - s0.z) < 300,
+          );
+          if (!cluster) {
+            cluster = {
+              traj: tr,
+              t0,
+              lastT,
+              endT,
+              sx: s0.x,
+              sz: s0.z,
+              rings: [],
+              timeSprite: null,
+            };
+            smokeClusters.push(cluster);
+          } else if (endT > cluster.endT) {
+            cluster.traj = tr;
+            cluster.t0 = t0;
+            cluster.lastT = lastT;
+            cluster.endT = endT;
+          }
+        }
+        const smokeRingGeom = new THREE.RingGeometry(40, 46, 36);
+        const smokeRingMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.75,
+          depthWrite: false,
+          side: THREE.DoubleSide,
         });
+        for (const cl of smokeClusters) {
+          for (let i = 0; i < 2; i++) {
+            const ring = new THREE.Mesh(smokeRingGeom, smokeRingMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.visible = false;
+            scene.add(ring);
+            cl.rings.push(ring);
+          }
+          const cvs = document.createElement("canvas");
+          cvs.width = 128;
+          cvs.height = 64;
+          const tex = new THREE.CanvasTexture(cvs);
+          const sprite = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+              map: tex,
+              transparent: true,
+              depthWrite: false,
+            }),
+          );
+          sprite.visible = false;
+          sprite.scale.set(60, 30, 1);
+          sprite.userData.canvas = cvs;
+          sprite.userData.text = "";
+          scene.add(sprite);
+          cl.timeSprite = sprite;
+        }
       }
 
       // Shell flights reconstructed between a launch and its impact: for
@@ -1684,22 +2020,7 @@ export default defineComponent({
         const line = new THREE.Line(lockGeom, lockMat);
         line.visible = false;
         scene.add(line);
-        // Big ring over the locked target so the lock reads at full-map zoom.
-        // RingGeometry + scale (same render path as the splash rings, which
-        // are known to render; plain torus meshes don't show in this scene).
-        const ringGeom = new THREE.RingGeometry(0.35, 1, 32);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xffcc33,
-          transparent: true,
-          opacity: 0.9,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-        const ring = new THREE.Mesh(ringGeom, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.visible = false;
-        scene.add(ring);
-        lockRing = ring;
+        lockLine = line;
         lockLine = line as unknown as THREE.Mesh;
       }
 
@@ -1787,12 +2108,18 @@ export default defineComponent({
           )];
           const count = (typeKey?.count ?? 3);
           if (list.length === 0) {
-            planeFormations.set(planeId, { count, meshes: [] });
+            planeFormations.set(planeId, { count, groupSize: 1, groupCount: count, meshes: [] });
           }
           list.push({ idx, role, count, trail });
         }
         const seenKey = new Set<string>();
         for (const [planeId, entries] of byPlane) {
+          // Infer the group layout from the launch positions (clusters of
+          // planes spawned together = one flight group).
+          const grp = inferGrouping(entries, sampleAt);
+          const formation = planeFormations.get(planeId)!;
+          formation.groupSize = Math.max(1, Math.min(grp.groupSize, formation.count));
+          formation.groupCount = Math.max(1, grp.groupCount);
           const first = entries[0];
           const url = resolvePlaneModelUrl(first.idx);
           if (!url) continue;
@@ -1808,12 +2135,12 @@ export default defineComponent({
               }).catch(() => null);
           seenKey.add(seen);
           if (!build) continue;
-          const formation = planeFormations.get(planeId)!;
+          const formationForPool = planeFormations.get(planeId)!;
           build.then((proto) => {
             if (epoch !== markerEpoch || !api.value?.scene || !proto) return;
             if (planeMeshes.has(planeId)) return;
             const pool: THREE.Object3D[] = [];
-            for (let i = 0; i < formation.count; i++) {
+            for (let i = 0; i < formationForPool.count; i++) {
               const inst = proto.clone(true);
               inst.userData.sharedGeometry = true;
               inst.visible = false;
@@ -1902,34 +2229,84 @@ export default defineComponent({
           (rosterEntry?.shipId != null
             ? resolveShipModelByShipId(rosterEntry.shipId)
             : null);
+        // The marker's cone stays as-is until a model arrives; ships whose
+        // own GLB is missing/unloadable still get a hull — a same-role model
+        // already loaded for another ship, cloned and re-tinted — instead of
+        // a bare cone.
+        const installModel = (target: THREE.Group, model: THREE.Group) => {
+          for (const child of [...target.children]) {
+            target.remove(child);
+            child.traverse((o) => {
+              if (o instanceof THREE.Mesh) {
+                o.geometry.dispose();
+                (o.material as THREE.Material).dispose();
+              }
+            });
+          }
+          target.add(model);
+          target.userData.modelLoaded = true;
+          target.userData.isDot = false;
+          // Re-run the per-frame visibility rules (opening-phase enemy
+          // hiding, creation time) instead of forcing the marker on.
+          updateMarkersAt(current.value);
+          initMarkerPosition(target, traj, current.value);
+          updateLabelPositions();
+        };
+        const buildFromLoadedPool = () => {
+          // Prefer a model from the same side (self/ally vs enemy).
+          const sub =
+            loadedModelPool.find((p) => p.role === role) ??
+            loadedModelPool[0];
+          if (!sub) return false;
+          try {
+            const replacement = buildMarkerFromSource(sub.model, role);
+            loadedModelPool.push({ model: replacement, role });
+            installModel(marker, replacement);
+            return true;
+          } catch (e) {
+            console.warn(`[HolographicMap] substitute model for entity ${traj.entityId} failed:`, e);
+            return false;
+          }
+        };
+        const drainModelWaiters = () => {
+          for (let i = modelWaiters.length - 1; i >= 0; i--) {
+            const w = modelWaiters[i];
+            if (w.marker.userData.modelLoaded) {
+              modelWaiters.splice(i, 1);
+              continue;
+            }
+            const sub =
+              loadedModelPool.find((p) => p.role === w.marker.userData.role) ??
+              loadedModelPool[0];
+            if (!sub) continue;
+            try {
+              const replacement = buildMarkerFromSource(sub.model, w.marker.userData.role);
+              loadedModelPool.push({ model: replacement, role: w.marker.userData.role });
+              installModel(w.marker, replacement);
+              modelWaiters.splice(i, 1);
+            } catch (e) {
+              console.warn(`[HolographicMap] substitute model for entity ${w.traj.entityId} failed:`, e);
+            }
+          }
+        };
         if (!modelUrl) {
           console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
             + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
-        }
-        if (modelUrl) {
+          if (!buildFromLoadedPool()) modelWaiters.push({ marker, traj });
+        } else {
           buildShipMarker({ url: modelUrl, role })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
-              for (const child of [...marker.children]) {
-                marker.remove(child);
-                child.traverse((o) => {
-                  if (o instanceof THREE.Mesh) {
-                    o.geometry.dispose();
-                    (o.material as THREE.Material).dispose();
-                  }
-                });
-              }
-              marker.add(shipModel);
-              marker.userData.modelLoaded = true;
-              marker.userData.isDot = false;
-              // Re-run the per-frame visibility rules (opening-phase enemy
-              // hiding, creation time) instead of forcing the marker on.
-              updateMarkersAt(current.value);
-              initMarkerPosition(marker, traj, current.value);
-              updateLabelPositions();
+              loadedModelPool.push({ model: shipModel, role });
+              installModel(marker, shipModel);
+              // Fill every marker still waiting on a hull from the model
+              // pool (same-role first), newest models included.
+              drainModelWaiters();
             })
             .catch((e) => {
               console.warn(`[HolographicMap] failed to load marker model for entity ${traj.entityId}:`, e);
+              if (epoch !== markerEpoch) return;
+              if (!buildFromLoadedPool()) modelWaiters.push({ marker, traj });
             });
         }
 
@@ -1998,21 +2375,36 @@ export default defineComponent({
       for (const [planeId, first] of createFirst) {
         // Match against the ship's position AT LAUNCH TIME (ships move — the
         // current playhead position would pair a sortie with the wrong ship).
-        let carrierId: number | null = null;
-        let bestD = 1500;
+        // The create fires on the flight deck, so prefer a REAL carrier
+        // (AirCarrier type) within carrier range; only fall back to any ship
+        // within a much tighter radius when no CV is nearby (hybrid carriers
+        // like Ise/Tone are typed Battleship, unknown offline ships have no
+        // type). Without the type filter a sortie from a distant CV gets
+        // pinned to whatever friendly ship sails nearest — e.g. a Vladivostok
+        // ends up wearing a bomber label and squadrons flip to the wrong side.
+        let cvId: number | null = null;
+        let cvD = 1000;
+        let anyId: number | null = null;
+        let anyD = 400;
         for (const m of shipMarkers) {
           const tr = props.trajectories.find((t) => t.entityId === m.userData.entityId);
           if (!tr) continue;
           const s = sampleAt(tr, first.time);
           if (!s) continue;
-          const dx = s.x - first.x;
-          const dz = s.z - first.z;
-          const d = Math.hypot(dx, dz);
-          if (d < bestD) {
-            bestD = d;
-            carrierId = m.userData.entityId as number;
+          const d = Math.hypot(s.x - first.x, s.z - first.z);
+          if (d < cvD) {
+            const lbl = newLabels.find((l) => l.entityId === m.userData.entityId);
+            if (/^AirCarrier/i.test(lbl?.type ?? "")) {
+              cvD = d;
+              cvId = m.userData.entityId as number;
+            }
+          }
+          if (d < anyD) {
+            anyD = d;
+            anyId = m.userData.entityId as number;
           }
         }
+        const carrierId = cvId ?? anyId;
         planeCarrierOf.set(planeId, carrierId);
         const carrierMarker = carrierId == null
           ? null
@@ -2058,6 +2450,10 @@ export default defineComponent({
       }
       shipLabels.value = newLabels;
 
+      // Opening view: aim the camera at the allied fleet and skip any
+      // pre-battle countdown (ships frozen before the first movement).
+      openSceneDefaults();
+
       // Capture zones: entityType 14 circles on the XZ plane.
       // Capture zones are static and may have no position samples; use the
       // initial position from EntityCreate metadata. Points that share the
@@ -2073,7 +2469,9 @@ export default defineComponent({
       const capEntries = capZones.value.map((t, idx) => ({
         x: t.kind!.initialX,
         z: t.kind!.initialZ,
-        radius: t.kind!.radius ?? 60,
+        // Modern domination points carry ~490 m rings; fall back to a large
+        // default when the create state yields no radius candidate.
+        radius: t.kind!.radius ?? 300,
         order: idx,
       }));
       if (capEntries.length === 0) {
@@ -2094,15 +2492,18 @@ export default defineComponent({
         const n = g.members.length;
         for (let k = 0; k < n; k++) {
           // Concentric group: offset each member along x, outer ring larger.
+          // Use the REAL radius (create-state InteractiveZone.radius, 20..60 m
+          // typical) — clamping to a big minimum made adjacent points'
+          // rings overlap and diverged from the minimap proportions.
           const spread = n > 1 ? 55 * (k - (n - 1) / 2) : 0;
-          const radius = n > 1 ? 52 - k * 14 : g.members[k].radius;
+          const radius = Math.max(g.members[k].radius, 25);
           const cx = g.x + spread;
           const cz = g.z;
-          const ringGeom = new THREE.TorusGeometry(radius, 1.2, 8, 48);
+          const ringGeom = new THREE.TorusGeometry(radius, 2.4, 8, 48);
           const ringMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.35,
+            opacity: 0.55,
             depthWrite: false,
           });
           const ring = new THREE.Mesh(ringGeom, ringMat);
@@ -2286,17 +2687,57 @@ export default defineComponent({
           if (!marker.userData._countedDead) {
             marker.userData._countedDead = true;
             const role = marker.userData.role as TeamRole;
-            // Kill feed + score tick. The killer is unknown from the replay
-            // stream, so the feed names the victim only.
+            // Kill feed + score tick. The killer's identity lives in the
+            // post-battle payload (killerId, index 408) — resolve it to a
+            // nickname, ship name and ship type at sink time.
             if (!reportedSinks.has(entityId)) {
               reportedSinks.add(entityId);
               const who = label?.name ?? `#${entityId}`;
-              const victimRole = role === "ally" ? "enemy" : "ally";
+              // Killer resolution: the killer's account id lives in the
+              // post-battle payload (index 408); map it back to a nickname
+              // via the same playersPublicInfo table.
+              let killerName: string | null = null;
+              let killerShipId: number | null = null;
+              let killerShipName = "";
+              let killerShipType: string | null = null;
+              if (props.battleResults) {
+                pbCache ??= parsePostBattle(props.battleResults);
+              }
+              if (pbCache?.players && who) {
+                const vn = who.trim().toLowerCase();
+                const victim = pbCache.players.find(
+                  (p) => (p.name ?? "").trim().toLowerCase() === vn,
+                );
+                if (victim?.killerId != null) {
+                  const killer = pbCache.players.find(
+                    (p) => p.accountId === victim.killerId,
+                  );
+                  killerName = killer?.name ?? null;
+                  killerShipId = killer?.shipId ?? null;
+                }
+              }
+              if (killerShipId != null) {
+                const encStore = useEncyclopediaStore();
+                const dataLang = useLanguage().dataLanguage.value;
+                const kinfo = props.encyclopedia.get(killerShipId) as ShipInfo | undefined;
+                const koff = shipOfflineEntry(killerShipId);
+                killerShipName =
+                  (kinfo ? encStore.shipDisplayName(kinfo) : null) ??
+                  shipNameFromOfflineDb(killerShipId, dataLang) ??
+                  shipNameFromModelDb(killerShipId) ??
+                  "";
+                killerShipType = kinfo?.type ?? koff?.type ?? null;
+              }
               const feedId = ++killSeq;
               killFeed.value.unshift({
                 id: feedId,
                 text: who,
-                role: victimRole,
+                shipName: label?.shipName ?? "",
+                shipType: label?.type ?? null,
+                killerShipName,
+                killerShipType,
+                killerName,
+                role,
               });
               if (killFeed.value.length > 4) killFeed.value.pop();
               window.setTimeout(() => {
@@ -2331,14 +2772,62 @@ export default defineComponent({
         else mat.color.set(0xffffff);
         mat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
       });
-      // Smoke screens at their current expanding point (visible for 90s
-      // after the last recorded update).
-      for (const sm of smokeMeshes) {
-        const s = sampleAt(sm.traj, t);
-        const created = (sm.traj.kind?.creationTime ?? -1) >= 0 ? t >= sm.traj.kind!.creationTime : true;
-        const alive = s != null && created && t <= sm.endT;
-        sm.mesh.visible = alive;
-        if (alive && s) sm.mesh.position.set(s.x, 2.5, -s.z);
+      // Smoke screens: white start/end rings + a floating remaining-seconds
+      // tag. The start ring walks toward the end while the smoke dissipates
+      // (WoWS smoke fades from the launch point); each cluster shows both
+      // endpoints only when the drift is >= 1 km, otherwise a single puff.
+      for (const cl of smokeClusters) {
+        const hide = () => {
+          cl.rings[0].visible = false;
+          cl.rings[1].visible = false;
+          if (cl.timeSprite) cl.timeSprite.visible = false;
+        };
+        if (t < cl.t0 || t > cl.endT) {
+          hide();
+          continue;
+        }
+        // Dissipation walk: after the last recorded update the start point
+        // slides from the launch position toward the end position.
+        let cur = t;
+        if (t > cl.lastT) {
+          const span = Math.max(1, cl.lastT - cl.t0);
+          cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+          if (cur > cl.lastT) cur = cl.lastT;
+        }
+        const pStart = sampleAt(cl.traj, cur);
+        if (!pStart) {
+          hide();
+          continue;
+        }
+        const pEnd = sampleAt(cl.traj, cl.lastT);
+        const drift =
+          pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
+        const showBoth = pEnd != null && drift >= 1000;
+        cl.rings[0].visible = true;
+        cl.rings[0].position.set(pStart.x, 2.5, -pStart.z);
+        cl.rings[1].visible = showBoth;
+        if (showBoth && pEnd) cl.rings[1].position.set(pEnd.x, 2.5, -pEnd.z);
+        const sprite = cl.timeSprite;
+        if (sprite) {
+          const secs = Math.ceil(cl.endT - t);
+          const text = `${secs}s`;
+          if (sprite.userData.text !== text) {
+            sprite.userData.text = text;
+            const cvs = sprite.userData.canvas as HTMLCanvasElement;
+            const ctx = cvs.getContext("2d")!;
+            ctx.clearRect(0, 0, cvs.width, cvs.height);
+            ctx.fillStyle = "rgba(255,255,255,0.9)";
+            ctx.font = "bold 40px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.shadowColor = "rgba(0,0,0,0.9)";
+            ctx.shadowBlur = 8;
+            ctx.fillText(text, 64, 32);
+            (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
+          }
+          sprite.position.set(pStart.x, 34, -pStart.z);
+          sprite.visible = true;
+        }
       }
       // Aircraft formations: full squadrons (GameParams size, e.g. 8 planes)
       // arranged in a wedge and slowly circling. Modeled formations drive
@@ -2375,41 +2864,46 @@ export default defineComponent({
         for (const [planeId, anchor] of formationAnchor) {
           const pool = planeMeshes.get(planeId);
           const formation = planeFormations.get(planeId);
-          const count = formation?.count ?? 3;
+          const total = formation?.count ?? 3;
+          const gCount = formation?.groupCount ?? total;
+          const gSize = formation?.groupSize ?? 1;
+          // Filled-wedge layout over flight groups (leader front, groups
+          // stepping back 1-2-3-…, leftover groups centered in the last row).
+          const offsets = formationOffsets(gCount, gSize);
+          const n = Math.min(total, offsets.length);
           // Slow circle so airborne squadrons visibly hold a patrol orbit.
           const ang = t * 0.22 + (planeId % 7) * 0.9;
           const R = 50;
-          const cx = anchor.s.x + Math.cos(ang) * R;
-          const cz = anchor.s.z + Math.sin(ang) * R;
           // Heading follows the patrol-circle TANGENT (the direction the
           // formation is actually moving) so the wedge turns as it orbits
           // instead of sliding sideways pointing at a fixed heading.
           const yaw = Math.atan2(-Math.sin(ang), Math.cos(ang));
           const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
           const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
+          // Orbit CENTRE = the formation's geometric centroid (not the lead
+          // plane) — a filled wedge visibly spins around its middle, like the
+          // in-game flight circle. The centroid sits at the anchor plus the
+          // (heading-rotated) mean offset of all aircraft.
+          const cxm = offsets.reduce((a, o) => a + o.ox, 0) / Math.max(1, offsets.length);
+          const czm = offsets.reduce((a, o) => a + o.oz, 0) / Math.max(1, offsets.length);
+          const ccx = anchor.s.x + cxm * right.x + czm * fwd.x;
+          const ccz = anchor.s.z + cxm * right.z + czm * fwd.z;
+          const cx = ccx + Math.cos(ang) * R;
+          const cz = ccz + Math.sin(ang) * R;
           const yBase = Math.max(60, anchor.s.y);
-          if (pool && pool.length >= count) {
-            for (let i = 0; i < count; i++) {
+          if (pool && pool.length >= n) {
+            for (let i = 0; i < n; i++) {
               const mesh = pool[i];
               mesh.visible = true;
-              // Tight wedge (梯形): leader ahead, pairs stepping back on both
-              // sides, with small per-slot altitude offsets (real formations
-              // fly staggered, not on one plane).
-              let ox = 0, oz = 0;
-              if (i > 0) {
-                const row = Math.ceil(i / 2);
-                const side = i % 2 === 1 ? -1 : 1;
-                const spacing = 15;
-                const depth = 13;
-                ox = side * row * spacing * right.x - row * depth * fwd.x;
-                oz = side * row * spacing * right.z - row * depth * fwd.z;
-              }
+              const o = offsets[i];
+              const ox = (o.ox - cxm) * right.x + (o.oz - czm) * fwd.x;
+              const oz = (o.ox - cxm) * right.z + (o.oz - czm) * fwd.z;
               const yOff = (i % 3) * 2 - 2; // -2 / 0 / +2 alternating
               mesh.position.set(cx + ox, yBase + yOff, -cz + oz);
               mesh.rotation.y = Math.PI - yaw;
             }
           } else {
-            // No model pool (yet): fall back to a point at the anchor.
+            // No model pool (yet): fall back to a point at the centroid.
             if (arr) {
               arr[(planeId % 16) * 3] = cx;
               arr[(planeId % 16) * 3 + 1] = yBase;
@@ -2547,7 +3041,6 @@ export default defineComponent({
           selfMarker != null &&
           targetMarker != null;
         lockLine.visible = on;
-        if (lockRing) lockRing.visible = on;
         if (on && selfMarker && targetMarker) {
           const a = selfMarker.position;
           const b = targetMarker.position;
@@ -2555,10 +3048,6 @@ export default defineComponent({
           attr.setXYZ(0, a.x, 30, a.z);
           attr.setXYZ(1, b.x, 30, b.z);
           attr.needsUpdate = true;
-          if (lockRing) {
-            lockRing.position.set(b.x, 60, b.z);
-            lockRing.scale.setScalar(90 * (1 + 0.12 * Math.sin(t * 4)));
-          }
         }
       }
       // Aircraft labels (one per carrier): sync name/HP from the carrier and
@@ -2579,7 +3068,9 @@ export default defineComponent({
             label.tier = carrierLabel.tier;
             label.hp = carrierLabel.hp;
             label.maxHp = carrierLabel.maxHp;
-            label.dead = carrierLabel.dead;
+            // Aircraft have no "sunk" state — planes are simply gone when
+            // shot down, so the card never shows the ship's dead tag.
+            label.dead = false;
           }
           // Any of this carrier's squadrons airborne?
           let visible = false;
@@ -2805,12 +3296,56 @@ export default defineComponent({
     /** Recompute cap zone states + score at playback time t. Fully derived
      *  from the replay stream (capSamples ownership changes, ship positions,
      *  HP streams) so scrubbing reproduces the same result. */
+    /** Point the opening camera at the allied fleet (not map centre) and pull
+     *  back far enough that every friendly ship is in view. Runs once after
+     *  the scene is built. */
+    function fitCameraToAllies() {
+      const ctrl = api.value?.controls;
+      const cam = api.value?.camera;
+      if (!ctrl || !cam || shipMarkers.length === 0) return;
+      const set = shipMarkers.filter((m) => {
+        const r = m.userData.role as TeamRole;
+        return r === "self" || r === "ally";
+      });
+      const use = set.length > 0 ? set : shipMarkers;
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const m of use) {
+        const p = m.position;
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.z < minZ) minZ = p.z;
+        if (p.z > maxZ) maxZ = p.z;
+      }
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      const span = Math.max(maxX - minX, maxZ - minZ, 500);
+      const dist = Math.min(4500, Math.max(900, span * 1.3));
+      ctrl.target.set(cx, 0, cz);
+      cam.position.set(cx, dist * 0.55, cz + dist);
+      ctrl.update();
+    }
+
+    function openSceneDefaults() {
+      // Eager post-battle parse: opening cap colours need the recorder's team.
+      if (props.battleResults) pbCache ??= parsePostBattle(props.battleResults);
+      // Frame the ACTIVE battle area (mode-restricted maps like brawls/duels
+      // play inside a small region of the full map) — the allies are inside
+      // it, so this also satisfies the "open on our fleet" requirement.
+      // Playback starts at the replay's raw time (no auto-skip).
+      if (bounds) {
+        fitCamera(bounds);
+      } else {
+        fitCameraToAllies();
+      }
+    }
+
     function updateCapsAndScore(t: number) {
       const zones = capZones.value;
-      // Scoring parameters by mode + map.
+      const scoring = scoringZones.value;
+      // Scoring parameters by mode + map (based on REAL capture points).
       const isRanked = props.matchGroup === "ranked" || props.matchGroup === "clan";
       const special = SPECIAL_CAP_MAPS.has(props.mapName);
-      const nAreas = zones.length;
+      const nAreas = scoring.length;
       const startPts = special ? 150 : isRanked ? 300 : nAreas >= 4 ? 200 : 300;
       const capCompletePts = special ? 40 : isRanked ? (nAreas >= 4 ? 2 : 9) : nAreas >= 4 ? 4 : 3;
       // Accrual: (every N seconds, +P per controlled area).
@@ -2862,17 +3397,34 @@ export default defineComponent({
       // pauses accrual while a point is contested), plus per-zone live capture
       // state for the UI.
       const display: CapZoneState[] = [];
+      const scoringSet = new Set(scoring.map((z) => z.entityId));
       for (let i = 0; i < zones.length; i++) {
         const zone = zones[i];
         const eid = zone.entityId;
         const samples = (zone.capSamples ?? []).map((s) => ({ time: s.time, value: s.value }));
+        if (!scoringSet.has(eid)) {
+          // Strike/event zone: rendered, never scored, no capture sim.
+          const { ally, enemy } = shipsInZone(zone, t);
+          display.push({
+            letter: String.fromCharCode(65 + i),
+            owner: 0,
+            progress: 0,
+            alliesIn: ally,
+            enemiesIn: enemy,
+            contested: false,
+            capturing: false,
+            speed: 1 / 60,
+            captureTeam: 0,
+          });
+          continue;
+        }
         // Capture simulation: replay from scratch on scrub-back, else advance.
         let st = capSim.get(eid);
         if (!st || st.lastT > t) {
           st = {
             lastT: 0,
             progress: 0,
-            owner: ownerAt(samples, 0),
+            owner: ownerAt(samples, 0, zone.kind?.initialTeam ?? null),
             prevHp: new Map(),
             accrualT: 0,
             scoreAlly: 0,
@@ -2906,12 +3458,28 @@ export default defineComponent({
       enemyScore.value = enemyScoreNow;
     }
 
-    /** Owner at time t from the raw capSamples stream. */
-    function ownerAt(samples: { time: number; value: number }[], t: number): number {
+    /** Owner at time t from the raw capSamples stream; before the first
+     *  ownership sample (or with no stream at all) fall back to the zone's
+     *  initial team from the create state — zones captured from match start
+     *  never emit ownership updates. teamId is a 0/1 SIDE number, so it maps
+     *  to the owner code (1 = recorder's side) via the recorder's own team
+     *  from the post-battle payload. */
+    function ownerAt(
+      samples: { time: number; value: number }[],
+      t: number,
+      initialTeam: number | null,
+    ): number {
       let o = 0;
+      let seen = false;
       for (const s of samples) {
-        if (s.time <= t) o = s.value;
-        else break;
+        if (s.time <= t) {
+          o = s.value;
+          seen = true;
+        } else break;
+      }
+      if (!seen && initialTeam != null && initialTeam >= 0) {
+        const st = selfTeam.value;
+        o = st != null ? (initialTeam === st ? 1 : 2) : 0;
       }
       return o;
     }
@@ -2976,12 +3544,16 @@ export default defineComponent({
      *  and pick the nearest visible marker via raycast. */
     function selectShip(entityId: number | null) {
       selectedEntityId.value = entityId;
+      // Clicking a ship switches to chase mode; clicking empty space returns
+      // to the free orbit camera.
+      cameraMode.value = entityId != null ? "follow" : "free";
     }
 
     /** Canvas click → raycast the nearest visible ship marker (within a
      *  generous screen distance) or clear the selection. */
     function onCanvasClick(e: MouseEvent) {
       speedMenuOpen.value = false;
+      cameraMenuOpen.value = false;
       const cam = api.value?.camera;
       const rnd = api.value?.renderer;
       const canvas = rnd?.domElement;
@@ -3419,14 +3991,51 @@ export default defineComponent({
           ) : null}
           </>
         ) : null}
-        {/* Kill feed (sink notifications) */}
+        {/* Kill feed (sink notifications) — bottom-left. Each entry shows
+            both ships: killer ship + nickname on the left (left-aligned),
+            "击沉了" centred, victim ship + nickname on the right
+            (right-aligned). The card's accent is the killer's side. */}
         {killFeed.value.length > 0 ? (
           <div class="holo-map__killfeed">
             {killFeed.value.map((k) => (
               <div key={k.id} class={["holo-map__kill", `holo-map__kill--${k.role}`]}>
-                <span class="holo-map__kill-cross">✕</span>
-                <span class="holo-map__kill-name">{k.text}</span>
-                <span class="holo-map__kill-pts">+1</span>
+                <div class="holo-map__kill-side holo-map__kill-side--killer">
+                  <span class="holo-map__kill-ship">
+                    <span class="holo-map__kill-ico">
+                      {k.killerShipType ? (
+                        <BattleIcon
+                          kind="ship"
+                          type={k.killerShipType}
+                          variant={k.role === "enemy" ? "enemy" : "ally"}
+                          size={13}
+                        />
+                      ) : null}
+                    </span>
+                    {k.killerShipName || k.killerName || "?"}
+                  </span>
+                  <span class="holo-map__kill-name">
+                    {k.killerName ?? ""}
+                  </span>
+                </div>
+                <span class="holo-map__kill-verb">击沉了</span>
+                <div class="holo-map__kill-side holo-map__kill-side--victim">
+                  <span class="holo-map__kill-ship">
+                    <span class="holo-map__kill-ico">
+                      {k.shipType ? (
+                        <BattleIcon
+                          kind="ship"
+                          type={k.shipType}
+                          variant={k.role === "ally" ? "enemy" : "ally"}
+                          size={13}
+                        />
+                      ) : null}
+                    </span>
+                    {k.shipName}
+                  </span>
+                  <span class="holo-map__kill-name">
+                    {k.text}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -3475,14 +4084,81 @@ export default defineComponent({
             >
               {showLabels.value ? "◉" : "◎"}
             </button>
-            {props.cameraFrames.length > 0 ? (
-              <button
-                class={["holo-map__lbltoggle", originalView.value ? "holo-map__lbltoggle--on" : ""]}
-                onClick={() => { originalView.value = !originalView.value; }}
-                title={originalView.value ? t("replay.origview.off") : t("replay.origview.on")}
-              >
-                {originalView.value ? "🎥" : "⛶"}
-              </button>
+            {props.cameraFrames.length > 0 || cameraMode.value !== "free" ? (
+              <div class="holo-map__camera">
+                <button
+                  class={["holo-map__lbltoggle", cameraMenuOpen.value ? "holo-map__lbltoggle--on" : ""]}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cameraMenuOpen.value = !cameraMenuOpen.value;
+                  }}
+                  title={t("replay.camera.title")}
+                >
+                  {cameraMode.value === "original" ? "🎥" : cameraMode.value === "follow" ? "◎" : "⛶"}
+                </button>
+                {cameraMenuOpen.value ? (
+                  <div class="holo-map__cam-menu" onClick={(e) => e.stopPropagation()}>
+                    <div class="holo-map__cam-modes">
+                      <button
+                        class={["holo-map__cam-mode", cameraMode.value === "free" ? "holo-map__cam-mode--on" : ""]}
+                        onClick={() => { cameraMode.value = "free"; cameraMenuOpen.value = false; }}
+                      >
+                        {t("replay.camera.free")}
+                      </button>
+                      {props.cameraFrames.length > 0 ? (
+                        <button
+                          class={["holo-map__cam-mode", cameraMode.value === "original" ? "holo-map__cam-mode--on" : ""]}
+                          onClick={() => { cameraMode.value = "original"; cameraMenuOpen.value = false; }}
+                        >
+                          {t("replay.camera.original")}
+                        </button>
+                      ) : null}
+                    </div>
+                    {cameraShipGroups.value.map((g) => (
+                      <div key={g.key} class="holo-map__cam-group">
+                        <div class="holo-map__cam-group-title">{g.title}</div>
+                        {g.items.map((item) => (
+                          <button
+                            key={item.entityId}
+                            class={[
+                              "holo-map__cam-item",
+                              item.entityId === selectedEntityId.value ? "holo-map__cam-item--on" : "",
+                              item.dead ? "holo-map__cam-item--dead" : "",
+                            ]}
+                            onClick={() => {
+                              selectShip(item.entityId);
+                              cameraMenuOpen.value = false;
+                            }}
+                          >
+                            <span class="holo-map__cam-ico">
+                              {item.type ? (
+                                <BattleIcon
+                                  kind="ship"
+                                  type={item.type}
+                                  variant={item.role === "enemy" ? "enemy" : "ally"}
+                                  size={13}
+                                />
+                              ) : null}
+                            </span>
+                            <span class="holo-map__cam-body">
+                              <span class="holo-map__cam-ship">{item.shipName}</span>
+                              <span class="holo-map__cam-meta">
+                                {item.tier ? tierToRoman(item.tier) : ""}
+                                {item.type ? ` ${t(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
+                                {item.maxHp != null ? ` · ${item.maxHp.toLocaleString()} HP` : ""}
+                              </span>
+                            </span>
+                            <span class="holo-map__cam-name">{item.name}</span>
+                            <span class="holo-map__cam-stats">
+                              {followStats.value.get(item.entityId) ?? "…"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? "❚❚" : "▶"}
@@ -3501,8 +4177,7 @@ export default defineComponent({
             />
             <span class="holo-map__time" onClick={toggleTimeMode} title="Click to toggle elapsed / remaining / total">
               {displayTime()}
-            </span>
-            <div class="holo-map__speed">
+            </span>            <div class="holo-map__speed">
               <button
                 class="holo-map__speed-btn"
                 onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}

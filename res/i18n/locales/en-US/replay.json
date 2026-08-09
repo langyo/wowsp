@@ -75,6 +75,23 @@
     "on": "Original view",
     "off": "Free view"
   },
+  "camera": {
+    "title": "Camera",
+    "free": "Free camera",
+    "original": "Original view",
+    "me": "Me",
+    "allies": "Allies",
+    "enemies": "Enemies",
+    "battles": "battles"
+  },
+  "classes": {
+    "battleship": "Battleship",
+    "cruiser": "Cruiser",
+    "destroyer": "Destroyer",
+    "aircarrier": "Aircraft carrier",
+    "submarine": "Submarine",
+    "auxiliary": "Auxiliary"
+  },
   "selfStats": "Self",
   "selfHits": "Hits",
   "selfFrags": "Frags",
