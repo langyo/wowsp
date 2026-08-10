@@ -59,11 +59,19 @@
     left: 12px;
     bottom: 12px;
     z-index: 1;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding: 6px 10px;
     pointer-events: auto;
+  }
+
+  &__shipcard {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    pointer-events: none;
   }
 
   &__play {

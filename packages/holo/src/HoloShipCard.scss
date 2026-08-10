@@ -1,0 +1,78 @@
+/* HoloShipCard — recorder ship health plaque (in-game team-list style). */
+.holo-ship-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 15rem;
+  max-width: 22rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  background: rgb(96 108 126 / 42%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgb(255 255 255 / 92%);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  pointer-events: none;
+  user-select: none;
+
+  &--dead {
+    opacity: 0.55;
+    filter: grayscale(0.7);
+  }
+
+  &__hull {
+    width: 52px;
+    height: 20px;
+    flex-shrink: 0;
+    color: rgb(255 255 255 / 88%);
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  &__name {
+    font-weight: 600;
+    color: rgb(255 255 255 / 95%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__bar {
+    position: relative;
+    display: block;
+    height: 0.8rem;
+    background: rgb(5 8 15 / 55%);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  &__hp {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.2s linear, background 0.2s linear;
+  }
+
+  /* Repairable pool: grey segment right of the current HP. */
+  &__rep {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: rgb(200 208 220 / 55%);
+    transition: left 0.2s linear, width 0.2s linear;
+  }
+
+  &__text {
+    color: rgb(255 255 255 / 85%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+  }
+}

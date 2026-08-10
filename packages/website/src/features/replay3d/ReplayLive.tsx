@@ -2,7 +2,7 @@ import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as THREE from "three";
 import {
-  HoloClock, HoloScorebar, HoloLabel, drawHoloMinimap, registerHoloShipIcons,
+  HoloClock, HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, registerHoloShipIcons,
   setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
   makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
@@ -104,6 +104,12 @@ export default defineComponent({
       time: 0, duration: 1, caps: [], ships: [],
     });
     const nameTags = ref<HoloLabelData[]>([]);
+    /** Recorder ship health plaque (bottom-left card). */
+    const selfShip = ref<ShipNode | null>(null);
+    const selfHp = ref<number | null>(null);
+    const selfMaxHp = ref<number | null>(null);
+    const selfRep = ref<number | null>(null);
+    const selfDead = ref(false);
     const capTags = ref<CapTag[]>([]);
     /** Alt held → show the in-game point timers (reach / capture ETA). */
     const altDown = ref(false);
@@ -150,6 +156,8 @@ export default defineComponent({
     let boomCursor = 0;
     let boomEvents: BattleBundle["explosions"] = [];
     let capZones: CapZone[] = [];
+    /** Ring elevation: floats above the terrain so island points stay visible. */
+    let capY = 2.2;
     let capRingMats: { ring: THREE.MeshBasicMaterial; fill: THREE.MeshBasicMaterial }[] = [];
     let reduced = false;
     let currentDuration = 100;
@@ -324,6 +332,26 @@ export default defineComponent({
       }
       nameTags.value = tags;
 
+      // recorder ship health plaque (bottom-left)
+      const selfNode = ships.find((s) => s.rel === 0) ?? null;
+      selfShip.value = selfNode;
+      if (selfNode) {
+        const cur = Math.min(battleT, selfNode.die ?? battleT);
+        const h = hpAt(selfNode.track, cur);
+        const mx = selfNode.track.hp ? Math.max(...selfNode.track.hp) : null;
+        selfHp.value = h;
+        selfMaxHp.value = mx;
+        selfDead.value = selfNode.die !== undefined && battleT > selfNode.die;
+        // Repairable pool: approximating the repair-party pool as 60% of the
+        // damage taken (BB-class standard) until the replay carries it.
+        selfRep.value = mx != null && h != null && mx > 0 ? (mx - h) * 0.6 : null;
+      } else {
+        selfHp.value = null;
+        selfMaxHp.value = null;
+        selfRep.value = null;
+        selfDead.value = false;
+      }
+
       // explosions
       while (boomCursor < boomEvents.length && boomEvents[boomCursor][0] <= battleT) {
         const [, x, z] = boomEvents[boomCursor++];
@@ -362,7 +390,7 @@ export default defineComponent({
           mats.fill.color.setHex(color);
           mats.fill.opacity = c.owner === "neutral" ? 0.05 : 0.14;
         }
-        const pr = projectToStage(zone.x, 2, -zone.z);
+        const pr = projectToStage(zone.x, capY, -zone.z);
         // Only a point UNDER CAPTURE shows a timer (remaining seconds) —
         // idle neutral points stay clean.
         const eta = altDown.value && c.capturing && c.seconds != null ? formatEta(c.seconds) : "";
@@ -447,6 +475,7 @@ export default defineComponent({
       applyTheme();
 
       // terrain
+      let terrainMaxY = 0;
       try {
         const terrain = await loadGlb(`${base}/models/41_Conquest.glb`);
         if (disposed) return;
@@ -454,16 +483,24 @@ export default defineComponent({
         materials.push(mat);
         terrain.traverse((c) => {
           const mesh = c as THREE.Mesh;
-          if (mesh.isMesh) { mesh.material = mat; if (mesh.geometry) geometries.push(mesh.geometry); }
+          if (mesh.isMesh) {
+            mesh.material = mat;
+            if (mesh.geometry) {
+              geometries.push(mesh.geometry);
+              mesh.geometry.computeBoundingBox();
+              const bb = mesh.geometry.boundingBox;
+              if (bb) terrainMaxY = Math.max(terrainMaxY, bb.max.y);
+            }
+          }
         });
         scene.add(terrain);
       } catch (e) {
         console.warn("[ReplayLive] terrain failed", e);
       }
 
-      // cap zone rings (the in-game circle at each letter point).
-      // depthTest off so the rings never hide behind terrain (cap points
-      // sit on islands in some maps) — they behave like HUD callouts.
+      // Cap zone rings float just above the terrain so island points (C on
+      // this map) stay visible — depthTest off as an extra guarantee.
+      capY = Math.max(2.2, terrainMaxY + 2.5);
       {
         const ringGeom = new THREE.RingGeometry(CAP_RING_R - 4, CAP_RING_R, 64);
         const fillGeom = new THREE.CircleGeometry(CAP_RING_R - 4, 48);
@@ -481,8 +518,8 @@ export default defineComponent({
           const fill = new THREE.Mesh(fillGeom, fillMat);
           ring.rotation.x = -Math.PI / 2;
           fill.rotation.x = -Math.PI / 2;
-          ring.position.set(c.x, 2.2, -c.z);
-          fill.position.set(c.x, 2.0, -c.z);
+          ring.position.set(c.x, capY, -c.z);
+          fill.position.set(c.x, capY - 0.2, -c.z);
           scene.add(ring, fill);
           materials.push(ringMat, fillMat);
           capRingMats.push({ ring: ringMat, fill: fillMat });
@@ -637,10 +674,17 @@ export default defineComponent({
             <div class="replay-live__hud replay-live__hud--top">
               <HoloScorebar state={hud.value} />
             </div>
-            <div class="replay-live__hud replay-live__hud--tr">
-              <span class="replay-live__live-dot">{t("showcase.replay.live.badge")}</span>
-            </div>
             <div class="replay-live__hud replay-live__hud--bl">
+              <HoloShipCard
+                data={{
+                  shipType: selfShip.value?.type,
+                  name: selfShip.value ? (isZh() ? selfShip.value.nameZh : selfShip.value.nameEn) : undefined,
+                  hp: selfHp.value,
+                  maxHp: selfMaxHp.value,
+                  repairableHp: selfRep.value,
+                  dead: selfDead.value,
+                }}
+              />
               <HoloClock
                 state={hud.value}
                 mode={clockMode.value}
@@ -656,4 +700,4 @@ export default defineComponent({
       </div>
     );
   },
-});
+});// selftest

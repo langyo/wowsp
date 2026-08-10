@@ -15,3 +15,4 @@ export { drawHoloMinimap, setMinimapArtImage } from "./minimap";
 export { default as HoloScorebar } from "./HoloScorebar";
 export { default as HoloClock } from "./HoloClock";
 export { default as HoloLabel } from "./HoloLabel";
+export { default as HoloShipCard } from "./HoloShipCard";

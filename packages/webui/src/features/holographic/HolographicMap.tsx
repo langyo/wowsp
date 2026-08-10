@@ -39,9 +39,9 @@ import type {
 import planeIcon from "./planeIcons";
 import { shipIcon, shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
-  HoloScorebar, HoloLabel, registerHoloShipIcons,
+  HoloScorebar, HoloLabel, HoloShipCard, registerHoloShipIcons,
   captureSecondsRemaining, formatEta,
-  type HoloCapZone, type HoloHudState, type HoloShip,
+  type HoloCapZone, type HoloHudState, type HoloShip, type HoloShipCardData,
 } from "@wowsp/holo";
 
 // The shared scorebar renders the game's own HUD icons — register the
@@ -559,6 +559,22 @@ export default defineComponent({
     /** Alt held → show in-game point timers on the cap letters (shared
      *  capTimer rules, same as the marketing site). */
     const showCapEta = ref(false);
+
+    /** Recorder ship health plaque (shared HoloShipCard, bottom-left). */
+    const selfCard = computed<HoloShipCardData | null>(() => {
+      const l = shipLabels.value.find((x) => x.role === "self" && x.shipName);
+      if (!l) return null;
+      return {
+        shipType: l.type ?? undefined,
+        name: l.shipName,
+        hp: l.hp,
+        maxHp: l.maxHp,
+        dead: l.dead,
+        // Repairable pool approximated as 60% of damage taken until the
+        // replay stream carries the real value.
+        repairableHp: l.hp != null && l.maxHp != null ? (l.maxHp - l.hp) * 0.6 : null,
+      };
+    });
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -4056,7 +4072,12 @@ export default defineComponent({
         ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
-            <button
+          {selfCard.value ? (
+            <div class="holo-map__shipcard">
+              <HoloShipCard data={selfCard.value} />
+            </div>
+          ) : null}
+          <button
               class="holo-map__lbltoggle"
               onClick={() => { showLabels.value = !showLabels.value; }}
               title={showLabels.value ? t("replay.labels.hide") : t("replay.labels.show")}
