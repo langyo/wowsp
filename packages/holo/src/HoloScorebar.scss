@@ -6,9 +6,9 @@
   --holo-contested: #f5b85c;
   --holo-capture: #4ade80;
   /* neutral cap outline/letter must read on BOTH the site's light pill and
-     the app's dark pill — mid slate works on either */
-  --holo-neutral: rgba(148, 163, 184, 0.9);
-  --holo-cap-text: #8fa0b5;
+     the app's dark pill — plain white works on either */
+  --holo-neutral: #ffffff;
+  --holo-cap-text: #ffffff;
 
   display: inline-flex;
   flex-direction: column;
@@ -83,17 +83,6 @@
 
 .holo-scorebar__fillbar {
   transition: height 0.18s linear;
-}
-
-.holo-scorebar__time {
-  min-width: 5ch;
-  text-align: center;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: rgb(var(--color-text, 235 240 248) / 70%);
-  border-left: 1px solid rgb(var(--color-border, 200 210 220) / 18%);
-  padding-left: 0.6rem;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Ship-icon strip under the scores: allies left, enemies right, sunk greyed

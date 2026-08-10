@@ -2,10 +2,11 @@ import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as THREE from "three";
 import {
-  HoloClock, HoloScorebar, drawHoloMinimap, registerHoloShipIcons,
-  setMinimapArtImage, captureSpeedPerSec, captureSecondsRemaining, reachSeconds, formatEta,
+  HoloClock, HoloScorebar, HoloLabel, drawHoloMinimap, registerHoloShipIcons,
+  setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
   makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
+  type HoloLabelData,
 } from "@wowsp/holo";
 import { loadGlb } from "./glb";
 import shipTypes from "@/data/shipTypes.json";
@@ -13,7 +14,7 @@ import { ships as SHIP_DB, shipName } from "@/data/ships";
 import "./ReplayLive.scss";
 
 /** Compact per-entity track baked by scripts/bake_site_replay.py (1 Hz). */
-interface Track { x: number[]; z: number[]; yaw: number[]; die?: number }
+interface Track { x: number[]; z: number[]; yaw: number[]; hp?: number[]; die?: number }
 interface RosterEntry {
   e: number; name: string; shipZh: string; shipEn: string; model: string;
   rel: number;
@@ -80,7 +81,14 @@ function posAt(track: Track, t: number): { x: number; z: number; yaw: number } {
   };
 }
 
-interface NameTag { key: number; nameZh: string; nameEn: string; role: string; x: number; y: number; dead: boolean; visible: boolean }
+/** Hold-last 1 Hz HP lookup (the baked hp trace), null when unavailable. */
+function hpAt(track: Track, t: number): number | null {
+  const hp = track.hp;
+  if (!hp || hp.length === 0) return null;
+  const i = Math.min(Math.max(Math.floor(t), 0), hp.length - 1);
+  return hp[i];
+}
+
 interface CapTag { letter: string; x: number; y: number; owner: string; eta: string; etaClass: string }
 
 export default defineComponent({
@@ -95,7 +103,7 @@ export default defineComponent({
       scoreAlly: 0, scoreEnemy: 0, aliveAlly: 11, aliveEnemy: 11,
       time: 0, duration: 1, caps: [], ships: [],
     });
-    const nameTags = ref<NameTag[]>([]);
+    const nameTags = ref<HoloLabelData[]>([]);
     const capTags = ref<CapTag[]>([]);
     /** Alt held → show the in-game point timers (reach / capture ETA). */
     const altDown = ref(false);
@@ -135,14 +143,14 @@ export default defineComponent({
 
     interface ShipNode {
       root: THREE.Group; rel: number; track: Track; die?: number;
-      type: string; nameZh: string; nameEn: string; key: number;
+      type: string; nameZh: string; nameEn: string; playerName: string; tier: number | null; key: number;
     }
     let ships: ShipNode[] = [];
     let boomPool: { mesh: THREE.Mesh; t0: number }[] = [];
     let boomCursor = 0;
     let boomEvents: BattleBundle["explosions"] = [];
     let capZones: CapZone[] = [];
-    let capRingMats: { ring: THREE.MeshBasicMaterial; fill: THREE.MeshBasicMaterial; out: THREE.MeshBasicMaterial }[] = [];
+    let capRingMats: { ring: THREE.MeshBasicMaterial; fill: THREE.MeshBasicMaterial }[] = [];
     let reduced = false;
     let currentDuration = 100;
 
@@ -285,7 +293,7 @@ export default defineComponent({
 
       let allies = 0, enemies = 0, scoreA = 0, scoreE = 0;
       const shipStates: HoloShip[] = [];
-      const tags: NameTag[] = [];
+      const tags: HoloLabelData[] = [];
       for (const s of ships) {
         const dead = s.die !== undefined && battleT > s.die;
         const p = posAt(s.track, Math.min(battleT, s.die ?? battleT));
@@ -298,9 +306,20 @@ export default defineComponent({
         shipStates.push({ x: 0, z: 0, yaw: 0, role: roleOf(s.rel), dead, shipType: s.type });
 
         const pr = projectToStage(p.x, 20, -p.z);
+        const role = roleOf(s.rel);
+        const cur = Math.min(battleT, s.die ?? battleT);
+        const hp = dead ? null : hpAt(s.track, cur);
+        const maxHp = s.track.hp ? Math.max(...s.track.hp) : null;
         tags.push({
-          key: s.key, nameZh: s.nameZh, nameEn: s.nameEn, role: roleOf(s.rel),
+          key: s.key,
+          role,
+          name: s.playerName,
+          shipName: isZh() ? s.nameZh : s.nameEn,
+          tier: s.tier,
           x: pr.x, y: pr.y, dead, visible: pr.visible,
+          iconUrl: holoShipIconUrl(s.type, dead ? "sunk" : role === "enemy" ? "enemy" : "ally"),
+          hp: hp ?? null,
+          maxHp: maxHp ?? null,
         });
       }
       nameTags.value = tags;
@@ -329,17 +348,8 @@ export default defineComponent({
       camera.position.set(Math.cos(ang) * r, 1250 + Math.sin(now / 1000 * 0.07) * 35, Math.sin(ang) * r);
       camera.lookAt(0, 0, 0);
 
-      // cap zones: ring colours + projected letters (+ Alt-hold point timers)
+      // cap zones: ring colours + projected letters (+ Alt-hold capture ETA)
       const caps = capStateAt(battleT);
-      // the recorder's current speed (world units per second) for reach ETA
-      let selfSpeed = 0;
-      const self = ships.find((s) => s.rel === 0);
-      if (self) {
-        const t0 = Math.min(battleT, self.die ?? battleT);
-        const p0 = posAt(self.track, Math.max(0, t0 - 1));
-        const p1 = posAt(self.track, t0);
-        selfSpeed = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-      }
       const cTags: CapTag[] = [];
       for (let i = 0; i < caps.length; i++) {
         const c = caps[i];
@@ -351,26 +361,15 @@ export default defineComponent({
           mats.ring.opacity = c.owner === "neutral" ? 0.55 : 0.8;
           mats.fill.color.setHex(color);
           mats.fill.opacity = c.owner === "neutral" ? 0.05 : 0.14;
-          mats.out.color.setHex(c.owner === "neutral" ? 0x1a2c44 : color);
-          mats.out.opacity = c.owner === "neutral" ? 0.4 : 0.25;
         }
         const pr = projectToStage(zone.x, 2, -zone.z);
-        let eta = "";
-        let etaClass = "";
-        if (altDown.value) {
-          if (c.capturing && c.seconds != null) {
-            eta = formatEta(c.seconds);
-            etaClass = "is-capture";
-          } else if (c.owner === "neutral" && !c.contested && self) {
-            const p0 = posAt(self.track, Math.min(battleT, self.die ?? battleT));
-            const reach = reachSeconds(Math.hypot(p0.x - zone.x, p0.z - zone.z), selfSpeed);
-            if (reach != null) {
-              eta = formatEta(reach);
-              etaClass = "is-reach";
-            }
-          }
-        }
-        cTags.push({ letter: c.letter, x: pr.x, y: pr.y, owner: c.owner, eta, etaClass });
+        // Only a point UNDER CAPTURE shows a timer (remaining seconds) —
+        // idle neutral points stay clean.
+        const eta = altDown.value && c.capturing && c.seconds != null ? formatEta(c.seconds) : "";
+        cTags.push({
+          letter: c.letter, x: pr.x, y: pr.y, owner: c.owner,
+          eta, etaClass: eta ? "is-capture" : "",
+        });
       }
       capTags.value = cTags;
 
@@ -462,35 +461,31 @@ export default defineComponent({
         console.warn("[ReplayLive] terrain failed", e);
       }
 
-      // cap zone rings (the in-game circle at each letter point)
+      // cap zone rings (the in-game circle at each letter point).
+      // depthTest off so the rings never hide behind terrain (cap points
+      // sit on islands in some maps) — they behave like HUD callouts.
       {
         const ringGeom = new THREE.RingGeometry(CAP_RING_R - 4, CAP_RING_R, 64);
         const fillGeom = new THREE.CircleGeometry(CAP_RING_R - 4, 48);
-        // second, darker ring so neutral points stay visible on light water
-        const outGeom = new THREE.RingGeometry(CAP_RING_R - 7, CAP_RING_R + 3, 64);
-        geometries.push(ringGeom, fillGeom, outGeom);
+        geometries.push(ringGeom, fillGeom);
         for (const c of capZones) {
           const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
+            color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide,
+            depthWrite: false, depthTest: false,
           });
           const fillMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff, transparent: true, opacity: 0.03, side: THREE.DoubleSide, depthWrite: false,
-          });
-          const outMat = new THREE.MeshBasicMaterial({
-            color: 0x1a2c44, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
+            color: 0xffffff, transparent: true, opacity: 0.03, side: THREE.DoubleSide,
+            depthWrite: false, depthTest: false,
           });
           const ring = new THREE.Mesh(ringGeom, ringMat);
           const fill = new THREE.Mesh(fillGeom, fillMat);
-          const out = new THREE.Mesh(outGeom, outMat);
           ring.rotation.x = -Math.PI / 2;
           fill.rotation.x = -Math.PI / 2;
-          out.rotation.x = -Math.PI / 2;
           ring.position.set(c.x, 2.2, -c.z);
           fill.position.set(c.x, 2.0, -c.z);
-          out.position.set(c.x, 2.1, -c.z);
-          scene.add(ring, fill, out);
-          materials.push(ringMat, fillMat, outMat);
-          capRingMats.push({ ring: ringMat, fill: fillMat, out: outMat });
+          scene.add(ring, fill);
+          materials.push(ringMat, fillMat);
+          capRingMats.push({ ring: ringMat, fill: fillMat });
         }
       }
 
@@ -542,6 +537,8 @@ export default defineComponent({
           type: shipTypeOf(r.model),
           nameZh: resolveShipName(r.model, r.shipZh, "zh-Hans"),
           nameEn: resolveShipName(r.model, r.shipEn, "en"),
+          playerName: r.name,
+          tier: SHIP_BY_ID.get(r.model)?.tier ?? SHIP_BY_EN.get(r.model)?.tier ?? SHIP_BY_EN.get(r.shipEn)?.tier ?? null,
           key: r.e,
         });
         scene.add(root);
@@ -577,7 +574,7 @@ export default defineComponent({
       lastNow = performance.now();
       raf = requestAnimationFrame(frame);
 
-      io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; }, { threshold: 0.1 });
+      io = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) visible = true; }, { threshold: 0.1 });
       io.observe(host.value);
       ro = new ResizeObserver(trackResize);
       ro.observe(host.value);
@@ -606,24 +603,11 @@ export default defineComponent({
     return () => (
       <div class="replay-live">
         <div class="replay-live__stage" ref={host} />
-        {/* ship name tags — DOM overlays, always readable (screen-space) */}
+        {/* ship labels — shared HoloLabel (app's floating card) */}
         {!loading.value && !failed.value ? (
           <div class="replay-live__tags" aria-hidden="true">
             {nameTags.value.map((tag) => (
-              <span
-                key={tag.key}
-                class={[
-                  "replay-live__nametag",
-                  `replay-live__nametag--${tag.role}`,
-                  tag.dead ? "is-dead" : "",
-                ].join(" ")}
-                style={{
-                  transform: `translate(-50%, -100%) translate(${tag.x}px, ${tag.y}px)`,
-                  opacity: tag.visible ? undefined : 0,
-                }}
-              >
-                {isZh() ? tag.nameZh : tag.nameEn}
-              </span>
+              <HoloLabel key={tag.key} label={tag} deadText={t("showcase.replay.live.dead")} />
             ))}
             {capTags.value.map((tag) => (
               <span

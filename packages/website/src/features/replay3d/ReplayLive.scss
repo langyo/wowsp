@@ -114,36 +114,13 @@
     pointer-events: none;
   }
 
-  /* ── DOM overlays: ship name tags + cap letters (screen-space, always
-        readable regardless of camera distance) ── */
+  /* ── DOM overlays: ship labels (shared HoloLabel) + cap letters ── */
   &__tags {
     position: absolute;
     inset: 0;
     z-index: 2;
     overflow: hidden;
     pointer-events: none;
-  }
-
-  &__nametag {
-    position: absolute;
-    left: 0;
-    top: 0;
-    padding: 1px var(--space-8);
-    border-radius: var(--radius-full);
-    background: var(--holo-hud-bg, rgb(13 20 34 / 78%));
-    border: 1px solid rgb(var(--color-border) / 25%);
-    backdrop-filter: blur(6px);
-    font-size: var(--text-xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    color: rgb(var(--color-text));
-
-    &--self { color: #f5b85c; border-color: rgb(245 184 92 / 45%); }
-    &--ally { color: #5dc4f8; }
-    &--enemy { color: #f87d7d; }
-
-    &.is-dead { opacity: 0.28; }
   }
 
   &__capletter {
@@ -194,12 +171,6 @@
     --holo-hud-bg: rgb(255 255 255 / 82%);
 
     &__minimap { background: rgb(255 255 255 / 55%); }
-
-    &__nametag {
-      &--self { color: #b45309; border-color: rgb(180 83 9 / 45%); }
-      &--ally { color: #0277bd; }
-      &--enemy { color: #d53030; }
-    }
 
     &__capletter {
       text-shadow: 0 1px 8px rgb(255 255 255 / 60%);
