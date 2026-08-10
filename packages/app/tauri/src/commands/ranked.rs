@@ -216,43 +216,53 @@ pub async fn get_ranked_stats(
 }
 
 /// Extract (current_rank, best_rank, best_league) from the rank_info structure.
-/// Structure: rank_info.<seasonId>.<league>.<sprint>.{rank, rank_best}
-/// league 1=Gold, 2=Silver, 3=Bronze. Returns the best (lowest-number = highest)
-/// rank + its league.
+///
+/// Verified against the live API: `rank_info.<seasonId>.<sprint>.<league>.{rank,
+/// rank_best, sprint_number, …}` — the OUTER key is the sprint index (0-based),
+/// the INNER key is the league (1 = Gold, 2 = Silver, 3 = Bronze).
+///
+/// "Best" = the highest league reached, then the best (lowest) rank inside it
+/// (Silver 9 outranks Bronze 1, matching community sites). "Current" = the
+/// snapshot from the latest sprint with activity.
 fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Option<(i32, i32, i32)> {
     let season = rank_info?.get(season_id)?;
-    let mut best_current: Option<i32> = None;
-    let mut best_ever: Option<i32> = None;
-    let mut best_league: i32 = 3; // default to bronze (worst)
-    if let Some(obj) = season.as_object() {
-        for (league_str, sprints) in obj {
-            let league: i32 = league_str.parse().unwrap_or(3);
-            if let Some(sprint_obj) = sprints.as_object() {
-                for (_sprint, info) in sprint_obj {
-                    let r = info.get("rank").and_then(|v| v.as_i64()).map(|v| v as i32);
+    let mut best_league: Option<i32> = None;
+    let mut best_rank = i32::MAX;
+    let mut latest: Option<(i32, i32, i32)> = None; // (sprint, league, rank)
+
+    if let Some(sprints) = season.as_object() {
+        for (sprint_key, leagues) in sprints {
+            let sprint_no: i32 = sprint_key.parse().unwrap_or(0);
+            if let Some(league_obj) = leagues.as_object() {
+                for (league_key, info) in league_obj {
+                    let league: i32 = league_key.parse().unwrap_or(99);
                     let rb = info
                         .get("rank_best")
                         .and_then(|v| v.as_i64())
                         .map(|v| v as i32);
-                    if let Some(r) = r {
-                        best_current = Some(best_current.map_or(r, |c| c.min(r)));
-                    }
+                    let r = info.get("rank").and_then(|v| v.as_i64()).map(|v| v as i32);
                     if let Some(rb) = rb {
-                        // Track the best (lowest) rank + the league it was in.
-                        // Lower league number = better league (1=gold > 2=silver > 3=bronze).
-                        if best_ever.is_none_or(|b| rb < b || (rb == b && league < best_league)) {
-                            best_ever = Some(rb);
-                            best_league = league;
+                        // Lower league number = better (1 gold > 2 silver > 3 bronze);
+                        // within a league, lower rank number = better.
+                        if best_league.is_none_or(|bl| league < bl || (league == bl && rb < best_rank)) {
+                            best_league = Some(league);
+                            best_rank = rb;
+                        }
+                    }
+                    if let Some(rr) = r {
+                        // The latest sprint with any data; within a sprint the
+                        // furthest league (lowest number) is where they ended.
+                        if latest.is_none_or(|(_, l, _)| league < l) || latest.is_none_or(|(s, _, _)| sprint_no > s) {
+                            latest = Some((sprint_no, league, rr));
                         }
                     }
                 }
             }
         }
     }
-    match (best_current, best_ever) {
-        (Some(c), Some(b)) => Some((c, b, best_league)),
-        _ => None,
-    }
+
+    let bl = best_league?;
+    Some((latest.map(|(_, _, r)| r).unwrap_or(best_rank), best_rank, bl))
 }
 
 fn get_i64(v: &serde_json::Value, key: &str) -> i64 {

@@ -17,12 +17,12 @@ html.s-theme-transitioning *::after {
 
 /* === Tokens === */
 :root {
-  /* Radius scale */
-  --radius: 12px;
-  --radius-lg: 12px;
-  --radius-md: 8px;
-  --radius-sm: 4px;
-  --radius-xs: 4px;
+  /* Radius scale — softened for the Abyssal Glass language */
+  --radius: 14px;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
   --radius-full: 9999px;
 
   /* Font sizes */
@@ -73,6 +73,8 @@ html.s-theme-transitioning *::after {
   --color-selected-bg: 0 120 200;
   --color-selected-text: 255 255 255;
   --color-on-solid: 255 255 255;
+  /* Text on filled-primary surfaces; presets override at runtime. */
+  --color-on-primary: 255 255 255;
   --color-success: 60 180 120;
   --color-error: 220 80 80;
   --color-warning: 230 170 50;

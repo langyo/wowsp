@@ -18,6 +18,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@vueuse/core": "^14",
+    "@wowsp/holo": "workspace:*",
     "echarts": "^6.1.0",
     "lucide-vue-next": "^1",
     "pinia": "^3",

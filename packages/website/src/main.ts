@@ -3,20 +3,36 @@ import { createI18n } from "vue-i18n";
 
 import App from "./App";
 import { router } from "@/router";
-import en from "./messages/en";
-import zhCN from "./messages/zh-CN";
+import { detectLocale, isValidLocale, SUPPORTED_LOCALES, type Locale } from "@/locales";
 import "@/theme/theme.scss";
+
+const modules = import.meta.glob("./messages/*.ts", { eager: true, import: "default" }) as Record<
+  string,
+  Record<string, unknown>
+>;
+
+const messages: Record<string, Record<string, unknown>> = {};
+for (const code of SUPPORTED_LOCALES) {
+  messages[code] = modules[`./messages/${code}.ts`] ?? {};
+}
+
+function loadLocale(): Locale {
+  try {
+    const saved = localStorage.getItem("wowsp-site-locale");
+    if (saved && isValidLocale(saved)) return saved;
+  } catch {
+    /* storage unavailable */
+  }
+  return detectLocale();
+}
 
 const i18n = createI18n({
   legacy: false,
-  locale: detectLocale(),
+  locale: loadLocale(),
   fallbackLocale: "en",
-  messages: { en, "zh-CN": zhCN },
+  messages,
 });
 
-function detectLocale(): string {
-  const nav = typeof navigator !== "undefined" ? navigator.language : "en";
-  return nav.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
-}
+document.documentElement.lang = i18n.global.locale.value;
 
 createApp(App).use(router).use(i18n).mount("#app");

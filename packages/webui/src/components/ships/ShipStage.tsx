@@ -12,6 +12,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import SSegmented from "@/components/base/SSegmented";
 import SSpinner from "@/components/base/SSpinner";
+import { createCycleTimer } from "@wowsp/holo";
 import { resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -85,6 +86,12 @@ export default defineComponent({
     const showArmor = ref(false);
     let gridRef: THREE.GridHelper | null = null;
     const _waterlinePlane: THREE.Mesh | null = null;
+
+    // Auto holo ↔ armor cycle on the shared timer (same period as the site
+    // stage); hovering the 3D view pauses it, the button group jumps.
+    const armorCycle = createCycleTimer(14600, () => toggleArmor());
+    const onStageEnter = () => armorCycle.pause();
+    const onStageLeave = () => armorCycle.resume();
 
     function disposeArmorScene() {
       const g = armorGroup.value;
@@ -217,6 +224,19 @@ export default defineComponent({
     function toggleArmor() {
       showArmor.value = !showArmor.value;
       syncArmorOverlay();
+    }
+
+    function setArmor(on: boolean) {
+      if (showArmor.value === on) {
+        armorCycle.stop();
+        armorCycle.start();
+        return;
+      }
+      showArmor.value = on;
+      syncArmorOverlay();
+      // restart the auto-cycle from this phase
+      armorCycle.stop();
+      armorCycle.start();
     }
 
     watch(
@@ -598,7 +618,18 @@ export default defineComponent({
           misc:             200,
         };
 
+        /** Instance-suffixed bake names ("main_battery_249") still colour by
+         *  their category prefix, so every turret looks the same while
+         *  remaining individually addressable. */
+        function categoryBase(name: string): string {
+          for (const key of Object.keys(PRESET_HUES)) {
+            if (name === key || name.startsWith(`${key}_`)) return key;
+          }
+          return name;
+        }
+
         function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color; edge: number } {
+          name = categoryBase(name);
           let hue: number, sat: number, lit: number;
           if (PRESET_HUES[name] != null) {
             hue = PRESET_HUES[name];
@@ -728,9 +759,17 @@ export default defineComponent({
         initScene();
         void loadModel();
       }
+      armorCycle.start();
+      containerRef.value?.addEventListener("mouseenter", onStageEnter);
+      containerRef.value?.addEventListener("mouseleave", onStageLeave);
     });
 
-    onBeforeUnmount(() => disposeScene());
+    onBeforeUnmount(() => {
+      armorCycle.stop();
+      containerRef.value?.removeEventListener("mouseenter", onStageEnter);
+      containerRef.value?.removeEventListener("mouseleave", onStageLeave);
+      disposeScene();
+    });
 
     // Reload the model when the ship changes.
     watch(
@@ -922,14 +961,22 @@ export default defineComponent({
             <span class="ship-stage__hint">
               {viewMode.value === "3d" ? t("ships.detail.stage.hint3d") : ""}
             </span>
-            <label
-              class={["ship-stage__armor-toggle", showArmor.value ? "ship-stage__armor-toggle--on" : ""]}
-              onClick={toggleArmor}
-              title={t("ships.detail.armor.toggle")}
-            >
-              <span class="ship-stage__armor-icon">&#x1f6e1;</span>
-              <span class="ship-stage__armor-label">{t("ships.detail.armor.short")}</span>
-            </label>
+            <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
+              <button
+                type="button"
+                class={["ship-stage__armor-mode", !showArmor.value ? "is-active" : ""].join(" ")}
+                onClick={() => setArmor(false)}
+              >
+                {t("ships.detail.stage.holo")}
+              </button>
+              <button
+                type="button"
+                class={["ship-stage__armor-mode", showArmor.value ? "is-active" : ""].join(" ")}
+                onClick={() => setArmor(true)}
+              >
+                {t("ships.detail.armor.short")}
+              </button>
+            </div>
             <SSegmented
               modelValue={viewMode.value}
               onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}

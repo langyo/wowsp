@@ -1,0 +1,13 @@
+{
+  "name": "@wowsp/holo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared holographic replay HUD components (scorebar / clock / minimap / labels) used by the desktop app and the marketing site.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "three": "^0.184",
+    "vue": "^3"
+  }
+}
