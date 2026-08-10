@@ -158,13 +158,45 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
     Categories: hull_body, hull_bow, hull_mid, hull_stern, deck_house,
                 main_battery, secondary_battery, aa_mount, torpedo, aircraft,
                 funnel, superstructure, turret_part, weapon, misc."""
+    buckets = extract_by_instance(gltf)
+    merged: dict[str, tuple[list[float], list[int]]] = {}
+    for cat, insts in buckets.items():
+        v: list[float] = []
+        i: list[int] = []
+        for inst, (iv, ii) in insts.items():
+            base = len(v) // 3
+            v.extend(iv)
+            i.extend(b + base for b in ii)
+        merged[cat] = (v, i)
+    return merged
+
+
+# Weapon HP-instance categories: each AGM/AGS/AGA/… node is one physical
+# mount. extract_by_instance keeps them SEPARATE (main_battery_0..N) so the
+# frontend can address individual turrets while still colouring by category.
+WEAPON_INSTANCE_CATS = {
+    "main_battery", "secondary_battery", "aa_mount", "torpedo",
+    "aircraft", "weapon", "turret_part",
+}
+
+_INSTANCE_NO = re.compile(r"\(HP_\w+_(\d+)\)|_(\d+)\s*$")
+
+
+def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], list[int]]]]:
+    """Extract geometry grouped by (category, weapon instance).
+
+    Returns {category: {instance_label: (verts, indices)}}. Hull categories
+    use instance "0"; every weapon mount (AGM_1, AGS_3, …) keeps its own
+    labelled group (main_battery_0, main_battery_1, …) so single turrets /
+    mounts are addressable downstream, while staying same-coloured per
+    category in the UI.
+    """
     gjson = gltf["json"]
     binary = gltf["binary"]
 
     buffers = []
     for buf in gjson.get("buffers", []):
         if buf.get("uri", "").startswith("data:"):
-            # Embedded base64 — not typical for GLB but handle it.
             import base64
             raw = base64.b64decode(buf["uri"].split(",", 1)[1])
             buffers.append(bytearray(raw))
@@ -183,7 +215,6 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
         count = acc["count"]
         comp_type = acc["componentType"]
         acc_type = acc["type"]
-        # Component sizes
         comp_sizes = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
         comp_fmts = {5120: "b", 5121: "B", 5122: "h", 5123: "H", 5125: "I", 5126: "f"}
         type_ncomp = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
@@ -199,19 +230,12 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
             for j in range(ncomp):
                 val = struct.unpack_from(f"<{fmt}", bv_data, pos + j * cs)[0]
                 values.append(val)
-        # All component types unpack to native Python ints/floats above, so no
-        # UINT-specific normalization is needed.
         return values, ncomp
 
     from collections import defaultdict
-    buckets: dict[str, tuple[list[float], list[int]]] = {}
-    for cat in ["hull_body", "hull_bow", "hull_mid", "hull_stern", "deck_house",
-                "main_battery", "secondary_battery", "aa_mount", "torpedo", "aircraft",
-                "funnel", "superstructure", "turret_part", "weapon", "misc"]:
-        buckets[cat] = ([], [])
+    buckets: dict[str, dict[str, tuple[list[float], list[int]]]] = defaultdict(dict)
 
-    # Build node→world transform lookup so turret/mounted meshes are
-    # positioned correctly instead of piling up at the origin.
+    # Node→world transform lookup (same as extract_by_category).
     nodes = gjson.get("nodes", [])
     import numpy as np
 
@@ -260,17 +284,10 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
     for r in roots:
         _compute_world(r)
 
-    non_id = sum(1 for w in node_world if w is not None and not np.allclose(w, np.eye(4)))
-    print(f"[bake] {len(nodes)} nodes, {len(roots)} roots, {non_id} non-identity world xforms")
-
-    # Pre-compute node categories (one per node index).
-    # Also build a parent-index lookup (reverse of `children`) for walking up
-    # the scene graph to find the owning HP entity.
     parent_of: dict[int, int] = {}
     for pi, kids in children.items():
         for ci in kids:
             parent_of[ci] = pi
-    # Fill in gaps from the non-standard `parent` field.
     for i, n in enumerate(nodes):
         p = n.get("parent")
         if isinstance(p, int) and 0 <= p < len(nodes) and i not in parent_of:
@@ -280,8 +297,6 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
     for ni, n in enumerate(nodes):
         name = n.get("name") or ""
         cat = _classify_node(name)
-        # LOD shapes and generic Turret_ parts have no semantic meaning on their
-        # own — inherit the category from the HP parent node instead.
         if cat in ("turret_part", "misc"):
             low = name.lower()
             if "lod" in low or "turret" in low:
@@ -292,7 +307,14 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
                         cat = parent_cat
         node_cat.append(cat)
 
-    mesh_xforms = 0
+    def instance_label(ni: int, cat: str) -> str:
+        if cat not in WEAPON_INSTANCE_CATS:
+            return "0"
+        name = nodes[ni].get("name") or ""
+        m = _INSTANCE_NO.search(name)
+        num = m.group(1) or m.group(2) if m else None
+        return num if num is not None else str(ni)
+
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
@@ -302,17 +324,28 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
             if n.get("mesh") == mesh_idx and node_world[ni] is not None:
                 w = node_world[ni]
                 world_mats.append((ni, w))
-                if not np.allclose(w, np.eye(4)):
-                    mesh_xforms += 1
         if not world_mats:
             world_mats = [(-1, np.eye(4))]
 
-        # All nodes referencing this mesh may have different categories
-        # (e.g. Turret_lod2Shape is shared by main, secondary, and AA gun
-        # HP nodes). Route each instance independently.
         for ni, world_mat in world_mats:
             cat = node_cat[ni] if ni >= 0 else "misc"
-            verts_target, idx_target = buckets[cat]
+            inst = instance_label(ni, cat) if ni >= 0 else "0"
+            # children of a weapon mount (turret parts, barrels) belong to the
+            # SAME instance — walk up to the owning weapon HP node.
+            if ni >= 0 and cat in ("turret_part", "misc"):
+                cur = ni
+                while cur is not None:
+                    p = parent_of.get(cur)
+                    if p is None:
+                        break
+                    pc = node_cat[p]
+                    if pc in WEAPON_INSTANCE_CATS and pc != "turret_part":
+                        cat = pc
+                        inst = instance_label(p, pc)
+                        break
+                    cur = p
+            target = buckets[cat].setdefault(inst, ([], []))
+            verts_target, idx_target = target
             for prim in mesh["primitives"]:
                 if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
                     continue
@@ -348,13 +381,14 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
                             idx_target.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
 
     # Report
-    parts: list[str] = []
-    for cat in buckets:
-        v, idx = buckets[cat]
-        if len(idx) > 0:
-            parts.append(f"{cat}:{len(v)//3}v/{len(idx)//3}t")
-    print(f"[bake] {len(parts)} groups: {'  '.join(parts)}")
-    return {cat: (v, idx) for cat, (v, idx) in buckets.items() if len(idx) > 0}
+    for cat in sorted(buckets):
+        parts = []
+        for inst, (v, idx) in buckets[cat].items():
+            if len(idx) > 0:
+                parts.append(f"{inst}:{len(v)//3}v/{len(idx)//3}t")
+        if parts:
+            print(f"[bake] {cat}: {'  '.join(parts)}")
+    return {cat: insts for cat, insts in buckets.items() if any(len(i) > 0 for _, (_, i) in insts.items())}
 
 
 def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
@@ -616,7 +650,14 @@ def write_glb_multimesh(
         idx_bytes = pad4(struct.pack(f"<{len(indices)}{idx_fmt}", *indices))
         pos_bv = len(buffer_views)
         buffer_views.append({"buffer": 0, "byteOffset": cur_offset, "byteLength": len(vert_bytes), "target": 34962})
-        accessors.append({"bufferView": pos_bv, "componentType": 5126, "count": n_verts, "type": "VEC3"})
+        # min/max keep GLTFLoader quiet and let Box3 work without a
+        # geometry-wide compute pass.
+        vs = vertices
+        accessors.append({
+            "bufferView": pos_bv, "componentType": 5126, "count": n_verts, "type": "VEC3",
+            "min": [min(vs[i::3]) for i in range(3)],
+            "max": [max(vs[i::3]) for i in range(3)],
+        })
         cur_offset += len(vert_bytes)
         idx_bv = len(buffer_views)
         buffer_views.append({"buffer": 0, "byteOffset": cur_offset, "byteLength": len(idx_bytes), "target": 34963})
@@ -805,10 +846,10 @@ def main() -> int:
 
     print(f"[bake] loading {inp.name} ...")
     gltf = parse_glb(inp)
-    buckets = extract_by_category(gltf)
+    buckets = extract_by_instance(gltf)
 
     # Decimate each category: proportional budget with 200-tri floor.
-    total_raw = sum(len(idx) // 3 for _, idx in buckets.values())
+    total_raw = sum(len(idx) // 3 for insts in buckets.values() for _, idx in insts.values())
     budget = max(args.triangles, 6000)
     parts: list[tuple[str, list[float], list[int]]] = []
 
@@ -817,21 +858,27 @@ def main() -> int:
         # Hull categories get their own labels for armour-belt separation.
         WEAPON_CATS = {"main_battery", "secondary_battery", "aa_mount", "torpedo",
                        "aircraft", "funnel", "turret_part", "weapon"}
-        for cat, (v, idx) in buckets.items():
-            raw_tris = len(idx) // 3
-            if raw_tris == 0:
+        for cat, insts in buckets.items():
+            raw_tris_cat = sum(len(idx) // 3 for _, idx in insts.values())
+            if raw_tris_cat == 0:
                 continue
-            ratio = raw_tris / total_raw
+            ratio = raw_tris_cat / total_raw
             tgt = max(int(budget * ratio), 200)
             # Give weapons a slightly higher budget share so they're never
             # erased by aggressive decimation of the much-larger hull groups.
             if cat in WEAPON_CATS and ratio > 0:
                 tgt = max(tgt, int(budget * 0.04))
-            dv, di = decimate(v, idx, tgt)
-            if len(di) > 0:
-                parts.append((cat, dv, di))
-            else:
-                print(f"  [{cat}] decimated to 0 triangles — dropped")
+            for inst, (v, idx) in insts.items():
+                if not v or not idx:
+                    continue
+                dv, di = decimate(v, idx, tgt)
+                if len(di) > 0:
+                    # instance-suffixed name: category_<instance>. The frontend
+                    # colours by category prefix, addresses mounts individually.
+                    name = f"{cat}_{inst}" if inst != "0" else cat
+                    parts.append((name, dv, di))
+                else:
+                    print(f"  [{cat}/{inst}] decimated to 0 triangles — dropped")
 
     print(f"[bake] writing {len(parts)} groups to {out.name} ...")
     write_glb_multimesh(out, parts)

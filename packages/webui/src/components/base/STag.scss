@@ -9,6 +9,7 @@
   justify-content: center;
   gap: 0.25rem;
   border-radius: var(--radius-xs);
+  border: 1px solid transparent;
   font-family: inherit;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -47,40 +48,47 @@
   }
 }
 
-/* ── variants (soft tinted backgrounds by default) ───────────────────── */
+/* ── variants (soft tinted backgrounds with matching hairline borders) ── */
 .s-tag-neutral {
   background: rgb(var(--color-bg));
+  border-color: rgb(var(--color-border) / 30%);
   color: rgb(var(--color-muted));
 }
 
 .s-tag-primary {
-  background: rgb(var(--color-primary) / 14%);
+  background: rgb(var(--color-primary) / 13%);
+  border-color: rgb(var(--color-primary) / 26%);
   color: rgb(var(--color-primary));
 }
 
 .s-tag-gold {
-  background: rgb(230 170 50 / 16%);
+  background: rgb(230 170 50 / 14%);
+  border-color: rgb(230 170 50 / 28%);
   color: rgb(230 170 50);
 }
 
 .s-tag-info {
-  background: rgb(120 200 255 / 16%);
+  background: rgb(120 200 255 / 14%);
+  border-color: rgb(120 200 255 / 28%);
   color: rgb(120 200 255);
 }
 
 .s-tag-success {
-  background: rgb(var(--color-success) / 16%);
+  background: rgb(var(--color-success) / 14%);
+  border-color: rgb(var(--color-success) / 28%);
   color: rgb(var(--color-success));
 }
 
 .s-tag-danger {
-  background: rgb(var(--color-error) / 16%);
+  background: rgb(var(--color-error) / 14%);
+  border-color: rgb(var(--color-error) / 28%);
   color: rgb(var(--color-error));
 }
 
 /* Legendary — distinct orange (vs gold's yellow) for the top rarity tier. */
 .s-tag-legendary {
-  background: rgb(255 140 40 / 18%);
+  background: rgb(255 140 40 / 16%);
+  border-color: rgb(255 140 40 / 30%);
   color: rgb(255 150 50);
 }
 

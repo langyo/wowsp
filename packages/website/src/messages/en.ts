@@ -1,17 +1,22 @@
 export default {
   nav: {
+    "language": "Language",
     features: "Features",
     download: "Download",
     docs: "Docs",
     github: "GitHub",
   },
   hero: {
+    badge: "Open source · Windows x64",
     tagline: "Replay review & in-game overlay for World of Warships",
     lede: "Watch any .wowsreplay on a holographic 3D map without launching the game. Or run WoWSP as a mod that overlays both teams' rosters while you play.",
     download: "Download for Windows",
     docs: "Read the docs",
     github: "Source on GitHub",
     version: "Initial release coming soon",
+    ships: "1,200+ ship models",
+    maps: "Battle replays in 3D",
+    overlay: "Tab overlay in battle",
   },
   features: {
     title: "Two modes, one panel",

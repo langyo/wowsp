@@ -84,7 +84,8 @@
     "ballisticsApprox": "穿深曲线为基于弹重 / 空气阻力 / krupp 的估算值，非游戏精确公式。",
     "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。",
     "stage": {
-      "hint3d": "拖动旋转 · 滚轮缩放 · 右键拖动平移"
+      "hint3d": "拖动旋转 · 滚轮缩放 · 右键拖动平移",
+      "holo": "全息"
     },
     "weapon": {
       "mainGun": "主炮组",

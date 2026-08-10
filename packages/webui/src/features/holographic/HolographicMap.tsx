@@ -37,7 +37,25 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import planeIcon from "./planeIcons";
-import { shipIcon, shipTypeClass } from "./shipIcons";
+import { shipIcon, shipIconUrl, shipTypeClass } from "./shipIcons";
+import {
+  HoloScorebar, registerHoloShipIcons,
+  captureSecondsRemaining, formatEta, reachSeconds,
+  type HoloCapZone, type HoloHudState, type HoloShip,
+} from "@wowsp/holo";
+
+// The shared scorebar renders the game's own HUD icons — register the
+// bundled URLs once (same PNGs the minimap canvas uses).
+for (const variant of ["ally", "enemy", "sunk"] as const) {
+  registerHoloShipIcons(variant, {
+    battleship: shipIconUrl("battleship", variant) ?? undefined,
+    cruiser: shipIconUrl("cruiser", variant) ?? undefined,
+    destroyer: shipIconUrl("destroyer", variant) ?? undefined,
+    aircarrier: shipIconUrl("aircarrier", variant) ?? undefined,
+    submarine: shipIconUrl("submarine", variant) ?? undefined,
+    auxiliary: shipIconUrl("auxiliary", variant) ?? undefined,
+  });
+}
 import { parsePostBattle } from "@/features/replay/postBattle";
 
 /** Per-plane local offsets inside ONE flight group (the group's own wedge):
@@ -538,15 +556,21 @@ export default defineComponent({
      *  strike/event zones never reach this list. */
     const scoringZones = computed(() => capZones.value);
 
+    /** Alt held → show in-game point timers on the cap letters (shared
+     *  capTimer rules, same as the marketing site). */
+    const showCapEta = ref(false);
+
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Tab") {
           e.preventDefault();
           showRoster.value = true;
         }
+        if (e.key === "Alt") showCapEta.value = true;
       };
       const onKeyUp = (e: KeyboardEvent) => {
         if (e.key === "Tab") showRoster.value = false;
+        if (e.key === "Alt") showCapEta.value = false;
       };
       window.addEventListener("keydown", onKey);
       window.addEventListener("keyup", onKeyUp);
@@ -642,6 +666,8 @@ export default defineComponent({
     const planeMeshes = new Map<number, THREE.Object3D[]>();
     /** Capture-zone ring meshes (repainted per frame by cap state). */
     let capRings: THREE.Mesh[] = [];
+    /** Cap-letter sprites (redrawn with the point ETA while Alt is held). */
+    let capLetterSprites: THREE.Sprite[] = [];
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
@@ -1275,6 +1301,7 @@ export default defineComponent({
       loadedModelPool = [];
       modelWaiters = [];
       capRings = [];
+      capLetterSprites = [];
       capSim.clear();
       for (const cl of smokeClusters) {
         for (const ring of cl.rings) {
@@ -2532,6 +2559,7 @@ export default defineComponent({
           sprite.scale.set(40, 40, 1);
           scene.add(sprite);
           trajectoryLines.push(sprite as unknown as THREE.Line);
+          capLetterSprites.push(sprite);
         }
       }
     }
@@ -2771,6 +2799,59 @@ export default defineComponent({
         else if (c.owner === 2) mat.color.set(0xcc3333);
         else mat.color.set(0xffffff);
         mat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
+      });
+      // Cap letters: Alt held → redraw with the shared point timer (capture
+      // seconds while capturing, reach ETA for neutral points from the
+      // recorder's current speed). Off → plain letter again.
+      const capAlt = showCapEta.value;
+      const recorderMarker = shipMarkers.find((m) => (m.userData.role as string) === "self") ?? null;
+      const recorderTraj =
+        recorderMarker
+          ? (props.trajectories.find((tr) => tr.entityId === recorderMarker.userData.entityId) ?? null)
+          : null;
+      let selfSpeed = 0;
+      if (recorderTraj) {
+        const s0 = sampleAt(recorderTraj, Math.max(0, t - 1));
+        const s1 = sampleAt(recorderTraj, t);
+        if (s0 && s1) selfSpeed = Math.hypot(s1.x - s0.x, s1.z - s0.z);
+      }
+      capDisplay.value.forEach((c, i) => {
+        const sprite = capLetterSprites[i];
+        if (!sprite) return;
+        const canvas = sprite.userData.canvas as HTMLCanvasElement | undefined;
+        if (!canvas) return;
+        let text = String(c.letter);
+        let etaLine = "";
+        if (capAlt) {
+          const teamShips = c.captureTeam === 1 ? c.alliesIn : c.enemiesIn;
+          const rem = captureSecondsRemaining(c.progress, teamShips, c.contested);
+          if (c.capturing && rem.seconds != null) {
+            etaLine = formatEta(rem.seconds);
+          } else if (c.owner === 0 && !c.contested && selfSpeed > 0 && recorderTraj) {
+            const z = capZones.value[i];
+            const sx = z?.kind?.initialX ?? 0;
+            const sz = z?.kind?.initialZ ?? 0;
+            const s1 = sampleAt(recorderTraj, t);
+            const dist = s1 ? Math.hypot(s1.x - sx, s1.z - sz) : 0;
+            const reach = reachSeconds(dist, selfSpeed);
+            if (reach != null) etaLine = formatEta(reach);
+          }
+        }
+        if (sprite.userData.text === `${text}|${etaLine}`) return;
+        sprite.userData.text = `${text}|${etaLine}`;
+        const ctx = canvas.getContext("2d")!;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.font = "bold 48px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, 32, 32);
+        if (etaLine) {
+          ctx.fillStyle = "rgba(251,191,36,0.95)";
+          ctx.font = "bold 22px sans-serif";
+          ctx.fillText(etaLine, 32, 56);
+        }
+        (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
       });
       // Smoke screens: white start/end rings + a floating remaining-seconds
       // tag. The start ring walks toward the end while the smoke dissipates
@@ -3136,6 +3217,44 @@ export default defineComponent({
       captureTeam: number;
     }
     const capDisplay = ref<CapZoneState[]>([]);
+
+    /** Shared scorebar state — the app's cap simulator + roster mapped onto
+     *  the @wowsp/holo contract (same component the marketing site uses). */
+    const scorebarState = computed<HoloHudState>(() => {
+      const caps: HoloCapZone[] = capDisplay.value.map((c) => ({
+        letter: c.letter,
+        owner: c.owner === 1 ? "ally" : c.owner === 2 ? "enemy" : "neutral",
+        progress: c.progress,
+        capturing: c.capturing,
+        contested: c.contested,
+        hint: c.contested
+          ? `${c.letter} 双方压点，进度暂停`
+          : c.capturing
+            ? `${c.letter} 占领中（${c.alliesIn} vs ${c.enemiesIn} 船）`
+            : c.owner === 0
+              ? `${c.letter} 中立`
+              : c.owner === 1
+                ? `${c.letter} 我方控制`
+                : `${c.letter} 敌方控制`,
+      }));
+      const ships: HoloShip[] = [
+        ...shipRows.value.allies.map((s) => ({
+          x: 0, z: 0, yaw: 0, role: "ally" as const, dead: s.dead, shipType: s.type ?? undefined,
+        })),
+        ...shipRows.value.enemies.map((s) => ({
+          x: 0, z: 0, yaw: 0, role: "enemy" as const, dead: s.dead, shipType: s.type ?? undefined,
+        })),
+      ];
+      return {
+        scoreAlly: allyScore.value,
+        scoreEnemy: enemyScore.value,
+        aliveAlly: 0, aliveEnemy: 0,
+        time: current.value,
+        duration: duration.value,
+        caps,
+        ships,
+      };
+    });
 
     /** Per-zone incremental capture simulator state. `progress` is simulated
      *  forward in ~0.5s steps while the playhead advances; scrubbing backward
@@ -3876,92 +3995,7 @@ export default defineComponent({
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
         {props.replayPath ? (
           <>
-          <div class="holo-map__scorebar">
-            <span class="holo-map__score-main">
-              <span class="holo-map__score-team holo-map__score--ally">
-                <span class="holo-map__score-dot" style="background:#3cb478" />
-                <strong class="holo-map__score-num">{allyScore.value}</strong>
-              </span>
-              <span class="holo-map__score-caps">
-              {capDisplay.value.map((c) => {
-                const ownerColor =
-                  c.owner === 1 ? "#4ade80" : c.owner === 2 ? "#cc3333" : "rgba(255,255,255,0.6)";
-                const capColor = c.captureTeam === 1 ? "#4ade80" : c.captureTeam === 2 ? "#cc3333" : "#ffffff";
-                const active = c.capturing || c.contested;
-                return (
-                  <span
-                    class={[
-                      "holo-map__cap",
-                      c.owner === 1 ? "holo-map__cap--ally" : c.owner === 2 ? "holo-map__cap--enemy" : "",
-                      active ? "holo-map__cap--active" : "",
-                      c.contested ? "holo-map__cap--contested" : "",
-                    ]}
-                    title={
-                      c.contested
-                        ? `${c.letter} 双方压点，进度暂停`
-                        : c.capturing
-                          ? `${c.letter} 占领中（${c.alliesIn} vs ${c.enemiesIn} 船）`
-                          : c.owner === 0
-                            ? `${c.letter} 中立`
-                            : c.owner === 1
-                              ? `${c.letter} 我方控制`
-                              : `${c.letter} 敌方控制`
-                    }
-                  >
-                    <svg width="30" height="30" viewBox="0 0 30 30">
-                      {active ? (
-                        <g>
-                          {/* capturing: the box rotates 45° into a diamond and
-                              gains a progress ring — like the in-game cap UI */}
-                          <rect x="9" y="9" width="12" height="12" fill="none"
-                            stroke={c.owner === 0 ? "rgba(255,255,255,0.35)" : ownerColor}
-                            stroke-width="1.6"
-                            transform="rotate(45 15 15)" />
-                          <circle r="11" cx="15" cy="15" fill="none"
-                            stroke={capColor} stroke-width="2.2" stroke-linecap="round"
-                            stroke-dasharray={`${Math.max(0.5, c.progress * 69.1)} 69.1`}
-                            transform="rotate(-90 15 15)" />
-                        </g>
-                      ) : (
-                        <rect x="9" y="9" width="12" height="12"
-                          fill={c.owner === 0 ? "rgba(255,255,255,0.05)" : ownerColor}
-                          stroke={ownerColor} stroke-width="1.6" />
-                      )}
-                      <text x="15" y="19.5" text-anchor="middle" font-size="13"
-                        font-weight="800" fill="#fff"
-                        style={{ textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}>
-                        {c.letter}
-                      </text>
-                    </svg>
-                  </span>
-                );
-              })}
-            </span>
-            <span class="holo-map__score-team holo-map__score--enemy">
-              <strong class="holo-map__score-num">{enemyScore.value}</strong>
-              <span class="holo-map__score-dot" style="background:#cc3333" />
-            </span>
-            </span>
-            <span class="holo-map__shiprow">
-              {shipRows.value.allies.map((s) => (
-                <BattleIcon
-                  key={s.key}
-                  type={s.type ?? ""}
-                  variant={s.dead ? "sunk" : "ally"}
-                  size={13}
-                />
-              ))}
-              <span class="holo-map__shiprow-sep" />
-              {shipRows.value.enemies.map((s) => (
-                <BattleIcon
-                  key={s.key}
-                  type={s.type ?? ""}
-                  variant={s.dead ? "sunk" : "enemy"}
-                  size={13}
-                />
-              ))}
-            </span>
-          </div>
+          <div class="holo-map__scorebar-wrap"><HoloScorebar state={scorebarState.value} /></div>
           {/* Live self statistics (top-right): a slim long bar matching the
               in-game strip, using res_mods ribbon skins when available. */}
           {selfStats.value ? (

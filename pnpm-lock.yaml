@@ -33,6 +33,15 @@ importers:
         specifier: ^66.7.0
         version: 66.7.5(vite@6.4.3(@types/node@26.1.1)(jiti@2.7.0)(sass@1.102.0))
 
+  packages/holo:
+    dependencies:
+      three:
+        specifier: ^0.184
+        version: 0.184.0
+      vue:
+        specifier: ^3
+        version: 3.5.39(typescript@5.9.3)
+
   packages/website:
     dependencies:
       lucide-vue-next:
@@ -78,6 +87,9 @@ importers:
       '@vueuse/core':
         specifier: ^14
         version: 14.3.0(vue@3.5.39(typescript@5.9.3))
+      '@wowsp/holo':
+        specifier: workspace:*
+        version: link:../holo
       echarts:
         specifier: ^6.1.0
         version: 6.1.0

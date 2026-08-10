@@ -82,30 +82,33 @@
     pointer-events: none;
   }
 
-  &__armor-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    cursor: pointer;
-    user-select: none;
-    padding: 0.25rem 0.55rem;
-    border-radius: var(--radius-sm);
+  &__armor-modes {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: var(--radius-full);
     background: rgb(var(--color-surface) / 75%);
     border: 1px solid rgb(var(--color-border) / 30%);
-    transition: background 0.15s, border-color 0.15s;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-
-    &:hover { background: rgb(var(--color-surface) / 90%); }
-    &--on {
-      background: rgb(var(--color-primary) / 14%);
-      border-color: rgb(var(--color-primary) / 40%);
-      color: rgb(var(--color-primary));
-    }
   }
 
-  &__armor-icon { font-size: 1rem; }
-  &__armor-label { font-weight: 600; }
+  &__armor-mode {
+    padding: 0.22rem 0.65rem;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover { color: rgb(var(--color-text)); }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 14%);
+    }
+  }
 
   /* Legend overlay for armor zones */
   &__armor-legend {

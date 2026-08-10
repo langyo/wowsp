@@ -1,17 +1,22 @@
 export default {
   nav: {
+    "language": "语言",
     features: "功能",
     download: "下载",
     docs: "文档",
     github: "GitHub",
   },
   hero: {
+    badge: "开源 · Windows x64",
     tagline: "战舰世界的回放复盘与游戏内悬浮面板",
     lede: "无需启动游戏，即可在三维全息地图上复盘任意 .wowsreplay 回放；也可以作为 Mod 安装，在按住 Tab 时悬浮显示双方阵容。",
     download: "下载 Windows 版",
     docs: "阅读文档",
     github: "GitHub 源码",
     version: "首个正式版即将发布",
+    ships: "1200+ 艘舰船模型",
+    maps: "三维回放复盘",
+    overlay: "对局内 Tab 悬浮",
   },
   features: {
     title: "两种模式，一个面板",

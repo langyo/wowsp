@@ -84,7 +84,8 @@
     "ballisticsApprox": "Penetration curves are an estimate derived from shell mass / airDrag / krupp — not the exact in-game model.",
     "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
     "stage": {
-      "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan"
+      "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
+      "holo": "Hologram"
     },
     "weapon": {
       "mainGun": "Main Battery",

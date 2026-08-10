@@ -42,10 +42,10 @@ jobs:
 
       - name: Build website
         env:
-          # GitHub Pages project site (langyo.github.io/wowsp) needs the
-          # /wowsp/ base. When the custom domain wowsp.langyo.xyz is fully
-          # configured (DNS + Pages custom domain), switch this to "/".
-          WOWSP_SITE_BASE: /wowsp/
+          # The custom domain wowsp.langyo.xyz is live and serves from the
+          # root, so the website must build with base "/". (When previewing
+          # at langyo.github.io/wowsp/, pass WOWSP_SITE_BASE=/wowsp/ instead.)
+          WOWSP_SITE_BASE: /
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @wowsp/website build

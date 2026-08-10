@@ -19,9 +19,9 @@
 .s-modal {
   pointer-events: auto;
   background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 20%);
+  border: 1px solid rgb(var(--color-border) / 35%);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
+  box-shadow: 0 24px 72px rgb(0 0 0 / 45%), inset 0 1px 0 rgb(255 255 255 / 6%);
   width: 100%;
   /* Generous height bounds so modals don't feel cramped when content is
      sparse, and scroll when it overflows. min-height prevents the SSelect

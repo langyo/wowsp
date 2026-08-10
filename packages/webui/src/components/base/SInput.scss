@@ -1,19 +1,37 @@
+/* SInput — tokenised frosted field (was hard-coded dark rgba). */
 .s-input {
   padding: 9px 12px;
   min-height: 34px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--color-border) / 45%);
+  background: rgb(var(--color-bg) / 60%);
+  color: rgb(var(--color-text));
   font-size: var(--text-sm);
+  transition:
+    border-color var(--duration-short) var(--ease-standard),
+    box-shadow var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+
+  &:hover:not(:disabled):not(:focus) {
+    border-color: rgb(var(--color-border) / 80%);
+  }
+
   &:focus {
     outline: none;
-    border-color: rgb(var(--color-accent) / 60%);
-    box-shadow: 0 0 0 2px rgb(var(--color-accent) / 12%);
+    border-color: rgb(var(--color-primary) / 60%);
+    box-shadow: 0 0 0 3px rgb(var(--color-primary) / 18%);
+    background: rgb(var(--color-bg) / 85%);
   }
+
   &::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: rgb(var(--color-muted) / 65%);
   }
+
+  &:disabled {
+    opacity: var(--opacity-faded);
+    cursor: not-allowed;
+  }
+
   &--block {
     width: 100%;
   }

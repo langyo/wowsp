@@ -1,6 +1,6 @@
-/* SCheckbox / SRadio — unified selection control. Ported from shittim-chest,
-   tokenized for WoWSP's theme system (no --space-* / --border-input / --z-above
-   tokens; using literals instead). */
+/* SCheckbox / SRadio / switch — Abyssal Glass refresh. DOM contract kept:
+   .s-checkbox[data-type][data-variant][data-disabled] wrapping
+   .s-checkbox-box / .s-checkbox-switch with [data-checked]. */
 .s-checkbox {
   display: inline-flex;
   align-items: center;
@@ -10,7 +10,7 @@
 }
 
 .s-checkbox[data-disabled] {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -21,13 +21,18 @@
   width: 1.125rem;
   height: 1.125rem;
   border-radius: var(--radius-xs);
-  border: 1px solid rgb(var(--color-border) / 40%);
+  border: 1.5px solid rgb(var(--color-border) / 70%);
   background: rgb(var(--color-surface) / 92%);
   transition:
     border-color var(--duration-short) var(--ease-standard),
-    background var(--duration-short) var(--ease-standard);
+    background var(--duration-short) var(--ease-standard),
+    box-shadow var(--duration-short) var(--ease-standard);
   flex-shrink: 0;
   position: relative;
+}
+
+.s-checkbox:hover:not([data-disabled]) .s-checkbox-box {
+  border-color: rgb(var(--color-primary) / 60%);
 }
 
 .s-checkbox[data-type="radio"] .s-checkbox-box {
@@ -35,9 +40,15 @@
 }
 
 .s-checkbox-box[data-checked] {
-  background: rgb(var(--color-primary));
-  border-color: rgb(var(--color-primary));
-  color: rgb(var(--color-on-solid));
+  background: linear-gradient(135deg, rgb(var(--color-secondary, var(--color-primary))) 0%, rgb(var(--color-primary)) 75%);
+  border-color: transparent;
+  color: rgb(var(--color-on-primary, var(--color-on-solid)));
+  box-shadow: 0 3px 10px rgb(var(--color-primary) / 35%);
+}
+
+/* Focus ring travels through the visually-hidden input. */
+.s-checkbox-box:has(.s-checkbox-input:focus-visible) {
+  box-shadow: 0 0 0 3px rgb(var(--color-primary) / 30%);
 }
 
 .s-checkbox-input {
@@ -48,17 +59,25 @@
   pointer-events: none;
 }
 
+/* Mount pop — the icon/dot only exists while checked, so animate on mount. */
 .s-checkbox [data-el="icon"] {
   position: relative;
   z-index: 1;
+  animation: s-check-pop var(--duration-normal) var(--ease-spring);
 }
 
 .s-checkbox [data-el="dot"] {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgb(var(--color-on-solid));
+  background: currentColor;
   z-index: 1;
+  animation: s-check-pop var(--duration-normal) var(--ease-spring);
+}
+
+@keyframes s-check-pop {
+  from { transform: scale(0.3); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 .s-checkbox [data-el="label"] {
@@ -70,33 +89,39 @@
 .s-checkbox-switch {
   display: flex;
   align-items: center;
-  width: 2rem;
-  height: 1.125rem;
+  width: 2.125rem;
+  height: 1.25rem;
   padding: 0.125rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-border) / 40%);
-  background: rgb(var(--color-surface) / 92%);
+  border: 1px solid rgb(var(--color-border) / 60%);
+  background: rgb(var(--color-border) / 25%);
   transition:
-    border-color var(--duration-short) var(--ease-standard),
-    background var(--duration-short) var(--ease-standard);
+    border-color var(--duration-normal) var(--ease-standard),
+    background var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard);
   flex-shrink: 0;
   position: relative;
 }
 
+.s-checkbox:hover:not([data-disabled]) .s-checkbox-switch {
+  border-color: rgb(var(--color-primary) / 50%);
+}
+
 .s-checkbox-switch[data-checked] {
-  background: rgb(var(--color-primary));
-  border-color: rgb(var(--color-primary));
+  background: linear-gradient(135deg, rgb(var(--color-secondary, var(--color-primary))) 0%, rgb(var(--color-primary)) 75%);
+  border-color: transparent;
+  box-shadow: 0 3px 12px rgb(var(--color-primary) / 35%), inset 0 1px 0 rgb(255 255 255 / 20%);
 }
 
 .s-checkbox-switch [data-el="thumb"] {
-  width: 0.8125rem;
-  height: 0.8125rem;
+  width: 0.9375rem;
+  height: 0.9375rem;
   border-radius: 50%;
-  background: rgb(var(--color-text) / 55%);
-  transition: transform var(--duration-short) var(--ease-standard);
+  background: #fff;
+  box-shadow: 0 1.5px 4px rgb(0 0 0 / 35%);
+  transition: transform var(--duration-normal) var(--ease-spring);
 }
 
 .s-checkbox-switch[data-checked] [data-el="thumb"] {
   transform: translateX(0.875rem);
-  background: rgb(var(--color-on-solid));
 }

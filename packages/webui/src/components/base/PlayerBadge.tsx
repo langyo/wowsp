@@ -1,31 +1,37 @@
 import { computed, defineComponent } from "vue";
 import type { DogTag } from "@/api";
+import dogtagsMapRaw from "@/data/dogtags_map.json";
 
 import "./PlayerBadge.scss";
 
-/** Decode a WG ARGB-packed u32 color to a CSS rgba() string. */
-function argbToCss(argb: number): string {
-  const a = ((argb >> 24) & 0xff) / 255;
-  const r = (argb >> 16) & 0xff;
-  const g = (argb >> 8) & 0xff;
-  const b = argb & 0xff;
-  return `rgba(${r}, ${g}, ${b}, ${a})`;
+/** dogtags_map.json: vortex dogTag id → [index, species, colorHEX?]. */
+type MapEntry = [string, string] | [string, string, string];
+const MAP = dogtagsMapRaw as Record<string, MapEntry>;
+
+function entryFor(id: number | undefined | null): MapEntry | null {
+  if (id == null) return null;
+  return MAP[String(id)] ?? null;
+}
+
+function hex(hexWithPrefix: string): string {
+  return hexWithPrefix.replace("0x", "#");
+}
+
+/** Image URL for a dogtag part. BackgroundShape entries are directories
+ *  (border.png = the plate frame); everything else is a flat PNG. */
+function partUrl(entry: MapEntry): string {
+  const [index, species] = entry;
+  if (species === "BackgroundShape") return `/dogtags/${index}/border.png`;
+  return `/dogtags/${index}.png`;
 }
 
 /**
- * Player emblem badge. Renders the player's **dog tag** (personalized emblem)
- * from the WG Vortex API — using the actual border + background colors the
- * player chose in-game.
+ * Player emblem badge — the player's real in-game dog tag, layered exactly
+ * like the client: background color fill → background-texture pattern →
+ * background-shape frame → center symbol, all resolved from the game's own
+ * GameParams dogtag table (dogtags_map.json) with the extracted GUI art.
  *
- * The dog tag is a layered emblem: background color + texture pattern + center
- * symbol + border color. Since the texture/symbol image assets are on WG's CDN
- * behind signed URLs (not publicly accessible), we render the tag from the
- * **color values** only — producing a colored shield shape with the player's
- * actual color scheme. The center symbol is approximated with the player's
- * service record tier number.
- *
- * If no dog_tag data is available (Vortex fetch failed), falls back to a
- * tier-based badge (bronze→diamond).
+ * Falls back to the service-record tier badge when no dog tag is available.
  */
 export default defineComponent({
   name: "PlayerBadge",
@@ -43,43 +49,53 @@ export default defineComponent({
       return "badge-bronze";
     });
 
-    /** If we have dog_tag colors, compute CSS custom properties for the
-     *  custom-colored rendering. */
-    const dogTagStyle = computed(() => {
-      if (!props.dogTag) return null;
-      const bg = argbToCss(props.dogTag.backgroundColor);
-      const border = argbToCss(props.dogTag.borderColor);
+    const layers = computed(() => {
+      const dt = props.dogTag;
+      if (!dt) return null;
+      const bgColor = entryFor(dt.backgroundColor);
+      const borderColor = entryFor(dt.borderColor);
+      const shape = entryFor(dt.backgroundId);
+      const texture = entryFor(dt.textureId);
+      const symbol = entryFor(dt.symbolId);
+      // Need at least the symbol or the shape to look like a dog tag.
+      if (!symbol && !shape) return null;
       return {
-        "--dt-bg": bg,
-        "--dt-border": border,
-      } as Record<string, string>;
+        bg: bgColor?.[2] ? hex(bgColor[2]) : "rgba(90, 100, 115, 0.9)",
+        border: borderColor?.[2] ? hex(borderColor[2]) : null,
+        shapeUrl: shape ? partUrl(shape) : null,
+        textureUrl: texture ? partUrl(texture) : null,
+        symbolUrl: symbol ? partUrl(symbol) : null,
+      };
     });
 
     return () => (
       <div
         class={[
           "player-badge",
-          props.dogTag ? "player-badge--dogtag" : tierClass.value,
+          layers.value ? "player-badge--dogtag" : tierClass.value,
         ]}
-        style={[
-          { width: `${props.size}px`, height: `${props.size}px` },
-          dogTagStyle.value,
-        ]}
-        title={
-          props.dogTag
-            ? `Player emblem (Tier ${props.tier})`
-            : `Service record tier ${props.tier}`
-        }
+        style={{ width: `${props.size}px`, height: `${props.size}px` }}
+        title={layers.value ? `Player emblem (Tier ${props.tier})` : `Service record tier ${props.tier}`}
       >
-        {props.dogTag ? (
-          [
-            <img
-              class="player-badge__dt-img"
-              src="/dogtags/DT_Default.png"
-              alt=""
-            />,
-            <span class="player-badge__tier">{props.tier || "?"}</span>,
-          ]
+        {layers.value ? (
+          <span class="player-badge__dt" style={{ background: layers.value.bg }}>
+            {layers.value.textureUrl ? (
+              <img class="player-badge__dt-texture" src={layers.value.textureUrl} alt="" />
+            ) : null}
+            {layers.value.symbolUrl ? (
+              <img class="player-badge__dt-symbol" src={layers.value.symbolUrl} alt="" />
+            ) : (
+              <span class="player-badge__tier">{props.tier || "?"}</span>
+            )}
+            {layers.value.shapeUrl ? (
+              <img
+                class="player-badge__dt-frame"
+                src={layers.value.shapeUrl}
+                alt=""
+                style={layers.value.border ? { filter: `drop-shadow(0 0 1px ${layers.value.border})` } : undefined}
+              />
+            ) : null}
+          </span>
         ) : (
           <span class="player-badge__tier">{props.tier || "?"}</span>
         )}
