@@ -1,0 +1,316 @@
+/* ModsView — Mod Hub vision page */
+.mods {
+  flex: 1;
+  overflow-x: clip;
+
+  /* ── hero ── */
+  &__hero {
+    position: relative;
+    padding: var(--space-96) 0 var(--space-80);
+    overflow: hidden;
+    text-align: center;
+  }
+
+  &__hero-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  &__title {
+    margin: var(--space-16) 0 0;
+    max-width: 54rem;
+    font-size: var(--text-display);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  &__lede {
+    margin: var(--space-20) auto 0;
+    max-width: 44rem;
+    font-size: var(--text-md);
+    line-height: 1.75;
+    color: rgb(var(--color-text-secondary));
+    text-wrap: pretty;
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-10);
+    margin-top: var(--space-28);
+  }
+
+  /* ── generic section ── */
+  &__section {
+    padding: var(--space-64) var(--space-24);
+  }
+
+  &__section-head {
+    text-align: center;
+    max-width: 44rem;
+    margin: 0 auto var(--space-48);
+  }
+
+  &__section-title {
+    margin: 0;
+    font-size: var(--text-3xl);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+
+  &__section-desc {
+    margin: var(--space-16) auto 0;
+    font-size: var(--text-md);
+    line-height: 1.75;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* ── pillar / category grids ── */
+  &__grid {
+    display: grid;
+    gap: var(--space-16);
+
+    &--3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    &--4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+    > .reveal { height: 100%; }
+  }
+
+  &__card {
+    height: 100%;
+    padding: var(--space-28);
+  }
+
+  &__card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 10%);
+    border: 1px solid rgb(var(--color-primary) / 18%);
+    margin-bottom: var(--space-16);
+  }
+
+  &__card-title {
+    margin: 0 0 var(--space-8);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+
+  &__card-desc {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* ── pipeline ── */
+  &__pipeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-16);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+
+    > .reveal { height: 100%; }
+  }
+
+  &__step {
+    position: relative;
+    height: 100%;
+    padding: var(--space-24);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-ring);
+  }
+
+  &__step-no {
+    position: absolute;
+    top: var(--space-16);
+    right: var(--space-20);
+    font-size: var(--text-2xl);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: rgb(var(--color-border) / 30%);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__step-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-accent));
+    background: rgb(var(--color-accent) / 10%);
+    border: 1px solid rgb(var(--color-accent) / 20%);
+    margin-bottom: var(--space-16);
+  }
+
+  &__step-title {
+    margin: 0 0 var(--space-8);
+    font-size: var(--text-md);
+    font-weight: 700;
+  }
+
+  &__step-desc {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* ── installer demo ── */
+  &__installer {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: var(--space-32);
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: var(--space-32);
+  }
+
+  &__installer-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-14);
+    align-items: flex-start;
+
+    &--wide { gap: var(--space-16); }
+  }
+
+  &__installer-label {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  &__installer-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-16);
+    flex-wrap: wrap;
+    margin-top: var(--space-4);
+  }
+
+  &__installer-note {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* ── categories ── */
+  &__cat {
+    height: 100%;
+    padding: var(--space-24);
+    text-align: left;
+  }
+
+  &__cat-count {
+    display: block;
+    font-size: var(--text-2xl);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__cat-title {
+    margin: var(--space-8) 0;
+    font-size: var(--text-md);
+    font-weight: 700;
+  }
+
+  &__cat-desc {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* ── roadmap ── */
+  &__roadmap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+    max-width: 52rem;
+    margin: 0 auto;
+  }
+
+  &__road-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-20);
+    padding: var(--space-20) var(--space-24);
+  }
+
+  &__road-index {
+    flex-shrink: 0;
+    font-size: var(--text-xl);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+
+  &__road-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-10);
+    margin: 0 0 var(--space-6);
+    font-size: var(--text-md);
+    font-weight: 700;
+  }
+
+  &__road-desc {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* ── CTA ── */
+  &__cta {
+    position: relative;
+    padding: var(--space-96) 0;
+    overflow: hidden;
+    text-align: center;
+    border-top: 1px solid rgb(var(--color-border) / 8%);
+  }
+
+  &__cta-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  &__cta-title {
+    margin: 0;
+    max-width: 44rem;
+    font-size: var(--text-display);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  &__cta-lede {
+    margin: var(--space-20) auto 0;
+    max-width: 36rem;
+    font-size: var(--text-md);
+    color: rgb(var(--color-text-secondary));
+  }
+
+  .ui-btn { margin-top: var(--space-32); }
+}

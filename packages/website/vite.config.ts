@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import { defineConfig, type Plugin } from "vite";
-import { readdirSync, rmSync } from "fs";
+import { copyFileSync, readdirSync, rmSync } from "fs";
 
 import vueSfc from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
@@ -30,6 +30,18 @@ function cleanOutDirContents(outDir: string): Plugin {
 export default defineConfig({
   plugins: [
     cleanOutDirContents(resolve(pkgDir, "../../dist/website")),
+    // SPA on static hosting (GitHub Pages / nginx): direct hits on /lookup
+    // etc. must fall back to the app shell instead of a hard 404.
+    {
+      name: "spa-404-fallback",
+      apply: "build",
+      closeBundle() {
+        const outDir = resolve(pkgDir, "../../dist/website");
+        try {
+          copyFileSync(resolve(outDir, "index.html"), resolve(outDir, "404.html"));
+        } catch { /* index.html missing — nothing to mirror */ }
+      },
+    },
     vueSfc(),
     vueJsx(),
   ],

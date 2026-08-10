@@ -1,0 +1,222 @@
+/* ReplayLive — live 3D replay sandbox (real battle, real models, real-time).
+   Background follows the theme: dark abyss in dark mode, light frosted sea
+   in light mode — so the hologram always reads. */
+.replay-live {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  margin-inline: auto;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgb(var(--color-primary) / 8%), transparent 60%),
+    var(--holo-stage-bg, rgb(3 6 12));
+  box-shadow: var(--shadow-elevated), var(--shadow-ring);
+
+  --holo-stage-bg: rgb(3 6 12);
+  --holo-hud-bg: rgb(10 16 28 / 78%);
+
+  &__stage {
+    position: absolute;
+    inset: 0;
+
+    /* Only the WebGL canvas fills the stage — the minimap canvas must keep
+       its own fixed size (a `canvas`-only selector would stretch it too). */
+    canvas.replay-live__gl {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+  }
+
+  &__loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-12);
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text-secondary));
+  }
+
+  &__spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgb(var(--color-border) / 25%);
+    border-top-color: rgb(var(--color-primary));
+    border-radius: 50%;
+    animation: replay-live-spin 0.8s linear infinite;
+  }
+
+  /* ── HUD layers ── */
+  &__hud {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+
+    &--top { top: var(--space-16); left: 50%; transform: translateX(-50%); }
+    &--tr { top: var(--space-16); right: var(--space-16); }
+    &--bl { bottom: var(--space-16); left: var(--space-16); }
+    &--br { bottom: var(--space-16); right: var(--space-16); }
+  }
+
+  &__live-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-8);
+    padding: var(--space-6) var(--space-14);
+    border-radius: var(--radius-full);
+    background: var(--holo-hud-bg, rgb(13 20 34 / 78%));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    backdrop-filter: blur(10px);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+
+    &::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: rgb(var(--color-success));
+      box-shadow: 0 0 8px rgb(var(--color-success) / 70%);
+      animation: signal 2s ease-in-out infinite;
+    }
+  }
+
+  &__caption {
+    padding: var(--space-6) var(--space-14);
+    border-radius: var(--radius-full);
+    background: var(--holo-hud-bg, rgb(13 20 34 / 78%));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    backdrop-filter: blur(10px);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: rgb(var(--color-text-secondary));
+    white-space: nowrap;
+  }
+
+  /* minimap canvas — bottom right, game-art based */
+  &__minimap {
+    position: absolute;
+    right: var(--space-16);
+    bottom: 3.25rem;
+    z-index: 3;
+    width: 128px;
+    height: 128px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
+    background: rgb(3 6 12 / 60%);
+    pointer-events: none;
+  }
+
+  /* ── DOM overlays: ship name tags + cap letters (screen-space, always
+        readable regardless of camera distance) ── */
+  &__tags {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  &__nametag {
+    position: absolute;
+    left: 0;
+    top: 0;
+    padding: 1px var(--space-8);
+    border-radius: var(--radius-full);
+    background: var(--holo-hud-bg, rgb(13 20 34 / 78%));
+    border: 1px solid rgb(var(--color-border) / 25%);
+    backdrop-filter: blur(6px);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    color: rgb(var(--color-text));
+
+    &--self { color: #f5b85c; border-color: rgb(245 184 92 / 45%); }
+    &--ally { color: #5dc4f8; }
+    &--enemy { color: #f87d7d; }
+
+    &.is-dead { opacity: 0.28; }
+  }
+
+  &__capletter {
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1;
+    text-shadow: 0 2px 12px rgb(0 0 0 / 35%);
+
+    &--neutral { color: rgb(255 255 255 / 32%); }
+    &--ally { color: rgb(56 189 248 / 70%); }
+    &--enemy { color: rgb(248 113 113 / 70%); }
+  }
+
+  /* in-game point timer under the letter (Alt held): capture ETA /
+     reach ETA */
+  &__capeta {
+    display: block;
+    margin-top: 4px;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgb(10 18 32 / 70%);
+    border: 1px solid rgb(255 255 255 / 22%);
+    color: rgb(255 255 255 / 90%);
+    font-variant-numeric: tabular-nums;
+    text-shadow: none;
+    backdrop-filter: blur(4px);
+
+    &.is-capture { color: #fbbf24; border-color: rgb(251 191 36 / 45%); }
+    &.is-reach { color: #93c5fd; }
+  }
+}
+
+@keyframes replay-live-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Light scheme: light sandbox backdrop + light HUD chips ── */
+@media (prefers-color-scheme: light) {
+  .replay-live {
+    --holo-stage-bg: rgb(240 245 252);
+    --holo-hud-bg: rgb(255 255 255 / 82%);
+
+    &__minimap { background: rgb(255 255 255 / 55%); }
+
+    &__nametag {
+      &--self { color: #b45309; border-color: rgb(180 83 9 / 45%); }
+      &--ally { color: #0277bd; }
+      &--enemy { color: #d53030; }
+    }
+
+    &__capletter {
+      text-shadow: 0 1px 8px rgb(255 255 255 / 60%);
+
+      &--neutral { color: rgb(30 50 80 / 30%); }
+      &--ally { color: rgb(2 132 199 / 65%); }
+      &--enemy { color: rgb(220 38 38 / 65%); }
+    }
+  }
+}
+
+@media (max-width: 720px) {
+  .replay-live {
+    aspect-ratio: 4 / 5;
+    border-radius: var(--radius-lg);
+
+    &__hud--br { display: none; }
+    &__minimap { width: 96px; height: 96px; }
+  }
+}

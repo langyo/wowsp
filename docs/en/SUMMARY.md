@@ -15,3 +15,4 @@
 # Designs
 
 - [Architecture](./designs/architecture.md)
+- [Mod Hub](./designs/mod-hub.md)

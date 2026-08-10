@@ -9,6 +9,11 @@ export const router = createRouter({
       component: () => import("@/views/HomeView"),
     },
     {
+      path: "/mods",
+      name: "mods",
+      component: () => import("@/views/ModsView"),
+    },
+    {
       path: "/download",
       name: "download",
       component: () => import("@/views/DownloadView"),

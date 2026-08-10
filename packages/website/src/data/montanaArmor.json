@@ -1,0 +1,34 @@
+{
+  "shipId": "3330226160",
+  "key": "PASB920_Montana_2",
+  "zones": [
+    {
+      "name": "citadel",
+      "thickness": 541
+    },
+    {
+      "name": "mainBelt",
+      "thickness": 457
+    },
+    {
+      "name": "deck",
+      "thickness": 432
+    },
+    {
+      "name": "casemate",
+      "thickness": 424
+    },
+    {
+      "name": "bow",
+      "thickness": 409
+    },
+    {
+      "name": "stern",
+      "thickness": 387
+    },
+    {
+      "name": "torpedoBelt",
+      "thickness": 324
+    }
+  ]
+}

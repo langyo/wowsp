@@ -1,8 +1,9 @@
 import { computed, defineComponent, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
-import { Languages } from "lucide-vue-next";
+import { Languages, Download } from "lucide-vue-next";
 import { LOCALE_OPTIONS, type Locale } from "@/locales";
+import { UiButton, UiMenu, type UiMenuItem } from "@/components/ui";
 import "./SiteNav.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -14,7 +15,6 @@ export default defineComponent({
     const docsHref = `${import.meta.env.BASE_URL}docs/`;
     const logoUrl = `${import.meta.env.BASE_URL}logo.webp`;
 
-    const open = ref(false);
     const scrolled = ref(false);
 
     function onScroll() {
@@ -31,6 +31,10 @@ export default defineComponent({
       () => LOCALE_OPTIONS.find((l) => l.code === locale.value) ?? LOCALE_OPTIONS[0],
     );
 
+    const langItems = computed<UiMenuItem[]>(() =>
+      LOCALE_OPTIONS.map((opt) => ({ key: opt.code, label: opt.label, hint: opt.native })),
+    );
+
     function select(code: string) {
       locale.value = code as Locale;
       if (typeof document !== "undefined") document.documentElement.lang = code;
@@ -38,18 +42,6 @@ export default defineComponent({
         localStorage.setItem("wowsp-site-locale", code);
       } catch {
         /* ignore */
-      }
-      open.value = false;
-    }
-
-    function toggle() {
-      open.value = !open.value;
-    }
-
-    function onBlur(e: FocusEvent) {
-      const next = e.relatedTarget as HTMLElement | null;
-      if (!next || !(e.currentTarget as HTMLElement).contains(next)) {
-        open.value = false;
       }
     }
 
@@ -62,45 +54,37 @@ export default defineComponent({
           </RouterLink>
 
           <nav class="site-nav__links">
-            <a href="/#features" class="site-nav__link">{t("nav.features")}</a>
+            <a href={`${import.meta.env.BASE_URL}#features`} class="site-nav__link">{t("nav.features")}</a>
+            <RouterLink to="/mods" class="site-nav__link">{t("nav.mods")}</RouterLink>
             <RouterLink to="/download" class="site-nav__link">{t("nav.download")}</RouterLink>
             <a href={docsHref} class="site-nav__link">{t("nav.docs")}</a>
             <a href={GITHUB} target="_blank" rel="noopener" class="site-nav__link">{t("nav.github")}</a>
           </nav>
 
-          <div class="site-nav__lang" onBlur={onBlur}>
-            <button
-              class="site-nav__lang-btn"
-              onClick={toggle}
-              type="button"
-              aria-haspopup="listbox"
-              aria-expanded={open.value}
-              aria-label={t("nav.language")}
+          <div class="site-nav__side">
+            <UiMenu
+              modelValue={locale.value}
+              items={langItems.value}
+              ariaLabel={t("nav.language")}
+              onUpdate:modelValue={select}
             >
-              <Languages size={14} />
-              <span class="site-nav__lang-code">{current.value.native}</span>
-            </button>
-            <Transition name="s-lang">
-              {open.value ? (
-                <ul class="site-nav__lang-menu" role="listbox">
-                  {LOCALE_OPTIONS.map((opt) => (
-                    <li key={opt.code}>
-                      <button
-                        class={["site-nav__lang-opt", opt.code === locale.value ? "is-active" : ""].join(" ")}
-                        onClick={() => select(opt.code)}
-                        type="button"
-                        role="option"
-                        aria-selected={opt.code === locale.value}
-                      >
-                        <span class="site-nav__lang-opt-native">{opt.native}</span>
-                        <span class="site-nav__lang-opt-label">{opt.label}</span>
-                        {opt.code === locale.value ? <span class="site-nav__lang-opt-dot" /> : null}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </Transition>
+              {{
+                trigger: () => (
+                  <>
+                    <Languages size={14} />
+                    <span class="site-nav__lang-code">{current.value.native}</span>
+                  </>
+                ),
+              }}
+            </UiMenu>
+            <RouterLink to="/download" custom>
+              {({ navigate }) => (
+                <UiButton size="sm" class="site-nav__cta" onClick={navigate}>
+                  <Download size={14} />
+                  {t("nav.download")}
+                </UiButton>
+              )}
+            </RouterLink>
           </div>
         </div>
       </header>
