@@ -1,0 +1,231 @@
+/* WindowFrames — homepage intro modules (LookupWindow / StatsWindow).
+   The shared window chrome (.mod-win, .mod-win__chrome, …) lives in
+   ModWindow.scss and is always present on the homepage; these are the
+   per-module bodies. */
+
+/* ── LookupWindow — ship-tool result table ── */
+.lookup-win {
+  &__searchrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-10);
+    margin: var(--space-14) var(--space-16) 0;
+    padding: var(--space-8) var(--space-14);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-border) / 6%);
+    color: rgb(var(--color-text-secondary));
+  }
+
+  &__input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font: inherit;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+  }
+
+  &__tablewrap {
+    margin: var(--space-12) var(--space-16) var(--space-16);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+
+    th {
+      padding: var(--space-8) var(--space-12);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-align: left;
+      color: rgb(var(--color-text-secondary));
+      background: rgb(var(--color-border) / 8%);
+      border-bottom: 1px solid var(--glass-border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: var(--space-8) var(--space-12);
+      border-bottom: 1px solid rgb(var(--color-border) / 12%);
+      color: rgb(var(--color-text));
+      white-space: nowrap;
+    }
+
+    tbody tr:nth-child(even) td { background: rgb(var(--color-border) / 5%); }
+    tbody tr:last-child td { border-bottom: none; }
+
+    .is-num { text-align: right; }
+  }
+
+  &__tier {
+    font-weight: 700;
+
+    &.is-top { color: rgb(var(--color-gold, 180 120 40)); }
+  }
+
+  &__nation {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-6);
+  }
+
+  &__flag { line-height: 1; }
+
+  &__namecell {
+    font-weight: 700;
+
+    .lookup-win__sub {
+      margin-left: var(--space-6);
+      font-weight: 400;
+      font-size: var(--text-xs);
+      color: rgb(var(--color-text-secondary));
+    }
+  }
+
+  &__empty {
+    padding: var(--space-24) !important;
+    text-align: center;
+    color: rgb(var(--color-text-secondary));
+  }
+}
+
+/* ── StatsWindow — water-meter card (classic stats style) ── */
+.stats-win {
+  &__id {
+    display: flex;
+    align-items: center;
+    gap: var(--space-16);
+    flex-wrap: wrap;
+    padding: var(--space-14) var(--space-16) 0;
+  }
+
+  &__who {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__name { font-size: var(--text-lg); font-weight: 800; letter-spacing: -0.01em; }
+
+  &__meta {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text-secondary));
+  }
+
+  /* gradient PR banner — the signature of the classic stats card */
+  &__prbanner {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-12);
+    padding: var(--space-8) var(--space-16);
+    border-radius: var(--radius-md);
+    background: linear-gradient(100deg, rgb(236 72 153 / 80%), rgb(34 211 238 / 65%));
+    color: #fff;
+    box-shadow: 0 4px 18px rgb(34 211 238 / 25%);
+  }
+
+  &__rating { font-size: var(--text-sm); font-weight: 700; }
+
+  &__pr {
+    font-size: var(--text-md);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tiles {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--space-10);
+    padding: var(--space-14) var(--space-16) 0;
+  }
+
+  &__tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--space-10) var(--space-8);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: rgb(var(--color-border) / 4%);
+    text-align: center;
+
+    svg { color: rgb(var(--color-primary)); }
+
+    b {
+      font-size: var(--text-md);
+      font-weight: 800;
+      color: rgb(var(--color-text));
+      font-variant-numeric: tabular-nums;
+    }
+
+    i {
+      font-style: normal;
+      font-size: var(--text-2xs);
+      color: rgb(var(--color-text-secondary));
+    }
+  }
+
+  &__sect {
+    padding: var(--space-12) var(--space-16) 0;
+
+    &:last-of-type { padding-bottom: var(--space-16); }
+  }
+
+  &__sect-title {
+    display: block;
+    margin-bottom: var(--space-8);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: rgb(var(--color-text-secondary));
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+
+    th {
+      padding: var(--space-6) var(--space-10);
+      font-size: var(--text-2xs);
+      text-align: left;
+      color: rgb(var(--color-text-secondary));
+      background: rgb(var(--color-border) / 8%);
+      border-bottom: 1px solid var(--glass-border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: var(--space-6) var(--space-10);
+      border-bottom: 1px solid rgb(var(--color-border) / 12%);
+      color: rgb(var(--color-text));
+      white-space: nowrap;
+    }
+
+    tbody tr:nth-child(even) td { background: rgb(var(--color-border) / 5%); }
+    tbody tr:last-child td { border-bottom: none; }
+
+    .is-num { text-align: right; }
+  }
+
+  &__shipname { font-weight: 700; }
+}
+
+@media (max-width: 720px) {
+  .stats-win__tiles { grid-template-columns: repeat(3, 1fr); }
+  .stats-win__prbanner { margin-left: 0; }
+}

@@ -1,7 +1,9 @@
 import { defineComponent } from "vue";
 import { useI18n } from "vue-i18n";
-import { HardDriveDownload, Usb, Zap, Download, ExternalLink } from "lucide-vue-next";
-import { useScrollReveal } from "@/composables/useScrollReveal";
+import {
+  HardDriveDownload, Usb, Zap, Download, ExternalLink, FileDown, Monitor, Apple, Terminal, Check, Clock3,
+} from "lucide-vue-next";
+import { UiButton, Reveal, UiTag } from "@/components/ui";
 import "./DownloadView.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -18,6 +20,12 @@ export default defineComponent({
       { icon: Zap, key: "modeGreen" },
     ] as const;
 
+    const platforms = [
+      { icon: Monitor, key: "win", ready: true },
+      { icon: Apple, key: "mac", ready: false },
+      { icon: Terminal, key: "linux", ready: false },
+    ] as const;
+
     const assets = [
       { file: "WoWSP-0.1.0-x64-setup.exe", label: t("download.install") },
       { file: "WoWSP-0.1.0-x64-portable.exe", label: t("download.portable") },
@@ -25,66 +33,110 @@ export default defineComponent({
       { file: "latest.json", label: "Update manifest" },
     ];
 
-    const m1 = useScrollReveal(0);
-    const m2 = useScrollReveal(100);
-    const m3 = useScrollReveal(200);
-    const modeReveals = [m1, m2, m3];
-
     return () => (
       <div class="download">
-        <section class="download__head section-bg scanline-overlay">
-          <div class="download__head-inner">
-            <span class="accent-pill">03 · {t("download.title")}</span>
-            <h1 class="download__title">
-              <span class="gradient-text">{t("download.title")}</span>
-            </h1>
-            <p class="download__lede">{t("download.lede")}</p>
-            <a href={RELEASES} target="_blank" rel="noopener" class="download__cta">
-              <Download size={16} />
-              {t("download.assets")}
-              <ExternalLink size={12} />
-            </a>
+        {/* ── head ── */}
+        <section class="download__head">
+          <div class="aurora" />
+          <div class="container download__head-inner">
+            <Reveal>
+              <h1 class="download__title">{t("download.title")}</h1>
+            </Reveal>
+            <Reveal delay={100}>
+              <p class="download__lede">{t("download.lede")}</p>
+            </Reveal>
+            <Reveal delay={200}>
+              <UiButton size="lg" href={RELEASES} external>
+                <Download size={17} />
+                {t("download.assets")}
+                <ExternalLink size={13} />
+              </UiButton>
+            </Reveal>
           </div>
         </section>
 
-        <section class="download__modes">
-          <div class="download__modes-head reveal is-visible">
-            <h2>{t("download.modesTitle")}</h2>
-          </div>
+        {/* ── platforms ── */}
+        <section class="download__platforms container">
           <div class="download__grid">
-            {modes.map((m, i) => {
-              const Icon = m.icon;
-              const r = modeReveals[i];
+            {platforms.map((p, i) => {
+              const Icon = p.icon;
               return (
-                <article
-                  class={["mode-card industrial-card", r.cls()].join(" ")}
-                  ref={r.setEl}
-                  style={r.style()}
-                  key={m.key}
-                >
-                  <div class="mode-card__icon">
-                    <Icon size={24} />
-                  </div>
-                  <h3>{t(`download.${m.key}Title`)}</h3>
-                  <p>{t(`download.${m.key}Desc`)}</p>
-                </article>
+                <Reveal delay={i * 80} key={p.key}>
+                  <article class={["platform-card glass-panel", !p.ready ? "is-soon" : ""].join(" ")}>
+                    <div class="platform-card__icon">
+                      <Icon size={22} />
+                    </div>
+                    <h3>{t(`download.platform.${p.key}.name`)}</h3>
+                    <p>{t(`download.platform.${p.key}.desc`)}</p>
+                    {p.ready ? (
+                      <span class="platform-card__status">
+                        <UiTag tone="success">
+                          <Check size={11} />
+                          {t("download.platform.ready")}
+                        </UiTag>
+                        <a href={RELEASES} target="_blank" rel="noopener" class="platform-card__link">
+                          {t("download.platform.get")}
+                          <ExternalLink size={12} />
+                        </a>
+                      </span>
+                    ) : (
+                      <span class="platform-card__status">
+                        <UiTag tone="gold">
+                          <Clock3 size={11} />
+                          {t("download.platform.soon")}
+                        </UiTag>
+                      </span>
+                    )}
+                  </article>
+                </Reveal>
               );
             })}
           </div>
         </section>
 
-        <section class="download__assets">
-          <h2>{t("download.assets")}</h2>
-          <ul class="download__list industrial-card">
-            {assets.map((a) => (
-              <li key={a.file}>
-                <a href={RELEASES} target="_blank" rel="noopener">
-                  <span class="download__file">{a.file}</span>
-                  <span class="download__label">{a.label}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
+        {/* ── modes ── */}
+        <section class="download__modes container">
+          <Reveal class="download__modes-head">
+            <h2>{t("download.modesTitle")}</h2>
+          </Reveal>
+          <div class="download__grid">
+            {modes.map((m, i) => {
+              const Icon = m.icon;
+              return (
+                <Reveal delay={i * 90} key={m.key}>
+                  <article class="mode-card glass-panel is-interactive">
+                    <div class="mode-card__icon">
+                      <Icon size={22} />
+                    </div>
+                    <h3>{t(`download.${m.key}Title`)}</h3>
+                    <p>{t(`download.${m.key}Desc`)}</p>
+                  </article>
+                </Reveal>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ── assets ── */}
+        <section class="download__assets container">
+          <Reveal>
+            <h2>{t("download.assets")}</h2>
+          </Reveal>
+          <Reveal delay={80}>
+            <ul class="download__list glass-panel">
+              {assets.map((a) => (
+                <li key={a.file}>
+                  <a href={RELEASES} target="_blank" rel="noopener">
+                    <span class="download__file">
+                      <FileDown size={14} />
+                      {a.file}
+                    </span>
+                    <span class="download__label">{a.label}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
           <p class="download__notes">{t("download.notes")}</p>
         </section>
       </div>

@@ -15,3 +15,4 @@
 # 设计
 
 - [架构设计](./designs/architecture.md)
+- [Mod Hub 插件管理](./designs/mod-hub.md)

@@ -1,6 +1,7 @@
 packages:
   - 'packages/webui'
   - 'packages/website'
+  - 'packages/holo'
 allowBuilds:
   esbuild: true
   vue-demi: true

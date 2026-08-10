@@ -1,19 +1,16 @@
+/* DownloadView — Abyssal Glass */
 .download {
   flex: 1;
 
-  /* ── Head ──────────────────────────────────────────────── */
+  /* ── head ── */
   &__head {
     position: relative;
-    padding: var(--space-96) var(--space-24) var(--space-64);
-    border-bottom: 1px solid rgb(var(--color-border) / 15%);
+    padding: var(--space-96) 0 var(--space-64);
     overflow: hidden;
   }
 
   &__head-inner {
     position: relative;
-    z-index: 1;
-    max-width: 80rem;
-    margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -24,46 +21,29 @@
   &__title {
     margin: 0;
     font-size: var(--text-display);
-    font-weight: 900;
-    letter-spacing: -0.03em;
-    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-wrap: balance;
   }
 
   &__lede {
     margin: 0;
-    font-size: var(--text-base);
+    max-width: 36rem;
+    font-size: var(--text-md);
     color: rgb(var(--color-text-secondary));
   }
 
-  &__cta {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-8);
-    margin-top: var(--space-16);
-    padding: var(--space-12) var(--space-24);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    text-decoration: none;
-    border-radius: var(--radius-sm);
-    background: rgb(var(--color-primary));
-    color: rgb(var(--color-background));
-    transition: all var(--duration-short) var(--ease-standard);
+  .ui-btn { margin-top: var(--space-16); }
 
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-glow);
-    }
+  /* ── platforms ── */
+  &__platforms {
+    padding-block: var(--space-32) var(--space-16);
   }
 
-  /* ── Modes ─────────────────────────────────────────────── */
+  /* ── modes ── */
   &__modes {
-    max-width: 80rem;
-    margin: 0 auto;
-    padding: var(--space-64) var(--space-24) var(--space-48);
-    width: 100%;
-    box-sizing: border-box;
+    padding-block: var(--space-48);
   }
 
   &__modes-head {
@@ -73,8 +53,8 @@
     h2 {
       margin: 0;
       font-size: var(--text-2xl);
-      font-weight: 900;
-      letter-spacing: -0.02em;
+      font-weight: 800;
+      letter-spacing: -0.025em;
     }
   }
 
@@ -82,20 +62,18 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: var(--space-16);
+
+    > .reveal { height: 100%; }
   }
 
-  /* ── Assets ────────────────────────────────────────────── */
+  /* ── assets ── */
   &__assets {
-    max-width: 80rem;
-    margin: 0 auto;
-    padding: var(--space-16) var(--space-24) var(--space-96);
-    width: 100%;
-    box-sizing: border-box;
+    padding-block: var(--space-32) var(--space-96);
 
     h2 {
       font-size: var(--text-2xl);
-      font-weight: 900;
-      letter-spacing: -0.02em;
+      font-weight: 800;
+      letter-spacing: -0.025em;
       margin: 0 0 var(--space-24);
     }
   }
@@ -103,11 +81,11 @@
   &__list {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: var(--space-6);
     overflow: hidden;
 
     li + li {
-      border-top: 1px solid rgb(var(--color-border) / 12%);
+      border-top: 1px solid var(--glass-border);
     }
 
     a {
@@ -115,66 +93,126 @@
       align-items: center;
       justify-content: space-between;
       gap: var(--space-16);
-      padding: var(--space-16) var(--space-20);
+      padding: var(--space-14) var(--space-16);
       text-decoration: none;
       color: rgb(var(--color-text));
+      border-radius: var(--radius-sm);
       transition: background var(--duration-short) var(--ease-standard);
 
       &:hover {
-        background: rgb(var(--color-primary) / 6%);
+        background: rgb(var(--color-primary) / 7%);
       }
     }
   }
 
   &__file {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-10);
     font-family: var(--font-mono);
     font-size: var(--text-sm);
+    color: rgb(var(--color-primary));
   }
 
   &__label {
     font-size: var(--text-xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-weight: 500;
     color: rgb(var(--color-text-secondary));
     white-space: nowrap;
   }
 
   &__notes {
     margin-top: var(--space-16);
-    font-size: var(--text-2xs);
-    letter-spacing: 0.04em;
-    color: rgb(var(--color-text-secondary) / 70%);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text-secondary));
     text-align: center;
   }
 }
 
 .mode-card {
-  padding: var(--space-24);
+  height: 100%;
+  padding: var(--space-28);
 
   &__icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-sm);
+    width: 46px;
+    height: 46px;
+    border-radius: var(--radius-md);
     background: rgb(var(--color-primary) / 10%);
+    border: 1px solid rgb(var(--color-primary) / 18%);
     color: rgb(var(--color-primary));
     margin-bottom: var(--space-16);
   }
 
   h3 {
     margin: 0 0 var(--space-8);
-    font-size: var(--text-md);
-    font-weight: 800;
-    letter-spacing: -0.01em;
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: -0.015em;
   }
 
   p {
     margin: 0;
     font-size: var(--text-sm);
-    line-height: 1.65;
+    line-height: 1.7;
     color: rgb(var(--color-text-secondary));
+  }
+}
+
+.platform-card {
+  height: 100%;
+  padding: var(--space-28);
+  display: flex;
+  flex-direction: column;
+
+  &.is-soon { opacity: 0.85; }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: var(--radius-md);
+    background: rgb(var(--color-primary) / 10%);
+    border: 1px solid rgb(var(--color-primary) / 18%);
+    color: rgb(var(--color-primary));
+    margin-bottom: var(--space-16);
+  }
+
+  h3 {
+    margin: 0 0 var(--space-8);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+
+  p {
+    margin: 0 0 var(--space-16);
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: rgb(var(--color-text-secondary));
+  }
+
+  &__status {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-12);
+    flex-wrap: wrap;
+  }
+
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-6);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-primary));
+    text-decoration: none;
+
+    &:hover { color: rgb(var(--color-accent)); }
   }
 }
