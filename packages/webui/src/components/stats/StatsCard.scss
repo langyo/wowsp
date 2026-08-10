@@ -149,17 +149,17 @@
     font-weight: 700;
   }
 
-  /* ── KPI grid: 3 columns, no WR/PR (those are in the hero bar) ── */
+  /* ── KPI strip: all six metrics on ONE row ── */
   &__kpis {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 0.5rem;
   }
 
   &__kpi {
     background: rgb(var(--color-bg));
     border-radius: var(--radius-sm);
-    padding: 0.5rem 0.4rem;
+    padding: 0.45rem 0.25rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -190,8 +190,13 @@
   }
 
   &__kpi-value {
-    font-size: var(--text-lg);
+    font-size: var(--text-md);
     font-weight: 700;
     color: rgb(var(--color-text));
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 900px) {
+    &__kpis { grid-template-columns: repeat(3, 1fr); }
   }
 }
