@@ -87,6 +87,21 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 - [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`) and set the custom domain in repo Pages settings; then flip `WOWSP_SITE_BASE` back to `/` in site.yml
 - [ ] First tagged release + model-pack `res-latest` assets
 
+## Post-1.0 milestones
+
+### M10 — Mod Hub (plugin/mod management)
+
+Full design: `docs/<lang>/designs/mod-hub.md`. Skin & voice packs are the
+bulk of the ecosystem and are first-class citizens; auxiliary mods and
+official mini-patches (IME fix, fonts) are the foundation.
+
+- [ ] M10.1 — Mod manifest (`wowsp.mod.toml`: id, version, game-version range, category, file map, SHA-256 hashes, previews) + GitHub Discussions resource-post template + index JSON schema
+- [ ] M10.2 — Generic installer: archive drag-in install, Aslain-compatible `res_mods/<version>/` writes, conflict detection, restore points, install records
+- [ ] M10.3 — Discussions indexer (scheduled Actions workflow → `mod-index.json` on `gh-pages`), shared by the website catalog and the in-app browser
+- [ ] M10.4 — Version-migration engine: game-update detection, classified auto-migration / community-confirmed / unverified flow, one-click rollback
+- [ ] M10.5 — Content browser: skin/voice categories with previews & audition, batch install, resumable downloads; CC0-only index
+- [ ] M10.6 — Aslain migration assistant: adopt Aslain-installed entries into the install record
+
 > **WebView2 note:** with the auto-updater enabled, tauri-bundler forces the
 > `downloadBootstrapper` WebView2 install mode (the updater NSIS bundle cannot
 > carry the ~1.8 MB embedded bootstrapper). The bootstrapper still installs

@@ -1,0 +1,39 @@
+/* UiTag — tonal status pill */
+.ui-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 2px var(--space-10);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  white-space: nowrap;
+
+  &--primary {
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 12%);
+    border-color: rgb(var(--color-primary) / 25%);
+  }
+  &--success {
+    color: rgb(var(--color-success));
+    background: rgb(var(--color-success) / 12%);
+    border-color: rgb(var(--color-success) / 25%);
+  }
+  &--gold {
+    color: rgb(var(--color-gold));
+    background: rgb(var(--color-gold) / 12%);
+    border-color: rgb(var(--color-gold) / 25%);
+  }
+  &--error {
+    color: rgb(var(--color-error));
+    background: rgb(var(--color-error) / 12%);
+    border-color: rgb(var(--color-error) / 25%);
+  }
+  &--neutral {
+    color: rgb(var(--color-text-secondary));
+    background: rgb(var(--color-border) / 10%);
+    border-color: rgb(var(--color-border) / 18%);
+  }
+}

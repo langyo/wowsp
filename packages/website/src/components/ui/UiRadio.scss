@@ -1,0 +1,65 @@
+/* UiRadio — halo ring with springing core */
+.ui-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-12);
+  cursor: pointer;
+  user-select: none;
+
+  &.is-disabled { opacity: 0.45; cursor: not-allowed; }
+
+  &__dot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 21px;
+    height: 21px;
+    flex-shrink: 0;
+    border: 1.5px solid rgb(var(--color-border) / 35%);
+    border-radius: 50%;
+    background: rgb(var(--color-border) / 8%);
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      box-shadow var(--duration-short) var(--ease-standard);
+
+    &[data-checked] {
+      border-color: rgb(var(--color-primary));
+      box-shadow: 0 0 0 3px rgb(var(--color-primary) / 18%);
+    }
+
+    &:has(.ui-radio__input:focus-visible) {
+      box-shadow: 0 0 0 3px rgb(var(--color-primary) / 35%);
+    }
+  }
+
+  &__input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  &__inner {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-primary)) 75%);
+    opacity: 0;
+    transform: scale(0.3);
+    transition:
+      opacity var(--duration-short) var(--ease-standard),
+      transform var(--duration-normal) var(--ease-spring);
+  }
+
+  &__dot[data-checked] &__inner {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  &__label {
+    font-size: var(--text-base);
+    color: rgb(var(--color-text));
+  }
+}

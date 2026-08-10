@@ -1,15 +1,19 @@
-/* WoWSP website design tokens — industrial aesthetic, adapted from
-   e.celestia.world (Entelecheia). Sharp corners, uppercase tracking,
-   grid-line section backgrounds, scanlines and glow accents on a
-   deep-navy space palette. */
+/* ──────────────────────────────────────────────────────────────────────────
+   WoWSP design language — “Abyssal Glass” (深渊玻璃)
+
+   A deep-ocean canvas, frosted-glass surfaces and holographic cyan light.
+   Product-page typography (large, tight, confident) meets soft Apple-grade
+   radii. Token *names* stay stable so every view keeps compiling; values and
+   utilities are the new aesthetic.
+   ────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* ── Radius — sharper, industrial ─────────────────────── */
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  /* ── Radius — soft, continuous ────────────────────────── */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
   --radius-full: 9999px;
 
   /* ── Typography ───────────────────────────────────────── */
@@ -17,186 +21,231 @@
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   --font-display: "Inter", "Noto Sans SC", sans-serif;
 
-  --text-2xs: 0.625rem;
+  --text-2xs: 0.6875rem;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
-  --text-base: 0.875rem;
-  --text-md: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 1.875rem;
-  --text-display: clamp(2.5rem, 7vw, 4.5rem);
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.875rem;
+  --text-3xl: 2.5rem;
+  --text-display: clamp(2.5rem, 6vw, 4.75rem);
+  --text-hero: clamp(3rem, 9vw, 7rem);
 
   /* ── Motion ───────────────────────────────────────────── */
   --duration-instant: 0.1s;
-  --duration-short: 0.12s;
-  --duration-normal: 0.25s;
-  --duration-long: 0.4s;
+  --duration-short: 0.16s;
+  --duration-normal: 0.28s;
+  --duration-long: 0.45s;
+  --duration-xslow: 0.7s;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo: cubic-bezier(0.7, 0, 0.84, 1);
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 
-  /* ── Shadows — hard-edge industrial ───────────────────── */
-  --shadow-card: 0 1px 0 rgb(var(--color-border) / 20%), 0 4px 16px rgb(0 0 0 / 40%);
-  --shadow-elevated: 0 2px 0 rgb(var(--color-border) / 30%), 0 8px 32px rgb(0 0 0 / 50%);
-  --shadow-glow: 0 0 40px rgb(var(--color-primary) / 15%);
+  /* ── Elevation — ambient, layered ─────────────────────── */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 24%), 0 12px 40px rgb(0 0 0 / 28%);
+  --shadow-elevated: 0 2px 4px rgb(0 0 0 / 28%), 0 24px 80px rgb(0 0 0 / 40%);
+  --shadow-glow: 0 0 80px rgb(var(--color-primary) / 22%);
+  --shadow-ring: inset 0 1px 0 rgb(255 255 255 / 7%);
 
   /* ── Spacing scale (8px base, rem) ────────────────────── */
   --space-2: 0.125rem; --space-4: 0.25rem; --space-6: 0.375rem; --space-8: 0.5rem;
-  --space-10: 0.625rem; --space-12: 0.75rem; --space-16: 1rem; --space-20: 1.25rem;
-  --space-24: 1.5rem; --space-32: 2rem; --space-40: 2.5rem; --space-48: 3rem;
-  --space-64: 4rem; --space-80: 5rem; --space-96: 6rem;
+  --space-10: 0.625rem; --space-12: 0.75rem; --space-14: 0.875rem; --space-16: 1rem; --space-20: 1.25rem;
+  --space-24: 1.5rem; --space-28: 1.75rem; --space-32: 2rem; --space-40: 2.5rem; --space-48: 3rem;
+  --space-64: 4rem; --space-80: 5rem; --space-96: 6rem; --space-128: 8rem;
 
   /* ── Z-index ──────────────────────────────────────────── */
   --z-base: 0; --z-content: 10; --z-header: 30; --z-floating: 50;
 
   /* ── Blur ─────────────────────────────────────────────── */
-  --blur-sm: 4px; --blur-md: 8px; --blur-lg: 12px;
+  --blur-sm: 6px; --blur-md: 14px; --blur-lg: 22px;
 
   /* ── Scrollbar ────────────────────────────────────────── */
-  --scrollbar-thumb: rgb(var(--color-primary) / 20%);
+  --scrollbar-thumb: rgb(var(--color-primary) / 24%);
   --scrollbar-track: transparent;
 }
 
-/* RGB channel tokens (dark navy default; light scheme below) */
+/* ── Color — abyssal dark (default) ───────────────────────
+   NOTE: values are SPACE-separated RGB channels so that
+   `rgb(var(--x) / alpha)` uses valid modern syntax — comma-separated
+   channels silently invalidate every alpha declaration. */
 :root {
-  --color-background: 11, 18, 32;        /* #0b1220 */
-  --color-surface: 16, 26, 46;           /* #101a2e */
-  --color-text: 207, 227, 255;           /* #cfe3ff */
-  --color-text-secondary: 143, 166, 200; /* #8fa6c8 */
-  --color-border: 148, 184, 255;         /* #94b8ff */
-  --color-primary: 77, 159, 255;         /* #4d9fff */
-  --color-accent: 124, 192, 255;         /* #7cc0ff */
-  --color-success: 74, 222, 128;         /* #4ade80 */
-  --color-error: 224, 93, 93;            /* #e05d5d */
+  --color-background: 4 8 16;              /* #040810 — abyss */
+  --color-surface: 13 20 34;               /* #0d1422 — solid fallback */
+  --color-text: 232 241 251;               /* #e8f1fb */
+  --color-text-secondary: 148 166 194;     /* #94a6c2 */
+  --color-border: 148 180 230;             /* used at low alpha */
+  --color-primary: 56 189 248;             /* #38bdf8 — holo sky */
+  --color-accent: 34 211 238;              /* #22d3ee — cyan */
+  --color-gold: 245 184 92;                /* #f5b85c — signal amber */
+  --color-success: 52 211 153;             /* #34d399 */
+  --color-error: 248 113 113;              /* #f87171 */
+  --color-warning: 251 191 36;             /* #fbbf24 */
+
+  /* Glass recipe — the signature surface */
+  --glass-bg: linear-gradient(165deg, rgb(255 255 255 / 5.5%), rgb(255 255 255 / 2%));
+  --glass-border: rgb(255 255 255 / 9%);
+  --glass-border-strong: rgb(255 255 255 / 16%);
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    --color-background: 245, 248, 252;
-    --color-surface: 255, 255, 255;
-    --color-text: 30, 40, 55;
-    --color-text-secondary: 76, 96, 124;
-    --color-border: 23, 55, 99;
-    --color-primary: 36, 117, 209;
-    --color-accent: 15, 92, 174;
-    --color-success: 22, 163, 74;
-    --color-error: 190, 44, 44;
+    --color-background: 244 247 251;
+    --color-surface: 255 255 255;
+    --color-text: 13 24 40;
+    --color-text-secondary: 84 103 130;
+    --color-border: 15 45 85;
+    --color-primary: 2 132 199;            /* #0284c7 */
+    --color-accent: 8 145 178;             /* #0891b2 */
+    --color-gold: 180 120 20;
+    --color-success: 5 150 105;
+    --color-error: 220 38 38;
+    --color-warning: 217 119 6;
+
+    --glass-bg: linear-gradient(165deg, rgb(255 255 255 / 72%), rgb(255 255 255 / 48%));
+    --glass-border: rgb(15 45 85 / 10%);
+    --glass-border-strong: rgb(15 45 85 / 18%);
+    --shadow-card: 0 1px 2px rgb(15 45 85 / 6%), 0 12px 40px rgb(15 45 85 / 10%);
+    --shadow-elevated: 0 2px 4px rgb(15 45 85 / 8%), 0 24px 80px rgb(15 45 85 / 14%);
+    --shadow-ring: inset 0 1px 0 rgb(255 255 255 / 60%);
+    color-scheme: light;
   }
 }
 
-/* ── Unified section background — grid + vertex dots ───── */
+/* ── Layout helper ──────────────────────────────────────── */
+.container {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: var(--space-24);
+}
+
+/* ── Ambient section backdrop — deep-sea dot grid ───────── */
 .section-bg {
   background-image:
-    radial-gradient(circle, rgb(var(--color-primary) / 14%) 1.2px, transparent 1.2px),
-    linear-gradient(rgb(var(--color-primary) / 3%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--color-primary) / 3%) 1px, transparent 1px);
-  background-size: 48px 48px;
+    radial-gradient(circle, rgb(var(--color-primary) / 10%) 1px, transparent 1.5px);
+  background-size: 44px 44px;
 }
 
-/* ── Scanline overlay ───────────────────────────────────── */
-.scanline-overlay::after {
-  content: "";
+/* ── Aurora — layered light fields for hero sections ────── */
+.aurora {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, transparent 50%, rgb(var(--color-primary) / 2%) 51%);
-  background-size: 100% 4px;
-  pointer-events: none;
-}
-
-/* ── Industrial card with corner accent dot ─────────────── */
-.industrial-card {
-  position: relative;
   overflow: hidden;
-  border: 1px solid rgb(var(--color-border) / 20%);
-  background: rgb(var(--color-surface) / 60%);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-card);
-  transition: all var(--duration-normal) var(--ease-standard);
+  pointer-events: none;
 
-  &:hover {
-    border-color: rgb(var(--color-primary) / 35%);
-    box-shadow: var(--shadow-glow);
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
   }
 
   &::before {
-    content: "";
-    position: absolute;
-    top: 6px; right: 6px;
-    width: 4px; height: 4px;
-    border-radius: 1px;
-    background: rgb(var(--color-primary));
-    opacity: 0.4;
+    width: 60vw; height: 60vw;
+    top: -18%; left: 50%;
+    transform: translateX(-60%);
+    background: radial-gradient(circle, rgb(var(--color-primary) / 20%), transparent 65%);
+  }
+
+  &::after {
+    width: 46vw; height: 46vw;
+    bottom: -22%; right: -8%;
+    background: radial-gradient(circle, rgb(var(--color-accent) / 14%), transparent 65%);
   }
 }
 
-/* ── Gradient text ──────────────────────────────────────── */
+/* ── Glass panel — the one true card ────────────────────── */
+.glass-panel {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card), var(--shadow-ring);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  transition:
+    border-color var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-out-expo);
+}
+
+a.glass-panel:hover,
+.glass-panel.is-interactive:hover {
+  border-color: var(--glass-border-strong);
+  box-shadow: var(--shadow-elevated), var(--shadow-ring), var(--shadow-glow);
+  transform: translateY(-3px);
+}
+
+/* ── Gradient text — holo cyan → sky ────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, rgb(var(--color-primary)), rgb(var(--color-accent))) 0 0 / 200% 100%;
+  background: linear-gradient(120deg, rgb(var(--color-accent)) 0%, rgb(var(--color-primary)) 55%, rgb(var(--color-primary)) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-/* ── Accent pill ────────────────────────────────────────── */
+/* ── Accent pill — soft badge ───────────────────────────── */
 .accent-pill {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4) var(--space-12);
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-16);
   font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: rgb(var(--color-primary));
   background: rgb(var(--color-primary) / 10%);
-  border: 1px solid rgb(var(--color-primary) / 20%);
-  border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--color-primary) / 22%);
+  border-radius: var(--radius-full);
+  backdrop-filter: blur(var(--blur-sm));
 }
 
-/* ── Animations ─────────────────────────────────────────── */
+/* ── Keyframes ──────────────────────────────────────────── */
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgb(var(--color-primary) / 10%); }
-  50% { box-shadow: 0 0 40px rgb(var(--color-primary) / 20%); }
-}
-
-@keyframes scan-line {
-  0% { transform: translateY(-100%); opacity: 0; }
-  50% { opacity: 0.5; }
-  100% { transform: translateY(100%); opacity: 0; }
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 
 @keyframes signal {
-  0%, 100% { opacity: 0.25; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.4); }
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
 }
 
 @keyframes float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  50% { transform: translateY(-8px); }
 }
 
-@keyframes data-flow {
-  0% { left: -5%; opacity: 0; }
-  15% { opacity: 1; }
-  85% { opacity: 1; }
-  100% { left: 105%; opacity: 0; }
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
 }
 
-.animate-glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
-.animate-signal { animation: signal 2s ease-in-out infinite; }
-.animate-float { animation: float 4s ease-in-out infinite; }
-.animate-flow { animation: data-flow 2.5s ease-in-out infinite; }
+@keyframes dash-flow {
+  to { stroke-dashoffset: -24; }
+}
 
-/* ── Scroll reveal ──────────────────────────────────────── */
+.animate-signal { animation: signal 2.2s ease-in-out infinite; }
+.animate-float { animation: float 5s ease-in-out infinite; }
+
+/* ── Scroll reveal — fade + rise (+ slight de-blur) ─────── */
 .reveal {
   opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.7s var(--ease-out-expo), transform 0.7s var(--ease-out-expo);
+  transform: translateY(28px);
+  filter: blur(6px);
+  transition:
+    opacity var(--duration-xslow) var(--ease-out-expo),
+    transform var(--duration-xslow) var(--ease-out-expo),
+    filter var(--duration-xslow) var(--ease-out-expo);
 
   &.is-visible {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0);
   }
 }
 
@@ -205,14 +254,20 @@
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-primary) / 30%); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-primary) / 38%); }
 
 ::selection {
-  background: rgb(var(--color-primary) / 20%);
+  background: rgb(var(--color-primary) / 26%);
   color: rgb(var(--color-text));
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html {
@@ -224,18 +279,22 @@ body {
   background: rgb(var(--color-background));
   color: rgb(var(--color-text));
   font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* ── Reduced motion ─────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --duration-short: 0s; --duration-normal: 0s; --duration-long: 0s;
+    --duration-short: 0s; --duration-normal: 0s;
+    --duration-long: 0s; --duration-xslow: 0s;
   }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
   html { scroll-behavior: auto; }
-  .reveal { opacity: 1; transform: none; }
+  .reveal { opacity: 1; transform: none; filter: none; }
 }
