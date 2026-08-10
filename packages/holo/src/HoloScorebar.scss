@@ -1,0 +1,131 @@
+/* HoloScorebar — shared top scoreboard (game-style caps + ship icons).
+   Token-driven; works in the app (dark) and on the site (light/dark). */
+.holo-scorebar {
+  --holo-ally: #4ade80;
+  --holo-enemy: #f87171;
+  --holo-contested: #f5b85c;
+  --holo-capture: #4ade80;
+  /* neutral cap outline/letter must read on BOTH the site's light pill and
+     the app's dark pill — mid slate works on either */
+  --holo-neutral: rgba(148, 163, 184, 0.9);
+  --holo-cap-text: #8fa0b5;
+
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 1.1rem;
+  border-radius: 18px;
+  background: var(--holo-hud-bg, rgb(13 20 34 / 78%));
+  border: 1px solid rgb(var(--color-border, 200 210 220) / 30%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: rgb(var(--color-text, 235 240 248));
+  box-shadow: 0 4px 18px rgb(0 0 0 / 25%), inset 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+.holo-scorebar__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.holo-scorebar__score {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 3ch;
+  justify-content: center;
+
+  &--ally { color: var(--holo-ally); }
+  &--enemy { color: var(--holo-enemy); }
+}
+
+.holo-scorebar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &--ally { background: var(--holo-ally); box-shadow: 0 0 8px var(--holo-ally); }
+  &--enemy { background: var(--holo-enemy); box-shadow: 0 0 8px var(--holo-enemy); }
+}
+
+.holo-scorebar__caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.25rem;
+}
+
+.holo-scorebar__cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  svg { display: block; }
+
+  &.is-contested svg {
+    animation: holo-cap-blink 0.9s ease-in-out infinite;
+  }
+}
+
+/* The cap chip: the whole diamond group rotates with a transition — 45°
+   into a diamond while capturing, back to a square once held. The progress
+   fill (clipped to the diamond) grows from the top corner. */
+.holo-scorebar__chip {
+  transform-box: view-box;
+  transform-origin: 15px 15px;
+  transition: transform 0.38s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.holo-scorebar__fillbar {
+  transition: height 0.18s linear;
+}
+
+.holo-scorebar__time {
+  min-width: 5ch;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgb(var(--color-text, 235 240 248) / 70%);
+  border-left: 1px solid rgb(var(--color-border, 200 210 220) / 18%);
+  padding-left: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ship-icon strip under the scores: allies left, enemies right, sunk greyed
+   and pushed to the far edge — same order as the in-game strip. */
+.holo-scorebar__ships {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  padding-top: 0.2rem;
+  border-top: 1px solid rgb(var(--color-border, 200 210 220) / 12%);
+
+  img { display: block; }
+}
+
+.holo-scorebar__ship {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+
+  &.is-sunk { opacity: 0.55; }
+}
+
+.holo-scorebar__ships-sep {
+  width: 1px;
+  height: 12px;
+  margin: 0 0.3rem;
+  background: rgb(var(--color-border, 200 210 220) / 25%);
+}
+
+@keyframes holo-cap-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}

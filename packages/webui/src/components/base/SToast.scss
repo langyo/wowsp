@@ -16,11 +16,12 @@
   gap: 0.5rem;
   min-width: 200px;
   max-width: 420px;
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-sm);
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 20%);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: rgb(var(--color-surface) / 96%);
+  border: 1px solid rgb(var(--color-border) / 35%);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 35%), inset 0 1px 0 rgb(255 255 255 / 5%);
+  backdrop-filter: blur(var(--blur-sm));
   font-size: var(--text-sm);
   color: rgb(var(--color-text));
   user-select: none;
