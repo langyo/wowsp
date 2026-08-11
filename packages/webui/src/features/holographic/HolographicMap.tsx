@@ -560,12 +560,21 @@ export default defineComponent({
      *  capTimer rules, same as the marketing site). */
     const showCapEta = ref(false);
 
+    /** Hull side-silhouettes (bake output, keyed by model name). */
+    const silhouettes: Record<string, { path: string }> = {};
+    void fetch("/models/silhouettes.json")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((j) => Object.assign(silhouettes, j as Record<string, { path: string }>))
+      .catch(() => { /* card falls back to the class silhouette */ });
+
     /** Recorder ship health plaque (shared HoloShipCard, bottom-left). */
     const selfCard = computed<HoloShipCardData | null>(() => {
       const l = shipLabels.value.find((x) => x.role === "self" && x.shipName);
       if (!l) return null;
+      const modelName = shipNameFromModelDb(l.shipId) ?? undefined;
       return {
         shipType: l.type ?? undefined,
+        silhouette: (modelName && silhouettes[modelName]?.path) ?? null,
         name: l.shipName,
         hp: l.hp,
         maxHp: l.maxHp,

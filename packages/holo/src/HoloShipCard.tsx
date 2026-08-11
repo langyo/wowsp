@@ -12,8 +12,10 @@ import { defineComponent, type PropType } from "vue";
 import "./HoloShipCard.scss";
 
 export interface HoloShipCardData {
-  /** WG ship type — drives the hull silhouette. */
+  /** WG ship type — drives the hull silhouette fallback. */
   shipType?: string;
+  /** Real hull silhouette path (from silhouettes.json), bow pointing right. */
+  silhouette?: string | null;
   /** Display name (localised ship name + nickname). */
   name?: string;
   hp: number | null;
@@ -69,7 +71,7 @@ export default defineComponent({
       return (
         <div class={["holo-ship-card", d.dead ? "holo-ship-card--dead" : ""].join(" ")}>
           <svg class="holo-ship-card__hull" viewBox="0 0 100 36" aria-hidden="true">
-            <path d={silhouetteOf(d.shipType)} fill="currentColor" />
+            <path d={d.silhouette ?? silhouetteOf(d.shipType)} fill="currentColor" />
           </svg>
           <div class="holo-ship-card__body">
             {d.name ? <span class="holo-ship-card__name">{d.name}</span> : null}

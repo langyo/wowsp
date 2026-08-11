@@ -106,6 +106,7 @@ export default defineComponent({
     const nameTags = ref<HoloLabelData[]>([]);
     /** Recorder ship health plaque (bottom-left card). */
     const selfShip = ref<ShipNode | null>(null);
+    const selfSilhouette = ref<string | null>(null);
     const selfHp = ref<number | null>(null);
     const selfMaxHp = ref<number | null>(null);
     const selfRep = ref<number | null>(null);
@@ -113,6 +114,9 @@ export default defineComponent({
     const capTags = ref<CapTag[]>([]);
     /** Alt held → show the in-game point timers (reach / capture ETA). */
     const altDown = ref(false);
+
+    /** Hull side-silhouettes (bake output, keyed by model name). */
+    let silhouettes: Record<string, { path: string }> = {};
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Alt") altDown.value = true;
@@ -149,7 +153,7 @@ export default defineComponent({
 
     interface ShipNode {
       root: THREE.Group; rel: number; track: Track; die?: number;
-      type: string; nameZh: string; nameEn: string; playerName: string; tier: number | null; key: number;
+      type: string; model: string; nameZh: string; nameEn: string; playerName: string; tier: number | null; key: number;
     }
     let ships: ShipNode[] = [];
     let boomPool: { mesh: THREE.Mesh; t0: number }[] = [];
@@ -342,6 +346,7 @@ export default defineComponent({
         selfHp.value = h;
         selfMaxHp.value = mx;
         selfDead.value = selfNode.die !== undefined && battleT > selfNode.die;
+        selfSilhouette.value = silhouettes[selfNode.model]?.path ?? null;
         // Repairable pool: approximating the repair-party pool as 60% of the
         // damage taken (BB-class standard) until the replay carries it.
         selfRep.value = mx != null && h != null && mx > 0 ? (mx - h) * 0.6 : null;
@@ -350,6 +355,7 @@ export default defineComponent({
         selfMaxHp.value = null;
         selfRep.value = null;
         selfDead.value = false;
+        selfSilhouette.value = null;
       }
 
       // explosions
@@ -430,6 +436,11 @@ export default defineComponent({
       currentDuration = bundle.duration;
       boomEvents = bundle.explosions;
       capZones = bundle.caps;
+      try {
+        silhouettes = (await (await fetch(`${base}/silhouettes.json`)).json()) as Record<string, { path: string }>;
+      } catch {
+        silhouettes = {};
+      }
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -499,7 +510,10 @@ export default defineComponent({
       }
 
       // Cap zone rings float just above the terrain so island points (C on
-      // this map) stay visible — depthTest off as an extra guarantee.
+      // this map) stay visible. depthTest off + a HIGH renderOrder: the
+      // terrain is transparent and drawn in distance order, so a ring that
+      // renders first would be washed out by the island's alpha blend —
+      // ordering it last keeps it on top from every camera angle.
       capY = Math.max(2.2, terrainMaxY + 2.5);
       {
         const ringGeom = new THREE.RingGeometry(CAP_RING_R - 4, CAP_RING_R, 64);
@@ -520,6 +534,8 @@ export default defineComponent({
           fill.rotation.x = -Math.PI / 2;
           ring.position.set(c.x, capY, -c.z);
           fill.position.set(c.x, capY - 0.2, -c.z);
+          ring.renderOrder = 10;
+          fill.renderOrder = 9;
           scene.add(ring, fill);
           materials.push(ringMat, fillMat);
           capRingMats.push({ ring: ringMat, fill: fillMat });
@@ -572,6 +588,7 @@ export default defineComponent({
         ships.push({
           root, rel: r.rel, track, die: track.die,
           type: shipTypeOf(r.model),
+          model: r.model,
           nameZh: resolveShipName(r.model, r.shipZh, "zh-Hans"),
           nameEn: resolveShipName(r.model, r.shipEn, "en"),
           playerName: r.name,
@@ -678,6 +695,7 @@ export default defineComponent({
               <HoloShipCard
                 data={{
                   shipType: selfShip.value?.type,
+                  silhouette: selfSilhouette.value,
                   name: selfShip.value ? (isZh() ? selfShip.value.nameZh : selfShip.value.nameEn) : undefined,
                   hp: selfHp.value,
                   maxHp: selfMaxHp.value,
