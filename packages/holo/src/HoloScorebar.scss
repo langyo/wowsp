@@ -16,8 +16,10 @@
   gap: 0.2rem;
   padding: 0.4rem 1.1rem;
   border-radius: 18px;
-  background: var(--holo-hud-bg, rgb(13 20 34 / 78%));
-  border: 1px solid rgb(var(--color-border, 200 210 220) / 30%);
+  /* Neutral translucent grey — readable on the light pill AND the dark app
+     pill; the cap letters themselves carry the team colours. */
+  background: rgb(96 108 126 / 42%);
+  border: 1px solid rgb(255 255 255 / 22%);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   font-variant-numeric: tabular-nums;
