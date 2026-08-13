@@ -34,13 +34,16 @@
     overflow: hidden;
     padding: 0;
     background: none;
+    /* Plate art is not circular; its alpha (or the mask below) defines the
+       shape, so the badge must not force a circular clip. */
+    border-radius: 0;
 
     .player-badge__dt {
       position: absolute;
       inset: 0;
       display: block;
       overflow: hidden;
-      border-radius: var(--radius-full);
+      border-radius: 0;
     }
 
     img {
@@ -48,26 +51,30 @@
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      /* Every layer is an 80x80 canvas stacked at the same scale; no inset,
+         no object-fit letterboxing. */
+      object-fit: fill;
       pointer-events: none;
+      display: block;
+    }
+
+    /* Bottom-to-top: plate -> texture -> symbol -> frame. */
+    .player-badge__dt-plate {
+      z-index: 1;
     }
 
     .player-badge__dt-texture {
-      opacity: 0.85;
+      z-index: 2;
+      opacity: 0.4;
       mix-blend-mode: multiply;
     }
 
     .player-badge__dt-symbol {
-      /* the center emblem sits slightly inset, above the texture */
-      inset: 12%;
-      width: 76%;
-      height: 76%;
-      object-fit: contain;
-      z-index: 1;
+      z-index: 3;
     }
 
     .player-badge__dt-frame {
-      z-index: 2;
+      z-index: 4;
     }
   }
 
