@@ -6,7 +6,6 @@ import SSegmented from "@/components/base/SSegmented";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import STag from "@/components/base/STag";
 import SScrollTop from "@/components/base/SScrollTop";
-import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -211,25 +210,6 @@ export default defineComponent({
             </div>
           ) : currentStats.value ? (
             <div class="dashboard-view__content" key="content">
-              {/* ── Identity header (centered) ── */}
-              <header class="dash-identity">
-                <PlayerBadge tier={currentStats.value.levelingTier ?? 0} dogTag={currentStats.value.dogTag ?? null} size={56} />
-                <div class="dash-identity__info">
-                  <h1 class="dash-identity__name">
-                    {currentStats.value.clanTag ? (
-                      <span class="dash-identity__clan">[{currentStats.value.clanTag}]</span>
-                    ) : null}
-                    {currentStats.value.name}
-                  </h1>
-                  <div class="dash-identity__tags">
-                    <STag variant="neutral" size="sm">{currentStats.value.realm.toUpperCase()}</STag>
-                    {currentStats.value.hidden ? (
-                      <STag variant="danger" size="sm">{t("stats.hidden")}</STag>
-                    ) : null}
-                  </div>
-                </div>
-              </header>
-
               {/* ── KPI summary ── */}
               <StatsCard stats={currentStats.value} />
 

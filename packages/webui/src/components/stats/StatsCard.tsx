@@ -1,6 +1,7 @@
 import { computed, defineComponent } from "vue";
 
 import STag from "@/components/base/STag";
+import PlayerBadge from "@/components/base/PlayerBadge";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import { prTier, winrateColor, winrateTier } from "@/utils/winrate";
@@ -68,6 +69,11 @@ export default defineComponent({
         {/* identity header */}
         <header class="stats-card__head">
           <div class="stats-card__name-line">
+            <PlayerBadge
+              tier={props.stats.levelingTier ?? 0}
+              dogTag={props.stats.dogTag ?? null}
+              size={36}
+            />
             {props.stats.clanTag ? (
               <span class="stats-card__clan">[{props.stats.clanTag}]</span>
             ) : null}
