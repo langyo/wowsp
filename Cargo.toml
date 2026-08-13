@@ -94,7 +94,7 @@ windows = { version = "^0.61", features = [
 image = { version = "^0.25", default-features = false, features = ["png"] }
 
 # Encoding helpers
-base64 = "^0.22"
+base64 = "^0.23"
 hex = "^0.4"
 
 # Tauri desktop shell — with tray-icon + image-png for the system tray.
