@@ -241,6 +241,7 @@ init:
     cargo fetch
     {{PM}} install
     just gen
+    just fetch-models
     @echo "Done."
 
 install: init
@@ -274,6 +275,14 @@ e2e-setup:
 #   just release-models 0.14.1 --dry-run
 release-models *ARGS:
     python scripts/release_models.py {{ARGS}}
+
+# ── fetch-models ───────────────────────────────────────────────────────
+# Download the baked GLB model pack from GitHub Releases (res-latest) into
+# packages/webui/src/res/models (the GLBs are gitignored). For fresh clones.
+#   just fetch-models
+#   just fetch-models --dry-run
+fetch-models *ARGS:
+    python scripts/fetch_models.py {{ARGS}}
 
 # ── check-env ─────────────────────────────────────────────────────────
 # WoWSP-specific environment check (celestia-devtools provides a generic
