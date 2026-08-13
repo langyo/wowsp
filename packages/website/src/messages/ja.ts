@@ -43,7 +43,7 @@ export default {
       titleB: "一枚のホロマップに",
       desc: "任意の .wowsreplay をワンクリックで解析——弾道、魚雷、スモーク、占領サークルが同じタイムラインに。任意の瞬間に戻って、あの転舵の代償を確認しましょう",
       liveChip: "ライブリプレイ · 12:34",
-        live: { loading: "実戦を読み込み中…", failed: "ライブ描画は利用できません", badge: "ライブ描画", caption: "実戦リプレイ · 長門 · トライデント" , cap: { ally: "味方支配", enemy: "敵支配", neutral: "中立", capturing: "占領中", contested: "争奪中" }},
+        live: { loading: "実戦を読み込み中…", failed: "ライブ描画は利用できません", badge: "ライブ描画", dead: "撃沈", caption: "実戦リプレイ · 長門 · トライデント" , cap: { ally: "味方支配", enemy: "敵支配", neutral: "中立", capturing: "占領中", contested: "争奪中" }},
     },
     mods: {
       eyebrow: "Mod 管理",

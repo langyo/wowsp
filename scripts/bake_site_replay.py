@@ -51,6 +51,21 @@ def sample_track(samples: list[dict], n: int) -> tuple[list, list, list]:
     return xs, zs, yaws
 
 
+def sample_hp(hp_samples: list[dict] | None, n: int) -> list[int]:
+    """1 Hz HP trace from the raw hpSamples stream (hold-last per second).
+    Returns [] when the stream is missing so the site hides the bar."""
+    if not hp_samples:
+        return []
+    hp: list[int] = []
+    j = 0
+    for i in range(n):
+        t = float(i)
+        while j + 1 < len(hp_samples) and hp_samples[j + 1]["time"] <= t:
+            j += 1
+        hp.append(int(hp_samples[j]["value"]))
+    return hp
+
+
 def main() -> None:
     dump_path, slug = sys.argv[1], sys.argv[2]
     dump = json.load(open(dump_path, encoding="utf-8"))
@@ -146,6 +161,9 @@ def main() -> None:
         eid = t["entityId"]
         xs, zs, yaws = sample_track(t["samples"], n)
         entry: dict = {"x": xs, "z": zs, "yaw": yaws}
+        hp = sample_hp(t.get("hpSamples"), n)
+        if hp:
+            entry["hp"] = hp
         dt = t.get("deathTime")
         if dt is not None:
             entry["die"] = round(dt, 1)

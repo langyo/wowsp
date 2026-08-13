@@ -16,16 +16,11 @@ import "./HoloScorebar.scss";
 const CAP_COLORS: Record<HoloCapZone["owner"], string> = {
   ally: "var(--holo-ally, #4ade80)",
   enemy: "var(--holo-enemy, #f87171)",
-  neutral: "var(--holo-neutral, rgba(255,255,255,0.55))",
+  neutral: "var(--holo-neutral, #ffffff)",
 };
 
 /** Unique clip ids per rendered chip (SVG clipPath must be id-referenced). */
 let clipSeq = 0;
-
-function fmt(sec: number): string {
-  const s = Math.max(0, Math.floor(sec));
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-}
 
 function CapChip({ cap, uid }: { cap: HoloCapZone; uid: string }) {
   const active = !!cap.capturing || !!cap.contested;
@@ -93,8 +88,7 @@ function CapChip({ cap, uid }: { cap: HoloCapZone; uid: string }) {
         </g>
         <text
           x="15" y="20" text-anchor="middle" font-size="14" font-weight="800"
-          fill={cap.owner === "neutral" && !active ? "var(--holo-cap-text, rgba(255,255,255,0.75))" : "#fff"}
-          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}
+          fill={cap.owner === "neutral" ? (active ? "var(--holo-cap-text, #ffffff)" : "#ffffff") : ownerColor}
         >
           {cap.letter}
         </text>
@@ -144,9 +138,6 @@ export default defineComponent({
               {s.scoreEnemy}
               <span class="holo-scorebar__dot holo-scorebar__dot--enemy" />
             </span>
-            {s.duration > 0 ? (
-              <span class="holo-scorebar__time">-{fmt(s.duration - s.time)}</span>
-            ) : null}
           </span>
           {s.ships.length ? (
             <span class="holo-scorebar__ships">
