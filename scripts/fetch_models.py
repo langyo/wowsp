@@ -87,14 +87,20 @@ def main() -> None:
         # ── Extract (archive root is models/ -> DEST/models) ───────────
         os.makedirs(DEST, exist_ok=True)
         print(f"[fetch-models] extracting into {DEST} ...")
+        # silhouettes.json is committed to the repo (traced from the game's
+        # silhouette bitmaps by trace_silhouettes.py). The pack ships an older
+        # GLB-projection bake, so skip it and keep the committed one.
+        skip = {"models/silhouettes.json"}
         with tarfile.open(archive, "r:gz") as tf:
             for member in tf.getmembers():
                 if member.name.startswith("../") or os.path.isabs(member.name):
                     raise RuntimeError(f"unsafe archive member: {member.name}")
-            try:
-                tf.extractall(DEST, filter="data")  # Python 3.12+ tar filter
-            except TypeError:
-                tf.extractall(DEST)
+                if member.name in skip:
+                    continue
+                try:
+                    tf.extract(member, DEST, filter="data")
+                except TypeError:
+                    tf.extract(member, DEST)
 
         ships = len([
             n for n in os.listdir(os.path.join(DEST, "models", "ships"))
