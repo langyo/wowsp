@@ -205,7 +205,8 @@ def main() -> int:
         base = entry.get("baseName")
         if not idx:
             continue
-        stem = base if (base and base in glb_stems) else (idx if idx in glb_stems else None)
+        # The app resolves index-first (shipModelStem), so match that order.
+        stem = idx if (idx and idx in glb_stems) else (base if base and base in glb_stems else None)
         if stem:
             stem_to_idx.setdefault(stem, set()).add(idx)
 
