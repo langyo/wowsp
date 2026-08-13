@@ -70,3 +70,10 @@ packages/tools/wowsunpack-vendor/target/
 # celestia-devtools: staged-on-demand shared justfile recipes (celestia-devtools init / just fetch)
 /.just/
 /celestia-devtools.just
+
+# Baked 3D model GLBs are distributed via the GitHub Release model pack
+# (tag `res-latest`) and cached locally like node_modules — never tracked.
+packages/webui/src/res/models/ships/*.glb
+packages/webui/src/res/models/planes/*.glb
+packages/webui/src/res/models/props/*.glb
+packages/webui/src/res/models/maps/*.glb
