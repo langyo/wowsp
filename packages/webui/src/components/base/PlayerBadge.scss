@@ -46,6 +46,15 @@
       border-radius: 0;
     }
 
+    /* The clip group holds the color fill, plate, texture and symbol, all
+       masked to the plate shape (mask applied inline). The frame (border
+       outline) sits outside it so it is never clipped. */
+    .player-badge__clip {
+      position: absolute;
+      inset: 0;
+      display: block;
+    }
+
     img {
       position: absolute;
       inset: 0;

@@ -19,30 +19,28 @@ function hex(hexWithPrefix: string): string {
 
 /**
  * BackgroundShape assets ship in two layouts:
- *   - PCNA001..PCNA009: a per-shape directory whose "border.png" is only the
- *     plate outline (interior transparent), so it renders as the top frame.
- *   - everything else (PCNA037+, PCNA999): a single flat plate image drawn as
- *     the bottom layer. Every part is an 80x80 canvas, so all layers must be
- *     stacked at the same scale instead of being inset/cropped.
+ *   - PCNA001..PCNA009: a per-shape directory. "border.png" is the plate
+ *     outline (interior transparent) drawn on top; "PCNT001.png" in the same
+ *     directory is the filled shield used as the clip mask.
+ *   - everything else (PCNA037+, PCNA999): a single flat plate image whose
+ *     own alpha is both the plate and the clip mask.
+ * Every part is an 80x80 canvas, so all layers stack at one scale.
  */
 function isOutlineShape(index: string): boolean {
   const n = Number(index.slice(4));
   return n >= 1 && n <= 9;
 }
 
-/** Image URL for a dog tag part. */
-function partUrl(index: string, species: string): string {
-  if (species === "BackgroundShape" && isOutlineShape(index)) {
-    return "/dogtags/" + index + "/border.png";
-  }
+/** Image URL for a dog tag part (symbol/texture). */
+function partUrl(index: string): string {
   return "/dogtags/" + index + ".png";
 }
 
 /**
- * Player emblem badge - the player real in-game dog tag, layered like the
- * client: background color fill -> background plate -> texture pattern ->
- * center symbol -> border outline. All parts resolve from the game own
- * dogtag table (dogtags_map.json) plus the extracted GUI art.
+ * Player emblem badge - the player real in-game dog tag. Layers (bottom to
+ * top): background color fill, flat plate (when present), texture pattern,
+ * center symbol, then the border outline. The color fill and texture are
+ * clipped to the plate shape so they never spill past its border.
  *
  * Falls back to the service-record tier badge when no dog tag is available.
  */
@@ -74,33 +72,38 @@ export default defineComponent({
       if (!symbol && !shape) return null;
 
       const outline = shape ? isOutlineShape(shape[0]) : false;
+      const shapeIndex = shape ? shape[0] : "";
       return {
         bg: bgColor?.[2] ? hex(bgColor[2]) : null,
         border: borderColor?.[2] ? hex(borderColor[2]) : null,
         // Flat shapes are the plate (bottom layer); directory shapes only
         // contribute a border outline (top layer).
-        plateUrl: shape && !outline ? partUrl(shape[0], shape[1]) : null,
-        frameUrl: shape && outline ? partUrl(shape[0], shape[1]) : null,
-        textureUrl: texture ? partUrl(texture[0], texture[1]) : null,
-        symbolUrl: symbol ? partUrl(symbol[0], symbol[1]) : null,
+        plateUrl: shape && !outline ? "/dogtags/" + shapeIndex + ".png" : null,
+        frameUrl: shape && outline ? "/dogtags/" + shapeIndex + "/border.png" : null,
+        // Clip mask = the plate filled shape: the flat plate alpha, or the
+        // filled shield shipped next to the outline for directory shapes.
+        maskUrl: shape
+          ? outline
+            ? "/dogtags/" + shapeIndex + "/PCNT001.png"
+            : "/dogtags/" + shapeIndex + ".png"
+          : null,
+        textureUrl: texture ? partUrl(texture[0]) : null,
+        symbolUrl: symbol ? partUrl(symbol[0]) : null,
       };
     });
 
     return () => {
       const l = layers.value;
-      // A flat plate is opaque where it draws and transparent in its corners;
-      // mask the color fill (and texture/symbol) to that shape so the
-      // background color does not leak out as a colored square behind it.
-      const dtStyle: Record<string, string> = {
+      const clipStyle: Record<string, string> = {
         background: l?.bg ?? "rgba(90, 100, 115, 0.9)",
       };
-      if (l?.plateUrl) {
-        dtStyle.WebkitMaskImage = "url(" + l.plateUrl + ")";
-        dtStyle.maskImage = "url(" + l.plateUrl + ")";
-        dtStyle.WebkitMaskSize = "100% 100%";
-        dtStyle.maskSize = "100% 100%";
-        dtStyle.WebkitMaskRepeat = "no-repeat";
-        dtStyle.maskRepeat = "no-repeat";
+      if (l?.maskUrl) {
+        clipStyle.WebkitMaskImage = "url(" + l.maskUrl + ")";
+        clipStyle.maskImage = "url(" + l.maskUrl + ")";
+        clipStyle.WebkitMaskSize = "100% 100%";
+        clipStyle.maskSize = "100% 100%";
+        clipStyle.WebkitMaskRepeat = "no-repeat";
+        clipStyle.maskRepeat = "no-repeat";
       }
 
       return (
@@ -113,18 +116,20 @@ export default defineComponent({
           title={l ? "Player emblem (Tier " + props.tier + ")" : "Service record tier " + props.tier}
         >
           {l ? (
-            <span class="player-badge__dt" style={dtStyle}>
-              {l.plateUrl ? (
-                <img class="player-badge__dt-plate" src={l.plateUrl} alt="" />
-              ) : null}
-              {l.textureUrl ? (
-                <img class="player-badge__dt-texture" src={l.textureUrl} alt="" />
-              ) : null}
-              {l.symbolUrl ? (
-                <img class="player-badge__dt-symbol" src={l.symbolUrl} alt="" />
-              ) : (
-                <span class="player-badge__tier">{props.tier || "?"}</span>
-              )}
+            <span class="player-badge__dt">
+              <span class="player-badge__clip" style={clipStyle}>
+                {l.plateUrl ? (
+                  <img class="player-badge__dt-plate" src={l.plateUrl} alt="" />
+                ) : null}
+                {l.textureUrl ? (
+                  <img class="player-badge__dt-texture" src={l.textureUrl} alt="" />
+                ) : null}
+                {l.symbolUrl ? (
+                  <img class="player-badge__dt-symbol" src={l.symbolUrl} alt="" />
+                ) : (
+                  <span class="player-badge__tier">{props.tier || "?"}</span>
+                )}
+              </span>
               {l.frameUrl ? (
                 <img
                   class="player-badge__dt-frame"
