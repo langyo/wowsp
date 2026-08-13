@@ -175,6 +175,27 @@ export function shipNameFromModelDb(shipId: number | string | undefined): string
   return base;
 }
 
+/** Cased model filename stem for a ship (the key used by silhouettes.json).
+ *  Tries the WG index then the baseName, matching the GLB filename on disk. */
+export function shipModelStem(
+  shipId: number | string | undefined,
+  fallbackName?: string,
+): string | null {
+  if (shipId != null) {
+    const entry = shipModelMap[String(shipId)];
+    for (const cand of [entry?.index, entry?.baseName]) {
+      if (!cand) continue;
+      const cased = shipCasedByLower.get(cand.toLowerCase());
+      if (cased) return cased;
+    }
+  }
+  if (fallbackName) {
+    const cased = shipCasedByLower.get(fallbackName.toLowerCase());
+    if (cased) return cased;
+  }
+  return null;
+}
+
 // ── Offline ship-name DB (GameParams + game gettext catalogs) ───────────
 // `ship_names.json` covers EVERY ship (incl. event/clone ships the WG
 // encyclopedia misses) with localized names per WG language code, produced

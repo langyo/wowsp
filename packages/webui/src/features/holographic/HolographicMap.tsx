@@ -13,6 +13,7 @@ import {
   resolvePropModelUrl,
   shipNameFromModelDb,
   shipNameFromOfflineDb,
+  shipModelStem,
   shipOfflineEntry,
   loadGlbModel,
   loadMapBounds,
@@ -573,10 +574,10 @@ export default defineComponent({
     const selfCard = computed<HoloShipCardData | null>(() => {
       const l = shipLabels.value.find((x) => x.role === "self" && x.shipName);
       if (!l) return null;
-      const modelName = shipNameFromModelDb(l.shipId) ?? undefined;
+      const stem = shipModelStem(l.shipId) ?? undefined;
       return {
         shipType: l.type ?? undefined,
-        silhouette: (modelName && silhouettes.value[modelName]?.path) ?? null,
+        silhouette: (stem && silhouettes.value[stem]?.path) ?? null,
         name: l.shipName,
         hp: l.hp,
         maxHp: l.maxHp,
