@@ -1,12 +1,13 @@
 /**
  * HoloShipCard — the recorder/self ship's health plaque (app + site).
  *
- * Like the in-game team list: a solid hull silhouette (bow pointing right)
- * with a health bar that fills left→right, coloured by health (green →
- * amber → red), plus a grey "repairable" segment on the right for the pool
- * a repair party could still recover. The host supplies hp/maxHp and an
- * optional repairable pool (the site approximates it from the damage taken;
- * the app can pass real values when the replay provides them).
+ * The hull silhouette *is* the health bar: a dim "empty" hull outline is
+ * always visible, and a coloured fill is clipped to the current HP fraction
+ * (filling left→right, green → amber → red), plus a grey "repairable" segment
+ * on the right for the pool a repair party could still recover. The host
+ * supplies hp/maxHp and an optional repairable pool (the site approximates it
+ * from the damage taken; the app can pass real values when the replay
+ * provides them).
  */
 import { defineComponent, type PropType } from "vue";
 import "./HoloShipCard.scss";
@@ -54,12 +55,16 @@ function healthColor(pct: number): string {
   return "#f87171"; // red
 }
 
+/** Unique clip-path ids for the fill segments (stable per component instance). */
+let cardUid = 0;
+
 export default defineComponent({
   name: "HoloShipCard",
   props: {
     data: { type: Object as PropType<HoloShipCardData>, required: true },
   },
   setup(props) {
+    const uid = `holo-ship-card-${++cardUid}`;
     return () => {
       const d = props.data;
       const max = d.maxHp ?? d.hp ?? 0;
@@ -68,31 +73,53 @@ export default defineComponent({
       const total = Math.max(1, max + rep);
       const hpPct = Math.max(0, Math.min(100, (hp / total) * 100));
       const repPct = Math.max(0, Math.min(100 - hpPct, (rep / total) * 100));
+      const path = d.silhouette ?? silhouetteOf(d.shipType);
+      const showText = d.hp != null && d.maxHp != null;
       return (
         <div class={["holo-ship-card", d.dead ? "holo-ship-card--dead" : ""].join(" ")}>
-          <svg class="holo-ship-card__hull" viewBox="0 0 100 36" aria-hidden="true">
-            <path d={d.silhouette ?? silhouetteOf(d.shipType)} fill="currentColor" />
-          </svg>
-          <div class="holo-ship-card__body">
-            {d.name ? <span class="holo-ship-card__name">{d.name}</span> : null}
-            <span class="holo-ship-card__bar">
-              <span
-                class="holo-ship-card__hp"
-                style={{ width: `${hpPct}%`, background: healthColor(hpPct) }}
-              />
-              {rep > 0 ? (
-                <span
-                  class="holo-ship-card__rep"
-                  style={{ left: `${hpPct}%`, width: `${repPct}%` }}
-                />
+          {d.name || showText ? (
+            <div class="holo-ship-card__head">
+              {d.name ? <span class="holo-ship-card__name">{d.name}</span> : null}
+              {showText ? (
+                <span class="holo-ship-card__text">
+                  {d.dead ? "—" : `${d.hp!.toLocaleString()} / ${d.maxHp!.toLocaleString()}`}
+                </span>
               ) : null}
-            </span>
-            <span class="holo-ship-card__text">
-              {d.dead || d.hp == null || d.maxHp == null
-                ? "—"
-                : `${d.hp.toLocaleString()} / ${d.maxHp.toLocaleString()}`}
-            </span>
-          </div>
+            </div>
+          ) : null}
+          <svg
+            class="holo-ship-card__hull"
+            viewBox="0 0 100 36"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <defs>
+              <clipPath id={`${uid}-hp`}>
+                <rect x="0" y="0" width={hpPct} height="36" />
+              </clipPath>
+              {rep > 0 ? (
+                <clipPath id={`${uid}-rep`}>
+                  <rect x={hpPct} y="0" width={repPct} height="36" />
+                </clipPath>
+              ) : null}
+            </defs>
+            <path d={path} class="holo-ship-card__hull-base" />
+            {rep > 0 ? (
+              <path
+                d={path}
+                class="holo-ship-card__hull-rep"
+                style={{ clipPath: `url(#${uid}-rep)` }}
+              />
+            ) : null}
+            <path
+              d={path}
+              class="holo-ship-card__hull-fill"
+              style={{
+                clipPath: `url(#${uid}-hp)`,
+                color: healthColor(hpPct),
+              }}
+            />
+          </svg>
         </div>
       );
     };
