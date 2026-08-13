@@ -39,9 +39,9 @@ import type {
 import planeIcon from "./planeIcons";
 import { shipIcon, shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
-  HoloScorebar, registerHoloShipIcons,
-  captureSecondsRemaining, formatEta, reachSeconds,
-  type HoloCapZone, type HoloHudState, type HoloShip,
+  HoloScorebar, HoloLabel, HoloShipCard, registerHoloShipIcons,
+  captureSecondsRemaining, formatEta,
+  type HoloCapZone, type HoloHudState, type HoloShip, type HoloShipCardData,
 } from "@wowsp/holo";
 
 // The shared scorebar renders the game's own HUD icons — register the
@@ -559,6 +559,31 @@ export default defineComponent({
     /** Alt held → show in-game point timers on the cap letters (shared
      *  capTimer rules, same as the marketing site). */
     const showCapEta = ref(false);
+
+    /** Hull side-silhouettes (bake output, keyed by model name). */
+    const silhouettes: Record<string, { path: string }> = {};
+    void fetch("/models/silhouettes.json")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((j) => Object.assign(silhouettes, j as Record<string, { path: string }>))
+      .catch(() => { /* card falls back to the class silhouette */ });
+
+    /** Recorder ship health plaque (shared HoloShipCard, bottom-left). */
+    const selfCard = computed<HoloShipCardData | null>(() => {
+      const l = shipLabels.value.find((x) => x.role === "self" && x.shipName);
+      if (!l) return null;
+      const modelName = shipNameFromModelDb(l.shipId) ?? undefined;
+      return {
+        shipType: l.type ?? undefined,
+        silhouette: (modelName && silhouettes[modelName]?.path) ?? null,
+        name: l.shipName,
+        hp: l.hp,
+        maxHp: l.maxHp,
+        dead: l.dead,
+        // Repairable pool approximated as 60% of damage taken until the
+        // replay stream carries the real value.
+        repairableHp: l.hp != null && l.maxHp != null ? (l.maxHp - l.hp) * 0.6 : null,
+      };
+    });
 
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
@@ -2801,20 +2826,8 @@ export default defineComponent({
         mat.opacity = c.capturing ? 0.7 : c.contested ? 0.5 : 0.35;
       });
       // Cap letters: Alt held → redraw with the shared point timer (capture
-      // seconds while capturing, reach ETA for neutral points from the
-      // recorder's current speed). Off → plain letter again.
+      // seconds while capturing; idle neutral points stay clean).
       const capAlt = showCapEta.value;
-      const recorderMarker = shipMarkers.find((m) => (m.userData.role as string) === "self") ?? null;
-      const recorderTraj =
-        recorderMarker
-          ? (props.trajectories.find((tr) => tr.entityId === recorderMarker.userData.entityId) ?? null)
-          : null;
-      let selfSpeed = 0;
-      if (recorderTraj) {
-        const s0 = sampleAt(recorderTraj, Math.max(0, t - 1));
-        const s1 = sampleAt(recorderTraj, t);
-        if (s0 && s1) selfSpeed = Math.hypot(s1.x - s0.x, s1.z - s0.z);
-      }
       capDisplay.value.forEach((c, i) => {
         const sprite = capLetterSprites[i];
         if (!sprite) return;
@@ -2825,17 +2838,7 @@ export default defineComponent({
         if (capAlt) {
           const teamShips = c.captureTeam === 1 ? c.alliesIn : c.enemiesIn;
           const rem = captureSecondsRemaining(c.progress, teamShips, c.contested);
-          if (c.capturing && rem.seconds != null) {
-            etaLine = formatEta(rem.seconds);
-          } else if (c.owner === 0 && !c.contested && selfSpeed > 0 && recorderTraj) {
-            const z = capZones.value[i];
-            const sx = z?.kind?.initialX ?? 0;
-            const sz = z?.kind?.initialZ ?? 0;
-            const s1 = sampleAt(recorderTraj, t);
-            const dist = s1 ? Math.hypot(s1.x - sx, s1.z - sz) : 0;
-            const reach = reachSeconds(dist, selfSpeed);
-            if (reach != null) etaLine = formatEta(reach);
-          }
+          if (c.capturing && rem.seconds != null) etaLine = formatEta(rem.seconds);
         }
         if (sprite.userData.text === `${text}|${etaLine}`) return;
         sprite.userData.text = `${text}|${etaLine}`;
@@ -3932,64 +3935,31 @@ export default defineComponent({
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
         <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
           {shipLabels.value.map((lbl) => (
-            <div
+            <HoloLabel
               key={lbl.entityId}
-              class={[
-                "holo-label",
-                `holo-label--${lbl.role}`,
-                lbl.dead ? "holo-label--dead" : "",
-                lbl.ghostText ? "holo-label--ghost" : "",
-                lbl.visible ? "" : "holo-label--hidden",
-                selectedEntityId.value === lbl.entityId ? "holo-label--selected" : "",
-              ]}
-              style={{
-                left: `${lbl.x}px`,
-                top: `${lbl.y}px`,
-                borderColor: `#${TEAM_COLOR[lbl.role].toString(16).padStart(6, "0")}`,
+              deadText={t("replay.legend.dead")}
+              label={{
+                key: lbl.entityId,
+                x: lbl.x,
+                y: lbl.y,
+                role: lbl.role,
+                name: lbl.name,
+                shipName: lbl.shipName,
+                tier: lbl.tier,
+                iconUrl:
+                  lbl.kind === "plane"
+                    ? (planeIcon(lbl.planeType ?? "attack")?.src ?? null)
+                    : lbl.type
+                      ? (shipIconUrl(lbl.type, lbl.role === "enemy" ? "enemy" : "ally") ?? null)
+                      : null,
+                hp: lbl.hp,
+                maxHp: lbl.maxHp,
+                dead: lbl.dead,
+                ghostText: lbl.ghostText,
+                visible: lbl.visible,
+                selected: selectedEntityId.value === lbl.entityId,
               }}
-            >
-              <span class="holo-label__name" title={lbl.name}>{lbl.name}</span>
-              <span class="holo-label__ship">
-                {lbl.kind === "plane" ? (
-                  <BattleIcon kind="plane" type={lbl.planeType ?? "attack"} size={11} />
-                ) : lbl.type ? (
-                  <BattleIcon
-                    kind="ship"
-                    type={lbl.type}
-                    variant={lbl.role === "self" || lbl.role === "ally" ? "ally" : lbl.role === "enemy" ? "enemy" : "plain"}
-                    size={11}
-                  />
-                ) : null}
-                {lbl.tier != null ? (
-                  <span class="holo-label__tier">{tierToRoman(lbl.tier)}</span>
-                ) : null}
-                {lbl.shipName}
-              </span>
-              {lbl.hp != null && !lbl.ghostText && !lbl.dead ? (
-                <span class="holo-label__hp">
-                  {lbl.maxHp != null ? (
-                    <span class="holo-label__hp-bar">
-                      <span
-                        class="holo-label__hp-fill"
-                        style={{
-                          width: `${Math.max(0, Math.min(100, (lbl.hp / lbl.maxHp) * 100))}%`,
-                          background: `#${(
-                            lbl.role === "self" ? 0x4ade80 : TEAM_COLOR[lbl.role]
-                          ).toString(16).padStart(6, "0")}`,
-                        }}
-                      />
-                      <span class="holo-label__hp-text">
-                        {lbl.hp.toLocaleString()}
-                        {lbl.maxHp != null ? ` / ${lbl.maxHp.toLocaleString()}` : ""}
-                      </span>
-                    </span>
-                  ) : null}
-                </span>
-              ) : lbl.ghostText ? (
-                <span class="holo-label__ghost-time">{lbl.ghostText}</span>
-              ) : null}
-              {lbl.dead ? <span class="holo-label__dead-tag">{t("replay.legend.dead")}</span> : null}
-            </div>
+            />
           ))}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
@@ -4111,7 +4081,12 @@ export default defineComponent({
         ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
-            <button
+          {selfCard.value ? (
+            <div class="holo-map__shipcard">
+              <HoloShipCard data={selfCard.value} />
+            </div>
+          ) : null}
+          <button
               class="holo-map__lbltoggle"
               onClick={() => { showLabels.value = !showLabels.value; }}
               title={showLabels.value ? t("replay.labels.hide") : t("replay.labels.show")}

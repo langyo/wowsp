@@ -43,7 +43,7 @@ export default {
       titleB: "one holographic map",
       desc: "Any .wowsreplay, parsed in one click — shells, torpedoes, smoke and capture rings all on a single timeline. Scrub back to any second and see what that turn really cost",
       liveChip: "Live replay · 12:34",
-        live: { loading: "Loading the real battle…", failed: "Live render unavailable", badge: "Live render", caption: "Real replay · Nagato · Trident" , cap: { ally: "Allied control", enemy: "Enemy control", neutral: "Neutral", capturing: "Capturing", contested: "Contested" }},
+        live: { loading: "Loading the real battle…", failed: "Live render unavailable", badge: "Live render", dead: "SUNK", caption: "Real replay · Nagato · Trident" , cap: { ally: "Allied control", enemy: "Enemy control", neutral: "Neutral", capturing: "Capturing", contested: "Contested" }},
     },
     mods: {
       eyebrow: "Mod management",

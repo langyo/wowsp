@@ -43,7 +43,7 @@ export default {
       titleB: "一張全息地圖",
       desc: "任意 .wowsreplay 一鍵解析——彈道、魚雷、煙霧、佔領圈全部落在同一條時間軸上。拖回任何一個瞬間，看清那一次轉向的代價",
       liveChip: "即時回放 · 12:34",
-        live: { loading: "正在載入真實對局…", failed: "即時演算不可用", badge: "即時演算", caption: "真實回放 · 長門 · 三叉戟" , cap: { ally: "我方控制", enemy: "敵方控制", neutral: "中立", capturing: "佔領中", contested: "雙方壓點" }},
+        live: { loading: "正在載入真實對局…", failed: "即時演算不可用", badge: "即時演算", dead: "已擊沉", caption: "真實回放 · 長門 · 三叉戟" , cap: { ally: "我方控制", enemy: "敵方控制", neutral: "中立", capturing: "佔領中", contested: "雙方壓點" }},
     },
     mods: {
       eyebrow: "模組管理",

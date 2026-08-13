@@ -101,9 +101,9 @@ export function drawHoloMinimap(opts: MinimapDrawOpts): void {
       const py = p.v * S;
       const col = CAP_OWNER_COLOR[c.owner] ?? CAP_OWNER_COLOR.neutral;
       ctx.beginPath();
-      ctx.arc(px, py, 7, 0, Math.PI * 2);
+      ctx.arc(px, py, 11, 0, Math.PI * 2);
       ctx.strokeStyle = col;
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.8;
       ctx.stroke();
       ctx.fillStyle = col;
       ctx.globalAlpha = 0.85;

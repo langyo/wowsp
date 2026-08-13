@@ -43,7 +43,7 @@ export default {
       titleB: "en un mapa holográfico",
       desc: "Cualquier .wowsreplay, analizado con un clic: proyectiles, torpedos, humo y zonas de captura en una sola línea de tiempo. Vuelve a cualquier instante y mira lo que costó ese giro",
       liveChip: "Repetición en vivo · 12:34",
-        live: { loading: "Cargando la batalla real…", failed: "Render en vivo no disponible", badge: "Render en vivo", caption: "Repetición real · Nagato · Tridente" , cap: { ally: "Control aliado", enemy: "Control enemigo", neutral: "Neutral", capturing: "Capturando", contested: "Disputado" }},
+        live: { loading: "Cargando la batalla real…", failed: "Render en vivo no disponible", badge: "Render en vivo", dead: "Hundido", caption: "Repetición real · Nagato · Tridente" , cap: { ally: "Control aliado", enemy: "Control enemigo", neutral: "Neutral", capturing: "Capturando", contested: "Disputado" }},
     },
     mods: {
       eyebrow: "Gestión de mods",

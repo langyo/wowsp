@@ -1,0 +1,140 @@
+/* HoloLabel — floating ship label shared by the app and the marketing site.
+   Verbatim port of the app's holo-map label styles (HolographicMap.scss). */
+.holo-label {
+  position: absolute;
+  translate: -50% -100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 6rem;
+  max-width: 12rem;
+  padding: 0.1rem 0.25rem;
+  font-size: var(--text-2xs, 0.625rem);
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.92);
+  /* No background by default — labels may overlap; each carries a thin role
+     border so the team colour stays readable over the sea. */
+  background: transparent;
+  border: 1px solid;
+  border-radius: 3px;
+  transition: opacity 0.15s linear;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  pointer-events: none;
+  cursor: default;
+  user-select: none;
+
+  &--hidden { opacity: 0; }
+  /* Ghost (unseen / sunk) ships: dashed border + gone-time instead of HP. */
+  &--ghost {
+    border-style: dashed;
+    opacity: 0.85;
+  }
+  &--dead {
+    opacity: 0.55;
+    filter: grayscale(0.7);
+  }
+
+  &--self { border-color: #ffffff; }
+  &--ally { border-color: #3cb478; }
+  &--enemy { border-color: #cc3333; }
+
+  &--selected {
+    outline: 1.5px dashed #ffd75e;
+    outline-offset: 1px;
+  }
+
+  &__name {
+    font-weight: 600;
+    font-size: 0.7em;
+    color: rgba(255, 255, 255, 0.95);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__ship {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.72em;
+  }
+
+  &__icon {
+    width: 11px;
+    height: 11px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  &__tier {
+    font-weight: 700;
+    color: rgba(100, 200, 255, 0.85);
+    margin-right: 0.05rem;
+  }
+
+  &__dead-tag {
+    color: rgb(var(--color-error, 248 113 113));
+    font-weight: 600;
+    font-size: 0.65em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__hp {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    width: 100%;
+    color: rgba(100, 255, 150, 0.9);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.7em;
+    font-weight: 600;
+  }
+
+  &__hp-bar {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 1rem;
+    background: rgba(5, 8, 15, 0.55);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  &__hp-fill {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.2s linear;
+  }
+
+  /* HP number sits inside the bar, like the in-game team list. */
+  &__hp-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95em;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+  }
+
+  &__ghost-time {
+    width: 100%;
+    padding: 0.1rem 0.25rem;
+    background: rgba(5, 8, 15, 0.55);
+    border-radius: 2px;
+    color: rgba(255, 255, 255, 0.75);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.75em;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
