@@ -37,6 +37,7 @@ import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHIP_MODELS = REPO_ROOT / "packages" / "webui" / "src" / "data" / "ship_models.json"
+SHIPS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models" / "ships"
 DEFAULT_OUT = (
     REPO_ROOT / "packages" / "webui" / "src" / "res" / "models" / "silhouettes.json"
 )
@@ -193,20 +194,26 @@ def main() -> int:
             skipped += 1
     print(f"[trace] traced {len(index_path)} silhouettes ({skipped} skipped)")
 
-    # baseName -> index(es) from ship_models.json
+    # Map each ship to its GLB filename stem (the key the app resolves), then
+    # to the game silhouette index. The GLB is baked under baseName when it is
+    # a real English name, otherwise under the WG index code.
     models = json.loads(Path(args.models).read_text(encoding="utf-8"))
-    name_to_idx: dict[str, set[str]] = {}
+    glb_stems = {p.stem for p in SHIPS_DIR.glob("*.glb")}
+    stem_to_idx: dict[str, set[str]] = {}
     for entry in models.values():
         idx = entry.get("index")
         base = entry.get("baseName")
-        if idx and base:
-            name_to_idx.setdefault(base, set()).add(idx)
+        if not idx:
+            continue
+        stem = base if (base and base in glb_stems) else (idx if idx in glb_stems else None)
+        if stem:
+            stem_to_idx.setdefault(stem, set()).add(idx)
 
     out: dict[str, dict] = {}
-    for base, idxs in sorted(name_to_idx.items()):
+    for stem, idxs in sorted(stem_to_idx.items()):
         for idx in sorted(idxs):
             if idx in index_path:
-                out[base] = {"path": index_path[idx]}
+                out[stem] = {"path": index_path[idx]}
                 break
 
     out_path = Path(args.output)
