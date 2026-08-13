@@ -68,12 +68,14 @@ export default defineComponent({
 
     const layers = computed(() => {
       const dt = props.dogTag;
-      if (!dt) return null;
-      const bgColor = entryFor(dt.backgroundColor);
-      const borderColor = entryFor(dt.borderColor);
-      const shape = entryFor(dt.backgroundId) ?? entryFor(DEFAULT_SHAPE_ID);
-      const texture = entryFor(dt.textureId);
-      const symbol = entryFor(dt.symbolId) ?? entryFor(DEFAULT_SYMBOL_ID);
+      // When Vortex returns no dog tag (accounts that never customised), fall
+      // back to the default symbol + shield so the badge renders a dog tag
+      // instead of the service-record tier.
+      const bgColor = entryFor(dt?.backgroundColor);
+      const borderColor = entryFor(dt?.borderColor);
+      const shape = entryFor(dt?.backgroundId) ?? entryFor(DEFAULT_SHAPE_ID);
+      const texture = entryFor(dt?.textureId);
+      const symbol = entryFor(dt?.symbolId) ?? entryFor(DEFAULT_SYMBOL_ID);
 
       const outline = shape ? isOutlineShape(shape[0]) : false;
       const shapeIndex = shape ? shape[0] : "";
