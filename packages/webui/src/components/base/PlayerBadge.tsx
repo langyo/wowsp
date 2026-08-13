@@ -17,6 +17,12 @@ function hex(hexWithPrefix: string): string {
   return hexWithPrefix.replace("0x", "#");
 }
 
+// Default emblem parts (PCNB999 symbol + PCNA999 shield). Vortex omits the
+// symbol/background ids for accounts that never customised their emblem, so
+// fall back to these so the badge still renders a dog tag.
+const DEFAULT_SYMBOL_ID = 3247393712;
+const DEFAULT_SHAPE_ID = 3247426480;
+
 /**
  * BackgroundShape assets ship in two layouts:
  *   - PCNA001..PCNA009: a per-shape directory. "border.png" is the plate
@@ -65,11 +71,9 @@ export default defineComponent({
       if (!dt) return null;
       const bgColor = entryFor(dt.backgroundColor);
       const borderColor = entryFor(dt.borderColor);
-      const shape = entryFor(dt.backgroundId);
+      const shape = entryFor(dt.backgroundId) ?? entryFor(DEFAULT_SHAPE_ID);
       const texture = entryFor(dt.textureId);
-      const symbol = entryFor(dt.symbolId);
-      // Need at least the symbol or the shape to look like a dog tag.
-      if (!symbol && !shape) return null;
+      const symbol = entryFor(dt.symbolId) ?? entryFor(DEFAULT_SYMBOL_ID);
 
       const outline = shape ? isOutlineShape(shape[0]) : false;
       const shapeIndex = shape ? shape[0] : "";
