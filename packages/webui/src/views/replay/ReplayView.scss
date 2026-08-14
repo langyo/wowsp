@@ -613,6 +613,11 @@
     box-shadow: 0 0 0 1px rgb(var(--color-primary) / 30%);
   }
 
+  &--live {
+    border-color: rgb(var(--color-success) / 45%);
+    background: rgb(var(--color-success) / 5%);
+  }
+
   &__top {
     display: flex;
     align-items: center;
@@ -637,6 +642,11 @@
     color: rgb(var(--color-accent));
     font-size: var(--text-2xs);
     text-transform: uppercase;
+
+    &--live {
+      background: rgb(var(--color-success) / 20%);
+      color: rgb(var(--color-success));
+    }
   }
 
   &__row {

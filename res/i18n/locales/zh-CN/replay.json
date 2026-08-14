@@ -74,6 +74,10 @@
   "resultsIncomplete": "录像在结算前中断，以下为最后一次录像记录的状态，非最终结果。",
   "bot": "机器人",
   "botNote": "AI 玩家，无历史战绩",
+  "live": {
+    "title": "实时对局",
+    "notStarted": "尚未开始新的对局"
+  },
   "tier": "等级",
   "damageTaken": "承伤",
   "noDamageData": "造成伤害与勋章需完整结算数据，此录像仅能推断本舰的伤害与击沉。",

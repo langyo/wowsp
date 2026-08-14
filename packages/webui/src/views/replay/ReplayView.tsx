@@ -4,6 +4,9 @@ import { RefreshCw } from "lucide-vue-next";
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
+import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
+import { useGameStatusStore } from "@/stores/gameStatus";
+import { useOverlayStore } from "@/stores/overlay";
 import { api } from "@/api";
 import type {
   CameraSample,
@@ -869,6 +872,22 @@ export default defineComponent({
     const toast = useToast();
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
+    const gameStatus = useGameStatusStore();
+    const overlay = useOverlayStore();
+    /** Whether the live-battle entry (first rail item) is selected. */
+    const liveOpen = ref(false);
+    // While the live entry is open, poll the game's tempArenaInfo.json so the
+    // roster refreshes as players load in / the battle ends.
+    let arenaTimer: number | null = null;
+    watch(liveOpen, (open) => {
+      if (open) {
+        void overlay.refreshArenaInfo();
+        arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
+      } else if (arenaTimer !== null) {
+        clearInterval(arenaTimer);
+        arenaTimer = null;
+      }
+    });
 
     // Auto-manage loading toast for replay operations.
     let loadingToastId = 0;
@@ -1063,6 +1082,42 @@ export default defineComponent({
               <p class="replay-view__empty">{t("replay.list.empty")}</p>
             ) : (
               <ul class="replay-view__items">
+                {gameStatus.process.running ? (
+                  <li class="replay-view__item">
+                    <button
+                      type="button"
+                      class={[
+                        "replay-card",
+                        "replay-card--live",
+                        liveOpen.value ? "replay-card--active" : "",
+                      ]}
+                      onClick={() => {
+                        liveOpen.value = true;
+                        parser.clear();
+                      }}
+                    >
+                      <div class="replay-card__top">
+                        <span class="replay-card__ship">▶ {t("replay.live.title")}</span>
+                        <span class="replay-card__pill replay-card__pill--live">LIVE</span>
+                      </div>
+                      <div class="replay-card__row">
+                        <span class="replay-card__label">{t("replay.mapLabel")}</span>
+                        <span class="replay-card__val">
+                          {overlay.arenaInfo?.mapName
+                            ? displayMapName(overlay.arenaInfo.mapName, mapLang.value)
+                            : t("replay.live.notStarted")}
+                        </span>
+                      </div>
+                      <div class="replay-card__foot">
+                        <span class="replay-card__players">
+                          {overlay.arenaInfo
+                            ? t("replay.players", { n: overlay.arenaInfo.vehicles.length })
+                            : "—"}
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                ) : null}
                 {parser.list.value.map((r) => (
                   <li key={r.path} class="replay-view__item">
                     <button
@@ -1105,7 +1160,9 @@ export default defineComponent({
         </aside>
 
         <section class="replay-view__main">
-          {parser.current.value ? (
+          {liveOpen.value ? (
+            <LiveBattlePanel arena={overlay.arenaInfo} />
+          ) : parser.current.value ? (
             <div class="replay-view__content">
               {parser.error.value ? (
                 <div class="replay-view__placeholder replay-view__placeholder--error">

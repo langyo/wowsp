@@ -626,6 +626,12 @@ fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) 
         if meta.is_dir() {
             walk_replays(&path, out);
         } else if path.extension().and_then(|e| e.to_str()) == Some("wowsreplay") {
+            // The game writes a live temp.wowsreplay during a match; it is not
+            // a completed replay. The frontend renders it as a live-battle
+            // entry instead of listing it here.
+            if path.file_name().and_then(|n| n.to_str()) == Some("temp.wowsreplay") {
+                continue;
+            }
             if let Ok(mtime) = meta.modified() {
                 out.push((path, mtime));
             }
