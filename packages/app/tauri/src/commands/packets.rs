@@ -207,13 +207,22 @@ struct RawMethodCall {
 /// EntityCreate's trailing state stream is scanned for these so ships can be
 /// joined to roster entries (the header `vehicle_id` field is a per-version
 /// constant and useless for that).
+///
+/// `client_version`: the header's `clientVersionFromExe` (comma-separated
+/// `major,minor,patch,build`). Selects the packet-ID layout: pre-12.6.0 replays
+/// shift ids down and carry no `BattleResults`. `None` assumes the modern layout.
 pub fn decode_replay(
     packet_stream: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
+    client_version: Option<&str>,
 ) -> Result<DecodedReplay, String> {
     let decrypted = decrypt_stream(packet_stream)?;
     let inflated = inflate_zlib(&decrypted)?;
-    Ok(walk_frames(&inflated, ship_id_candidates))
+    let legacy = match client_version {
+        Some(v) => packet_layout_is_legacy(v),
+        None => false,
+    };
+    Ok(walk_frames(&inflated, ship_id_candidates, legacy))
 }
 
 /// Blowfish-ECB decrypt with the WoWS key + XOR chain. Skips the first 8-byte
@@ -254,12 +263,55 @@ fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// Whether a `clientVersionFromExe` string (comma-separated
+/// `major,minor,patch[,build]`) predates the modern BigWorld packet-ID layout
+/// introduced in 12.6.0. Malformed versions fall back to the modern layout
+/// (current clients are all modern).
+fn packet_layout_is_legacy(version: &str) -> bool {
+    let mut parts = version.split(',');
+    let (Some(major), Some(minor), Some(patch)) = (parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    match (
+        major.trim().parse::<u32>(),
+        minor.trim().parse::<u32>(),
+        patch.trim().parse::<u32>(),
+    ) {
+        (Ok(major), Ok(minor), Ok(patch)) => (major, minor, patch) < (12, 6, 0),
+        _ => false,
+    }
+}
+
+/// Map a legacy (<12.6.0) wire packet id to its modern-layout equivalent so the
+/// frame loop can match against the modern constants. The modern layout inserts
+/// `BattleResults` at 0x22 and `CameraMode` at 0x27, shifting every later id up;
+/// legacy replays therefore carry no `BattleResults` and no `CameraMode`.
+fn remap_legacy_packet_id(raw: u32) -> u32 {
+    match raw {
+        0x22 => PACKET_NESTED_PROPERTY,
+        0x24 => PACKET_CAMERA,
+        0x27 => PACKET_MAP,
+        0x29 => PACKET_POSITION_AUX,
+        0x2b => PACKET_PLAYER_POSITION,
+        0x2e => PACKET_CAMERA_FREELOOK,
+        0x2f => PACKET_SET_WEAPON_LOCK,
+        0x30 => PACKET_SUB_CONTROLLER,
+        0x31 => PACKET_CRUISE_STATE,
+        0x32 => PACKET_SHOT_TRACKING,
+        other => other,
+    }
+}
+
 /// Walk `[u32 size][u32 type][f32 time][payload]` frames, collecting Position
 /// samples (grouped by entity id) and EntityCreate metadata. Stops cleanly if a
 /// frame header is truncated or declares an absurd size (trailing padding).
+///
+/// `legacy` selects the pre-12.6.0 packet-id layout (see [`remap_legacy_packet_id`]).
 fn walk_frames(
     inflated: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
+    legacy: bool,
 ) -> DecodedReplay {
     let mut positions: BTreeMap<i32, Vec<PositionSample>> = BTreeMap::new();
     let mut kinds: BTreeMap<i32, EntityKind> = BTreeMap::new();
@@ -288,7 +340,8 @@ fn walk_frames(
             break;
         }
         let payload = &inflated[cur + 12..payload_end];
-        match ptype {
+        let logical_type = if legacy { remap_legacy_packet_id(ptype) } else { ptype };
+        match logical_type {
             PACKET_POSITION => {
                 if let Some(sample) = parse_position(payload, time) {
                     positions.entry(sample.entity_id).or_default().push(sample);
@@ -1095,6 +1148,40 @@ mod tests {
         );
     }
 
+    /// The 12.6.0 layout boundary: legacy versions use the shifted packet-id
+    /// table, modern versions use the current one.
+    #[test]
+    fn packet_layout_boundary() {
+        assert!(packet_layout_is_legacy("12,5,0,12345"));
+        assert!(packet_layout_is_legacy("0,11,4,1"));
+        assert!(!packet_layout_is_legacy("12,6,0,1"));
+        assert!(!packet_layout_is_legacy("14,5,0,10087791"));
+        // Malformed versions assume the modern layout.
+        assert!(!packet_layout_is_legacy(""));
+        assert!(!packet_layout_is_legacy("garbage"));
+        assert!(!packet_layout_is_legacy("12"));
+    }
+
+    /// Legacy packet ids remap onto their modern equivalents so the frame loop
+    /// keeps matching the modern constants.
+    #[test]
+    fn remaps_legacy_packet_ids() {
+        assert_eq!(remap_legacy_packet_id(0x22), PACKET_NESTED_PROPERTY);
+        assert_eq!(remap_legacy_packet_id(0x24), PACKET_CAMERA);
+        assert_eq!(remap_legacy_packet_id(0x27), PACKET_MAP);
+        assert_eq!(remap_legacy_packet_id(0x29), PACKET_POSITION_AUX);
+        assert_eq!(remap_legacy_packet_id(0x2b), PACKET_PLAYER_POSITION);
+        assert_eq!(remap_legacy_packet_id(0x2e), PACKET_CAMERA_FREELOOK);
+        assert_eq!(remap_legacy_packet_id(0x2f), PACKET_SET_WEAPON_LOCK);
+        assert_eq!(remap_legacy_packet_id(0x30), PACKET_SUB_CONTROLLER);
+        assert_eq!(remap_legacy_packet_id(0x31), PACKET_CRUISE_STATE);
+        assert_eq!(remap_legacy_packet_id(0x32), PACKET_SHOT_TRACKING);
+        // Stable ids pass through untouched.
+        assert_eq!(remap_legacy_packet_id(PACKET_POSITION), PACKET_POSITION);
+        assert_eq!(remap_legacy_packet_id(PACKET_VERSION), PACKET_VERSION);
+        assert_eq!(remap_legacy_packet_id(PACKET_BASE_PLAYER_CREATE_STUB), PACKET_BASE_PLAYER_CREATE_STUB);
+    }
+
     /// End-to-end against a real replay when `WOWSP_TEST_REPLAY` is set. Asserts
     /// positions AND EntityCreate kinds are extracted and look sane.
     #[test]
@@ -1109,7 +1196,7 @@ mod tests {
             let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
             cur += 4 + bl;
         }
-        let decoded = decode_replay(&bytes[cur..], &std::collections::HashSet::new())
+        let decoded = decode_replay(&bytes[cur..], &std::collections::HashSet::new(), None)
             .expect("decode must succeed");
         let total_samples: usize = decoded.positions.values().map(|v| v.len()).sum();
         assert!(total_samples > 0, "must extract position samples");
