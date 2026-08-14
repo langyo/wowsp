@@ -484,6 +484,12 @@
   &__postbattle-global-note {
     color: rgb(var(--color-text) / 0.5);
     font-size: var(--text-2xs);
+
+    &--loading {
+      display: flex;
+      justify-content: center;
+      padding: 0.5rem 0;
+    }
   }
   &__postbattle-global-grid {
     display: flex;
