@@ -17,6 +17,7 @@ import {
   shipOfflineEntry,
   loadGlbModel,
   loadMapBounds,
+  loadSilhouettes,
   type MapBounds,
   type ShipModelSpec,
 } from "./modelLoader";
@@ -565,10 +566,9 @@ export default defineComponent({
      *  ref so the selfCard re-renders once the async fetch resolves (a plain
      *  object would populate silently and never update the card). */
     const silhouettes = ref<Record<string, { path: string }>>({});
-    void fetch("/models/silhouettes.json")
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((j) => Object.assign(silhouettes.value, j as Record<string, { path: string }>))
-      .catch(() => { /* card falls back to the class silhouette */ });
+    void loadSilhouettes().then((j) =>
+      Object.assign(silhouettes.value, j),
+    );
 
     /** Recorder ship health plaque (shared HoloShipCard, bottom-left). */
     const selfCard = computed<HoloShipCardData | null>(() => {
