@@ -83,6 +83,7 @@
   },
   "tier": "等级",
   "damageTaken": "承伤",
+  "hpRemaining": "剩余血量",
   "noDamageData": "造成伤害与勋章需完整结算数据，此录像仅能推断本舰的伤害与击沉。",
   "origview": {
     "on": "原视角",
