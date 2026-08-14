@@ -33,6 +33,8 @@
     overflow: hidden;
     padding: 0;
     background: none;
+    /* The plate art is flat; drop the metallic ring shadow entirely. */
+    box-shadow: none;
     /* Plate art is not circular; its alpha (or the mask below) defines the
        shape, so the badge must not force a circular clip. */
     border-radius: 0;
