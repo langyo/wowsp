@@ -507,6 +507,8 @@ export default defineComponent({
     const squadronCreates = ref<SquadronCreate[]>([]);
     const squadronPlanes = ref<SquadronPlane[]>([]);
     const showResults = ref(false);
+    /** True while the packet stream is decoding (post-battle results pending). */
+    const resultsLoading = ref(false);
     const trajectoryError = ref<string | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
@@ -530,6 +532,7 @@ export default defineComponent({
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
+        resultsLoading.value = true;
         try {
           const stream = await api.readReplayPositions(path);
           trajectories.value = stream.trajectories;
@@ -552,6 +555,8 @@ export default defineComponent({
           duration.value = maxT;
         } catch (e) {
           trajectoryError.value = (e as Error).message;
+        } finally {
+          resultsLoading.value = false;
         }
       },
     );
@@ -695,7 +700,11 @@ export default defineComponent({
                     {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
                   </span>
                 ) : null}
-                {battleResults.value ? (
+                {resultsLoading.value ? (
+                  <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
+                    {t("replay.results")}…
+                  </span>
+                ) : battleResults.value ? (
                   <button
                     class="replay-view__meta-item replay-view__pill replay-view__results"
                     onClick={() => (showResults.value = !showResults.value)}
