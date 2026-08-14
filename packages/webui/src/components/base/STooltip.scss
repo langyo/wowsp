@@ -1,0 +1,21 @@
+.stooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 8px));
+  max-width: 280px;
+
+  &__content {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-surface) / 95%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    color: rgb(var(--color-text));
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+    white-space: normal;
+    word-break: break-word;
+  }
+}

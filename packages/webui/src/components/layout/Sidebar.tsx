@@ -103,14 +103,14 @@ export default defineComponent({
             {running.value ? (
               <div class="sidebar__game-detail">
                 {clientLabel.value ? (
-                  <span class="sidebar__game-client" title={proc.value.exePath ?? undefined}>
+                  <span class="sidebar__game-client" v-tooltip={proc.value.exePath ?? undefined}>
                     {clientLabel.value}
                   </span>
                 ) : null}
                 {proc.value.pid != null ? (
                   <span
                     class="sidebar__game-pid"
-                    title={t("common.copied")}
+                    v-tooltip={t("common.clickToCopy")}
                     onClick={(e: MouseEvent) => {
                       e.stopPropagation();
                       copyPid();
@@ -128,7 +128,7 @@ export default defineComponent({
               <span class="sidebar__account-name">{accountLabel.value}</span>
             </div>
             {/* Settings as an icon button in the bottom-left */}
-            <RouterLink to="/settings" class="sidebar__settings-btn" activeClass="is-active" title={t("nav.settings")}>
+            <RouterLink to="/settings" class="sidebar__settings-btn" activeClass="is-active" v-tooltip={t("nav.settings")}>
               <Settings size={18} />
             </RouterLink>
           </div>
