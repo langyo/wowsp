@@ -8,9 +8,28 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import batch_bake
 
 MISSING = [
-    "PWSB017_Chios",
-    "PVSD016_Cervantes",
-    "PVSC106_Almirante_Cochrane",
+    # 15.7 Pan-America destroyers (new DD line) + cruisers missing from the pack.
+    "PVSD010_20_de_Julio",
+    "PVSD013_Almirante_Villar",
+    "PVSD014_Serrano",
+    "PVSD015_Antioquia",
+    "PVSD017_Marcilio_Dias",
+    "PVSD018_Cuauhtemoc",
+    "PVSD019_Nueva_Esparta",
+    "PVSD710_La_Pampa",
+    "PVSC101_Hercules",
+    "PVSC102_Almirante_Barroso",
+    "PVSC103_Vicente_Guerrero",
+    "PVSC104_Cordoba",
+    "PVSC105_La_Argentina",
+    "PVSC107_Coronel_Bolognesi",
+    "PVSC108_Ignacio_Allende",
+    "PVSC109_Santander",
+    "PVSC110_San_Martin",
+    "PVSC507_Nueve_de_Julio_1951",
+    "PVSC508_Almirante_Grau",
+    "PVSC708_Comandante_Aguirre",
+    "PVSC710_Almirante_Irizar",
 ]
 
 
