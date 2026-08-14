@@ -1270,6 +1270,71 @@ mod tests {
         }
     }
 
+    /// Diagnostic: for each ship EntityCreate, list every roster shipId found
+    /// in its state stream (offset -> id) to see whether 15.7 state streams
+    /// still carry the correct unique shipId when the descriptor shares one.
+    /// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
+    #[test]
+    fn dump_state_ship_ids() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            return;
+        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        let mut cur = 8;
+        let mut candidates: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for _ in 0..block_count {
+            let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+            cur += 4;
+            let block = &bytes[cur..cur + bl];
+            cur += bl;
+            if candidates.is_empty() {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(block) {
+                    if let Some(arr) = json.get("vehicles").and_then(|v| v.as_array()) {
+                        for v in arr {
+                            if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
+                                candidates.insert(id as u32);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("roster shipIds: {:?}", candidates);
+        let decrypted = decrypt_stream(&bytes[cur..]).expect("decrypt");
+        let inflated = inflate_zlib(&decrypted).expect("inflate");
+        let mut c = 0usize;
+        while c + 12 <= inflated.len() {
+            let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
+            let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
+            let payload_end = c + 12 + size;
+            if size > 200_000 || payload_end > inflated.len() {
+                break;
+            }
+            if ptype == PACKET_ENTITY_CREATE {
+                let payload = &inflated[c + 12..payload_end];
+                if payload.len() >= 38 {
+                    let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+                    let etype = i16::from_le_bytes(payload[4..6].try_into().unwrap());
+                    if etype == 2 {
+                        let state = &payload[38..];
+                        let mut hits = Vec::new();
+                        if state.len() >= 4 {
+                            for off in 0..=state.len() - 4 {
+                                let val = u32::from_le_bytes(state[off..off + 4].try_into().unwrap());
+                                if candidates.contains(&val) {
+                                    hits.push((off, val));
+                                }
+                            }
+                        }
+                        eprintln!("eid {eid}: state len {} hits {:?}", state.len(), hits);
+                    }
+                }
+            }
+            c = payload_end;
+        }
+    }
+
     /// Diagnostic: dump Position packet payload sizes from a real replay to
     /// determine if newer game builds include extra health/speed fields.
     /// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
