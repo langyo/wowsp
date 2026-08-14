@@ -72,17 +72,6 @@ def largest_component(mask: np.ndarray) -> np.ndarray:
     return out
 
 
-def gaussian_smooth(mask: np.ndarray, sigma: float) -> np.ndarray:
-    """Gaussian-blur a binary mask so the extracted contour is smooth instead
-    of a pixel-jaggy staircase. Separable 1-D convolution (no scipy needed)."""
-    size = int(sigma * 3) * 2 + 1
-    ks = np.arange(size) - size // 2
-    kernel = np.exp(-(ks**2) / (2 * sigma**2))
-    kernel /= kernel.sum()
-    rows = np.apply_along_axis(lambda r: np.convolve(r, kernel, mode="same"), 1, mask)
-    return np.apply_along_axis(lambda c: np.convolve(c, kernel, mode="same"), 0, rows)
-
-
 def trace_contour(mask: np.ndarray) -> np.ndarray | None:
     """Marching-squares outline (largest contour), points as (col, row)."""
     cs = plt.contour(mask.astype(np.float64), levels=[0.5])
@@ -153,9 +142,6 @@ def trace_png(png_bytes: bytes) -> str | None:
     a = np.array(img)
     mask = a[..., 3] > 128
     mask = largest_component(mask)
-    # Blur the mask before contouring so the outline is a smooth curve, not a
-    # pixel staircase (the game's silhouette is a clean vector shape).
-    mask = gaussian_smooth(mask.astype(np.float64), sigma=3.0)
     contour = trace_contour(mask)
     if contour is None or len(contour) < 16:
         return None
@@ -170,7 +156,7 @@ def trace_png(png_bytes: bytes) -> str | None:
         ((x - xmin) / (xmax - xmin) * 100.0, (y - ymin) / (ymax - ymin) * 36.0)
         for x, y in contour
     ]
-    pts = simplify_ring(pts, eps=0.35)
+    pts = simplify_ring(pts, eps=0.7)
     if len(pts) < 4:
         return None
 
