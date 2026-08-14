@@ -42,6 +42,8 @@ export const RPC = {
   is_overlay_mod_installed: "is_overlay_mod_installed",
   get_ranked_stats: "get_ranked_stats",
   ensure_model_pack: "ensure_model_pack",
+  get_network_config: "get_network_config",
+  set_network_config: "set_network_config",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

@@ -25,10 +25,7 @@ const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
 pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerStats, String> {
     let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
     let host = realm_host(&realm)?;
-    let client = reqwest::Client::builder()
-        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
-        .build()
-        .map_err(|e| format!("http client: {e}"))?;
+    let client = crate::commands::network::build_http_client()?;
 
     // 1. Resolve name → account_id via account/list.
     let list_url = format!(

@@ -20,5 +20,12 @@
   "periodNight": "Night",
   "about": "About",
   "updater": "Updates",
-  "wallpaper": "Background"
+  "wallpaper": "Background",
+  "network": "Network",
+  "networkHint": "Proxy used for all outbound requests (stats lookups, model pack, updates). System follows your OS proxy settings.",
+  "networkSystem": "System proxy",
+  "networkNone": "No proxy",
+  "networkManual": "Manual proxy",
+  "networkProxyPlaceholder": "http://127.0.0.1:7890",
+  "networkSave": "Save"
 }

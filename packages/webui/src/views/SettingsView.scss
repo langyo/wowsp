@@ -63,6 +63,43 @@
     font-size: var(--text-md);
   }
 
+  &__netmanual {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  &__netinput {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    outline: none;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:focus {
+      border-color: rgb(var(--color-primary) / 60%);
+    }
+  }
+
+  &__netsave {
+    padding: 0.5rem 1rem;
+    background: rgb(var(--color-primary));
+    border: none;
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-on-solid));
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: filter var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      filter: brightness(1.08);
+    }
+  }
+
   &__presets {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

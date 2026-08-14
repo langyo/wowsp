@@ -1,6 +1,11 @@
 export { api } from "./client";
 export type {
   GameInstall,
+  GameInstallKind,
+  GameProcessInfo,
+  DogTag,
+  NetworkConfig,
+  RankedSeasonStats,
   VehicleEntry,
   ReplayMeta,
   ReplayMetaLite,

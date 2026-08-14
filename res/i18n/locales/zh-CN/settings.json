@@ -20,5 +20,12 @@
   "periodNight": "夜晚",
   "about": "关于",
   "updater": "更新",
-  "wallpaper": "背景"
+  "wallpaper": "背景",
+  "network": "网络",
+  "networkHint": "所有外发请求（战绩查询、模型包下载、更新检查）使用的代理。系统代理跟随操作系统设置。",
+  "networkSystem": "系统代理",
+  "networkNone": "不使用代理",
+  "networkManual": "手动代理",
+  "networkProxyPlaceholder": "http://127.0.0.1:7890",
+  "networkSave": "保存"
 }

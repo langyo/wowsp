@@ -119,7 +119,7 @@ async fn download_and_extract(url: &str, dest: &PathBuf, client: &Client) -> Res
 #[tauri::command]
 pub async fn ensure_model_pack() -> Result<String, String> {
     let cache_dir = models_cache_dir()?;
-    let client = Client::new();
+    let client = crate::commands::network::build_http_client()?;
     let tags = ["res-latest", "res-latest-old-1", "res-latest-old-2"];
 
     // If the latest asset version already matches the cache, skip the download.
