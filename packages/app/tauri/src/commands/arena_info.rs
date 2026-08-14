@@ -76,6 +76,7 @@ fn read_arena_file(path: &PathBuf) -> Result<ArenaInfo, String> {
     Ok(ArenaInfo {
         match_group: meta.match_group,
         date_time: meta.date_time,
+        map_name: meta.map_name,
         vehicles: meta.vehicles,
         raw,
     })

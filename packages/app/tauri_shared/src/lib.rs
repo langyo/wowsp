@@ -140,6 +140,8 @@ pub struct ReplayMetaLite {
 pub struct ArenaInfo {
     pub match_group: Option<String>,
     pub date_time: Option<String>,
+    /// Client display name of the map, e.g. "spaces/40_Okinawa".
+    pub map_name: Option<String>,
     pub vehicles: Vec<VehicleEntry>,
     pub raw: serde_json::Value,
 }

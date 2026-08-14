@@ -76,6 +76,7 @@ export interface ReplayMetaLite {
 export interface ArenaInfo {
   matchGroup?: string | null;
   dateTime?: string | null;
+  mapName?: string | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
