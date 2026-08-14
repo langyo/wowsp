@@ -24,7 +24,10 @@
     "ranked_sprint": "排位冲刺战",
     "pve_event": "行动",
     "convoy": "护航战",
-    "asymmetric": "非对称作战",
+    "asymmetric": "非对称战斗",
+    "armsrace": "军备竞赛",
+    "operation": "行动",
+    "halloween": "万圣节",
     "sandbox": "沙盒",
     "_fallback": "对战"
   },

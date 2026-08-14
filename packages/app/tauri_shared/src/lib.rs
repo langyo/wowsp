@@ -87,6 +87,10 @@ pub struct ReplayMeta {
     pub map_id: Option<i64>,
     /// Client display name, e.g. `"15_NE_north"`.
     pub map_name: Option<String>,
+    /// Scenario name, e.g. "domination_3point" or "asymm_3point_coop".
+    pub scenario: Option<String>,
+    /// Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric).
+    pub event_type: Option<String>,
     /// Per-player roster.
     pub vehicles: Vec<VehicleEntry>,
     /// Raw JSON block preserved for the frontend to render arbitrary fields.
@@ -123,6 +127,10 @@ pub struct ReplayMetaLite {
     pub map_name: Option<String>,
     /// Numeric map id (the client JSON sends `mapId` as a number).
     pub map_id: Option<i64>,
+    /// Scenario name, e.g. "domination_3point" or "asymm_3point_coop".
+    pub scenario: Option<String>,
+    /// Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric).
+    pub event_type: Option<String>,
     /// The recording player's ship id — the roster entry with `relation == 0`.
     /// Used to render the per-replay holographic ship preview.
     pub own_ship_id: Option<i64>,

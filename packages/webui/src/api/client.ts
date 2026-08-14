@@ -47,6 +47,10 @@ export interface ReplayMeta {
   mapId?: number | null;
   /** Client display name, e.g. "15_NE_north". */
   mapName?: string | null;
+  /** Scenario name, e.g. "domination_3point", "asymm_3point_coop". */
+  scenario?: string | null;
+  /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
+  eventType?: string | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
@@ -64,6 +68,10 @@ export interface ReplayMetaLite {
   /** Client map display name, e.g. "15_NE_north". */
   mapName?: string | null;
   mapId?: number | null;
+  /** Scenario name, e.g. "domination_3point", "asymm_3point_coop". */
+  scenario?: string | null;
+  /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
+  eventType?: string | null;
   /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
   ownShipId?: number | null;
   /** Recorder's ship display name when resolvable, else null. */
