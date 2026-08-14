@@ -431,7 +431,8 @@ const PostBattleFallbackPanel = defineComponent({
     const { dataLanguage } = useLanguage();
     const accounts = useAccountStore();
     const router = useRouter();
-    /** AI/bot players (":Name:") have no WG account — skip the lookup jump. */
+    const toast = useToast();
+    /** AI/bot players (":Name:") have no WG account. */
     const AI_NAME = /^:.*:$/;
 
     /** Death time per shipId (same join the scorebar strip uses). */
@@ -450,15 +451,20 @@ const PostBattleFallbackPanel = defineComponent({
           (v.shipId != null
             ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
             : null) ?? v.shipName ?? "",
+        tier: v.shipId != null ? (shipOfflineEntry(v.shipId)?.tier ?? 0) : 0,
       })),
     );
-    // Self first, then survivors, then sunk; stable by name within each group.
+    // Sort order: survivors first, then ship class (carrier > BB > CA > DD >
+    // SS), then tier, then human before bot, then name case-sensitive.
     const sortRows = (
       a: (typeof rows.value)[number],
       b: (typeof rows.value)[number],
     ) =>
-      Number(a.vehicle.relation) - Number(b.vehicle.relation) ||
       Number(a.dead) - Number(b.dead) ||
+      shipClassRank(a.vehicle.shipId) - shipClassRank(b.vehicle.shipId) ||
+      b.tier - a.tier ||
+      Number(AI_NAME.test(a.vehicle.name)) -
+        Number(AI_NAME.test(b.vehicle.name)) ||
       a.vehicle.name.localeCompare(b.vehicle.name);
     const allies = computed(() =>
       rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
@@ -467,16 +473,51 @@ const PostBattleFallbackPanel = defineComponent({
       rows.value.filter((r) => r.vehicle.relation > 1).sort(sortRows),
     );
 
+    const selected = ref<null | (typeof rows.value)[number]>(null);
+    const detailOpen = ref(false);
+    const globalStats = ref<PlayerStats | null>(null);
+    const globalLoading = ref(false);
+    const globalError = ref(false);
+
+    async function loadGlobal(name: string) {
+      globalStats.value = null;
+      globalLoading.value = false;
+      globalError.value = false;
+      globalLoading.value = true;
+      const tid = toast.loading("加载 " + name + " 全局战绩…");
+      try {
+        globalStats.value = await api.lookupPlayerStats(name, accounts.activeRealm);
+        toast.dismiss(tid);
+      } catch {
+        toast.dismiss(tid);
+        globalError.value = true;
+      } finally {
+        globalLoading.value = false;
+      }
+    }
+
     function openPlayer(r: (typeof rows.value)[number]) {
-      if (AI_NAME.test(r.vehicle.name)) return;
+      selected.value = r;
+      detailOpen.value = true;
+      if (!AI_NAME.test(r.vehicle.name)) {
+        void loadGlobal(r.vehicle.name);
+      }
+    }
+
+    function jumpToLookup() {
+      const p = selected.value;
+      detailOpen.value = false;
       emit("close");
-      void router.push({
-        path: "/lookup",
-        query: { name: r.vehicle.name, realm: accounts.activeRealm },
-      });
+      if (p) {
+        void router.push({
+          path: "/lookup",
+          query: { name: p.vehicle.name, realm: accounts.activeRealm },
+        });
+      }
     }
 
     return () => {
+      const isBot = (r: (typeof rows.value)[number]) => AI_NAME.test(r.vehicle.name);
       const cell = (r: (typeof rows.value)[number]) => (
         <button
           class={[
@@ -484,7 +525,6 @@ const PostBattleFallbackPanel = defineComponent({
             r.dead ? "replay-view__postbattle-cell--dead" : "",
           ]}
           onClick={() => openPlayer(r)}
-          disabled={AI_NAME.test(r.vehicle.name)}
         >
           <span class="replay-view__postbattle-cell-ico">
             <BattleIcon
@@ -502,7 +542,12 @@ const PostBattleFallbackPanel = defineComponent({
             />
           </span>
           <span class="replay-view__postbattle-cell-main">
-            <span class="replay-view__postbattle-cell-name">{r.vehicle.name}</span>
+            <span class="replay-view__postbattle-cell-name">
+              {r.vehicle.name}
+              {isBot(r) ? (
+                <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+              ) : null}
+            </span>
             <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
           </span>
           <span class="replay-view__postbattle-cell-status">
@@ -510,6 +555,7 @@ const PostBattleFallbackPanel = defineComponent({
           </span>
         </button>
       );
+      const sel = selected.value;
       return (
         <div class="replay-view__postbattle">
           <div class="replay-view__postbattle-matrix">
@@ -526,6 +572,81 @@ const PostBattleFallbackPanel = defineComponent({
               {enemies.value.map(cell)}
             </div>
           </div>
+
+          {detailOpen.value && sel ? (
+            <div
+              class="replay-view__postbattle-modal"
+              onClick={() => (detailOpen.value = false)}
+            >
+              <div
+                class="replay-view__postbattle-modal-panel"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div class="replay-view__postbattle-modal-head">
+                  <span class="replay-view__postbattle-detail-head">
+                    <span class="replay-view__postbattle-detail-ico">
+                      <BattleIcon
+                        type={shipTypeOf(sel.vehicle.shipId)}
+                        variant={
+                          sel.dead
+                            ? "sunk"
+                            : sel.vehicle.relation <= 1
+                              ? "ally"
+                              : "enemy"
+                        }
+                        size={24}
+                      />
+                    </span>
+                    <span class="replay-view__postbattle-detail-name">
+                      {sel.vehicle.name}
+                      {isBot(sel) ? (
+                        <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                      ) : null}
+                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
+                    </span>
+                  </span>
+                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                </div>
+                <div class="replay-view__postbattle-detail-body">
+                  <div class="replay-view__postbattle-detail-damage">
+                    <span class="replay-view__postbattle-detail-damage-num">
+                      {sel.dead ? t("replay.legend.dead") : t("replay.legend.ally")}
+                    </span>
+                    <span class="replay-view__postbattle-detail-damage-label">
+                      {shipTypeLabel(sel.vehicle.shipId)}
+                      {sel.tier ? " · " + t("replay.tier") + " " + sel.tier : ""}
+                    </span>
+                  </div>
+                </div>
+                {isBot(sel) ? (
+                  <div class="replay-view__postbattle-global">
+                    <span class="replay-view__postbattle-global-note">
+                      {t("replay.botNote")}
+                    </span>
+                  </div>
+                ) : (
+                  <div class="replay-view__postbattle-global">
+                    {globalLoading.value ? (
+                      <span class="replay-view__postbattle-global-note">
+                        正在加载全局战绩…
+                      </span>
+                    ) : globalStats.value ? (
+                      <StatsCard stats={globalStats.value} />
+                    ) : globalError.value ? (
+                      <span class="replay-view__postbattle-global-note">
+                        无法获取全局战绩
+                      </span>
+                    ) : null}
+                  </div>
+                )}
+                {!isBot(sel) ? (
+                  <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
+                    查看完整战绩 →
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       );
     };
@@ -536,6 +657,26 @@ const PostBattleFallbackPanel = defineComponent({
  *  outside the encyclopedia store). */
 function shipTypeOf(shipId: number): string {
   return shipOfflineEntry(shipId)?.type ?? "";
+}
+
+/** Sort weight for a ship class: carrier > battleship > cruiser > destroyer
+ *  > submarine, then everything else. */
+function shipClassRank(shipId: number): number {
+  const t = (shipOfflineEntry(shipId)?.type ?? "").toLowerCase();
+  if (t.includes("aircarrier") || t.includes("aircar")) return 0;
+  if (t.includes("battleship")) return 1;
+  if (t.includes("cruiser")) return 2;
+  if (t.includes("destroyer")) return 3;
+  if (t.includes("submarine")) return 4;
+  return 5;
+}
+
+/** Localized ship-class label for the fallback detail (e.g. "驱逐舰"). */
+function shipTypeLabel(shipId: number): string {
+  const raw = shipOfflineEntry(shipId)?.type ?? "";
+  const key = "replay.classes." + raw.toLowerCase();
+  const lbl = t(key);
+  return lbl === key ? raw : lbl;
 }
 
 /**
