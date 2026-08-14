@@ -24,6 +24,12 @@ export const TEAM_COLOR: Record<TeamRole, number> = {
   enemy: 0xcc3333, // red
 };
 
+/** {baseColor, fresnelColor} pair consumed by the holographic shader. */
+export interface HoloColorPair {
+  baseColor: number;
+  fresnelColor: number;
+}
+
 /** Per-role holographic tint pairs. */
 const HOLO_PAIRS: Record<TeamRole, HoloColorPair> = {
   self: { baseColor: 0x555555, fresnelColor: 0xffffff },

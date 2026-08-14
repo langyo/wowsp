@@ -78,7 +78,7 @@ export default defineComponent({
               }}
             </UiMenu>
             <RouterLink to="/download" custom>
-              {({ navigate }) => (
+              {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
                 <UiButton size="sm" class="site-nav__cta" onClick={navigate}>
                   <Download size={14} />
                   {t("nav.download")}

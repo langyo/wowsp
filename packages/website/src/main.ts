@@ -11,7 +11,7 @@ const modules = import.meta.glob("./messages/*.ts", { eager: true, import: "defa
   Record<string, unknown>
 >;
 
-const messages: Record<string, Record<string, unknown>> = {};
+const messages: Record<string, Record<string, any>> = {};
 for (const code of SUPPORTED_LOCALES) {
   messages[code] = modules[`./messages/${code}.ts`] ?? {};
 }
@@ -33,6 +33,6 @@ const i18n = createI18n({
   messages,
 });
 
-document.documentElement.lang = i18n.global.locale.value;
+document.documentElement.lang = (i18n.global.locale as unknown as { value: string }).value;
 
 createApp(App).use(router).use(i18n).mount("#app");

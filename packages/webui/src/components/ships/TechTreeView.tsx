@@ -101,6 +101,7 @@ export default defineComponent({
               archetype: i === branch.ships.length - 1 ? archetypeKey(node.archetype) : null,
               parentId: i > startIdx ? branch.ships[i - 1] : null,
               forkFromId: isFirstInCol ? forkFrom : null,
+              forkArchetypes: [],
             });
           }
         });

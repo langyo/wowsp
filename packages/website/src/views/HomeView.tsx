@@ -71,7 +71,7 @@ export default defineComponent({
                   {t("hero.download")}
                 </UiButton>
                 <RouterLink to="/mods" custom>
-                  {({ navigate }) => (
+                  {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
                     <UiButton size="lg" variant="secondary" onClick={navigate}>
                       {t("hero.mods")}
                     </UiButton>
@@ -190,7 +190,7 @@ export default defineComponent({
             </Reveal>
             <Reveal delay={220}>
               <RouterLink to="/mods" custom>
-                {({ navigate }) => (
+                {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
                   <UiButton variant="text" onClick={navigate}>
                     {t("showcase.mods.link")}
                     <ChevronRight size={15} />

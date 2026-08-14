@@ -5,6 +5,8 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  Teleport,
+  Transition,
   watch,
   type PropType,
 } from "vue";

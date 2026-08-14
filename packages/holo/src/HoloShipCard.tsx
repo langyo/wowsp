@@ -27,18 +27,21 @@ export interface HoloShipCardData {
   dead?: boolean;
 }
 
-/** Hull silhouettes per class, bow pointing RIGHT. Paths are 0..100 × 0..36. */
+/** Hull silhouettes per class, bow pointing RIGHT. Paths are 0..100 × 0..36.
+ *  Solid hulls with visible freeboard and superstructure so the fallback
+ *  plaque still reads as a ship (the old art was a near-zero-height sliver
+ *  that rendered as a flat line). */
 const SILHOUETTES: Record<string, string> = {
   Battleship:
-    "M2 30 L8 26 L14 24 L22 23 L30 22 L46 20 L58 19 L66 16 L78 12 L84 10 L98 8 L98 6 L90 10 L80 13 L70 15 L62 17 L52 18 L40 20 L30 21 L22 23 L16 26 L10 29 Z",
+    "M2 30 L20 31 L96 31 L98 30 L98 15 L93 12 L86 14 L84 12 L84 8 L78 8 L78 13 L72 14 L70 13 L70 5 L66 5 L66 14 L60 15 L58 14 L58 4 L48 4 L48 15 L42 15 L40 15 L40 7 L34 7 L34 15 L26 16 L24 15 L24 11 L18 11 L18 16 L10 19 L4 23 Z",
   Cruiser:
-    "M2 28 L10 25 L18 23 L28 22 L40 21 L52 19 L64 16 L76 12 L86 9 L98 7 L98 5 L88 9 L78 12 L66 16 L54 19 L42 21 L30 22 L20 24 L12 27 Z",
+    "M2 29 L94 30 L98 28 L98 17 L93 13 L87 15 L85 14 L85 7 L79 7 L79 15 L73 16 L71 15 L71 5 L62 5 L62 16 L56 16 L54 16 L54 9 L48 9 L48 16 L36 17 L33 16 L33 11 L27 11 L27 17 L16 18 L8 21 L3 24 Z",
   Destroyer:
-    "M2 24 L12 21 L24 19 L38 17 L52 14 L66 11 L78 9 L90 7 L98 5 L98 4 L88 7 L76 9 L64 11 L50 14 L36 17 L22 19 L12 22 Z",
+    "M2 27 L94 28 L98 26 L98 19 L93 16 L88 18 L86 17 L86 11 L80 11 L80 17 L74 17 L74 13 L68 13 L68 17 L48 18 L42 17 L42 13 L36 13 L36 18 L18 20 L8 22 L3 24 Z",
   AirCarrier:
-    "M4 32 L14 30 L26 28 L38 24 L52 20 L64 14 L76 11 L88 9 L98 7 L98 5 L86 9 L74 12 L62 16 L50 20 L38 24 L26 28 L14 31 Z",
+    "M2 30 L90 30 L98 28 L98 19 L92 16 L80 17 L74 16 L74 5 L64 5 L64 17 L48 17 L26 18 L8 20 L2 22 Z",
   Submarine:
-    "M2 20 L14 16 L28 13 L42 11 L56 10 L70 10 L82 12 L94 15 L98 16 L98 14 L82 11 L70 9 L56 8 L42 9 L28 11 L14 15 Z",
+    "M2 22 L40 24 L88 23 L98 18 L98 15 L92 11 L78 12 L62 12 L62 5 L54 5 L54 13 L40 14 L12 17 L2 19 Z",
 };
 
 function silhouetteOf(type?: string): string {

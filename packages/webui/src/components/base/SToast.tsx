@@ -1,4 +1,4 @@
-import { defineComponent } from "vue";
+import { defineComponent, Teleport, TransitionGroup } from "vue";
 import { CheckCircle, XCircle, AlertTriangle, Info, Loader, X, Copy } from "lucide-vue-next";
 
 import { useToast, type ToastType } from "@/composables/useToast";
@@ -31,7 +31,11 @@ export default defineComponent({
 
     return () => (
       <Teleport to="body">
-        <TransitionGroup name="s-toast" tag="div" class="s-toast-container">
+        <TransitionGroup
+          name="s-toast"
+          tag="div"
+          {...({ class: "s-toast-container" } as Record<string, string>)}
+        >
           {toasts.map((toast) => {
             const Icon = ICONS[toast.type];
             const actionable = toast.type === "error" || toast.type === "warning";

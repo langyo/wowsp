@@ -61,7 +61,7 @@ export default defineComponent({
               <button
                 key={c.value}
                 class="s-search__cand"
-                onMouseDown={(e) => {
+                onMousedown={(e: MouseEvent) => {
                   // mousedown before blur so the click lands
                   e.preventDefault();
                   pick(c.value);

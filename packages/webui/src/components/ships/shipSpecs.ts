@@ -64,7 +64,7 @@ function shellRows(shells: Record<string, any> | undefined): SpecRow[] {
   if (!shells || typeof shells !== "object") return [];
   const rows: SpecRow[] = [];
   // Order: HE, SAP, AP, Cruise (readable priority for players).
-  const order: Array<[string, string, string]> = [
+  const order: Array<[string, string, string | undefined]> = [
     ["HE", "heShell", "heShellHint"],
     ["CS", "sapShell", "sapShellHint"],
     ["AP", "apShell", "apShellHint"],

@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onMounted, ref, watch, type CSSProperties } from "vue";
 import { RefreshCw } from "lucide-vue-next";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -30,7 +30,9 @@ import {
   type PostBattleRibbon,
 } from "@/features/replay/postBattle";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
-import ribbonNames from "@/data/ribbon_names.json";
+import ribbonNamesRaw from "@/data/ribbon_names.json";
+
+const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
 import BattleIcon from "@/components/base/BattleIcon";
 import SSpinner from "@/components/base/SSpinner";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -184,7 +186,7 @@ const PostBattlePanel = defineComponent({
     });
     const detailOpen = ref(false);
     const rawOpen = ref(false);
-    const selected = ref<ReturnType<typeof rows.value>[number] | null>(null);
+    const selected = ref<(typeof rows.value)[number] | null>(null);
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
     const globalError = ref(false);
@@ -193,7 +195,7 @@ const PostBattlePanel = defineComponent({
     const shipDistList = ref<DistDatum[]>([]);
 
     /** Load the player's per-ship stats and aggregate tier/type distribution. */
-    async function loadShipDist(p: ReturnType<typeof rows.value>[number]) {
+    async function loadShipDist(p: (typeof rows.value)[number]) {
       shipDistList.value = [];
       if (!p.realm) return;
       try {
@@ -211,7 +213,7 @@ const PostBattlePanel = defineComponent({
      *  loading; the lookup API resolves by nickname + realm). Failures are
      *  silent — AI names and rate-limited lookups are common, and an error
      *  toast for every bot would be noise. */
-    async function loadGlobal(p: ReturnType<typeof rows.value>[number]) {
+    async function loadGlobal(p: (typeof rows.value)[number]) {
       globalStats.value = null;
       globalLoading.value = false;
       if (!p.realm || AI_NAME.test(p.name)) return;
@@ -228,7 +230,7 @@ const PostBattlePanel = defineComponent({
       }
     }
 
-    function openDetail(p: ReturnType<typeof rows.value>[number]) {
+    function openDetail(p: (typeof rows.value)[number]) {
       selected.value = p;
       detailOpen.value = true;
       void loadGlobal(p);
@@ -250,9 +252,9 @@ const PostBattlePanel = defineComponent({
       const pb = parsed.value;
       if (!pb) return <pre>{props.raw}</pre>;
       const st = selfTeam.value;
-      const isEnemy = (p: ReturnType<typeof rows.value>[number]) =>
+      const isEnemy = (p: (typeof rows.value)[number]) =>
         p.team !== null && (st != null ? p.team !== st : p.team === 1);
-      const cell = (p: ReturnType<typeof allies.value>[number]) => (
+      const cell = (p: (typeof allies.value)[number]) => (
         <button
           class={[
             "replay-view__postbattle-cell",
@@ -1137,7 +1139,7 @@ export default defineComponent({
                           {r.ownShipName ?? t("replay.ownShip")}
                         </span>
                         {r.matchGroup ? (
-                          <span class="replay-card__pill" style={modeColor(r.matchGroup, r.scenario, r.eventType)}>
+                          <span class="replay-card__pill" style={modeColor(r.matchGroup, r.scenario, r.eventType) as CSSProperties}>
                             {modeLabel(r.matchGroup, r.scenario, r.eventType)}
                           </span>
                         ) : null}
@@ -1183,11 +1185,13 @@ export default defineComponent({
                 {parser.current.value.matchGroup ? (
                   <span
                     class="replay-view__meta-item replay-view__pill"
-                    style={modeColor(
-                      parser.current.value.matchGroup,
-                      parser.current.value.scenario,
-                      parser.current.value.eventType,
-                    )}
+                    style={
+                      modeColor(
+                        parser.current.value.matchGroup,
+                        parser.current.value.scenario,
+                        parser.current.value.eventType,
+                      ) as CSSProperties
+                    }
                   >
                     {modeLabel(
                       parser.current.value.matchGroup,
@@ -1273,9 +1277,9 @@ export default defineComponent({
                       explosions={explosions.value}
                       torpedoes={torpedoes.value}
                       weaponLocks={weaponLocks.value}
-                      battleResults={battleResults.value}
-                      replayVersion={replayVersion.value}
-                      mapNamePkt={mapNamePkt.value}
+                      battleResults={battleResults.value ?? undefined}
+                      replayVersion={replayVersion.value ?? undefined}
+                      mapNamePkt={mapNamePkt.value ?? undefined}
                       cameraFrames={cameraFrames.value}
                       netStats={netStats.value}
                       leavesMap={leavesMap.value}
@@ -1283,7 +1287,7 @@ export default defineComponent({
                       squadronCreates={squadronCreates.value}
                       squadronPlanes={squadronPlanes.value}
                       vehicles={parser.current.value.vehicles}
-                      encyclopedia={encyclopedia.byId.value}
+                      encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}
                       matchGroup={parser.current.value.matchGroup ?? ""}
                       mapName={parser.current.value.mapName ?? ""}

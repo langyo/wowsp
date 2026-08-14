@@ -116,7 +116,7 @@ export default defineComponent({
               placeholder={t("account.nickname")}
               value={searchName.value}
               onInput={(e) => (searchName.value = (e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => {
+              onKeydown={(e: KeyboardEvent) => {
                 if (e.key === "Enter") void doSearch();
               }}
             />

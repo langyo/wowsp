@@ -100,7 +100,7 @@ function loadUiLocale(): Locale {
   if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) {
     return saved as Locale;
   }
-  return i18n.global.locale.value as Locale;
+  return (i18n.global.locale as unknown as { value: Locale }).value as Locale;
 }
 
 function loadDataLanguage(): string {
@@ -108,7 +108,7 @@ function loadDataLanguage(): string {
   if (saved && isLangLoc(saved)) return saved;
 
   // First startup: determine from UI locale + realm, then persist.
-  const ui = i18n.global.locale.value as Locale;
+  const ui = (i18n.global.locale as unknown as { value: Locale }).value as Locale;
   const realm = localStorage.getItem("wowsp-active-realm") || "asia";
   const determined = determineDataLanguage(ui, realm);
   localStorage.setItem(DATA_KEY, determined);

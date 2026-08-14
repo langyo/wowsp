@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref, Transition } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
@@ -239,7 +239,7 @@ export default defineComponent({
               placeholder={t("account.nickname")}
               value={nickname.value}
               onInput={(e) => (nickname.value = (e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => {
+              onKeydown={(e: KeyboardEvent) => {
                 if (e.key === "Enter") void search();
               }}
             />
