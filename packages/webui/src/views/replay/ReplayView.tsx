@@ -426,8 +426,14 @@ const PostBattleFallbackPanel = defineComponent({
     vehicles: { type: Array as () => VehicleEntry[], required: true },
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
   },
-  setup(props) {
+  emits: ["close"],
+  setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
+    const accounts = useAccountStore();
+    const router = useRouter();
+    /** AI/bot players (":Name:") have no WG account — skip the lookup jump. */
+    const AI_NAME = /^:.*:$/;
+
     /** Death time per shipId (same join the scorebar strip uses). */
     const deathByShipId = computed(() => {
       const m = new Map<number, number | null>();
@@ -446,16 +452,39 @@ const PostBattleFallbackPanel = defineComponent({
             : null) ?? v.shipName ?? "",
       })),
     );
-    const allies = computed(() => rows.value.filter((r) => r.vehicle.relation <= 1));
-    const enemies = computed(() => rows.value.filter((r) => r.vehicle.relation > 1));
+    // Self first, then survivors, then sunk; stable by name within each group.
+    const sortRows = (
+      a: (typeof rows.value)[number],
+      b: (typeof rows.value)[number],
+    ) =>
+      Number(a.vehicle.relation) - Number(b.vehicle.relation) ||
+      Number(a.dead) - Number(b.dead) ||
+      a.vehicle.name.localeCompare(b.vehicle.name);
+    const allies = computed(() =>
+      rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
+    );
+    const enemies = computed(() =>
+      rows.value.filter((r) => r.vehicle.relation > 1).sort(sortRows),
+    );
+
+    function openPlayer(r: (typeof rows.value)[number]) {
+      if (AI_NAME.test(r.vehicle.name)) return;
+      emit("close");
+      void router.push({
+        path: "/lookup",
+        query: { name: r.vehicle.name, realm: accounts.activeRealm },
+      });
+    }
+
     return () => {
       const cell = (r: (typeof rows.value)[number]) => (
-        <div
+        <button
           class={[
             "replay-view__postbattle-cell",
-            "replay-view__postbattle-cell--fallback",
             r.dead ? "replay-view__postbattle-cell--dead" : "",
           ]}
+          onClick={() => openPlayer(r)}
+          disabled={AI_NAME.test(r.vehicle.name)}
         >
           <span class="replay-view__postbattle-cell-ico">
             <BattleIcon
@@ -479,13 +508,10 @@ const PostBattleFallbackPanel = defineComponent({
           <span class="replay-view__postbattle-cell-status">
             {r.dead ? t("replay.legend.dead") : ""}
           </span>
-        </div>
+        </button>
       );
       return (
         <div class="replay-view__postbattle">
-          <div class="replay-view__postbattle-incomplete">
-            {t("replay.resultsIncomplete")}
-          </div>
           <div class="replay-view__postbattle-matrix">
             <div class="replay-view__postbattle-col">
               <div class="replay-view__postbattle-col-title">
@@ -841,6 +867,7 @@ export default defineComponent({
                         <PostBattleFallbackPanel
                           vehicles={parser.current.value.vehicles}
                           trajectories={trajectories.value}
+                          onClose={() => (showResults.value = false)}
                         />
                       )}
                     </div>
