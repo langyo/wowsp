@@ -361,8 +361,10 @@ const PostBattlePanel = defineComponent({
                       ) : null}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
-                      伤害 · 击沉 {sel.frags}
-                      {sel.hpRatio != null ? ` · 残血 ${Math.round(sel.hpRatio)}%` : ""}
+                      承伤 {sel.damageTaken.toLocaleString()}
+                      {sel.hpRatio != null
+                        ? ` · 剩余血量 ${Math.round(sel.hpRatio)}%`
+                        : ""}
                     </span>
                   </div>
                   <div class="replay-view__postbattle-detail-ribbons">
@@ -663,9 +665,9 @@ const PostBattleFallbackPanel = defineComponent({
                       {sel.damage.toLocaleString()}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
-                      伤害 · 击沉 {sel.frags}
+                      承伤 {sel.damageTaken.toLocaleString()}
                       {sel.hpRatio != null
-                        ? " · 残血 " + Math.round(sel.hpRatio * 100) + "%"
+                        ? " · 剩余血量 " + Math.round(sel.hpRatio) + "%"
                         : ""}
                     </span>
                   </div>
@@ -768,13 +770,13 @@ function damageTaken(hp: HpSample[] | undefined | null): number {
   return dmg;
 }
 
-/** Remaining-HP ratio (0..1) from the last HP sample. */
+/** Remaining-HP percent (0..100) from the last HP sample. */
 function hpRatioOf(hp: HpSample[] | undefined | null): number | null {
   if (!hp || hp.length === 0) return null;
   let max = 0;
   for (const s of hp) if (s.value > max) max = s.value;
   if (max <= 0) return null;
-  return hp[hp.length - 1].value / max;
+  return (hp[hp.length - 1].value / max) * 100;
 }
 
 function angleDiff(a: number, b: number): number {

@@ -165,19 +165,19 @@
     max-height: 82vh;
     display: flex;
     flex-direction: column;
-    background: #141922;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-text) / 0.14);
     border-radius: 10px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
     overflow: hidden;
-    color: #fff;
+    color: rgb(var(--color-text));
   }
   &__modal-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.6rem 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgb(var(--color-text) / 0.1);
     font-size: var(--text-sm);
   }
   &__modal-title {
@@ -195,10 +195,10 @@
   &__modal-close {
     border: none;
     background: transparent;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(var(--color-text) / 0.7);
     cursor: pointer;
     font-size: var(--text-sm);
-    &:hover { color: #fff; }
+    &:hover { color: rgb(var(--color-text)); }
   }
   &__modal-body {
     overflow-y: auto;
@@ -209,7 +209,7 @@
   &__postbattle-cell-status {
     flex: 0 0 auto;
     font-size: var(--text-2xs);
-    color: rgba(255, 255, 255, 0.45);
+    color: rgb(var(--color-text) / 0.45);
   }
   &__postbattle-bot {
     display: inline-flex;
@@ -219,8 +219,8 @@
     margin-left: 6px;
     padding: 0 5px;
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.14);
-    color: rgba(255, 255, 255, 0.62);
+    background: rgb(var(--color-text) / 0.14);
+    color: rgb(var(--color-text) / 0.62);
     font-size: 0.72em;
     line-height: 1;
     font-style: normal;
@@ -242,11 +242,11 @@
     min-height: 0;
   }
   &__postbattle-col-title {
-    color: rgba(255, 255, 255, 0.55);
+    color: rgb(var(--color-text) / 0.55);
     font-size: var(--text-2xs);
     letter-spacing: 0.08em;
     padding: 0 2px 2px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgb(var(--color-text) / 0.1);
   }
   &__postbattle-cell {
     display: flex;
@@ -256,20 +256,20 @@
     padding: 4px 6px;
     border: none;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.04);
-    color: #fff;
+    background: rgb(var(--color-text) / 0.04);
+    color: rgb(var(--color-text));
     text-align: left;
     cursor: pointer;
     font-size: var(--text-2xs);
     transition: background 0.15s;
-    &:hover { background: rgba(255, 255, 255, 0.1); }
+    &:hover { background: rgb(var(--color-text) / 0.1); }
     &:disabled {
       cursor: default;
-      &:hover { background: rgba(255, 255, 255, 0.04); }
+      &:hover { background: rgb(var(--color-text) / 0.04); }
     }
     &--dead { opacity: 0.55; }
     &--self {
-      outline: 1px solid rgba(255, 255, 255, 0.7);
+      outline: 1px solid rgb(var(--color-text) / 0.7);
       outline-offset: -1px;
     }
   }
@@ -289,7 +289,7 @@
     white-space: nowrap;
   }
   &__postbattle-cell-sub {
-    color: rgba(255, 255, 255, 0.45);
+    color: rgb(var(--color-text) / 0.45);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -304,8 +304,8 @@
     margin-top: 10px;
     padding: 10px 12px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(var(--color-text) / 0.05);
+    border: 1px solid rgb(var(--color-text) / 0.12);
   }
   &__postbattle-detail-close {
     position: absolute;
@@ -313,7 +313,7 @@
     right: 8px;
     border: none;
     background: none;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgb(var(--color-text) / 0.6);
     cursor: pointer;
     font-size: var(--text-sm);
   }
@@ -330,7 +330,7 @@
   }
   &__postbattle-detail-ship {
     font-style: normal;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgb(var(--color-text) / 0.5);
     margin-left: 8px;
     font-size: var(--text-2xs);
   }
@@ -354,11 +354,11 @@
     font-family: var(--font-mono);
     font-size: 26px;
     font-weight: 700;
-    color: #fff;
+    color: rgb(var(--color-text));
     line-height: 1;
   }
   &__postbattle-detail-damage-label {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgb(var(--color-text) / 0.5);
     font-size: var(--text-2xs);
     margin-top: 2px;
   }
@@ -398,14 +398,14 @@
     gap: 16px;
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgb(var(--color-text) / 0.1);
     font-size: var(--text-2xs);
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(var(--color-text) / 0.7);
     b { color: #ffd93d; font-family: var(--font-mono); margin-left: 4px; }
   }
   &__postbattle-raw {
     margin-top: 0.6rem;
-    summary { cursor: pointer; color: rgba(255, 255, 255, 0.5); }
+    summary { cursor: pointer; color: rgb(var(--color-text) / 0.5); }
     pre {
       margin-top: 4px;
       max-height: 220px;
@@ -421,11 +421,11 @@
     padding: 3px 10px;
     border: none;
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.7);
+    background: rgb(var(--color-text) / 0.08);
+    color: rgb(var(--color-text) / 0.7);
     font-size: var(--text-2xs);
     cursor: pointer;
-    &:hover { background: rgba(255, 255, 255, 0.14); }
+    &:hover { background: rgb(var(--color-text) / 0.14); }
   }
   /* Level-2 modal (raw payload / player detail) */
   &__postbattle-modal {
@@ -444,11 +444,11 @@
     display: flex;
     flex-direction: column;
     padding: 12px 14px;
-    background: #141922;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-text) / 0.14);
     border-radius: 10px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
-    color: #fff;
+    color: rgb(var(--color-text));
     overflow: hidden;
   }
   &__postbattle-modal-head {
@@ -460,7 +460,7 @@
     button {
       border: none;
       background: none;
-      color: rgba(255, 255, 255, 0.6);
+      color: rgb(var(--color-text) / 0.6);
       cursor: pointer;
       font-size: var(--text-sm);
     }
@@ -479,10 +479,10 @@
   &__postbattle-global {
     margin-top: 10px;
     padding-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgb(var(--color-text) / 0.1);
   }
   &__postbattle-global-note {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgb(var(--color-text) / 0.5);
     font-size: var(--text-2xs);
   }
   &__postbattle-global-grid {
@@ -490,8 +490,8 @@
     flex-wrap: wrap;
     gap: 6px 14px;
     font-size: var(--text-2xs);
-    color: rgba(255, 255, 255, 0.7);
-    b { color: #fff; font-family: var(--font-mono); margin-right: 3px; }
+    color: rgb(var(--color-text) / 0.7);
+    b { color: rgb(var(--color-text)); font-family: var(--font-mono); margin-right: 3px; }
   }
   &__postbattle-jump {
     margin-top: 10px;
@@ -508,10 +508,10 @@
   &__postbattle-dist {
     margin-top: 10px;
     padding-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgb(var(--color-text) / 0.1);
   }
   &__postbattle-dist-title {
-    color: rgba(255, 255, 255, 0.55);
+    color: rgb(var(--color-text) / 0.55);
     font-size: var(--text-2xs);
     margin-bottom: 5px;
   }
@@ -523,7 +523,7 @@
   }
   &__postbattle-dist-item {
     font-size: var(--text-2xs);
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(var(--color-text) / 0.7);
     b { color: #ffd93d; font-family: var(--font-mono); margin-right: 2px; }
   }
 
