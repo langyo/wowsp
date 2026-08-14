@@ -76,7 +76,7 @@
   "botNote": "AI player — no battle history",
   "tier": "Tier",
   "damageTaken": "Damage taken",
-  "noDamageData": "Damage dealt and ribbons need full battle results, which this replay lacks.",
+  "noDamageData": "Damage dealt and ribbons need full battle results; only your own ship's damage and frags can be inferred from this replay.",
   "origview": {
     "on": "Original view",
     "off": "Free view"

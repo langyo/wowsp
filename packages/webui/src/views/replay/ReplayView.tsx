@@ -20,7 +20,12 @@ import type {
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
-import { parsePostBattle, ribbonKeyOfIndex, isRibbonIndexVerified } from "@/features/replay/postBattle";
+import {
+  parsePostBattle,
+  ribbonKeyOfIndex,
+  isRibbonIndexVerified,
+  type PostBattleRibbon,
+} from "@/features/replay/postBattle";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNames from "@/data/ribbon_names.json";
 import BattleIcon from "@/components/base/BattleIcon";
@@ -425,6 +430,7 @@ const PostBattleFallbackPanel = defineComponent({
   props: {
     vehicles: { type: Array as () => VehicleEntry[], required: true },
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
+    explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
   },
   emits: ["close"],
   setup(props, { emit }) {
@@ -453,19 +459,39 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
+    /** Recorder's own inferred damage dealt / frags / hits. */
+    const selfStats = computed(() => {
+      const self = props.vehicles.find((v) => v.relation === 0);
+      return computeSelfStats(props.trajectories, props.explosions, self?.shipId);
+    });
     const rows = computed(() =>
       props.vehicles.map((v) => {
         const hp = v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined;
+        const isSelf = v.relation === 0;
+        const st = selfStats.value;
+        const frags = isSelf ? st.frags : 0;
+        const hits = isSelf ? st.hits : 0;
+        const ribbons: PostBattleRibbon[] = [];
+        if (isSelf) {
+          if (hits > 0) ribbons.push({ index: 28, value: hits });
+          if (frags > 0) ribbons.push({ index: 32, value: frags });
+        }
         return {
           vehicle: v,
-          dead: v.shipId != null && deathByShipId.value.get(v.shipId) != null,
+          alive: !(v.shipId != null && deathByShipId.value.get(v.shipId) != null),
           shipName:
             (v.shipId != null
               ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
               : null) ?? v.shipName ?? "",
           tier: v.shipId != null ? (shipOfflineEntry(v.shipId)?.tier ?? 0) : 0,
-          damageTaken: damageTaken(hp),
+          damage: isSelf ? st.damage : 0,
+          frags,
           hpRatio: hpRatioOf(hp),
+          damageTaken: damageTaken(hp),
+          ribbons,
+          killerName: null as string | null,
+          killerDamage: null as number | null,
+          isSelf,
         };
       }),
     );
@@ -475,7 +501,7 @@ const PostBattleFallbackPanel = defineComponent({
       a: (typeof rows.value)[number],
       b: (typeof rows.value)[number],
     ) =>
-      Number(a.dead) - Number(b.dead) ||
+      Number(!a.alive) - Number(!b.alive) ||
       shipClassRank(a.vehicle.shipId) - shipClassRank(b.vehicle.shipId) ||
       b.tier - a.tier ||
       Number(AI_NAME.test(a.vehicle.name)) -
@@ -537,7 +563,7 @@ const PostBattleFallbackPanel = defineComponent({
         <button
           class={[
             "replay-view__postbattle-cell",
-            r.dead ? "replay-view__postbattle-cell--dead" : "",
+            !r.alive ? "replay-view__postbattle-cell--dead" : "",
           ]}
           onClick={() => openPlayer(r)}
         >
@@ -545,7 +571,7 @@ const PostBattleFallbackPanel = defineComponent({
             <BattleIcon
               type={shipTypeOf(r.vehicle.shipId)}
               variant={
-                r.dead
+                !r.alive
                   ? "sunk"
                   : r.vehicle.relation === 0
                     ? "white"
@@ -566,7 +592,7 @@ const PostBattleFallbackPanel = defineComponent({
             <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
           </span>
           <span class="replay-view__postbattle-cell-status">
-            {r.dead ? t("replay.legend.dead") : ""}
+            {!r.alive ? t("replay.legend.dead") : ""}
           </span>
         </button>
       );
@@ -603,7 +629,7 @@ const PostBattleFallbackPanel = defineComponent({
                       <BattleIcon
                         type={shipTypeOf(sel.vehicle.shipId)}
                         variant={
-                          sel.dead
+                          !sel.alive
                             ? "sunk"
                             : sel.vehicle.relation <= 1
                               ? "ally"
@@ -625,24 +651,48 @@ const PostBattleFallbackPanel = defineComponent({
                 <div class="replay-view__postbattle-detail-body">
                   <div class="replay-view__postbattle-detail-damage">
                     <span class="replay-view__postbattle-detail-damage-num">
-                      {sel.damageTaken.toLocaleString()}
+                      {sel.damage.toLocaleString()}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
-                      {t("replay.damageTaken")}
+                      伤害 · 击沉 {sel.frags}
                       {sel.hpRatio != null
-                        ? " · " + Math.round(sel.hpRatio * 100) + "%"
+                        ? " · 残血 " + Math.round(sel.hpRatio * 100) + "%"
                         : ""}
-                      {" · "}
-                      {sel.dead ? t("replay.legend.dead") : t("replay.legend.ally")}
-                      {" · "}
-                      {shipTypeLabel(sel.vehicle.shipId)}
-                      {sel.tier ? " " + sel.tier : ""}
                     </span>
+                  </div>
+                  <div class="replay-view__postbattle-detail-ribbons">
+                    {sel.ribbons.map((x) => {
+                      const key = ribbonKeyOfIndex(x.index);
+                      if (!key) return null;
+                      const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
+                      const verified = isRibbonIndexVerified(x.index);
+                      return (
+                        <span
+                          key={x.index}
+                          class="replay-view__postbattle-detail-ribbon"
+                          title={name + " ×" + x.value + (verified ? "" : "（推测）")}
+                        >
+                          <img
+                            src={bundledRibbonUrl(key) ?? ""}
+                            width={40}
+                            height={15}
+                            alt=""
+                          />
+                          <em>{x.value}</em>
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
                 <div class="replay-view__postbattle-global">
                   <span class="replay-view__postbattle-global-note">
                     {t("replay.noDamageData")}
+                    {sel.damageTaken > 0
+                      ? " · " +
+                        t("replay.damageTaken") +
+                        " " +
+                        sel.damageTaken.toLocaleString()
+                      : ""}
                   </span>
                 </div>
                 {isBot(sel) ? (
@@ -698,14 +748,6 @@ function shipClassRank(shipId: number): number {
   return 5;
 }
 
-/** Localized ship-class label for the fallback detail (e.g. "驱逐舰"). */
-function shipTypeLabel(shipId: number): string {
-  const raw = shipOfflineEntry(shipId)?.type ?? "";
-  const key = "replay.classes." + raw.toLowerCase();
-  const lbl = t(key);
-  return lbl === key ? raw : lbl;
-}
-
 /** Total HP lost across a ship's HP timeline (damage taken). */
 function damageTaken(hp: HpSample[] | undefined | null): number {
   if (!hp || hp.length < 2) return 0;
@@ -724,6 +766,91 @@ function hpRatioOf(hp: HpSample[] | undefined | null): number | null {
   for (const s of hp) if (s.value > max) max = s.value;
   if (max <= 0) return null;
   return hp[hp.length - 1].value / max;
+}
+
+function angleDiff(a: number, b: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/** Position sample at time t (linear interpolation, mirrors HolographicMap). */
+function sampleAtTraj(
+  traj: EntityTrajectory,
+  t: number,
+): { x: number; z: number; yaw: number } | null {
+  const ss = traj.samples;
+  if (!ss || ss.length === 0) return null;
+  if (t <= ss[0].time) return ss[0];
+  if (t >= ss[ss.length - 1].time) return ss[ss.length - 1];
+  let lo = 0;
+  let hi = ss.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (ss[mid].time < t) lo = mid;
+    else hi = mid;
+  }
+  const a = ss[lo];
+  const b = ss[hi];
+  const f = (t - a.time) / (b.time - a.time || 1);
+  return {
+    x: a.x + (b.x - a.x) * f,
+    z: a.z + (b.z - a.z) * f,
+    yaw: a.yaw + angleDiff(a.yaw, b.yaw) * f,
+  };
+}
+
+/** HP at time t (last sample at or before t). */
+function hpAtTime(hp: HpSample[] | undefined, t: number): number | null {
+  if (!hp || hp.length === 0) return null;
+  let last = hp[0].value;
+  for (const s of hp) {
+    if (s.time > t) break;
+    last = s.value;
+  }
+  return last;
+}
+
+/** Recorder's own damage dealt / frags / hits, inferred from the explosion
+ *  stream (the same heuristic HolographicMap uses for its self-stats bar). */
+function computeSelfStats(
+  trajectories: EntityTrajectory[],
+  explosions: ExplosionEvent[],
+  selfShipId: number | undefined,
+): { damage: number; frags: number; hits: number } {
+  const out = { damage: 0, frags: 0, hits: 0 };
+  if (selfShipId == null) return out;
+  const selfTraj = trajectories.find(
+    (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
+  );
+  if (!selfTraj || selfTraj.samples.length === 0) return out;
+  for (const e of explosions) {
+    const s = sampleAtTraj(selfTraj, e.time);
+    if (!s) continue;
+    const dist = Math.hypot(s.x - e.x, s.z - e.z);
+    if (dist < 300 || dist > 15000) continue;
+    const aim = Math.atan2(e.x - s.x, e.z - s.z);
+    let dAim = Math.abs(aim - s.yaw);
+    if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
+    if (dAim > 0.35) continue;
+    out.hits++;
+    for (const tr of trajectories) {
+      if (tr.kind?.entityType !== 2 || tr.kind?.shipId === selfShipId) continue;
+      const at = sampleAtTraj(tr, e.time);
+      if (!at) continue;
+      if (Math.hypot(at.x - e.x, at.z - e.z) > 500) continue;
+      const hpBefore = hpAtTime(tr.hpSamples, e.time - 0.4);
+      const hpAfter = hpAtTime(tr.hpSamples, e.time + 0.6);
+      if (hpBefore != null && hpAfter != null && hpBefore - hpAfter > 50) {
+        out.damage += hpBefore - hpAfter;
+      }
+      if (tr.deathTime != null && Math.abs(tr.deathTime - e.time) < 1.2) {
+        out.frags++;
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -1055,6 +1182,7 @@ export default defineComponent({
                         <PostBattleFallbackPanel
                           vehicles={parser.current.value.vehicles}
                           trajectories={trajectories.value}
+                          explosions={explosions.value}
                           onClose={() => (showResults.value = false)}
                         />
                       )}
