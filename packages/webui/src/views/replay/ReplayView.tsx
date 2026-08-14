@@ -15,6 +15,7 @@ import type {
   SquadronCreate,
   SquadronPlane,
   TorpedoLaunch,
+  VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
 import { t } from "@/i18n";
@@ -413,6 +414,98 @@ const PostBattlePanel = defineComponent({
   },
 });
 
+/**
+ * Fallback post-battle panel for replays whose BattleResults packet is missing
+ * (the replay ended before the server settlement was recorded). Shows the last
+ * recorded state — which roster ships were already sunk — instead of the final
+ * result, with a clear "incomplete" note.
+ */
+const PostBattleFallbackPanel = defineComponent({
+  name: "PostBattleFallbackPanel",
+  props: {
+    vehicles: { type: Array as () => VehicleEntry[], required: true },
+    trajectories: { type: Array as () => EntityTrajectory[], required: true },
+  },
+  setup(props) {
+    const { dataLanguage } = useLanguage();
+    /** Death time per shipId (same join the scorebar strip uses). */
+    const deathByShipId = computed(() => {
+      const m = new Map<number, number | null>();
+      for (const tr of props.trajectories) {
+        if (tr.kind?.shipId != null) m.set(tr.kind.shipId, tr.deathTime ?? null);
+      }
+      return m;
+    });
+    const rows = computed(() =>
+      props.vehicles.map((v) => ({
+        vehicle: v,
+        dead: v.shipId != null && deathByShipId.value.get(v.shipId) != null,
+        shipName:
+          (v.shipId != null
+            ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
+            : null) ?? v.shipName ?? "",
+      })),
+    );
+    const allies = computed(() => rows.value.filter((r) => r.vehicle.relation <= 1));
+    const enemies = computed(() => rows.value.filter((r) => r.vehicle.relation > 1));
+    return () => {
+      const cell = (r: (typeof rows.value)[number]) => (
+        <div
+          class={[
+            "replay-view__postbattle-cell",
+            "replay-view__postbattle-cell--fallback",
+            r.dead ? "replay-view__postbattle-cell--dead" : "",
+          ]}
+        >
+          <span class="replay-view__postbattle-cell-ico">
+            <BattleIcon
+              type={shipTypeOf(r.vehicle.shipId)}
+              variant={
+                r.dead
+                  ? "sunk"
+                  : r.vehicle.relation === 0
+                    ? "white"
+                    : r.vehicle.relation <= 1
+                      ? "ally"
+                      : "enemy"
+              }
+              size={20}
+            />
+          </span>
+          <span class="replay-view__postbattle-cell-main">
+            <span class="replay-view__postbattle-cell-name">{r.vehicle.name}</span>
+            <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
+          </span>
+          <span class="replay-view__postbattle-cell-status">
+            {r.dead ? t("replay.legend.dead") : ""}
+          </span>
+        </div>
+      );
+      return (
+        <div class="replay-view__postbattle">
+          <div class="replay-view__postbattle-incomplete">
+            {t("replay.resultsIncomplete")}
+          </div>
+          <div class="replay-view__postbattle-matrix">
+            <div class="replay-view__postbattle-col">
+              <div class="replay-view__postbattle-col-title">
+                {t("replay.roster.allies")}
+              </div>
+              {allies.value.map(cell)}
+            </div>
+            <div class="replay-view__postbattle-col">
+              <div class="replay-view__postbattle-col-title">
+                {t("replay.roster.enemies")}
+              </div>
+              {enemies.value.map(cell)}
+            </div>
+          </div>
+        </div>
+      );
+    };
+  },
+});
+
 /** Best-effort ship class for the icon (offline DB only — the modal lives
  *  outside the encyclopedia store). */
 function shipTypeOf(shipId: number): string {
@@ -706,7 +799,7 @@ export default defineComponent({
                     {t("replay.results")}
                     <SSpinner size="xs" tone="current" />
                   </span>
-                ) : battleResults.value ? (
+                ) : battleResults.value || trajectories.value.length > 0 ? (
                   <button
                     class="replay-view__meta-item replay-view__pill replay-view__results"
                     onClick={() => (showResults.value = !showResults.value)}
@@ -715,14 +808,21 @@ export default defineComponent({
                   </button>
                 ) : null}
               </header>
-              {showResults.value && battleResults.value ? (
+              {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                 <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
                   <div
                     class="replay-view__modal-panel"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div class="replay-view__modal-head">
-                      <strong>{t("replay.results")}</strong>
+                      <div class="replay-view__modal-title">
+                        <strong>{t("replay.results")}</strong>
+                        {!battleResults.value ? (
+                          <span class="replay-view__results-note">
+                            {t("replay.resultsIncomplete")}
+                          </span>
+                        ) : null}
+                      </div>
                       <button
                         class="replay-view__modal-close"
                         onClick={() => (showResults.value = false)}
@@ -732,10 +832,17 @@ export default defineComponent({
                       </button>
                     </div>
                     <div class="replay-view__modal-body">
-                      <PostBattlePanel
-                        raw={battleResults.value}
-                        onClose={() => (showResults.value = false)}
-                      />
+                      {battleResults.value ? (
+                        <PostBattlePanel
+                          raw={battleResults.value}
+                          onClose={() => (showResults.value = false)}
+                        />
+                      ) : (
+                        <PostBattleFallbackPanel
+                          vehicles={parser.current.value.vehicles}
+                          trajectories={trajectories.value}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

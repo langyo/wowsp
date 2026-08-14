@@ -71,6 +71,7 @@
     "show": "Show labels"
   },
   "results": "Battle results",
+  "resultsIncomplete": "Replay ended before the battle results were recorded — showing the last recorded state, not the final result.",
   "origview": {
     "on": "Original view",
     "off": "Free view"
