@@ -306,6 +306,24 @@ export function loadMapBounds(): Promise<Map<string, MapBounds>> {
   return _mapBoundsPromise;
 }
 
+let _silhouettesPromise: Promise<Record<string, { path: string }>> | null = null;
+
+/** Lazy-load the hull silhouettes (keyed by the GLB filename). In production
+ *  these come from the downloaded model pack, not the bundled publicDir. */
+export function loadSilhouettes(): Promise<Record<string, { path: string }>> {
+  if (!_silhouettesPromise) {
+    const url =
+      !import.meta.env.DEV && _modelCacheRoot && _convertFileSrc
+        ? _convertFileSrc(_modelCacheRoot + "/models/silhouettes.json")
+        : "/models/silhouettes.json";
+    _silhouettesPromise = fetch(url)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((j) => j as Record<string, { path: string }>)
+      .catch(() => ({} as Record<string, { path: string }>));
+  }
+  return _silhouettesPromise;
+}
+
 // ── Fallback resolution (tier / nation / type) ──────────────────────────
 
 export interface ShipModelSpec {
