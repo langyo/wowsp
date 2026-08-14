@@ -27,10 +27,12 @@ export interface PostBattlePlayer {
   team: 0 | 1 | 2 | null;
   alive: boolean;
   damage: number;
+  /** Damage taken — max hull HP (index 15) × (1 − hpRatio). */
+  damageTaken: number;
   /** Frags (ships sunk). Index 32 — verified: the sum across players equals
    *  the match's sunk count. */
   frags: number;
-  /** Remaining-HP ratio (0..100) — index 23. */
+  /** Remaining-HP percent (0..100) — index 23. */
   hpRatio: number | null;
   /** Killer player accountId (index 408) + killer's damage (index 412). */
   killerId: number | null;
@@ -141,6 +143,14 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
           : null;
       const team = num(6);
       const shipId = num(7);
+      const maxHp = num(15);
+      const hpRatio = num(23);
+      // Damage taken = hull HP lost = maxHp × (1 − remaining%). No dedicated
+      // damage-taken field exists in playersPublicInfo, so derive it.
+      const damageTaken =
+        maxHp != null && hpRatio != null
+          ? Math.round(maxHp * (1 - hpRatio / 100))
+          : 0;
       players.push({
         accountId: Number(pidStr) || 0,
         name: typeof arr[1] === "string" ? (arr[1] as string) : `#${pidStr}`,
@@ -149,9 +159,9 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         team: team === 0 || team === 1 || team === 2 ? team : null,
         alive: arr[21] === true,
         damage: num(20) ?? 0,
+        damageTaken,
         frags: num(32) ?? 0,
-        /** Remaining-HP ratio (0..100) — index 23. */
-        hpRatio: num(23) ?? null,
+        hpRatio,
         /** Killer player accountId (index 408) + killer's damage (412). */
         killerId: num(408) ?? null,
         killerDamage: num(412) ?? null,
