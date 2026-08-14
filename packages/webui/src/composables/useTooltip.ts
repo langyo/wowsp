@@ -1,18 +1,22 @@
 /**
  * Global tooltip context (module-level singleton, mirrors the popup manager).
  * A custom v-tooltip directive + a TooltipHost component replace the native
- * title-attribute tooltip with a styled, arrowed, z-index-managed one.
+ * title-attribute tooltip with a styled, arrowed, viewport-aware one.
+ *
+ * Positioning is anchor-based (relative to the hovered element), not mouse
+ * position: the host measures its own size and flips / clamps so the tooltip
+ * never overflows the window edge.
  */
 import { readonly, ref } from "vue";
 
 export interface TooltipState {
   visible: boolean;
   content: string;
-  x: number;
-  y: number;
+  /** The hovered element's rect, captured on show. */
+  anchor: DOMRect | null;
 }
 
-const state = ref<TooltipState>({ visible: false, content: "", x: 0, y: 0 });
+const state = ref<TooltipState>({ visible: false, content: "", anchor: null });
 let hideTimer: number | null = null;
 
 function show(content: string, target: HTMLElement) {
@@ -21,26 +25,18 @@ function show(content: string, target: HTMLElement) {
     clearTimeout(hideTimer);
     hideTimer = null;
   }
-  const r = target.getBoundingClientRect();
   state.value = {
     visible: true,
     content,
-    x: r.left + r.width / 2,
-    y: r.top,
+    anchor: target.getBoundingClientRect(),
   };
-}
-
-function move(x: number, y: number) {
-  if (state.value.visible) {
-    state.value.x = x;
-    state.value.y = y;
-  }
 }
 
 function hide() {
   if (hideTimer !== null) clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
     state.value.visible = false;
+    state.value.anchor = null;
   }, 80);
 }
 
@@ -48,7 +44,6 @@ export function useTooltip() {
   return {
     state: readonly(state),
     show,
-    move,
     hide,
   };
 }
@@ -77,10 +72,6 @@ export const vTooltip = {
       show(content, el);
     }
 
-    function onMove(e: MouseEvent) {
-      if (active) move(e.clientX, e.clientY);
-    }
-
     function onLeave() {
       if (!active) return;
       active = false;
@@ -93,7 +84,6 @@ export const vTooltip = {
     }
 
     el.addEventListener("mouseenter", onEnter);
-    el.addEventListener("mousemove", onMove);
     el.addEventListener("mouseleave", onLeave);
   },
 };
