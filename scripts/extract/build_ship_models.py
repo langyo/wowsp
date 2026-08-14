@@ -40,13 +40,12 @@ def _readable_name(gp_key: str) -> str:
     the leading tier number, and any trailing year/suffix tokens.
     """
     stem = gp_key
-    for pre in ("PJSB", "PJSC", "PJSD", "PJSS", "PASA", "PASB", "PASC", "PASD",
-                "PASS", "PESA", "PFSB", "PFSA", "PCSA", "PISB", "PISA",
-                "PISD", "PSSA", "PSSB", "PBSD", "PBSA", "PRSB", "PRSA",
-                "PRSD", "PSSB", "PXSB", "PJSB", "PJSA", "PESC", "PESB"):
-        if stem.startswith(pre):
-            stem = stem[len(pre):]
-            break
+    # Strip the WG index prefix: P + nation(2) + class(1), e.g. "PVSD013".
+    # This covers every nation (AS/BS/…/VS/WS/ZS/XS) instead of a hardcoded
+    # list that lags behind new lines.
+    m = re.match(r"^P[A-Z]{2}[ABCDSX]", stem)
+    if m:
+        stem = stem[m.end():]
     parts = stem.split("_")
     # Drop a leading numeric token (tier index) and pure-year tokens.
     cleaned = [p for p in parts if p and not p.isdigit() and not re.fullmatch(r"19\d{2}|20\d{2}", p)]

@@ -332,8 +332,8 @@ def main() -> int:
     # Also skip PX*-prefixed ships (event/consumable/Boss units that have no
     # playable 3D hull model — the exporter returns exit 1 for these).
     PLAYABLE_PREFIXES = ("PA", "PB", "PC", "PD", "PE", "PF", "PG", "PH", "PI",
-                         "PJ", "PK", "PL", "PM", "PN", "PO", "PP", "PR", "PT",
-                         "PU")  # Commonwealth, Pan-Europe etc.
+                         "PJ", "PK", "PL", "PM", "PN", "PO", "PP", "PQ", "PR",
+                         "PS", "PT", "PU", "PV", "PW", "PZ")  # all playable nations
 
     # Decide whether an existing GLB is "current" (skip) or "stale" (re-bake):
     #   --force              → never current
