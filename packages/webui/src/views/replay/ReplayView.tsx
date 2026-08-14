@@ -443,16 +443,31 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
+    /** HP timeline per shipId (same join; shared shipIds take the last stream). */
+    const hpByShipId = computed(() => {
+      const m = new Map<number, HpSample[]>();
+      for (const tr of props.trajectories) {
+        if (tr.kind?.shipId != null && tr.hpSamples?.length) {
+          m.set(tr.kind.shipId, tr.hpSamples);
+        }
+      }
+      return m;
+    });
     const rows = computed(() =>
-      props.vehicles.map((v) => ({
-        vehicle: v,
-        dead: v.shipId != null && deathByShipId.value.get(v.shipId) != null,
-        shipName:
-          (v.shipId != null
-            ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
-            : null) ?? v.shipName ?? "",
-        tier: v.shipId != null ? (shipOfflineEntry(v.shipId)?.tier ?? 0) : 0,
-      })),
+      props.vehicles.map((v) => {
+        const hp = v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined;
+        return {
+          vehicle: v,
+          dead: v.shipId != null && deathByShipId.value.get(v.shipId) != null,
+          shipName:
+            (v.shipId != null
+              ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
+              : null) ?? v.shipName ?? "",
+          tier: v.shipId != null ? (shipOfflineEntry(v.shipId)?.tier ?? 0) : 0,
+          damageTaken: damageTaken(hp),
+          hpRatio: hpRatioOf(hp),
+        };
+      }),
     );
     // Sort order: survivors first, then ship class (carrier > BB > CA > DD >
     // SS), then tier, then human before bot, then name case-sensitive.
@@ -610,13 +625,25 @@ const PostBattleFallbackPanel = defineComponent({
                 <div class="replay-view__postbattle-detail-body">
                   <div class="replay-view__postbattle-detail-damage">
                     <span class="replay-view__postbattle-detail-damage-num">
-                      {sel.dead ? t("replay.legend.dead") : t("replay.legend.ally")}
+                      {sel.damageTaken.toLocaleString()}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
+                      {t("replay.damageTaken")}
+                      {sel.hpRatio != null
+                        ? " · " + Math.round(sel.hpRatio * 100) + "%"
+                        : ""}
+                      {" · "}
+                      {sel.dead ? t("replay.legend.dead") : t("replay.legend.ally")}
+                      {" · "}
                       {shipTypeLabel(sel.vehicle.shipId)}
-                      {sel.tier ? " · " + t("replay.tier") + " " + sel.tier : ""}
+                      {sel.tier ? " " + sel.tier : ""}
                     </span>
                   </div>
+                </div>
+                <div class="replay-view__postbattle-global">
+                  <span class="replay-view__postbattle-global-note">
+                    {t("replay.noDamageData")}
+                  </span>
                 </div>
                 {isBot(sel) ? (
                   <div class="replay-view__postbattle-global">
@@ -677,6 +704,26 @@ function shipTypeLabel(shipId: number): string {
   const key = "replay.classes." + raw.toLowerCase();
   const lbl = t(key);
   return lbl === key ? raw : lbl;
+}
+
+/** Total HP lost across a ship's HP timeline (damage taken). */
+function damageTaken(hp: HpSample[] | undefined | null): number {
+  if (!hp || hp.length < 2) return 0;
+  let dmg = 0;
+  for (let i = 1; i < hp.length; i++) {
+    const d = hp[i - 1].value - hp[i].value;
+    if (d > 0) dmg += d;
+  }
+  return dmg;
+}
+
+/** Remaining-HP ratio (0..1) from the last HP sample. */
+function hpRatioOf(hp: HpSample[] | undefined | null): number | null {
+  if (!hp || hp.length === 0) return null;
+  let max = 0;
+  for (const s of hp) if (s.value > max) max = s.value;
+  if (max <= 0) return null;
+  return hp[hp.length - 1].value / max;
 }
 
 /**

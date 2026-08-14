@@ -212,13 +212,17 @@
     color: rgba(255, 255, 255, 0.45);
   }
   &__postbattle-bot {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.2em;
     margin-left: 6px;
     padding: 0 5px;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.14);
     color: rgba(255, 255, 255, 0.62);
-    font-size: 10px;
+    font-size: 0.72em;
+    line-height: 1;
     font-style: normal;
     font-weight: 400;
     letter-spacing: 0.02em;
