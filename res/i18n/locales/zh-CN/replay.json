@@ -75,6 +75,8 @@
   "bot": "机器人",
   "botNote": "AI 玩家，无历史战绩",
   "tier": "等级",
+  "damageTaken": "承伤",
+  "noDamageData": "造成伤害与勋章需完整结算数据，此录像缺失。",
   "origview": {
     "on": "原视角",
     "off": "自由视角"

@@ -75,6 +75,8 @@
   "bot": "Bot",
   "botNote": "AI player — no battle history",
   "tier": "Tier",
+  "damageTaken": "Damage taken",
+  "noDamageData": "Damage dealt and ribbons need full battle results, which this replay lacks.",
   "origview": {
     "on": "Original view",
     "off": "Free view"
