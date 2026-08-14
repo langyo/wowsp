@@ -23,6 +23,7 @@ import { parsePostBattle, ribbonKeyOfIndex, isRibbonIndexVerified } from "@/feat
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNames from "@/data/ribbon_names.json";
 import BattleIcon from "@/components/base/BattleIcon";
+import SSpinner from "@/components/base/SSpinner";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -702,7 +703,8 @@ export default defineComponent({
                 ) : null}
                 {resultsLoading.value ? (
                   <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
-                    {t("replay.results")}…
+                    {t("replay.results")}
+                    <SSpinner size="xs" tone="current" />
                   </span>
                 ) : battleResults.value ? (
                   <button
