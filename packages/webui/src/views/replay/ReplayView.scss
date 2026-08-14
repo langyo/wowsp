@@ -126,6 +126,9 @@
 
   /* Post-battle results pill while the packet stream is still decoding. */
   &__results--loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     cursor: default;
     opacity: 0.65;
     animation: replay-results-pulse 1.2s ease-in-out infinite;
