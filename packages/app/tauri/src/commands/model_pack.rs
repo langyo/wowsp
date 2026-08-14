@@ -1,6 +1,6 @@
 //! Model-pack downloader: fetches baked GLB models from GitHub Releases on
 //! first launch and caches them in AppData. Subsequent launches skip the
-//! download as long as the cache version tag matches the release tag.
+//! download as long as the cached asset upload timestamp is unchanged.
 //!
 //! Tag convention:
 //!   `res-latest`           — newest pack (primary download target)
@@ -20,7 +20,6 @@ use tar::Archive;
 
 const REPO: &str = "langyo/wowsp";
 const ASSET_NAME: &str = "wowsp-models.tar.gz";
-const FALLBACK_TAGS: &[&str] = &["res-latest-old-1", "res-latest-old-2"];
 
 fn models_cache_dir() -> Result<PathBuf, String> {
     crate::paths::ensure_cache_dir()
@@ -34,14 +33,17 @@ fn cached_version() -> Option<String> {
     fs::read_to_string(version_file().ok()?).ok()
 }
 
-fn write_cached_version(tag: &str) -> Result<(), String> {
+fn write_cached_version(version: &str) -> Result<(), String> {
     let dir = models_cache_dir()?;
     fs::create_dir_all(&dir).map_err(|e| format!("create cache dir: {e}"))?;
-    fs::write(version_file()?, tag).map_err(|e| format!("write version: {e}"))
+    fs::write(version_file()?, version).map_err(|e| format!("write version: {e}"))
 }
 
-/// Resolve a GitHub Release asset download URL for a given tag.
-async fn release_asset_url(client: &Client, tag: &str) -> Result<String, String> {
+/// Resolve a GitHub Release asset download URL + upload timestamp for a tag.
+/// The timestamp is the cache version: the tag stays fixed (res-latest) across
+/// packs, so the asset's updated_at is what tells an already-installed app a
+/// new pack was published.
+async fn release_asset_info(client: &Client, tag: &str) -> Result<(String, String), String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
     let resp: serde_json::Value = client
         .get(&url)
@@ -61,33 +63,32 @@ async fn release_asset_url(client: &Client, tag: &str) -> Result<String, String>
     for asset in assets {
         let name = asset["name"].as_str().unwrap_or("");
         if name == ASSET_NAME {
-            return asset["browser_download_url"]
+            let download_url = asset["browser_download_url"]
                 .as_str()
-                .ok_or_else(|| format!("asset {ASSET_NAME} missing download_url"))
-                .map(|s| s.to_string());
+                .ok_or_else(|| format!("asset {ASSET_NAME} missing download_url"))?
+                .to_string();
+            let updated_at = asset["updated_at"].as_str().unwrap_or("").to_string();
+            return Ok((download_url, updated_at));
         }
     }
     Err(format!("asset {ASSET_NAME} not found in release {tag}"))
 }
 
-/// Download and extract the model pack from a release tag.
-async fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
-    let client = Client::new();
-
-    let asset_url = release_asset_url(&client, tag).await?;
-    tracing::info!(tag, url = %asset_url, "downloading model pack");
+/// Download and extract the model pack from an asset URL.
+async fn download_and_extract(url: &str, dest: &PathBuf, client: &Client) -> Result<(), String> {
+    tracing::info!(url, "downloading model pack");
 
     let response = client
-        .get(&asset_url)
+        .get(url)
         .header("User-Agent", "WoWSP-model-pack/1.0")
         .send()
         .await
-        .map_err(|e| format!("download {tag}: {e}"))?;
+        .map_err(|e| format!("download: {e}"))?;
 
     let body = response
         .bytes()
         .await
-        .map_err(|e| format!("read response {tag}: {e}"))?;
+        .map_err(|e| format!("read response: {e}"))?;
     let cursor = io::Cursor::new(&body[..]);
 
     // Remove existing models so we don't accumulate stale files.
@@ -103,9 +104,7 @@ async fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
         .unpack(dest)
         .map_err(|e| format!("extract model pack: {e}"))?;
 
-    write_cached_version(tag)?;
-    tracing::info!(tag, "model pack extracted");
-
+    tracing::info!(url, "model pack extracted");
     Ok(())
 }
 
@@ -114,47 +113,45 @@ async fn download_and_extract(tag: &str, dest: &PathBuf) -> Result<(), String> {
 /// Returns the cache root directory (the parent of `models/`) so the frontend
 /// can construct paths like `<cache>/models/ships/Yamato.glb`.
 ///
-/// Lookup order:
-///   1. Check [cached_version] — if matching the latest tag, skip download.
-///   2. Try `res-latest` tag.
-///   3. Fall back to `res-latest-old-1`, then `res-latest-old-2`.
+/// Lookup order: res-latest, then res-latest-old-1, then res-latest-old-2.
+/// The cache version is the asset upload timestamp (not the fixed tag), so a
+/// re-published pack is re-downloaded on the next launch.
 #[tauri::command]
 pub async fn ensure_model_pack() -> Result<String, String> {
-    let primary_tag = "res-latest";
     let cache_dir = models_cache_dir()?;
+    let client = Client::new();
+    let tags = ["res-latest", "res-latest-old-1", "res-latest-old-2"];
 
-    // Already cached and version matches? Skip.
-    if let Some(cached) = cached_version() {
-        if cached == primary_tag {
+    // If the latest asset version already matches the cache, skip the download.
+    // The cache version is the asset upload timestamp (not the fixed tag), so a
+    // re-published res-latest is re-downloaded on the next launch.
+    if let Ok((_url, version)) = release_asset_info(&client, tags[0]).await {
+        if cached_version().as_deref() == Some(version.as_str()) {
             tracing::info!(?cache_dir, "model pack up to date");
             return Ok(cache_dir.to_string_lossy().to_string());
         }
     }
 
-    // Try primary tag first.
-    if let Err(e) = download_and_extract(primary_tag, &cache_dir).await {
-        tracing::warn!(?e, "primary model-pack download failed, trying fallbacks");
-
-        // Try fallback tags in order.
-        let mut ok = false;
-        for tag in FALLBACK_TAGS {
-            match download_and_extract(tag, &cache_dir).await {
+    // Download + extract, trying each tag in order.
+    let mut last_err = String::from("no model-pack tags available");
+    for tag in tags {
+        match release_asset_info(&client, tag).await {
+            Err(e) => {
+                tracing::warn!(?e, tag, "model-pack resolve failed");
+                last_err = e;
+            },
+            Ok((url, version)) => match download_and_extract(&url, &cache_dir, &client).await {
                 Ok(()) => {
-                    ok = true;
-                    break;
+                    write_cached_version(&version)?;
+                    return Ok(cache_dir.to_string_lossy().to_string());
                 },
-                Err(e2) => {
-                    tracing::warn!(?e2, tag, "fallback model-pack download failed");
+                Err(e) => {
+                    tracing::warn!(?e, tag, "model-pack download failed");
+                    last_err = e;
                 },
-            }
-        }
-        if !ok {
-            return Err(format!(
-                "failed to download model pack from any tag. Primary: {e}. \
-                 Fallbacks exhausted."
-            ));
+            },
         }
     }
 
-    Ok(cache_dir.to_string_lossy().to_string())
+    Err(format!("failed to download model pack from any tag: {last_err}"))
 }
