@@ -274,10 +274,7 @@ fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
 
 fn wg_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
-        .build()
-        .map_err(|e| format!("http client: {e}"))
+    crate::commands::network::build_http_client()
 }
 
 fn realm_host(realm: &str) -> Result<&'static str, String> {

@@ -479,6 +479,25 @@ async def cmd_appdata_write(payload: dict) -> None:
     return None
 
 
+# --- Network proxy config (Settings -> Network) ---------------------------
+# In-memory only: the browser mock has no real proxy stack, but the settings
+# UI still exercises the same get/set round-trip as the desktop shell.
+
+_MOCK_NETWORK: dict[str, Any] = {"mode": "system", "proxy": None}
+
+
+@app.post("/api/get_network_config")
+async def cmd_get_network_config() -> dict:
+    return {**_MOCK_NETWORK, "effectiveProxy": None}
+
+
+@app.post("/api/set_network_config")
+async def cmd_set_network_config(payload: dict) -> None:
+    _MOCK_NETWORK["mode"] = payload.get("mode", "system")
+    _MOCK_NETWORK["proxy"] = payload.get("proxy")
+    return None
+
+
 if __name__ == "__main__":
     import uvicorn
 

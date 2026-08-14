@@ -1,4 +1,4 @@
-import { defineComponent, ref } from "vue";
+import { defineComponent, onMounted, ref } from "vue";
 import { Sun, Moon, Monitor } from "lucide-vue-next";
 
 import { useTheme } from "@/theme/useTheme";
@@ -6,6 +6,7 @@ import { useWallpaper } from "@/theme/useWallpaper";
 import { themePresets, type ThemeMode } from "@/theme/presets";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { api, type NetworkConfig } from "@/api";
 import SSelect from "@/components/base/SSelect";
 import AboutModal from "@/components/layout/AboutModal";
 import "./SettingsView.scss";
@@ -35,6 +36,30 @@ export default defineComponent({
       if (period === "day") return t("settings.periodDay");
       if (period === "dusk") return t("settings.periodDusk");
       return t("settings.periodNight");
+    }
+
+    // ── Network proxy (global for all outbound requests) ──────────────────
+    const netCfg = ref<NetworkConfig>({ mode: "system", proxy: null });
+    onMounted(async () => {
+      try {
+        netCfg.value = await api.getNetworkConfig();
+      } catch {
+        // mock backend / older shell without the command — keep defaults
+      }
+    });
+    async function selectNetMode(mode: NetworkConfig["mode"]) {
+      netCfg.value.mode = mode;
+      await saveNet();
+    }
+    async function saveNet() {
+      try {
+        await api.setNetworkConfig({
+          mode: netCfg.value.mode,
+          proxy: netCfg.value.proxy?.trim() || null,
+        });
+      } catch {
+        // best-effort — the desktop shell persists it; mock has no backend
+      }
     }
 
     return () => (
@@ -183,6 +208,50 @@ export default defineComponent({
               {t("settings.currentPeriod")}: <strong>{periodLabel(theme.period.value)}</strong>
             </span>
           </div>
+        </section>
+
+        {/* network proxy — applies to every outbound request (stats, model
+            pack, updates) */}
+        <section class="settings-view__section">
+          <h2 class="settings-view__section-title">{t("settings.network")}</h2>
+          <p class="settings-view__hint">{t("settings.networkHint")}</p>
+          <div class="settings-view__modes">
+            {(
+              [
+                { value: "system", labelKey: "settings.networkSystem" },
+                { value: "none", labelKey: "settings.networkNone" },
+                { value: "manual", labelKey: "settings.networkManual" },
+              ] as const
+            ).map((m) => (
+              <button
+                key={m.value}
+                class={[
+                  "settings-view__mode",
+                  netCfg.value.mode === m.value ? "settings-view__mode--on" : "",
+                ]}
+                onClick={() => void selectNetMode(m.value)}
+              >
+                {t(m.labelKey)}
+              </button>
+            ))}
+          </div>
+          {netCfg.value.mode === "manual" ? (
+            <div class="settings-view__netmanual">
+              <input
+                class="settings-view__netinput"
+                type="text"
+                spellcheck={false}
+                placeholder={t("settings.networkProxyPlaceholder")}
+                value={netCfg.value.proxy ?? ""}
+                onInput={(e: InputEvent) =>
+                  (netCfg.value.proxy = (e.target as HTMLInputElement).value)
+                }
+              />
+              <button class="settings-view__netsave" onClick={() => void saveNet()}>
+                {t("settings.networkSave")}
+              </button>
+            </div>
+          ) : null}
         </section>
 
         {/* about */}

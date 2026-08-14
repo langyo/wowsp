@@ -3,6 +3,8 @@ import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate, type Update } from "@tauri-apps/plugin-updater";
 
+import { api } from "@/api";
+
 /**
  * Auto-updater store. Wraps `@tauri-apps/plugin-updater`. Exposes check /
  * downloadAndInstall actions. The update endpoint + pubkey are configured in
@@ -40,12 +42,21 @@ export const useUpdaterStore = defineStore("updater", () => {
     checking.value = true;
     error.value = null;
     try {
-      const update = await checkUpdate();
+      // Honor the Settings -> Network proxy choice (the updater plugin has
+      // its own reqwest client that ignores it otherwise).
+      let proxy: string | undefined;
+      try {
+        const net = await api.getNetworkConfig();
+        proxy = net.effectiveProxy ?? undefined;
+      } catch {
+        proxy = undefined;
+      }
+      const update = await checkUpdate(proxy ? { proxy } : {});
       checked.value = true;
       if (update) {
         available.value = true;
         version.value = update.version;
-        notes.value = update.body;
+        notes.value = update.body ?? null;
         pendingUpdate = update;
       } else {
         available.value = false;

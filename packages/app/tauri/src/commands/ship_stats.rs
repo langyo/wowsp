@@ -285,10 +285,7 @@ async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
 // ── shared helpers (same pattern as encyclopedia.rs) ─────────────────────
 
 fn wg_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
-        .build()
-        .map_err(|e| format!("http client: {e}"))
+    crate::commands::network::build_http_client()
 }
 
 fn realm_host(realm: &str) -> Result<&'static str, String> {

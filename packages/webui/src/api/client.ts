@@ -13,6 +13,9 @@ export interface GameInstall {
   realm?: string | null;
 }
 
+/** Installer kind discriminator (see GameInstall). */
+export type GameInstallKind = GameInstall["kind"];
+
 /** Mirrors `wowsp_tauri_shared::GameProcessInfo`. Richer than the legacy
  *  `is_game_running` boolean — carries the PID and the install (kind/realm)
  *  the running process belongs to, resolved by exe-path prefix match. */
@@ -414,6 +417,16 @@ export interface RankedSeasonStats {
   bestRankDisplay: string | null;
 }
 
+/** Proxy mode + optional manual URL (mirrors the Rust NetworkConfig). */
+export interface NetworkConfig {
+  /** "system" (OS settings) | "none" (direct) | "manual" (fixed proxy URL). */
+  mode: "system" | "none" | "manual";
+  /** Manual proxy URL, e.g. "http://127.0.0.1:7890" (only for "manual"). */
+  proxy?: string | null;
+  /** OS proxy pre-resolved by the shell (read-only, for proxy-URL consumers). */
+  effectiveProxy?: string | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::DogTag` — player's personalized emblem. */
 export interface DogTag {
   textureId: number;
@@ -503,4 +516,8 @@ export const api = {
   /** Download model pack from GitHub Releases to local cache. Returns the
    *  cache directory path so the frontend can construct file URLs. */
   ensureModelPack: () => transport.invoke<string>(RPC.ensure_model_pack),
+  /** Network proxy settings (system / none / manual), applied globally. */
+  getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
+  setNetworkConfig: (config: NetworkConfig) =>
+    transport.invoke<null>(RPC.set_network_config, { config }),
 };

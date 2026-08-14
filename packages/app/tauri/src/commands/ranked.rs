@@ -40,9 +40,9 @@ fn realm_host(realm: &str) -> Result<&'static str, String> {
     }
 }
 
-/// Build a reqwest client for WG API calls.
+/// Build a reqwest client for WG API calls (proxy-aware via network.rs).
 fn wg_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    crate::commands::network::http_client_builder()?
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("build reqwest client: {e}"))
