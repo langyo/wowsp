@@ -25,6 +25,9 @@
     "pve_event": "Operation",
     "convoy": "Convoy",
     "asymmetric": "Asymmetric",
+    "armsrace": "Arms Race",
+    "operation": "Operation",
+    "halloween": "Halloween",
     "sandbox": "Sandbox",
     "_fallback": "Battle"
   },

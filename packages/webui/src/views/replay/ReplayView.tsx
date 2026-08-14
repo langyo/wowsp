@@ -36,7 +36,7 @@ import SSpinner from "@/components/base/SSpinner";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { modeColor } from "@/utils/modeColors";
+import { modeColor, modeKey } from "@/utils/modeColors";
 import { useToast } from "@/composables/useToast";
 import { useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
@@ -66,13 +66,19 @@ function replaysDir(installPath: string): string {
   return `${trimmed}/replays`;
 }
 
-/** Localize a replay matchGroup ("pvp"/"ranked"/…) with a generic fallback. */
-function modeLabel(group?: string | null): string {
-  if (!group) return t("replay.mode._fallback");
-  const key = `replay.mode.${group}`;
-  const lbl = t(key);
+/** Localize a battle mode from its layered identity (matchGroup / scenario /
+ *  eventType) with a generic fallback. */
+function modeLabel(
+  group?: string | null,
+  scenario?: string | null,
+  eventType?: string | null,
+): string {
+  const key = modeKey(group, scenario, eventType);
+  if (!key) return t("replay.mode._fallback");
+  const i18nKey = `replay.mode.${key}`;
+  const lbl = t(i18nKey);
   // t() returns the key when missing — fall back to the generic battle label.
-  return lbl === key ? t("replay.mode._fallback") : lbl;
+  return lbl === i18nKey ? t("replay.mode._fallback") : lbl;
 }
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
@@ -1133,8 +1139,8 @@ export default defineComponent({
                           {r.ownShipName ?? t("replay.ownShip")}
                         </span>
                         {r.matchGroup ? (
-                          <span class="replay-card__pill" style={modeColor(r.matchGroup)}>
-                            {modeLabel(r.matchGroup)}
+                          <span class="replay-card__pill" style={modeColor(r.matchGroup, r.scenario, r.eventType)}>
+                            {modeLabel(r.matchGroup, r.scenario, r.eventType)}
                           </span>
                         ) : null}
                       </div>
@@ -1179,9 +1185,17 @@ export default defineComponent({
                 {parser.current.value.matchGroup ? (
                   <span
                     class="replay-view__meta-item replay-view__pill"
-                    style={modeColor(parser.current.value.matchGroup)}
+                    style={modeColor(
+                      parser.current.value.matchGroup,
+                      parser.current.value.scenario,
+                      parser.current.value.eventType,
+                    )}
                   >
-                    {modeLabel(parser.current.value.matchGroup)}
+                    {modeLabel(
+                      parser.current.value.matchGroup,
+                      parser.current.value.scenario,
+                      parser.current.value.eventType,
+                    )}
                   </span>
                 ) : null}
                 <span class="replay-view__meta-item replay-view__count">

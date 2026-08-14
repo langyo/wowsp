@@ -390,6 +390,8 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 match_group: None,
                 map_name: None,
                 map_id: None,
+                scenario: None,
+                event_type: None,
                 own_ship_id: None,
                 own_ship_name: None,
                 player_count: 0,
@@ -405,6 +407,8 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 match_group: None,
                 map_name: None,
                 map_id: None,
+                scenario: None,
+                event_type: None,
                 own_ship_id: None,
                 own_ship_name: None,
                 player_count: 0,
@@ -420,6 +424,8 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 match_group: None,
                 map_name: None,
                 map_id: None,
+                scenario: None,
+                event_type: None,
                 own_ship_id: None,
                 own_ship_name: None,
                 player_count: 0,
@@ -447,6 +453,14 @@ fn lite_from_raw(
         .and_then(|o| o.get("mapDisplayName"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
+    let scenario = obj
+        .and_then(|o| o.get("scenario"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let event_type = obj
+        .and_then(|o| o.get("eventType"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
 
     // Pull the roster just enough to count players + find the recorder (relation 0).
     let vehicles = obj
@@ -471,6 +485,8 @@ fn lite_from_raw(
         match_group,
         map_name,
         map_id,
+        scenario,
+        event_type,
         own_ship_id,
         own_ship_name,
         player_count,
@@ -541,6 +557,14 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         .and_then(|o| o.get("mapDisplayName"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
+    let scenario = obj
+        .and_then(|o| o.get("scenario"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let event_type = obj
+        .and_then(|o| o.get("eventType"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
 
     let vehicles = obj
         .and_then(|o| o.get("vehicles"))
@@ -558,6 +582,8 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         match_group,
         map_id,
         map_name,
+        scenario,
+        event_type,
         vehicles,
         raw,
     }
