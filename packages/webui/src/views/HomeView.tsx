@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import { t } from "@/i18n";
 import SButton from "@/components/base/SButton";
+import SSpinner from "@/components/base/SSpinner";
 import "./HomeView.scss";
 
 /**
@@ -34,6 +35,7 @@ export default defineComponent({
             <h2 class="home__card-title">{t("common.detect.title")}</h2>
             {detecting ? (
               <p class="home__card-state home__card-state--loading">
+                <SSpinner size="xs" tone="current" />
                 {t("common.detect.scanning")}
               </p>
             ) : active ? (

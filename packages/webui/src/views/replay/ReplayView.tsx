@@ -397,7 +397,9 @@ const PostBattlePanel = defineComponent({
                 {/* On-demand global stats (toast while loading) */}
                 <div class="replay-view__postbattle-global">
                   {globalLoading.value ? (
-                    <span class="replay-view__postbattle-global-note">正在加载全局战绩…</span>
+                    <span class="replay-view__postbattle-global-note">
+                      <SSpinner size="xs" tone="current" />
+                    </span>
                   ) : globalStats.value ? (
                     <StatsCard stats={globalStats.value} />
                   ) : globalError.value ? (
@@ -710,7 +712,7 @@ const PostBattleFallbackPanel = defineComponent({
                   <div class="replay-view__postbattle-global">
                     {globalLoading.value ? (
                       <span class="replay-view__postbattle-global-note">
-                        正在加载全局战绩…
+                        <SSpinner size="xs" tone="current" />
                       </span>
                     ) : globalStats.value ? (
                       <StatsCard stats={globalStats.value} />
