@@ -5,6 +5,7 @@ import App from "./App";
 import OverlayApp from "@/OverlayApp";
 import router from "@/router";
 import { i18n } from "@/i18n";
+import { vTooltip } from "@/composables/useTooltip";
 import "@/theme/theme.scss";
 import "virtual:uno.css";
 
@@ -26,6 +27,7 @@ if (isOverlay) {
   app.mount("#app");
 } else {
   const app = createApp(App);
+  app.directive("tooltip", vTooltip);
   app.use(createPinia());
   app.use(router);
   app.use(i18n);

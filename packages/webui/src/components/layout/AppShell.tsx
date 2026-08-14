@@ -10,6 +10,7 @@ import SModal from "@/components/base/SModal";
 import SButton from "@/components/base/SButton";
 import SCheckbox from "@/components/base/SCheckbox";
 import SToast from "@/components/base/SToast";
+import STooltip from "@/components/base/STooltip";
 import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -93,6 +94,7 @@ export default defineComponent({
           />
         </main>
         <SToast />
+        <STooltip />
 
         {/* Close confirm dialog — uses standard SModal + SButton */}
         <SModal
