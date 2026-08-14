@@ -51,8 +51,13 @@ pub fn read_replay_positions(
     // recover each entity's shipId from its EntityCreate state stream (the
     // only reliable entity -> player join key).
     let mut candidates = std::collections::HashSet::new();
+    let mut client_version: Option<String> = None;
     if let Some(json) = extract_descriptor_json(&bytes) {
         if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
             if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
                 for v in arr {
                     if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
@@ -62,7 +67,7 @@ pub fn read_replay_positions(
             }
         }
     }
-    let decoded = super::packets::decode_replay(stream, &candidates)?;
+    let decoded = super::packets::decode_replay(stream, &candidates, client_version.as_deref())?;
     Ok(group_by_entity(decoded))
 }
 
