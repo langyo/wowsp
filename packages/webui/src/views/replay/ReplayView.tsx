@@ -361,9 +361,9 @@ const PostBattlePanel = defineComponent({
                       ) : null}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
-                      承伤 {sel.damageTaken.toLocaleString()}
+                      {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
                       {sel.hpRatio != null
-                        ? ` · 剩余血量 ${Math.round(sel.hpRatio)}%`
+                        ? ` · ${t("replay.hpRemaining")} ${Math.round(sel.hpRatio)}%`
                         : ""}
                     </span>
                   </div>
@@ -665,9 +665,9 @@ const PostBattleFallbackPanel = defineComponent({
                       {sel.damage.toLocaleString()}
                     </span>
                     <span class="replay-view__postbattle-detail-damage-label">
-                      承伤 {sel.damageTaken.toLocaleString()}
+                      {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
                       {sel.hpRatio != null
-                        ? " · 剩余血量 " + Math.round(sel.hpRatio) + "%"
+                        ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
                         : ""}
                     </span>
                   </div>
@@ -698,12 +698,6 @@ const PostBattleFallbackPanel = defineComponent({
                 <div class="replay-view__postbattle-global">
                   <span class="replay-view__postbattle-global-note">
                     {t("replay.noDamageData")}
-                    {sel.damageTaken > 0
-                      ? " · " +
-                        t("replay.damageTaken") +
-                        " " +
-                        sel.damageTaken.toLocaleString()
-                      : ""}
                   </span>
                 </div>
                 {isBot(sel) ? (

@@ -83,6 +83,7 @@
   },
   "tier": "Tier",
   "damageTaken": "Damage taken",
+  "hpRemaining": "remaining HP",
   "noDamageData": "Damage dealt and ribbons need full battle results; only your own ship's damage and frags can be inferred from this replay.",
   "origview": {
     "on": "Original view",
