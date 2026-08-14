@@ -9,15 +9,15 @@ import { onMounted, onUnmounted, ref, type Ref } from "vue";
  * in JSX render functions).
  */
 export function useScrollReveal(delay = 0) {
-  const el = ref<HTMLElement | null>(null);
+  const el = ref<Element | null>(null);
   const visible = ref(false);
   let obs: IntersectionObserver | null = null;
 
-  function setEl(node: HTMLElement | null) {
+  function setEl(node: Element | null) {
     el.value = node;
   }
 
-  function isInViewport(node: HTMLElement): boolean {
+  function isInViewport(node: Element): boolean {
     const r = node.getBoundingClientRect();
     const vh = window.innerHeight || document.documentElement.clientHeight;
     return r.top < vh * 0.92 && r.bottom > 0;

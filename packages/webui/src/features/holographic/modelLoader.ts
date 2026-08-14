@@ -90,7 +90,7 @@ interface ShipModelEntry {
   name: string;
   baseName: string;
   originShipName: string;
-  hullModel: string;
+  hullModel: string | null;
 }
 const shipModelMap = shipModelNames as Record<string, ShipModelEntry>;
 

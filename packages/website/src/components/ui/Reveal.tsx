@@ -13,10 +13,19 @@ export default defineComponent({
   },
   setup(props, { slots }) {
     const r = useScrollReveal(props.delay);
-    return () => (
-      <props.tag ref={r.setEl} class={r.cls()} style={r.style()}>
-        {slots.default?.()}
-      </props.tag>
-    );
+    return () => {
+      // Dynamic tag (string prop): the JSX intrinsic table has no index
+      // signature for it, so route through "any".
+      const Tag = props.tag as any;
+      return (
+        <Tag
+          ref={(el: Element | null) => r.setEl(el instanceof HTMLElement ? el : null)}
+          class={r.cls()}
+          style={r.style()}
+        >
+          {slots.default?.()}
+        </Tag>
+      );
+    };
   },
 });

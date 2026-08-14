@@ -12,9 +12,9 @@ export default defineComponent({
   setup() {
     const overlay = useOverlay();
     return () => (
-      <div class={["overlay-roster", overlay.visible.value ? "is-visible" : ""]}>
+      <div class={["overlay-roster", overlay.visible ? "is-visible" : ""]}>
         <div class="overlay-roster__team">
-          {overlay.allies.value.map((v) => (
+          {overlay.allies.map((v) => (
             <div class="overlay-roster__row ally" key={v.id}>
               <span class="overlay-roster__name">{v.name}</span>
               <span class="overlay-roster__ship">{v.shipName ?? v.shipId}</span>
@@ -23,7 +23,7 @@ export default defineComponent({
         </div>
         <div class="overlay-roster__divider" />
         <div class="overlay-roster__team">
-          {overlay.enemies.value.map((v) => (
+          {overlay.enemies.map((v) => (
             <div class="overlay-roster__row enemy" key={v.id}>
               <span class="overlay-roster__name">{v.name}</span>
               <span class="overlay-roster__ship">{v.shipName ?? v.shipId}</span>

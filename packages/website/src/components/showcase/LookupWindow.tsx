@@ -93,7 +93,7 @@ export default defineComponent({
                 </tr>
               ))}
               {rows.value.length === 0 ? (
-                <tr><td class="lookup-win__empty" colSpan={5}>{t("lookup.empty")}</td></tr>
+                <tr><td class="lookup-win__empty" colspan={5}>{t("lookup.empty")}</td></tr>
               ) : null}
             </tbody>
           </table>

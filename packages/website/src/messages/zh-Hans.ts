@@ -115,24 +115,6 @@ export default {
         title: "WoWSP · 水表战绩",
       },
     },
-    lookup: {
-      titleA: "千余艘舰船，",
-      titleB: "一搜即得",
-      desc: "按等级、舰种、国家检索游戏全量舰船——舰名、血量、参数都在，不必启动游戏",
-      win: {
-        title: "WoWSP · 舰船数据库",
-        count: "{n} 艘",
-        placeholder: "试试「蒙大拿」…",
-      },
-    },
-    stats: {
-      titleA: "你的水表，",
-      titleB: "一眼看清",
-      desc: "胜率、场均、PR 与主力舰船——战后数据一屏速览",
-      win: {
-        title: "WoWSP · 水表战绩",
-      },
-    },
   },
   features: {
     title: "两种模式，一个面板",

@@ -6,7 +6,7 @@ import "./PlayerBadge.scss";
 
 /** dogtags_map.json: vortex dogTag id -> [index, species, colorHEX?]. */
 type MapEntry = [string, string] | [string, string, string];
-const MAP = dogtagsMapRaw as Record<string, MapEntry>;
+const MAP = dogtagsMapRaw as unknown as Record<string, MapEntry>;
 
 function entryFor(id: number | undefined | null): MapEntry | null {
   if (id == null) return null;

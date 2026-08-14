@@ -110,8 +110,8 @@ function formationOffsets(groupCount: number, groupSize: number): { ox: number; 
  *  …), so the median cluster size is the per-group count and the cluster
  *  count is the number of flight groups. */
 function inferGrouping(
-  entries: { trail: EntityTrajectory }[],
-  sampleAtFn: (tr: EntityTrajectory, t: number) => { x: number; z: number } | null,
+  entries: { trail: { id: number; samples: SquadronPlane[] } }[],
+  sampleAtFn: (tr: { samples: SquadronPlane[] }, t: number) => { x: number; z: number } | null,
 ): { groupSize: number; groupCount: number } {
   const t0 = Math.min(...entries.map((e) => e.trail.samples[0]?.time ?? 0));
   const pts: { x: number; z: number }[] = [];
@@ -707,6 +707,8 @@ export default defineComponent({
       role: TeamRole;
       name: string;
       shipName: string;
+      /** WG shipId (roster/trajectory join) — drives the hull silhouette. */
+      shipId?: number;
       tier: number | null;
       type: string | null;
       hp: number | null;
@@ -2075,7 +2077,6 @@ export default defineComponent({
         const line = new THREE.Line(lockGeom, lockMat);
         line.visible = false;
         scene.add(line);
-        lockLine = line;
         lockLine = line as unknown as THREE.Mesh;
       }
 
@@ -2147,7 +2148,7 @@ export default defineComponent({
       planeFormations.clear();
       {
         // Group trails by planeId first.
-        const byPlane = new Map<number, { idx: string; role: string; count: number; trail: EntityTrajectory }[]>();
+        const byPlane = new Map<number, { idx: string; role: string; count: number; trail: { id: number; samples: SquadronPlane[] } }[]>();
         for (const trail of planeTrails) {
           const planeId = Math.floor(trail.id / 16);
           const idx = planeIndexById.get(trail.id);
@@ -2221,7 +2222,7 @@ export default defineComponent({
           assignments,
         );
         const color = TEAM_COLOR[role];
-        const offline = shipOfflineEntry(rosterEntry?.shipId ?? traj.kind?.shipId);
+        const offline = shipOfflineEntry((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined);
         const shipType = shipInfo?.type ?? offline?.type ?? null;
 
         // Marker: small cone + sphere so the heading is visible even before
@@ -2373,10 +2374,10 @@ export default defineComponent({
         // event/clone ships), else the baked model DB's English base name.
         const shipName =
           (shipInfo ? encStore.shipDisplayName(shipInfo) : null) ??
-          shipNameFromOfflineDb(rosterEntry?.shipId ?? traj.kind?.shipId, dataLang) ??
+          shipNameFromOfflineDb((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined, dataLang) ??
           rosterEntry?.shipName ??
           shipInfo?.name ??
-          shipNameFromModelDb(rosterEntry?.shipId ?? traj.kind?.shipId) ??
+          shipNameFromModelDb((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined) ??
           "?";
         // Max HP: the peak of the entity's own HP stream — authoritative for
         // the battle's actual scaling (event/asymmetric modes cut bot HP to a
@@ -2402,6 +2403,7 @@ export default defineComponent({
           role,
           name,
           shipName,
+          shipId: (rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined,
           tier: shipInfo?.tier ?? offline?.tier ?? null,
           type: shipInfo?.type ?? offline?.type ?? null,
           hp: maxHp,
@@ -2836,7 +2838,7 @@ export default defineComponent({
         if (!sprite) return;
         const canvas = sprite.userData.canvas as HTMLCanvasElement | undefined;
         if (!canvas) return;
-        let text = String(c.letter);
+        const text = String(c.letter);
         let etaLine = "";
         if (capAlt) {
           const teamShips = c.captureTeam === 1 ? c.alliesIn : c.enemiesIn;
@@ -3373,7 +3375,8 @@ export default defineComponent({
             if (prev != null && hp != null && hp < prev - 50) {
               st.progress *= 0.5;
             }
-            st.prevHp.set(traj.entityId, hp ?? prev);
+            const hpVal = hp ?? prev;
+            if (hpVal != null) st.prevHp.set(traj.entityId, hpVal);
           }
         }
         if (st.owner === 0) {
@@ -3766,7 +3769,10 @@ export default defineComponent({
     }
 
     /** Interpolate a sample at time t (linear between neighbors). */
-    function sampleAt(traj: EntityTrajectory, t: number) {
+    function sampleAt(
+      traj: { samples: { time: number; x: number; z: number; yaw: number }[] },
+      t: number,
+    ) {
       const ss = traj.samples;
       if (t <= ss[0].time) return ss[0];
       if (t >= ss[ss.length - 1].time) return ss[ss.length - 1];
@@ -3924,7 +3930,7 @@ export default defineComponent({
         <div
           ref={container}
           class="holo-map__canvas"
-          onPointerDown={(e) => { _downPt = { x: e.clientX, y: e.clientY }; }}
+          onPointerdown={(e: PointerEvent) => { _downPt = { x: e.clientX, y: e.clientY }; }}
           onClick={(e) => {
             if (_downPt && Math.hypot(e.clientX - _downPt.x, e.clientY - _downPt.y) > 6) {
               // This was a drag, not a click — clear any selection so the
@@ -4073,7 +4079,7 @@ export default defineComponent({
               <SCheckbox
                 modelValue={minimapShowTrails.value}
                 variant="switch"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e: MouseEvent) => e.stopPropagation()}
                 onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
               >
                 {t("replay.minimap.trails")}

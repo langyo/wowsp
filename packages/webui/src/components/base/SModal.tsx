@@ -3,6 +3,8 @@ import {
   defineComponent,
   onBeforeUnmount,
   ref,
+  Teleport,
+  Transition,
   watch,
 } from "vue";
 import { X } from "lucide-vue-next";

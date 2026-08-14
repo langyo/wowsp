@@ -63,7 +63,7 @@ export default defineComponent({
         </div>
 
         <nav class="sidebar__nav">
-          <RouterLink to="/" class="sidebar__link" activeClass="is-active" end>
+          <RouterLink to="/" class="sidebar__link" activeClass="is-active" exactActiveClass="is-active">
             <BarChart3 size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.dashboard")}</span>
           </RouterLink>

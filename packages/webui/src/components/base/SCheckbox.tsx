@@ -25,6 +25,7 @@ export default defineComponent({
   },
   emits: {
     "update:modelValue": (_value: boolean) => true,
+    click: (_e: MouseEvent) => true,
   },
   setup(props, { emit, slots }) {
     function onChange(e: Event) {
@@ -39,6 +40,7 @@ export default defineComponent({
         data-type={dataType}
         data-variant={props.variant}
         data-disabled={props.disabled ? "" : undefined}
+        onClick={(e) => emit("click", e)}
       >
         {props.variant === "switch" ? (
           <span class="s-checkbox-switch" data-checked={props.modelValue ? "" : undefined}>

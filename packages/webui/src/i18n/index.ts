@@ -12,7 +12,7 @@ const modules = import.meta.glob("../../../../res/i18n/locales/**/*.json", { eag
 export const SUPPORTED_LOCALES = ["en-US", "zh-CN"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
-type Messages = Record<string, Record<string, unknown>>;
+type Messages = Record<string, Record<string, any>>;
 const messages: Messages = {};
 for (const [path, mod] of Object.entries(modules)) {
   // path looks like: .../locales/en-US/common.json
@@ -44,7 +44,7 @@ export const i18n = createI18n({
 });
 
 export function setLocale(locale: Locale): void {
-  i18n.global.locale.value = locale;
+  (i18n.global.locale as unknown as { value: Locale }).value = locale;
   if (typeof document !== "undefined") {
     document.documentElement.lang = locale;
   }

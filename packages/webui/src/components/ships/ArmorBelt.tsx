@@ -116,7 +116,7 @@ export default defineComponent({
                     width={sp.w}
                     height={62}
                     fill={color}
-                    fillOpacity={0.78}
+                    fill-opacity={0.78}
                     class="armor-belt__zone"
                     onMouseenter={(e) => onZoneEnter(e, { zone: sp.zone, thickness: th, estimated: true })}
                     onMouseleave={onZoneLeave}
@@ -130,7 +130,7 @@ export default defineComponent({
                 width={560}
                 height={14}
                 fill={armorColor(zoneThickness("belt"))}
-                fillOpacity={0.85}
+                fill-opacity={0.85}
                 class="armor-belt__zone"
                 onMouseenter={(e) => onZoneEnter(e, { zone: "belt", thickness: zoneThickness("belt"), estimated: true })}
                 onMouseleave={onZoneLeave}
@@ -142,7 +142,7 @@ export default defineComponent({
                 width={540}
                 height={8}
                 fill={armorColor(zoneThickness("deck"))}
-                fillOpacity={0.85}
+                fill-opacity={0.85}
                 class="armor-belt__zone"
                 onMouseenter={(e) => onZoneEnter(e, { zone: "deck", thickness: zoneThickness("deck"), estimated: true })}
                 onMouseleave={onZoneLeave}

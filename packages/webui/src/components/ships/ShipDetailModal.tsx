@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
@@ -52,9 +52,12 @@ export default defineComponent({
     const skillHealthPct = ref(1);
 
     // ── Holographic stage ─────────────────────────────────────────────────
-    const stageRef = ref<InstanceType<typeof ShipStage> | null>(null);
+    const stageRef = ref<
+      | (InstanceType<typeof ShipStage> & { focusZone?: (zone: FocusZone, count?: number) => void })
+      | null
+    >(null);
     function onWeaponFocus(zone: FocusZone, count?: number) {
-      stageRef.value?.focusZone(zone, count ?? 1);
+      stageRef.value?.focusZone?.(zone, count ?? 1);
     }
 
     // ── Armor tab: lazy GameParams ─────────────────────────────────────────
@@ -115,7 +118,6 @@ export default defineComponent({
 
     function selectTab(name: typeof tab.value) {
       tab.value = name;
-      if (name === "armor") void loadGameparams();
       if (name === "mystats") void loadMyStats();
     }
 
@@ -239,7 +241,7 @@ export default defineComponent({
             {tab.value !== "skill" ? (
               <>
                 <ShipStage ref={stageRef} ship={props.ship} armorZones={armorZones.value} waterlineDraft={waterlineDraft.value} />
-                <WeaponBar gameparams={gameparams.value} onFocus={onWeaponFocus} />
+                <WeaponBar gameparams={gameparams.value as Record<string, unknown> | null} onFocus={onWeaponFocus} />
               </>
             ) : (
               /* Data observer: replaces the stage when in the captain skills tab */

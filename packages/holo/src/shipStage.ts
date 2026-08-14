@@ -103,6 +103,8 @@ export function createShipStage(
   };
 
   const armorPh = createPlayhead(opts.armorFirst ? ARMOR_AT + 0.1 : 0);
+  const onHoverEnter = () => armorPh.pause();
+  const onHoverLeave = () => armorPh.resume();
 
   function resize() {
     const w = host.clientWidth, h = host.clientHeight;
@@ -329,8 +331,6 @@ export function createShipStage(
     let angle = 0.6;
     let armorMix = 0;
 
-    const onHoverEnter = () => armorPh.pause();
-    const onHoverLeave = () => armorPh.resume();
     host.addEventListener("mouseenter", onHoverEnter);
     host.addEventListener("mouseleave", onHoverLeave);
 

@@ -25,6 +25,7 @@ export default defineComponent({
     disabled: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
     block: { type: Boolean, default: false },
+    title: { type: String, default: undefined },
   },
   emits: {
     click: (_e: MouseEvent) => true,
@@ -41,6 +42,7 @@ export default defineComponent({
       <button
         class={cls.value}
         disabled={props.disabled || props.loading}
+        title={props.title}
         onClick={(e) => emit("click", e)}
       >
         {props.loading ? <SSpinner size="xs" tone="current" /> : null}
