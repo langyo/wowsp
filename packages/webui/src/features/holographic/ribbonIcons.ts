@@ -24,6 +24,7 @@ import ribbonFrag from "../../res/images/ribbons/ribbon_frag.png";
 import ribbonMainCaliber from "../../res/images/ribbons/ribbon_main_caliber.png";
 import ribbonMissile from "../../res/images/ribbons/ribbon_missile.png";
 import ribbonPlane from "../../res/images/ribbons/ribbon_plane.png";
+import ribbonSecondaryCaliber from "../../res/images/ribbons/ribbon_secondary_caliber.png";
 import ribbonSuppressed from "../../res/images/ribbons/ribbon_suppressed.png";
 import ribbonTorpedo from "../../res/images/ribbons/ribbon_torpedo.png";
 import subBurn from "../../res/images/ribbons/subribbon_burn.png";
@@ -44,8 +45,10 @@ const BUNDLED: Record<string, string> = {
   frag: ribbonFrag,
   main_caliber: ribbonMainCaliber,
   main_caliber_shots: ribbonMainCaliber,
+  secondary_caliber: ribbonSecondaryCaliber,
   hits: ribbonMainCaliber,
   aa_hits: ribbonPlane,
+  plane: ribbonPlane,
   shells: ribbonMainCaliber,
   plane_losses: ribbonPlane,
   dbomb: ribbonTorpedo,

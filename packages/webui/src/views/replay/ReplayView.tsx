@@ -398,7 +398,7 @@ const PostBattlePanel = defineComponent({
                 <div class="replay-view__postbattle-global">
                   {globalLoading.value ? (
                     <span class="replay-view__postbattle-global-note">
-                      <SSpinner size="xs" tone="current" />
+                      <SSpinner size="md" center tone="current" />
                     </span>
                   ) : globalStats.value ? (
                     <StatsCard stats={globalStats.value} />
@@ -712,7 +712,7 @@ const PostBattleFallbackPanel = defineComponent({
                   <div class="replay-view__postbattle-global">
                     {globalLoading.value ? (
                       <span class="replay-view__postbattle-global-note">
-                        <SSpinner size="xs" tone="current" />
+                        <SSpinner size="md" center tone="current" />
                       </span>
                     ) : globalStats.value ? (
                       <StatsCard stats={globalStats.value} />
