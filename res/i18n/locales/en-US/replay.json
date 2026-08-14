@@ -72,6 +72,9 @@
   },
   "results": "Battle results",
   "resultsIncomplete": "Replay ended before the battle results were recorded — showing the last recorded state, not the final result.",
+  "bot": "Bot",
+  "botNote": "AI player — no battle history",
+  "tier": "Tier",
   "origview": {
     "on": "Original view",
     "off": "Free view"

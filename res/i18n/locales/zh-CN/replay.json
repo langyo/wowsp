@@ -72,6 +72,9 @@
   },
   "results": "战后统计",
   "resultsIncomplete": "录像在结算前中断，以下为最后一次录像记录的状态，非最终结果。",
+  "bot": "机器人",
+  "botNote": "AI 玩家，无历史战绩",
+  "tier": "等级",
   "origview": {
     "on": "原视角",
     "off": "自由视角"
