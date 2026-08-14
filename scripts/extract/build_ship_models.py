@@ -69,21 +69,16 @@ def main() -> int:
     ships = bridge.get("ships", {})
     if isinstance(ships, list):
         ships = {s["id"]: s for s in ships}
-    # index → shipId
-    index_to_id = {}
-    for sid, s in ships.items():
-        idx = s.get("index")
-        if idx:
-            index_to_id[idx] = int(sid) if isinstance(sid, str) else sid
-
-    # GameParams: stream-parse the top-level dict (it's huge, ~350 MB).
-    # Each top-level value is a component/ship/etc.; ships have
-    # typeinfo.type == "Ship". We only need ships with originShipName or a
-    # shared hull model.
+    # GameParams: parse the top-level dict (it's huge, ~350 MB). Each
+    # top-level value is a component/ship/etc.; ships have
+    # typeinfo.type == "Ship" and an 'id' field that IS the shipId. Read the
+    # shipId straight from GameParams instead of the wowsinfo bridge: the
+    # bridge lags behind new patches and would silently drop freshly-added
+    # ships. The bridge is only used for the optional display 'name'.
     print(f"[ship_models] parsing GameParams ({args.gameparams.stat().st_size >> 20} MB) ...")
     gp = json.loads(args.gameparams.read_text(encoding="utf-8"))
 
-    # Collect per-key: {key → {originShipName, hullModel}}
+    # Collect per-key: {key → {shipId, index, originShipName, hullModel}}.
     key_info = {}
     skin_count = 0
     for key, obj in gp.items():
@@ -92,40 +87,39 @@ def main() -> int:
         ti = obj.get("typeinfo")
         if not isinstance(ti, dict) or ti.get("type") != "Ship":
             continue
+        ship_id = obj.get("id")
+        if not isinstance(ship_id, int):
+            continue
         origin = obj.get("originShipName")
         hull = obj.get("A_Hull")
         hull_model = None
         if isinstance(hull, dict):
             hull_model = hull.get("model")
-        key_info[key] = {"originShipName": origin, "hullModel": hull_model}
+        idx = key.split("_", 1)[0]
+        key_info[key] = {
+            "shipId": ship_id,
+            "index": idx,
+            "originShipName": origin,
+            "hullModel": hull_model,
+        }
         if origin and origin != key:
             skin_count += 1
 
-    # Resolve base readable name for every ship that has a shipId via the bridge.
+    # Resolve a base readable name for every ship GameParams defines.
     out: dict[str, dict] = {}
     resolved = 0
     deduped = 0
-    for idx, ship_id in index_to_id.items():
-        # Find the GameParams key for this index. Keys look like "PJSB018_Yamato_1944".
-        # Match by index prefix.
-        gp_key = None
-        for k in key_info:
-            if k.startswith(idx + "_") or k == idx:
-                gp_key = k
-                break
-        if gp_key is None:
-            continue
-        info = key_info[gp_key]
+    for gp_key, info in key_info.items():
         origin = info["originShipName"]
         # baseName: skin → resolve origin's readable name; else own readable name.
         base_name = _readable_name(gp_key)
         if origin and origin in key_info and origin != gp_key:
             base_name = _readable_name(origin)
             deduped += 1
-        bridge_entry = ships.get(str(ship_id)) or ships.get(ship_id)
+        bridge_entry = ships.get(str(info["shipId"])) or ships.get(info["shipId"])
         name = (bridge_entry or {}).get("name", "")
-        out[str(ship_id)] = {
-            "index": idx,
+        out[str(info["shipId"])] = {
+            "index": info["index"],
             "name": name,
             "baseName": base_name,
             "originShipName": origin,
