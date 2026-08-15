@@ -4092,7 +4092,9 @@ export default defineComponent({
         ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
-          {selfCard.value ? (
+          {/* In the 2D enlarged view the plaque + stats duplicate what the 3D
+              view shows — hide them so the 2D map owns the screen. */}
+          {!minimapZoom.value && selfCard.value ? (
             <div class="holo-map__shipcard">
               <HoloShipCard data={selfCard.value} />
               {/* Self battle stats ride to the right of the hull plaque:
