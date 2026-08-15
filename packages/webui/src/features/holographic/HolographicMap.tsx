@@ -909,7 +909,8 @@ export default defineComponent({
         const role = m.userData.role as TeamRole | undefined;
         const firstT = m.userData.firstT as number | undefined;
         // Unobserved ships: enemies are NOT shown at all; allies show a
-        // solid white glyph at their spawn (same rule as the 3D scene).
+        // GREEN outline glyph (class engraving kept via the polygon gaps)
+        // at their spawn — white stays reserved for the recorder.
         if (t < (firstT ?? Infinity)) {
           if (role === "enemy") continue;
           const gx = wx(m.userData.spawnX as number);
@@ -917,7 +918,10 @@ export default defineComponent({
           ctx.save();
           ctx.translate(gx, gz);
           ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-          drawShipGlyph(ctx, m.userData.type as string | undefined, 0, 0, 10, 0xffffff);
+          drawShipGlyph(ctx, m.userData.type as string | undefined, 0, 0, 11, TEAM_COLOR.ally, {
+            outline: true,
+            lineWidth: 1.2,
+          });
           ctx.restore();
           continue;
         }
@@ -1091,7 +1095,10 @@ export default defineComponent({
               zctx.save();
               zctx.translate(gx, gz);
               zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-              drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, 22, 0xf2f5f8);
+              drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, 24, TEAM_COLOR.ally, {
+                outline: true,
+                lineWidth: 1.6,
+              });
               zctx.restore();
               continue;
             }
@@ -1261,13 +1268,42 @@ export default defineComponent({
       );
     }
 
-    /** Draw one of the five WoWS class glyphs on a canvas context, centered at
-     *  (x, y), `size` px tall, in the given color. The geometry is TRACED from
-     *  the game's own 28×28 HUD bitmaps (solid hull + darker internal class
-     *  separators) so the shapes keep the original look, but rendered as
-     *  canvas vector fills — crisp and anti-aliased at any scale/rotation,
-     *  where the raster PNGs would alias. Glyphs point RIGHT (+x) at 0
-     *  rotation, matching the HUD art convention. */
+    /** Ship-class glyph polygons TRACED from the game's own 28×28 HUD
+     *  bitmaps (scripts/trace_icons.mjs: connected-component boundary
+     *  extraction + Douglas-Peucker). Each class is a list of solid
+     *  polygons; the GAPS between them reproduce the icons' engraved class
+     *  separators — battleship: two slanted cuts, cruiser: one, carrier:
+     *  deck line + bow joint, submarine: tail joint, destroyer: plain
+     *  triangle. Bow points RIGHT (+x) at 0 rotation. */
+    const SHIP_GLYPH_POLYS: Record<string, number[][][]> = {
+      destroyer: [
+        [[5.5, 9.5], [21.5, 13.5], [5.5, 17.5]],
+      ],
+      cruiser: [
+        [[16.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [11.5, 17.5], [15.5, 10.5]],
+        [[5.5, 9.5], [13.5, 9.5], [8.5, 17.5], [5.5, 17.5]],
+      ],
+      battleship: [
+        [[5.5, 9.5], [11.5, 9.5], [6.5, 17.5], [5.5, 17.5]],
+        [[14.5, 9.5], [15.5, 9.5], [11.5, 16.5], [9.5, 17.5], [13.5, 10.5]],
+        [[18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [13.5, 17.5], [17.5, 10.5]],
+      ],
+      aircarrier: [
+        [[16.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [16.5, 17.5]],
+        [[5.5, 9.5], [14.5, 9.5], [14.5, 12.5], [5.5, 12.5]],
+        [[5.5, 14.5], [14.5, 14.5], [14.5, 17.5], [5.5, 17.5]],
+      ],
+      submarine: [
+        [[5.5, 9.5], [6.5, 9.5], [6.5, 17.5], [5.5, 17.5]],
+        [[9.5, 10.5], [21.5, 13.5], [9.5, 16.5]],
+      ],
+    };
+
+    /** Draw a WoWS class glyph on a canvas context, centered at (x, y),
+     *  `size` px tall, in the given color. Solid mode fills the traced
+     *  polygons (vector — anti-aliased at any scale/rotation, where the
+     *  raster HUD PNGs alias); outline mode strokes them without fill, the
+     *  inter-polygon gaps keeping the class engraving readable. */
     function drawShipGlyph(
       ctx: CanvasRenderingContext2D,
       type: string | undefined,
@@ -1275,68 +1311,36 @@ export default defineComponent({
       y: number,
       size: number,
       color: number,
+      opts?: { outline?: boolean; lineWidth?: number },
     ) {
-      // Coordinate space is the original 28×28 atlas.
-      const s = size / 28;
       const t = type?.toLowerCase() ?? "";
-      // Solid hull polygon(s).
-      let hulls: [number, number][][];
-      // Internal class separators (each entry is a [start, end] line),
-      // stroked in a darkened hull colour.
-      let seps: [[number, number], [number, number]][] = [];
-      if (t.includes("destroyer")) {
-        hulls = [[[5.5, 9], [22.5, 13], [5.5, 17]]];
-      } else if (t.includes("battleship")) {
-        hulls = [[[4.5, 8.5], [13.5, 8.5], [22.5, 13], [13.5, 17.5], [4.5, 17.5]]];
-        seps = [
-          [[11.8, 9.2], [13.0, 16.8]],
-          [[14.6, 9.0], [15.8, 17.0]],
-          [[17.4, 10.2], [18.4, 15.8]],
-        ];
-      } else if (t.includes("aircarrier") || t.includes("aircar")) {
-        hulls = [[[4.5, 8.5], [15.5, 8.5], [22.5, 13], [15.5, 17.5], [4.5, 17.5]]];
-        seps = [
-          [[16.6, 9.6], [17.4, 16.4]],  // bow joint
-          [[4.8, 13], [15.8, 13]],      // deck line
-        ];
-      } else if (t.includes("submarine")) {
-        hulls = [
-          [[5, 9.5], [7, 9.5], [7, 16.5], [5, 16.5]],   // tail block
-          [[7, 10.2], [21.5, 13], [7, 15.8]],           // body
-        ];
-      } else {
-        // cruiser (default) — pentagon + two separators
-        hulls = [[[4.5, 8.5], [13.5, 8.5], [22.5, 13], [13.5, 17.5], [4.5, 17.5]]];
-        seps = [
-          [[13.6, 9.0], [14.8, 17.0]],
-          [[16.6, 10.0], [17.6, 16.0]],
-        ];
-      }
+      const cls = t.includes("destroyer")
+        ? "destroyer"
+        : t.includes("battleship")
+          ? "battleship"
+          : t.includes("aircarrier") || t.includes("aircar")
+            ? "aircarrier"
+            : t.includes("submarine")
+              ? "submarine"
+              : "cruiser"; // auxiliary + unknown fall back to cruiser
+      const polys = SHIP_GLYPH_POLYS[cls];
+      const s = size / 28;
       const hex = `#${color.toString(16).padStart(6, "0")}`;
-      // Darkened separator colour: each channel × 0.5.
-      const dr = Math.round(((color >> 16) & 0xff) * 0.5);
-      const dg = Math.round(((color >> 8) & 0xff) * 0.5);
-      const db = Math.round((color & 0xff) * 0.5);
-      const dark = `rgb(${dr},${dg},${db})`;
-      ctx.fillStyle = hex;
-      for (const h of hulls) {
+      for (const poly of polys) {
         ctx.beginPath();
-        ctx.moveTo(x + h[0][0] * s, y + h[0][1] * s);
-        for (let i = 1; i < h.length; i++) {
-          ctx.lineTo(x + h[i][0] * s, y + h[i][1] * s);
+        ctx.moveTo(x + poly[0][0] * s, y + poly[0][1] * s);
+        for (let i = 1; i < poly.length; i++) {
+          ctx.lineTo(x + poly[i][0] * s, y + poly[i][1] * s);
         }
         ctx.closePath();
-        ctx.fill();
-      }
-      if (seps.length > 0) {
-        ctx.strokeStyle = dark;
-        ctx.lineWidth = Math.max(0.8, s * 1.1);
-        ctx.lineCap = "round";
-        for (const [a, b] of seps) {
-          ctx.beginPath();
-          ctx.moveTo(x + a[0] * s, y + a[1] * s);
-          ctx.lineTo(x + b[0] * s, y + b[1] * s);
+        if (opts?.outline) {
+          ctx.strokeStyle = hex;
+          ctx.lineWidth = opts.lineWidth ?? Math.max(1, size * 0.07);
+          ctx.lineJoin = "round";
           ctx.stroke();
+        } else {
+          ctx.fillStyle = hex;
+          ctx.fill();
         }
       }
     }
@@ -2324,11 +2328,12 @@ export default defineComponent({
         marker.userData.spawnZ = traj.kind?.initialZ ?? 0;
         marker.userData.firstT = traj.samples[0]?.time ?? Infinity;
         // Ghost: the same class-scaled hull outline marking an unobserved /
-        // sunk ship's last-known position — white for allies, red for enemies
-        // (the game's "not spotted" marker). Enemy ships that were never seen
+        // sunk ship's last-known position — GREEN for allies, red for
+        // enemies (the game's "not spotted" marker; white stays reserved
+        // for the recorder's own hull). Enemy ships that were never seen
         // stay invisible.
         {
-          const ghostCol = role === "enemy" ? 0xcc3333 : 0xffffff;
+          const ghostCol = role === "enemy" ? 0xcc3333 : TEAM_COLOR.ally;
           const ghost = makeHullOutline(ghostCol, shipType, 0.85);
           ghost.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
           ghost.rotation.y = Math.PI - (traj.samples[0]?.yaw ?? 0);
