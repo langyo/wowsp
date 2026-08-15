@@ -41,7 +41,7 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { useToast } from "@/composables/useToast";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
@@ -953,10 +953,28 @@ export default defineComponent({
       }
     }
 
+    const route = useRoute();
+    /** One-shot deep-link seek (?t=seconds) forwarded to the map. */
+    const initialSeek = Math.max(0, Number(route.query.t) || 0);
+
     onMounted(async () => {
       await gd.detect();
       await reload();
       void encyclopedia.load(realm.value).catch(() => {});
+      // Deep link: ?open=<index|substr> auto-opens a replay from the list —
+      // handy for sharing a match link and for headless render checks.
+      const want = route.query.open;
+      if (want != null && want !== "") {
+        const list = parser.list.value;
+        const idx = /^\d+$/.test(String(want))
+          ? Number(want)
+          : list.findIndex((r) => r.path.includes(String(want)));
+        const hit = idx >= 0 ? list[idx] : undefined;
+        if (hit) {
+          pane.value = { kind: "archive", path: hit.path };
+          void parser.open(hit.path);
+        }
+      }
     });
 
     async function onSelectClient(path: string) {
@@ -1327,6 +1345,8 @@ export default defineComponent({
                       mapId={parser.current.value.mapName ?? ""}
                       matchGroup={parser.current.value.matchGroup ?? ""}
                       mapName={parser.current.value.mapName ?? ""}
+                      initialTime={initialSeek}
+                      initialMinimapZoom={route.query.mm === "1"}
                     />
                   )}
                 </div>
