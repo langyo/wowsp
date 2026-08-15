@@ -909,7 +909,7 @@ export default defineComponent({
         const role = m.userData.role as TeamRole | undefined;
         const firstT = m.userData.firstT as number | undefined;
         // Unobserved ships: enemies are NOT shown at all; allies show a
-        // white glyph OUTLINE at their spawn (same rule as the 3D scene).
+        // solid white glyph at their spawn (same rule as the 3D scene).
         if (t < (firstT ?? Infinity)) {
           if (role === "enemy") continue;
           const gx = wx(m.userData.spawnX as number);
@@ -917,15 +917,7 @@ export default defineComponent({
           ctx.save();
           ctx.translate(gx, gz);
           ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-          drawShipGlyph(
-            ctx,
-            m.userData.type as string | undefined,
-            0,
-            0,
-            10,
-            0xffffff,
-            { outline: true, lineWidth: 1.2 },
-          );
+          drawShipGlyph(ctx, m.userData.type as string | undefined, 0, 0, 10, 0xffffff);
           ctx.restore();
           continue;
         }
@@ -934,25 +926,17 @@ export default defineComponent({
           t >= (m.userData.deathTime as number);
         const cx = wx(m.position.x);
         const cz = wz(m.position.z);
-        // Vector class glyph, rotated to the ship's heading. Convention:
-        // rotation 0 points the glyph UP (north); yaw is clockwise from
-        // north with canvas up. The glyph's pointy end faces RIGHT (+x) at
-        // rest, so subtract 90° to land 0° pointing north — matching the 3D
-        // marker (rotation.y = PI - yaw on the mirrored frame). Vector
-        // strokes stay crisp at any scale/rotation; the HUD PNGs alias.
+        // Solid vector class glyph (traced from the game's HUD bitmap —
+        // original shape, crisp at any scale/rotation), rotated to the
+        // ship's heading: rotation 0 points the glyph UP (north), yaw is
+        // clockwise from north; the glyph's pointy end faces RIGHT (+x) at
+        // rest, so subtract 90° for 0° = north (matching the 3D marker's
+        // rotation.y = PI - yaw on the mirrored frame).
         const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
         ctx.save();
         ctx.translate(cx, cz);
         ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-        drawShipGlyph(
-          ctx,
-          m.userData.type as string | undefined,
-          0,
-          0,
-          dead ? 11 : 13,
-          color,
-          { outline: true, lineWidth: 1.4 },
-        );
+        drawShipGlyph(ctx, m.userData.type as string | undefined, 0, 0, dead ? 11 : 13, color);
         ctx.restore();
       }
 
@@ -1107,15 +1091,7 @@ export default defineComponent({
               zctx.save();
               zctx.translate(gx, gz);
               zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-              drawShipGlyph(
-                zctx,
-                m.userData.type as string | undefined,
-                0,
-                0,
-                22,
-                0xffffff,
-                { outline: true, lineWidth: 1.6 },
-              );
+              drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, 22, 0xf2f5f8);
               zctx.restore();
               continue;
             }
@@ -1124,22 +1100,14 @@ export default defineComponent({
               t >= (m.userData.deathTime as number);
             const cx = zwx(m.position.x);
             const cz = zwz(m.position.z);
-            // Vector outline glyph (crisp at any zoom/rotation — the HUD
-            // PNGs alias badly when rotated); sunk ships render greyed-out,
-            // live ships in their team colour.
+            // Solid traced vector glyph (original HUD shape, crisp at any
+            // zoom/rotation); sunk ships render greyed-out, live ships in
+            // their team colour.
             const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
             zctx.save();
             zctx.translate(cx, cz);
             zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-            drawShipGlyph(
-              zctx,
-              m.userData.type as string | undefined,
-              0,
-              0,
-              dead ? 26 : 34,
-              color,
-              { outline: true, lineWidth: 2 },
-            );
+            drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, dead ? 26 : 34, color);
             zctx.restore();
           }
           // Smoke screens — white start/end rings + remaining seconds on
@@ -1294,13 +1262,12 @@ export default defineComponent({
     }
 
     /** Draw one of the five WoWS class glyphs on a canvas context, centered at
-     *  (x, y), `size` px tall, in the given color. Same geometry as the
-     *  ShipTypeIcon component (27×27 atlas), normalized to the requested size.
-     *
-     *  `outline` renders the glyph as an anti-aliased VECTOR stroke (with a
-     *  faint fill for legibility) — the raster HUD PNGs scale/rotate with
-     *  visible jaggies, so the maps draw these paths instead. Glyphs point
-     *  RIGHT (+x) at 0 rotation, matching the HUD art convention. */
+     *  (x, y), `size` px tall, in the given color. The geometry is TRACED from
+     *  the game's own 28×28 HUD bitmaps (solid hull + darker internal class
+     *  separators) so the shapes keep the original look, but rendered as
+     *  canvas vector fills — crisp and anti-aliased at any scale/rotation,
+     *  where the raster PNGs would alias. Glyphs point RIGHT (+x) at 0
+     *  rotation, matching the HUD art convention. */
     function drawShipGlyph(
       ctx: CanvasRenderingContext2D,
       type: string | undefined,
@@ -1308,75 +1275,69 @@ export default defineComponent({
       y: number,
       size: number,
       color: number,
-      opts?: { outline?: boolean; lineWidth?: number },
     ) {
-      const s = size / 27;
-      const hex = `#${color.toString(16).padStart(6, "0")}`;
-      const outline = opts?.outline === true;
-      const lw = opts?.lineWidth ?? Math.max(1.2, size * 0.09);
-      const hulls: [number, number][][] = [];
-      const details: [number, number][][] = [];
+      // Coordinate space is the original 28×28 atlas.
+      const s = size / 28;
       const t = type?.toLowerCase() ?? "";
+      // Solid hull polygon(s).
+      let hulls: [number, number][][];
+      // Internal class separators (each entry is a [start, end] line),
+      // stroked in a darkened hull colour.
+      let seps: [[number, number], [number, number]][] = [];
       if (t.includes("destroyer")) {
-        hulls.push([[4.5, 8.5], [23, 13], [4.5, 17.5]]);
+        hulls = [[[5.5, 9], [22.5, 13], [5.5, 17]]];
       } else if (t.includes("battleship")) {
-        hulls.push([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
-        details.push([[13.5, 8.5], [8.5, 17.5]]);
-        details.push([[17, 8.5], [12.5, 17.5]]);
+        hulls = [[[4.5, 8.5], [13.5, 8.5], [22.5, 13], [13.5, 17.5], [4.5, 17.5]]];
+        seps = [
+          [[11.8, 9.2], [13.0, 16.8]],
+          [[14.6, 9.0], [15.8, 17.0]],
+          [[17.4, 10.2], [18.4, 15.8]],
+        ];
       } else if (t.includes("aircarrier") || t.includes("aircar")) {
-        hulls.push([[4.5, 8], [14.5, 8], [16, 8], [23, 13], [16, 18], [14.5, 18], [4.5, 18]]);
-        details.push([[4.5, 13], [14.5, 13]]);
+        hulls = [[[4.5, 8.5], [15.5, 8.5], [22.5, 13], [15.5, 17.5], [4.5, 17.5]]];
+        seps = [
+          [[16.6, 9.6], [17.4, 16.4]],  // bow joint
+          [[4.8, 13], [15.8, 13]],      // deck line
+        ];
       } else if (t.includes("submarine")) {
-        hulls.push([[4, 8.5], [5.5, 8.5], [5.5, 17.5], [4, 17.5]]);
-        hulls.push([[8.5, 9], [23, 13], [8.5, 17]]);
+        hulls = [
+          [[5, 9.5], [7, 9.5], [7, 16.5], [5, 16.5]],   // tail block
+          [[7, 10.2], [21.5, 13], [7, 15.8]],           // body
+        ];
       } else {
-        // cruiser (default) — pentagon + one diagonal
-        hulls.push([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
-        details.push([[14.5, 8.5], [9.5, 17.5]]);
+        // cruiser (default) — pentagon + two separators
+        hulls = [[[4.5, 8.5], [13.5, 8.5], [22.5, 13], [13.5, 17.5], [4.5, 17.5]]];
+        seps = [
+          [[13.6, 9.0], [14.8, 17.0]],
+          [[16.6, 10.0], [17.6, 16.0]],
+        ];
       }
-      const trace = (pts: [number, number][]) => {
+      const hex = `#${color.toString(16).padStart(6, "0")}`;
+      // Darkened separator colour: each channel × 0.5.
+      const dr = Math.round(((color >> 16) & 0xff) * 0.5);
+      const dg = Math.round(((color >> 8) & 0xff) * 0.5);
+      const db = Math.round((color & 0xff) * 0.5);
+      const dark = `rgb(${dr},${dg},${db})`;
+      ctx.fillStyle = hex;
+      for (const h of hulls) {
         ctx.beginPath();
-        ctx.moveTo(x + pts[0][0] * s, y + pts[0][1] * s);
-        for (let i = 1; i < pts.length; i++) {
-          ctx.lineTo(x + pts[i][0] * s, y + pts[i][1] * s);
+        ctx.moveTo(x + h[0][0] * s, y + h[0][1] * s);
+        for (let i = 1; i < h.length; i++) {
+          ctx.lineTo(x + h[i][0] * s, y + h[i][1] * s);
         }
-      };
-      if (outline) {
-        for (const h of hulls) {
-          trace(h);
-          ctx.closePath();
-          ctx.fillStyle = hex;
-          ctx.globalAlpha = 0.28;
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = hex;
-          ctx.lineWidth = lw;
-          ctx.lineJoin = "round";
+        ctx.closePath();
+        ctx.fill();
+      }
+      if (seps.length > 0) {
+        ctx.strokeStyle = dark;
+        ctx.lineWidth = Math.max(0.8, s * 1.1);
+        ctx.lineCap = "round";
+        for (const [a, b] of seps) {
+          ctx.beginPath();
+          ctx.moveTo(x + a[0] * s, y + a[1] * s);
+          ctx.lineTo(x + b[0] * s, y + b[1] * s);
           ctx.stroke();
         }
-        ctx.strokeStyle = hex;
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = Math.max(1, lw * 0.6);
-        for (const d of details) {
-          trace(d);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-      } else {
-        ctx.fillStyle = hex;
-        for (const h of hulls) {
-          trace(h);
-          ctx.closePath();
-          ctx.fill();
-        }
-        ctx.strokeStyle = hex;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = Math.max(1, s);
-        for (const d of details) {
-          trace(d);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
       }
     }
 
