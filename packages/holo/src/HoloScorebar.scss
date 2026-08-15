@@ -90,14 +90,17 @@
   background: rgb(10 16 26 / 30%);
 }
 
-/* Capturing diamond: owner-coloured body with a clockwise conic sweep
-   masked to the diamond — the diamond itself IS the loading ring (no extra
-   circle drawn around it). */
+/* Capturing diamond: owner-coloured border + faint owner body with a
+   clockwise conic sweep masked to the diamond — the diamond itself IS the
+   loading ring (no extra circle drawn around it). */
 .holo-scorebar__chip--diamond {
   width: 12px;
   height: 12px;
+  box-sizing: border-box;
   transform: rotate(45deg);
   transition: transform 0.38s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
 
   &::before {
     content: "";
@@ -105,7 +108,7 @@
     inset: 0;
     border-radius: 1px;
     background: currentColor;
-    opacity: 0.55;
+    opacity: 0.25;
   }
 }
 
