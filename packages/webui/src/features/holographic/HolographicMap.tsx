@@ -4096,24 +4096,29 @@ export default defineComponent({
             <div class="holo-map__shipcard">
               <HoloShipCard data={selfCard.value} />
               {/* Self battle stats ride to the right of the hull plaque:
-                  lucide icons, vertically centred against the card. */}
+                  icon + short label + number per stat, bottom-aligned with
+                  the plaque, content centred inside. */}
               {selfStats.value ? (
                 <div class="holo-map__selfstats">
-                  <span class="holo-map__selfstat" title="命中">
-                    <Crosshair size={13} />
-                    <b>{selfStats.value.hits}</b>
+                  <span class="holo-map__selfstat">
+                    <Crosshair size={14} class="holo-map__selfstat-ico" />
+                    <i class="holo-map__selfstat-label">{t("replay.selfHits")}</i>
+                    <b class="holo-map__selfstat-num">{selfStats.value.hits}</b>
                   </span>
-                  <span class="holo-map__selfstat" title="击沉">
-                    <Skull size={13} />
-                    <b>{selfStats.value.frags}</b>
+                  <span class="holo-map__selfstat">
+                    <Skull size={14} class="holo-map__selfstat-ico" />
+                    <i class="holo-map__selfstat-label">{t("replay.selfFrags")}</i>
+                    <b class="holo-map__selfstat-num">{selfStats.value.frags}</b>
                   </span>
-                  <span class="holo-map__selfstat" title="造成伤害">
-                    <Swords size={13} />
-                    <b>{selfStats.value.damage.toLocaleString()}</b>
+                  <span class="holo-map__selfstat">
+                    <Swords size={14} class="holo-map__selfstat-ico" />
+                    <i class="holo-map__selfstat-label">{t("replay.selfDamage")}</i>
+                    <b class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</b>
                   </span>
-                  <span class="holo-map__selfstat" title="承受伤害">
-                    <Shield size={13} />
-                    <b>{selfStats.value.taken.toLocaleString()}</b>
+                  <span class="holo-map__selfstat">
+                    <Shield size={14} class="holo-map__selfstat-ico" />
+                    <i class="holo-map__selfstat-label">{t("replay.selfTaken")}</i>
+                    <b class="holo-map__selfstat-num">{selfStats.value.taken.toLocaleString()}</b>
                   </span>
                 </div>
               ) : null}
