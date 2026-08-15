@@ -19,28 +19,20 @@ const CAP_COLORS: Record<HoloCapZone["owner"], string> = {
   neutral: "var(--holo-neutral, #ffffff)",
 };
 
-/** Unique clip ids per rendered chip (SVG clipPath must be id-referenced). */
-let clipSeq = 0;
-
-function CapChip({ cap, uid }: { cap: HoloCapZone; uid: string }) {
+function CapChip({ cap }: { cap: HoloCapZone }) {
   const active = !!cap.capturing || !!cap.contested;
   const ownerColor = CAP_COLORS[cap.owner];
-  const ringColor = cap.contested
-    ? "var(--holo-contested, #f5b85c)"
-    : ownerColor;
-  const fillColor = active
-    ? cap.contested
-      ? "var(--holo-contested, #f5b85c)"
-      : cap.owner === "neutral"
-        ? "var(--holo-capture, #4ade80)"
-        : ownerColor
-    : ownerColor;
-  // In-game cap widget: a square that rotates 45° into a diamond while
-  // capturing — the diamond fills from its top corner as progress accrues
-  // (clipped fill, no extra progress ring), then rotates back to a filled
-  // square once the point is held.
-  const rotated = active;
-  const bodyOpacity = active ? 0.9 : cap.progress >= 1 ? 0.85 : 0;
+  // The clockwise progress sweep is coloured by the side accruing the
+  // capture (ally green / enemy red) — white/red/green only, never yellow.
+  const sweepColor = CAP_COLORS[cap.captureSide ?? cap.owner];
+  const deg = Math.max(0, Math.min(360, Math.round((cap.progress ?? 0) * 360)));
+  // Letter: team colour on the idle square; white on a coloured diamond;
+  // dark on a white (neutral) diamond so it stays readable.
+  const letterColor = !active
+    ? ownerColor
+    : cap.owner === "neutral"
+      ? "rgba(10, 16, 26, 0.92)"
+      : "#ffffff";
   return (
     <span
       class={[
@@ -51,48 +43,31 @@ function CapChip({ cap, uid }: { cap: HoloCapZone; uid: string }) {
       ].join(" ")}
       title={cap.hint}
     >
-      <svg viewBox="0 0 30 30" width="26" height="26" aria-hidden="true">
-        <defs>
-          <clipPath id={uid}>
-            <rect x="8" y="8" width="14" height="14" />
-          </clipPath>
-        </defs>
-        <g
-          class="holo-scorebar__chip"
-          style={{
-            transform: rotated ? "rotate(45deg)" : "rotate(0deg)",
-          }}
-        >
-          {/* diamond body — clipped fill from the top corner */}
-          <rect
-            x="8" y="8" width="14" height="14"
-            fill="transparent"
-            class="holo-scorebar__fill"
-            style={{ clipPath: `url(#${uid})` }}
+      {/* Idle = square (roomier letter padding); capturing = diamond with a
+          clockwise conic sweep masked to the diamond shape. The two are
+          independent sizes — NOT a plain 45° rotation of each other. */}
+      <span
+        class={[
+          "holo-scorebar__chip",
+          active ? "holo-scorebar__chip--diamond" : "holo-scorebar__chip--square",
+        ].join(" ")}
+        style={{ color: ownerColor }}
+      >
+        {active ? (
+          <span
+            class="holo-scorebar__chip-sweep"
+            style={
+              {
+                "--holo-sweep-color": sweepColor,
+                "--holo-sweep-deg": `${deg}deg`,
+              } as Record<string, string>
+            }
           />
-          {/* progress fill: grows downward inside the diamond clip */}
-          <rect
-            x="8" y="8" width="14" height={Math.max(0, Math.min(1, cap.progress)) * 14}
-            fill={fillColor}
-            fill-opacity={bodyOpacity}
-            class="holo-scorebar__fillbar"
-            style={{ clipPath: `url(#${uid})` }}
-          />
-          {/* border */}
-          <rect
-            x="8" y="8" width="14" height="14" fill="none"
-            stroke={active ? ringColor : ownerColor}
-            stroke-width="1.8"
-            class="holo-scorebar__frame"
-          />
-        </g>
-        <text
-          x="15" y="20" text-anchor="middle" font-size="14" font-weight="800"
-          fill={cap.owner === "neutral" ? (active ? "var(--holo-cap-text, #ffffff)" : "#ffffff") : ownerColor}
-        >
+        ) : null}
+        <span class="holo-scorebar__chip-letter" style={{ color: letterColor }}>
           {cap.letter}
-        </text>
-      </svg>
+        </span>
+      </span>
     </span>
   );
 }
@@ -132,7 +107,7 @@ export default defineComponent({
               {s.scoreAlly}
             </span>
             <span class="holo-scorebar__caps">
-              {s.caps.map((c) => <CapChip key={c.letter} cap={c} uid={`capclip${clipSeq++}`} />)}
+              {s.caps.map((c) => <CapChip key={c.letter} cap={c} />)}
             </span>
             <span class="holo-scorebar__score holo-scorebar__score--enemy">
               {s.scoreEnemy}

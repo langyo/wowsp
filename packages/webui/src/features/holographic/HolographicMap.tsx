@@ -3237,6 +3237,7 @@ export default defineComponent({
         progress: c.progress,
         capturing: c.capturing,
         contested: c.contested,
+        captureSide: c.captureTeam === 1 ? "ally" : c.captureTeam === 2 ? "enemy" : undefined,
         hint: c.contested
           ? `${c.letter} 双方压点，进度暂停`
           : c.capturing
@@ -3387,15 +3388,16 @@ export default defineComponent({
             st.progress += step / (Math.max(ally, enemy) >= 2 ? 40 : 60);
             if (st.progress > 1) st.progress = 1;
           }
-        } else if (enemy > 0) {
-          // An enemy is inside: accrual pauses (game rule). If allies are
-          // also inside the point is contested (progress frozen); otherwise
-          // the enemy is re-capturing (ring visual only — the actual flip
-          // comes from the prop0 stream).
-          if (ally === 0) {
-            st.progress += step / (enemy >= 2 ? 40 : 60);
-            if (st.progress > 1) st.progress = 1;
-          }
+        } else if (enemy > 0 && ally === 0) {
+          // Enemy-only inside an allied point: re-capturing (ring visual;
+          // the actual flip comes from the prop0 stream).
+          st.progress += step / (enemy >= 2 ? 40 : 60);
+          if (st.progress > 1) st.progress = 1;
+        } else if (ally > 0 && enemy === 0) {
+          // Allied-only inside an enemy point: we are re-capturing it the
+          // same way (progress accrues, no owner accrual while inside).
+          st.progress += step / (ally >= 2 ? 40 : 60);
+          if (st.progress > 1) st.progress = 1;
         } else {
           // No enemy inside: the owner scores accrual points; allied ships
           // inside (or nobody) keep it ticking.
@@ -3580,7 +3582,20 @@ export default defineComponent({
           contested: ally > 0 && enemy > 0,
           capturing,
           speed: 1 / (Math.max(ally, enemy) >= 2 ? 40 : 60),
-          captureTeam: st.owner === 0 ? (ally > enemy ? 1 : enemy > ally ? 2 : 0) : st.owner,
+          captureTeam:
+            st.owner === 0
+              ? ally > enemy
+                ? 1
+                : enemy > ally
+                  ? 2
+                  : 0
+              : st.owner === 1
+                ? enemy > 0 && ally === 0
+                  ? 2
+                  : 0
+                : ally > 0 && enemy === 0
+                  ? 1
+                  : 0,
         });
       }
       capDisplay.value = display;

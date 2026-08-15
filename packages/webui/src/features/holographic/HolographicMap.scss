@@ -309,7 +309,8 @@
 .holo-map__killfeed {
   position: absolute;
   left: 12px;
-  bottom: 62px;
+  /* Above the self ship card (controls at bottom:12px + card ≈72px tall). */
+  bottom: 148px;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;

@@ -39,6 +39,8 @@ export interface HoloCapZone {
   capturing?: boolean;
   /** Both teams inside the ring — progress paused (in-game "contested"). */
   contested?: boolean;
+  /** Team currently accruing the capture progress (drives the sweep colour). */
+  captureSide?: "ally" | "enemy";
   /** Optional tooltip for the letter chip. */
   hint?: string;
 }
