@@ -1149,7 +1149,13 @@ export default defineComponent({
                         "replay-card",
                         currentPath.value === r.path ? "replay-card--active" : "",
                       ]}
-                      onClick={() => parser.open(r.path)}
+                      onClick={() => {
+                        // Leaving the live panel: close it before opening the
+                        // replay, otherwise the live view keeps rendering and
+                        // the selected replay appears to never open.
+                        liveOpen.value = false;
+                        void parser.open(r.path);
+                      }}
                     >
                       <div class="replay-card__top">
                         <span class="replay-card__ship">
