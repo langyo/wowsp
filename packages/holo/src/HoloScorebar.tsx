@@ -19,11 +19,12 @@ const CAP_COLORS: Record<HoloCapZone["owner"], string> = {
   neutral: "var(--holo-neutral, #ffffff)",
 };
 
-// Diamond edge sweep: a dash arc runs along the diamond outline from the
-// top corner, clockwise — the diamond's own edge IS the loading ring (no
-// extra circle drawn around it, no fill pie).
-const DIAMOND_SIDE = 14; // in the 30-unit viewBox (same as the in-game widget)
-const DIAMOND_PERIM = DIAMOND_SIDE * 4;
+// Diamond geometry (30-unit viewBox, same footprint as the in-game widget):
+// the outline path starts at the TOP corner and runs clockwise, so a
+// stroke-dasharray arc along it sweeps clockwise from 12 o'clock — the
+// diamond's own edge IS the loading ring (no extra circle, no fill pie).
+const DIAMOND_PATH = "M15 5.1 L24.9 15 L15 24.9 L5.1 15 Z";
+const DIAMOND_PERIM = 4 * (24.9 - 15) * Math.SQRT2;
 
 function CapChip({ cap }: { cap: HoloCapZone }) {
   const active = !!cap.capturing || !!cap.contested;
@@ -48,25 +49,21 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
           sizes, not a 45° rotation of the same square. */}
       <svg viewBox="0 0 30 30" width="26" height="26" aria-hidden="true">
         {active ? (
-          <g transform="rotate(45 15 15)">
+          <>
             {/* owner-coloured body + owner outline */}
-            <rect
-              x={8} y={8} width={DIAMOND_SIDE} height={DIAMOND_SIDE}
-              fill={ownerColor} fill-opacity="0.55"
+            <path d={DIAMOND_PATH} fill={ownerColor} fill-opacity="0.55" />
+            <path
+              d={DIAMOND_PATH} fill="none"
+              stroke={ownerColor} stroke-width="1.8" stroke-linejoin="round"
             />
-            <rect
-              x={8} y={8} width={DIAMOND_SIDE} height={DIAMOND_SIDE}
-              fill="none" stroke={ownerColor} stroke-width="1.8"
-            />
-            {/* clockwise edge sweep (the loading ring), starting at 12 o'clock */}
-            <rect
-              x={8} y={8} width={DIAMOND_SIDE} height={DIAMOND_SIDE}
-              fill="none" stroke={sweepColor} stroke-width="3"
+            {/* clockwise edge sweep (the loading ring), from 12 o'clock */}
+            <path
+              d={DIAMOND_PATH} fill="none"
+              stroke={sweepColor} stroke-width="3"
               stroke-linecap="round"
               stroke-dasharray={`${dash} ${DIAMOND_PERIM}`}
-              transform="rotate(-45 15 15)"
             />
-          </g>
+          </>
         ) : (
           <rect
             x={5} y={5} width={20} height={20}
