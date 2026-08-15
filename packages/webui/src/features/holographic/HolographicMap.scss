@@ -77,7 +77,7 @@
     bottom: calc(100% + 8px);
     display: flex;
     flex-direction: row;
-    align-items: flex-end;
+    align-items: center;
     gap: 10px;
     pointer-events: none;
   }
@@ -235,50 +235,46 @@
   pointer-events: none;
 }
 
-/* Live self-stats — ride to the right of the hull plaque (bottom-left):
-   a glassy strip filling the remaining rail width, bottom-aligned. */
+/* Live self-stats — lucide icons + numbers in a glassy strip to the right
+   of the hull plaque, vertically centred against it. */
 .holo-map__selfstats {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 14px;
-  padding: 0 6px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0.5rem 0.9rem;
   background: rgb(96 108 126 / 42%);
   border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 8px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  font-size: var(--text-2xs);
   color: rgb(255 255 255 / 92%);
   pointer-events: none;
 }
 .holo-map__selfstat {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  img { display: block; }
-  &--dmg {
-    padding-left: 12px;
-    border-left: 1px solid rgb(255 255 255 / 18%);
+  gap: 5px;
+  padding: 0 0.7rem;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+
+  &:not(:first-child) {
+    border-left: 1px solid rgb(255 255 255 / 16%);
   }
-  &--taken {
-    padding-left: 12px;
-    border-left: 1px solid rgb(255 255 255 / 18%);
-    .holo-map__selfstat-num { color: #f8b4b4; }
+
+  svg {
+    flex-shrink: 0;
+    opacity: 0.8;
   }
-}
-.holo-map__selfstat-ico {
-  font-size: 11px;
-  line-height: 1;
-}
-.holo-map__selfstat-num {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
+
+  b {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
 }
 
 /* ── Kill feed (sink notifications) — bottom-left, ABOVE the playback

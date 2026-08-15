@@ -1,5 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
+import { Crosshair, Shield, Skull, Swords } from "lucide-vue-next";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
@@ -183,11 +184,9 @@ function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
 }
 import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
-import { bundledRibbonUrl, ribbonUrl } from "./ribbonIcons";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
-import { useConfigStore } from "@/stores/config";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
 import { t } from "@/i18n";
@@ -454,20 +453,6 @@ export default defineComponent({
         }
       }
       return { hits, damage, frags, taken };
-    });
-    /** Ribbon icon URLs for the self-stats bar, resolved from res_mods skins
-     *  (falls back to bundled art). */
-    const selfRibbonUrls = ref<{ hits: string | null; frags: string | null }>({
-      hits: null,
-      frags: null,
-    });
-    onMounted(() => {
-      const path = useConfigStore().activeInstall?.path;
-      void Promise.all([ribbonUrl("main_caliber", path), ribbonUrl("frag", path)]).then(
-        ([hits, frags]) => {
-          selfRibbonUrls.value = { hits, frags };
-        },
-      );
     });
     /** Ship class for a shipId (encyclopedia → offline DB → "". */
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
@@ -4111,34 +4096,25 @@ export default defineComponent({
             <div class="holo-map__shipcard">
               <HoloShipCard data={selfCard.value} />
               {/* Self battle stats ride to the right of the hull plaque:
-                  bottom-aligned, filling the remaining rail width. */}
+                  lucide icons, vertically centred against the card. */}
               {selfStats.value ? (
                 <div class="holo-map__selfstats">
-                  <div class="holo-map__selfstat">
-                    <img
-                      src={selfRibbonUrls.value.hits ?? bundledRibbonUrl("main_caliber") ?? ""}
-                      width={26}
-                      height={10}
-                      alt=""
-                    />
-                    <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
-                  </div>
-                  <div class="holo-map__selfstat">
-                    <img
-                      src={selfRibbonUrls.value.frags ?? bundledRibbonUrl("frag") ?? ""}
-                      width={26}
-                      height={10}
-                      alt=""
-                    />
-                    <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
-                  </div>
-                  <div class="holo-map__selfstat holo-map__selfstat--dmg">
-                    <strong class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</strong>
-                  </div>
-                  <div class="holo-map__selfstat holo-map__selfstat--taken">
-                    <span class="holo-map__selfstat-ico">🛡</span>
-                    <strong class="holo-map__selfstat-num">{selfStats.value.taken.toLocaleString()}</strong>
-                  </div>
+                  <span class="holo-map__selfstat" title="命中">
+                    <Crosshair size={13} />
+                    <b>{selfStats.value.hits}</b>
+                  </span>
+                  <span class="holo-map__selfstat" title="击沉">
+                    <Skull size={13} />
+                    <b>{selfStats.value.frags}</b>
+                  </span>
+                  <span class="holo-map__selfstat" title="造成伤害">
+                    <Swords size={13} />
+                    <b>{selfStats.value.damage.toLocaleString()}</b>
+                  </span>
+                  <span class="holo-map__selfstat" title="承受伤害">
+                    <Shield size={13} />
+                    <b>{selfStats.value.taken.toLocaleString()}</b>
+                  </span>
                 </div>
               ) : null}
             </div>
