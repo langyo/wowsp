@@ -19,21 +19,23 @@ const CAP_COLORS: Record<HoloCapZone["owner"], string> = {
   neutral: "var(--holo-neutral, #ffffff)",
 };
 
-// Diamond geometry (30-unit viewBox, same footprint as the in-game widget):
-// the outline path starts at the TOP corner and runs clockwise, so a
-// stroke-dasharray arc along it sweeps clockwise from 12 o'clock — the
-// diamond's own edge IS the loading ring (no extra circle, no fill pie).
-const DIAMOND_PATH = "M15 5.1 L24.9 15 L15 24.9 L5.1 15 Z";
-const DIAMOND_PERIM = 4 * (24.9 - 15) * Math.SQRT2;
+// Diamond geometry (30-unit viewBox): the outline path starts at the TOP
+// corner and runs clockwise, so a clip rect growing downward fills the
+// diamond top-to-bottom with the capturing side's colour as progress
+// accrues (in-game behaviour), while the outline stays the owner's.
+const DIAMOND_PATH = "M15 1.5 L28.5 15 L15 28.5 L1.5 15 Z";
+
+/** Unique clip ids per rendered chip (SVG clipPath is id-referenced). */
+let clipSeq = 0;
 
 function CapChip({ cap }: { cap: HoloCapZone }) {
   const active = !!cap.capturing || !!cap.contested;
   const ownerColor = CAP_COLORS[cap.owner];
-  // The rotating edge arc is coloured by the side accruing the capture
-  // (ally green / enemy red) — white/red/green only, never yellow.
-  const sweepColor = CAP_COLORS[cap.captureSide ?? cap.owner];
+  // The capture fill is coloured by the side accruing the capture (ally
+  // green / enemy red) — white/red/green only, never yellow.
+  const fillColor = CAP_COLORS[cap.captureSide ?? cap.owner];
   const progress = Math.max(0, Math.min(1, cap.progress ?? 0));
-  const dash = DIAMOND_PERIM * progress;
+  const uid = `capfill${clipSeq++}`;
   return (
     <span
       class={[
@@ -44,24 +46,31 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
       ].join(" ")}
       title={cap.hint}
     >
-      {/* Idle = square (larger, roomier letter padding); capturing = diamond
-          (kept at the in-game footprint). The two shapes are independent
-          sizes, not a 45° rotation of the same square. */}
-      <svg viewBox="0 0 30 30" width="26" height="26" aria-hidden="true">
+      {/* Idle = square (roomier letter padding); capturing = diamond (a bit
+          larger than before, matching the in-game widget footprint). The two
+          shapes are independent sizes, not a 45° rotation of the same square. */}
+      <svg viewBox="0 0 30 30" width="28" height="28" aria-hidden="true">
         {active ? (
           <>
-            {/* owner-coloured body + owner outline */}
-            <path d={DIAMOND_PATH} fill={ownerColor} fill-opacity="0.55" />
+            <defs>
+              <clipPath id={uid}>
+                <path d={DIAMOND_PATH} />
+              </clipPath>
+            </defs>
+            {/* owner body behind the fill */}
+            <path d={DIAMOND_PATH} fill={ownerColor} fill-opacity="0.3" />
+            {/* capture fill: grows top→bottom with progress, clipped to the
+                diamond (the fill covers the whole diamond width, not just a
+                corner) */}
+            <rect
+              x="0" y="0" width="30" height={30 * progress}
+              fill={fillColor} fill-opacity="0.85"
+              clip-path={`url(#${uid})`}
+            />
+            {/* owner outline */}
             <path
               d={DIAMOND_PATH} fill="none"
               stroke={ownerColor} stroke-width="1.8" stroke-linejoin="round"
-            />
-            {/* clockwise edge sweep (the loading ring), from 12 o'clock */}
-            <path
-              d={DIAMOND_PATH} fill="none"
-              stroke={sweepColor} stroke-width="3"
-              stroke-linecap="round"
-              stroke-dasharray={`${dash} ${DIAMOND_PERIM}`}
             />
           </>
         ) : (
