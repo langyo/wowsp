@@ -189,7 +189,7 @@ import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import SCheckbox from "@/components/base/SCheckbox";
-import { t } from "@/i18n";
+import { t as i18nT } from "@/i18n";
 import "./HolographicMap.scss";
 
 /**
@@ -732,13 +732,13 @@ export default defineComponent({
         else enemy.push(l);
       }
       if (self.length > 0) {
-        groups.push({ key: "self", title: t("replay.camera.me"), items: self });
+        groups.push({ key: "self", title: i18nT("replay.camera.me"), items: self });
       }
       if (ally.length > 0) {
-        groups.push({ key: "ally", title: t("replay.camera.allies"), items: ally });
+        groups.push({ key: "ally", title: i18nT("replay.camera.allies"), items: ally });
       }
       if (enemy.length > 0) {
-        groups.push({ key: "enemy", title: t("replay.camera.enemies"), items: enemy });
+        groups.push({ key: "enemy", title: i18nT("replay.camera.enemies"), items: enemy });
       }
       return groups;
     });
@@ -1201,7 +1201,7 @@ export default defineComponent({
         .filter(
           (x) =>
             x.kind?.entityType === 2 &&
-            (x.samples.length >= 80 ||
+            (x.samples.length >= 8 ||
               (x.kind?.shipId != null && x.samples.length > 0)),
         )
         .map((x) => x.entityId)
@@ -1735,7 +1735,7 @@ export default defineComponent({
       // order is the fallback team-split heuristic when a roster join fails.
       const isShip = (t: EntityTrajectory) =>
         t.kind?.entityType === 2 &&
-        (t.samples.length >= 80 ||
+        (t.samples.length >= 8 ||
           (t.kind?.shipId != null && t.samples.length > 0));
       const shipTrajs = props.trajectories.filter(isShip);
       const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
@@ -2718,7 +2718,7 @@ export default defineComponent({
             }
             if (label) {
               label.visible = true;
-              label.ghostText = `已消失 ${t.toFixed(1)} s`;
+              label.ghostText = i18nT("replay.legend.gone", { n: t.toFixed(0) });
             }
           }
           continue;
@@ -3975,7 +3975,7 @@ export default defineComponent({
           {shipLabels.value.map((lbl) => (
             <HoloLabel
               key={lbl.entityId}
-              deadText={t("replay.legend.dead")}
+              deadText={i18nT("replay.legend.dead")}
               label={{
                 key: lbl.entityId,
                 x: lbl.x,
@@ -4077,14 +4077,14 @@ export default defineComponent({
         {minimapZoom.value ? (
           <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
             <div class="holo-map__mmzoom-head">
-              <span>{t("replay.minimap.zoom")}</span>
+              <span>{i18nT("replay.minimap.zoom")}</span>
               <SCheckbox
                 modelValue={minimapShowTrails.value}
                 variant="switch"
                 onClick={(e: MouseEvent) => e.stopPropagation()}
                 onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
               >
-                {t("replay.minimap.trails")}
+                {i18nT("replay.minimap.trails")}
               </SCheckbox>
             </div>
             <canvas ref={zoomCanvas} width={760} height={760} class="holo-map__mmzoom-canvas" />
@@ -4104,22 +4104,22 @@ export default defineComponent({
                 <div class="holo-map__selfstats">
                   <span class="holo-map__selfstat">
                     <Crosshair size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{t("replay.selfHits")}</i>
+                    <i class="holo-map__selfstat-label">{i18nT("replay.selfHits")}</i>
                     <b class="holo-map__selfstat-num">{selfStats.value.hits}</b>
                   </span>
                   <span class="holo-map__selfstat">
                     <Skull size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{t("replay.selfFrags")}</i>
+                    <i class="holo-map__selfstat-label">{i18nT("replay.selfFrags")}</i>
                     <b class="holo-map__selfstat-num">{selfStats.value.frags}</b>
                   </span>
                   <span class="holo-map__selfstat">
                     <Swords size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{t("replay.selfDamage")}</i>
+                    <i class="holo-map__selfstat-label">{i18nT("replay.selfDamage")}</i>
                     <b class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</b>
                   </span>
                   <span class="holo-map__selfstat">
                     <Shield size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{t("replay.selfTaken")}</i>
+                    <i class="holo-map__selfstat-label">{i18nT("replay.selfTaken")}</i>
                     <b class="holo-map__selfstat-num">{selfStats.value.taken.toLocaleString()}</b>
                   </span>
                 </div>
@@ -4129,7 +4129,7 @@ export default defineComponent({
           <button
               class="holo-map__lbltoggle"
               onClick={() => { showLabels.value = !showLabels.value; }}
-              title={showLabels.value ? t("replay.labels.hide") : t("replay.labels.show")}
+              title={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
             >
               {showLabels.value ? "◉" : "◎"}
             </button>
@@ -4141,7 +4141,7 @@ export default defineComponent({
                     e.stopPropagation();
                     cameraMenuOpen.value = !cameraMenuOpen.value;
                   }}
-                  title={t("replay.camera.title")}
+                  title={i18nT("replay.camera.title")}
                 >
                   {cameraMode.value === "original" ? "🎥" : cameraMode.value === "follow" ? "◎" : "⛶"}
                 </button>
@@ -4152,14 +4152,14 @@ export default defineComponent({
                         class={["holo-map__cam-mode", cameraMode.value === "free" ? "holo-map__cam-mode--on" : ""]}
                         onClick={() => { cameraMode.value = "free"; cameraMenuOpen.value = false; }}
                       >
-                        {t("replay.camera.free")}
+                        {i18nT("replay.camera.free")}
                       </button>
                       {props.cameraFrames.length > 0 ? (
                         <button
                           class={["holo-map__cam-mode", cameraMode.value === "original" ? "holo-map__cam-mode--on" : ""]}
                           onClick={() => { cameraMode.value = "original"; cameraMenuOpen.value = false; }}
                         >
-                          {t("replay.camera.original")}
+                          {i18nT("replay.camera.original")}
                         </button>
                       ) : null}
                     </div>
@@ -4193,7 +4193,7 @@ export default defineComponent({
                               <span class="holo-map__cam-ship">{item.shipName}</span>
                               <span class="holo-map__cam-meta">
                                 {item.tier ? tierToRoman(item.tier) : ""}
-                                {item.type ? ` ${t(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
+                                {item.type ? ` ${i18nT(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
                                 {item.maxHp != null ? ` · ${item.maxHp.toLocaleString()} HP` : ""}
                               </span>
                             </span>
@@ -4255,7 +4255,7 @@ export default defineComponent({
           <div class="holo-map__roster-overlay">
             <table>
               <thead>
-                <tr><th colspan="3">{t("replay.roster.allies")}</th></tr>
+                <tr><th colspan="3">{i18nT("replay.roster.allies")}</th></tr>
               </thead>
               <tbody>
                 {props.vehicles.filter(v => v.relation <= 1).map(v => (
@@ -4267,7 +4267,7 @@ export default defineComponent({
                 ))}
               </tbody>
               <thead>
-                <tr><th colspan="3">{t("replay.roster.enemies")}</th></tr>
+                <tr><th colspan="3">{i18nT("replay.roster.enemies")}</th></tr>
               </thead>
               <tbody>
                 {props.vehicles.filter(v => v.relation > 1).map(v => (
