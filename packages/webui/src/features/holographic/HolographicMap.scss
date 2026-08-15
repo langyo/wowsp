@@ -77,7 +77,7 @@
     bottom: calc(100% + 8px);
     display: flex;
     flex-direction: row;
-    align-items: center;
+    align-items: flex-end;
     gap: 10px;
     pointer-events: none;
   }
@@ -235,13 +235,14 @@
   pointer-events: none;
 }
 
-/* Live self-stats — lucide icons + numbers in a glassy strip to the right
-   of the hull plaque, vertically centred against it. */
+/* Live self-stats — icon + short label + number per stat in a glassy
+   strip to the right of the hull plaque. The strip itself bottom-aligns
+   with the plaque; each stat inside is a centred mini column. */
 .holo-map__selfstats {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
-  padding: 0.5rem 0.9rem;
+  padding: 0.45rem 0.3rem;
   background: rgb(96 108 126 / 42%);
   border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 8px;
@@ -252,29 +253,35 @@
 }
 .holo-map__selfstat {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 0 0.7rem;
-  font-size: var(--text-xs);
+  justify-content: center;
+  gap: 3px;
+  padding: 0 0.8rem;
   white-space: nowrap;
 
   &:not(:first-child) {
     border-left: 1px solid rgb(255 255 255 / 16%);
   }
-
-  svg {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  b {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
+}
+.holo-map__selfstat-ico {
+  opacity: 0.85;
+  line-height: 0;
+}
+.holo-map__selfstat-label {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  color: rgb(255 255 255 / 55%);
+  letter-spacing: 0.02em;
+}
+.holo-map__selfstat-num {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 /* ── Kill feed (sink notifications) — bottom-left, ABOVE the playback
