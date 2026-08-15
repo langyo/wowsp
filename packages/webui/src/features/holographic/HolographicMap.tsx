@@ -267,8 +267,6 @@ export default defineComponent({
     let playRaf = 0;
     let lastTick = 0;
 
-    // Time display toggle: 0=elapsed, 1=remaining, 2=total
-    const timeMode = ref(0);
     const showRoster = ref(false);
     // Toggle for the floating ship labels (info overlay).
     const showLabels = ref(true);
@@ -332,19 +330,15 @@ export default defineComponent({
     const minimapZoom = ref(false);
     const minimapShowTrails = ref(true);
 
-    function toggleTimeMode() {
-      timeMode.value = (timeMode.value + 1) % 3;
-    }
     function formatTime(sec: number): string {
       const s = Math.max(0, Math.round(sec));
       const m = Math.floor(s / 60);
       return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
     }
+    /** Fixed "elapsed / total" readout. */
     function displayTime(): string {
       const d = duration.value || 0;
       const c = current.value;
-      if (timeMode.value === 1) return `-${formatTime(d - c)} / ${formatTime(d)}`;
-      if (timeMode.value === 2) return formatTime(d);
       return `${formatTime(c)} / ${formatTime(d)}`;
     }
 
@@ -422,6 +416,15 @@ export default defineComponent({
       let hits = 0;
       let damage = 0;
       let frags = 0;
+      // Damage taken: every point of HP the self ship lost up to the
+      // playhead (the in-game "承受伤害" readout beside the HP plaque).
+      let taken = 0;
+      const hps = selfTraj.hpSamples ?? [];
+      for (let i = 1; i < hps.length; i++) {
+        if (hps[i].time > current.value) break;
+        const drop = hps[i - 1].value - hps[i].value;
+        if (drop > 0) taken += drop;
+      }
       for (const e of props.explosions) {
         if (e.time > current.value) continue; // not time-sorted in all dumps
         const s = sampleAt(selfTraj, e.time);
@@ -450,7 +453,7 @@ export default defineComponent({
           }
         }
       }
-      return { hits, damage, frags };
+      return { hits, damage, frags, taken };
     });
     /** Ribbon icon URLs for the self-stats bar, resolved from res_mods skins
      *  (falls back to bundled art). */
@@ -3599,8 +3602,10 @@ export default defineComponent({
         });
       }
       capDisplay.value = display;
-      allyScore.value = allyScoreNow;
-      enemyScore.value = enemyScoreNow;
+      // Standard battles end at 1000 points — clamp both scores so the
+      // reconstructed total can never exceed the real win condition.
+      allyScore.value = Math.min(allyScoreNow, 1000);
+      enemyScore.value = Math.min(enemyScoreNow, 1000);
     }
 
     /** Owner at time t from the raw capSamples stream; before the first
@@ -3992,33 +3997,6 @@ export default defineComponent({
         {props.replayPath ? (
           <>
           <div class="holo-map__scorebar-wrap"><HoloScorebar state={scorebarState.value} /></div>
-          {/* Live self statistics (top-right): a slim long bar matching the
-              in-game strip, using res_mods ribbon skins when available. */}
-          {selfStats.value ? (
-            <div class="holo-map__damage">
-              <div class="holo-map__selfstat">
-                <img
-                  src={selfRibbonUrls.value.hits ?? bundledRibbonUrl("main_caliber") ?? ""}
-                  width={26}
-                  height={10}
-                  alt=""
-                />
-                <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
-              </div>
-              <div class="holo-map__selfstat">
-                <img
-                  src={selfRibbonUrls.value.frags ?? bundledRibbonUrl("frag") ?? ""}
-                  width={26}
-                  height={10}
-                  alt=""
-                />
-                <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
-              </div>
-              <div class="holo-map__selfstat holo-map__selfstat--dmg">
-                <strong class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</strong>
-              </div>
-            </div>
-          ) : null}
           </>
         ) : null}
         {/* Kill feed (sink notifications) — bottom-left. Each entry shows
@@ -4110,6 +4088,37 @@ export default defineComponent({
           {selfCard.value ? (
             <div class="holo-map__shipcard">
               <HoloShipCard data={selfCard.value} />
+              {/* Self battle stats ride to the right of the hull plaque:
+                  bottom-aligned, filling the remaining rail width. */}
+              {selfStats.value ? (
+                <div class="holo-map__selfstats">
+                  <div class="holo-map__selfstat">
+                    <img
+                      src={selfRibbonUrls.value.hits ?? bundledRibbonUrl("main_caliber") ?? ""}
+                      width={26}
+                      height={10}
+                      alt=""
+                    />
+                    <strong class="holo-map__selfstat-num">{selfStats.value.hits}</strong>
+                  </div>
+                  <div class="holo-map__selfstat">
+                    <img
+                      src={selfRibbonUrls.value.frags ?? bundledRibbonUrl("frag") ?? ""}
+                      width={26}
+                      height={10}
+                      alt=""
+                    />
+                    <strong class="holo-map__selfstat-num">{selfStats.value.frags}</strong>
+                  </div>
+                  <div class="holo-map__selfstat holo-map__selfstat--dmg">
+                    <strong class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</strong>
+                  </div>
+                  <div class="holo-map__selfstat holo-map__selfstat--taken">
+                    <span class="holo-map__selfstat-ico">🛡</span>
+                    <strong class="holo-map__selfstat-num">{selfStats.value.taken.toLocaleString()}</strong>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <button
@@ -4210,9 +4219,7 @@ export default defineComponent({
                 current.value = Number((e.target as HTMLInputElement).value);
               }}
             />
-            <span class="holo-map__time" onClick={toggleTimeMode} title="Click to toggle elapsed / remaining / total">
-              {displayTime()}
-            </span>            <div class="holo-map__speed">
+            <span class="holo-map__time">{displayTime()}</span>            <div class="holo-map__speed">
               <button
                 class="holo-map__speed-btn"
                 onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}

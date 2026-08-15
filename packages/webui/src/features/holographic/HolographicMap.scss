@@ -75,6 +75,10 @@
     position: absolute;
     left: 0;
     bottom: calc(100% + 8px);
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 10px;
     pointer-events: none;
   }
 
@@ -231,78 +235,50 @@
   pointer-events: none;
 }
 
-/* Live self-stats — a slim capsule bar (top-right), mirroring the in-game
-   strip's proportions at a smaller scale. */
-.holo-map__damage {
-  position: absolute;
-  top: 10px;
-  right: 8px;
-  z-index: 3;
+/* Live self-stats — ride to the right of the hull plaque (bottom-left):
+   a glassy strip filling the remaining rail width, bottom-aligned. */
+.holo-map__selfstats {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  padding: 3px 12px;
-  background: rgba(13, 20, 34, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 0 6px 6px;
+  background: rgb(96 108 126 / 42%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   font-size: var(--text-2xs);
-  color: rgba(255, 255, 255, 0.92);
+  color: rgb(255 255 255 / 92%);
   pointer-events: none;
 }
 .holo-map__selfstat {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   img { display: block; }
   &--dmg {
     padding-left: 12px;
-    border-left: 1px solid rgba(255, 255, 255, 0.18);
+    border-left: 1px solid rgb(255 255 255 / 18%);
   }
+  &--taken {
+    padding-left: 12px;
+    border-left: 1px solid rgb(255 255 255 / 18%);
+    .holo-map__selfstat-num { color: #f8b4b4; }
+  }
+}
+.holo-map__selfstat-ico {
+  font-size: 11px;
+  line-height: 1;
 }
 .holo-map__selfstat-num {
   font-family: var(--font-mono);
   font-size: 12px;
   color: #fff;
-}
-.holo-map__damage-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 230px;
-}
-.holo-map__damage-ico { flex: 0 0 auto; }
-.holo-map__damage-name {
-  flex: 0 1 74px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-}
-.holo-map__damage-frags {
-  font-style: normal;
-  color: #ffd93d;
-  margin-left: 3px;
-}
-.holo-map__damage-bar {
-  flex: 1 1 auto;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.holo-map__damage-fill {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-}
-.holo-map__damage-num {
-  flex: 0 0 42px;
-  text-align: right;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Kill feed (sink notifications) — bottom-left, ABOVE the playback
