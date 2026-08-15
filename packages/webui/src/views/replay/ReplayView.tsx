@@ -1,10 +1,11 @@
 import { computed, defineComponent, onMounted, ref, watch, type CSSProperties } from "vue";
-import { RefreshCw } from "lucide-vue-next";
+import { Play, RefreshCw } from "lucide-vue-next";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap from "@/features/holographic/HolographicMap";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
+import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useOverlayStore } from "@/stores/overlay";
 import { api } from "@/api";
@@ -882,6 +883,8 @@ export default defineComponent({
     const overlay = useOverlayStore();
     /** Whether the live-battle entry (first rail item) is selected. */
     const liveOpen = ref(false);
+    /** Live battle clock (from tempArenaInfo's dateTime). */
+    const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
     // While the live entry is open, poll the game's tempArenaInfo.json so the
     // roster refreshes as players load in / the battle ends.
     let arenaTimer: number | null = null;
@@ -1103,7 +1106,18 @@ export default defineComponent({
                       }}
                     >
                       <div class="replay-card__top">
-                        <span class="replay-card__ship">▶ {t("replay.live.title")}</span>
+                        <span class="replay-card__ship">
+                          <Play size={13} class="replay-card__live-ico" strokeWidth={2.4} />
+                          {t("replay.live.title")}
+                        </span>
+                        {overlay.arenaInfo?.matchGroup ? (
+                          <span
+                            class="replay-card__pill"
+                            style={modeColor(overlay.arenaInfo.matchGroup, null, null) as CSSProperties}
+                          >
+                            {modeLabel(overlay.arenaInfo.matchGroup, null, null)}
+                          </span>
+                        ) : null}
                         <span class="replay-card__pill replay-card__pill--live">LIVE</span>
                       </div>
                       <div class="replay-card__row">
@@ -1120,6 +1134,9 @@ export default defineComponent({
                             ? t("replay.players", { n: overlay.arenaInfo.vehicles.length })
                             : "—"}
                         </span>
+                        {liveClock.label.value ? (
+                          <span class="replay-card__clock">{liveClock.label.value}</span>
+                        ) : null}
                       </div>
                     </button>
                   </li>

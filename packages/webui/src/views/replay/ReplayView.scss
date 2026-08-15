@@ -650,8 +650,9 @@
     text-transform: uppercase;
 
     &--live {
-      background: rgb(var(--color-success) / 20%);
-      color: rgb(var(--color-success));
+      background: rgb(var(--color-danger) / 18%);
+      color: rgb(var(--color-danger));
+      letter-spacing: 0.06em;
     }
   }
 
@@ -676,16 +677,34 @@
     text-align: right;
   }
 
+  &__live-ico {
+    flex-shrink: 0;
+    margin-right: 2px;
+    vertical-align: -2px;
+    color: rgb(var(--color-success));
+  }
+
   &__foot {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    gap: 0.5rem;
     margin-top: 0.1rem;
   }
 
   &__players {
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__clock {
+    padding: 0.05rem 0.45rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-text) / 8%);
+    color: rgb(var(--color-text) / 85%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
   }
 }

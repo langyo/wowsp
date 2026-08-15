@@ -1,16 +1,18 @@
 /**
  * Live-battle panel (the first item in the replay rail while the game is
- * running). Shows the current battle's map + roster with per-player WR / PR,
- * queried on-demand from the WG public API. Rendered instead of the
- * holographic map when the live entry is selected.
+ * running). Shows the current battle's mode, map, roster with per-player
+ * WR / PR (queried on-demand from the WG public API through a throttled
+ * queue — WG rate-limits bursts hard) and the elapsed battle clock.
  */
-import { computed, defineComponent, reactive, watch } from "vue";
+import { computed, defineComponent, reactive, watch, type CSSProperties } from "vue";
 
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { modeColor, modeKey } from "@/utils/modeColors";
+import { useBattleClock } from "./useBattleClock";
 import SSpinner from "@/components/base/SSpinner";
 import mapNamesRaw from "@/data/map_names.json";
 import "./LiveBattlePanel.scss";
@@ -29,6 +31,15 @@ function displayMapName(spaceId?: string | null, lang?: string): string {
   return lbl === key ? clean : lbl;
 }
 
+/** Localize a battle mode from its layered identity. */
+function modeLabelOf(group?: string | null): string {
+  const key = modeKey(group, null, null);
+  if (!key) return t("replay.mode._fallback");
+  const i18nKey = "replay.mode." + key;
+  const lbl = t(i18nKey);
+  return lbl === i18nKey ? t("replay.mode._fallback") : lbl;
+}
+
 interface PlayerStat {
   winrate: number | null;
   pr: number | null;
@@ -45,6 +56,9 @@ export default defineComponent({
     const accounts = useAccountStore();
     const { dataLanguage } = useLanguage();
     const stats = reactive(new Map<number, PlayerStat>());
+    const { label: clockLabel } = useBattleClock(
+      () => props.arena?.dateTime ?? null,
+    );
 
     const allies = computed(
       () => props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
@@ -53,29 +67,68 @@ export default defineComponent({
       () => props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
     );
 
-    function lookup(v: VehicleEntry) {
-      if (AI_NAME.test(v.name) || stats.has(v.id)) return;
-      stats.set(v.id, { winrate: null, pr: null, battles: null, loading: true });
-      void api
+    // WG's public API rate-limits hard bursts (each lookup = 4 requests;
+    // 12 players at once = 48 parallel calls → everything gets 429/407'd).
+    // Run the queue at low concurrency with a stagger and one retry.
+    let running = 0;
+    const queue: VehicleEntry[] = [];
+    let drainTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function lookupOnce(v: VehicleEntry): Promise<boolean> {
+      return api
         .lookupPlayerStats(v.name, accounts.activeRealm)
-        .then((s) =>
+        .then((s) => {
           stats.set(v.id, {
             winrate: s.winrate ?? null,
             pr: s.pr ?? null,
             battles: s.battles ?? null,
             loading: false,
-          }),
-        )
-        .catch(() =>
-          stats.set(v.id, { winrate: null, pr: null, battles: null, loading: false }),
-        );
+          });
+          return true;
+        })
+        .catch(() => {
+          stats.set(v.id, { winrate: null, pr: null, battles: null, loading: false });
+          return false;
+        });
+    }
+
+    function pump() {
+      while (running < 2 && queue.length > 0) {
+        const v = queue.shift()!;
+        running += 1;
+        void lookupOnce(v)
+          .then((ok) =>
+            // One retry after a pause — WG transient limits recover quickly.
+            ok ? false : new Promise((r) => setTimeout(r, 600)).then(() => lookupOnce(v)),
+          )
+          .finally(() => {
+            running -= 1;
+            pump();
+          });
+      }
+      if (queue.length === 0 && running === 0 && drainTimer) {
+        clearTimeout(drainTimer);
+        drainTimer = null;
+      }
+    }
+
+    function enqueue(vehicles: VehicleEntry[]) {
+      for (const v of vehicles) {
+        if (AI_NAME.test(v.name) || stats.has(v.id)) continue;
+        stats.set(v.id, { winrate: null, pr: null, battles: null, loading: true });
+        queue.push(v);
+      }
+      // Stagger the very start too — the panel often mounts while the WG
+      // client is also fetching its own roster.
+      if (!drainTimer) drainTimer = setTimeout(pump, 250);
     }
 
     watch(
       () => props.arena,
       (a) => {
         stats.clear();
-        if (a) a.vehicles.forEach(lookup);
+        queue.length = 0;
+        if (a) enqueue(a.vehicles);
       },
       { immediate: true },
     );
@@ -88,6 +141,15 @@ export default defineComponent({
           </div>
         );
       }
+
+      const modePill = props.arena.matchGroup ? (
+        <span
+          class="live-battle__pill"
+          style={modeColor(props.arena.matchGroup, null, null) as CSSProperties}
+        >
+          {modeLabelOf(props.arena.matchGroup)}
+        </span>
+      ) : null;
 
       const cell = (v: VehicleEntry) => {
         const st = stats.get(v.id);
@@ -123,6 +185,11 @@ export default defineComponent({
         <div class="live-battle">
           <div class="live-battle__head">
             <span class="live-battle__title">{t("replay.live.title")}</span>
+            <span class="live-battle__pill live-battle__pill--live">LIVE</span>
+            {modePill}
+            {clockLabel.value ? (
+              <span class="live-battle__clock">{clockLabel.value}</span>
+            ) : null}
             <span class="live-battle__map">
               {displayMapName(props.arena.mapName, dataLanguage.value)}
             </span>

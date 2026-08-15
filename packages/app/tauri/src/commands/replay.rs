@@ -577,7 +577,14 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         .unwrap_or_default();
 
     ReplayMeta {
-        date_time: parse_datetime_from_filename(&path),
+        // Replay files carry no timestamp in the descriptor (filename wins);
+        // the live tempArenaInfo.json HAS a "dateTime" field and no date in
+        // its name, so the descriptor is the fallback there.
+        date_time: parse_datetime_from_filename(&path).or_else(|| {
+            obj.and_then(|o| o.get("dateTime"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        }),
         path,
         match_group,
         map_id,
