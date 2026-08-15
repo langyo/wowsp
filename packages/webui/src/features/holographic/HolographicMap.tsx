@@ -245,6 +245,11 @@ export default defineComponent({
     matchGroup: { type: String, default: "" },
     /** Map space id, for applying per-map domination scoring overrides. */
     mapName: { type: String, default: "" },
+    /** Initial playback position (match seconds). Deep-link/dev aid; clamped
+     *  to the decoded duration once trajectories arrive. */
+    initialTime: { type: Number, default: 0 },
+    /** Open with the enlarged 2D minimap shown (deep-link/dev aid). */
+    initialMinimapZoom: { type: Boolean, default: false },
   },
   setup(props) {
     const container = ref<HTMLElement | null>(null);
@@ -326,8 +331,15 @@ export default defineComponent({
     // (null = free orbit). Set by clicking a ship marker/label.
     const selectedEntityId = ref<number | null>(null);
     // 2D minimap enlarged overlay state.
-    const minimapZoom = ref(false);
+    const minimapZoom = ref(props.initialMinimapZoom);
     const minimapShowTrails = ref(true);
+    /** Roster assignment per ship entity — THE single source of truth for
+     *  team roles, shared by 3D markers, minimap trails, shell-arc targets
+     *  and self-stats. Rebuilt in rebuildActors; empty before first build. */
+    let rosterAssignments = new Map<number, VehicleEntry | null>();
+    /** Sorted ship entity ids — the spawn-order fallback for roleless ships
+     *  (the game client spawns team A before team B). */
+    let shipEntityIds: number[] = [];
 
     function formatTime(sec: number): string {
       const s = Math.max(0, Math.round(sec));
@@ -1061,7 +1073,7 @@ export default defineComponent({
           });
           if (minimapShowTrails.value) {
             for (const tr of props.trajectories) {
-              if (tr.kind?.entityType !== 2 || tr.samples.length < 8) continue;
+              if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
               const role = resolveRoleQuick(tr);
               zctx.strokeStyle =
                 role === "enemy"
@@ -1188,26 +1200,16 @@ export default defineComponent({
       }
     }
 
-    /** Quick team-role lookup for the zoomed minimap trails (by shipId join,
-     *  same fallbacks as the markers but without the roster-assignment pass). */
+    /** Quick team-role lookup for the minimap trails, shell-arc targets and
+     *  self-stats — reads the SAME roster assignments the 3D markers use
+     *  (computed in rebuildActors), so trails and markers can never disagree.
+     *  Ships without an assignment (older replays, decode gaps) fall back to
+     *  the entity-id spawn-order heuristic: the client spawns team A first. */
     function resolveRoleQuick(tr: EntityTrajectory): TeamRole {
-      const sid = tr.kind?.shipId;
-      if (sid != null) {
-        const entries = props.vehicles.filter((v) => v.shipId === sid);
-        if (entries.length === 1) return roleFromRelation(entries[0].relation);
-      }
-      // Fallback: entity-id spawn order (first half of ships = allies).
-      const ids = props.trajectories
-        .filter(
-          (x) =>
-            x.kind?.entityType === 2 &&
-            (x.samples.length >= 8 ||
-              (x.kind?.shipId != null && x.samples.length > 0)),
-        )
-        .map((x) => x.entityId)
-        .sort((a, b) => a - b);
-      const idx = ids.indexOf(tr.entityId);
-      return idx >= 0 && idx < ids.length / 2 ? "ally" : "enemy";
+      const entry = rosterAssignments.get(tr.entityId);
+      if (entry) return roleFromRelation(entry.relation);
+      const idx = shipEntityIds.indexOf(tr.entityId);
+      return idx >= 0 && idx < shipEntityIds.length / 2 ? "ally" : "enemy";
     }
 
     function frustumCorners(cam: THREE.PerspectiveCamera): THREE.Vector3[] {
@@ -1419,8 +1421,9 @@ export default defineComponent({
       enemyScore.value = 0;
       killFeed.value = [];
       reportedSinks.clear();
-      minimapZoom.value = false;
       selectedEntityId.value = null;
+      rosterAssignments = new Map();
+      shipEntityIds = [];
     }
 
     /** Remove a previously-loaded map terrain model. */
@@ -1724,22 +1727,18 @@ export default defineComponent({
       // Encyclopedia as the fallback pool for tier/nation/type resolution.
       const encSpecs: ShipModelSpec[] = [...props.encyclopedia.values()];
 
-      // Ships = EntityCreate type 2 with a roster shipId (the reliable
-      // marker), or enough position samples to be a real vessel rather than a
-      // transient (planes/torpedoes have far fewer). Ships that sank early may
-      // carry very few samples — the shipId join keeps them rendered and
-      // counted in the scoreboard. Entities with zero position samples are
-      // re-creation duplicates (leave+re-enter) with no usable data; skipping
-      // them also prevents double-counting their player in the alive counter.
-      // Sorted by entity id — the client spawns team A before team B, so this
-      // order is the fallback team-split heuristic when a roster join fails.
+      // Ships = EntityCreate type 2 that moved at least once. No sample-count
+      // threshold: planes/torpedoes/smokes arrive on OTHER entity types, so a
+      // type-2 entity with 2+ position samples IS a vessel — ships that sank
+      // or sailed unobserved early carry few samples and must stay counted.
+      // Zero/one-sample type-2 entities are re-creation duplicates with no
+      // usable trajectory; skipping them prevents double-counting players.
       const isShip = (t: EntityTrajectory) =>
-        t.kind?.entityType === 2 &&
-        (t.samples.length >= 8 ||
-          (t.kind?.shipId != null && t.samples.length > 0));
+        t.kind?.entityType === 2 && t.samples.length > 1;
       const shipTrajs = props.trajectories.filter(isShip);
-      const shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
-      const assignments = resolveRosterAssignments(shipTrajs);
+      shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
+      rosterAssignments = resolveRosterAssignments(shipTrajs);
+      const assignments = rosterAssignments;
 
       // Smoke screens (entityType 4 = SmokeScreen): white ring markers at
       // the smoke's START point (and END point when the drift exceeds 1 km)
@@ -1826,7 +1825,7 @@ export default defineComponent({
       const shipForImpact = (e: ExplosionEvent) => {
         let best: { tr: EntityTrajectory; score: number; t0: number; h: number } | null = null;
         for (const tr of props.trajectories) {
-          if (tr.kind?.entityType !== 2 || tr.samples.length < 8) continue;
+          if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
           const s = sampleAt(tr, e.time);
           if (!s) continue;
           const dist = Math.hypot(s.x - e.x, s.z - e.z);
@@ -2686,17 +2685,12 @@ export default defineComponent({
         const role = marker.userData.role as TeamRole;
         const ghostBox = marker.userData.ghost as THREE.LineLoop | undefined;
         const firstT = marker.userData.firstT as number;
-        // Hide entities that haven't been created yet at this time. Entities
-        // re-created mid-match (leaving/re-entering the observed area) may
-        // carry a later creationTime than their first sample — trust the
-        // samples in that case.
-        const created = traj.kind?.creationTime ?? -1;
-        if (created >= 0 && t < created && t < firstT) {
-          if (ghostBox) ghostBox.visible = false;
-          marker.visible = false;
-          if (label) label.visible = false;
-          continue;
-        }
+        // NOTE: no creationTime gate. A ship's EntityCreate fires when the
+        // recorder FIRST OBSERVES it (creationTime tracks the first sample),
+        // so gating on it would hide not-yet-spotted ALLIES for the whole
+        // opening. The game shows teammates' last-known position from t=0 —
+        // we do the same via the spawn ghost below. Unobserved enemies are
+        // already fully hidden by the firstT rule.
         const deathTime = marker.userData.deathTime as number | null;
         const dead = deathTime != null && t >= deathTime;
         if (label) label.dead = dead;
@@ -3862,6 +3856,10 @@ export default defineComponent({
           current.value = 0;
           playing.value = false;
           duration.value = 0;
+          // The enlarged 2D view belongs to ONE replay — close it on switch
+          // (clearActors no longer resets it so a deep-link ?mm=1 open and
+          // mid-session rebuilds keep the overlay alive).
+          minimapZoom.value = false;
           clearActors();
           shipLabels.value = [];
           bounds = null;
@@ -3880,6 +3878,10 @@ export default defineComponent({
         }
         recomputeBoundsAndCamera();
         rebuildActors();
+        // One-shot deep-link seek: ?t=<seconds> jumps playback on load.
+        if (props.initialTime > 0 && current.value === 0) {
+          current.value = Math.min(props.initialTime, duration.value);
+        }
         updateMarkersAt(current.value);
       },
       { deep: false },
