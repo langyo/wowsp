@@ -41,7 +41,7 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import planeIcon from "./planeIcons";
-import { shipIcon, shipIconUrl, shipTypeClass } from "./shipIcons";
+import { shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
   HoloScorebar, HoloLabel, HoloShipCard, registerHoloShipIcons,
   captureSecondsRemaining, formatEta,
@@ -909,14 +909,24 @@ export default defineComponent({
         const role = m.userData.role as TeamRole | undefined;
         const firstT = m.userData.firstT as number | undefined;
         // Unobserved ships: enemies are NOT shown at all; allies show a
-        // hollow WHITE box at their spawn (same rule as the 3D scene).
+        // white glyph OUTLINE at their spawn (same rule as the 3D scene).
         if (t < (firstT ?? Infinity)) {
           if (role === "enemy") continue;
           const gx = wx(m.userData.spawnX as number);
           const gz = wz(-(m.userData.spawnZ as number));
-          ctx.strokeStyle = "rgba(255,255,255,0.7)";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(gx - 5, gz - 5, 10, 10);
+          ctx.save();
+          ctx.translate(gx, gz);
+          ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+          drawShipGlyph(
+            ctx,
+            m.userData.type as string | undefined,
+            0,
+            0,
+            10,
+            0xffffff,
+            { outline: true, lineWidth: 1.2 },
+          );
+          ctx.restore();
           continue;
         }
         const dead =
@@ -924,33 +934,26 @@ export default defineComponent({
           t >= (m.userData.deathTime as number);
         const cx = wx(m.position.x);
         const cz = wz(m.position.z);
-        const icon = shipIcon(
+        // Vector class glyph, rotated to the ship's heading. Convention:
+        // rotation 0 points the glyph UP (north); yaw is clockwise from
+        // north with canvas up. The glyph's pointy end faces RIGHT (+x) at
+        // rest, so subtract 90° to land 0° pointing north — matching the 3D
+        // marker (rotation.y = PI - yaw on the mirrored frame). Vector
+        // strokes stay crisp at any scale/rotation; the HUD PNGs alias.
+        const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
+        ctx.save();
+        ctx.translate(cx, cz);
+        ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+        drawShipGlyph(
+          ctx,
           m.userData.type as string | undefined,
-          dead ? "sunk" : role === "self" || role === "ally" ? "ally" : role === "enemy" ? "enemy" : "white",
+          0,
+          0,
+          dead ? 11 : 13,
+          color,
+          { outline: true, lineWidth: 1.4 },
         );
-        if (icon && icon.complete && icon.naturalWidth > 0) {
-          const sz = 15;
-          // Rotate the icon to the ship's heading. Convention: rotation 0
-          // points the icon UP (north), yaw is clockwise from north (canvas
-          // up). The HUD art's pointy end actually faces RIGHT (+x) at rest,
-          // so subtract 90° to land 0° pointing north — matching the 3D
-          // marker (rotation.y = PI - yaw on the mirrored frame).
-          ctx.save();
-          ctx.translate(cx, cz);
-          ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-          ctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-          ctx.restore();
-          continue;
-        }
-        if (dead) {
-          ctx.fillStyle = "rgba(150, 150, 150, 0.7)";
-          ctx.beginPath();
-          ctx.arc(cx, cz, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-          continue;
-        }
-        const color = role ? TEAM_COLOR[role] : 0x888888;
-        drawShipGlyph(ctx, m.userData.type as string | undefined, cx, cz, 5, color);
+        ctx.restore();
       }
 
       // Smoke screens (entityType 4): white start/end rings + remaining
@@ -1095,14 +1098,25 @@ export default defineComponent({
           for (const m of shipMarkers) {
             const role = m.userData.role as TeamRole | undefined;
             const firstT = m.userData.firstT as number | undefined;
-            // Unobserved ships: enemies not shown, allies get a hollow box.
+            // Unobserved ships: enemies not shown; allies get a white glyph
+            // outline at spawn — the game's "last known position" marker.
             if (t < (firstT ?? Infinity)) {
               if (role === "enemy") continue;
               const gx = zwx(m.userData.spawnX as number);
               const gz = zwz(-(m.userData.spawnZ as number));
-              zctx.strokeStyle = "rgba(255,255,255,0.7)";
-              zctx.lineWidth = 1.5;
-              zctx.strokeRect(gx - 9, gz - 9, 18, 18);
+              zctx.save();
+              zctx.translate(gx, gz);
+              zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+              drawShipGlyph(
+                zctx,
+                m.userData.type as string | undefined,
+                0,
+                0,
+                22,
+                0xffffff,
+                { outline: true, lineWidth: 1.6 },
+              );
+              zctx.restore();
               continue;
             }
             const dead =
@@ -1110,28 +1124,23 @@ export default defineComponent({
               t >= (m.userData.deathTime as number);
             const cx = zwx(m.position.x);
             const cz = zwz(m.position.z);
-            const icon = shipIcon(
+            // Vector outline glyph (crisp at any zoom/rotation — the HUD
+            // PNGs alias badly when rotated); sunk ships render greyed-out,
+            // live ships in their team colour.
+            const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
+            zctx.save();
+            zctx.translate(cx, cz);
+            zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+            drawShipGlyph(
+              zctx,
               m.userData.type as string | undefined,
-              dead ? "sunk" : role === "self" || role === "ally" ? "ally" : role === "enemy" ? "enemy" : "white",
+              0,
+              0,
+              dead ? 26 : 34,
+              color,
+              { outline: true, lineWidth: 2 },
             );
-            if (icon && icon.complete && icon.naturalWidth > 0) {
-              const sz = dead ? 34 : 30;
-              zctx.save();
-              zctx.translate(cx, cz);
-              zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-              zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-              zctx.restore();
-              continue;
-            }
-            if (dead) {
-              zctx.fillStyle = "rgba(150,150,150,0.7)";
-              zctx.beginPath();
-              zctx.arc(cx, cz, 5, 0, Math.PI * 2);
-              zctx.fill();
-              continue;
-            }
-            const color = role ? TEAM_COLOR[role] : 0x888888;
-            drawShipGlyph(zctx, m.userData.type as string | undefined, cx, cz, 14, color);
+            zctx.restore();
           }
           // Smoke screens — white start/end rings + remaining seconds on
           // the enlarged map (same lifetime/dissipation rules as minimap).
@@ -1227,9 +1236,71 @@ export default defineComponent({
       return corners;
     }
 
+    /** Class-scaled hull lengths for the 3D outline markers (world units —
+     *  roughly 1.5× real scale so outlines stay readable at tactical zoom). */
+    const HULL_LEN: Record<string, number> = {
+      battleship: 46,
+      aircarrier: 52,
+      cruiser: 38,
+      destroyer: 30,
+      submarine: 26,
+    };
+
+    /** Build a ship-shaped LINE LOOP for the 3D scene: a pointed bow,
+     *  parallel midbody and tapered stern, laid out on XZ with the bow along
+     *  +Z (matching the marker cone / model convention). Doubles as the
+     *  live outline (child of the marker, follows position + yaw) and the
+     *  "last known position" ghost. */
+    function makeHullOutline(
+      color: number,
+      type: string | null | undefined,
+      scale = 1,
+    ): THREE.LineLoop {
+      const t = (type ?? "").toLowerCase();
+      const len =
+        (HULL_LEN[
+          Object.keys(HULL_LEN).find((k) => t.includes(k)) ?? "cruiser"
+        ] ?? HULL_LEN.cruiser) * scale;
+      const beam = len * 0.24;
+      // (x, z) around the hull, bow at +Z.
+      const pts: [number, number][] = [
+        [0, 0.5],
+        [0.5, 0.3],
+        [0.5, 0.0],
+        [0.42, -0.36],
+        [0, -0.5],
+        [-0.42, -0.36],
+        [-0.5, 0.0],
+        [-0.5, 0.3],
+      ];
+      const arr = new Float32Array(pts.length * 3);
+      pts.forEach(([px, pz], i) => {
+        arr[i * 3] = px * beam;
+        arr[i * 3 + 1] = 0.6;
+        arr[i * 3 + 2] = pz * len;
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+      geo.computeBoundingSphere();
+      return new THREE.LineLoop(
+        geo,
+        new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+        }),
+      );
+    }
+
     /** Draw one of the five WoWS class glyphs on a canvas context, centered at
      *  (x, y), `size` px tall, in the given color. Same geometry as the
-     *  ShipTypeIcon component (27×27 atlas), normalized to the requested size. */
+     *  ShipTypeIcon component (27×27 atlas), normalized to the requested size.
+     *
+     *  `outline` renders the glyph as an anti-aliased VECTOR stroke (with a
+     *  faint fill for legibility) — the raster HUD PNGs scale/rotate with
+     *  visible jaggies, so the maps draw these paths instead. Glyphs point
+     *  RIGHT (+x) at 0 rotation, matching the HUD art convention. */
     function drawShipGlyph(
       ctx: CanvasRenderingContext2D,
       type: string | undefined,
@@ -1237,55 +1308,74 @@ export default defineComponent({
       y: number,
       size: number,
       color: number,
+      opts?: { outline?: boolean; lineWidth?: number },
     ) {
       const s = size / 27;
-      const P = (pts: [number, number][]) => {
-        ctx.beginPath();
-        ctx.moveTo(x + pts[0][0] * s, y + pts[0][1] * s);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(x + pts[i][0] * s, y + pts[i][1] * s);
-        ctx.closePath();
-        ctx.fill();
-      };
-      ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+      const hex = `#${color.toString(16).padStart(6, "0")}`;
+      const outline = opts?.outline === true;
+      const lw = opts?.lineWidth ?? Math.max(1.2, size * 0.09);
+      const hulls: [number, number][][] = [];
+      const details: [number, number][][] = [];
       const t = type?.toLowerCase() ?? "";
       if (t.includes("destroyer")) {
-        P([[4.5, 8.5], [23, 13], [4.5, 17.5]]);
+        hulls.push([[4.5, 8.5], [23, 13], [4.5, 17.5]]);
       } else if (t.includes("battleship")) {
-        P([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
-        // two parallel diagonals (drawn thinner, darker)
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = Math.max(1, s);
-        ctx.beginPath();
-        ctx.moveTo(x + 13.5 * s, y + 8.5 * s);
-        ctx.lineTo(x + 8.5 * s, y + 17.5 * s);
-        ctx.moveTo(x + 17 * s, y + 8.5 * s);
-        ctx.lineTo(x + 12.5 * s, y + 17.5 * s);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        hulls.push([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
+        details.push([[13.5, 8.5], [8.5, 17.5]]);
+        details.push([[17, 8.5], [12.5, 17.5]]);
       } else if (t.includes("aircarrier") || t.includes("aircar")) {
-        P([[4.5, 8], [14.5, 8], [16, 8], [23, 13], [16, 18], [14.5, 18], [4.5, 18]]);
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = Math.max(1, s);
-        ctx.beginPath();
-        ctx.moveTo(x + 4.5 * s, y + 13 * s);
-        ctx.lineTo(x + 14.5 * s, y + 13 * s);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        hulls.push([[4.5, 8], [14.5, 8], [16, 8], [23, 13], [16, 18], [14.5, 18], [4.5, 18]]);
+        details.push([[4.5, 13], [14.5, 13]]);
       } else if (t.includes("submarine")) {
-        P([[4, 8.5], [5.5, 8.5], [5.5, 17.5], [4, 17.5]]);
-        P([[8.5, 9], [23, 13], [8.5, 17]]);
+        hulls.push([[4, 8.5], [5.5, 8.5], [5.5, 17.5], [4, 17.5]]);
+        hulls.push([[8.5, 9], [23, 13], [8.5, 17]]);
       } else {
         // cruiser (default) — pentagon + one diagonal
-        P([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
-        ctx.strokeStyle = ctx.fillStyle;
+        hulls.push([[4.5, 8], [19, 8], [23, 13], [19, 18], [4.5, 18]]);
+        details.push([[14.5, 8.5], [9.5, 17.5]]);
+      }
+      const trace = (pts: [number, number][]) => {
+        ctx.beginPath();
+        ctx.moveTo(x + pts[0][0] * s, y + pts[0][1] * s);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(x + pts[i][0] * s, y + pts[i][1] * s);
+        }
+      };
+      if (outline) {
+        for (const h of hulls) {
+          trace(h);
+          ctx.closePath();
+          ctx.fillStyle = hex;
+          ctx.globalAlpha = 0.28;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = hex;
+          ctx.lineWidth = lw;
+          ctx.lineJoin = "round";
+          ctx.stroke();
+        }
+        ctx.strokeStyle = hex;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = Math.max(1, lw * 0.6);
+        for (const d of details) {
+          trace(d);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = hex;
+        for (const h of hulls) {
+          trace(h);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.strokeStyle = hex;
         ctx.globalAlpha = 0.35;
         ctx.lineWidth = Math.max(1, s);
-        ctx.beginPath();
-        ctx.moveTo(x + 14.5 * s, y + 8.5 * s);
-        ctx.lineTo(x + 9.5 * s, y + 17.5 * s);
-        ctx.stroke();
+        for (const d of details) {
+          trace(d);
+          ctx.stroke();
+        }
         ctx.globalAlpha = 1;
       }
     }
@@ -1328,6 +1418,13 @@ export default defineComponent({
           scene.remove(ghost);
           ghost.geometry.dispose();
           (ghost.material as THREE.Material).dispose();
+        }
+        // Hull outline (LineLoop child — not a Mesh, so the mesh traversal
+        // below would leak its buffers).
+        const hull = m.userData.hull as THREE.LineLoop | undefined;
+        if (hull) {
+          hull.geometry.dispose();
+          (hull.material as THREE.Material).dispose();
         }
         if (m.userData.isDot) {
           m.traverse((o) => {
@@ -2236,9 +2333,15 @@ export default defineComponent({
         const offline = shipOfflineEntry((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined);
         const shipType = shipInfo?.type ?? offline?.type ?? null;
 
-        // Marker: small cone + sphere so the heading is visible even before
-        // the ship model loads. Cone points +Z (forward) at yaw 0.
+        // Marker: class-scaled HULL OUTLINE (vector line loop — reads at any
+        // zoom and never depends on GLB availability) plus a small cone+dot
+        // so the heading stays visible before/outside the outline. Cone
+        // points +Z (forward) at yaw 0.
         const marker = new THREE.Group();
+        const hull = makeHullOutline(color, shipType);
+        hull.userData.hullOutline = true;
+        marker.add(hull);
+        marker.userData.hull = hull;
         const coneGeom = new THREE.ConeGeometry(7, 18, 6);
         const coneMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7 });
         const cone = new THREE.Mesh(coneGeom, coneMat);
@@ -2259,30 +2362,15 @@ export default defineComponent({
         marker.userData.spawnX = traj.kind?.initialX ?? 0;
         marker.userData.spawnZ = traj.kind?.initialZ ?? 0;
         marker.userData.firstT = traj.samples[0]?.time ?? Infinity;
-        // Hollow outline box marking an unobserved / sunk ship's position —
-        // white for allies, red for enemies (no fill, like the game's
-        // "not spotted" outline). Only ever shown for observed-position
-        // ghosts: enemy ships that were never seen stay invisible.
+        // Ghost: the same class-scaled hull outline marking an unobserved /
+        // sunk ship's last-known position — white for allies, red for enemies
+        // (the game's "not spotted" marker). Enemy ships that were never seen
+        // stay invisible.
         {
           const ghostCol = role === "enemy" ? 0xcc3333 : 0xffffff;
-          const ghostGeo = new THREE.BufferGeometry();
-          ghostGeo.setAttribute(
-            "position",
-            new THREE.BufferAttribute(new Float32Array(12), 3),
-          );
-          const ghostPos = ghostGeo.getAttribute("position") as THREE.BufferAttribute;
-          ghostPos.setXYZ(0, -30, 1, -13);
-          ghostPos.setXYZ(1, 30, 1, -13);
-          ghostPos.setXYZ(2, 30, 1, 13);
-          ghostPos.setXYZ(3, -30, 1, 13);
-          ghostGeo.computeBoundingSphere();
-          const ghost = new THREE.LineLoop(ghostGeo, new THREE.LineBasicMaterial({
-            color: ghostCol,
-            transparent: true,
-            opacity: 0.85,
-            depthWrite: false,
-          }));
+          const ghost = makeHullOutline(ghostCol, shipType, 0.85);
           ghost.position.set(traj.kind?.initialX ?? 0, 0, -(traj.kind?.initialZ ?? 0));
+          ghost.rotation.y = Math.PI - (traj.samples[0]?.yaw ?? 0);
           ghost.visible = false;
           scene.add(ghost);
           marker.userData.ghost = ghost;
@@ -2302,6 +2390,9 @@ export default defineComponent({
         // a bare cone.
         const installModel = (target: THREE.Group, model: THREE.Group) => {
           for (const child of [...target.children]) {
+            // The hull outline survives the model swap — it is the tactical
+            // marker, not placeholder art.
+            if ((child.userData?.hullOutline as boolean) === true) continue;
             target.remove(child);
             child.traverse((o) => {
               if (o instanceof THREE.Mesh) {
