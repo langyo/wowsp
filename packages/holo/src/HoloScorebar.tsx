@@ -19,20 +19,20 @@ const CAP_COLORS: Record<HoloCapZone["owner"], string> = {
   neutral: "var(--holo-neutral, #ffffff)",
 };
 
+// Diamond edge sweep: a dash arc runs along the diamond outline from the
+// top corner, clockwise — the diamond's own edge IS the loading ring (no
+// extra circle drawn around it, no fill pie).
+const DIAMOND_SIDE = 14; // in the 30-unit viewBox (same as the in-game widget)
+const DIAMOND_PERIM = DIAMOND_SIDE * 4;
+
 function CapChip({ cap }: { cap: HoloCapZone }) {
   const active = !!cap.capturing || !!cap.contested;
   const ownerColor = CAP_COLORS[cap.owner];
-  // The clockwise progress sweep is coloured by the side accruing the
-  // capture (ally green / enemy red) — white/red/green only, never yellow.
+  // The rotating edge arc is coloured by the side accruing the capture
+  // (ally green / enemy red) — white/red/green only, never yellow.
   const sweepColor = CAP_COLORS[cap.captureSide ?? cap.owner];
-  const deg = Math.max(0, Math.min(360, Math.round((cap.progress ?? 0) * 360)));
-  // Letter: team colour on the idle square; white on a coloured diamond;
-  // dark on a white (neutral) diamond so it stays readable.
-  const letterColor = !active
-    ? ownerColor
-    : cap.owner === "neutral"
-      ? "rgba(10, 16, 26, 0.92)"
-      : "#ffffff";
+  const progress = Math.max(0, Math.min(1, cap.progress ?? 0));
+  const dash = DIAMOND_PERIM * progress;
   return (
     <span
       class={[
@@ -43,31 +43,46 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
       ].join(" ")}
       title={cap.hint}
     >
-      {/* Idle = square (roomier letter padding); capturing = diamond with a
-          clockwise conic sweep masked to the diamond shape. The two are
-          independent sizes — NOT a plain 45° rotation of each other. */}
-      <span
-        class={[
-          "holo-scorebar__chip",
-          active ? "holo-scorebar__chip--diamond" : "holo-scorebar__chip--square",
-        ].join(" ")}
-        style={{ color: ownerColor }}
-      >
+      {/* Idle = square (larger, roomier letter padding); capturing = diamond
+          (kept at the in-game footprint). The two shapes are independent
+          sizes, not a 45° rotation of the same square. */}
+      <svg viewBox="0 0 30 30" width="26" height="26" aria-hidden="true">
         {active ? (
-          <span
-            class="holo-scorebar__chip-sweep"
-            style={
-              {
-                "--holo-sweep-color": sweepColor,
-                "--holo-sweep-deg": `${deg}deg`,
-              } as Record<string, string>
-            }
+          <g transform="rotate(45 15 15)">
+            {/* owner-coloured body + owner outline */}
+            <rect
+              x={8} y={8} width={DIAMOND_SIDE} height={DIAMOND_SIDE}
+              fill={ownerColor} fill-opacity="0.55"
+            />
+            <rect
+              x={8} y={8} width={DIAMOND_SIDE} height={DIAMOND_SIDE}
+              fill="none" stroke={ownerColor} stroke-width="1.8"
+            />
+            {/* clockwise edge sweep (the loading ring), starting at 12 o'clock */}
+            <rect
+              x={8} y={8} width={DIAMOND_SIDE} height={DIAMOND_SIDE}
+              fill="none" stroke={sweepColor} stroke-width="3"
+              stroke-linecap="round"
+              stroke-dasharray={`${dash} ${DIAMOND_PERIM}`}
+              transform="rotate(-45 15 15)"
+            />
+          </g>
+        ) : (
+          <rect
+            x={5} y={5} width={20} height={20}
+            fill="none" stroke={ownerColor} stroke-width="1.8"
           />
-        ) : null}
-        <span class="holo-scorebar__chip-letter" style={{ color: letterColor }}>
+        )}
+        <text
+          x="15" y="19.5" text-anchor="middle" font-size="12" font-weight="800"
+          fill={active ? "#ffffff" : ownerColor}
+          paint-order="stroke"
+          stroke={active ? "rgba(0, 0, 0, 0.85)" : "none"}
+          stroke-width={active ? "1.3" : "0"}
+        >
           {cap.letter}
-        </span>
-      </span>
+        </text>
+      </svg>
     </span>
   );
 }

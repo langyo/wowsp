@@ -66,76 +66,10 @@
   width: 26px;
   height: 26px;
 
-  &.is-contested .holo-scorebar__chip {
+  svg { display: block; }
+
+  &.is-contested svg {
     animation: holo-cap-blink 0.9s ease-in-out infinite;
-  }
-}
-
-/* Cap chip. Idle square is LARGER than the capturing diamond (independent
-   sizes, not a 45° rotation of the same square): the square needs more letter
-   padding, the diamond keeps the in-game widget footprint. */
-.holo-scorebar__chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Idle square: owner-coloured box border + roomier letter padding. */
-.holo-scorebar__chip--square {
-  width: 20px;
-  height: 20px;
-  border: 1.8px solid currentColor;
-  border-radius: 2px;
-  background: rgb(10 16 26 / 30%);
-}
-
-/* Capturing diamond: owner-coloured border + faint owner body with a
-   clockwise conic sweep masked to the diamond — the diamond itself IS the
-   loading ring (no extra circle drawn around it). */
-.holo-scorebar__chip--diamond {
-  width: 12px;
-  height: 12px;
-  box-sizing: border-box;
-  transform: rotate(45deg);
-  transition: transform 0.38s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
-  border: 1.5px solid currentColor;
-  border-radius: 1px;
-
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 1px;
-    background: currentColor;
-    opacity: 0.25;
-  }
-}
-
-/* Clockwise progress sweep: conic gradient from the top, angle = progress,
-   clipped to the diamond via mask (clip-path polygon). */
-.holo-scorebar__chip-sweep {
-  position: absolute;
-  inset: 0;
-  background: conic-gradient(
-    from 0deg,
-    var(--holo-sweep-color, #4ade80) var(--holo-sweep-deg, 0deg),
-    transparent 0
-  );
-  -webkit-clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-}
-
-.holo-scorebar__chip-letter {
-  position: relative;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  transition: transform 0.38s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
-
-  /* Counter-rotate so the letter stays upright inside the diamond. */
-  .holo-scorebar__chip--diamond & {
-    transform: rotate(-45deg);
   }
 }
 
