@@ -15,7 +15,12 @@ import "./HoloShipCard.scss";
 export interface HoloShipCardData {
   /** WG ship type — drives the hull silhouette fallback. */
   shipType?: string;
-  /** Real hull silhouette path (from silhouettes.json), bow pointing right. */
+  /** URL of the game's own hull silhouette bitmap (ships_silhouettes PNG).
+   *  Preferred over the vector path — this is the exact in-game HP plaque
+   *  art, with its native antialiased edges. */
+  silhouetteUrl?: string | null;
+  /** Real hull silhouette path (from silhouettes.json), bow pointing right.
+   *  Vector fallback used when the bitmap URL is unavailable. */
   silhouette?: string | null;
   /** Display name (localised ship name + nickname). */
   name?: string;
@@ -77,6 +82,7 @@ export default defineComponent({
       const hpPct = Math.max(0, Math.min(100, (hp / total) * 100));
       const repPct = Math.max(0, Math.min(100 - hpPct, (rep / total) * 100));
       const path = d.silhouette ?? silhouetteOf(d.shipType);
+      const pngUrl = d.silhouetteUrl ?? null;
       const showText = d.hp != null && d.maxHp != null;
       return (
         <div class={["holo-ship-card", d.dead ? "holo-ship-card--dead" : ""].join(" ")}>
@@ -90,39 +96,62 @@ export default defineComponent({
               ) : null}
             </div>
           ) : null}
-          <svg
-            class="holo-ship-card__hull"
-            viewBox="0 0 100 36"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <defs>
-              <clipPath id={`${uid}-hp`}>
-                <rect x="0" y="0" width={hpPct} height="36" />
-              </clipPath>
+          {pngUrl ? (
+            <div
+              class="holo-ship-card__hull-png"
+              style={{ "--holo-sil": `url("${pngUrl}")` } as Record<string, string>}
+              aria-hidden="true"
+            >
+              <div class="holo-ship-card__sil holo-ship-card__sil-base" />
               {rep > 0 ? (
-                <clipPath id={`${uid}-rep`}>
-                  <rect x={hpPct} y="0" width={repPct} height="36" />
-                </clipPath>
+                <div
+                  class="holo-ship-card__sil holo-ship-card__sil-rep"
+                  style={{ clipPath: `inset(0 ${Math.max(0, 100 - hpPct - repPct)}% 0 ${hpPct}%)` }}
+                />
               ) : null}
-            </defs>
-            <path d={path} class="holo-ship-card__hull-base" />
-            {rep > 0 ? (
+              <div
+                class="holo-ship-card__sil holo-ship-card__sil-fill"
+                style={{
+                  clipPath: `inset(0 ${100 - hpPct}% 0 0)`,
+                  color: healthColor(hpPct),
+                }}
+              />
+            </div>
+          ) : (
+            <svg
+              class="holo-ship-card__hull"
+              viewBox="0 0 100 36"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <clipPath id={`${uid}-hp`}>
+                  <rect x="0" y="0" width={hpPct} height="36" />
+                </clipPath>
+                {rep > 0 ? (
+                  <clipPath id={`${uid}-rep`}>
+                    <rect x={hpPct} y="0" width={repPct} height="36" />
+                  </clipPath>
+                ) : null}
+              </defs>
+              <path d={path} class="holo-ship-card__hull-base" />
+              {rep > 0 ? (
+                <path
+                  d={path}
+                  class="holo-ship-card__hull-rep"
+                  style={{ clipPath: `url(#${uid}-rep)` }}
+                />
+              ) : null}
               <path
                 d={path}
-                class="holo-ship-card__hull-rep"
-                style={{ clipPath: `url(#${uid}-rep)` }}
+                class="holo-ship-card__hull-fill"
+                style={{
+                  clipPath: `url(#${uid}-hp)`,
+                  color: healthColor(hpPct),
+                }}
               />
-            ) : null}
-            <path
-              d={path}
-              class="holo-ship-card__hull-fill"
-              style={{
-                clipPath: `url(#${uid}-hp)`,
-                color: healthColor(hpPct),
-              }}
-            />
-          </svg>
+            </svg>
+          )}
         </div>
       );
     };

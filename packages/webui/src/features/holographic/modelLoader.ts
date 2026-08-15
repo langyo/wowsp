@@ -196,6 +196,17 @@ export function shipModelStem(
   return null;
 }
 
+/** URL of the game's own hull silhouette bitmap for a ship
+ *  (gui/ships_silhouettes/<INDEX>.png, shipped under res/models/silhouettes).
+ *  This is the exact in-game HP plaque art — no outline extraction. */
+export function shipSilhouetteUrl(shipId: number | string | undefined): string | null {
+  if (shipId == null) return null;
+  const entry = shipModelMap[String(shipId)];
+  const index = entry?.index;
+  if (!index) return null;
+  return "/models/silhouettes/" + index + ".png";
+}
+
 // ── Offline ship-name DB (GameParams + game gettext catalogs) ───────────
 // `ship_names.json` covers EVERY ship (incl. event/clone ships the WG
 // encyclopedia misses) with localized names per WG language code, produced
