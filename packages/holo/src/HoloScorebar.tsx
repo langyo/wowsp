@@ -97,7 +97,10 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
 
 function ShipIcon({ ship }: { ship: HoloShip }) {
   const variant = ship.dead ? "sunk" : ship.role === "enemy" ? "enemy" : "ally";
-  const url = holoShipIconUrl(ship.shipType, variant);
+  // Sunk auxiliaries have no sunk art — fall back to the sunk cruiser icon
+  // so a missing asset never blanks a slot in the strip.
+  let url = holoShipIconUrl(ship.shipType, variant);
+  if (!url && variant === "sunk") url = holoShipIconUrl("cruiser", "sunk");
   if (!url) return null;
   return (
     <img
