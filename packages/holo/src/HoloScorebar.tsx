@@ -13,10 +13,12 @@ import "./HoloScorebar.scss";
  * (and pulses when contested).
  */
 
+// Concrete hex values — SVG presentation attributes (fill/stroke) take
+// these directly; CSS var() strings render black in some attribute contexts.
 const CAP_COLORS: Record<HoloCapZone["owner"], string> = {
-  ally: "var(--holo-ally, #4ade80)",
-  enemy: "var(--holo-enemy, #f87171)",
-  neutral: "var(--holo-neutral, #ffffff)",
+  ally: "#4ade80",
+  enemy: "#f87171",
+  neutral: "#ffffff",
 };
 
 // Diamond geometry (30-unit viewBox): the outline path starts at the TOP
