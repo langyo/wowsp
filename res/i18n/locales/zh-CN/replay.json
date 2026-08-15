@@ -45,7 +45,8 @@
     "self": "我方舰",
     "ally": "队友",
     "enemy": "敌方",
-    "dead": "已击毁"
+    "dead": "已击毁",
+    "gone": "已消失 {n} s"
   },
   "tip": {
     "loading": "查询中…",

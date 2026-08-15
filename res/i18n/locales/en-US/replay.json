@@ -45,7 +45,8 @@
     "self": "You",
     "ally": "Allies",
     "enemy": "Enemies",
-    "dead": "Sunk"
+    "dead": "Sunk",
+    "gone": "Gone {n} s"
   },
   "tip": {
     "loading": "Loading…",

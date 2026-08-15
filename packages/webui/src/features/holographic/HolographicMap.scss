@@ -512,6 +512,9 @@
     align-items: center;
     gap: 0.3rem;
     cursor: pointer;
+    /* The mmzoom head sits on a dark scrim — force light text so the
+       trails-switch label never falls back to the app's dark theme token. */
+    color: rgba(255, 255, 255, 0.9);
   }
 }
 .holo-map__mmzoom-canvas {
