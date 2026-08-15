@@ -881,22 +881,36 @@ export default defineComponent({
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
     const overlay = useOverlayStore();
-    /** Whether the live-battle entry (first rail item) is selected. */
-    const liveOpen = ref(false);
+    /**
+     * What the main pane currently shows — a proper little state machine
+     * (Rust-flavoured: None | Live | Archive(Server, ID)). Invariant: exactly
+     * one pane renders, and every rail card click *transitions* the state
+     * instead of flipping independent booleans (the old liveOpen bug was a
+     * replay click forgetting to transition back).
+     */
+    type Pane =
+      | { kind: "none" }
+      | { kind: "live" }
+      | { kind: "archive"; path: string };
+    const pane = ref<Pane>({ kind: "none" });
     /** Live battle clock (from tempArenaInfo's dateTime). */
     const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
-    // While the live entry is open, poll the game's tempArenaInfo.json so the
+    // While the live pane is open, poll the game's tempArenaInfo.json so the
     // roster refreshes as players load in / the battle ends.
     let arenaTimer: number | null = null;
-    watch(liveOpen, (open) => {
-      if (open) {
-        void overlay.refreshArenaInfo();
-        arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
-      } else if (arenaTimer !== null) {
-        clearInterval(arenaTimer);
-        arenaTimer = null;
-      }
-    });
+    watch(
+      pane,
+      (p, old) => {
+        if (p.kind === "live" && old.kind !== "live") {
+          void overlay.refreshArenaInfo();
+          arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
+        } else if (p.kind !== "live" && arenaTimer !== null) {
+          clearInterval(arenaTimer);
+          arenaTimer = null;
+        }
+      },
+      { deep: false },
+    );
 
     // Auto-manage loading toast for replay operations.
     let loadingToastId = 0;
@@ -1045,8 +1059,6 @@ export default defineComponent({
       }
     }
 
-    const currentPath = computed(() => parser.current.value?.path ?? "");
-
     return () => (
       <main class="replay-view">
         <aside class="replay-view__list">
@@ -1098,10 +1110,10 @@ export default defineComponent({
                       class={[
                         "replay-card",
                         "replay-card--live",
-                        liveOpen.value ? "replay-card--active" : "",
+                        pane.value.kind === "live" ? "replay-card--active" : "",
                       ]}
                       onClick={() => {
-                        liveOpen.value = true;
+                        pane.value = { kind: "live" };
                         parser.clear();
                       }}
                     >
@@ -1147,13 +1159,14 @@ export default defineComponent({
                       type="button"
                       class={[
                         "replay-card",
-                        currentPath.value === r.path ? "replay-card--active" : "",
+                        pane.value.kind === "archive" && pane.value.path === r.path
+                          ? "replay-card--active"
+                          : "",
                       ]}
                       onClick={() => {
-                        // Leaving the live panel: close it before opening the
-                        // replay, otherwise the live view keeps rendering and
-                        // the selected replay appears to never open.
-                        liveOpen.value = false;
+                        // Transition the pane (closing any live view) BEFORE
+                        // opening the archive — exactly one pane at a time.
+                        pane.value = { kind: "archive", path: r.path };
                         void parser.open(r.path);
                       }}
                     >
@@ -1189,7 +1202,7 @@ export default defineComponent({
         </aside>
 
         <section class="replay-view__main">
-          {liveOpen.value ? (
+          {pane.value.kind === "live" ? (
             <LiveBattlePanel arena={overlay.arenaInfo} />
           ) : parser.current.value ? (
             <div class="replay-view__content">
