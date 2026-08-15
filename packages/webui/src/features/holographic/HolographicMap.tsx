@@ -1042,9 +1042,10 @@ export default defineComponent({
       if (zc) {
         const zctx = zc.getContext("2d");
         if (zctx) {
-          const zw = 640;
+          const zw = zc.width; // native 760 — matches the art 1:1 (sharp)
           zctx.clearRect(0, 0, zw, zw);
           if (minimapImage) {
+            zctx.imageSmoothingEnabled = true;
             zctx.drawImage(minimapImage, 0, 0, zw, zw);
           } else {
             zctx.fillStyle = "rgba(5, 8, 15, 0.9)";
@@ -1052,6 +1053,27 @@ export default defineComponent({
           }
           const zwx = (x: number) => ((x - full.minX) / (full.maxX - full.minX || 1)) * zw;
           const zwz = (zScene: number) => ((full.maxZ + zScene) / (full.maxZ - full.minZ || 1)) * zw;
+          // Capture rings + letters (same rendering as the small thumb, at
+          // the enlarged scale).
+          const zcapR = (radius: number) =>
+            Math.max(8, Math.min(48, 5 + Math.sqrt(radius / 20) * 9));
+          capZones.value.forEach((z, i) => {
+            const cx = zwx(z.kind!.initialX);
+            const cz = zwz(-z.kind!.initialZ);
+            const owner = capDisplay.value[i]?.owner ?? 0;
+            const rPx = zcapR(Math.max(z.kind?.radius ?? 300, 25));
+            zctx.strokeStyle =
+              owner === 1 ? "rgba(74, 222, 128, 0.85)" : owner === 2 ? "rgba(204, 51, 51, 0.85)" : "rgba(255, 255, 255, 0.55)";
+            zctx.lineWidth = 2;
+            zctx.beginPath();
+            zctx.arc(cx, cz, rPx, 0, Math.PI * 2);
+            zctx.stroke();
+            zctx.fillStyle = zctx.strokeStyle;
+            zctx.font = "bold 16px sans-serif";
+            zctx.textAlign = "center";
+            zctx.textBaseline = "middle";
+            zctx.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
+          });
           if (minimapShowTrails.value) {
             for (const tr of props.trajectories) {
               if (tr.kind?.entityType !== 2 || tr.samples.length < 8) continue;
@@ -1096,7 +1118,7 @@ export default defineComponent({
               dead ? "sunk" : role === "self" || role === "ally" ? "ally" : role === "enemy" ? "enemy" : "white",
             );
             if (icon && icon.complete && icon.naturalWidth > 0) {
-              const sz = 26;
+              const sz = dead ? 34 : 30;
               zctx.save();
               zctx.translate(cx, cz);
               zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
@@ -4080,7 +4102,7 @@ export default defineComponent({
                 {t("replay.minimap.trails")}
               </SCheckbox>
             </div>
-            <canvas ref={zoomCanvas} width={640} height={640} class="holo-map__mmzoom-canvas" />
+            <canvas ref={zoomCanvas} width={760} height={760} class="holo-map__mmzoom-canvas" />
           </div>
         ) : null}
         {props.replayPath ? (

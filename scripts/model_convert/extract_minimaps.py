@@ -76,11 +76,15 @@ def parse_bounds(settings_xml: str) -> dict[str, float] | None:
     min_y, max_y = val("minY"), val("maxY")
     if None in (min_x, max_x, min_y, max_y):
         return None
+    # Symmetric crop: the minimap covers the central (chunks-4) chunk band,
+    # i.e. 2 chunks cropped on EVERY side of the settings rect. The previous
+    # +2/-1 asymmetry shifted the window one chunk north — the art's top
+    # strip rendered off-canvas.
     out = {
         "minX": (min_x + 2.0) * 100.0,
-        "maxX": (max_x - 1.0) * 100.0,
+        "maxX": (max_x - 2.0) * 100.0,
         "minZ": (min_y + 2.0) * 100.0,
-        "maxZ": (max_y - 1.0) * 100.0,
+        "maxZ": (max_y - 2.0) * 100.0,
     }
     if out["maxX"] <= out["minX"] or out["maxZ"] <= out["minZ"]:
         return None

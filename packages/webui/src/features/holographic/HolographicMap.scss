@@ -476,7 +476,9 @@
 .holo-map__mmzoom {
   position: absolute;
   inset: 0;
-  z-index: 8;
+  /* Below the playback controls (z 4): the 2D view stays scrubable — the
+     controls + self plaque render on top of the enlarged map. */
+  z-index: 3;
   background: rgba(5, 8, 15, 0.82);
   display: flex;
   flex-direction: column;
