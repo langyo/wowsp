@@ -14,6 +14,7 @@ import {
   shipNameFromModelDb,
   shipNameFromOfflineDb,
   shipModelStem,
+  shipSilhouetteUrl,
   shipOfflineEntry,
   loadGlbModel,
   loadMapBounds,
@@ -577,6 +578,7 @@ export default defineComponent({
       const stem = shipModelStem(l.shipId) ?? undefined;
       return {
         shipType: l.type ?? undefined,
+        silhouetteUrl: shipSilhouetteUrl(l.shipId),
         silhouette: (stem && silhouettes.value[stem]?.path) ?? null,
         name: l.shipName,
         hp: l.hp,
