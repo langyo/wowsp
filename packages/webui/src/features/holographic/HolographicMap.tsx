@@ -3608,10 +3608,11 @@ export default defineComponent({
       const nAreas = scoring.length;
       const startPts = special ? 150 : isRanked ? 300 : nAreas >= 4 ? 200 : 300;
       const capCompletePts = special ? 40 : isRanked ? (nAreas >= 4 ? 2 : 9) : nAreas >= 4 ? 4 : 3;
-      // Accrual: (every N seconds, +P per controlled area). Randoms:
-      // 2-3 points = 3 pts / 3 s (calibrated against a real domination_
-      // 2point Canada replay: 300 start, 843 final over 887 s with one
-      // point contested from t=311), 4+ points = 4 pts / 9 s.
+      // Accrual: (every N seconds, +P per controlled area). Randoms 2-3
+      // points = 3 pts / 6 s — SOLVED from the real Canada domination_2point
+      // replay: final 843 = 300 start + 135 kill points (4 enemy sinks:
+      // CA+SS+CA+BB) + rate × 818 owned-cap-seconds (home point contested
+      // t=311..377) → rate = 0.499 pts/s. 4+ points keep 4/9 s.
       let accrualEvery = 0;
       let accrualPts = 0;
       if (!special) {
@@ -3619,7 +3620,7 @@ export default defineComponent({
           accrualEvery = nAreas >= 4 ? 0 : nAreas === 2 ? 10 : 3;
           accrualPts = nAreas >= 4 ? 0 : nAreas === 2 ? 9 : 2;
         } else {
-          accrualEvery = nAreas >= 4 ? 9 : 3;
+          accrualEvery = nAreas >= 4 ? 9 : 6;
           accrualPts = nAreas >= 4 ? 4 : 3;
         }
       }
