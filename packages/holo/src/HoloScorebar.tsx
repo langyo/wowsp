@@ -19,24 +19,25 @@ import "./HoloScorebar.scss";
 // retint the NEUTRAL letter (white on dark glass, slate on light glass)
 // without touching the team colours.
 
-// Diamond geometry (30-unit viewBox): the outline path starts at the TOP
-// corner and runs clockwise, so a clip rect growing downward fills the
-// diamond top-to-bottom with the capturing side's colour as progress
-// accrues (in-game behaviour), while the outline stays the owner's.
+// Diamond geometry (30-unit viewBox): the outline starts at the TOP corner
+// and runs CLOCKWISE. The capture progress is a stroke-dash segment walking
+// that edge like the in-game widget (a loading ring on the diamond's EDGE —
+// never an interior fill); the ring rides a slightly larger diamond so it
+// reads outside the owner outline.
 const DIAMOND_PATH = "M15 1.5 L28.5 15 L15 28.5 L1.5 15 Z";
-
-/** Unique clip ids per rendered chip (SVG clipPath is id-referenced). */
-let clipSeq = 0;
+// Progress-ring path: same diamond expanded ~2.2 units from centre.
+const RING_PATH = "M15 -0.7 L30.7 15 L15 30.7 L-0.7 15 Z";
+// Ring perimeter (4 x hypot(15.7, 15.7)) for the dash maths.
+const RING_LEN = 4 * Math.hypot(15.7, 15.7);
 
 function CapChip({ cap }: { cap: HoloCapZone }) {
   const active = !!cap.capturing || !!cap.contested;
-  // The capture fill is coloured by the side accruing the capture (ally
+  // The progress ring is coloured by the side accruing the capture (ally
   // green / enemy red) — white/red/green only, never yellow. Resolved as a
   // CSS custom property (inline style) so the theme flip in the SCSS
   // applies; owner tint comes from currentColor (class sets `color`).
   const fillVar = `var(--holo-${cap.captureSide ?? cap.owner})`;
   const progress = Math.max(0, Math.min(1, cap.progress ?? 0));
-  const uid = `capfill${clipSeq++}`;
   return (
     <span
       class={[
@@ -53,25 +54,21 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
       <svg viewBox="0 0 30 30" width="28" height="28" aria-hidden="true">
         {active ? (
           <>
-            <defs>
-              <clipPath id={uid}>
-                <path d={DIAMOND_PATH} />
-              </clipPath>
-            </defs>
-            {/* owner body behind the fill */}
-            <path d={DIAMOND_PATH} fill="currentColor" fill-opacity="0.3" />
-            {/* capture fill: grows top→bottom with progress, clipped to the
-                diamond (the fill covers the whole diamond width, not just a
-                corner) */}
-            <rect
-              x="0" y="0" width="30" height={30 * progress}
-              style={{ fill: fillVar }} fill-opacity="0.85"
-              clip-path={`url(#${uid})`}
-            />
+            {/* owner body: faint interior tint (decor only — the PROGRESS
+                lives on the edge ring below, like the in-game widget) */}
+            <path d={DIAMOND_PATH} fill="currentColor" fill-opacity="0.18" />
             {/* owner outline */}
             <path
               d={DIAMOND_PATH} fill="none"
-              stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"
+              stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"
+            />
+            {/* capture progress: a clockwise walking dash along the EDGE
+                (loading-ring). stroke-dasharray carves the travelled arc. */}
+            <path
+              d={RING_PATH} fill="none"
+              style={{ stroke: fillVar }}
+              stroke-width="2.6" stroke-linecap="round"
+              stroke-dasharray={`${(RING_LEN * progress).toFixed(2)} ${RING_LEN.toFixed(2)}`}
             />
           </>
         ) : (
