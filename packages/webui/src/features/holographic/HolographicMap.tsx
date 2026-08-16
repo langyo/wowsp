@@ -840,10 +840,18 @@ export default defineComponent({
       if (!cvs) return;
       if (!_mmCtx) _mmCtx = cvs.getContext("2d");
       const ctx = _mmCtx!;
+      // HiDPI backing store: the canvas is displayed at 160 CSS px, which on
+      // a scaled Windows desktop (125%/150%) is 200-320 DEVICE px. A 160px
+      // backing store would be bilinear-upscaled by the browser — blurring
+      // even the vector glyphs. Render at devicePixelRatio instead; the base
+      // transform below keeps every drawing call in 160-unit logical coords.
+      const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      const px = Math.round(MINIMAP_SIZE * dpr);
+      if (cvs.width !== px) cvs.width = px;
+      if (cvs.height !== px) cvs.height = px;
+      ctx.setTransform(px / MINIMAP_SIZE, 0, 0, px / MINIMAP_SIZE, 0, 0);
       const w = MINIMAP_SIZE;
       const h = MINIMAP_SIZE;
-      if (cvs.width !== w) cvs.width = w;
-      if (cvs.height !== h) cvs.height = h;
 
       const dbW = db.maxX - db.minX;
       const dbH = db.maxZ - db.minZ;
@@ -1030,7 +1038,14 @@ export default defineComponent({
       if (zc) {
         const zctx = zc.getContext("2d");
         if (zctx) {
-          const zw = zc.width; // native 760 — matches the art 1:1 (sharp)
+          // HiDPI backing store (same rationale as the small thumb): 760
+          // logical units rendered at devicePixelRatio so glyphs/text stay
+          // crisp on scaled desktops. All zwx/zwz math stays in 760-space.
+          const dprZ = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+          const pxZ = Math.round(760 * dprZ);
+          if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
+          zctx.setTransform(pxZ / 760, 0, 0, pxZ / 760, 0, 0);
+          const zw = 760;
           zctx.clearRect(0, 0, zw, zw);
           if (minimapImage) {
             zctx.imageSmoothingEnabled = true;
