@@ -112,12 +112,12 @@
   50% { opacity: 0.45; }
 }
 
-/* Light theme: white glass pill; the neutral cap letter flips to slate so
-   it stays visible (team greens/reds read on either glass). */
+/* Light theme: white glass pill; the neutral cap letter flips to DARK GREY
+   (gray-700) so it stays visible (team greens/reds read on either glass). */
 :root[data-mode="light"] .holo-scorebar {
-  --holo-neutral: #334155;
+  --holo-neutral: #374151;
 
   background: rgb(255 255 255 / 62%);
-  border-color: rgb(15 23 42 / 14%);
-  box-shadow: 0 4px 18px rgb(15 23 42 / 14%), inset 0 1px 0 rgb(255 255 255 / 60%);
+  border-color: rgb(55 65 81 / 16%);
+  box-shadow: 0 4px 18px rgb(55 65 81 / 14%), inset 0 1px 0 rgb(255 255 255 / 60%);
 }

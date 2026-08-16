@@ -107,14 +107,15 @@
   }
 }
 
-/* Light theme: white glass plaque with dark text over the paper-white sea. */
+/* Light theme: white glass plaque with DARK GREY text over the paper-white
+   sea (gray-700 ink — never near-black). */
 :root[data-mode="light"] .holo-ship-card {
   background: rgb(255 255 255 / 68%);
-  border-color: rgb(15 23 42 / 14%);
-  color: rgb(15 23 42 / 85%);
+  border-color: rgb(55 65 81 / 16%);
+  color: rgb(55 65 81 / 88%);
 
-  &__name { color: rgb(15 23 42 / 92%); }
-  &__text { color: rgb(15 23 42 / 78%); }
-  &__sil-base { background: rgb(15 23 42 / 12%); }
-  &__hull-base { fill: rgb(15 23 42 / 12%); }
+  &__name { color: rgb(55 65 81 / 94%); }
+  &__text { color: rgb(55 65 81 / 78%); }
+  &__sil-base { background: rgb(55 65 81 / 12%); }
+  &__hull-base { fill: rgb(55 65 81 / 12%); }
 }
