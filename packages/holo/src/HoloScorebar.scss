@@ -66,6 +66,11 @@
   width: 26px;
   height: 26px;
 
+  /* Owner tint for the SVG shapes (currentColor — see CapChip). */
+  &--ally { color: var(--holo-ally); }
+  &--enemy { color: var(--holo-enemy); }
+  &--neutral { color: var(--holo-neutral); }
+
   svg { display: block; }
 
   &.is-contested svg {
@@ -105,4 +110,14 @@
 @keyframes holo-cap-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
+}
+
+/* Light theme: white glass pill; the neutral cap letter flips to slate so
+   it stays visible (team greens/reds read on either glass). */
+:root[data-mode="light"] .holo-scorebar {
+  --holo-neutral: #334155;
+
+  background: rgb(255 255 255 / 62%);
+  border-color: rgb(15 23 42 / 14%);
+  box-shadow: 0 4px 18px rgb(15 23 42 / 14%), inset 0 1px 0 rgb(255 255 255 / 60%);
 }
