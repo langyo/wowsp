@@ -162,6 +162,13 @@ pub struct DecodedReplay {
     pub weapon_locks: Vec<wowsp_tauri_shared::WeaponLockEvent>,
     /// Raw post-battle statistics payload (BattleResults 0x22).
     pub battle_results: Option<String>,
+    /// Every EntityMethod call (time, entity_id, method_id, arg_len) — a
+    /// diagnostic surface for identifying yet-undecoded signals (team score
+    /// updates, consumables, chat) without re-decoding the stream.
+    pub method_histogram: Vec<(f32, i32, i32, u32)>,
+    /// First few raw argument blobs per (entity_id, method_id) for offline
+    /// protocol identification (hex-dumped by the replay dump test).
+    pub method_arg_samples: std::collections::BTreeMap<(i32, i32), Vec<Vec<u8>>>,
     /// Protocol version string (0x16).
     pub version: Option<String>,
     /// Map name from the Map packet (0x28).
@@ -318,6 +325,9 @@ fn walk_frames(
     let mut destroys: BTreeMap<i32, f32> = BTreeMap::new();
     let mut properties: BTreeMap<i32, Vec<PropertyChange>> = BTreeMap::new();
     let mut methods: Vec<RawMethodCall> = Vec::new();
+    let mut method_histogram: Vec<(f32, i32, i32, u32)> = Vec::new();
+    let mut method_arg_samples: std::collections::BTreeMap<(i32, i32), Vec<Vec<u8>>> =
+        std::collections::BTreeMap::new();
     let mut nested: Vec<RawNestedProperty> = Vec::new();
     let mut weapon_locks: Vec<wowsp_tauri_shared::WeaponLockEvent> = Vec::new();
     let mut battle_results: Option<String> = None;
@@ -383,6 +393,13 @@ fn walk_frames(
             },
             PACKET_ENTITY_METHOD => {
                 if let Some(call) = parse_entity_method(payload, time) {
+                    method_histogram.push((call.time, call.entity_id, call.method_id, call.args.len() as u32));
+                    let entry = method_arg_samples
+                        .entry((call.entity_id, call.method_id))
+                        .or_default();
+                    if entry.len() < 6 {
+                        entry.push(call.args[..call.args.len().min(24)].to_vec());
+                    }
                     methods.push(call);
                 }
             },
@@ -552,6 +569,8 @@ fn walk_frames(
         cap_progress,
         weapon_locks,
         battle_results,
+        method_histogram,
+        method_arg_samples,
         version,
         map_name,
         camera,

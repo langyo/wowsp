@@ -202,6 +202,8 @@ fn group_by_entity(
         mut cap_progress,
         weapon_locks,
         battle_results,
+        method_histogram: _,
+        method_arg_samples: _,
         version,
         map_name,
         camera,
@@ -836,8 +838,66 @@ mod tests {
             return;
         };
         let meta = read_replay_header(path.clone()).expect("header");
-        let stream = read_replay_positions(path).expect("positions");
+        let stream = read_replay_positions(path.clone()).expect("positions");
+        // Raw per-entity property timelines for offline analysis (score
+        // hunting, property-index identification).
+        let bytes = std::fs::read(&path).unwrap();
+        let pstream = packet_stream_after_blocks(&bytes).expect("packet stream");
+        let mut candidates = std::collections::HashSet::new();
+        let mut cver: Option<String> = None;
+        if let Some(json) = extract_descriptor_json(&bytes) {
+            if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+                cver = raw.get("clientVersionFromExe").and_then(|x| x.as_str()).map(str::to_string);
+                if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
+                    for v in arr {
+                        if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
+                            candidates.insert(id as u32);
+                        }
+                    }
+                }
+            }
+        }
+        let decoded = crate::commands::packets::decode_replay(pstream, &candidates, cver.as_deref()).expect("decode");
+        // (entityType, methodId) histogram with arg-length stats.
+        let mut histo: std::collections::BTreeMap<(i16, i32), (u32, u32, f32, f32)> = std::collections::BTreeMap::new();
+        for (t, eid, mid, alen) in &decoded.method_histogram {
+            let et = decoded.kinds.get(eid).map(|k| k.entity_type).unwrap_or(-1);
+            let e = histo.entry((et, *mid)).or_insert((0, *alen, *t, *t));
+            e.0 += 1;
+            e.1 = e.1.max(*alen);
+            e.3 = e.3.max(*t);
+        }
+        let mut props = std::collections::BTreeMap::new();
+        for (eid, changes) in &decoded.properties {
+            props.insert(
+                eid.to_string(),
+                changes.iter().map(|c| serde_json::json!({
+                    "t": c.time, "p": c.property_index, "v": c.value, "s": c.size,
+                })).collect::<Vec<_>>(),
+            );
+        }
+        let histo_json: serde_json::Value = histo
+            .iter()
+            .map(|((et, mid), (n, maxlen, t0, t1))| {
+                // raw arg samples for this (entityType, method) — the args
+                // are per-entity, so collect from any sampled entity.
+                let mut samples: Vec<String> = Vec::new();
+                for ((eid2, mid2), blobs) in &decoded.method_arg_samples {
+                    if *mid2 != *mid { continue; }
+                    let et2 = decoded.kinds.get(eid2).map(|k| k.entity_type).unwrap_or(-1);
+                    if et2 != *et { continue; }
+                    for b in blobs {
+                        samples.push(b.iter().map(|x| format!("{x:02x}")).collect::<String>());
+                    }
+                    if samples.len() >= 4 { break; }
+                }
+                serde_json::json!({ "et": et, "mid": mid, "n": n, "maxLen": maxlen, "t0": t0, "t1": t1, "args": samples })
+            })
+            .collect::<Vec<_>>()
+            .into();
         let out = serde_json::json!({
+            "properties": props,
+            "methods": histo_json,
             "meta": meta,
             "trajectories": stream.trajectories,
             "explosions": stream.explosions,
