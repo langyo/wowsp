@@ -41,6 +41,9 @@ export interface HoloCapZone {
   contested?: boolean;
   /** Team currently accruing the capture progress (drives the sweep colour). */
   captureSide?: "ally" | "enemy";
+  /** Seconds until the capture completes if the situation holds (shown as
+   *  a small "xx s" tag under the chip / map marker). */
+  etaSeconds?: number | null;
   /** Optional tooltip for the letter chip. */
   hint?: string;
 }

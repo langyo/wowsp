@@ -918,6 +918,13 @@ export default defineComponent({
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
+        // Capturing countdown under the letter: "xx s" to complete.
+        const eta = capDisplay.value[i]?.etaSeconds;
+        if (eta != null && eta > 0) {
+          ctx.fillStyle = "rgba(251,191,36,0.95)";
+          ctx.font = "bold 7px sans-serif";
+          ctx.fillText(Math.ceil(eta) + " s", cx, cz + radiusPx + 5);
+        }
       });
 
       // Ship markers: the game's own HUD class icons, tinted by team via the
@@ -1093,6 +1100,13 @@ export default defineComponent({
             zctx.textAlign = "center";
             zctx.textBaseline = "middle";
             zctx.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
+            // Capturing countdown under the letter: "xx s" to complete.
+            const eta = capDisplay.value[i]?.etaSeconds;
+            if (eta != null && eta > 0) {
+              zctx.fillStyle = "rgba(251,191,36,0.95)";
+              zctx.font = "bold 12px sans-serif";
+              zctx.fillText(Math.ceil(eta) + " s", cx, cz + rPx + 9);
+            }
           });
           if (minimapShowTrails.value) {
             for (const tr of props.trajectories) {
@@ -2972,7 +2986,12 @@ export default defineComponent({
           const rem = captureSecondsRemaining(c.progress, teamShips, c.contested);
           if (c.capturing && rem.seconds != null) etaLine = formatEta(rem.seconds);
         }
-        if (sprite.userData.text === `${text}|${etaLine}`) return;
+        const quickEta =
+          c.etaSeconds != null && c.etaSeconds > 0
+            ? Math.ceil(c.etaSeconds) + " s"
+            : "";
+        if (sprite.userData.text === `${text}|${etaLine}|${quickEta}`) return;
+        sprite.userData.text = `${text}|${etaLine}|${quickEta}`;
         sprite.userData.text = `${text}|${etaLine}`;
         const ctx = canvas.getContext("2d")!;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2981,7 +3000,11 @@ export default defineComponent({
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(text, 32, 32);
-        if (etaLine) {
+        if (quickEta) {
+          ctx.fillStyle = "rgba(251,191,36,0.95)";
+          ctx.font = "bold 22px sans-serif";
+          ctx.fillText(quickEta, 32, 56);
+        } else if (etaLine) {
           ctx.fillStyle = "rgba(251,191,36,0.95)";
           ctx.font = "bold 22px sans-serif";
           ctx.fillText(etaLine, 32, 56);
@@ -3350,6 +3373,8 @@ export default defineComponent({
       speed: number;
       /** Capturing team (1/2) when capturing. */
       captureTeam: number;
+      /** Seconds to finish if the situation holds (null when paused). */
+      etaSeconds: number | null;
     }
     const capDisplay = ref<CapZoneState[]>([]);
 
@@ -3363,6 +3388,7 @@ export default defineComponent({
         capturing: c.capturing,
         contested: c.contested,
         captureSide: c.captureTeam === 1 ? "ally" : c.captureTeam === 2 ? "enemy" : undefined,
+        etaSeconds: c.etaSeconds,
         hint: c.contested
           ? `${c.letter} 双方压点，进度暂停`
           : c.capturing
@@ -3678,6 +3704,7 @@ export default defineComponent({
             contested: false,
             capturing: false,
             speed: 1 / 60,
+            etaSeconds: null,
             captureTeam: 0,
           });
           continue;
@@ -3714,6 +3741,13 @@ export default defineComponent({
           contested: ally > 0 && enemy > 0,
           capturing,
           speed: 1 / (Math.max(ally, enemy) >= 2 ? 40 : 60),
+          // ETA to finish if the situation holds (null when paused/not
+          // capturing); the 0x23 progress stream drives st.progress so
+          // remaining-fraction / tick-rate matches the visible ring.
+          etaSeconds:
+            capturing && !(ally > 0 && enemy > 0)
+              ? (1 - st.progress) / (1 / (Math.max(ally, enemy) >= 2 ? 40 : 60))
+              : null,
           captureTeam:
             st.owner === 0
               ? ally > enemy
