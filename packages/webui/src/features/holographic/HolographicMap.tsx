@@ -4048,6 +4048,23 @@ export default defineComponent({
     // Recompute markers whenever the scrubber moves.
     watch(current, (t) => updateMarkersAt(t));
 
+    // Deep link ?play=1: start playback once the trajectories are in —
+    // headless render checks exercise the NATURAL playback path (the RAF
+    // loop advancing current), not just seeks.
+    if (new URLSearchParams(location.search).get("play") === "1") {
+      watch(
+        () => props.trajectories.length,
+        (n) => {
+          if (n > 0 && current.value === 0 && !playing.value) {
+            playing.value = true;
+            lastTick = 0;
+            playRaf = requestAnimationFrame(playTick);
+          }
+        },
+        { immediate: true },
+      );
+    }
+
     // Once the scene is ready, build actors for any trajectories already set
     // and attempt to load the terrain model.
     watch(ready, (r) => {
