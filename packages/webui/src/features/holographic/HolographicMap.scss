@@ -1,4 +1,39 @@
+/* HUD overlay palette. Dark (default): dark glass over the hologram sea.
+   Light: white glass matching the paper-white sea — flipped via the root
+   [data-mode] the theme manager maintains. Every in-viewport control
+   (playback bar, score pill glass, kill feed, menus, scrims) draws from
+   these tokens so the whole viewport follows the app theme. */
+:root[data-mode="light"] .holo-map {
+  --holo-hud-bg: rgb(255 255 255 / 74%);
+  --holo-hud-chip: rgb(255 255 255 / 62%);
+  --holo-hud-menu: rgb(255 255 255 / 96%);
+  --holo-hud-glass: rgb(255 255 255 / 66%);
+  --holo-hud-soft: rgb(15 23 42 / 5%);
+  --holo-hud-hover: rgb(15 23 42 / 8%);
+  --holo-hud-border: rgb(15 23 42 / 14%);
+  --holo-hud-text: rgb(15 23 42 / 88%);
+  --holo-hud-dim: rgb(15 23 42 / 55%);
+  --holo-hud-strong: #0f172a;
+  --holo-hud-shadow: 0 4px 14px rgb(15 23 42 / 16%);
+  --holo-hud-scrim: rgb(236 240 246 / 88%);
+  --holo-hud-tshadow: none;
+}
+
 .holo-map {
+  --holo-hud-bg: rgb(8 12 20 / 62%);
+  --holo-hud-chip: rgb(0 0 0 / 40%);
+  --holo-hud-menu: rgb(12 16 26 / 96%);
+  --holo-hud-glass: rgb(96 108 126 / 42%);
+  --holo-hud-soft: rgb(255 255 255 / 5%);
+  --holo-hud-hover: rgb(255 255 255 / 10%);
+  --holo-hud-border: rgb(255 255 255 / 14%);
+  --holo-hud-text: rgb(255 255 255 / 92%);
+  --holo-hud-dim: rgb(255 255 255 / 55%);
+  --holo-hud-strong: #ffffff;
+  --holo-hud-shadow: 0 4px 14px rgb(0 0 0 / 55%);
+  --holo-hud-scrim: rgb(5 8 15 / 85%);
+  --holo-hud-tshadow: 0 1px 2px rgb(0 0 0 / 80%);
+
   position: relative;
   width: 100%;
   height: 100%;
@@ -20,6 +55,13 @@
     }
   }
 
+  /* Bottom-right minimap thumb: the canvas art is the game's own dark map,
+     the FRAME follows the theme so it melts into either viewport. */
+  &__minimap {
+    border: 1px solid var(--holo-hud-border);
+    box-shadow: var(--holo-hud-shadow);
+  }
+
   &__hint,
   &__overlay-info {
     position: absolute;
@@ -27,7 +69,7 @@
     padding: 4px 8px;
     font-size: var(--text-sm);
     color: rgb(var(--color-primary));
-    background: rgb(0 0 0 / 50%);
+    background: var(--holo-hud-bg);
     border-radius: var(--radius-sm);
     pointer-events: none;
   }
@@ -40,7 +82,7 @@
     padding: 4px 8px;
     font-size: var(--text-sm);
     color: rgb(var(--color-primary));
-    background: rgb(0 0 0 / 50%);
+    background: var(--holo-hud-bg);
     border-radius: var(--radius-sm);
     pointer-events: none;
   }
@@ -104,7 +146,7 @@
     padding: 0;
     border: 1px solid rgb(var(--color-primary) / 50%);
     border-radius: var(--radius-sm);
-    background: rgb(0 0 0 / 40%);
+    background: var(--holo-hud-chip);
     color: rgb(var(--color-primary));
     cursor: pointer;
     font-size: var(--text-sm);
@@ -122,11 +164,11 @@
 
   &__time,
   &__count {
-    color: #fff;
+    color: var(--holo-hud-strong);
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     white-space: nowrap;
-    text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+    text-shadow: var(--holo-hud-tshadow);
   }
 
   &__time {
@@ -147,8 +189,8 @@
     padding: 0 8px;
     border: 1px solid rgb(var(--color-primary) / 50%);
     border-radius: var(--radius-sm);
-    background: rgb(0 0 0 / 40%);
-    color: #fff;
+    background: var(--holo-hud-chip);
+    color: var(--holo-hud-strong);
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
@@ -162,10 +204,10 @@
     flex-direction: column;
     gap: 2px;
     padding: 4px;
-    border: 1px solid rgb(255 255 255 / 14%);
+    border: 1px solid var(--holo-hud-border);
     border-radius: var(--radius-sm);
-    background: rgb(12 16 26 / 96%);
-    box-shadow: 0 4px 14px rgb(0 0 0 / 55%);
+    background: var(--holo-hud-menu);
+    box-shadow: var(--holo-hud-shadow);
     z-index: 6;
   }
   &__speed-opt {
@@ -174,12 +216,12 @@
     border: none;
     border-radius: 4px;
     background: transparent;
-    color: rgb(255 255 255 / 75%);
+    color: var(--holo-hud-text);
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     text-align: left;
-    &:hover { background: rgb(255 255 255 / 10%); }
+    &:hover { background: var(--holo-hud-hover); }
     &--on { color: rgb(var(--color-primary)); font-weight: 700; }
   }
 
@@ -192,7 +234,7 @@
     flex-direction: column;
     gap: 0.25rem;
     padding: 0.4rem 0.6rem;
-    background: rgb(0 0 0 / 50%);
+    background: var(--holo-hud-bg);
     border-radius: var(--radius-sm);
     pointer-events: none;
   }
@@ -246,12 +288,12 @@
   align-items: stretch;
   gap: 0;
   padding: 0.45rem 0.3rem;
-  background: rgb(96 108 126 / 42%);
-  border: 1px solid rgb(255 255 255 / 22%);
+  background: var(--holo-hud-glass, rgb(96 108 126 / 42%));
+  border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
   border-radius: 8px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  color: rgb(255 255 255 / 92%);
+  color: var(--holo-hud-text, rgb(255 255 255 / 92%));
   pointer-events: none;
 }
 .holo-map__selfstat {
@@ -264,7 +306,7 @@
   white-space: nowrap;
 
   &:not(:first-child) {
-    border-left: 1px solid rgb(255 255 255 / 16%);
+    border-left: 1px solid var(--holo-hud-border, rgb(255 255 255 / 16%));
   }
 }
 .holo-map__selfstat-ico {
@@ -275,14 +317,14 @@
   font-style: normal;
   font-size: 10px;
   line-height: 1;
-  color: rgb(255 255 255 / 55%);
+  color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
   letter-spacing: 0.02em;
 }
 .holo-map__selfstat-num {
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 700;
-  color: #fff;
+  color: var(--holo-hud-strong, #fff);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -311,8 +353,8 @@
   gap: 0.5rem;
   padding: 0.3rem 0.55rem;
   font-size: var(--text-xs);
-  background: rgba(5, 8, 15, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--holo-hud-menu);
+  border: 1px solid var(--holo-hud-border);
   border-radius: 4px;
   animation: holo-kill-in 0.25s ease-out;
 }
@@ -328,7 +370,7 @@
   align-self: center;
   padding-top: 1px;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--holo-hud-dim);
   white-space: nowrap;
 }
 .holo-map__kill-ico {
@@ -340,7 +382,7 @@
   align-items: center;
   gap: 5px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--holo-hud-text);
   line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -348,7 +390,7 @@
 }
 .holo-map__kill-name {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--holo-hud-dim);
   line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -379,31 +421,31 @@
   max-height: min(70vh, 560px);
   overflow-y: auto;
   padding: 0.4rem;
-  background: rgba(5, 8, 15, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--holo-hud-menu);
+  border: 1px solid var(--holo-hud-border);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--holo-hud-shadow);
 }
 .holo-map__cam-modes {
   display: flex;
   gap: 0.35rem;
   padding-bottom: 0.35rem;
   margin-bottom: 0.15rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--holo-hud-border);
 }
 .holo-map__cam-mode {
   flex: 1;
   padding: 0.3rem 0.5rem;
   font-size: var(--text-xs);
-  color: rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--holo-hud-text);
+  background: var(--holo-hud-soft);
+  border: 1px solid var(--holo-hud-border);
   border-radius: 4px;
   cursor: pointer;
 }
-.holo-map__cam-mode:hover { background: rgba(255, 255, 255, 0.12); }
+.holo-map__cam-mode:hover { background: var(--holo-hud-hover); }
 .holo-map__cam-mode--on {
-  color: #fff;
+  color: var(--holo-hud-strong);
   background: rgba(60, 180, 120, 0.25);
   border-color: rgba(60, 180, 120, 0.6);
 }
@@ -413,7 +455,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--holo-hud-dim);
 }
 .holo-map__cam-item {
   display: grid;
@@ -428,13 +470,13 @@
   padding: 0.28rem 0.4rem;
   font-size: var(--text-xs);
   text-align: left;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--holo-hud-text);
   background: transparent;
   border: none;
   border-radius: 4px;
   cursor: pointer;
 }
-.holo-map__cam-item:hover { background: rgba(255, 255, 255, 0.08); }
+.holo-map__cam-item:hover { background: var(--holo-hud-hover); }
 .holo-map__cam-item--on {
   background: rgba(255, 215, 94, 0.14);
   outline: 1px solid rgba(255, 215, 94, 0.5);
@@ -460,12 +502,12 @@
 }
 .holo-map__cam-meta {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--holo-hud-dim);
 }
 .holo-map__cam-name {
   grid-area: name;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--holo-hud-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -474,7 +516,7 @@
   grid-area: stats;
   font-size: 10px;
   font-family: var(--font-mono);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--holo-hud-dim);
   white-space: nowrap;
 }
 
@@ -485,7 +527,7 @@
   /* Below the playback controls (z 4): the 2D view stays scrubable — the
      controls + self plaque render on top of the enlarged map. */
   z-index: 3;
-  background: rgba(5, 8, 15, 0.82);
+  background: var(--holo-hud-scrim);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -499,11 +541,11 @@
   gap: 0.75rem;
   padding: 0.4rem 0.9rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--holo-hud-chip);
+  border: 1px solid var(--holo-hud-border);
   backdrop-filter: blur(6px);
   font-size: var(--text-sm);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--holo-hud-text);
   user-select: none;
   cursor: default;
   > span:first-child {
@@ -517,15 +559,17 @@
     cursor: pointer;
     /* The mmzoom head sits on a dark scrim — force light text so the
        trails-switch label never falls back to the app's dark theme token. */
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--holo-hud-text);
   }
 }
 .holo-map__mmzoom-canvas {
   width: min(80vw, 80vh, 720px);
   height: auto;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--holo-hud-border);
   border-radius: 6px;
-  background: #05080f;
+  /* Canvas base follows the theme — the art itself is drawn as a faded
+     paper print in light mode (see the zLight branch in drawMinimap). */
+  background: var(--holo-hud-menu);
 }
 
 /* ── Tab roster overlay ─────────────────────────────────────────────── */
@@ -533,22 +577,22 @@
   position: absolute;
   inset: 0;
   z-index: 10;
-  background: rgba(5, 8, 15, 0.9);
+  background: var(--holo-hud-scrim);
   backdrop-filter: blur(4px);
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 3rem 0;
   pointer-events: none;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--holo-hud-text);
 
   table { border-collapse: collapse; width: 100%; max-width: 600px; }
   th {
     text-align: left;
     padding: 0.35rem 0.6rem;
     font-size: var(--text-xs);
-    color: rgba(255, 255, 255, 0.6);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--holo-hud-dim);
+    border-bottom: 1px solid var(--holo-hud-border);
   }
   td {
     padding: 0.25rem 0.6rem;

@@ -138,3 +138,26 @@
     white-space: nowrap;
   }
 }
+
+/* Light theme: the sea is paper white, so labels flip to dark text with a
+   soft white backing for contrast. Team borders and the HP/tier accents
+   darken one step to stay legible. */
+:root[data-mode="light"] .holo-label {
+  color: rgb(15 23 42 / 90%);
+
+  &--self { border-color: #0f172a; }
+
+  &__name { color: rgb(15 23 42 / 95%); }
+  &__ship { color: rgb(15 23 42 / 70%); }
+  &__tier { color: rgb(23 100 170 / 0.95); }
+  &__hp { color: rgb(20 130 80 / 0.95); }
+  &__hp-bar { background: rgb(15 23 42 / 10%); }
+  &__hp-text {
+    color: #0f172a;
+    text-shadow: 0 0 2px rgb(255 255 255 / 80%);
+  }
+  &__ghost-time {
+    background: rgb(255 255 255 / 55%);
+    color: rgb(15 23 42 / 75%);
+  }
+}
