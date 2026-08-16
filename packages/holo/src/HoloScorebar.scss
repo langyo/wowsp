@@ -65,6 +65,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
+  position: relative;
 
   /* Owner tint for the SVG shapes (currentColor — see CapChip). */
   &--ally { color: var(--holo-ally); }
@@ -76,6 +77,24 @@
   &.is-contested svg {
     animation: holo-cap-blink 0.9s ease-in-out infinite;
   }
+}
+
+/* ETA tag under a capturing chip: "xx s" to complete if it holds. */
+.holo-scorebar__cap-eta {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% 1px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgb(9 13 22 / 78%);
+  color: rgb(var(--color-text, 235 240 248) / 85%);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* Ship-icon strip under the scores: allies left, enemies right, sunk greyed

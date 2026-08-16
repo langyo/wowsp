@@ -57,25 +57,27 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
             {/* owner body: faint interior tint (decor only — the PROGRESS
                 lives on the edge arc below, like the in-game widget) */}
             <path d={DIAMOND_PATH} fill="currentColor" fill-opacity="0.18" />
+            {/* Both strokes share ONE width so the sweeping arc and the
+                owner outline read as a single uniform ring. */}
             {/* owner outline */}
             <path
               d={DIAMOND_PATH} fill="none"
-              stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"
+              stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"
             />
-            {/* capture progress: the SAME path stroked wider on top with a
+            {/* capture progress: the SAME path, SAME width on top with a
                 dash segment walking clockwise from the top corner — an
                 exact overlay of the outline (loading-ring). */}
             <path
               d={DIAMOND_PATH} fill="none"
               style={{ stroke: fillVar }}
-              stroke-width="3" stroke-linecap="round"
+              stroke-width="2.4" stroke-linecap="round"
               stroke-dasharray={`${(RING_LEN * progress).toFixed(2)} ${RING_LEN.toFixed(2)}`}
             />
           </>
         ) : (
           <rect
             x={5} y={5} width={20} height={20}
-            fill="none" stroke="currentColor" stroke-width="1.8"
+            fill="none" stroke="currentColor" stroke-width="2.4"
           />
         )}
         <text
@@ -88,6 +90,10 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
           {cap.letter}
         </text>
       </svg>
+      {/* ETA: seconds to complete the capture if the situation holds. */}
+      {active && cap.etaSeconds != null && cap.etaSeconds > 0 ? (
+        <span class="holo-scorebar__cap-eta">{Math.ceil(cap.etaSeconds)} s</span>
+      ) : null}
     </span>
   );
 }
