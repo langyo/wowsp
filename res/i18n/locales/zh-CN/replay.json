@@ -80,7 +80,8 @@
   "botNote": "AI 玩家，无历史战绩",
   "live": {
     "title": "实时对局",
-    "notStarted": "尚未开始新的对局"
+    "notStarted": "尚未开始新的对局",
+    "settling": "结算中"
   },
   "tier": "等级",
   "damageTaken": "承伤",

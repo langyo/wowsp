@@ -520,23 +520,30 @@ export default defineComponent({
      *  themselves (the authoritative per-match source — a map can ship in
      *  multiple versions, so game resources alone can't be trusted):
      *  - controlPoint component (create state) — always a real point
-     *  - capSamples (ownership stream) — real point on older clients
-     *  - capProgress: strike/event targets start high (741..1446) or
-     *    mid-range and DROP to zero once destroyed; real points either
-     *    keep progress above zero or stay at zero the whole match (owned
-     *    from the start, nobody ever contests them — no stream updates)
+     *    (older clients; 15.7+ no longer ships it)
+     *  - capSamples (ownership stream) — real point when present
+     *  - capProgress DYNAMICS (15.7+ discriminator, measured on real
+     *    dumps): a capture point's progress is a tug-of-war — dozens of
+     *    samples (66..223 on a 2-cap Canada match) rising and falling as
+     *    ships enter/leave/contest. Strike/event targets carry 2-3
+     *    samples that decay monotonically from a high start (health-style,
+     *    often >1000) straight to zero when destroyed. The old
+     *    "ended-at-zero" heuristic rejected a real point whose final
+     *    contest bled out — the very state "each side holds one point"
+     *    ends in — which collapsed a 2-cap map to a single chip.
      */
     function isCaptureZone(t: EntityTrajectory): boolean {
       if (t.kind?.controlPointIndex != null) return true;
       if ((t.capSamples?.length ?? 0) > 0) return true;
       const cp = t.capProgress ?? [];
       if (cp.length === 0) return false;
+      if (cp.length >= 10) return true; // living tug-of-war stream
       const first = cp[0].value;
-      if (first >= 1000) return false;
+      if (first >= 1000) return false; // strike-target health pool
       const last = cp[cp.length - 1].value;
       if (last > 0) return true;
-      // Ended at zero: a strike target shows non-zero progress BEFORE the
-      // drop; a point nobody ever touched stays zero the whole match.
+      // Few samples ending at zero: only a point NOBODY ever touched stays
+      // zero the whole match. Strike targets decay from non-zero.
       return !cp.some((s) => s.value > 0);
     }
     const capZones = computed(() => {
@@ -1360,13 +1367,17 @@ export default defineComponent({
         }
         ctx.closePath();
         if (opts?.outline) {
-          // Thin engraved outline: ONE device pixel per polygon edge (the
+          // Hairline engraved outline: 0.75 device px per polygon edge (the
           // seams between the traced bands read as the class engraving).
-          // No composite tricks — a destination-out eraser band proved able
-          // to punch holes through the underlying map art on some drivers.
-          const devScale = Math.max(1e-6, ctx.getTransform().a || 1);
+          // Modern displays rasterise sub-pixel strokes cleanly, and thin
+          // beats thick here — the traced polygons sit 1-2 atlas units
+          // apart, so fat strokes bridge the seams. NOTE the scale is the
+          // rotation-invariant magnitude (a alone is s·cosθ and would make
+          // diagonally-rotated glyphs ~41% thicker).
+          const m = ctx.getTransform();
+          const devScale = Math.max(1e-6, Math.hypot(m.a, m.b) || 1);
           ctx.strokeStyle = hex;
-          ctx.lineWidth = 1 / devScale;
+          ctx.lineWidth = 0.75 / devScale;
           ctx.lineJoin = "round";
           ctx.stroke();
         } else {

@@ -124,6 +124,12 @@
     cursor: pointer;
   }
 
+  /* Battle ended (its replay file just appeared) — results screen. */
+  &__pill--settling {
+    background: rgb(var(--color-warning) / 18%);
+    color: rgb(var(--color-warning));
+  }
+
   /* Post-battle results pill while the packet stream is still decoding. */
   &__results--loading {
     display: inline-flex;

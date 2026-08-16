@@ -80,7 +80,8 @@
   "botNote": "AI player — no battle history",
   "live": {
     "title": "Live battle",
-    "notStarted": "A new battle has not started yet"
+    "notStarted": "A new battle has not started yet",
+    "settling": "Settling"
   },
   "tier": "Tier",
   "damageTaken": "Damage taken",
