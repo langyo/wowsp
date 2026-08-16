@@ -841,13 +841,13 @@ export default defineComponent({
       if (!cvs) return;
       if (!_mmCtx) _mmCtx = cvs.getContext("2d");
       const ctx = _mmCtx!;
-      // HiDPI backing store: the canvas is displayed at 160 CSS px, which on
-      // a scaled Windows desktop (125%/150%) is 200-320 DEVICE px. A 160px
-      // backing store would be bilinear-upscaled by the browser — blurring
-      // even the vector glyphs. Render at devicePixelRatio instead; the base
+      // HiDPI backing store EXACTLY matching the displayed element size
+      // (rect × devicePixelRatio) — a 1:1 buffer↔element mapping avoids the
+      // browser resampling the canvas and softening vector edges. The base
       // transform below keeps every drawing call in 160-unit logical coords.
       const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
-      const px = Math.round(MINIMAP_SIZE * dpr);
+      const dispMm = Math.round(Math.max(1, cvs.getBoundingClientRect().width));
+      const px = Math.round(dispMm * dpr);
       if (cvs.width !== px) cvs.width = px;
       if (cvs.height !== px) cvs.height = px;
       ctx.setTransform(px / MINIMAP_SIZE, 0, 0, px / MINIMAP_SIZE, 0, 0);
@@ -930,9 +930,8 @@ export default defineComponent({
           ctx.save();
           ctx.translate(gx, gz);
           ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-          drawShipGlyph(ctx, m.userData.type as string | undefined, 0, 0, 11, TEAM_COLOR.ally, {
+          drawShipGlyph(ctx, m.userData.type as string | undefined, 0, 0, 14, TEAM_COLOR.ally, {
             outline: true,
-            lineWidth: 1.2,
           });
           ctx.restore();
           continue;
@@ -1042,11 +1041,15 @@ export default defineComponent({
       if (zc) {
         const zctx = zc.getContext("2d");
         if (zctx) {
-          // HiDPI backing store (same rationale as the small thumb): 760
-          // logical units rendered at devicePixelRatio so glyphs/text stay
-          // crisp on scaled desktops. All zwx/zwz math stays in 760-space.
+          // HiDPI backing store EXACTLY matching the displayed element
+          // size: rect × devicePixelRatio device px. Matching 1:1 avoids the
+          // browser's own box resampling of the canvas (a 760·dpr buffer on
+          // a differently-sized element reintroduced ~3px edge softening at
+          // 150% scaling). All zwx/zwz math stays in 760 logical units.
           const dprZ = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
-          const pxZ = Math.round(760 * dprZ);
+          const rectZ = zc.getBoundingClientRect();
+          const dispZ = Math.round(Math.max(1, rectZ.width));
+          const pxZ = Math.round(dispZ * dprZ);
           if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
           zctx.setTransform(pxZ / 760, 0, 0, pxZ / 760, 0, 0);
           const zw = 760;
@@ -1117,9 +1120,8 @@ export default defineComponent({
               zctx.save();
               zctx.translate(gx, gz);
               zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-              drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, 24, TEAM_COLOR.ally, {
+              drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, 30, TEAM_COLOR.ally, {
                 outline: true,
-                lineWidth: 1.6,
               });
               zctx.restore();
               continue;
@@ -1324,8 +1326,10 @@ export default defineComponent({
     /** Draw a WoWS class glyph on a canvas context, centered at (x, y),
      *  `size` px tall, in the given color. Solid mode fills the traced
      *  polygons (vector — anti-aliased at any scale/rotation, where the
-     *  raster HUD PNGs alias); outline mode strokes them without fill, the
-     *  inter-polygon gaps keeping the class engraving readable. */
+     *  raster HUD PNGs alias); outline mode strokes each polygon with a
+     *  THIN line and no fill — the inter-polygon gaps stay transparent so
+     *  the class engraving reads as a proper cut-out (thick strokes would
+     *  bridge the 1-2px seams between the traced bands). */
     function drawShipGlyph(
       ctx: CanvasRenderingContext2D,
       type: string | undefined,
@@ -1356,8 +1360,13 @@ export default defineComponent({
         }
         ctx.closePath();
         if (opts?.outline) {
+          // Thin engraved outline: ONE device pixel per polygon edge (the
+          // seams between the traced bands read as the class engraving).
+          // No composite tricks — a destination-out eraser band proved able
+          // to punch holes through the underlying map art on some drivers.
+          const devScale = Math.max(1e-6, ctx.getTransform().a || 1);
           ctx.strokeStyle = hex;
-          ctx.lineWidth = opts.lineWidth ?? Math.max(1, size * 0.07);
+          ctx.lineWidth = 1 / devScale;
           ctx.lineJoin = "round";
           ctx.stroke();
         } else {
