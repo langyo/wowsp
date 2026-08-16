@@ -20,15 +20,15 @@ import "./HoloScorebar.scss";
 // without touching the team colours.
 
 // Diamond geometry (30-unit viewBox): the outline starts at the TOP corner
-// and runs CLOCKWISE. The capture progress is a stroke-dash segment walking
-// that edge like the in-game widget (a loading ring on the diamond's EDGE —
-// never an interior fill); the ring rides a slightly larger diamond so it
-// reads outside the owner outline.
+// and runs CLOCKWISE. Both the owner outline AND the progress arc stroke
+// THE SAME path — the progress dash just draws on top with a wider stroke,
+// so it always covers the outline exactly (a separate expanded path
+// misaligned at the corners and its apex-first start rendered as a needle
+// tip at low progress).
 const DIAMOND_PATH = "M15 1.5 L28.5 15 L15 28.5 L1.5 15 Z";
-// Progress-ring path: same diamond expanded ~2.2 units from centre.
-const RING_PATH = "M15 -0.7 L30.7 15 L15 30.7 L-0.7 15 Z";
-// Ring perimeter (4 x hypot(15.7, 15.7)) for the dash maths.
-const RING_LEN = 4 * Math.hypot(15.7, 15.7);
+// Perimeter for the dash maths: each corner-to-corner edge spans
+// hypot(13.5, 13.5) ~ 19.09, four edges -> ~76.37.
+const RING_LEN = 4 * Math.hypot(13.5, 13.5);
 
 function CapChip({ cap }: { cap: HoloCapZone }) {
   const active = !!cap.capturing || !!cap.contested;
@@ -55,19 +55,20 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
         {active ? (
           <>
             {/* owner body: faint interior tint (decor only — the PROGRESS
-                lives on the edge ring below, like the in-game widget) */}
+                lives on the edge arc below, like the in-game widget) */}
             <path d={DIAMOND_PATH} fill="currentColor" fill-opacity="0.18" />
             {/* owner outline */}
             <path
               d={DIAMOND_PATH} fill="none"
               stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"
             />
-            {/* capture progress: a clockwise walking dash along the EDGE
-                (loading-ring). stroke-dasharray carves the travelled arc. */}
+            {/* capture progress: the SAME path stroked wider on top with a
+                dash segment walking clockwise from the top corner — an
+                exact overlay of the outline (loading-ring). */}
             <path
-              d={RING_PATH} fill="none"
+              d={DIAMOND_PATH} fill="none"
               style={{ stroke: fillVar }}
-              stroke-width="2.6" stroke-linecap="round"
+              stroke-width="3" stroke-linecap="round"
               stroke-dasharray={`${(RING_LEN * progress).toFixed(2)} ${RING_LEN.toFixed(2)}`}
             />
           </>
