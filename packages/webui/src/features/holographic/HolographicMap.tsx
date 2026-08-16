@@ -2752,19 +2752,21 @@ export default defineComponent({
       return last;
     }
 
-    /** Linear-interpolated capture progress (0..1000) at time t. */
+    /** Capture progress (0..1000) at time t from the game's own stream.
+     *  STEP semantics, zero outside the stream's span: a home point emits no
+     *  samples until it is first contested (the Canada 2-cap's own point's
+     *  first sample is at t=311s) — extrapolating that first sample back to
+     *  t=0 made every home point read "being captured" from the opening
+     *  second. Values hold between samples (the game reports on change). */
     function progressAtTime(samples: HpSample[] | undefined, t: number): number | null {
       if (!samples || samples.length === 0) return null;
-      if (t <= samples[0].time) return samples[0].value;
-      for (let i = 0; i < samples.length - 1; i++) {
-        const a = samples[i];
-        const b = samples[i + 1];
-        if (t >= a.time && t <= b.time) {
-          const k = b.time === a.time ? 0 : (t - a.time) / (b.time - a.time);
-          return a.value + (b.value - a.value) * k;
-        }
+      if (t < samples[0].time) return 0;
+      let v = samples[0].value;
+      for (const s of samples) {
+        if (s.time <= t) v = s.value;
+        else break;
       }
-      return samples[samples.length - 1].value;
+      return v;
     }
 
     /** Position + orient each ship marker at the current playback time.
@@ -3746,6 +3748,12 @@ export default defineComponent({
           o = s.value;
           seen = true;
         } else break;
+      }
+      if (
+        seen && o === 0 && samples.length === 1 &&
+        initialTeam != null && initialTeam >= 0
+      ) {
+        seen = false; // cleanup flush only — keep the starting owner
       }
       if (!seen && initialTeam != null && initialTeam >= 0) {
         const st = selfTeam.value;
