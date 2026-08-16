@@ -51,7 +51,7 @@ import {
 
 // The shared scorebar renders the game's own HUD icons — register the
 // bundled URLs once (same PNGs the minimap canvas uses).
-for (const variant of ["ally", "enemy", "sunk"] as const) {
+for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(variant, {
     battleship: shipIconUrl("battleship", variant) ?? undefined,
     cruiser: shipIconUrl("cruiser", variant) ?? undefined,

@@ -116,7 +116,9 @@
   height: 15px;
   object-fit: contain;
 
-  &.is-sunk { opacity: 0.55; }
+  /* Sunk = greyed out; direction stays the side's own (enemy icons keep
+     facing right — the sunk art faces left and would flip them). */
+  &.is-sunk { opacity: 0.55; filter: grayscale(0.85); }
 }
 
 .holo-scorebar__ships-sep {

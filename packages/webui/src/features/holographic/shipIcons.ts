@@ -21,6 +21,11 @@ import sunkCruiser from "../../res/images/ships/icon_sunk_cruiser.png";
 import sunkDestroyer from "../../res/images/ships/icon_sunk_destroyer.png";
 import sunkAircarrier from "../../res/images/ships/icon_sunk_aircarrier.png";
 import sunkSubmarine from "../../res/images/ships/icon_sunk_submarine.png";
+import sunkEnemyBattleship from "../../res/images/ships/icon_sunk_enemy_battleship.png";
+import sunkEnemyCruiser from "../../res/images/ships/icon_sunk_enemy_cruiser.png";
+import sunkEnemyDestroyer from "../../res/images/ships/icon_sunk_enemy_destroyer.png";
+import sunkEnemyAircarrier from "../../res/images/ships/icon_sunk_enemy_aircarrier.png";
+import sunkEnemySubmarine from "../../res/images/ships/icon_sunk_enemy_submarine.png";
 import whiteBattleship from "../../res/images/ships/icon_white_battleship.png";
 import whiteCruiser from "../../res/images/ships/icon_white_cruiser.png";
 import whiteDestroyer from "../../res/images/ships/icon_white_destroyer.png";
@@ -56,6 +61,16 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     aircarrier: sunkAircarrier,
     submarine: sunkSubmarine,
   },
+  // Sunk art for the ENEMY row: the sunk bitmap faces left like the ally
+  // art (see flip_sunk_icons.py), so the enemy variant is the mirrored copy
+  // keeping the enemy row's rightward direction.
+  "sunk-enemy": {
+    battleship: sunkEnemyBattleship,
+    cruiser: sunkEnemyCruiser,
+    destroyer: sunkEnemyDestroyer,
+    aircarrier: sunkEnemyAircarrier,
+    submarine: sunkEnemySubmarine,
+  },
   white: {
     battleship: whiteBattleship,
     cruiser: whiteCruiser,
@@ -72,7 +87,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
   },
 };
 
-export type ShipIconVariant = "ally" | "enemy" | "sunk" | "white" | "plain";
+export type ShipIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy" | "white" | "plain";
 
 /** Map a WG ShipInfo.type string to the icon-atlas class key. */
 export function shipTypeClass(type: string | null | undefined): string {
