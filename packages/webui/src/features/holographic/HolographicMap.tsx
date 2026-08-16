@@ -4,7 +4,8 @@ import { Crosshair, Shield, Skull, Swords } from "lucide-vue-next";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
-import { useThreeScene } from "./useThreeScene";
+import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
+import { useTheme } from "@/theme/useTheme";
 import {
   resolveMapModelUrl,
   resolveMapMinimapUrl,
@@ -1526,10 +1527,14 @@ export default defineComponent({
      *  purpose — no blend-order interaction with the transparent terrain. */
     let waterFloor: THREE.Mesh | null = null;
     let seaSurface: THREE.Mesh | null = null;
+    /** Water colours follow the app theme: deep-space navy in dark mode,
+     *  soft paper-blue sea in light mode (same palette family as the scene
+     *  background/grid — see useThreeScene.SCENE_THEMES). */
     function ensureWaterFloor() {
       const scene = api.value?.scene;
       if (!scene || waterFloor) return;
-      const mat = new THREE.MeshBasicMaterial({ color: 0x05121f });
+      const p = scenePalette();
+      const mat = new THREE.MeshBasicMaterial({ color: p.bg === SCENE_THEMES.light.bg ? 0xd7e2ec : 0x05121f });
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(24000, 24000), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.y = -40;
@@ -1540,7 +1545,7 @@ export default defineComponent({
       // Translucent sea surface at y≈0: hides the seabed tint behind it and
       // lets islands poke through, while keeping ship wake depth readable.
       const seaMat = new THREE.MeshBasicMaterial({
-        color: 0x071827,
+        color: p.bg === SCENE_THEMES.light.bg ? 0xc2d5e4 : 0x071827,
         transparent: true,
         opacity: 0.45,
         depthWrite: false,
@@ -1553,6 +1558,22 @@ export default defineComponent({
       scene.add(sea);
       seaSurface = sea;
     }
+    // Live theme switch: recolour the water planes already in the scene
+    // (scene background + grid are handled inside useThreeScene).
+    const { effectiveMode: sceneMode } = useTheme();
+    watch(sceneMode, () => {
+      const light = scenePalette() === SCENE_THEMES.light;
+      if (waterFloor) {
+        (waterFloor.material as THREE.MeshBasicMaterial).color.setHex(
+          light ? 0xd7e2ec : 0x05121f,
+        );
+      }
+      if (seaSurface) {
+        (seaSurface.material as THREE.MeshBasicMaterial).color.setHex(
+          light ? 0xc2d5e4 : 0x071827,
+        );
+      }
+    });
 
     /** Attempt to load the terrain GLB for the current mapId and restyle it as
      *  a holographic island mesh (same cyan scanline/fresnel shader as the ship

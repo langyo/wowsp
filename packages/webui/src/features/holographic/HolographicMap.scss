@@ -4,7 +4,10 @@
   height: 100%;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #05080f;
+  /* Follows the app theme — matches the 3D scene background so the
+     letterboxing never flashes a foreign colour (dark: deep space,
+     light: paper white). */
+  background: rgb(var(--color-background));
   border: 1px solid rgb(var(--color-primary) / 30%);
   box-shadow: 0 0 24px rgb(var(--color-primary) / 15%) inset;
 

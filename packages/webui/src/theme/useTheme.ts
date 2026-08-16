@@ -50,6 +50,12 @@ function updatePeriod() {
  *  resolves the initial period, applies the theme, and starts a 5-min poll
  *  so "system" mode tracks the sun. */
 export async function initTheme() {
+  // One-shot deep link (?theme=light|dark): forces the mode for this load —
+  // handy for sharing a themed link and for headless render checks.
+  const forced = new URLSearchParams(location.search).get("theme");
+  if (forced === "light" || forced === "dark") {
+    currentMode.value = forced;
+  }
   // Apply immediately with last-known state (avoids flash of wrong theme).
   applyTheme();
 
