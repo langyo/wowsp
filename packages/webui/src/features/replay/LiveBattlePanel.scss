@@ -49,6 +49,13 @@
     letter-spacing: 0.06em;
   }
 
+  /* Battle ended (replay file appeared), game on the results screen. */
+  &__pill--settling {
+    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
+    background: rgb(var(--color-warning, 251 191 36) / 16%);
+    color: rgb(var(--color-warning, 251 191 36));
+  }
+
   &__clock {
     display: inline-flex;
     align-items: baseline;

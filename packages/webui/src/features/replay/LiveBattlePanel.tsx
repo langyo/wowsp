@@ -51,6 +51,10 @@ export default defineComponent({
   name: "LiveBattlePanel",
   props: {
     arena: { type: Object as () => ArenaInfo | null, default: null },
+    /** Battle-end signal: a fresh .wowsreplay appeared in the replays dir
+     *  (the game writes the file when the battle ends) — the battle is on
+     *  the results screen, stats final but replay still settling. */
+    settling: { type: Boolean, default: false },
   },
   setup(props) {
     const accounts = useAccountStore();
@@ -185,7 +189,13 @@ export default defineComponent({
         <div class="live-battle">
           <div class="live-battle__head">
             <span class="live-battle__title">{t("replay.live.title")}</span>
-            <span class="live-battle__pill live-battle__pill--live">LIVE</span>
+            {props.settling ? (
+              <span class="live-battle__pill live-battle__pill--settling">
+                {t("replay.live.settling")}
+              </span>
+            ) : (
+              <span class="live-battle__pill live-battle__pill--live">LIVE</span>
+            )}
             {modePill}
             {clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>

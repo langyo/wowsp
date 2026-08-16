@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref, watch, type CSSProperties } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
 import { Play, RefreshCw } from "lucide-vue-next";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -912,6 +912,72 @@ export default defineComponent({
       { deep: false },
     );
 
+    /** Battle lifecycle: while the game runs, watch the replays folder —
+     *  the game writes the .wowsreplay file when the battle ENDS, so a new
+     *  file is the direct "match over" signal. On detection: flip the live
+     *  panel to SETTLING (结算中 — stats screen, replay not yet final) and
+     *  refresh the replay list so the finished match appears immediately.
+     *  When the game process exits, do a final refresh (the file may grow
+     *  its post-battle block) and return to idle. */
+    const livePhase = ref<"idle" | "battle" | "settling">("idle");
+    let baselineFiles: Set<string> | null = null;
+    async function snapshotReplayDir(): Promise<Set<string> | null> {
+      const dir = activePath.value ? replaysDir(activePath.value) : undefined;
+      try {
+        const files = await api.listReplays(dir);
+        return new Set(files);
+      } catch {
+        return null;
+      }
+    }
+    watch(
+      () => gameStatus.process.running,
+      async (running) => {
+        if (running) {
+          livePhase.value = "battle";
+          baselineFiles = await snapshotReplayDir();
+        } else {
+          // Game exited: finalize whatever the battle produced.
+          if (livePhase.value !== "idle") void reload();
+          livePhase.value = "idle";
+          baselineFiles = null;
+        }
+      },
+    );
+    let endPoll: number | null = null;
+    watch(
+      livePhase,
+      (ph) => {
+        if (ph === "battle") {
+          if (endPoll === null) {
+            endPoll = window.setInterval(async () => {
+              if (baselineFiles == null) {
+                baselineFiles = await snapshotReplayDir();
+                return;
+              }
+              const now = await snapshotReplayDir();
+              if (!now) return;
+              const fresh = [...now].some((f) => !baselineFiles!.has(f));
+              if (fresh) {
+                livePhase.value = "settling";
+                void reload();
+              } else {
+                baselineFiles = now;
+              }
+            }, 3000);
+          }
+        } else if (endPoll !== null) {
+          clearInterval(endPoll);
+          endPoll = null;
+        }
+      },
+      { immediate: true },
+    );
+    onBeforeUnmount(() => {
+      if (endPoll !== null) clearInterval(endPoll);
+      if (arenaTimer !== null) clearInterval(arenaTimer);
+    });
+
     // Auto-manage loading toast for replay operations.
     let loadingToastId = 0;
     watch(() => parser.loading.value, (v) => {
@@ -1148,7 +1214,13 @@ export default defineComponent({
                             {modeLabel(overlay.arenaInfo.matchGroup, null, null)}
                           </span>
                         ) : null}
+                        {livePhase.value === "settling" ? (
+                        <span class="replay-card__pill replay-card__pill--settling">
+                          {t("replay.live.settling")}
+                        </span>
+                      ) : (
                         <span class="replay-card__pill replay-card__pill--live">LIVE</span>
+                      )}
                       </div>
                       <div class="replay-card__row">
                         <span class="replay-card__label">{t("replay.mapLabel")}</span>
@@ -1221,7 +1293,7 @@ export default defineComponent({
 
         <section class="replay-view__main">
           {pane.value.kind === "live" ? (
-            <LiveBattlePanel arena={overlay.arenaInfo} />
+            <LiveBattlePanel arena={overlay.arenaInfo} settling={livePhase.value === "settling"} />
           ) : parser.current.value ? (
             <div class="replay-view__content">
               {parser.error.value ? (
