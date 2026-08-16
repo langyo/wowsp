@@ -99,11 +99,22 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
 }
 
 function ShipIcon({ ship }: { ship: HoloShip }) {
-  const variant = ship.dead ? "sunk" : ship.role === "enemy" ? "enemy" : "ally";
-  // Sunk auxiliaries have no sunk art — fall back to the sunk cruiser icon
-  // so a missing asset never blanks a slot in the strip.
+  // Direction contract of the game's own HUD art: ally icons face LEFT,
+  // enemy icons face RIGHT, and the sunk bitmap faces LEFT — so each side
+  // has its OWN sunk variant ("sunk" for the ally row, the mirrored
+  // "sunk-enemy" for the enemy row). Casualties never flip direction.
+  const variant = ship.dead
+    ? ship.role === "enemy"
+      ? "sunk-enemy"
+      : "sunk"
+    : ship.role === "enemy"
+      ? "enemy"
+      : "ally";
+  // Sunk auxiliaries have no sunk art — fall back to the same side's sunk
+  // cruiser icon so a missing asset never blanks a slot in the strip.
   let url = holoShipIconUrl(ship.shipType, variant);
   if (!url && variant === "sunk") url = holoShipIconUrl("cruiser", "sunk");
+  if (!url && variant === "sunk-enemy") url = holoShipIconUrl("cruiser", "sunk-enemy");
   if (!url) return null;
   return (
     <img

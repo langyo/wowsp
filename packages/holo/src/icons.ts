@@ -6,7 +6,7 @@
  * asset pipelines, so each app registers its URL map once at startup; the
  * shared scorebar / minimap then render the real game icons everywhere.
  */
-export type HoloShipIconVariant = "ally" | "enemy" | "sunk";
+export type HoloShipIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy";
 
 export type HoloShipClass =
   | "battleship" | "cruiser" | "destroyer" | "aircarrier" | "submarine" | "auxiliary";
@@ -24,7 +24,12 @@ export function shipTypeClass(type: string | null | undefined): HoloShipClass {
 }
 
 type UrlMap = Partial<Record<HoloShipClass, string>>;
-const urlRegistry: Record<HoloShipIconVariant, UrlMap> = { ally: {}, enemy: {}, sunk: {} };
+const urlRegistry: Record<HoloShipIconVariant, UrlMap> = {
+  ally: {},
+  enemy: {},
+  sunk: {},         // faces LEFT - ally-row casualties
+  "sunk-enemy": {}, // mirrored, faces RIGHT - enemy-row casualties
+};
 
 /** Register the app's bundled icon URLs (call once per app bootstrap). */
 export function registerHoloShipIcons(variant: HoloShipIconVariant, urls: UrlMap): void {
