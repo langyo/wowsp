@@ -3507,26 +3507,29 @@ export default defineComponent({
             if (hpVal != null) st.prevHp.set(traj.entityId, hpVal);
           }
         }
+        const contested = ally > 0 && enemy > 0;
         if (st.owner === 0) {
           // Neutral: a single team present starts capturing it.
           if ((ally > 0) !== (enemy > 0)) {
             st.progress += step / (Math.max(ally, enemy) >= 2 ? 40 : 60);
             if (st.progress > 1) st.progress = 1;
           }
-        } else if (enemy > 0 && ally === 0) {
+        } else if (!contested && enemy > 0 && ally === 0 && st.owner === 1) {
           // Enemy-only inside an allied point: re-capturing (ring visual;
           // the actual flip comes from the prop0 stream).
           st.progress += step / (enemy >= 2 ? 40 : 60);
           if (st.progress > 1) st.progress = 1;
-        } else if (ally > 0 && enemy === 0) {
-          // Allied-only inside an enemy point: we are re-capturing it the
-          // same way (progress accrues, no owner accrual while inside).
+        } else if (!contested && ally > 0 && enemy === 0 && st.owner === 2) {
+          // Allied-only inside an enemy point: re-capturing it the same way.
           st.progress += step / (ally >= 2 ? 40 : 60);
           if (st.progress > 1) st.progress = 1;
         } else {
-          // No enemy inside: the owner scores accrual points; allied ships
-          // inside (or nobody) keep it ticking.
-          if (accrualEvery > 0) {
+          // Owner keeps scoring accrual while NOT contested — including
+          // with the owner's own ships sitting on the point (the standard
+          // 2-cap opening: both home points tick from second one, with the
+          // whole home fleet inside). In-game this is the passive 3 pts
+          // per 2 s per owned point.
+          if (accrualEvery > 0 && !contested) {
             st.accrualT += step;
             while (st.accrualT >= accrualEvery) {
               st.accrualT -= accrualEvery;
@@ -3605,7 +3608,10 @@ export default defineComponent({
       const nAreas = scoring.length;
       const startPts = special ? 150 : isRanked ? 300 : nAreas >= 4 ? 200 : 300;
       const capCompletePts = special ? 40 : isRanked ? (nAreas >= 4 ? 2 : 9) : nAreas >= 4 ? 4 : 3;
-      // Accrual: (every N seconds, +P per controlled area).
+      // Accrual: (every N seconds, +P per controlled area). Randoms:
+      // 2-3 points = 3 pts / 3 s (calibrated against a real domination_
+      // 2point Canada replay: 300 start, 843 final over 887 s with one
+      // point contested from t=311), 4+ points = 4 pts / 9 s.
       let accrualEvery = 0;
       let accrualPts = 0;
       if (!special) {
@@ -3613,7 +3619,7 @@ export default defineComponent({
           accrualEvery = nAreas >= 4 ? 0 : nAreas === 2 ? 10 : 3;
           accrualPts = nAreas >= 4 ? 0 : nAreas === 2 ? 9 : 2;
         } else {
-          accrualEvery = nAreas >= 4 ? 9 : 5;
+          accrualEvery = nAreas >= 4 ? 9 : 3;
           accrualPts = nAreas >= 4 ? 4 : 3;
         }
       }
