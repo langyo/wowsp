@@ -841,9 +841,6 @@ export default defineComponent({
       if (!cvs) return;
       if (!_mmCtx) _mmCtx = cvs.getContext("2d");
       const ctx = _mmCtx!;
-      /** True when the app theme is light — the game's dark map art is then
-       *  drawn as a faded print over a white base (paper-minimap look). */
-      const lightHud = scenePalette() === SCENE_THEMES.light;
       // HiDPI backing store: the canvas is displayed at 160 CSS px, which on
       // a scaled Windows desktop (125%/150%) is 200-320 DEVICE px. A 160px
       // backing store would be bilinear-upscaled by the browser — blurring
@@ -867,16 +864,10 @@ export default defineComponent({
       function wz(zScene: number) { return ((db.maxZ + zScene) / (dbH || 1)) * h; }
 
       ctx.clearRect(0, 0, w, h);
+      // The minimap art NEVER changes with the theme: it is the game's own
+      // map bitmap, shown as-is in both modes (like a photo). Only the
+      // surrounding HUD chrome (frame, scrims, panels) follows the theme.
       if (minimapImage) {
-        // Light theme: invert+hue-rotate the art into a DAY-MAP palette
-        // (dark navy sea → pale cream, islands stay darker than water) —
-        // the standard map-app day/night flip. Markers drawn after this
-        // keep their exact team colours (the filter only wraps drawImage).
-        if (lightHud) {
-          ctx.fillStyle = "#eef2f6";
-          ctx.fillRect(0, 0, w, h);
-          ctx.filter = "invert(1) hue-rotate(180deg) brightness(1.02)";
-        }
         if (db === full) {
           ctx.drawImage(minimapImage, 0, 0, w, h);
         } else {
@@ -890,9 +881,8 @@ export default defineComponent({
           const sh = ((db.maxZ - db.minZ) / (fullH || 1)) * img.height;
           ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
         }
-        ctx.filter = "none";
       } else {
-        ctx.fillStyle = lightHud ? "rgba(238, 242, 246, 0.9)" : "rgba(5, 8, 15, 0.85)";
+        ctx.fillStyle = "rgba(5, 8, 15, 0.85)";
         ctx.fillRect(0, 0, w, h);
       }
       ctx.strokeStyle = "rgba(0, 170, 255, 0.3)";
@@ -958,13 +948,7 @@ export default defineComponent({
         // clockwise from north; the glyph's pointy end faces RIGHT (+x) at
         // rest, so subtract 90° for 0° = north (matching the 3D marker's
         // rotation.y = PI - yaw on the mirrored frame).
-        const color = dead
-          ? 0x8a97a5
-          : role === "self"
-            ? (lightHud ? 0x1e293b : TEAM_COLOR.self)
-            : role
-              ? TEAM_COLOR[role]
-              : 0x9aa7b5;
+        const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
         ctx.save();
         ctx.translate(cx, cz);
         ctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
@@ -976,10 +960,8 @@ export default defineComponent({
       // seconds, fading out after each puff's lifetime (90s past its last
       // update, or the recorded leave time).
       {
-        const ink = lightHud ? "rgba(15,23,42,0.7)" : "rgba(255,255,255,0.85)";
-        const inkText = lightHud ? "rgba(15,23,42,0.9)" : "rgba(255,255,255,0.95)";
-        ctx.strokeStyle = ink;
-        ctx.fillStyle = inkText;
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
         ctx.lineWidth = 1;
         for (const cl of smokeClusters) {
           if (t < cl.t0 || t > cl.endT) continue;
@@ -1046,7 +1028,7 @@ export default defineComponent({
       const cam = api.value?.camera;
       if (cam) {
         const corners = frustumCorners(cam);
-        ctx.strokeStyle = lightHud ? "rgba(15,23,42,0.4)" : "rgba(255, 255, 255, 0.45)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(wx(corners[0].x), wz(corners[0].z));
@@ -1068,21 +1050,15 @@ export default defineComponent({
           if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
           zctx.setTransform(pxZ / 760, 0, 0, pxZ / 760, 0, 0);
           const zw = 760;
-          const zLight = scenePalette() === SCENE_THEMES.light;
+          // The 2D map art NEVER changes with the theme (the game's own
+          // bitmap, shown as-is in both modes); only the overlay chrome —
+          // scrim, head pill, frame — follows the app theme.
           zctx.clearRect(0, 0, zw, zw);
           if (minimapImage) {
             zctx.imageSmoothingEnabled = true;
-            // Light theme: day-map flip (invert + hue-rotate), same as
-            // the small thumb — dark navy sea becomes pale cream.
-            if (zLight) {
-              zctx.fillStyle = "#eef2f6";
-              zctx.fillRect(0, 0, zw, zw);
-              zctx.filter = "invert(1) hue-rotate(180deg) brightness(1.02)";
-            }
             zctx.drawImage(minimapImage, 0, 0, zw, zw);
-            zctx.filter = "none";
           } else {
-            zctx.fillStyle = zLight ? "rgba(238, 242, 247, 0.92)" : "rgba(5, 8, 15, 0.9)";
+            zctx.fillStyle = "rgba(5, 8, 15, 0.9)";
             zctx.fillRect(0, 0, zw, zw);
           }
           const zwx = (x: number) => ((x - full.minX) / (full.maxX - full.minX || 1)) * zw;
@@ -1114,12 +1090,10 @@ export default defineComponent({
               const role = resolveRoleQuick(tr);
               zctx.strokeStyle =
                 role === "enemy"
-                  ? "rgba(204, 51, 51, 0.55)"
+                  ? "rgba(204, 51, 51, 0.5)"
                   : role === "self"
-                    ? zLight
-                      ? "rgba(15, 23, 42, 0.55)"
-                      : "rgba(255, 255, 255, 0.6)"
-                    : "rgba(60, 180, 120, 0.55)";
+                    ? "rgba(255, 255, 255, 0.6)"
+                    : "rgba(60, 180, 120, 0.5)";
               zctx.lineWidth = 1.5;
               zctx.beginPath();
               tr.samples.forEach((s, i) => {
@@ -1158,25 +1132,17 @@ export default defineComponent({
             // Solid traced vector glyph (original HUD shape, crisp at any
             // zoom/rotation); sunk ships render greyed-out, live ships in
             // their team colour.
-            // Self is WHITE on the dark art; on the light paper print it
-            // flips to ink navy (white would vanish).
-            const color = dead
-              ? 0x8a97a5
-              : role === "self"
-                ? (zLight ? 0x1e293b : TEAM_COLOR.self)
-                : role
-                  ? TEAM_COLOR[role]
-                  : 0x9aa7b5;
+            const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
             zctx.save();
             zctx.translate(cx, cz);
             zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
             drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, dead ? 26 : 34, color);
             zctx.restore();
           }
-          // Smoke screens — start/end rings + remaining seconds on the
-          // enlarged map (ink on the light paper print, white on dark).
-          zctx.strokeStyle = zLight ? "rgba(15,23,42,0.7)" : "rgba(255,255,255,0.85)";
-          zctx.fillStyle = zLight ? "rgba(15,23,42,0.9)" : "rgba(255,255,255,0.95)";
+          // Smoke screens — white start/end rings + remaining seconds on
+          // the enlarged map (same lifetime/dissipation rules as minimap).
+          zctx.strokeStyle = "rgba(255,255,255,0.85)";
+          zctx.fillStyle = "rgba(255,255,255,0.95)";
           zctx.lineWidth = 1.4;
           for (const cl of smokeClusters) {
             if (t < cl.t0 || t > cl.endT) continue;

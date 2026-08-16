@@ -4,17 +4,18 @@
    (playback bar, score pill glass, kill feed, menus, scrims) draws from
    these tokens so the whole viewport follows the app theme. */
 :root[data-mode="light"] .holo-map {
+  /* Ink tones are DARK GREY (gray-700 family), never near-black. */
   --holo-hud-bg: rgb(255 255 255 / 74%);
   --holo-hud-chip: rgb(255 255 255 / 62%);
   --holo-hud-menu: rgb(255 255 255 / 96%);
   --holo-hud-glass: rgb(255 255 255 / 66%);
-  --holo-hud-soft: rgb(15 23 42 / 5%);
-  --holo-hud-hover: rgb(15 23 42 / 8%);
-  --holo-hud-border: rgb(15 23 42 / 14%);
-  --holo-hud-text: rgb(15 23 42 / 88%);
-  --holo-hud-dim: rgb(15 23 42 / 55%);
-  --holo-hud-strong: #0f172a;
-  --holo-hud-shadow: 0 4px 14px rgb(15 23 42 / 16%);
+  --holo-hud-soft: rgb(55 65 81 / 5%);
+  --holo-hud-hover: rgb(55 65 81 / 8%);
+  --holo-hud-border: rgb(55 65 81 / 16%);
+  --holo-hud-text: rgb(55 65 81 / 90%);
+  --holo-hud-dim: rgb(55 65 81 / 62%);
+  --holo-hud-strong: #374151;
+  --holo-hud-shadow: 0 4px 14px rgb(55 65 81 / 16%);
   --holo-hud-scrim: rgb(236 240 246 / 88%);
   --holo-hud-tshadow: none;
 }
@@ -567,9 +568,9 @@
   height: auto;
   border: 1px solid var(--holo-hud-border);
   border-radius: 6px;
-  /* Canvas base follows the theme — the art itself is drawn as a faded
-     paper print in light mode (see the zLight branch in drawMinimap). */
-  background: var(--holo-hud-menu);
+  /* The canvas shows the game's own dark map art in BOTH themes (frame +
+     scrim around it follow the theme). */
+  background: #05080f;
 }
 
 /* ── Tab roster overlay ─────────────────────────────────────────────── */
