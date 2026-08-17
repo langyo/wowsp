@@ -41,7 +41,7 @@ const CAP_RING_R = 90;
 /** The game's own HUD ship icons (bundled with the site assets). */
 const ICON_BASE = `${import.meta.env.BASE_URL}icons/ships`;
 const ICON_CLASSES = ["battleship", "cruiser", "destroyer", "aircarrier", "submarine"] as const;
-for (const variant of ["ally", "enemy", "sunk"] as const) {
+for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(
     variant,
     Object.fromEntries(ICON_CLASSES.map((c) => [c, `${ICON_BASE}/icon_${variant}_${c}.png`])),
@@ -81,6 +81,19 @@ function posAt(track: Track, t: number): { x: number; z: number; yaw: number } {
   };
 }
 
+/** Decimated course trail for the minimap (oldest → newest), sampled
+ *  every ~20 s of the 1 Hz baked track up to time t — long enough to
+ *  read the opening leg, short enough to stay a hairline. */
+function trailAt(track: Track, t: number, spacing = 20, max = 14): { x: number; z: number }[] {
+  const n = Math.min(Math.floor(t), track.x.length - 1);
+  if (n < 2) return [];
+  const out: { x: number; z: number }[] = [];
+  const step = Math.max(1, Math.round(spacing));
+  const startIdx = Math.max(0, n - step * (max - 1));
+  for (let i = startIdx; i <= n; i += step) out.push({ x: track.x[i], z: track.z[i] });
+  out.push({ x: track.x[n], z: track.z[n] });
+  return out;
+}
 /** Hold-last 1 Hz HP lookup (the baked hp trace), null when unavailable. */
 function hpAt(track: Track, t: number): number | null {
   const hp = track.hp;
@@ -211,16 +224,18 @@ export default defineComponent({
         // heading from motion (screen space: x right, -z up)
         const p2 = posAt(s.track, Math.min(t0 + 1.5, s.track.x.length - 1.001));
         const heading = Math.atan2(p2.x - p.x, p2.z - p.z);
+        const dead = s.die !== undefined && battleT > s.die;
         return {
           x: p.x, z: p.z, yaw: p.yaw, role: roleOf(s.rel),
-          dead: s.die !== undefined && battleT > s.die,
+          dead,
           shipType: s.type,
           heading,
+          trail: dead ? undefined : trailAt(s.track, t0),
         };
       });
       const capsForMap: HoloCap[] = capZones.map((c) => {
         const st = capStateAt(battleT).find((s) => s.letter === c.letter);
-        return { letter: c.letter, x: c.x, z: c.z, owner: st?.owner ?? "neutral" };
+        return { letter: c.letter, x: c.x, z: c.z, owner: st?.owner ?? "neutral", etaSeconds: st?.seconds ?? null };
       });
       drawHoloMinimap({
         ctx: minimapCtx,
@@ -272,13 +287,21 @@ export default defineComponent({
           if (time >= start && time < next[0]) {
             capturing = true;
             progress = Math.min(1, Math.max(0, (time - start) / (1 / speed)));
-            seconds = captureSecondsRemaining(progress, teamShips, contested).seconds;
+            // ETA anchors to the RECORDED flip time (ground truth from
+            // the replay) — the inside-count model can go quiet when the
+            // capturing ships have already sailed out of the ring on the
+            // baked 1 Hz tracks, which would blank the countdown.
+            seconds = contested
+              ? null
+              : captureSecondsRemaining(progress, teamShips, contested).seconds
+                ?? Math.max(1, Math.ceil(next[0] - time));
           }
         }
         return {
           letter: c.letter, owner, progress,
           capturing, contested,
           captureTeam, alliesIn: allies, enemiesIn: enemies, seconds,
+          etaSeconds: seconds,
           hint: contested
             ? t("showcase.replay.live.cap.contested")
             : capturing
@@ -329,7 +352,7 @@ export default defineComponent({
           shipName: isZh() ? s.nameZh : s.nameEn,
           tier: s.tier,
           x: pr.x, y: pr.y, dead, visible: pr.visible,
-          iconUrl: holoShipIconUrl(s.type, dead ? "sunk" : role === "enemy" ? "enemy" : "ally"),
+          iconUrl: holoShipIconUrl(s.type, dead ? (role === "enemy" ? "sunk-enemy" : "sunk") : role === "enemy" ? "enemy" : "ally"),
           hp: hp ?? null,
           maxHp: maxHp ?? null,
         });

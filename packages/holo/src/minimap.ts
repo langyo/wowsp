@@ -1,11 +1,17 @@
 /**
  * HoloMinimap — pure canvas minimap renderer, faithful to the app's
- * holographic replay minimap: game minimap art (water+land composite) with
- * role-coloured ship dots, dead = grey, optional trails, world→minimap
- * projection with the z-flip the game uses.
+ * holographic replay minimap: game minimap art (water+land composite)
+ * with role-coloured ship glyphs, dead = grey, optional trails,
+ * world→minimap projection with the z-flip the game uses.
+ *
+ * Ships render as VECTOR class glyphs traced from the game's own HUD
+ * bitmaps (see shipGlyph.ts) — crisp at any scale/rotation, unlike the
+ * raster PNGs which alias when rotated. Capture zones draw their owner
+ * ring + letter, with an amber "xx s" countdown under the letter while
+ * a capture is in progress (same contract as the scorebar chips).
  */
 import type { HoloBounds, HoloMinimapArt, HoloShip, HoloCap } from "./types";
-import { holoShipIconImage } from "./icons";
+import { drawShipGlyph } from "./shipGlyph";
 
 export interface MinimapDrawOpts {
   ctx: CanvasRenderingContext2D;
@@ -24,10 +30,13 @@ const ROLE_COLOR: Record<string, string> = {
   enemy: "#f87171",
 };
 
+/** Sunk hulls keep a readable grey (matches the app's minimap). */
+const DEAD_COLOR = "#8a97a5";
+
 const CAP_OWNER_COLOR: Record<HoloCap["owner"], string> = {
-  ally: "#4ade80",
-  enemy: "#f87171",
-  neutral: "rgba(220,228,240,0.9)",
+  ally: "rgba(74, 222, 128, 0.85)",
+  enemy: "rgba(248, 113, 113, 0.85)",
+  neutral: "rgba(255, 255, 255, 0.55)",
 };
 
 function project(
@@ -45,6 +54,10 @@ function project(
 export function drawHoloMinimap(opts: MinimapDrawOpts): void {
   const { ctx, size, art, ships, caps = [], showTrails = true, dpr = 1 } = opts;
   const S = size;
+  // Scale factor from the app's 160-unit thumb to this canvas: glyph /
+  // ring / font sizes below are expressed in app units and stay legible
+  // at any canvas size.
+  const k = S / 160;
   ctx.save();
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, S, S);
@@ -89,65 +102,52 @@ export function drawHoloMinimap(opts: MinimapDrawOpts): void {
     }
   }
 
-  // ── capture zones — letter rings (same projection as ships) ──
+  // ── capture zones — owner ring + letter, amber ETA countdown while
+  //    a capture runs (mirrors the app's minimap + scorebar chips) ──
   if (art && caps.length) {
     const b = art.activeBounds ?? art.bounds;
-    ctx.font = "700 9px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    const ringR = 11 * k;
     for (const c of caps) {
       const p = project(c.x, c.z, b);
       const px = p.u * S;
       const py = p.v * S;
       const col = CAP_OWNER_COLOR[c.owner] ?? CAP_OWNER_COLOR.neutral;
       ctx.beginPath();
-      ctx.arc(px, py, 11, 0, Math.PI * 2);
+      ctx.arc(px, py, ringR, 0, Math.PI * 2);
       ctx.strokeStyle = col;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = 1.2 * k;
       ctx.stroke();
       ctx.fillStyle = col;
-      ctx.globalAlpha = 0.85;
+      ctx.font = "bold " + Math.round(8 * k) + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.fillText(c.letter, px, py + 0.5);
-      ctx.globalAlpha = 1;
+      // Capturing countdown under the letter: "xx s" to complete.
+      const eta = c.etaSeconds;
+      if (eta != null && eta > 0) {
+        ctx.fillStyle = "rgba(251,191,36,0.95)";
+        ctx.font = "bold " + Math.round(7 * k) + "px sans-serif";
+        ctx.fillText(Math.ceil(eta) + " s", px, py + ringR + 4.5 * k);
+      }
     }
   }
 
-  // ── ships — the game's own HUD class icons (dots as fallback), rotated
-  //    to each ship's heading like the in-game minimap ──
+  // ── ships — VECTOR class glyphs (traced from the game's HUD art),
+  //    rotated to each ship's heading like the in-game minimap ──
   if (art) {
     const b = art.activeBounds ?? art.bounds;
     for (const s of ships) {
       const p = project(s.x, s.z, b);
       const px = p.u * S;
       const py = p.v * S;
-      const variant = s.dead ? "sunk" : s.role === "enemy" ? "enemy" : "ally";
-      const img = holoShipIconImage(s.shipType, variant);
-      if (img && img.complete && img.naturalWidth > 0) {
-        const sz = s.dead ? 8 : 10;
-        // The icon art points up (north); rotate to the motion heading.
-        const rot = s.heading ?? 0;
-        if (!s.dead && rot !== 0) {
-          ctx.save();
-          ctx.translate(px, py);
-          ctx.rotate(rot);
-          ctx.drawImage(img, -sz / 2, -sz / 2, sz, sz);
-          ctx.restore();
-        } else {
-          ctx.drawImage(img, px - sz / 2, py - sz / 2, sz, sz);
-        }
-        continue;
-      }
-      const color = s.dead ? "#5a6678" : (ROLE_COLOR[s.role] ?? "#94a6c2");
-      ctx.beginPath();
-      ctx.arc(px, py, s.dead ? 1.8 : 2.6, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      if (!s.dead) {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 4;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
+      const color = s.dead ? DEAD_COLOR : (ROLE_COLOR[s.role] ?? "#94a6c2");
+      // The glyph's bow points +x (east) at rest; heading is clockwise
+      // from north — subtract 90° so heading 0 faces up.
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate((s.heading ?? 0) - Math.PI / 2);
+      drawShipGlyph(ctx, s.shipType, 0, 0, (s.dead ? 11 : 13) * k, color);
+      ctx.restore();
     }
   } else {
     // No art: dark water fallback + dots still projected onto data bounds.

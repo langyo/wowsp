@@ -54,6 +54,9 @@ export interface HoloCap {
   x: number;
   z: number;
   owner: "ally" | "enemy" | "neutral";
+  /** Seconds until the capture completes while it runs — drawn as an
+   *  amber "xx s" countdown under the letter (matches the scorebar). */
+  etaSeconds?: number | null;
 }
 
 /** Everything the scorebar / clock / minimap need each frame. */
