@@ -1,4 +1,4 @@
-import { defineComponent, onMounted, ref } from "vue";
+import { defineComponent, ref, watch } from "vue";
 import { X, Trophy, Swords } from "lucide-vue-next";
 
 import SModal from "@/components/base/SModal";
@@ -85,14 +85,22 @@ export default defineComponent({
      *  winrate/battles/clan without re-hitting the WG API. */
     async function hydrateStats() {
       for (const a of accounts.accounts) {
+        const key = a.realm + "_" + a.accountId;
+        if (statsById.value.has(key)) continue;
         const cached = await stats.loadCached(a.realm, a.accountId);
-        if (cached) statsById.value.set(`${a.realm}_${a.accountId}`, cached);
+        if (cached) statsById.value.set(key, cached);
       }
     }
 
-    onMounted(() => {
-      void hydrateStats();
-    });
+    // Accounts load asynchronously in AppShell onMounted; the modal may open
+    // before they arrive, so hydrate on open AND whenever the list changes.
+    watch(
+      () => [props.modelValue, accounts.accounts.length] as const,
+      ([open]) => {
+        if (open) void hydrateStats();
+      },
+      { immediate: true },
+    );
 
     return () => (
       <SModal
