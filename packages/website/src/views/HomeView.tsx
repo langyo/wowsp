@@ -23,33 +23,57 @@ export default defineComponent({
   setup() {
     const { t } = useI18n();
 
-    // Snap-to-grid scroll: every scroll stop lands on a 1/3-page step
-    // (page height = 100dvh minus the 4rem header) in every browser —
-    // CSS scroll-snap cannot express sub-page steps reliably (Chromium
-    // ignores nested snap targets, Safari lacks scroll-snap-stop). A
-    // debounce after the last scroll event eases to the nearest grid
-    // point; landing exactly on one is a no-op, so it never fights the
-    // user, and touch/scrollbar drags still rest on a grid point.
-    let snapTimer = 0;
+    // Paged 1/3-page scrolling — the gesture ITSELF steps, no post-scroll
+    // correction: every wheel notch / key press moves exactly one grid
+    // step (page height = 100dvh minus the 4rem header), so the position
+    // is always on the grid. Smooth trackpads accumulate pixels and step
+    // when a third accumulates; ctrl+wheel (pinch-zoom) passes through.
     const HEADER = 64;
-    function snapToGrid() {
+    let wheelAcc = 0;
+    function pageStep(dir: number) {
       const vh = window.innerHeight;
       const step = Math.max(120, (vh - HEADER) / 3);
       const max = document.documentElement.scrollHeight - vh;
       const cur = window.scrollY;
-      const target = Math.min(max, Math.max(0, Math.round(cur / step) * step));
-      if (Math.abs(target - cur) > 2) window.scrollTo({ top: target, behavior: "smooth" });
+      const base = Math.round(cur / step) * step;
+      const target = Math.min(max, Math.max(0, base + dir * step));
+      if (Math.abs(target - cur) >= 1) window.scrollTo({ top: target, behavior: "instant" });
     }
-    function onScroll() {
-      window.clearTimeout(snapTimer);
-      snapTimer = window.setTimeout(snapToGrid, 220);
+    function onWheel(e: WheelEvent) {
+      if (e.ctrlKey) return; // pinch-zoom
+      const step = Math.max(120, (window.innerHeight - HEADER) / 3);
+      const d = e.deltaY;
+      // Discrete notch (mouse wheel / line mode): one 1/3-page step per
+      // notch. Smooth wheels emit small deltas — accumulate those.
+      if (e.deltaMode === 1 || Math.abs(d) >= step * 0.5) {
+        e.preventDefault();
+        pageStep(Math.sign(d) || 1);
+        return;
+      }
+      wheelAcc += d;
+      if (Math.abs(wheelAcc) >= step) {
+        e.preventDefault();
+        pageStep(Math.sign(wheelAcc) || 1);
+        wheelAcc %= step;
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      const step = Math.max(120, (window.innerHeight - HEADER) / 3);
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (e.key === "PageDown") { e.preventDefault(); pageStep(3); }
+      else if (e.key === "PageUp") { e.preventDefault(); pageStep(-3); }
+      else if (e.key === "ArrowDown" || e.key === " ") { e.preventDefault(); pageStep(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); pageStep(-1); }
+      else if (e.key === "Home") { e.preventDefault(); window.scrollTo({ top: 0, behavior: "instant" }); }
+      else if (e.key === "End") { e.preventDefault(); window.scrollTo({ top: max, behavior: "instant" }); }
     }
     onMounted(() => {
-      window.addEventListener("scroll", onScroll, { passive: true });
+      window.addEventListener("wheel", onWheel, { passive: false });
+      window.addEventListener("keydown", onKey);
     });
     onBeforeUnmount(() => {
-      window.clearTimeout(snapTimer);
-      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey);
     });
 
     const features = [
