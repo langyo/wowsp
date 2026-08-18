@@ -1,22 +1,21 @@
-/* Every section is a hard stop: the wheel/trackpad always lands exactly
-   on a page boundary — one 100vh page per section, never a partial one. */
-.hero, .showcase, .features, .cta-band {
-  scroll-snap-stop: always;
-}
-/* HomeView — Abyssal Glass product page. Full-viewport snap deck: every
-   major section is EXACTLY one viewport tall, so the scroll reads as one
-   page per section (proximity snap — no trapped scrolling on tall pages).
-   The fixed nav floats over each section's top 4rem; content is centred,
-   so nothing hides behind it. The deck pulls up under the nav spacer. */
+/* HomeView — Abyssal Glass product page. One page per section, each page
+   EXACTLY (100vh − 4rem header): the fixed nav owns the top 4rem of every
+   viewport (via scroll-padding-top + the nav spacer), so a snapped page
+   starts below the header and ends exactly at the viewport bottom. dvh
+   keeps it exact on iOS Safari (URL-bar chrome). Scroll is hard-snapped
+   to page boundaries, with 1/3-page snap markers inside every section so
+   a long page can be read in thirds without ever resting off-grid. */
 html {
-  scroll-snap-type: y mandatory;
+  /* The 1/3-page grid is driven by JS (see HomeView setup) — CSS
+     scroll-snap cannot express sub-page steps portably. */
 }
 
 .home {
   flex: 1;
   overflow-x: clip;
-  margin-top: -4rem;
 }
+
+.features { position: relative; }
 
 /* ── HERO ─────────────────────────────────────────────────── */
 .hero {
@@ -25,11 +24,11 @@ html {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Full-viewport hero: exactly one viewport, content optically centred
-     slightly ABOVE the geometric centre (the nav floats over the top). */
-  height: 100vh;
+  /* Page height = one viewport minus the fixed header (4rem). */
+  height: calc(100vh - 4rem);
+  height: calc(100dvh - 4rem);
   scroll-snap-align: start;
-  padding: calc(4rem + var(--space-16)) 0 var(--space-32);
+  padding: var(--space-40) 0 var(--space-32);
   text-align: center;
 
   &__content {
@@ -146,15 +145,15 @@ html {
 /* ── SHOWCASE sections — each exactly one viewport, snapped ── */
 .showcase {
   position: relative;
-  height: 100vh;
-  min-height: 100vh;
+  height: calc(100vh - 4rem);
+  height: calc(100dvh - 4rem);
+  min-height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Content is centred — the fixed nav floats over the section's top
-     chrome, so no nav-clearance padding is needed; keep it tight so
-     fixed-height windows fit exactly one viewport. */
+  /* Page content is centred below the fixed header; keep the padding
+     tight so fixed-height windows fit exactly one page. */
   padding: var(--space-40) 0 var(--space-24);
   overflow: hidden;
   scroll-snap-align: start;
@@ -254,7 +253,7 @@ html {
 
   .hero, .showcase, .features, .cta-band {
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .ship-stage {
@@ -265,13 +264,14 @@ html {
 
 /* ── FEATURES ─────────────────────────────────────────────── */
 .features {
-  height: 100vh;
-  min-height: 100vh;
+  height: calc(100vh - 4rem);
+  height: calc(100dvh - 4rem);
+  min-height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: calc(4rem + var(--space-48)) 0 var(--space-48);
+  padding: var(--space-48) 0;
   scroll-snap-align: start;
 
   &__head {
@@ -333,13 +333,14 @@ html {
 /* ── CTA band ─────────────────────────────────────────────── */
 .cta-band {
   position: relative;
-  height: 100vh;
-  min-height: 100vh;
+  height: calc(100vh - 4rem);
+  height: calc(100dvh - 4rem);
+  min-height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: calc(4rem + var(--space-48)) 0;
+  padding: var(--space-48) 0;
   overflow: hidden;
   text-align: center;
   border-top: 1px solid rgb(var(--color-border) / 8%);

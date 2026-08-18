@@ -28,6 +28,10 @@ export default defineComponent({
       // blasts to billboard size and a wide one never leaves the viewport.
       const s = Math.min(avail / Math.max(natural, 1), availW / Math.max(naturalW, 1));
       scale.value = Math.min(1.8, Math.max(0.35, s));
+      // Shrink the LAYOUT box to the scaled size (transform alone leaves
+      // the natural box in flow, which made sections measure as overflow).
+      i.style.width = Math.round(naturalW * scale.value) + "px";
+      i.style.height = Math.round(natural * scale.value) + "px";
     }
 
     onMounted(() => {

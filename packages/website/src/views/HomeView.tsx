@@ -1,4 +1,4 @@
-import { defineAsyncComponent, defineComponent } from "vue";
+import { defineAsyncComponent, defineComponent, onBeforeUnmount, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import {
@@ -23,6 +23,35 @@ export default defineComponent({
   setup() {
     const { t } = useI18n();
 
+    // Snap-to-grid scroll: every scroll stop lands on a 1/3-page step
+    // (page height = 100dvh minus the 4rem header) in every browser —
+    // CSS scroll-snap cannot express sub-page steps reliably (Chromium
+    // ignores nested snap targets, Safari lacks scroll-snap-stop). A
+    // debounce after the last scroll event eases to the nearest grid
+    // point; landing exactly on one is a no-op, so it never fights the
+    // user, and touch/scrollbar drags still rest on a grid point.
+    let snapTimer = 0;
+    const HEADER = 64;
+    function snapToGrid() {
+      const vh = window.innerHeight;
+      const step = Math.max(120, (vh - HEADER) / 3);
+      const max = document.documentElement.scrollHeight - vh;
+      const cur = window.scrollY;
+      const target = Math.min(max, Math.max(0, Math.round(cur / step) * step));
+      if (Math.abs(target - cur) > 2) window.scrollTo({ top: target, behavior: "smooth" });
+    }
+    function onScroll() {
+      window.clearTimeout(snapTimer);
+      snapTimer = window.setTimeout(snapToGrid, 220);
+    }
+    onMounted(() => {
+      window.addEventListener("scroll", onScroll, { passive: true });
+    });
+    onBeforeUnmount(() => {
+      window.clearTimeout(snapTimer);
+      window.removeEventListener("scroll", onScroll);
+    });
+
     const features = [
       { icon: MonitorPlay, key: "replay" },
       { icon: Eye, key: "overlay" },
@@ -41,6 +70,7 @@ export default defineComponent({
       <div class="home">
         {/* ── HERO — Apple-style product intro ─────────────── */}
         <section class="hero">
+
           <div class="aurora" />
           <div class="hero__content container">
             <Reveal>
@@ -103,6 +133,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 战舰展示 ───────────────────────────── */}
         <section id="showcase-ships" class="showcase showcase--ships">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -123,6 +154,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 对局复盘 ───────────────────────────── */}
         <section class="showcase showcase--replay section-bg">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -141,6 +173,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 舰船查询 ──────────────────────────── */}
         <section class="showcase showcase--lookup">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -159,6 +192,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 水表战绩 ──────────────────────────── */}
         <section class="showcase showcase--stats section-bg">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -177,6 +211,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 插件管理 ───────────────────────────── */}
         <section class="showcase showcase--mods">
+
           <div class="aurora" />
           <div class="container showcase__head">
             <Reveal delay={80}>
@@ -206,6 +241,7 @@ export default defineComponent({
 
         {/* ── FEATURES ─────────────────────────────────────── */}
         <section id="features" class="features section-bg">
+
           <div class="container">
             <div class="features__head">
               <Reveal delay={80}>
@@ -234,6 +270,7 @@ export default defineComponent({
 
         {/* ── CTA band ─────────────────────────────────────── */}
         <section class="cta-band">
+
           <div class="aurora" />
           <div class="container cta-band__inner">
             <Reveal>
