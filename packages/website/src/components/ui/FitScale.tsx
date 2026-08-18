@@ -6,8 +6,10 @@ import "./FitScale.scss";
  * window is taller than the space left by the section head, up when it
  * is smaller), so every showcase page reads as one full 100vh screen —
  * no ragged empty bands. Clamped so a tiny window never blasts to
- * billboard size. Transform keeps the layout box at natural size; the
- * flex parent centres the result.
+ * billboard size. Transform-only: the window keeps its natural layout
+ * box (the section clips any marginal overflow), and the inner is never
+ * given an explicit width/height — pinning those to an early,
+ * not-yet-laid-out measurement collapsed windows into thin strips.
  */
 export default defineComponent({
   name: "FitScale",
@@ -16,6 +18,7 @@ export default defineComponent({
     const inner = ref<HTMLElement | null>(null);
     const scale = ref(1);
     let ro: ResizeObserver | null = null;
+    let timers: number[] = [];
 
     function measure() {
       const h = host.value, i = inner.value;
@@ -24,22 +27,29 @@ export default defineComponent({
       const natural = i.scrollHeight;
       const availW = h.clientWidth;
       const naturalW = i.scrollWidth;
+      // Not laid out yet (async content / fonts still settling) — skip
+      // rather than pin a collapsed size. A later re-measure catches it.
+      if (natural <= 0 || naturalW <= 0) return;
       // Fill both ways (up AND down), clamped so a tiny window never
       // blasts to billboard size and a wide one never leaves the viewport.
-      const s = Math.min(avail / Math.max(natural, 1), availW / Math.max(naturalW, 1));
+      const s = Math.min(avail / natural, availW / naturalW);
       scale.value = Math.min(1.8, Math.max(0.35, s));
-      // Shrink the LAYOUT box to the scaled size (transform alone leaves
-      // the natural box in flow, which made sections measure as overflow).
-      i.style.width = Math.round(naturalW * scale.value) + "px";
-      i.style.height = Math.round(natural * scale.value) + "px";
     }
 
     onMounted(() => {
       measure();
       ro = new ResizeObserver(measure);
       if (host.value) ro.observe(host.value);
+      // Content settles after mount (fonts, images, charts) — re-measure
+      // a few times so the fill target is the FINAL size, not the first.
+      timers = [80, 400, 1500].map((ms) => window.setTimeout(measure, ms));
+      window.addEventListener("resize", measure);
     });
-    onBeforeUnmount(() => ro?.disconnect());
+    onBeforeUnmount(() => {
+      ro?.disconnect();
+      timers.forEach((t) => window.clearTimeout(t));
+      window.removeEventListener("resize", measure);
+    });
 
     return () => (
       <div ref={host} class="fit-scale">
