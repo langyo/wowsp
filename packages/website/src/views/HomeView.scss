@@ -1,10 +1,15 @@
+/* Every section is a hard stop: the wheel/trackpad always lands exactly
+   on a page boundary — one 100vh page per section, never a partial one. */
+.hero, .showcase, .features, .cta-band {
+  scroll-snap-stop: always;
+}
 /* HomeView — Abyssal Glass product page. Full-viewport snap deck: every
    major section is EXACTLY one viewport tall, so the scroll reads as one
    page per section (proximity snap — no trapped scrolling on tall pages).
    The fixed nav floats over each section's top 4rem; content is centred,
    so nothing hides behind it. The deck pulls up under the nav spacer. */
 html {
-  scroll-snap-type: y proximity;
+  scroll-snap-type: y mandatory;
 }
 
 .home {
@@ -243,6 +248,10 @@ html {
 }
 
 @media (max-width: 720px) {
+  /* Sections may exceed one viewport on phones (content stacks) —
+     mandatory snap would trap the scroll, so relax to proximity. */
+  html { scroll-snap-type: y proximity; }
+
   .hero, .showcase, .features, .cta-band {
     height: auto;
     min-height: 100vh;

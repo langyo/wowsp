@@ -2,10 +2,12 @@ import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import "./FitScale.scss";
 
 /**
- * FitScale — scales its child DOWN (never up) to fit the host height, so
- * a fixed-height showcase window always sits inside one 100vh section no
- * matter the locale (longer headlines) or viewport. Transform keeps the
- * layout box at natural size; the flex parent centres the result.
+ * FitScale — scales its child to FILL the host height (down when the
+ * window is taller than the space left by the section head, up when it
+ * is smaller), so every showcase page reads as one full 100vh screen —
+ * no ragged empty bands. Clamped so a tiny window never blasts to
+ * billboard size. Transform keeps the layout box at natural size; the
+ * flex parent centres the result.
  */
 export default defineComponent({
   name: "FitScale",
@@ -20,7 +22,12 @@ export default defineComponent({
       if (!h || !i) return;
       const avail = h.clientHeight;
       const natural = i.scrollHeight;
-      scale.value = Math.min(1, avail / Math.max(natural, 1));
+      const availW = h.clientWidth;
+      const naturalW = i.scrollWidth;
+      // Fill both ways (up AND down), clamped so a tiny window never
+      // blasts to billboard size and a wide one never leaves the viewport.
+      const s = Math.min(avail / Math.max(natural, 1), availW / Math.max(naturalW, 1));
+      scale.value = Math.min(1.8, Math.max(0.35, s));
     }
 
     onMounted(() => {
