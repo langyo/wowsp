@@ -35,7 +35,17 @@ interface BattleBundle {
 
 const SHIP_SCALE = 5.0;
 const PLAYBACK_SPEEDS = [1, 2, 4, 8, 16] as const;
-const ROLE_COLOR = { self: 0xf5b85c, ally: 0x38bdf8, enemy: 0xf87171 } as const;
+/** App team colors (webui teamColors): white self / green allies / red enemies. */
+const ROLE_COLOR = { self: 0xffffff, ally: 0x4ade80, enemy: 0xcc3333 } as const;
+/** Holographic shader tint pairs. The BASE is the bright team colour itself
+   (the holo package's shader keeps the body at ~0.62 luminance, so a dark
+   app-style base reads grey on the site's light sea) — the fresnel is the
+   brighter rim accent on top. */
+const HOLO_PAIRS: Record<keyof typeof ROLE_COLOR, { baseColor: number; fresnelColor: number }> = {
+  self: { baseColor: 0xdcdcdc, fresnelColor: 0xffffff },
+  ally: { baseColor: 0x54e08a, fresnelColor: 0xa8ffc8 },
+  enemy: { baseColor: 0xcc3333, fresnelColor: 0xff6666 },
+};
 const MAP_BOUNDS: HoloBounds = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
 const CAP_RING_R = 90;
 
@@ -556,7 +566,7 @@ export default defineComponent({
         const zone = capZones[i];
         const mats = capRingMats[i];
         if (mats) {
-          const color = c.owner === "ally" ? 0x38bdf8 : c.owner === "enemy" ? 0xf87171 : 0xffffff;
+          const color = c.owner === "ally" ? 0x4ade80 : c.owner === "enemy" ? 0xcc3333 : 0xffffff;
           mats.ring.color.setHex(color);
           mats.ring.opacity = c.owner === "neutral" ? 0.55 : 0.8;
           mats.fill.color.setHex(color);
@@ -742,12 +752,12 @@ export default defineComponent({
         const src = lib.get(r.model);
         if (!track || !src) continue;
         const role = roleOf(r.rel);
-        const color = ROLE_COLOR[role];
+        const pair = HOLO_PAIRS[role];
 
         const clone = src.clone(true);
         const holo = makeShipHoloMaterial();
-        holo.uniforms.baseColor.value.setHex(color);
-        holo.uniforms.fresnelColor.value.setHex(color);
+        holo.uniforms.baseColor.value.setHex(pair.baseColor);
+        holo.uniforms.fresnelColor.value.setHex(pair.fresnelColor);
         materials.push(holo);
         const meshes: THREE.Mesh[] = [];
         clone.traverse((c) => { if ((c as THREE.Mesh).isMesh) meshes.push(c as THREE.Mesh); });

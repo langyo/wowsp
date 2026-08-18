@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 import {
   MonitorPlay, Eye, BarChart3, Ship, ChevronDown, ChevronRight, Download, Github,
 } from "lucide-vue-next";
-import { UiButton, Reveal } from "@/components/ui";
+import { UiButton, Reveal, FitScale } from "@/components/ui";
 import ModWindow from "@/components/showcase/ModWindow";
 import LookupWindow from "@/components/showcase/LookupWindow";
 import StatsWindow from "@/components/showcase/StatsWindow";
@@ -114,7 +114,7 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.ships.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
+          <Reveal delay={200} class="container showcase__stage">
             <div class="ship-stage">
               <ShipLive />
             </div>
@@ -134,7 +134,7 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.replay.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
+          <Reveal delay={200} class="container showcase__stage">
             <ReplayLive />
           </Reveal>
         </section>
@@ -152,8 +152,8 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.lookup.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
-            <LookupWindow />
+          <Reveal delay={200} class="container showcase__fit">
+            <FitScale><LookupWindow /></FitScale>
           </Reveal>
         </section>
 
@@ -170,8 +170,8 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.stats.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
-            <StatsWindow />
+          <Reveal delay={200} class="container showcase__fit">
+            <FitScale><StatsWindow /></FitScale>
           </Reveal>
         </section>
 
@@ -199,8 +199,8 @@ export default defineComponent({
               </RouterLink>
             </Reveal>
           </div>
-          <Reveal delay={260} class="container">
-            <ModWindow />
+          <Reveal delay={260} class="container showcase__fit">
+            <FitScale><ModWindow /></FitScale>
           </Reveal>
         </section>
 

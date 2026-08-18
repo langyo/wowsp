@@ -1,7 +1,16 @@
-/* HomeView — Abyssal Glass product page */
+/* HomeView — Abyssal Glass product page. Full-viewport snap deck: every
+   major section is EXACTLY one viewport tall, so the scroll reads as one
+   page per section (proximity snap — no trapped scrolling on tall pages).
+   The fixed nav floats over each section's top 4rem; content is centred,
+   so nothing hides behind it. The deck pulls up under the nav spacer. */
+html {
+  scroll-snap-type: y proximity;
+}
+
 .home {
   flex: 1;
   overflow-x: clip;
+  margin-top: -4rem;
 }
 
 /* ── HERO ─────────────────────────────────────────────────── */
@@ -11,13 +20,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Full-viewport hero: pull it up under the fixed transparent nav
-     (-4rem = nav spacer height), then weight the padding so the content's
-     optical center sits slightly ABOVE the geometric center — otherwise
-     the block reads as "sunk" below the fold. */
-  min-height: 100vh;
-  margin-top: -4rem;
-  padding: calc(4rem + var(--space-16)) 0 12rem;
+  /* Full-viewport hero: exactly one viewport, content optically centred
+     slightly ABOVE the geometric centre (the nav floats over the top). */
+  height: 100vh;
+  scroll-snap-align: start;
+  padding: calc(4rem + var(--space-16)) 0 var(--space-32);
   text-align: center;
 
   &__content {
@@ -131,11 +138,21 @@
   50% { transform: translateX(-50%) translateY(7px); opacity: 1; }
 }
 
-/* ── SHOWCASE sections ────────────────────────────────────── */
+/* ── SHOWCASE sections — each exactly one viewport, snapped ── */
 .showcase {
   position: relative;
-  padding: var(--space-128) 0 var(--space-96);
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* Content is centred — the fixed nav floats over the section's top
+     chrome, so no nav-clearance padding is needed; keep it tight so
+     fixed-height windows fit exactly one viewport. */
+  padding: var(--space-40) 0 var(--space-24);
   overflow: hidden;
+  scroll-snap-align: start;
 
   &--replay {
     border-block: 1px solid rgb(var(--color-border) / 8%);
@@ -146,7 +163,30 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    margin-bottom: var(--space-64);
+    margin-bottom: var(--space-24);
+  }
+
+  /* Stage sections (ships / replay): the window fills the space left
+     after the head, so the stage always reaches the viewport edges. */
+  /* Fixed-size window sections (lookup / stats / mods): the area left
+     after the head hosts a FitScale wrapper, so the window scales down
+     (never up) to fit exactly one viewport in any locale. */
+  &__fit {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__stage {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   &__title {
@@ -174,15 +214,16 @@
     text-wrap: pretty;
   }
 
-  .ui-btn--text { margin-top: var(--space-16); }
+  .ui-btn--text { margin-top: var(--space-8); }
 }
 
 /* ── ship stage: live 3D turntable (Montana) + weapon leader lines ── */
 .ship-stage {
   position: relative;
+  height: 100%;
+  width: 100%;
   max-width: 900px;
   margin-inline: auto;
-  aspect-ratio: 16 / 9;
   border-radius: var(--radius-xl);
   overflow: hidden;
   border: 1px solid var(--glass-border);
@@ -202,15 +243,27 @@
 }
 
 @media (max-width: 720px) {
+  .hero, .showcase, .features, .cta-band {
+    height: auto;
+    min-height: 100vh;
+  }
+
   .ship-stage {
-    aspect-ratio: 4 / 3;
+    min-height: 62vh;
     border-radius: var(--radius-lg);
   }
 }
 
 /* ── FEATURES ─────────────────────────────────────────────── */
 .features {
-  padding: var(--space-96) 0;
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(4rem + var(--space-48)) 0 var(--space-48);
+  scroll-snap-align: start;
 
   &__head {
     display: flex;
@@ -271,10 +324,17 @@
 /* ── CTA band ─────────────────────────────────────────────── */
 .cta-band {
   position: relative;
-  padding: var(--space-128) 0;
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(4rem + var(--space-48)) 0;
   overflow: hidden;
   text-align: center;
   border-top: 1px solid rgb(var(--color-border) / 8%);
+  scroll-snap-align: start;
 
   &__inner {
     display: flex;

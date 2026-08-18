@@ -27,9 +27,9 @@ export interface MinimapDrawOpts {
 }
 
 const ROLE_COLOR: Record<string, string> = {
-  self: "#f5b85c",
-  ally: "#38bdf8",
-  enemy: "#f87171",
+  self: "#ffffff",
+  ally: "#4ade80",
+  enemy: "#cc3333",
 };
 
 /** Sunk hulls keep a readable grey (matches the app's minimap). */
