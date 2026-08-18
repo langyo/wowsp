@@ -57,6 +57,9 @@ export interface HoloCap {
   /** Seconds until the capture completes while it runs — drawn as an
    *  amber "xx s" countdown under the letter (matches the scorebar). */
   etaSeconds?: number | null;
+  /** Zone radius in world metres — drives the ring size (relative sqrt
+   *  scale, like the app thumb: bigger point → visibly bigger ring). */
+  radius?: number;
 }
 
 /** Everything the scorebar / clock / minimap need each frame. */

@@ -20,6 +20,8 @@ export interface MinimapDrawOpts {
   ships: HoloShip[];
   /** Capture zones: letter rings, coloured by current owner. */
   caps?: HoloCap[];
+  /** Camera frustum ground quad (world coords) — the app thumb draws it. */
+  frustum?: { x: number; z: number }[];
   showTrails?: boolean;
   dpr?: number;
 }
@@ -52,7 +54,7 @@ function project(
 }
 
 export function drawHoloMinimap(opts: MinimapDrawOpts): void {
-  const { ctx, size, art, ships, caps = [], showTrails = true, dpr = 1 } = opts;
+  const { ctx, size, art, ships, caps = [], frustum, showTrails = false, dpr = 1 } = opts;
   const S = size;
   // Scale factor from the app's 160-unit thumb to this canvas: glyph /
   // ring / font sizes below are expressed in app units and stay legible
@@ -106,8 +108,13 @@ export function drawHoloMinimap(opts: MinimapDrawOpts): void {
   //    a capture runs (mirrors the app's minimap + scorebar chips) ──
   if (art && caps.length) {
     const b = art.activeBounds ?? art.bounds;
-    const ringR = 11 * k;
+    // Ring size from the zone REAL radius: on a 160px thumb of a 30 km
+    // map even 140 m is sub-pixel, so use the app relative sqrt scale —
+    // bigger radius → visibly bigger ring (clamped like the app thumb).
+    const ringPx = (radius?: number) =>
+      Math.max(4, Math.min(22, 3 + Math.sqrt(Math.max(radius ?? 300, 25) / 20) * 5)) * k;
     for (const c of caps) {
+      const ringR = ringPx(c.radius);
       const p = project(c.x, c.z, b);
       const px = p.u * S;
       const py = p.v * S;
@@ -141,13 +148,29 @@ export function drawHoloMinimap(opts: MinimapDrawOpts): void {
       const px = p.u * S;
       const py = p.v * S;
       const color = s.dead ? DEAD_COLOR : (ROLE_COLOR[s.role] ?? "#94a6c2");
-      // The glyph's bow points +x (east) at rest; heading is clockwise
-      // from north — subtract 90° so heading 0 faces up.
+      // The glyph's bow points +x (east) at rest; the rotation value is
+      // the RECORDED hull yaw when available (stable per frame — the
+      // motion-derived heading is noisy for slow/stationary ships),
+      // clockwise from north — subtract 90° so 0 faces up.
       ctx.save();
       ctx.translate(px, py);
-      ctx.rotate((s.heading ?? 0) - Math.PI / 2);
+      ctx.rotate((s.yaw ?? s.heading ?? 0) - Math.PI / 2);
       drawShipGlyph(ctx, s.shipType, 0, 0, (s.dead ? 11 : 13) * k, color);
       ctx.restore();
+    }
+    // camera frustum (world coords) — the app thumb draws the view cone
+    if (frustum && frustum.length === 4) {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const p0 = project(frustum[0].x, frustum[0].z, art.activeBounds ?? art.bounds);
+      ctx.moveTo(p0.u * S, p0.v * S);
+      for (let i = 1; i < 4; i++) {
+        const p = project(frustum[i].x, frustum[i].z, art.activeBounds ?? art.bounds);
+        ctx.lineTo(p.u * S, p.v * S);
+      }
+      ctx.closePath();
+      ctx.stroke();
     }
   } else {
     // No art: dark water fallback + dots still projected onto data bounds.
