@@ -436,9 +436,26 @@ async def cmd_get_ship_encyclopedia(request: Request) -> list[dict[str, Any]]:
     return _load_encyclopedia()
 
 
+# AppData sandbox: serves files from fixtures/appdata/<file> (path-traversal
+# safe) so browser-side flows (account switcher, stats cache) can be
+# exercised against realistic data. Mirrors the Tauri appdata_read.
+
+_APPDATA_SANDBOX = Path(__file__).resolve().parent.parent / "fixtures" / "appdata"
+
+
 @app.post("/api/appdata_read")
 async def cmd_appdata_read(payload: dict) -> str | None:
-    return None
+    file = payload.get("file")
+    if not file or isinstance(file, str) is False:
+        return None
+    target = (_APPDATA_SANDBOX / file).resolve()
+    try:
+        target.relative_to(_APPDATA_SANDBOX.resolve())
+    except ValueError:
+        return None
+    if not target.is_file():
+        return None
+    return target.read_text(encoding="utf-8")
 
 
 # --- Ship GameParams (detail modal armor/ballistics tab) ------------------

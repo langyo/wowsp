@@ -43,7 +43,7 @@ export default {
       titleB: "sur une carte holographique",
       desc: "N'importe quel .wowsreplay, analysé en un clic — obus, torpilles, fumées et zones de capture sur une seule frise. Revenez à n'importe quel instant et voyez le vrai prix de ce virage",
       liveChip: "Replay en direct · 12:34",
-        live: { loading: "Chargement de la vraie bataille…", failed: "Rendu direct indisponible", badge: "Rendu direct", dead: "Coulé", caption: "Replay réel · Nagato · Trident" , cap: { ally: "Contrôle allié", enemy: "Contrôle ennemi", neutral: "Neutre", capturing: "Capture", contested: "Contesté" }},
+        live: { loading: "Chargement de la vraie bataille…", failed: "Rendu direct indisponible", badge: "Rendu direct", dead: "Coulé", caption: "Replay réel · Nagato · Trident", zoom: "Mini-carte", trails: "Traces", play: "Lecture", pause: "Pause", speed: "Vitesse", labelsShow: "Afficher les étiquettes", labelsHide: "Masquer les étiquettes", sunkVerb: "coulé" , cap: { ally: "Contrôle allié", enemy: "Contrôle ennemi", neutral: "Neutre", capturing: "Capture", contested: "Contesté" }},
     },
     mods: {
       eyebrow: "Gestion des mods",

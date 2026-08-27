@@ -43,7 +43,7 @@ export default {
       titleB: "一张全息地图",
       desc: "任意 .wowsreplay 一键解析——弹道、鱼雷、烟雾、占领圈全部落在同一条时间轴上。拖回任何一个瞬间，看清那一次转向的代价",
       liveChip: "实时回放 · 12:34",
-        live: { loading: "正在载入真实对局…", failed: "实时演算不可用", badge: "实时演算", dead: "已击沉", caption: "真实回放 · 长门 · 三叉戟" , cap: { ally: "我方控制", enemy: "敌方控制", neutral: "中立", capturing: "占领中", contested: "双方压点" }},
+        live: { loading: "正在载入真实对局…", failed: "实时演算不可用", badge: "实时演算", dead: "已击沉", caption: "真实回放 · 长门 · 三叉戟", zoom: "小地图", trails: "航迹", play: "播放", pause: "暂停", speed: "播放速度", labelsShow: "显示名牌", labelsHide: "隐藏名牌", sunkVerb: "被击沉" , cap: { ally: "我方控制", enemy: "敌方控制", neutral: "中立", capturing: "占领中", contested: "双方压点" }},
     },
     mods: {
       eyebrow: "插件管理",

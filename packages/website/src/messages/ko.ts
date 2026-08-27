@@ -43,7 +43,7 @@ export default {
       titleB: "하나의 홀로 맵에",
       desc: "어떤 .wowsreplay든 원클릭 분석——탄도, 어뢰, 연막, 점령 서클이 모두 같은 타임라인 위에. 원하는 순간으로 돌아가 그 선회의 대가를 확인하세요",
       liveChip: "라이브 리플레이 · 12:34",
-        live: { loading: "실제 전투 불러오는 중…", failed: "실시간 렌더링 불가", badge: "실시간 렌더링", dead: "격침", caption: "실제 리플레이 · 나가토 · 삼지창" , cap: { ally: "아군 점령", enemy: "적군 점령", neutral: "중립", capturing: "점령 중", contested: "경합 중" }},
+        live: { loading: "실제 전투 불러오는 중…", failed: "실시간 렌더링 불가", badge: "실시간 렌더링", dead: "격침", caption: "실제 리플레이 · 나가토 · 삼지창", zoom: "미니맵", trails: "항적", play: "재생", pause: "일시정지", speed: "재생 속도", labelsShow: "이름 표시", labelsHide: "이름 숨기기", sunkVerb: "격침됨" , cap: { ally: "아군 점령", enemy: "적군 점령", neutral: "중립", capturing: "점령 중", contested: "경합 중" }},
     },
     mods: {
       eyebrow: "모드 관리",

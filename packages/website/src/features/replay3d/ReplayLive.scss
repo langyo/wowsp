@@ -3,10 +3,10 @@
    in light mode — so the hologram always reads. */
 .replay-live {
   position: relative;
+  height: 100%;
   width: 100%;
   max-width: 1100px;
   margin-inline: auto;
-  aspect-ratio: 16 / 10;
   border-radius: var(--radius-xl);
   overflow: hidden;
   border: 1px solid var(--glass-border);
@@ -69,6 +69,7 @@
     &--br { bottom: var(--space-16); right: var(--space-16); }
   }
 
+  /* caption pill (positioned above the minimap by the later block) */
   &__caption {
     padding: var(--space-6) var(--space-14);
     border-radius: var(--radius-full);
@@ -81,19 +82,203 @@
     white-space: nowrap;
   }
 
-  /* minimap canvas — bottom right, game-art based */
+  /* minimap thumb — the app's bottom-right fixture: 160px, click to
+     enlarge into the full 2D map overlay */
   &__minimap {
     position: absolute;
     right: var(--space-16);
-    bottom: 3.25rem;
-    z-index: 3;
-    width: 128px;
-    height: 128px;
+    bottom: var(--space-16);
+    z-index: 4;
+    width: 160px;
+    height: 160px;
     border-radius: var(--radius-md);
     border: 1px solid rgb(var(--color-border) / 30%);
     box-shadow: 0 4px 18px rgb(0 0 0 / 25%);
     background: rgb(3 6 12 / 60%);
+    pointer-events: auto;
+    cursor: zoom-in;
+  }
+
+  /* caption rides above the minimap thumb */
+  &__caption {
+    position: absolute;
+    right: var(--space-16);
+    bottom: calc(var(--space-16) + 160px + var(--space-8));
+    z-index: 4;
+  }
+
+  /* kill feed — factual sink notices, above the bottom-left cluster */
+  &__killfeed {
+    position: absolute;
+    left: var(--space-16);
+    bottom: calc(var(--space-16) + 92px);
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     pointer-events: none;
+  }
+
+  &__kill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: var(--radius-md);
+    background: var(--holo-hud-bg, rgb(10 16 28 / 78%));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-left: 2px solid rgb(56 189 248 / 60%);
+    backdrop-filter: blur(10px);
+    font-size: var(--text-xs);
+    color: rgb(255 255 255 / 85%);
+    white-space: nowrap;
+
+    &.is-enemy { border-left-color: rgb(248 113 113 / 60%); }
+
+    &-ico { display: inline-flex; width: 15px; justify-content: center; }
+    &-ship { font-weight: 600; }
+    &-verb { color: rgb(255 255 255 / 55%); }
+    &-name { color: rgb(255 255 255 / 75%); font-variant-numeric: tabular-nums; }
+  }
+
+  /* app-style playback controls row under the recorder plaque */
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    background: var(--holo-hud-bg, rgb(10 16 28 / 78%));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+  }
+
+  &__ctl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 6px;
+    border-radius: 6px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    background: rgb(255 255 255 / 6%);
+    color: rgb(255 255 255 / 85%);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+
+    &:hover { background: rgb(255 255 255 / 14%); }
+  }
+
+  &__scrub {
+    width: 150px;
+    height: 3px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgb(255 255 255 / 22%);
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+
+    &::-webkit-slider-thumb {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #fff;
+      border: none;
+      box-shadow: 0 0 6px rgb(0 0 0 / 50%);
+    }
+  }
+
+  &__time {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgb(255 255 255 / 85%);
+    font-variant-numeric: tabular-nums;
+    min-width: 38px;
+    text-align: center;
+  }
+
+  &__speed {
+    position: relative;
+
+    &-menu {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px;
+      border-radius: 8px;
+      background: rgb(10 16 28 / 92%);
+      border: 1px solid rgb(255 255 255 / 18%);
+      backdrop-filter: blur(10px);
+    }
+
+    &-opt {
+      min-width: 44px;
+      padding: 4px 8px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: rgb(255 255 255 / 75%);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+
+      &:hover { background: rgb(255 255 255 / 10%); }
+      &.is-on { background: rgb(56 189 248 / 22%); color: #fff; }
+    }
+  }
+
+  /* enlarged 2D map overlay — the app's mmzoom */
+  &__mmzoom {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-10);
+    background: rgb(3 6 12 / 88%);
+    backdrop-filter: blur(8px);
+    cursor: zoom-out;
+
+    &-head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-14);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      background: rgb(10 16 28 / 80%);
+      border: 1px solid rgb(255 255 255 / 18%);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: rgb(255 255 255 / 85%);
+    }
+
+    &-switch {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    &-canvas {
+      width: min(72vmin, 620px);
+      aspect-ratio: 1;
+      border-radius: var(--radius-md);
+      border: 1px solid rgb(255 255 255 / 20%);
+      box-shadow: 0 10px 40px rgb(0 0 0 / 45%);
+      background: rgb(5 8 15 / 90%);
+    }
   }
 
   /* ── DOM overlays: ship labels (shared HoloLabel) + cap letters ── */
@@ -115,7 +300,7 @@
     text-shadow: 0 2px 12px rgb(0 0 0 / 35%);
 
     &--neutral { color: rgb(255 255 255 / 32%); }
-    &--ally { color: rgb(56 189 248 / 70%); }
+    &--ally { color: rgb(74 222 128 / 70%); }
     &--enemy { color: rgb(248 113 113 / 70%); }
   }
 
@@ -154,11 +339,43 @@
 
     &__minimap { background: rgb(255 255 255 / 55%); }
 
+    &__kill {
+      color: rgb(20 32 52 / 88%);
+      &-verb { color: rgb(20 32 52 / 50%); }
+      &-name { color: rgb(20 32 52 / 70%); }
+    }
+
+    &__ctl {
+      border-color: rgb(20 32 52 / 18%);
+      background: rgb(20 32 52 / 6%);
+      color: rgb(20 32 52 / 85%);
+      &:hover { background: rgb(20 32 52 / 12%); }
+    }
+
+    &__scrub {
+      background: rgb(20 32 52 / 22%);
+      &::-webkit-slider-thumb { background: rgb(20 32 52 / 85%); }
+    }
+
+    &__time { color: rgb(20 32 52 / 85%); }
+
+    &__speed-menu { background: rgb(255 255 255 / 95%); border-color: rgb(20 32 52 / 18%); }
+    &__speed-opt {
+      color: rgb(20 32 52 / 75%);
+      &:hover { background: rgb(20 32 52 / 10%); }
+      &.is-on { background: rgb(2 132 199 / 18%); color: rgb(15 60 100 / 95%); }
+    }
+
+    &__mmzoom {
+      background: rgb(240 245 252 / 92%);
+      &-head { background: rgb(255 255 255 / 85%); border-color: rgb(20 32 52 / 18%); color: rgb(20 32 52 / 85%); }
+    }
+
     &__capletter {
       text-shadow: 0 1px 8px rgb(255 255 255 / 60%);
 
       &--neutral { color: rgb(30 50 80 / 30%); }
-      &--ally { color: rgb(2 132 199 / 65%); }
+      &--ally { color: rgb(22 163 74 / 65%); }
       &--enemy { color: rgb(220 38 38 / 65%); }
     }
   }
@@ -166,10 +383,13 @@
 
 @media (max-width: 720px) {
   .replay-live {
-    aspect-ratio: 4 / 5;
+    min-height: 62vh;
     border-radius: var(--radius-lg);
 
     &__hud--br { display: none; }
     &__minimap { width: 96px; height: 96px; }
+    &__caption { bottom: calc(var(--space-16) + 96px + var(--space-8)); display: none; }
+    &__killfeed { display: none; }
+    &__scrub { width: 90px; }
   }
 }
