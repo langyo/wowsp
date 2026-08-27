@@ -50,9 +50,13 @@ futures = "^0.3"
 tokio = { version = "^1", features = ["rt", "rt-multi-thread", "macros", "time", "net", "io-util", "fs", "sync", "signal"] }
 
 # Networking (optional WG API lookups)
+# Networking (optional WG API lookups). native-tls = SChannel on Windows:
+# reqwest 0.13 renamed `rustls-tls` → `rustls`, which now pins aws-lc-rs
+# (needs NASM/CMake on every build machine) — not worth it for a
+# Windows-only app.
 reqwest = { version = "^0.13", default-features = false, features = [
     "json",
-    "rustls-tls",
+    "native-tls",
     "stream",
     "charset",
     "http2",
