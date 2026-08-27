@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import argparse
 import glob
-import os
 import re
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -40,7 +40,18 @@ def ensure_payload() -> Path:
         return payload
     print(f"[wv2] downloading Evergreen x64 offline installer ({WV2_URL}) …")
     tmp = payload.with_suffix(".part")
-    urllib.request.urlretrieve(WV2_URL, tmp)  # follows the fwlink redirect
+    # curl is dramatically faster than urllib on some Windows setups
+    # (observed 10 MB/s vs 25 KB/s through the same fwlink) — prefer it.
+    curl = shutil.which("curl")
+    if curl:
+        subprocess.run(
+            [curl, "-sL", "--retry", "3", "-o", str(tmp), WV2_URL],
+            check=True,
+        )
+    else:
+        urllib.request.urlretrieve(WV2_URL, tmp)  # follows the fwlink redirect
+    if tmp.stat().st_size < 100 * 1024 * 1024 or tmp.read_bytes()[:2] != b"MZ":
+        sys.exit(f"downloaded payload looks wrong: {tmp} ({tmp.stat().st_size} bytes)")
     tmp.replace(payload)
     print(f"[wv2] saved {payload.stat().st_size:,} bytes -> {payload}")
     return payload
@@ -70,11 +81,13 @@ def build_bundled(payload: Path, makensis: Path) -> Path:
     src = TARGET / "nsis" / "x64" / "installer.nsi"
     script = src.read_text(encoding="utf-8")
 
-    # Distinct artifact name, same product identity (they are alternatives of
-    # the same app, not a side-by-side install).
+    # The bundler compiles the generated script with a placeholder OUTFILE and
+    # passes the real name on its own makensis invocation. For the variant we
+    # hard-code the absolute output path instead.
+    outfile = TARGET / "bundle" / "nsis" / "WoWSP_0.1.0_x64-setup-webview2.exe"
     script, n = re.subn(
-        r'(!define OUTFILE ".*?)(-setup\.exe")',
-        r"\1-setup-webview2.exe\2",
+        r'!define OUTFILE "[^"]*"',
+        lambda _m: f'!define OUTFILE "{outfile}"',
         script,
         count=1,
     )
