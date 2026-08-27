@@ -41,11 +41,10 @@ pub fn load_config() -> NetworkConfig {
     let Ok(dir) = paths::ensure_data_dir() else {
         return NetworkConfig::default();
     };
-    let raw = std::fs::read_to_string(dir.join(NETWORK_CONFIG_FILE)).ok();
-    match raw.and_then(|r| serde_json::from_str::<NetworkConfig>(&r).ok()) {
-        Some(cfg) => cfg,
-        None => NetworkConfig::default(),
-    }
+    std::fs::read_to_string(dir.join(NETWORK_CONFIG_FILE))
+        .ok()
+        .and_then(|r| serde_json::from_str::<NetworkConfig>(&r).ok())
+        .unwrap_or_default()
 }
 
 /// Config as returned to the webui, with the OS proxy pre-resolved so the
@@ -133,7 +132,7 @@ fn wininet_proxy() -> Option<String> {
         server
             .split(';')
             .find(|s| s.trim_start().starts_with(scheme))
-            .and_then(|s| s.splitn(2, '=').nth(1))
+            .and_then(|s| s.split_once('=').map(|x| x.1))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
     };

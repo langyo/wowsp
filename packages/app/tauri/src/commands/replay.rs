@@ -113,6 +113,7 @@ enum HpValueKind {
 ///     with a full-health sync),
 ///   - never jumps UP by more than 35% of max in one step (damage/heal ticks
 ///     are small; huge upward jumps are init artifacts or packed deltas).
+///
 /// The index with the most qualifying ship entities wins (ties: more samples).
 fn detect_hp_property(
     kinds: &std::collections::BTreeMap<i32, wowsp_tauri_shared::EntityKind>,
