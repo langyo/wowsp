@@ -38,6 +38,6 @@
     "typescript": "^5",
     "vite": "^8",
     "vitest": "^4.1.8",
-    "vue-tsc": "^2"
+    "vue-tsc": "^3"
   }
 }
