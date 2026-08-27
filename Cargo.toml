@@ -77,7 +77,7 @@ tar = "^0.4"
 malkuth = { version = "^0.1", default-features = false, features = ["signals"] }
 
 # Windows registry scanning for game install detection (official / Lesta / 360)
-winreg = "^0.55"
+winreg = "^0.56"
 
 # Windows screen capture for overlay roster positioning
 windows = { version = "^0.61", features = [
