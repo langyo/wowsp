@@ -2,12 +2,13 @@ import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as THREE from "three";
 import {
-  HoloClock, HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, registerHoloShipIcons,
+  HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, drawShipGlyph, registerHoloShipIcons,
   setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
   makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
+import UiSwitch from "@/components/ui/UiSwitch";
 import { loadGlb } from "./glb";
 import shipTypes from "@/data/shipTypes.json";
 import { ships as SHIP_DB, shipName } from "@/data/ships";
@@ -33,15 +34,25 @@ interface BattleBundle {
 }
 
 const SHIP_SCALE = 5.0;
-const PLAYBACK_SPEED = 8;
-const ROLE_COLOR = { self: 0xf5b85c, ally: 0x38bdf8, enemy: 0xf87171 } as const;
+const PLAYBACK_SPEEDS = [1, 2, 4, 8, 16] as const;
+/** App team colors (webui teamColors): white self / green allies / red enemies. */
+const ROLE_COLOR = { self: 0xffffff, ally: 0x4ade80, enemy: 0xcc3333 } as const;
+/** Holographic shader tint pairs. The BASE is the bright team colour itself
+   (the holo package's shader keeps the body at ~0.62 luminance, so a dark
+   app-style base reads grey on the site's light sea) — the fresnel is the
+   brighter rim accent on top. */
+const HOLO_PAIRS: Record<keyof typeof ROLE_COLOR, { baseColor: number; fresnelColor: number }> = {
+  self: { baseColor: 0xdcdcdc, fresnelColor: 0xffffff },
+  ally: { baseColor: 0x54e08a, fresnelColor: 0xa8ffc8 },
+  enemy: { baseColor: 0xcc3333, fresnelColor: 0xff6666 },
+};
 const MAP_BOUNDS: HoloBounds = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
 const CAP_RING_R = 90;
 
 /** The game's own HUD ship icons (bundled with the site assets). */
 const ICON_BASE = `${import.meta.env.BASE_URL}icons/ships`;
 const ICON_CLASSES = ["battleship", "cruiser", "destroyer", "aircarrier", "submarine"] as const;
-for (const variant of ["ally", "enemy", "sunk"] as const) {
+for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(
     variant,
     Object.fromEntries(ICON_CLASSES.map((c) => [c, `${ICON_BASE}/icon_${variant}_${c}.png`])),
@@ -91,6 +102,9 @@ function hpAt(track: Track, t: number): number | null {
 
 interface CapTag { letter: string; x: number; y: number; owner: string; eta: string; etaClass: string }
 
+/** Kill-feed entry (factual: the bake carries sink times + victims, not killers). */
+interface KillTag { key: number; name: string; shipName: string; type: string; enemy: boolean }
+
 export default defineComponent({
   name: "ReplayLive",
   setup() {
@@ -98,7 +112,17 @@ export default defineComponent({
     const host = ref<HTMLElement | null>(null);
     const loading = ref(true);
     const failed = ref(false);
-    const clockMode = ref<0 | 1 | 2>(0);
+    /** App-style corner facilities: enlarged 2D map, playback, tag toggle. */
+    const mmZoom = ref(false);
+    const mmTrails = ref(true);
+    const mmShowTags = ref(true);
+    const playing = ref(true);
+    const speed = ref<number>(8);
+    const speedMenuOpen = ref(false);
+    const currentT = ref(0);
+    const killFeed = ref<KillTag[]>([]);
+    const minimapCanvasRef = ref<HTMLCanvasElement | null>(null);
+    const zoomCanvas = ref<HTMLCanvasElement | null>(null);
     const hud = ref<HoloHudState>({
       scoreAlly: 0, scoreEnemy: 0, aliveAlly: 11, aliveEnemy: 11,
       time: 0, duration: 1, caps: [], ships: [],
@@ -146,7 +170,6 @@ export default defineComponent({
     const geometries: THREE.BufferGeometry[] = [];
     const textures: THREE.Texture[] = [];
     let minimapCtx: CanvasRenderingContext2D | null = null;
-    let minimapCanvas: HTMLCanvasElement | null = null;
     let seaMat: THREE.MeshBasicMaterial | null = null;
     let gridMat: THREE.LineBasicMaterial | null = null;
     let themeMq: MediaQueryList | null = null;
@@ -165,6 +188,10 @@ export default defineComponent({
     let capRingMats: { ring: THREE.MeshBasicMaterial; fill: THREE.MeshBasicMaterial }[] = [];
     let reduced = false;
     let currentDuration = 100;
+    /** Factual sink events (bake ground truth: time + victim only). */
+    let deaths: { key: number; die: number; name: string; shipZh: string; shipEn: string; type: string; enemy: boolean }[] = [];
+    /** The loaded minimap art (the enlarged 2D map draws it too). */
+    let minimapImg: HTMLImageElement | null = null;
 
     const projV = new THREE.Vector3();
 
@@ -204,32 +231,163 @@ export default defineComponent({
     }
 
     function drawMinimap() {
-      if (!minimapCtx || !minimapCanvas) return;
+      const cvs = minimapCanvasRef.value;
+      if (!cvs) return;
+      if (!minimapCtx) minimapCtx = cvs.getContext("2d");
+      const ctx = minimapCtx;
+      if (!ctx) return;
       const shipsForMap: HoloShip[] = ships.map((s) => {
         const t0 = Math.min(battleT, s.die ?? battleT);
         const p = posAt(s.track, t0);
-        // heading from motion (screen space: x right, -z up)
-        const p2 = posAt(s.track, Math.min(t0 + 1.5, s.track.x.length - 1.001));
-        const heading = Math.atan2(p2.x - p.x, p2.z - p.z);
+        const dead = s.die !== undefined && battleT > s.die;
+        // The RECORDED hull yaw drives the glyph rotation — stable per
+        // frame. (A motion-derived heading is pure noise for the many
+        // slow/stationary ships on the baked 1 Hz tracks, which made the
+        // old thumb glyphs spin.)
         return {
           x: p.x, z: p.z, yaw: p.yaw, role: roleOf(s.rel),
-          dead: s.die !== undefined && battleT > s.die,
-          shipType: s.type,
-          heading,
+          dead, shipType: s.type,
         };
       });
       const capsForMap: HoloCap[] = capZones.map((c) => {
         const st = capStateAt(battleT).find((s) => s.letter === c.letter);
-        return { letter: c.letter, x: c.x, z: c.z, owner: st?.owner ?? "neutral" };
+        return {
+          letter: c.letter, x: c.x, z: c.z,
+          owner: st?.owner ?? "neutral", etaSeconds: st?.seconds ?? null,
+          radius: CAP_RING_R,
+        };
       });
+      // Camera frustum ground quad (world coords; scene z = -world z).
+      let frustum: { x: number; z: number }[] | undefined;
+      if (camera) {
+        const hw = 0.5, hh = hw / camera.aspect;
+        frustum = [];
+        for (let i = 0; i < 4; i++) {
+          const sx = i === 0 || i === 3 ? -hw : hw;
+          const sy = i < 2 ? -hh : hh;
+          const pt = new THREE.Vector3(sx, sy, 1).unproject(camera);
+          const ray = pt.clone().sub(camera.position).normalize();
+          const tt = -camera.position.y / ray.y;
+          const hit = camera.position.clone().add(ray.multiplyScalar(tt));
+          frustum.push({ x: hit.x, z: -hit.z });
+        }
+      }
+      // HiDPI backing store exactly matching the displayed element, like
+      // the app thumb (1:1 buffer↔element keeps vector edges crisp).
+      const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      const disp = Math.round(Math.max(1, cvs.getBoundingClientRect().width));
+      const px = Math.round(disp * dpr);
+      if (cvs.width !== px) { cvs.width = px; cvs.height = px; }
       drawHoloMinimap({
-        ctx: minimapCtx,
-        size: 128,
+        ctx,
+        size: 160,
         art: { url: `${base}/minimap.png`, bounds: MAP_BOUNDS },
         ships: shipsForMap,
         caps: capsForMap,
-        dpr: minimapCanvas.width / 128,
+        frustum,
+        dpr: px / 160,
       });
+    }
+
+    /** Enlarged 2D map overlay — the app's mmzoom: full-map art, complete
+     *  course trails (toggle), capture rings with ETA, vector glyphs. */
+    function drawZoomMap() {
+      const zc = zoomCanvas.value;
+      if (!zc) return;
+      const zctx = zc.getContext("2d");
+      if (!zctx) return;
+      const dprZ = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      const dispZ = Math.round(Math.max(1, zc.getBoundingClientRect().width));
+      const pxZ = Math.round(dispZ * dprZ);
+      if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
+      zctx.setTransform(pxZ / 760, 0, 0, pxZ / 760, 0, 0);
+      const zw = 760;
+      const zwx = (x: number) => ((x - MAP_BOUNDS.minX) / (MAP_BOUNDS.maxX - MAP_BOUNDS.minX || 1)) * zw;
+      const zwz = (z: number) => ((MAP_BOUNDS.maxZ - z) / (MAP_BOUNDS.maxZ - MAP_BOUNDS.minZ || 1)) * zw;
+      zctx.clearRect(0, 0, zw, zw);
+      if (minimapImg) {
+        zctx.imageSmoothingEnabled = true;
+        zctx.drawImage(minimapImg, 0, 0, zw, zw);
+      } else {
+        zctx.fillStyle = "rgba(5, 8, 15, 0.9)";
+        zctx.fillRect(0, 0, zw, zw);
+      }
+      // capture rings + letters + capturing ETA (app zoom sizing)
+      const zcapR = (radius: number) =>
+        Math.max(8, Math.min(48, 5 + Math.sqrt(Math.max(radius, 25) / 20) * 9));
+      const st = capStateAt(battleT);
+      capZones.forEach((c, i) => {
+        const cx = zwx(c.x), cz = zwz(c.z);
+        const owner = st[i]?.owner ?? "neutral";
+        const rPx = zcapR(CAP_RING_R);
+        zctx.strokeStyle =
+          owner === "ally" ? "rgba(74, 222, 128, 0.85)"
+            : owner === "enemy" ? "rgba(248, 113, 113, 0.85)"
+              : "rgba(255, 255, 255, 0.55)";
+        zctx.lineWidth = 2;
+        zctx.beginPath();
+        zctx.arc(cx, cz, rPx, 0, Math.PI * 2);
+        zctx.stroke();
+        zctx.fillStyle = zctx.strokeStyle;
+        zctx.font = "bold 16px sans-serif";
+        zctx.textAlign = "center";
+        zctx.textBaseline = "middle";
+        zctx.fillText(c.letter, cx, cz + 0.5);
+        const eta = st[i]?.seconds;
+        if (eta != null && eta > 0 && st[i]?.capturing) {
+          zctx.fillStyle = "rgba(251,191,36,0.95)";
+          zctx.font = "bold 12px sans-serif";
+          zctx.fillText(Math.ceil(eta) + " s", cx, cz + rPx + 9);
+        }
+      });
+      // complete course trails, coloured by role (app palette)
+      if (mmTrails.value) {
+        zctx.lineWidth = 1.5;
+        for (const s of ships) {
+          zctx.strokeStyle =
+            s.rel === 2 ? "rgba(204, 51, 51, 0.5)"
+              : s.rel === 0 ? "rgba(255, 255, 255, 0.6)"
+                : "rgba(60, 180, 120, 0.5)";
+          zctx.beginPath();
+          for (let i = 0; i < s.track.x.length; i++) {
+            const tx = zwx(s.track.x[i]), ty = zwz(s.track.z[i]);
+            if (i === 0) zctx.moveTo(tx, ty);
+            else zctx.lineTo(tx, ty);
+          }
+          zctx.stroke();
+        }
+      }
+      // ship glyphs — vector, rotated to the recorded yaw
+      for (const s of ships) {
+        const t0 = Math.min(battleT, s.die ?? battleT);
+        const p = posAt(s.track, t0);
+        const dead = s.die !== undefined && battleT > s.die;
+        const color = dead ? 0x8a97a5 : ROLE_COLOR[roleOf(s.rel)];
+        zctx.save();
+        zctx.translate(zwx(p.x), zwz(p.z));
+        zctx.rotate(p.yaw - Math.PI / 2);
+        drawShipGlyph(zctx, s.type, 0, 0, dead ? 26 : 34, color);
+        zctx.restore();
+      }
+    }
+
+    function fmtTime(sec: number): string {
+      const s2 = Math.max(0, Math.floor(sec));
+      return String(Math.floor(s2 / 60)).padStart(2, "0") + ":" + String(s2 % 60).padStart(2, "0");
+    }
+
+    function togglePlay() {
+      playing.value = !playing.value;
+    }
+
+    function scrubTo(v: number) {
+      battleT = Math.min(Math.max(v, 0), currentDuration);
+      // one-shot explosion cursor: skip events that already faded, so a
+      // backward scrub does not refire the whole battle's blasts at once
+      boomCursor = 0;
+      while (boomCursor < boomEvents.length && boomEvents[boomCursor][0] <= battleT - 3) boomCursor++;
+      for (const b of boomPool) b.mesh.visible = false;
+      currentT.value = battleT;
     }
 
     /** Ships inside a cap ring right now (alive, within CAP_RING_R). */
@@ -272,13 +430,21 @@ export default defineComponent({
           if (time >= start && time < next[0]) {
             capturing = true;
             progress = Math.min(1, Math.max(0, (time - start) / (1 / speed)));
-            seconds = captureSecondsRemaining(progress, teamShips, contested).seconds;
+            // ETA anchors to the RECORDED flip time (ground truth from
+            // the replay) — the inside-count model can go quiet when the
+            // capturing ships have already sailed out of the ring on the
+            // baked 1 Hz tracks, which would blank the countdown.
+            seconds = contested
+              ? null
+              : captureSecondsRemaining(progress, teamShips, contested).seconds
+                ?? Math.max(1, Math.ceil(next[0] - time));
           }
         }
         return {
           letter: c.letter, owner, progress,
           capturing, contested,
           captureTeam, alliesIn: allies, enemiesIn: enemies, seconds,
+          etaSeconds: seconds,
           hint: contested
             ? t("showcase.replay.live.cap.contested")
             : capturing
@@ -296,12 +462,22 @@ export default defineComponent({
       lastNow = now;
       if (!visible) return;
 
-      if (!reduced) battleT += dt * PLAYBACK_SPEED;
+      if (!reduced && playing.value) battleT += dt * speed.value;
       if (battleT > currentDuration) {
         battleT = 0;
         boomCursor = 0;
         for (const b of boomPool) b.mesh.visible = false;
       }
+      currentT.value = battleT;
+      // Kill feed: factual sink notices, shown for 12 battle-seconds.
+      killFeed.value = deaths
+        .filter((d) => battleT >= d.die && battleT - d.die <= 12)
+        .slice(-4)
+        .map((d) => ({
+          key: d.key, name: d.name,
+          shipName: isZh() ? d.shipZh : d.shipEn,
+          type: d.type, enemy: d.enemy,
+        }));
 
       let allies = 0, enemies = 0, scoreA = 0, scoreE = 0;
       const shipStates: HoloShip[] = [];
@@ -329,12 +505,12 @@ export default defineComponent({
           shipName: isZh() ? s.nameZh : s.nameEn,
           tier: s.tier,
           x: pr.x, y: pr.y, dead, visible: pr.visible,
-          iconUrl: holoShipIconUrl(s.type, dead ? "sunk" : role === "enemy" ? "enemy" : "ally"),
+          iconUrl: holoShipIconUrl(s.type, dead ? (role === "enemy" ? "sunk-enemy" : "sunk") : role === "enemy" ? "enemy" : "ally"),
           hp: hp ?? null,
           maxHp: maxHp ?? null,
         });
       }
-      nameTags.value = tags;
+      nameTags.value = mmShowTags.value ? tags : [];
 
       // recorder ship health plaque (bottom-left)
       const selfNode = ships.find((s) => s.rel === 0) ?? null;
@@ -390,7 +566,7 @@ export default defineComponent({
         const zone = capZones[i];
         const mats = capRingMats[i];
         if (mats) {
-          const color = c.owner === "ally" ? 0x38bdf8 : c.owner === "enemy" ? 0xf87171 : 0xffffff;
+          const color = c.owner === "ally" ? 0x4ade80 : c.owner === "enemy" ? 0xcc3333 : 0xffffff;
           mats.ring.color.setHex(color);
           mats.ring.opacity = c.owner === "neutral" ? 0.55 : 0.8;
           mats.fill.color.setHex(color);
@@ -415,6 +591,7 @@ export default defineComponent({
         ships: shipStates,
       };
       drawMinimap();
+      if (mmZoom.value) drawZoomMap();
       renderer.render(scene, camera);
     }
 
@@ -436,6 +613,19 @@ export default defineComponent({
       currentDuration = bundle.duration;
       boomEvents = bundle.explosions;
       capZones = bundle.caps;
+      deaths = bundle.roster
+        .map((r) => ({ r, track: bundle.tracks[String(r.e)] }))
+        .filter((d) => d.track && d.track.die != null)
+        .map((d) => ({
+          key: d.r.e,
+          die: d.track.die!,
+          name: d.r.name,
+          shipZh: resolveShipName(d.r.model, d.r.shipZh, "zh-Hans"),
+          shipEn: resolveShipName(d.r.model, d.r.shipEn, "en"),
+          type: shipTypeOf(d.r.model),
+          enemy: d.r.rel === 2,
+        }))
+        .sort((a, b) => a.die - b.die);
       try {
         silhouettes = (await (await fetch(`${base}/silhouettes.json`)).json()) as Record<string, { path: string }>;
       } catch {
@@ -542,8 +732,9 @@ export default defineComponent({
         }
       }
 
-      // minimap art
+      // minimap art (kept module-level: the enlarged 2D map draws it too)
       const mmImg = new Image();
+      minimapImg = mmImg;
       mmImg.onload = () => { setMinimapArtImage(mmImg); drawMinimap(); };
       mmImg.src = `${base}/minimap.png`;
 
@@ -561,12 +752,12 @@ export default defineComponent({
         const src = lib.get(r.model);
         if (!track || !src) continue;
         const role = roleOf(r.rel);
-        const color = ROLE_COLOR[role];
+        const pair = HOLO_PAIRS[role];
 
         const clone = src.clone(true);
         const holo = makeShipHoloMaterial();
-        holo.uniforms.baseColor.value.setHex(color);
-        holo.uniforms.fresnelColor.value.setHex(color);
+        holo.uniforms.baseColor.value.setHex(pair.baseColor);
+        holo.uniforms.fresnelColor.value.setHex(pair.fresnelColor);
         materials.push(holo);
         const meshes: THREE.Mesh[] = [];
         clone.traverse((c) => { if ((c as THREE.Mesh).isMesh) meshes.push(c as THREE.Mesh); });
@@ -613,14 +804,6 @@ export default defineComponent({
         boomPool.push({ mesh, t0: 0 });
       }
 
-      // minimap canvas (bottom-right HUD) — 2× backing store
-      minimapCanvas = document.createElement("canvas");
-      minimapCanvas.width = 256;
-      minimapCanvas.height = 256;
-      minimapCanvas.className = "replay-live__minimap";
-      host.value.appendChild(minimapCanvas);
-      minimapCtx = minimapCanvas.getContext("2d");
-
       loading.value = false;
       trackResize();
 
@@ -648,7 +831,6 @@ export default defineComponent({
       for (const tx of textures) tx.dispose();
       renderer?.dispose();
       renderer?.domElement.remove();
-      minimapCanvas?.remove();
       ships = [];
       boomPool = [];
       capRingMats = [];
@@ -691,28 +873,118 @@ export default defineComponent({
             <div class="replay-live__hud replay-live__hud--top">
               <HoloScorebar state={hud.value} />
             </div>
-            <div class="replay-live__hud replay-live__hud--bl">
-              <HoloShipCard
-                data={{
-                  shipType: selfShip.value?.type,
-                  silhouette: selfSilhouette.value,
-                  name: selfShip.value ? (isZh() ? selfShip.value.nameZh : selfShip.value.nameEn) : undefined,
-                  hp: selfHp.value,
-                  maxHp: selfMaxHp.value,
-                  repairableHp: selfRep.value,
-                  dead: selfDead.value,
-                }}
-              />
-              <HoloClock
-                state={hud.value}
-                mode={clockMode.value}
-                interactive
-                onCycle={() => { clockMode.value = ((clockMode.value + 1) % 3) as 0 | 1 | 2; }}
-              />
-            </div>
-            <div class="replay-live__hud replay-live__hud--br">
-              <span class="replay-live__caption">{t("showcase.replay.live.caption")}</span>
-            </div>
+
+            {/* kill feed — factual sink notices from the bake (bottom-left) */}
+            {killFeed.value.length > 0 && !mmZoom.value ? (
+              <div class="replay-live__killfeed" aria-hidden="true">
+                {killFeed.value.map((k) => (
+                  <div key={k.key} class={["replay-live__kill", k.enemy ? "is-enemy" : "is-ally"].join(" ")}>
+                    <span class="replay-live__kill-ico">
+                      <img
+                        src={holoShipIconUrl(k.type, k.enemy ? "enemy" : "ally") ?? ""}
+                        alt=""
+                        width="13"
+                        height="13"
+                      />
+                    </span>
+                    <span class="replay-live__kill-ship">{k.shipName}</span>
+                    <span class="replay-live__kill-verb">{t("showcase.replay.live.sunkVerb")}</span>
+                    <span class="replay-live__kill-name">{k.name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* bottom-left: recorder plaque + app-style playback controls */}
+            {!mmZoom.value ? (
+              <div class="replay-live__hud replay-live__hud--bl">
+                <HoloShipCard
+                  data={{
+                    shipType: selfShip.value?.type,
+                    silhouette: selfSilhouette.value,
+                    name: selfShip.value ? (isZh() ? selfShip.value.nameZh : selfShip.value.nameEn) : undefined,
+                    hp: selfHp.value,
+                    maxHp: selfMaxHp.value,
+                    repairableHp: selfRep.value,
+                    dead: selfDead.value,
+                  }}
+                />
+                <div class="replay-live__controls">
+                  <button
+                    class="replay-live__ctl"
+                    onClick={togglePlay}
+                    title={playing.value ? t("showcase.replay.live.pause") : t("showcase.replay.live.play")}
+                  >
+                    {playing.value ? "❚❚" : "▶"}
+                  </button>
+                  <input
+                    class="replay-live__scrub"
+                    type="range"
+                    min={0}
+                    max={currentDuration}
+                    step={0.1}
+                    value={currentT.value}
+                    onInput={(e) => scrubTo(Number((e.target as HTMLInputElement).value))}
+                  />
+                  <span class="replay-live__time">{fmtTime(currentT.value)}</span>
+                  <div class="replay-live__speed">
+                    <button
+                      class="replay-live__ctl"
+                      title={t("showcase.replay.live.speed")}
+                      onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
+                    >
+                      {speed.value}×
+                    </button>
+                    {speedMenuOpen.value ? (
+                      <div class="replay-live__speed-menu" onClick={(e) => e.stopPropagation()}>
+                        {PLAYBACK_SPEEDS.map((sp) => (
+                          <button
+                            key={sp}
+                            class={["replay-live__speed-opt", sp === speed.value ? "is-on" : ""].join(" ")}
+                            onClick={() => { speed.value = sp; speedMenuOpen.value = false; }}
+                          >
+                            {sp}×
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    class="replay-live__ctl"
+                    onClick={() => { mmShowTags.value = !mmShowTags.value; }}
+                    title={mmShowTags.value ? t("showcase.replay.live.labelsHide") : t("showcase.replay.live.labelsShow")}
+                  >
+                    {mmShowTags.value ? "◉" : "◎"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* bottom-right: app minimap thumb — click for the enlarged 2D map */}
+            <canvas
+              ref={minimapCanvasRef}
+              class="replay-live__minimap"
+              onClick={() => { mmZoom.value = true; }}
+            />
+            <span class="replay-live__caption">{t("showcase.replay.live.caption")}</span>
+
+            {/* enlarged 2D map overlay (the app's mmzoom) */}
+            {mmZoom.value ? (
+              <div class="replay-live__mmzoom" onClick={() => { mmZoom.value = false; }}>
+                <div class="replay-live__mmzoom-head">
+                  <span>{t("showcase.replay.live.zoom")}</span>
+                  <span class="replay-live__mmzoom-switch" onClick={(e: MouseEvent) => e.stopPropagation()}>
+                    <UiSwitch
+                      modelValue={mmTrails.value}
+                      onUpdate:modelValue={(v: boolean) => { mmTrails.value = v; }}
+                    >
+                      {t("showcase.replay.live.trails")}
+                    </UiSwitch>
+                  </span>
+                </div>
+                <canvas ref={zoomCanvas} class="replay-live__mmzoom-canvas" />
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>

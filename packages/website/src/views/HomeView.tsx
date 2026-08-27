@@ -1,10 +1,10 @@
-import { defineAsyncComponent, defineComponent } from "vue";
+import { defineAsyncComponent, defineComponent, onBeforeUnmount, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import {
   MonitorPlay, Eye, BarChart3, Ship, ChevronDown, ChevronRight, Download, Github,
 } from "lucide-vue-next";
-import { UiButton, Reveal } from "@/components/ui";
+import { UiButton, Reveal, FitScale } from "@/components/ui";
 import ModWindow from "@/components/showcase/ModWindow";
 import LookupWindow from "@/components/showcase/LookupWindow";
 import StatsWindow from "@/components/showcase/StatsWindow";
@@ -22,6 +22,58 @@ export default defineComponent({
   name: "HomeView",
   setup() {
     const { t } = useI18n();
+
+    // Paged 1/3-page scrolling — the gesture ITSELF steps, no post-scroll
+    // correction: every wheel notch / key press moves exactly one grid
+    // step (page height = 100dvh minus the 4rem header), so the position
+    // is always on the grid. Smooth trackpads accumulate pixels and step
+    // when a third accumulates; ctrl+wheel (pinch-zoom) passes through.
+    const HEADER = 64;
+    let wheelAcc = 0;
+    function pageStep(dir: number) {
+      const vh = window.innerHeight;
+      const step = Math.max(120, (vh - HEADER) / 3);
+      const max = document.documentElement.scrollHeight - vh;
+      const cur = window.scrollY;
+      const base = Math.round(cur / step) * step;
+      const target = Math.min(max, Math.max(0, base + dir * step));
+      if (Math.abs(target - cur) >= 1) window.scrollTo({ top: target, behavior: "instant" });
+    }
+    function onWheel(e: WheelEvent) {
+      if (e.ctrlKey) return; // pinch-zoom
+      const step = Math.max(120, (window.innerHeight - HEADER) / 3);
+      const d = e.deltaY;
+      // Discrete notch (mouse wheel / line mode): one 1/3-page step per
+      // notch. Smooth wheels emit small deltas — accumulate those.
+      if (e.deltaMode === 1 || Math.abs(d) >= step * 0.5) {
+        e.preventDefault();
+        pageStep(Math.sign(d) || 1);
+        return;
+      }
+      wheelAcc += d;
+      if (Math.abs(wheelAcc) >= step) {
+        e.preventDefault();
+        pageStep(Math.sign(wheelAcc) || 1);
+        wheelAcc %= step;
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (e.key === "PageDown") { e.preventDefault(); pageStep(3); }
+      else if (e.key === "PageUp") { e.preventDefault(); pageStep(-3); }
+      else if (e.key === "ArrowDown" || e.key === " ") { e.preventDefault(); pageStep(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); pageStep(-1); }
+      else if (e.key === "Home") { e.preventDefault(); window.scrollTo({ top: 0, behavior: "instant" }); }
+      else if (e.key === "End") { e.preventDefault(); window.scrollTo({ top: max, behavior: "instant" }); }
+    }
+    onMounted(() => {
+      window.addEventListener("wheel", onWheel, { passive: false });
+      window.addEventListener("keydown", onKey);
+    });
+    onBeforeUnmount(() => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey);
+    });
 
     const features = [
       { icon: MonitorPlay, key: "replay" },
@@ -41,6 +93,7 @@ export default defineComponent({
       <div class="home">
         {/* ── HERO — Apple-style product intro ─────────────── */}
         <section class="hero">
+
           <div class="aurora" />
           <div class="hero__content container">
             <Reveal>
@@ -103,6 +156,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 战舰展示 ───────────────────────────── */}
         <section id="showcase-ships" class="showcase showcase--ships">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -114,7 +168,7 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.ships.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
+          <Reveal delay={200} class="container showcase__stage">
             <div class="ship-stage">
               <ShipLive />
             </div>
@@ -123,6 +177,7 @@ export default defineComponent({
 
         {/* ── SHOWCASE · 对局复盘 ───────────────────────────── */}
         <section class="showcase showcase--replay section-bg">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -134,13 +189,14 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.replay.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
+          <Reveal delay={200} class="container showcase__stage">
             <ReplayLive />
           </Reveal>
         </section>
 
         {/* ── SHOWCASE · 舰船查询 ──────────────────────────── */}
         <section class="showcase showcase--lookup">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -152,13 +208,14 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.lookup.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
-            <LookupWindow />
+          <Reveal delay={200} class="container showcase__fit">
+            <FitScale><LookupWindow /></FitScale>
           </Reveal>
         </section>
 
         {/* ── SHOWCASE · 水表战绩 ──────────────────────────── */}
         <section class="showcase showcase--stats section-bg">
+
           <div class="container showcase__head">
             <Reveal delay={80}>
               <h2 class="showcase__title">
@@ -170,13 +227,14 @@ export default defineComponent({
               <p class="showcase__desc">{t("showcase.stats.desc")}</p>
             </Reveal>
           </div>
-          <Reveal delay={200} class="container">
-            <StatsWindow />
+          <Reveal delay={200} class="container showcase__fit">
+            <FitScale><StatsWindow /></FitScale>
           </Reveal>
         </section>
 
         {/* ── SHOWCASE · 插件管理 ───────────────────────────── */}
         <section class="showcase showcase--mods">
+
           <div class="aurora" />
           <div class="container showcase__head">
             <Reveal delay={80}>
@@ -199,13 +257,14 @@ export default defineComponent({
               </RouterLink>
             </Reveal>
           </div>
-          <Reveal delay={260} class="container">
-            <ModWindow />
+          <Reveal delay={260} class="container showcase__fit">
+            <FitScale><ModWindow /></FitScale>
           </Reveal>
         </section>
 
         {/* ── FEATURES ─────────────────────────────────────── */}
         <section id="features" class="features section-bg">
+
           <div class="container">
             <div class="features__head">
               <Reveal delay={80}>
@@ -234,6 +293,7 @@ export default defineComponent({
 
         {/* ── CTA band ─────────────────────────────────────── */}
         <section class="cta-band">
+
           <div class="aurora" />
           <div class="container cta-band__inner">
             <Reveal>

@@ -18,11 +18,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: pnpm/action-setup@v6
-        with:
-          version: 9
+        # Version comes from the "packageManager" field in package.json
+        # (pnpm 11 — workspace-level overrides live in pnpm-workspace.yaml).
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - name: Cache cargo
         uses: actions/cache@v6

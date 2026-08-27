@@ -1,0 +1,9 @@
+.fit-scale {
+  height: 100%;
+  max-width: 100%;
+
+  &__inner {
+    transform-origin: top center;
+    will-change: transform;
+  }
+}

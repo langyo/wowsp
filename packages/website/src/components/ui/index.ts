@@ -6,3 +6,4 @@ export { default as UiInput } from "./UiInput";
 export { default as UiMenu, type UiMenuItem } from "./UiMenu";
 export { default as UiTag, type UiTagTone } from "./UiTag";
 export { default as Reveal } from "./Reveal";
+export { default as FitScale } from "./FitScale";
