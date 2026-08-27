@@ -427,6 +427,43 @@ export interface NetworkConfig {
   effectiveProxy?: string | null;
 }
 
+// ── Mod Hub (mirrors `wowsp_tauri_shared`, see commands/mod_hub.rs) ────────
+
+/** Plugin category from on-disk structure signatures (mod-formats.md). */
+export type ModKind = "voice" | "skin" | "textures" | "gui" | "patch";
+
+/** One classified plugin found installed under `res_mods/<version>/`. */
+export interface InstalledMod {
+  kind: ModKind;
+  name: string;
+  /** PnF ship id / voice-over selector label, when the format carries one. */
+  detail?: string | null;
+  relPath: string;
+}
+
+/** One subtree copy in an install plan (package rel → res_mods rel). */
+export interface PackagePlanEntry {
+  fromRel: string;
+  toRel: string;
+}
+
+/** Install plan for an unpacked plugin directory. */
+export interface PackagePlan {
+  kind: ModKind;
+  name: string;
+  detail?: string | null;
+  entries: PackagePlanEntry[];
+  warnings: string[];
+}
+
+/** Result of applying a plan to a game install. */
+export interface InstallReport {
+  name: string;
+  binVersion: string;
+  wroteFiles: number;
+  warnings: string[];
+}
+
 /** Mirrors `wowsp_tauri_shared::DogTag` — player's personalized emblem. */
 export interface DogTag {
   textureId: number;
@@ -520,4 +557,11 @@ export const api = {
   getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
   setNetworkConfig: (config: NetworkConfig) =>
     transport.invoke<null>(RPC.set_network_config, { config }),
+  // ── Mod Hub ──
+  modHubScanInstalled: (gameRoot: string) =>
+    transport.invoke<InstalledMod[]>(RPC.mod_hub_scan_installed, { gameRoot }),
+  modHubClassifyPath: (sourcePath: string) =>
+    transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
+  modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>
+    transport.invoke<InstallReport>(RPC.mod_hub_install, { sourceRoot, gameRoot, plan }),
 };

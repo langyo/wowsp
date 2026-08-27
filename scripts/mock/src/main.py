@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="WoWSP mock backend")
@@ -140,6 +140,64 @@ async def cmd_ribbon_skin_dir(request: Request):
     return str(hits[0])
 
 
+
+
+# ── Mod Hub (M10 groundwork): thin re-implementation of the Rust
+# classifier rules from commands/mod_hub.rs so the browser preview can drive
+# the same UI flow against the mock appdata sandbox.
+_MOCK_INSTALLED = [
+    {"kind": "voice", "name": "Hoshino", "detail": "Hoshino",
+     "relPath": "banks/mods/Hoshino"},
+    {"kind": "voice", "name": "OTTO Ver1.0", "detail": "OTTO Ver1.1",
+     "relPath": "banks/Mods/OTTO Ver1.0"},
+    {"kind": "skin", "name": "Hina_Moskva", "detail": "RSC110_Pr_66_Moskva",
+     "relPath": "PnFMods/Hina_Moskva"},
+    {"kind": "gui", "name": "ribbons", "detail": None, "relPath": "gui/ribbons"},
+    {"kind": "patch", "name": "ime_config.xml", "detail": None,
+     "relPath": "ime_config.xml"},
+]
+
+
+@app.post("/api/mod_hub_scan_installed")
+async def cmd_mod_hub_scan_installed(request: Request) -> list[dict]:
+    return _MOCK_INSTALLED
+
+
+@app.post("/api/mod_hub_classify_path")
+async def cmd_mod_hub_classify_path(request: Request) -> dict:
+    body = await request.json()
+    src = body.get("sourcePath", "")
+    low = src.lower().replace("\\", "/")
+    if low.endswith(".zip") or low.endswith(".7z"):
+        raise HTTPException(status_code=400, detail=(
+            "archive payloads need M10.2 unpack support — extract it to a folder first"))
+    if low.endswith("语音包") or "/mika" in low or "voice" in low:
+        return {
+            "kind": "voice", "name": src.rstrip("/\\").rsplit("/", 1)[-1],
+            "detail": None,
+            "entries": [{"fromRel": ".", "toRel": "banks/mods/MockVoice"}],
+            "warnings": ["bare voice pack wrapped into banks/mods"],
+        }
+    return {
+        "kind": "textures", "name": src.rstrip("/\\").rsplit("/", 1)[-1],
+        "detail": None,
+        "entries": [
+            {"fromRel": "content", "toRel": "content"},
+            {"fromRel": "PnFMods", "toRel": "PnFMods"},
+        ],
+        "warnings": ["mock plan — real classification runs in the desktop shell"],
+    }
+
+
+@app.post("/api/mod_hub_install")
+async def cmd_mod_hub_install(request: Request) -> dict:
+    body = await request.json()
+    plan = body.get("plan", {})
+    return {
+        "name": plan.get("name", "?"), "binVersion": "12668706",
+        "wroteFiles": sum(len(e.get("fromRel", "")) for e in plan.get("entries", [])) or 3,
+        "warnings": plan.get("warnings", []),
+    }
 
 
 @app.get("/api/is_game_running")
