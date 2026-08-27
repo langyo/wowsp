@@ -46,28 +46,6 @@ fn latest_bin_version(game_root: &str) -> Option<(String, PathBuf)> {
     newest.map(|(n, p)| (n.to_string(), p))
 }
 
-fn eq_ignore_case(a: impl AsRef<Path>, b: &str) -> bool {
-    a.as_ref().to_string_lossy().eq_ignore_ascii_case(b)
-}
-
-/// Recursive file count for an entry display surface.
-fn count_files(dir: &Path) -> usize {
-    let mut n = 0;
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&d) else { continue };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else {
-                n += 1;
-            }
-        }
-    }
-    n
-}
-
 /// Extract `<Name>value</Name>` of the first such tag (ASCII-case-insensitive).
 fn first_xml_tag(body: &str, tag: &str) -> Option<String> {
     let lower = body.to_ascii_lowercase();
@@ -87,10 +65,16 @@ fn registered_ship_id(main_py: &str) -> Option<String> {
     Some(rest[..end].trim().to_string())
 }
 
-/// Copy a subtree recursively, counting written files.
+/// Copy a subtree (or a single mapped file) recursively, counting writes.
 fn copy_tree(from: &Path, to: &Path) -> Result<usize, String> {
-    if !from.is_dir() {
-        return Err(format!("{} is not a directory", from.display()));
+    if !from.exists() {
+        return Err(format!("{} does not exist", from.display()));
+    }
+    if from.is_file() {
+        fs::create_dir_all(to.parent().unwrap_or(to))
+            .map_err(|e| format!("create {}: {e}", to.display()))?;
+        fs::copy(from, to).map_err(|e| format!("copy {}: {e}", from.display()))?;
+        return Ok(1);
     }
     fs::create_dir_all(to).map_err(|e| format!("create {}: {e}", to.display()))?;
     let mut count = 0usize;
@@ -271,6 +255,62 @@ pub fn mod_hub_classify_path(source_path: String) -> Result<PackagePlan, String>
 
 /// Classify the contents of an unpacked package directory.
 fn classify_package(src: &Path) -> Result<PackagePlan, String> {
+    let mut plan = classify_package_layout(src)?;
+
+    // Real-world packs often ship behind a single naming-wrapper folder
+    // (<系列名>/<本体>/{PnFMods,content,…}, e.g. 莫斯科日奈换色版). When the
+    // top level has no signatures but exactly one child directory carries
+    // them, re-derive the plan one layer down and shift `fromRel` inward —
+    // installs then read payloads relative to the wrapper.
+    if plan.entries.is_empty() {
+        if let Some(wrapper) = single_wrapper_dir(src) {
+            let inner = src.join(&wrapper);
+            let candidate = classify_package_layout(&inner)?;
+            for entry in candidate.entries {
+                plan.entries.push(PackagePlanEntry {
+                    from_rel: format!("{}/{}", wrapper, entry.from_rel),
+                    to_rel: entry.to_rel,
+                });
+            }
+            if !plan.entries.is_empty() {
+                plan.kind = candidate.kind;
+                if plan.detail.is_none() {
+                    plan.detail = candidate.detail;
+                }
+                plan.warnings.extend(candidate.warnings);
+                plan.warnings
+                    .push(format!("unwrapped single-layer folder \"{wrapper}\""));
+            }
+        }
+    }
+
+    Ok(plan)
+}
+
+/// The only content of `src` is one subdirectory (ignoring explorer noise) —
+/// its name is a candidate wrapper layer.
+fn single_wrapper_dir(src: &Path) -> Option<String> {
+    let mut dirs = Vec::new();
+    for e in fs::read_dir(src).ok()?.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let lower = name.to_ascii_lowercase();
+        if lower == "desktop.ini" || lower == "thumbs.db" || lower.ends_with(".txt") {
+            continue;
+        }
+        if !e.path().is_dir() {
+            return None;
+        }
+        dirs.push(name);
+    }
+    if dirs.len() == 1 {
+        dirs.pop()
+    } else {
+        None
+    }
+}
+
+/// Signature-level classification of one directory layout (no wrapper peel).
+fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
     let entries_raw: Vec<String> = fs::read_dir(src)
         .map_err(|e| format!("read {}: {e}", src.display()))?
         .flatten()
@@ -520,6 +560,53 @@ mod tests {
     }
 
     #[test]
+    fn classify_peels_single_wrapper_layer() {
+        let tmp = std::env::temp_dir().join("wowsp_wrapper_test");
+        let _ = fs::remove_dir_all(&tmp);
+        // <系列>/<本体>/PnFMods/…+content/… — real 莫斯科日奈换色版 shape.
+        fs::create_dir_all(tmp.join("莫斯科日奈/PnFMods/Hina_Moskva")).unwrap();
+        fs::write(
+            tmp.join("莫斯科日奈/PnFMods/Hina_Moskva/Main.py"),
+            "API_VERSION='API_v1.0'\ncontentSdk.registerShipMod('RSC110_Pr_66_Moskva')",
+        )
+        .unwrap();
+        touch(&tmp.join("莫斯科日奈/PnFModsLoader.py"));
+        touch(&tmp.join("莫斯科日奈/content/gameplay/russia/textures/a.dds"));
+
+        let plan = classify_package(&tmp).unwrap();
+        assert_eq!(plan.kind, ModKind::Skin);
+        assert_eq!(plan.detail.as_deref(), Some("RSC110_Pr_66_Moskva"));
+        let froms: Vec<_> = plan.entries.iter().map(|e| e.from_rel.as_str()).collect();
+        assert!(froms.contains(&"莫斯科日奈/PnFMods"), "{froms:?}");
+        assert!(froms.contains(&"莫斯科日奈/content"), "{froms:?}");
+        assert!(plan.warnings.iter().any(|w| w.contains("unwrapped")));
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn install_maps_single_file_patches() {
+        // Real ime_config patch: the plan's entry is a FILE, not a subtree.
+        let pkg = std::env::temp_dir().join("wowsp_inst_ime");
+        let game = std::env::temp_dir().join("wowsp_inst_ime_game");
+        let _ = fs::remove_dir_all(&pkg);
+        let _ = fs::remove_dir_all(&game);
+        fs::create_dir_all(&pkg).unwrap();
+        touch(&pkg.join("ime_config.xml"));
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+
+        let plan = classify_package(&pkg).unwrap();
+        assert_eq!(plan.kind, ModKind::Patch);
+        let report =
+            mod_hub_install(pkg.to_str().unwrap().into(), game.to_str().unwrap().into(), plan)
+                .unwrap();
+        assert_eq!(report.wrote_files, 1);
+        assert!(game.join("bin/1/res_mods/ime_config.xml").is_file());
+
+        fs::remove_dir_all(&pkg).ok();
+        fs::remove_dir_all(&game).ok();
+    }
+
+    #[test]
     fn install_copies_tree_and_creates_missing_loader() {
         let pkg = std::env::temp_dir().join("wowsp_inst_pkg");
         let game = std::env::temp_dir().join("wowsp_inst_game");
@@ -547,5 +634,141 @@ mod tests {
     fn zip_files_get_structured_error() {
         let err = mod_hub_classify_path("Z:/not/here/pack.zip".into()).unwrap_err();
         assert_eq!(err, UNSUPPORTED_ARCHIVE);
+    }
+
+    // ── Real-world sample harness ───────────────────────────────────────────
+    // Run against a local mod collection (skipped in CI):
+    //   WOWSP_SAMPLES_DIR="D:\绿色软件\游戏工具\WOWS" cargo test -p wowsp_tauri
+    //   -- --ignored --nocapture mod_hub_real
+    //
+    // `classify` sweep is read-only; the install leg writes only under %TEMP%.
+
+    /// Every top-level entry of the samples dir must classify cleanly: dirs
+    /// produce a typed plan, archives hit the structured unpack hint.
+    #[test]
+    #[ignore]
+    fn mod_hub_real_samples_classify() {
+        let dir = std::env::var("WOWSP_SAMPLES_DIR").expect("set WOWSP_SAMPLES_DIR");
+        let mut seen = 0;
+        for ent in fs::read_dir(&dir).unwrap().flatten() {
+            let path = ent.path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if name == "desktop.ini" {
+                continue;
+            }
+            let lower = name.to_ascii_lowercase();
+            // Shortcuts/readmes/etc. are not packages — only archives must
+            // classify through the structured unpack hint.
+            if path.is_file() && !lower.ends_with(".zip") && !lower.ends_with(".7z") {
+                println!("{name}: SKIP (not a package)");
+                continue;
+            }
+            match mod_hub_classify_path(path.to_string_lossy().into_owned()) {
+                Ok(plan) => {
+                    println!(
+                        "{name}: {:?} \"{}\" detail={:?} entries={} warnings={:?}",
+                        plan.kind,
+                        plan.name,
+                        plan.detail,
+                        plan.entries.len(),
+                        plan.warnings
+                    );
+                    assert!(!plan.entries.is_empty(), "{name}: empty plan");
+                }
+                Err(err) => {
+                    // Archives must always hit the structured unpack hint.
+                    // Non-package payloads (SDK/tutorial trees, standalone
+                    // tools, raw asset dumps, wrapper dirs of zips) fail with
+                    // "no recognizable structure" by design — log them, don't
+                    // treat as harness failures.
+                    if err == UNSUPPORTED_ARCHIVE {
+                        assert!(lower.ends_with(".zip") || lower.ends_with(".7z"));
+                        println!("{name}: ARCHIVE (needs M10.2 unpack)");
+                    } else {
+                        assert!(err.contains("no recognizable"), "{name}: {err}");
+                        println!("{name}: NOT-A-PACKAGE (rejected by design)");
+                    }
+                }
+            }
+            seen += 1;
+        }
+        assert!(seen >= 15, "expected the full sample set, got {seen}");
+    }
+
+    /// Install three representative real packs into a throwaway sandbox game
+    /// and verify the written tree: bare-voice wrapping, banks passthrough and
+    /// PnF loader-marker creation.
+    #[test]
+    #[ignore]
+    fn mod_hub_real_samples_install_sandbox() {
+        let dir = PathBuf::from(std::env::var("WOWSP_SAMPLES_DIR").expect("set WOWSP_SAMPLES_DIR"));
+        let game = std::env::temp_dir().join("wowsp_realsample_game");
+        let _ = fs::remove_dir_all(&game);
+        fs::create_dir_all(game.join("bin/12668706")).unwrap();
+
+        // 1. ime_config.xml (config-patch, folder layout).
+        let ime = find_dir(&dir, "输入法").expect("ime sample");
+        let plan = classify_package(&ime).unwrap();
+        let report =
+            mod_hub_install(ime.to_string_lossy().into_owned(), game.to_string_lossy().into_owned(), plan).unwrap();
+        assert!(report.wrote_files >= 1);
+        assert!(game.join("bin/12668706/res_mods/ime_config.xml").is_file());
+
+        // 2. Miyako_soundmod — standard banks pack.
+        let miyako = find_dir(&dir, "Miyako_soundmod").expect("banks sample");
+        let plan = classify_package(&miyako).unwrap();
+        assert_eq!(plan.kind, ModKind::Voice);
+        let report =
+            mod_hub_install(miyako.to_string_lossy().into_owned(), game.to_string_lossy().into_owned(), plan).unwrap();
+        assert!(report.wrote_files > 90, "banks pack copied {} files", report.wrote_files);
+        assert!(game.join("bin/12668706/res_mods/banks/mods/Miyako/mod.xml").is_file());
+
+        // 3. 莫斯科日奈换色版 — PnF skin with its own loader, nested one level.
+        let hina = find_dir(&dir, "莫斯科日奈换色版").expect("pnf sample");
+        let pnf_root = find_dir_within(&hina, "PnFModsLoader.py")
+            .or_else(|| Some(hina.clone()))
+            .unwrap();
+        let plan = classify_package(&pnf_root).unwrap();
+        assert_eq!(plan.kind, ModKind::Skin);
+        let report = mod_hub_install(
+            pnf_root.to_string_lossy().into_owned(),
+            game.to_string_lossy().into_owned(),
+            plan,
+        )
+        .unwrap();
+        assert!(report.wrote_files > 100, "pnf pack copied {} files", report.wrote_files);
+        assert!(game.join("bin/12668706/res_mods/PnFMods/Hina_Moskva/Main.py").is_file());
+        assert!(game.join("bin/12668706/res_mods/PnFModsLoader.py").is_file());
+        assert!(
+            game.join("bin/12668706/res_mods/content/gameplay").is_dir(),
+            "texture overrides copied alongside"
+        );
+
+        fs::remove_dir_all(&game).ok();
+    }
+
+    fn find_dir(root: &Path, needle: &str) -> Option<PathBuf> {
+        fs::read_dir(root).ok()?.flatten().map(|e| e.path()).find(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().contains(needle))
+                .unwrap_or(false)
+        })
+    }
+
+    /// Peel single-wrapper layers until the PNF payload is exposed.
+    fn find_dir_within(root: &Path, marker: &str) -> Option<PathBuf> {
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            if dir.join(marker).is_file() {
+                return Some(dir);
+            }
+            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            for e in entries.flatten() {
+                if e.path().is_dir() {
+                    stack.push(e.path());
+                }
+            }
+        }
+        None
     }
 }

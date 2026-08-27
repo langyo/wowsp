@@ -215,10 +215,11 @@ export default defineComponent({
           )}
           {report.value && (
             <div class="resources-banner resources-banner--ok">
-              {t("resources.installedOk")
-                .replace("{name}", report.value.name)
-                .replace("{count}", String(report.value.count))
-                .replace("{version}", report.value.version)}
+              {t("resources.installedOk", {
+                name: report.value.name,
+                count: report.value.count,
+                version: report.value.version,
+              })}
             </div>
           )}
 

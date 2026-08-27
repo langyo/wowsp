@@ -164,10 +164,14 @@ pub struct DecodedReplay {
     pub battle_results: Option<String>,
     /// Every EntityMethod call (time, entity_id, method_id, arg_len) — a
     /// diagnostic surface for identifying yet-undecoded signals (team score
-    /// updates, consumables, chat) without re-decoding the stream.
+    /// updates, consumables, chat) without re-decoding the stream. Collected
+    /// unconditionally; nothing reads it yet (protocol-diagnostics groundwork).
+    #[allow(dead_code)]
     pub method_histogram: Vec<(f32, i32, i32, u32)>,
     /// First few raw argument blobs per (entity_id, method_id) for offline
-    /// protocol identification (hex-dumped by the replay dump test).
+    /// protocol identification (hex-dumped by the replay dump test). Kept
+    /// alongside the histogram for the same reason.
+    #[allow(dead_code)]
     pub method_arg_samples: std::collections::BTreeMap<(i32, i32), Vec<Vec<u8>>>,
     /// Protocol version string (0x16).
     pub version: Option<String>,
@@ -502,7 +506,7 @@ fn walk_frames(
         }
         if n.payload.len() >= 4 {
             let f = f32::from_le_bytes(n.payload[n.payload.len() - 4..].try_into().unwrap());
-            if f.is_finite() && f >= 0.0 && f <= 1.5 {
+            if f.is_finite() && (0.0..=1.5).contains(&f) {
                 cap_progress
                     .entry(n.entity_id)
                     .or_default()
@@ -966,7 +970,7 @@ fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
     let mut best: Option<(usize, f32)> = None;
     for off in 0..=state.len() - 4 {
         let f = f32::from_le_bytes(state[off..off + 4].try_into().ok()?);
-        if f.is_finite() && f >= 20.0 && f <= 700.0 && (f - f.round()).abs() < 0.01 {
+        if f.is_finite() && (20.0..=700.0).contains(&f) && (f - f.round()).abs() < 0.01 {
             best = Some((off, f));
         }
     }

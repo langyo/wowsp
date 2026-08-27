@@ -174,7 +174,8 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !endif
 
 ; 4. WoWSP install-mode page: local / USB (internet-cafe) / green direct-run
-!define MUI_PAGE_CUSTOMFUNCTION_PRE ModePagePre
+;    A plain NSIS `Page custom` never consumes MUI_PAGE_CUSTOMFUNCTION_PRE,
+;    so the skip logic lives inside ModePageCreate instead of a pre-hook.
 Page custom ModePageCreate ModePageLeave
 
 ; 5. Custom page to ask user if he wants to reinstall/uninstall
@@ -489,7 +490,7 @@ LangString WEBVIEW2_REQUIRED ${LANG_ENGLISH} "WoWSP requires the Microsoft WebVi
 LangString WEBVIEW2_REQUIRED ${LANG_SIMPCHINESE} "本系统缺少 WoWSP 运行所必需的 Microsoft WebView2 运行时。$\n$\n点击「是」打开下载页面，获取自带 WebView2 的完整版安装包。"
 
 ; ── WoWSP mode page functions ───────────────────────────────────────────
-Function ModePagePre
+Function ModePageCreate
   ; Skip the page entirely in passive/update/silent flows - those always
   ; use the local-install mode (the updater only serves local installs).
   ${If} $PassiveMode = 1
@@ -499,9 +500,7 @@ Function ModePagePre
     StrCpy $InstallModeSelection 1
     Abort
   ${EndIf}
-FunctionEnd
 
-Function ModePageCreate
   !insertmacro MUI_HEADER_TEXT "$(MODE_PAGE_TITLE)" "$(MODE_PAGE_SUBTITLE)"
   nsDialogs::Create 1018
   Pop $0
