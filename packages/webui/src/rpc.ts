@@ -44,6 +44,9 @@ export const RPC = {
   ensure_model_pack: "ensure_model_pack",
   get_network_config: "get_network_config",
   set_network_config: "set_network_config",
+  mod_hub_scan_installed: "mod_hub_scan_installed",
+  mod_hub_classify_path: "mod_hub_classify_path",
+  mod_hub_install: "mod_hub_install",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

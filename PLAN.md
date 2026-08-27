@@ -102,12 +102,12 @@ official mini-patches (IME fix, fonts) are the foundation.
 - [ ] M10.5 — Content browser: skin/voice categories with previews & audition, batch install, resumable downloads; CC0-only index
 - [ ] M10.6 — Aslain migration assistant: adopt Aslain-installed entries into the install record
 
-> **WebView2 note:** with the auto-updater enabled, tauri-bundler forces the
-> `downloadBootstrapper` WebView2 install mode (the updater NSIS bundle cannot
-> carry the ~1.8 MB embedded bootstrapper). The bootstrapper still installs
-> WebView2 automatically when missing — only the "carried inside the installer"
-> part is sacrificed. `webviewInstallMode` in tauri.conf.json keeps the
-> `silent: true` flag either way.
+> **WebView2 note:** the installer never ships or silently installs the
+> runtime (`webviewInstallMode: skip`). `installer.nsi` gates `.onInit` on a
+> registry check instead: a machine without WebView2 gets a dialog pointing at
+> the bundled-WebView2 release build and the installer exits. Silent/unattended
+> runs (updater flow) log and continue — the app surfaces the same guidance on
+> launch.
 
 ## Release notes history
 

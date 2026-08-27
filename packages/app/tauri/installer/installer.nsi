@@ -56,6 +56,9 @@ ${StrLoc}
 !define WEBVIEW2BOOTSTRAPPERPATH "{{webview2_bootstrapper_path}}"
 !define WEBVIEW2INSTALLERPATH "{{webview2_installer_path}}"
 !define MINIMUMWEBVIEW2VERSION "{{minimum_webview2_version}}"
+; WoWSP never ships or silently installs the WebView2 runtime. When the
+; machine lacks it, the installer points at the bundled-WebView2 build.
+!define WEBVIEW2_BUNDLED_URL "https://github.com/langyo/wowsp/releases/latest"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}"
 !define MANUKEY "Software\${MANUFACTURER}"
 !define MANUPRODUCTKEY "${MANUKEY}\${PRODUCTNAME}"
@@ -482,6 +485,9 @@ LangString MODE_USB_DESC ${LANG_SIMPCHINESE} "便携副本放在可移动磁盘�
 LangString MODE_GREEN ${LANG_SIMPCHINESE} "直接运行（绿色软件）"
 LangString MODE_GREEN_DESC ${LANG_SIMPCHINESE} "解压到指定文件夹独立运行，与本机安装完全隔离。"
 
+LangString WEBVIEW2_REQUIRED ${LANG_ENGLISH} "WoWSP requires the Microsoft WebView2 runtime, which is missing on this system.$\n$\nClick Yes to open the download page for the full installer with WebView2 bundled."
+LangString WEBVIEW2_REQUIRED ${LANG_SIMPCHINESE} "本系统缺少 WoWSP 运行所必需的 Microsoft WebView2 运行时。$\n$\n点击「是」打开下载页面，获取自带 WebView2 的完整版安装包。"
+
 ; ── WoWSP mode page functions ───────────────────────────────────────────
 Function ModePagePre
   ; Skip the page entirely in passive/update/silent flows - those always
@@ -635,6 +641,9 @@ Function .onInit
   !if "${INSTALLMODE}" == "both"
     !insertmacro MULTIUSER_INIT
   !endif
+
+  ; WoWSP gate: WebView2 is required before anything else happens.
+  Call CheckWebView2Runtime
 FunctionEnd
 
 
@@ -657,97 +666,34 @@ Section EarlyChecks
 
 SectionEnd
 
-Section WebView2
-  ; Check if Webview2 is already installed and skip this section
+; ── WoWSP: WebView2 runtime gate ──────────────────────────────────────────
+; The runtime must already be present when the installer starts. When it is
+; missing, point the user at the bundled-WebView2 build instead of
+; downloading or silently installing anything from here.
+Function CheckWebView2Runtime
   ${If} ${RunningX64}
-    ReadRegStr $4 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
+    ReadRegStr $R9 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
   ${Else}
-    ReadRegStr $4 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
+    ReadRegStr $R9 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
   ${EndIf}
-  ${If} $4 == ""
-    ReadRegStr $4 HKCU "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
+  ${If} $R9 == ""
+    ReadRegStr $R9 HKCU "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
   ${EndIf}
 
-  ${If} $4 == ""
-    ; Webview2 installation
-    ;
-    ; Skip if updating
-    ${If} $UpdateMode <> 1
-      !if "${INSTALLWEBVIEW2MODE}" == "downloadBootstrapper"
-        Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
-        DetailPrint "$(webview2Downloading)"
-        NSISdl::download "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$TEMP\MicrosoftEdgeWebview2Setup.exe"
-        Pop $0
-        ${If} $0 == "success"
-          DetailPrint "$(webview2DownloadSuccess)"
-        ${Else}
-          DetailPrint "$(webview2DownloadError)"
-          Abort "$(webview2AbortError)"
-        ${EndIf}
-        StrCpy $6 "$TEMP\MicrosoftEdgeWebview2Setup.exe"
-        Goto install_webview2
-      !endif
-
-      !if "${INSTALLWEBVIEW2MODE}" == "embedBootstrapper"
-        Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
-        File "/oname=$TEMP\MicrosoftEdgeWebview2Setup.exe" "${WEBVIEW2BOOTSTRAPPERPATH}"
-        DetailPrint "$(installingWebview2)"
-        StrCpy $6 "$TEMP\MicrosoftEdgeWebview2Setup.exe"
-        Goto install_webview2
-      !endif
-
-      !if "${INSTALLWEBVIEW2MODE}" == "offlineInstaller"
-        Delete "$TEMP\MicrosoftEdgeWebView2RuntimeInstaller.exe"
-        File "/oname=$TEMP\MicrosoftEdgeWebView2RuntimeInstaller.exe" "${WEBVIEW2INSTALLERPATH}"
-        DetailPrint "$(installingWebview2)"
-        StrCpy $6 "$TEMP\MicrosoftEdgeWebView2RuntimeInstaller.exe"
-        Goto install_webview2
-      !endif
-
-      Goto webview2_done
-
-      install_webview2:
-        DetailPrint "$(installingWebview2)"
-        ; $6 holds the path to the webview2 installer
-        ExecWait "$6 ${WEBVIEW2INSTALLERARGS} /install" $1
-        ${If} $1 = 0
-          DetailPrint "$(webview2InstallSuccess)"
-        ${Else}
-          DetailPrint "$(webview2InstallError)"
-          Abort "$(webview2AbortError)"
-        ${EndIf}
-      webview2_done:
+  ${If} $R9 == ""
+    DetailPrint "$(WEBVIEW2_REQUIRED)"
+    ${If} ${Silent}
+      ; Unattended runs (updater flow) keep going - the app surfaces the same
+      ; guidance on launch instead of blocking an unattended machine.
+      Return
     ${EndIf}
-  ${Else}
-    !if "${MINIMUMWEBVIEW2VERSION}" != ""
-      ${VersionCompare} "${MINIMUMWEBVIEW2VERSION}" "$4" $R0
-      ${If} $R0 = 1
-        update_webview:
-          DetailPrint "$(installingWebview2)"
-          ${If} ${RunningX64}
-            ReadRegStr $R1 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate" "path"
-          ${Else}
-            ReadRegStr $R1 HKLM "SOFTWARE\Microsoft\EdgeUpdate" "path"
-          ${EndIf}
-          ${If} $R1 == ""
-            ReadRegStr $R1 HKCU "SOFTWARE\Microsoft\EdgeUpdate" "path"
-          ${EndIf}
-          ${If} $R1 != ""
-            ; Chromium updater docs: https://source.chromium.org/chromium/chromium/src/+/main:docs/updater/user_manual.md
-            ; Modified from "HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView\ModifyPath"
-            ExecWait `"$R1" /install appguid=${WEBVIEW2APPGUID}&needsadmin=true` $1
-            ${If} $1 = 0
-              DetailPrint "$(webview2InstallSuccess)"
-            ${Else}
-              MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE "$(webview2InstallError)" IDIGNORE ignore IDRETRY update_webview
-              Quit
-              ignore:
-            ${EndIf}
-          ${EndIf}
-      ${EndIf}
-    !endif
+    MessageBox MB_ICONEXCLAMATION|MB_YESNO|MB_DEFBUTTON1 "$(WEBVIEW2_REQUIRED)" IDYES open_bundled_page
+    Abort
+    open_bundled_page:
+      ExecShell "open" "${WEBVIEW2_BUNDLED_URL}"
+      Abort
   ${EndIf}
-SectionEnd
+FunctionEnd
 
 Section Install
   SetOutPath $INSTDIR
