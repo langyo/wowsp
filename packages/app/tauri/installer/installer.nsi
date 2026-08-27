@@ -467,7 +467,9 @@ FunctionEnd
   !include "{{this}}"
 {{/each}}
 
-; ── WoWSP mode-page strings (fall back to the MUI language files) ───────
+; ── WoWSP custom strings, 8 installer languages ─────────────────────────
+; LangStrings not defined for the selected language fall back to the first
+; loaded language, so English below is also the safety net.
 LangString MODE_PAGE_TITLE ${LANG_ENGLISH} "Choose how to run WoWSP"
 LangString MODE_PAGE_SUBTITLE ${LANG_ENGLISH} "Pick how this copy of WoWSP is installed and where it keeps its data."
 LangString MODE_LOCAL ${LANG_ENGLISH} "Install to this PC (recommended)"
@@ -476,6 +478,10 @@ LangString MODE_USB ${LANG_ENGLISH} "Install to a USB drive (internet-cafe mode)
 LangString MODE_USB_DESC ${LANG_ENGLISH} "Portable copy on a removable drive - no registry entries, all data stays on the drive."
 LangString MODE_GREEN ${LANG_ENGLISH} "Run directly (green software)"
 LangString MODE_GREEN_DESC ${LANG_ENGLISH} "Extract to a folder and run as a standalone copy - isolated from your main install."
+LangString WEBVIEW2_REQUIRED ${LANG_ENGLISH} "WoWSP requires the Microsoft WebView2 runtime, which is missing on this system.$\n$\nClick Yes to open the download page for the full installer with WebView2 bundled."
+LangString WV2_INSTALLING ${LANG_ENGLISH} "Installing the Microsoft WebView2 runtime…"
+LangString WV2_DONE ${LANG_ENGLISH} "WebView2 runtime installed."
+LangString WV2_FAILED ${LANG_ENGLISH} "WebView2 runtime installation failed.$\n$\nClick Yes to open the download page for the full installer with WebView2 bundled."
 
 LangString MODE_PAGE_TITLE ${LANG_SIMPCHINESE} "选择 WoWSP 的安装方式"
 LangString MODE_PAGE_SUBTITLE ${LANG_SIMPCHINESE} "选择此副本的安装方式及其数据存放位置。"
@@ -485,9 +491,88 @@ LangString MODE_USB ${LANG_SIMPCHINESE} "安装到 U 盘（网吧模式）"
 LangString MODE_USB_DESC ${LANG_SIMPCHINESE} "便携副本放在可移动磁盘上——无注册表项，所有数据留在 U 盘内。"
 LangString MODE_GREEN ${LANG_SIMPCHINESE} "直接运行（绿色软件）"
 LangString MODE_GREEN_DESC ${LANG_SIMPCHINESE} "解压到指定文件夹独立运行，与本机安装完全隔离。"
-
-LangString WEBVIEW2_REQUIRED ${LANG_ENGLISH} "WoWSP requires the Microsoft WebView2 runtime, which is missing on this system.$\n$\nClick Yes to open the download page for the full installer with WebView2 bundled."
 LangString WEBVIEW2_REQUIRED ${LANG_SIMPCHINESE} "本系统缺少 WoWSP 运行所必需的 Microsoft WebView2 运行时。$\n$\n点击「是」打开下载页面，获取自带 WebView2 的完整版安装包。"
+LangString WV2_INSTALLING ${LANG_SIMPCHINESE} "正在安装 Microsoft WebView2 运行时…"
+LangString WV2_DONE ${LANG_SIMPCHINESE} "WebView2 运行时安装完成。"
+LangString WV2_FAILED ${LANG_SIMPCHINESE} "WebView2 运行时安装失败。$\n$\n点击「是」打开下载页面，获取自带 WebView2 的完整版安装包。"
+
+LangString MODE_PAGE_TITLE ${LANG_TRADCHINESE} "選擇 WoWSP 的安裝方式"
+LangString MODE_PAGE_SUBTITLE ${LANG_TRADCHINESE} "選擇此副本的安裝方式及其資料存放位置。"
+LangString MODE_LOCAL ${LANG_TRADCHINESE} "安裝到本機（建議）"
+LangString MODE_LOCAL_DESC ${LANG_TRADCHINESE} "標準安裝，含開始功能表捷徑與自動更新。"
+LangString MODE_USB ${LANG_TRADCHINESE} "安裝到 USB 隨身碟（網咖模式）"
+LangString MODE_USB_DESC ${LANG_TRADCHINESE} "便攜副本放在可移除磁碟上——無登錄項目，所有資料留在隨身碟內。"
+LangString MODE_GREEN ${LANG_TRADCHINESE} "直接執行（綠色軟體）"
+LangString MODE_GREEN_DESC ${LANG_TRADCHINESE} "解壓到指定資料夾獨立執行，與本機安裝完全隔離。"
+LangString WEBVIEW2_REQUIRED ${LANG_TRADCHINESE} "本系統缺少 WoWSP 執行所必需的 Microsoft WebView2 執行階段。$\n$\n點擊「是」開啟下載頁面，取得自帶 WebView2 的完整版安裝套件。"
+LangString WV2_INSTALLING ${LANG_TRADCHINESE} "正在安裝 Microsoft WebView2 執行階段…"
+LangString WV2_DONE ${LANG_TRADCHINESE} "WebView2 執行階段安裝完成。"
+LangString WV2_FAILED ${LANG_TRADCHINESE} "WebView2 執行階段安裝失敗。$\n$\n點擊「是」開啟下載頁面，取得自帶 WebView2 的完整版安裝套件。"
+
+LangString MODE_PAGE_TITLE ${LANG_JAPANESE} "WoWSP の実行方法を選択"
+LangString MODE_PAGE_SUBTITLE ${LANG_JAPANESE} "このコピーのインストール方法とデータの保存先を選択します。"
+LangString MODE_LOCAL ${LANG_JAPANESE} "この PC にインストール（推奨）"
+LangString MODE_LOCAL_DESC ${LANG_JAPANESE} "スタートメニューのショートカットと自動更新を備えた標準インストール。"
+LangString MODE_USB ${LANG_JAPANESE} "USB ドライブにインストール（ネットカフェモード）"
+LangString MODE_USB_DESC ${LANG_JAPANESE} "リムーバブルドライブ上のポータブルコピー — レジストリ項目なし、データはすべてドライブ内に保存されます。"
+LangString MODE_GREEN ${LANG_JAPANESE} "直接実行（ポータブル版）"
+LangString MODE_GREEN_DESC ${LANG_JAPANESE} "指定フォルダーに展開してスタンドアロンで実行。本機のインストールとは完全に分離されます。"
+LangString WEBVIEW2_REQUIRED ${LANG_JAPANESE} "このシステムには WoWSP の実行に必要な Microsoft WebView2 ランタイムがありません。$\n$\n「はい」をクリックすると、WebView2 同梱の完全版インストーラーのダウンロードページを開きます。"
+LangString WV2_INSTALLING ${LANG_JAPANESE} "Microsoft WebView2 ランタイムをインストールしています…"
+LangString WV2_DONE ${LANG_JAPANESE} "WebView2 ランタイムのインストールが完了しました。"
+LangString WV2_FAILED ${LANG_JAPANESE} "WebView2 ランタイムのインストールに失敗しました。$\n$\n「はい」をクリックして WebView2 同梱版のダウンロードページを開いてください。"
+
+LangString MODE_PAGE_TITLE ${LANG_KOREAN} "WoWSP 실행 방법 선택"
+LangString MODE_PAGE_SUBTITLE ${LANG_KOREAN} "이 사본의 설치 방식과 데이터 저장 위치를 선택하세요."
+LangString MODE_LOCAL ${LANG_KOREAN} "이 PC에 설치 (권장)"
+LangString MODE_LOCAL_DESC ${LANG_KOREAN} "시작 메뉴 바로 가기와 자동 업데이트가 포함된 표준 설치입니다."
+LangString MODE_USB ${LANG_KOREAN} "USB 드라이브에 설치 (PC방 모드)"
+LangString MODE_USB_DESC ${LANG_KOREAN} "이동식 드라이브에 휴대용 사본 — 레지스트리 항목 없음, 모든 데이터는 드라이브에 저장됩니다."
+LangString MODE_GREEN ${LANG_KOREAN} "직접 실행 (포터블)"
+LangString MODE_GREEN_DESC ${LANG_KOREAN} "지정한 폴더에 압축을 풀어 독립 실행 — 시스템 설치와 완전히 분리됩니다."
+LangString WEBVIEW2_REQUIRED ${LANG_KOREAN} "이 시스템에 WoWSP 실행에 필요한 Microsoft WebView2 런타임이 없습니다.$\n$\n'예'를 누르면 WebView2 포함 전체 설치 관리자의 다운로드 페이지가 열립니다."
+LangString WV2_INSTALLING ${LANG_KOREAN} "Microsoft WebView2 런타임을 설치하는 중…"
+LangString WV2_DONE ${LANG_KOREAN} "WebView2 런타임 설치 완료."
+LangString WV2_FAILED ${LANG_KOREAN} "WebView2 런타임 설치 실패.$\n$\n'예'를 눌러 WebView2 포함 버전의 다운로드 페이지를 여십시오."
+
+LangString MODE_PAGE_TITLE ${LANG_FRENCH} "Choisissez comment exécuter WoWSP"
+LangString MODE_PAGE_SUBTITLE ${LANG_FRENCH} "Choisissez le mode d'installation de cette copie et l'emplacement de ses données."
+LangString MODE_LOCAL ${LANG_FRENCH} "Installer sur ce PC (recommandé)"
+LangString MODE_LOCAL_DESC ${LANG_FRENCH} "Installation standard avec raccourci du menu Démarrer et mises à jour automatiques."
+LangString MODE_USB ${LANG_FRENCH} "Installer sur une clé USB (mode cybercafé)"
+LangString MODE_USB_DESC ${LANG_FRENCH} "Copie portable sur un support amovible — aucune entrée de registre, toutes les données restent sur la clé."
+LangString MODE_GREEN ${LANG_FRENCH} "Exécuter directement (version portable)"
+LangString MODE_GREEN_DESC ${LANG_FRENCH} "Extraire vers un dossier et exécuter de façon autonome, isolée de l'installation principale."
+LangString WEBVIEW2_REQUIRED ${LANG_FRENCH} "WoWSP requiert le runtime Microsoft WebView2, absent de ce système.$\n$\nCliquez sur Oui pour ouvrir la page de téléchargement de l'installateur complet avec WebView2 intégré."
+LangString WV2_INSTALLING ${LANG_FRENCH} "Installation du runtime Microsoft WebView2…"
+LangString WV2_DONE ${LANG_FRENCH} "Runtime WebView2 installé."
+LangString WV2_FAILED ${LANG_FRENCH} "Échec de l'installation du runtime WebView2.$\n$\nCliquez sur Oui pour ouvrir la page de la version avec WebView2 intégré."
+
+LangString MODE_PAGE_TITLE ${LANG_RUSSIAN} "Выберите способ запуска WoWSP"
+LangString MODE_PAGE_SUBTITLE ${LANG_RUSSIAN} "Укажите, как установить эту копию и где хранить её данные."
+LangString MODE_LOCAL ${LANG_RUSSIAN} "Установить на этот ПК (рекомендуется)"
+LangString MODE_LOCAL_DESC ${LANG_RUSSIAN} "Обычная установка с ярлыком в меню «Пуск» и автоматическими обновлениями."
+LangString MODE_USB ${LANG_RUSSIAN} "Установить на USB-накопитель (режим интернет-кафе)"
+LangString MODE_USB_DESC ${LANG_RUSSIAN} "Портативная копия на съёмном диске — без записей в реестре, все данные остаются на накопителе."
+LangString MODE_GREEN ${LANG_RUSSIAN} "Запустить напрямую (portable-версия)"
+LangString MODE_GREEN_DESC ${LANG_RUSSIAN} "Распаковать в папку и запускать автономно — отдельно от основной установки."
+LangString WEBVIEW2_REQUIRED ${LANG_RUSSIAN} "Для WoWSP требуется среда выполнения Microsoft WebView2, отсутствующая в системе.$\n$\nНажмите «Да», чтобы открыть страницу загрузки полной версии установщика со встроенным WebView2."
+LangString WV2_INSTALLING ${LANG_RUSSIAN} "Установка среды выполнения Microsoft WebView2…"
+LangString WV2_DONE ${LANG_RUSSIAN} "Среда выполнения WebView2 установлена."
+LangString WV2_FAILED ${LANG_RUSSIAN} "Не удалось установить среду выполнения WebView2.$\n$\nНажмите «Да», чтобы открыть страницу версии со встроенным WebView2."
+
+LangString MODE_PAGE_TITLE ${LANG_SPANISH} "Elige cómo ejecutar WoWSP"
+LangString MODE_PAGE_SUBTITLE ${LANG_SPANISH} "Elige cómo se instala esta copia y dónde guarda sus datos."
+LangString MODE_LOCAL ${LANG_SPANISH} "Instalar en este equipo (recomendado)"
+LangString MODE_LOCAL_DESC ${LANG_SPANISH} "Instalación estándar con acceso directo en el menú Inicio y actualizaciones automáticas."
+LangString MODE_USB ${LANG_SPANISH} "Instalar en una unidad USB (modo cibercafé)"
+LangString MODE_USB_DESC ${LANG_SPANISH} "Copia portátil en una unidad extraíble: sin entradas de registro, todos los datos permanecen en la unidad."
+LangString MODE_GREEN ${LANG_SPANISH} "Ejecutar directamente (versión portable)"
+LangString MODE_GREEN_DESC ${LANG_SPANISH} "Extraer a una carpeta y ejecutar de forma independiente, aislada de la instalación principal."
+LangString WEBVIEW2_REQUIRED ${LANG_SPANISH} "WoWSP requiere el runtime de Microsoft WebView2, que falta en este sistema.$\n$\nHaz clic en Sí para abrir la página de descarga del instalador completo con WebView2 incluido."
+LangString WV2_INSTALLING ${LANG_SPANISH} "Instalando el runtime de Microsoft WebView2…"
+LangString WV2_DONE ${LANG_SPANISH} "Runtime de WebView2 instalado."
+LangString WV2_FAILED ${LANG_SPANISH} "Error al instalar el runtime de WebView2.$\n$\nHaz clic en Sí para abrir la página de la versión con WebView2 incluido."
 
 ; ── WoWSP mode page functions ───────────────────────────────────────────
 Function ModePageCreate
@@ -666,9 +751,10 @@ Section EarlyChecks
 SectionEnd
 
 ; ── WoWSP: WebView2 runtime gate ──────────────────────────────────────────
-; The runtime must already be present when the installer starts. When it is
-; missing, point the user at the bundled-WebView2 build instead of
-; downloading or silently installing anything from here.
+; Default build: the runtime must already be present — point the user at the
+; bundled-WebView2 release instead of installing anything from here.
+; Variant build (scripts/build_installers.py passes /DWOWSP_WV2_PAYLOAD=<abs
+; path>): the Evergreen offline installer is embedded and executed in place.
 Function CheckWebView2Runtime
   ${If} ${RunningX64}
     ReadRegStr $R9 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
@@ -679,7 +765,29 @@ Function CheckWebView2Runtime
     ReadRegStr $R9 HKCU "SOFTWARE\Microsoft\EdgeUpdate\Clients\${WEBVIEW2APPGUID}" "pv"
   ${EndIf}
 
-  ${If} $R9 == ""
+  ${If} $R9 != ""
+    Return
+  ${EndIf}
+
+  !ifdef WOWSP_WV2_PAYLOAD
+    ; ── bundled-WebView2 variant: install the embedded runtime ────────────
+    DetailPrint "$(WV2_INSTALLING)"
+    File "/oname=$TEMP\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" "${WOWSP_WV2_PAYLOAD}"
+    ExecWait '"$TEMP\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" /silent /install' $1
+    Delete "$TEMP\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+    ${If} $1 = 0
+      DetailPrint "$(WV2_DONE)"
+      Return
+    ${EndIf}
+    DetailPrint "$(WV2_FAILED)"
+    ${If} ${Silent}
+      ; Unattended machines keep going - the app surfaces the same guidance.
+      Return
+    ${EndIf}
+    MessageBox MB_ICONEXCLAMATION|MB_YESNO "$(WV2_FAILED)" IDYES open_bundled_page
+    Abort
+  !else
+    ; ── standard variant: prompt for the bundled build ────────────────────
     DetailPrint "$(WEBVIEW2_REQUIRED)"
     ${If} ${Silent}
       ; Unattended runs (updater flow) keep going - the app surfaces the same
@@ -688,10 +796,11 @@ Function CheckWebView2Runtime
     ${EndIf}
     MessageBox MB_ICONEXCLAMATION|MB_YESNO|MB_DEFBUTTON1 "$(WEBVIEW2_REQUIRED)" IDYES open_bundled_page
     Abort
-    open_bundled_page:
-      ExecShell "open" "${WEBVIEW2_BUNDLED_URL}"
-      Abort
-  ${EndIf}
+  !endif
+
+  open_bundled_page:
+    ExecShell "open" "${WEBVIEW2_BUNDLED_URL}"
+    Abort
 FunctionEnd
 
 Section Install

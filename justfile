@@ -67,6 +67,7 @@ dev target='tauri' *FLAGS='':
 #   just build webui             → pnpm build @wowsp/webui
 #   just build site              → site + lagrange docs → dist/
 #   just build package           → cargo tauri build (installer)
+#   just build installers [--skip-tauri-build] → std + bundled-WebView2 NSIS
 #   just build wowsunpack        → clone + compile vendored wowsunpack
 #   just build all               → webui + site + app
 
@@ -90,6 +91,9 @@ _build-site:
 
 _build-package *FLAGS='':
     cargo tauri build {{FLAGS}}
+
+_build-installers *FLAGS='':
+    python scripts/build_installers.py {{FLAGS}}
 
 _build-wowsunpack:
     @echo "Cloning/building wowsunpack (landaire/wows-toolkit)..."

@@ -26,8 +26,21 @@
       "nsis": {
         "installMode": "currentUser",
         "template": "installer/installer.nsi",
+        "installerIcon": "icons/installer.ico",
+        "uninstallerIcon": "icons/uninstaller.ico",
+        "headerImage": "icons/installer-header.bmp",
+        "sidebarImage": "icons/installer-sidebar.bmp",
         "displayLanguageSelector": true,
-        "languages": ["SimpChinese", "English"]
+        "languages": [
+          "SimpChinese",
+          "TradChinese",
+          "Japanese",
+          "Korean",
+          "French",
+          "Russian",
+          "Spanish",
+          "English"
+        ]
       }
     }
   },
