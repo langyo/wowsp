@@ -15,8 +15,8 @@
     "site:build": "pnpm --filter @wowsp/website build"
   },
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
+    "node": ">=22",
+    "pnpm": ">=11"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

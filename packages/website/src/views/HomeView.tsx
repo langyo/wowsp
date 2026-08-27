@@ -58,7 +58,6 @@ export default defineComponent({
       }
     }
     function onKey(e: KeyboardEvent) {
-      const step = Math.max(120, (window.innerHeight - HEADER) / 3);
       const max = document.documentElement.scrollHeight - window.innerHeight;
       if (e.key === "PageDown") { e.preventDefault(); pageStep(3); }
       else if (e.key === "PageUp") { e.preventDefault(); pageStep(-3); }

@@ -22,7 +22,7 @@ jobs:
         # (pnpm 11 — workspace-level overrides live in pnpm-workspace.yaml).
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - name: Cache cargo
         uses: actions/cache@v6
