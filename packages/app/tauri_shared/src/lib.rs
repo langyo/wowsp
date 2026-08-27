@@ -682,3 +682,73 @@ pub struct CommunityTrend {
     pub ship_id: i64,
     pub buckets: Vec<TrendBucket>,
 }
+
+// ── Mod Hub (M10 groundwork) ────────────────────────────────────────────────
+
+/// Plugin category, derived from on-disk structure signatures — see
+/// docs/<lang>/designs/mod-formats.md for the full taxonomy and the real
+/// package samples each variant mirrors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ModKind {
+    /// WWise voice bank (`banks/mods/*` + AudioModification xml).
+    Voice,
+    /// PnF ship-model/camouflage mod (`PnFMods/*/Main.py`).
+    Skin,
+    /// Direct file overrides under `content/` (`.dds` textures etc.).
+    Textures,
+    /// HUD art (`gui/ribbons`, `gui/BFGC/BattleWave`).
+    Gui,
+    /// Loose config patches (`ime_config.xml` …).
+    Patch,
+}
+
+/// One classified plugin found installed under `res_mods/<version>/`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledMod {
+    pub kind: ModKind,
+    pub name: String,
+    /// PnF `registerShipMod(...)` ship id for skins; in-game voice-over option
+    /// label for banks. `None` when the kind has no secondary identifier.
+    pub detail: Option<String>,
+    /// Path of the entry relative to the `res_mods/<version>/` root.
+    pub rel_path: String,
+}
+
+/// One subtree copy the install performs: `fromRel` (relative to the package
+/// root) lands at `toRel` (relative to the new `res_mods/<version>/`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackagePlanEntry {
+    pub from_rel: String,
+    pub to_rel: String,
+}
+
+/// Install plan for an unpacked plugin directory. Shown to the user before
+/// `mod_hub_install` writes anything.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackagePlan {
+    pub kind: ModKind,
+    /// Display name: folder name, or the AudioModification `<Name>` /
+    /// PnF ship id when the format carries a better one.
+    pub name: String,
+    /// Kind-specific secondary id (see `InstalledMod::detail`).
+    pub detail: Option<String>,
+    pub entries: Vec<PackagePlanEntry>,
+    /// Non-fatal observations: missing loader marker will be auto-created,
+    /// case-variant bank folders (`Mods` vs `mods`), overwrite targets.
+    pub warnings: Vec<String>,
+}
+
+/// Result of applying a [`PackagePlan`] to a game install.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallReport {
+    pub name: String,
+    /// `bin/<version>` the files were written into.
+    pub bin_version: String,
+    pub wrote_files: usize,
+    pub warnings: Vec<String>,
+}
