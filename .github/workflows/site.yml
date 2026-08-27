@@ -33,8 +33,7 @@ jobs:
           lagrange build --src docs --out _site/docs --site-url https://wowsp.langyo.xyz/docs
 
       - uses: pnpm/action-setup@v6
-        with:
-          version: 9
+        # Version comes from the "packageManager" field in package.json.
       - uses: actions/setup-node@v7
         with:
           node-version: 20
