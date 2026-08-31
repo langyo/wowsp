@@ -13,7 +13,7 @@
   "themeModeLight": "浅色",
   "themePreset": "配色方案",
   "geolocation": "位置",
-  "geolocationHint": "用于基于日照的自动主题。通过 IP 解析，缓存 24 小时。",
+  "geolocationHint": "用于基于日照的自动主题。壳层提供定位时优先使用，否则按 IP 解析，本次会话内缓存。",
   "currentPeriod": "日照时段",
   "periodDay": "白天",
   "periodDusk": "黄昏",

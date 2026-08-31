@@ -7,8 +7,8 @@ component library, following the same convention as
 ## Provenance
 
 - Upstream repo: `https://github.com/celestia-island/hikari`
-- Vendored commit: `e3d695844388e9edd3db4e7ddfa7775e1669dc0d`
-  (♻️ Simplify the font stacks to the Apple-style system batch. (#332))
+- Vendored commit: `a561aaa8604aaa861212f4fdde0d43a014499dde`
+  (✨ Give the theme clock a real geolocation feed and a provider hook. (#341))
 - License: SySL-1.0 (same as WoWSP)
 
 ## What is vendored
