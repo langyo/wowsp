@@ -1,7 +1,7 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { Sun, Moon, Monitor } from "lucide-vue-next";
 
-import { HButton, HInput, HSelect, HTabs, getThemeTokens, getGeolocation, getTimePeriod, themePresets, useTheme } from "@celestia-island/hikari";
+import { HButton, HInput, HSelect, HTabs, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
 import { t } from "@/i18n";
@@ -36,17 +36,8 @@ export default defineComponent({
     );
 
     // ── Solar clock indicator (informational) ──────────────────────────────
-    const geo = ref<{ lat: number; lng: number } | null>(null);
-    const period = ref<string>("night");
-    onMounted(async () => {
-      try {
-        const g = await getGeolocation();
-        geo.value = g;
-        period.value = getTimePeriod(g.lat, g.lng);
-      } catch {
-        // Indicator only — leave defaults.
-      }
-    });
+    // Shares the theme clock's resolution — no extra geo lookup here.
+    const { geo, period } = theme;
 
     function periodLabel(p: string): string {
       if (p === "day") return t("settings.periodDay");
