@@ -34,19 +34,20 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
+import { HButton, HSelect, HSpinner, useToast } from "@celestia-island/hikari";
+
+/** Hikari select option shape (HkSelectOption is not re-exported). */
+type SelectOption = { value: string; label: string; disabled?: boolean };
+
 import BattleIcon from "@/components/base/BattleIcon";
-import SSpinner from "@/components/base/SSpinner";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
-import { useToast } from "@/composables/useToast";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
-import SButton from "@/components/base/SButton";
-import SSelect, { type SelectOption } from "@/components/base/SSelect";
 import "./ReplayView.scss";
 
 /** Map a client kind to its localized label (e.g. Steam / 官服 / Lesta / 国服). */
@@ -222,9 +223,9 @@ const PostBattlePanel = defineComponent({
       const tid = toast.loading(`加载 ${p.name} 全局战绩…`);
       try {
         globalStats.value = await api.lookupPlayerStats(p.name, p.realm);
-        toast.dismiss(tid);
+        toast.remove(tid);
       } catch {
-        toast.dismiss(tid);
+        toast.remove(tid);
         globalError.value = true;
       } finally {
         globalLoading.value = false;
@@ -401,7 +402,7 @@ const PostBattlePanel = defineComponent({
                 <div class="replay-view__postbattle-global">
                   {globalLoading.value ? (
                     <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                      <SSpinner size="md" tone="current" />
+                      <HSpinner size="md" tone="current" />
                     </span>
                   ) : globalStats.value ? (
                     <StatsCard stats={globalStats.value} />
@@ -544,9 +545,9 @@ const PostBattleFallbackPanel = defineComponent({
       const tid = toast.loading("加载 " + name + " 全局战绩…");
       try {
         globalStats.value = await api.lookupPlayerStats(name, accounts.activeRealm);
-        toast.dismiss(tid);
+        toast.remove(tid);
       } catch {
-        toast.dismiss(tid);
+        toast.remove(tid);
         globalError.value = true;
       } finally {
         globalLoading.value = false;
@@ -715,7 +716,7 @@ const PostBattleFallbackPanel = defineComponent({
                   <div class="replay-view__postbattle-global">
                     {globalLoading.value ? (
                       <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                        <SSpinner size="md" tone="current" />
+                        <HSpinner size="md" tone="current" />
                       </span>
                     ) : globalStats.value ? (
                       <StatsCard stats={globalStats.value} />
@@ -984,7 +985,7 @@ export default defineComponent({
       if (v) {
         loadingToastId = toast.loading(t("replay.loading"));
       } else if (loadingToastId) {
-        toast.dismiss(loadingToastId);
+        toast.remove(loadingToastId);
         loadingToastId = 0;
       }
     });
@@ -1149,21 +1150,19 @@ export default defineComponent({
           <div class="replay-view__list-head">
             <div class="replay-view__list-head-row">
               <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
-              <SButton
+              <HButton
                 size="sm"
                 variant="ghost"
                 disabled={!hasClient.value || refreshing.value}
                 onClick={() => void onRefresh()}
-                title={t("replay.refresh")}
+                ariaLabel={t("replay.refresh")}
               >
                 <RefreshCw size={14} class={refreshing.value ? "replay-view__spin" : ""} />
-              </SButton>
+              </HButton>
             </div>
 
             {hasClient.value ? (
-              <SSelect
-                size="sm"
-                block
+              <HSelect
                 modelValue={activePath.value}
                 onUpdate:modelValue={(v: string) => void onSelectClient(v)}
                 options={clientOptions.value}
@@ -1337,7 +1336,7 @@ export default defineComponent({
                 {resultsLoading.value ? (
                   <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
                     {t("replay.results")}
-                    <SSpinner size="xs" tone="current" />
+                    <HSpinner size="xs" tone="current" />
                   </span>
                 ) : battleResults.value || trajectories.value.length > 0 ? (
                   <button

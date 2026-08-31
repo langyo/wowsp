@@ -8,7 +8,7 @@ import {
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
-import UiSwitch from "@/components/ui/UiSwitch";
+import { HSwitch } from "@celestia-island/hikari";
 import { loadGlb } from "./glb";
 import shipTypes from "@/data/shipTypes.json";
 import { ships as SHIP_DB, shipName } from "@/data/ships";
@@ -974,12 +974,12 @@ export default defineComponent({
                 <div class="replay-live__mmzoom-head">
                   <span>{t("showcase.replay.live.zoom")}</span>
                   <span class="replay-live__mmzoom-switch" onClick={(e: MouseEvent) => e.stopPropagation()}>
-                    <UiSwitch
+                    <HSwitch
                       modelValue={mmTrails.value}
                       onUpdate:modelValue={(v: boolean) => { mmTrails.value = v; }}
                     >
                       {t("showcase.replay.live.trails")}
-                    </UiSwitch>
+                    </HSwitch>
                   </span>
                 </div>
                 <canvas ref={zoomCanvas} class="replay-live__mmzoom-canvas" />

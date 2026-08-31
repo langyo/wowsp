@@ -1,0 +1,118 @@
+.hk-scroll-container {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hk-scroll-container-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.hk-scroll-container[data-axis="horizontal"] > .hk-scroll-container-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ── Safe centering (align="center") ─────────────────────────────
+   The viewport becomes a row flex container whose single item is the
+   aligner wrapper. Auto inline margins absorb free space (content
+   centered) and collapse to zero when the content overflows, so the
+   content falls back to the inline-start edge and stays fully
+   reachable by scrolling — unlike justify-content: center, which
+   clips the overflowing start. Horizontal axis only (axis="both"
+   would re-introduce cross-axis center-clipping, so it is excluded). */
+.hk-scroll-container[data-align="center"][data-axis="horizontal"] > .hk-scroll-container-viewport {
+  display: flex;
+  flex-direction: row;
+}
+
+.hk-scroll-container-aligner {
+  flex: none;
+  margin-inline: auto;
+}
+
+/* ── Optional edge fades (fade=true) ──────────────────────────────
+   Pure CSS driven by the sensed overflow state the component mirrors
+   onto the root (data-h-overflow). Only the sides with hidden
+   content fade. The fade size custom property is declared on the
+   root so consumers can override it from the container element. */
+.hk-scroll-container[data-fade="true"] {
+  --hk-scroll-fade-size: 24px;
+}
+
+.hk-scroll-container[data-fade="true"][data-h-overflow="end"] > .hk-scroll-container-viewport {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 var(--hk-scroll-fade-size));
+  mask-image: linear-gradient(to left, transparent 0, #000 var(--hk-scroll-fade-size));
+}
+
+.hk-scroll-container[data-fade="true"][data-h-overflow="start"] > .hk-scroll-container-viewport {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--hk-scroll-fade-size));
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--hk-scroll-fade-size));
+}
+
+.hk-scroll-container[data-fade="true"][data-h-overflow="both"] > .hk-scroll-container-viewport {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--hk-scroll-fade-size),
+    #000 calc(100% - var(--hk-scroll-fade-size)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--hk-scroll-fade-size),
+    #000 calc(100% - var(--hk-scroll-fade-size)),
+    transparent 100%
+  );
+}
+
+/* autoFollow content is bottom-anchored while it fits the viewport: the
+   newest row hugs the bottom edge (a tail-following console, e.g. the
+   agent thinking-step stream) instead of hanging at the top with a dead
+   band below. Once the content overflows, min-height grows with it and
+   the flex-end grouping is a no-op — ordinary scroll + follow resumes. */
+.hk-scroll-container-autofollow-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+  flex-shrink: 0;
+}
+
+.hk-scroll-container-autotag {
+  position: absolute;
+  right: 0.625rem;
+  bottom: 0.625rem;
+  z-index: 6;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 2px 8px;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--hi-color-muted);
+  background: color-mix(in srgb, var(--hi-color-surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hi-color-border) 12%, transparent);
+  border-radius: var(--hi-radius-full, 9999px);
+  backdrop-filter: blur(4px);
+  opacity: 0.85;
+  transition: opacity var(--hi-duration-fast, 0.15s) ease;
+}
+
+// Jump-back FAB — above the scrollbar tracks (z-index 10).
+.hk-scroll-container > .hk-scroll-container-jump {
+  z-index: 11;
+}
+
+// The overlay track/thumb chrome (.hk-scrollbar-track / .hk-scrollbar-thumb)
+// moved to packages/theme/styles/_scrollbar.scss — the single shared set used
+// by every scroll region (see composables/useOverlayScrollbar.ts).

@@ -65,13 +65,13 @@ function deriveRarity(s: RaritySignals): Rarity {
 /** STag variant to use for each rarity tier (frame colour proxy). */
 export const RARITY_VARIANT: Record<
   Rarity,
-  "neutral" | "success" | "info" | "danger" | "legendary"
+  "default" | "success" | "info" | "danger" | "warning"
 > = {
-  common: "neutral", // white
+  common: "default", // white
   uncommon: "success", // green
   rare: "info", // blue
   epic: "danger", // red
-  legendary: "legendary", // orange
+  legendary: "warning", // orange
 };
 
 /** CSS modifier class for a ship card border, derived from rarity. */

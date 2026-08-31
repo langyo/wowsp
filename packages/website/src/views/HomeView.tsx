@@ -4,7 +4,8 @@ import { RouterLink } from "vue-router";
 import {
   MonitorPlay, Eye, BarChart3, Ship, ChevronDown, ChevronRight, Download, Github,
 } from "lucide-vue-next";
-import { UiButton, Reveal, FitScale } from "@/components/ui";
+import { HButton } from "@celestia-island/hikari";
+import { LinkButton, Reveal, FitScale } from "@/components/ui";
 import ModWindow from "@/components/showcase/ModWindow";
 import LookupWindow from "@/components/showcase/LookupWindow";
 import StatsWindow from "@/components/showcase/StatsWindow";
@@ -119,21 +120,21 @@ export default defineComponent({
 
             <Reveal delay={320}>
               <div class="hero__actions">
-                <UiButton size="lg" href={RELEASES} external>
+                <LinkButton size="lg" href={RELEASES} external>
                   <Download size={17} />
                   {t("hero.download")}
-                </UiButton>
+                </LinkButton>
                 <RouterLink to="/mods" custom>
                   {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                    <UiButton size="lg" variant="secondary" onClick={navigate}>
+                    <HButton size="lg" variant="secondary" onClick={navigate}>
                       {t("hero.mods")}
-                    </UiButton>
+                    </HButton>
                   )}
                 </RouterLink>
-                <UiButton size="lg" variant="text" href={GITHUB} external>
+                <LinkButton size="lg" variant="ghost" href={GITHUB} external>
                   <Github size={16} />
                   {t("hero.github")}
-                </UiButton>
+                </LinkButton>
               </div>
             </Reveal>
 
@@ -249,10 +250,10 @@ export default defineComponent({
             <Reveal delay={220}>
               <RouterLink to="/mods" custom>
                 {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                  <UiButton variant="text" onClick={navigate}>
+                  <HButton variant="ghost" onClick={navigate}>
                     {t("showcase.mods.link")}
                     <ChevronRight size={15} />
-                  </UiButton>
+                  </HButton>
                 )}
               </RouterLink>
             </Reveal>
@@ -304,14 +305,14 @@ export default defineComponent({
             </Reveal>
             <Reveal delay={200}>
               <div class="cta-band__actions">
-                <UiButton size="lg" href={RELEASES} external>
+                <LinkButton size="lg" href={RELEASES} external>
                   <Download size={17} />
                   {t("cta.download")}
-                </UiButton>
-                <UiButton size="lg" variant="text" href={GITHUB} external>
+                </LinkButton>
+                <LinkButton size="lg" variant="ghost" href={GITHUB} external>
                   <Github size={16} />
                   GitHub
-                </UiButton>
+                </LinkButton>
               </div>
             </Reveal>
           </div>

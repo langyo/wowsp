@@ -1,7 +1,7 @@
 import { defineComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import { Activity, Crosshair, Gauge, Star, Swords, Trophy } from "lucide-vue-next";
-import { UiTag } from "@/components/ui";
+import { HTag } from "@celestia-island/hikari";
 import "./WindowFrames.scss";
 
 /** Mock player water-meter for the homepage intro module (anonymised sample). */
@@ -97,7 +97,7 @@ export default defineComponent({
             <tbody>
               {MOCK.groups.map((g) => (
                 <tr key={g.key}>
-                  <td><UiTag tone="neutral">{t(`stats.groups.${g.key}`)}</UiTag></td>
+                  <td><HTag variant="default">{t(`stats.groups.${g.key}`)}</HTag></td>
                   <td class="is-num">{g.battles ?? "-"}</td>
                   <td>{g.pr ?? "-"}</td>
                   <td class="is-num">{g.winRate ?? "-"}</td>

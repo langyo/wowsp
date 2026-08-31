@@ -2,9 +2,9 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import SSegmented from "@/components/base/SSegmented";
+import { HTag, HTabs, HButton } from "@celestia-island/hikari";
+
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
-import STag from "@/components/base/STag";
 import SScrollTop from "@/components/base/SScrollTop";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
@@ -12,7 +12,7 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
 import { useRankedStore } from "@/stores/ranked";
-import { useToast } from "@/composables/useToast";
+import { useToast } from "@celestia-island/hikari";
 import { winrateColor } from "@/utils/winrate";
 import {
   filterByDateRange,
@@ -161,7 +161,7 @@ export default defineComponent({
         trends.loadPlayer(acc.accountId, acc.realm),
         ranked.load(acc.accountId, acc.realm, 5),
       ]);
-      toast.dismiss(toastId);
+      toast.remove(toastId);
     }
 
     // Refresh on mount + whenever the active account changes. We always
@@ -204,9 +204,9 @@ export default defineComponent({
               </div>
               <h2 class="dashboard-view__title">{t("dashboard.noAccount")}</h2>
               <p class="dashboard-view__hint">{t("dashboard.noAccountHint")}</p>
-              <button class="dashboard-view__bind" onClick={() => (showModal.value = true)}>
+              <HButton onClick={() => (showModal.value = true)}>
                 {t("account.search")}
-              </button>
+              </HButton>
             </div>
           ) : currentStats.value ? (
             <div class="dashboard-view__content" key="content">
@@ -245,10 +245,11 @@ export default defineComponent({
               {/* ── Ship stats: date range + packaged filter bar ── */}
               <section class="dash-section">
                 <div class="dash-section__controls">
-                  <SSegmented
+                  <HTabs
+                    variant="segmented"
                     modelValue={dateRange.value}
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                    options={rangeOptions}
+                    tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
                   />
                 </div>
                 <ShipFilterBar
@@ -281,7 +282,7 @@ export default defineComponent({
                         {group.ships.map((s) => (
                           <div class="dash-ship-table__row" key={s.shipId}>
                             <span class="dash-ship-table__col-name">
-                              <STag variant="primary" size="sm">{shipTypeShort(s.shipId)}</STag>
+                              <HTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HTag>
                               <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
                             </span>
                             <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>

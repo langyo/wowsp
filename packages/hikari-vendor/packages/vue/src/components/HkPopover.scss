@@ -1,0 +1,184 @@
+.hk-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hk-popover-panel {
+  min-width: 0;
+  max-height: min(70vh, calc(100vh - 2 * 8px));
+}
+
+.hk-popover-enter-active {
+  transition:
+    opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.hk-popover-leave-active {
+  transition:
+    opacity 0.15s cubic-bezier(0.4, 0, 1, 1),
+    transform 0.15s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.hk-popover-enter-from {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+}
+
+.hk-popover-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.97);
+}
+
+/* Glass dropdown content — used when `glass` prop is true.
+   --hk-popover-bg/--hk-popover-blur let a host app's surface-finish
+   preference (chest html[data-surface]) re-skin this layer; the defaults
+   keep the historical look. */
+.hii-dropdown-content,
+.hk-popover-panel.hii-dropdown-content {
+  background: var(--hk-popover-bg, rgb(var(--color-surface)));
+  backdrop-filter: var(--hk-popover-blur, blur(var(--blur-lg)) saturate(1.2));
+  border: 1px solid rgb(var(--color-border) / 20%);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-dropdown);
+  padding: var(--space-4, 12px);
+}
+
+/* Locale picker menu items */
+.hk-popup-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-14);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: inherit;
+  color: rgb(var(--color-text));
+  cursor: pointer;
+  transition: background var(--duration-normal) ease;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  outline: none;
+  border-radius: var(--radius-sm);
+}
+
+/* Hover = background wash only, never on the active item (active >
+   hover precedence — see HkNavItem.scss for the spec). */
+.hk-popup-menu-item:hover:not([data-active]) {
+  background: var(--c-primary-subtle);
+}
+
+.hk-popup-menu-item[data-active] {
+  color: rgb(var(--color-primary));
+  font-weight: 600;
+}
+
+.hk-locale-submenu {
+  min-width: 140px;
+  padding: var(--space-6);
+}
+
+.hk-locale-flag {
+  font-size: var(--text-base);
+  line-height: 1;
+}
+
+// ------
+// Mobile bottom-sheet mode (`sheetOnMobile`) — the panel docks to the
+// bottom edge on <768px viewports instead of anchoring: a real scrim
+// (click closes), rounded top corners only, slide-up reveal. Same visual
+// contract as the modal mobile docking (top inset keeps the secondary-
+// window breadcrumb strip visible).
+// ------
+.hk-popover-scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+  background: rgb(0 0 0 / 40%);
+}
+
+.hk-popover-panel.hk-is-sheet {
+  border-radius: var(--hk-modal-radius, var(--hi-radius-lg, 12px))
+                 var(--hk-modal-radius, var(--hi-radius-lg, 12px))
+                 0 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  max-height: min(
+    72vh,
+    calc(
+      100vh - var(--hk-sheet-top-inset, 4.25rem) -
+        var(--hk-sheet-bottom-gap, 0.375rem)
+    )
+  );
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 0;
+  /* The sheet's bottom-edge distance itself comes from the shared
+   * --hk-sheet-bottom-gap (inline in HkPopover's sheet style); here the
+   * content keeps the last row clear of the home bar: the safe-area
+   * inset stacked on a 12px family base, which also restores a bottom
+   * cushion over the glass dropdown chrome (equal specificity, earlier
+   * in source, whose own bottom padding the sheet rule would otherwise
+   * zero out). The modal sheet footer goes further (it adds
+   * --hk-sheet-footer-gap for its action buttons); this sheet has no
+   * footer, so this is the family baseline. */
+  padding-bottom: calc(var(--space-12, 0.75rem) + env(safe-area-inset-bottom, 0px));
+
+  /* Overlay scrollbar (useOverlayScrollbar, sheet mode only) — the
+     native chrome is hidden, never styled. */
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.hk-popover-sheet-grabber {
+  flex-shrink: 0;
+  // Grabber zone: tap target tall enough for a thumb, bar visually small.
+  padding: 14px 0 20px;
+  margin: 0 auto;
+  width: 100%;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+
+  &::before {
+    content: "";
+    width: 2.25rem;
+    height: 4px;
+    border-radius: 999px;
+    background: rgb(var(--color-border, 100 100 100) / 40%);
+  }
+}
+
+.hk-popover-sheet-enter-active {
+  transition:
+    opacity 0.25s ease-out,
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hk-popover-sheet-leave-active {
+  transition:
+    opacity 0.2s ease-in,
+    transform 0.25s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.hk-popover-sheet-enter-from,
+.hk-popover-sheet-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hk-popover-sheet-enter-active,
+  .hk-popover-sheet-leave-active {
+    transition: none;
+  }
+}

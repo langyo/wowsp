@@ -1,20 +1,25 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { Sun, Moon, Monitor } from "lucide-vue-next";
 
-import { useTheme } from "@/theme/useTheme";
+import { HButton, HInput, HSelect, HTabs, getThemeTokens, getGeolocation, getTimePeriod, themePresets, useTheme } from "@celestia-island/hikari";
+
 import { useWallpaper } from "@/theme/useWallpaper";
-import { themePresets, type ThemeMode } from "@/theme/presets";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type NetworkConfig } from "@/api";
-import SSelect from "@/components/base/SSelect";
 import AboutModal from "@/components/layout/AboutModal";
 import "./SettingsView.scss";
 
+/** Hikari token → CSS rgb() color. */
+function css(rgb: { r: number; g: number; b: number }): string {
+  return `rgb(${rgb.r} ${rgb.g} ${rgb.b})`;
+}
+
 /**
- * Settings page: theme mode (system/dark/light), color preset, geolocation
- * info, and an About button. The solar period indicator shows the current
- * sun-based classification so users understand what "Auto (sun)" does.
+ * Settings page: language, theme mode + color preset (hikari theme system),
+ * wallpaper, geolocation info, network proxy, and About. The solar period
+ * indicator shows the current sun-based classification so users understand
+ * what "Auto (sun)" does.
  */
 export default defineComponent({
   name: "SettingsView",
@@ -24,17 +29,28 @@ export default defineComponent({
     const lang = useLanguage();
     const showAbout = ref(false);
 
-    const modes: { value: ThemeMode; labelKey: string; icon: typeof Sun }[] = [
-      { value: "system", labelKey: "settings.themeModeSystem", icon: Monitor },
-      { value: "dark", labelKey: "settings.themeModeDark", icon: Moon },
-      { value: "light", labelKey: "settings.themeModeLight", icon: Sun },
-    ];
+    // Brand default first, then hikari's built-ins (incl. the shared
+    // nord/gruvbox/tokyonight presets and any user custom themes).
+    const presetIds = Object.keys(themePresets).sort((a, b) =>
+      a === "ocean" ? -1 : b === "ocean" ? 1 : 0,
+    );
 
-    const presets = Object.values(themePresets);
+    // ── Solar clock indicator (informational) ──────────────────────────────
+    const geo = ref<{ lat: number; lng: number } | null>(null);
+    const period = ref<string>("night");
+    onMounted(async () => {
+      try {
+        const g = await getGeolocation();
+        geo.value = g;
+        period.value = getTimePeriod(g.lat, g.lng);
+      } catch {
+        // Indicator only — leave defaults.
+      }
+    });
 
-    function periodLabel(period: string): string {
-      if (period === "day") return t("settings.periodDay");
-      if (period === "dusk") return t("settings.periodDusk");
+    function periodLabel(p: string): string {
+      if (p === "day") return t("settings.periodDay");
+      if (p === "dusk") return t("settings.periodDusk");
       return t("settings.periodNight");
     }
 
@@ -75,79 +91,63 @@ export default defineComponent({
           <div class="settings-view__langs">
             <div class="settings-view__lang">
               <span class="settings-view__lang-label">{t("settings.uiLanguage")}</span>
-              <SSelect
+              <HSelect
                 modelValue={lang.uiLocale.value}
                 onUpdate:modelValue={(v: string) => lang.setUiLocale(v as "en-US" | "zh-CN")}
                 options={lang.uiLocaleOptions.map((o) => ({ value: o.value, label: o.label }))}
-                block
               />
             </div>
             <div class="settings-view__lang">
               <span class="settings-view__lang-label">{t("settings.dataLanguage")}</span>
-              <SSelect
+              <HSelect
                 modelValue={lang.dataLanguage.value}
                 onUpdate:modelValue={(v: string) => lang.setDataLanguage(v)}
                 options={lang.wgLanguageOptions.map((o) => ({ value: o.value, label: o.label }))}
-                block
               />
             </div>
           </div>
           <p class="settings-view__hint">{t("settings.dataLanguageHint")}</p>
         </section>
 
-        {/* appearance */}
+        {/* appearance — mode switcher as a segmented button group */}
         <section class="settings-view__section">
           <h2 class="settings-view__section-title">{t("settings.themeMode")}</h2>
-          <div class="settings-view__modes">
-            {modes.map((m) => (
-              <button
-                class={[
-                  "settings-view__mode",
-                  theme.mode.value === m.value ? "settings-view__mode--on" : "",
-                ]}
-                onClick={() => theme.setMode(m.value)}
-              >
-                <span class="settings-view__mode-icon"><m.icon size={15} /></span>
-                <span>{t(m.labelKey)}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+          <HTabs
+            variant="segmented"
+            modelValue={theme.currentMode.value}
+            onUpdate:modelValue={(v: string) => theme.setMode(v as "system" | "dark" | "light")}
+            tabs={[
+              { key: "system", label: t("settings.themeModeSystem"), icon: <Monitor size={14} /> },
+              { key: "dark", label: t("settings.themeModeDark"), icon: <Moon size={14} /> },
+              { key: "light", label: t("settings.themeModeLight"), icon: <Sun size={14} /> },
+            ]}
+          />
 
-        {/* color preset */}
-        <section class="settings-view__section">
+          {/* color preset */}
           <h2 class="settings-view__section-title">{t("settings.themePreset")}</h2>
           <div class="settings-view__presets">
-            {presets.map((p) => {
+            {presetIds.map((id) => {
               // Use the effective mode so light-mode users see a light preview.
-              const tokens = p[theme.effectiveMode.value];
+              const tokens = getThemeTokens(id, theme.effectiveMode.value);
+              if (!tokens) return null;
               return (
                 <button
                   class={[
                     "settings-view__preset",
-                    theme.preset.value === p.id ? "settings-view__preset--on" : "",
+                    theme.currentTheme.value === id ? "settings-view__preset--on" : "",
                   ]}
-                  onClick={() => theme.setPreset(p.id)}
+                  onClick={() => theme.setTheme(id)}
                   style={{
-                    background: `rgb(${tokens.background})`,
-                    color: `rgb(${tokens.text})`,
+                    background: css(tokens.background),
+                    color: css(tokens.text),
                     borderColor:
-                      theme.preset.value === p.id ? `rgb(${tokens.primary})` : "transparent",
+                      theme.currentTheme.value === id ? css(tokens.primary) : "transparent",
                   }}
                 >
-                  <span
-                    class="settings-view__preset-swatch"
-                    style={{ background: `rgb(${tokens.primary})` }}
-                  />
-                  <span
-                    class="settings-view__preset-swatch"
-                    style={{ background: `rgb(${tokens.accent})` }}
-                  />
-                  <span
-                    class="settings-view__preset-swatch"
-                    style={{ background: `rgb(${tokens.success})` }}
-                  />
-                  <span class="settings-view__preset-name">{p.name}</span>
+                  <span class="settings-view__preset-swatch" style={{ background: css(tokens.primary) }} />
+                  <span class="settings-view__preset-swatch" style={{ background: css(tokens.accent) }} />
+                  <span class="settings-view__preset-swatch" style={{ background: css(tokens.success) }} />
+                  <span class="settings-view__preset-name">{themePresets[id].name}</span>
                 </button>
               );
             })}
@@ -197,59 +197,44 @@ export default defineComponent({
           <h2 class="settings-view__section-title">{t("settings.geolocation")}</h2>
           <p class="settings-view__hint">{t("settings.geolocationHint")}</p>
           <div class="settings-view__geo">
-            {theme.geo.value ? (
+            {geo.value ? (
               <span>
-                {theme.geo.value.lat.toFixed(2)}°, {theme.geo.value.lng.toFixed(2)}°
+                {geo.value.lat.toFixed(2)}°, {geo.value.lng.toFixed(2)}°
               </span>
             ) : (
               <span>—</span>
             )}
             <span class="settings-view__period">
-              {t("settings.currentPeriod")}: <strong>{periodLabel(theme.period.value)}</strong>
+              {t("settings.currentPeriod")}: <strong>{periodLabel(period.value)}</strong>
             </span>
           </div>
         </section>
 
         {/* network proxy — applies to every outbound request (stats, model
-            pack, updates) */}
+            pack, updates); mode switcher as a segmented button group */}
         <section class="settings-view__section">
           <h2 class="settings-view__section-title">{t("settings.network")}</h2>
           <p class="settings-view__hint">{t("settings.networkHint")}</p>
-          <div class="settings-view__modes">
-            {(
-              [
-                { value: "system", labelKey: "settings.networkSystem" },
-                { value: "none", labelKey: "settings.networkNone" },
-                { value: "manual", labelKey: "settings.networkManual" },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.value}
-                class={[
-                  "settings-view__mode",
-                  netCfg.value.mode === m.value ? "settings-view__mode--on" : "",
-                ]}
-                onClick={() => void selectNetMode(m.value)}
-              >
-                {t(m.labelKey)}
-              </button>
-            ))}
-          </div>
+          <HTabs
+            variant="segmented"
+            modelValue={netCfg.value.mode}
+            onUpdate:modelValue={(v: string) => void selectNetMode(v as NetworkConfig["mode"])}
+            tabs={[
+              { key: "system", label: t("settings.networkSystem") },
+              { key: "none", label: t("settings.networkNone") },
+              { key: "manual", label: t("settings.networkManual") },
+            ]}
+          />
           {netCfg.value.mode === "manual" ? (
             <div class="settings-view__netmanual">
-              <input
-                class="settings-view__netinput"
-                type="text"
-                spellcheck={false}
+              <HInput
+                modelValue={netCfg.value.proxy ?? ""}
+                onUpdate:modelValue={(v: string) => (netCfg.value.proxy = v)}
                 placeholder={t("settings.networkProxyPlaceholder")}
-                value={netCfg.value.proxy ?? ""}
-                onInput={(e: InputEvent) =>
-                  (netCfg.value.proxy = (e.target as HTMLInputElement).value)
-                }
               />
-              <button class="settings-view__netsave" onClick={() => void saveNet()}>
+              <HButton size="sm" onClick={() => void saveNet()}>
                 {t("settings.networkSave")}
-              </button>
+              </HButton>
             </div>
           ) : null}
         </section>
@@ -257,9 +242,9 @@ export default defineComponent({
         {/* about */}
         <section class="settings-view__section">
           <h2 class="settings-view__section-title">{t("settings.about")}</h2>
-          <button class="settings-view__about-btn" onClick={() => (showAbout.value = true)}>
+          <HButton variant="secondary" onClick={() => (showAbout.value = true)}>
             WoWSP — World of WarShip Panel
-          </button>
+          </HButton>
         </section>
 
         <AboutModal

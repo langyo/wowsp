@@ -15,6 +15,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@celestia-island/hikari": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@vueuse/core": "^14",

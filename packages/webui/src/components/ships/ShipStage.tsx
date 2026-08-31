@@ -10,15 +10,13 @@ import {
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import SSegmented from "@/components/base/SSegmented";
-import SSpinner from "@/components/base/SSpinner";
+import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
 import { createCycleTimer } from "@wowsp/holo";
 import { resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t } from "@/i18n";
-import { useToast } from "@/composables/useToast";
 import type { ShipInfo } from "@/api";
 import "./ShipStage.scss";
 
@@ -949,7 +947,7 @@ export default defineComponent({
             ) : null}
             {loading.value ? (
               <div class="ship-stage__overlay">
-                <SSpinner center size="md" />
+                <HSpinner center size="md" />
               </div>
             ) : null}
             {errorMsg.value ? (
@@ -977,12 +975,13 @@ export default defineComponent({
                 {t("ships.detail.armor.short")}
               </button>
             </div>
-            <SSegmented
+            <HTabs
+              variant="segmented"
               modelValue={viewMode.value}
               onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}
-              options={[
-                { value: "3d", label: "3D" },
-                { value: "2d", label: "2D" },
+              tabs={[
+                { key: "3d", label: "3D" },
+                { key: "2d", label: "2D" },
               ]}
             />
           </div>

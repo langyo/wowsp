@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import { RotateCcw, Lock } from "lucide-vue-next";
 
-import SButton from "@/components/base/SButton";
+import { HButton } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import { resolveSkillIcon } from "@/utils/skillIcons";
 import {
@@ -110,9 +110,9 @@ export default defineComponent({
             {remaining.value >= 0
               ? <span class="skill-builder-v__remaining">{t("ships.skills.remaining", { n: remaining.value })}</span>
               : <span class="skill-builder-v__remaining skill-builder-v__points--over">{t("ships.skills.overBudget")}</span>}
-            <SButton variant="ghost" size="sm" onClick={reset}>
+            <HButton variant="ghost" size="sm" onClick={reset}>
               <RotateCcw size={12} /> {t("ships.skills.reset")}
-            </SButton>
+            </HButton>
           </div>
 
           {/* ── 3-column layout ── */}

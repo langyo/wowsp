@@ -1,0 +1,200 @@
+/* ── HkMenu — generic cascading menu ─────────────────────────────────
+ * Presentation is powered by HkSelectPanel (the shared dropdown
+ * surface): desktop anchored popouts, mobile bottom sheets with
+ * scrim/grabber/title, popup-manager z-stacking, back-guard history.
+ * The panel/sheet geometry lives in HkSelect.scss — this file only
+ * owns what HkMenu itself brings to that surface: the row grammar,
+ * the leading check column, and the sidebar variant's inline nav. */
+
+/* rows are shared by popout levels and mobile sheet layers */
+.hk-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: rgb(var(--color-text));
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition: background 0.12s ease;
+}
+
+.hk-menu-row:hover {
+  background: rgb(var(--color-primary) / 10%);
+}
+
+.hk-menu-row[data-active] {
+  background: rgb(var(--color-primary) / 14%);
+  font-weight: 600;
+}
+
+.hk-menu-row[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hk-menu-row[data-danger] {
+  color: rgb(var(--color-danger, 240 70 80));
+}
+
+.hk-menu-row[data-danger]:hover {
+  background: rgb(var(--color-danger, 240 70 80) / 12%);
+}
+
+.hk-menu-flag {
+  flex-shrink: 0;
+  font-size: var(--text-base);
+  line-height: 1;
+}
+
+.hk-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Leading check column (selectMode). The cell is reserved on EVERY row
+ * of a level while the column is on, so labels stay aligned; only
+ * checked === true shows the mark. */
+.hk-menu-check {
+  flex-shrink: 0;
+  width: 16px;
+  color: rgb(var(--color-primary));
+  font-weight: 700;
+  text-align: center;
+}
+
+.hk-menu-more {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* One level's surface inside the shared panel (popout body / sheet
+ * list): header slot → rows (or consumer default-slot rows) → footer
+ * slot. */
+.hk-menu-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 2px);
+  min-width: 0;
+}
+
+/* Touch-sized rows inside the shared mobile sheet surface (the same
+ * grammar HkSelect applies to its own sheet options). */
+.hk-select-sheet-panel .hk-menu-level .hk-menu-row {
+  min-height: 44px;
+  padding: 12px 10px;
+  font-size: var(--text-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hk-menu-row {
+    transition: none;
+  }
+}
+
+/* ── sidebar variant ────────────────────────────────────────────── */
+/* Inline vertical nav list — always rendered, no popover machinery.
+ * Rows share the popup row's interaction grammar (hover wash, active
+ * tint + weight, disabled/danger) but with nav-appropriate rhythm:
+ * a consistent 4px gap between rows so rounded hover pills never touch,
+ * deeper levels indenting under their group. */
+
+.hk-menu-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 4px);
+  width: 100%;
+}
+
+.hk-menu-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  width: 100%;
+  padding: var(--space-8, 8px) var(--space-12, 12px);
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: rgb(var(--color-text) / 82%);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  .hk-menu-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.hk-menu-sidebar-row:hover:not([data-disabled]):not([data-active]) {
+  background: rgb(var(--color-primary) / 10%);
+  color: rgb(var(--color-text));
+}
+
+.hk-menu-sidebar-row[data-active] {
+  background: rgb(var(--color-primary) / 14%);
+  color: rgb(var(--color-primary));
+  font-weight: 600;
+}
+
+.hk-menu-sidebar-row[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hk-menu-sidebar-row[data-danger] {
+  color: rgb(var(--color-danger, 240 70 80));
+}
+
+.hk-menu-sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 4px);
+}
+
+.hk-menu-sidebar-group-toggle .hk-menu-more {
+  transition: transform var(--duration-fast, 0.15s) ease;
+}
+
+.hk-menu-sidebar-group[data-open] .hk-menu-sidebar-group-toggle .hk-menu-more {
+  transform: rotate(90deg);
+}
+
+.hk-menu-sidebar-children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 4px);
+  margin-top: var(--space-2, 2px);
+}
+
+.hk-menu-sidebar-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-4, 4px);
+  border-radius: 999px;
+  background: rgb(var(--color-error, 240 70 80));
+  color: #fff;
+  font-size: var(--text-2xs, 10px);
+  font-weight: 700;
+  line-height: 1;
+}

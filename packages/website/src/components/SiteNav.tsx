@@ -3,7 +3,7 @@ import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import { Languages, Download } from "lucide-vue-next";
 import { LOCALE_OPTIONS, type Locale } from "@/locales";
-import { UiButton, UiMenu, type UiMenuItem } from "@/components/ui";
+import { HButton, HMenu } from "@celestia-island/hikari";
 import "./SiteNav.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -31,11 +31,18 @@ export default defineComponent({
       () => LOCALE_OPTIONS.find((l) => l.code === locale.value) ?? LOCALE_OPTIONS[0],
     );
 
-    const langItems = computed<UiMenuItem[]>(() =>
-      LOCALE_OPTIONS.map((opt) => ({ key: opt.code, label: opt.label, hint: opt.native })),
+    const langItems = computed(() =>
+      LOCALE_OPTIONS.map((opt) => ({
+        key: opt.code,
+        label: opt.label,
+        checked: opt.code === locale.value,
+      })),
     );
+    const langOpen = ref(false);
+    const langAnchor = ref<HTMLElement | null>(null);
 
     function select(code: string) {
+      langOpen.value = false;
       locale.value = code as Locale;
       if (typeof document !== "undefined") document.documentElement.lang = code;
       try {
@@ -62,27 +69,31 @@ export default defineComponent({
           </nav>
 
           <div class="site-nav__side">
-            <UiMenu
-              modelValue={locale.value}
-              items={langItems.value}
-              ariaLabel={t("nav.language")}
-              onUpdate:modelValue={select}
-            >
-              {{
-                trigger: () => (
-                  <>
-                    <Languages size={14} />
-                    <span class="site-nav__lang-code">{current.value.native}</span>
-                  </>
-                ),
-              }}
-            </UiMenu>
+            <span>
+              <button
+                type="button"
+                ref={langAnchor}
+                class="site-nav__lang-btn"
+                aria-label={t("nav.language")}
+                onClick={() => (langOpen.value = !langOpen.value)}
+              >
+                <Languages size={14} />
+                <span class="site-nav__lang-code">{current.value.native}</span>
+              </button>
+              <HMenu
+                items={langItems.value}
+                open={langOpen.value}
+                anchorRef={langAnchor.value}
+                placement="bottom-end"
+                onSelect={(code: string) => select(String(code))}
+              />
+            </span>
             <RouterLink to="/download" custom>
               {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                <UiButton size="sm" class="site-nav__cta" onClick={navigate}>
+                <HButton size="sm" class="site-nav__cta" onClick={navigate}>
                   <Download size={14} />
                   {t("nav.download")}
-                </UiButton>
+                </HButton>
               )}
             </RouterLink>
           </div>
