@@ -4,7 +4,8 @@ import {
   Boxes, ShieldCheck, Sparkles, MessagesSquare, ChevronRight,
   Compass, DownloadCloud, BadgeCheck, RefreshCcw,
 } from "lucide-vue-next";
-import { UiButton, UiCheckbox, UiInput, UiRadio, UiTag, Reveal } from "@/components/ui";
+import { HButton, HCheckbox, HInput, HRadio, HTag } from "@celestia-island/hikari";
+import { LinkButton, Reveal } from "@/components/ui";
 import "./ModsView.scss";
 
 const DISCUSSIONS = "https://github.com/langyo/wowsp/discussions";
@@ -51,9 +52,9 @@ export default defineComponent({
             </Reveal>
             <Reveal delay={240}>
               <div class="mods__badges">
-                <UiTag tone="primary">{t("mods.hero.badgeAslain")}</UiTag>
-                <UiTag tone="gold">{t("mods.hero.badgeGh")}</UiTag>
-                <UiTag tone="success">{t("mods.hero.badgeCc0")}</UiTag>
+                <HTag variant="primary">{t("mods.hero.badgeAslain")}</HTag>
+                <HTag variant="warning">{t("mods.hero.badgeGh")}</HTag>
+                <HTag variant="success">{t("mods.hero.badgeCc0")}</HTag>
               </div>
             </Reveal>
           </div>
@@ -109,18 +110,25 @@ export default defineComponent({
             <div class="mods__installer glass-panel">
               <div class="mods__installer-col">
                 <span class="mods__installer-label">{t("mods.installer.sourceLabel")}</span>
-                <UiRadio v-model={source.value} name="mod-source" value="zip" label={t("mods.installer.sourceZip")} />
-                <UiRadio v-model={source.value} name="mod-source" value="gh" label={t("mods.installer.sourceGh")} />
-                <UiRadio v-model={source.value} name="mod-source" value="local" label={t("mods.installer.sourceLocal")} />
+                <HRadio
+                  modelValue={source.value}
+                  onUpdate:modelValue={(v: string | number) => (source.value = String(v))}
+                  direction="vertical"
+                  options={[
+                    { value: "zip", label: t("mods.installer.sourceZip") },
+                    { value: "gh", label: t("mods.installer.sourceGh") },
+                    { value: "local", label: t("mods.installer.sourceLocal") },
+                  ]}
+                />
               </div>
               <div class="mods__installer-col">
                 <span class="mods__installer-label">{t("mods.installer.optionsLabel")}</span>
-                <UiCheckbox v-model={optRestore.value} label={t("mods.installer.optRestore")} />
-                <UiCheckbox v-model={optHash.value} label={t("mods.installer.optHash")} />
-                <UiCheckbox v-model={optMigrate.value} label={t("mods.installer.optMigrate")} />
+                <HCheckbox v-model={optRestore.value} label={t("mods.installer.optRestore")} />
+                <HCheckbox v-model={optHash.value} label={t("mods.installer.optHash")} />
+                <HCheckbox v-model={optMigrate.value} label={t("mods.installer.optMigrate")} />
               </div>
               <div class="mods__installer-col mods__installer-col--wide">
-                <UiInput
+                <HInput
                   v-model={url.value}
                   type="url"
                   label={t("mods.installer.urlLabel")}
@@ -128,7 +136,7 @@ export default defineComponent({
                   hint={t("mods.installer.urlHint")}
                 />
                 <div class="mods__installer-actions">
-                  <UiButton disabled>{t("mods.installer.install")}</UiButton>
+                  <HButton disabled>{t("mods.installer.install")}</HButton>
                   <span class="mods__installer-note">{t("mods.installer.note")}</span>
                 </div>
               </div>
@@ -169,9 +177,9 @@ export default defineComponent({
                   <div class="mods__road-body">
                     <h3 class="mods__road-title">
                       {t(`mods.roadmap.${r}.title`)}
-                      <UiTag tone={i === 0 ? "primary" : "neutral"}>
+                      <HTag variant={i === 0 ? "primary" : "default"}>
                         {t(i === 0 ? "mods.roadmap.statusDesign" : "mods.roadmap.statusPlanned")}
-                      </UiTag>
+                      </HTag>
                     </h3>
                     <p class="mods__road-desc">{t(`mods.roadmap.${r}.desc`)}</p>
                   </div>
@@ -192,11 +200,11 @@ export default defineComponent({
               <p class="mods__cta-lede">{t("mods.cta.lede")}</p>
             </Reveal>
             <Reveal delay={200}>
-              <UiButton size="lg" href={DISCUSSIONS} external>
+              <LinkButton size="lg" href={DISCUSSIONS} external>
                 <MessagesSquare size={17} />
                 {t("mods.cta.button")}
                 <ChevronRight size={16} />
-              </UiButton>
+              </LinkButton>
             </Reveal>
           </div>
         </section>

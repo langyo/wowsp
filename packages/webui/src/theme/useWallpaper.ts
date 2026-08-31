@@ -6,7 +6,7 @@
  */
 import { computed, ref, watch } from "vue";
 
-import { useTheme } from "./useTheme";
+import { useTheme } from "@/theme";
 import {
   addCustomWallpaper as addCustom,
   DEFAULT_PRESETS,

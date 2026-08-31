@@ -13,7 +13,7 @@ import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { useBattleClock } from "./useBattleClock";
-import SSpinner from "@/components/base/SSpinner";
+import { HSpinner } from "@celestia-island/hikari";
 import mapNamesRaw from "@/data/map_names.json";
 import "./LiveBattlePanel.scss";
 
@@ -172,7 +172,7 @@ export default defineComponent({
               {AI_NAME.test(v.name) ? (
                 "—"
               ) : st?.loading ? (
-                <SSpinner size="xs" tone="current" />
+                <HSpinner size="xs" tone="current" />
               ) : st?.winrate != null ? (
                 <span>
                   <b>{st.winrate.toFixed(1)}%</b> WR · <b>{st.pr ?? "—"}</b> PR

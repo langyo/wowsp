@@ -1,10 +1,8 @@
 import { defineComponent, ref, watch } from "vue";
 import { X, Trophy, Swords } from "lucide-vue-next";
 
-import SModal from "@/components/base/SModal";
-import SButton from "@/components/base/SButton";
-import SSelect from "@/components/base/SSelect";
-import STag from "@/components/base/STag";
+import { HButton, HInput, HModal, HSelect, HTag } from "@celestia-island/hikari";
+
 import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
@@ -103,7 +101,7 @@ export default defineComponent({
     );
 
     return () => (
-      <SModal
+      <HModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("account.switcherTitle")}
@@ -112,31 +110,25 @@ export default defineComponent({
         <div class="acct-modal">
           {/* search / bind */}
           <div class="acct-modal__search">
-            <SSelect
-              size="sm"
+            <HSelect
               modelValue={searchRealm.value}
               onUpdate:modelValue={(v: string) => (searchRealm.value = v)}
               options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
             />
-            <input
-              class="acct-modal__input"
-              type="text"
+            <HInput
+              modelValue={searchName.value}
+              onUpdate:modelValue={(v: string) => (searchName.value = v)}
               placeholder={t("account.nickname")}
-              value={searchName.value}
-              onInput={(e) => (searchName.value = (e.target as HTMLInputElement).value)}
-              onKeydown={(e: KeyboardEvent) => {
-                if (e.key === "Enter") void doSearch();
-              }}
+              submitOnEnter={() => void doSearch()}
             />
-            <SButton
-              variant="primary"
+            <HButton
               size="sm"
               loading={searching.value}
               disabled={!searchName.value.trim()}
               onClick={() => void doSearch()}
             >
               {t("account.search")}
-            </SButton>
+            </HButton>
           </div>
           {searchError.value ? (
             <p class="acct-modal__error">{searchError.value}</p>
@@ -172,7 +164,7 @@ export default defineComponent({
                         <span class="acct-card__name">{a.nickname}</span>
                       </div>
                       <div class="acct-card__meta">
-                        <STag variant="neutral" size="sm">{a.realm.toUpperCase()}</STag>
+                        <HTag variant="default" size="sm">{a.realm.toUpperCase()}</HTag>
                         {s ? (
                           [
                             s.battles != null ? (
@@ -190,7 +182,7 @@ export default defineComponent({
                               </span>
                             ) : null,
                             s.hidden ? (
-                              <STag variant="danger" size="sm">{t("stats.hidden")}</STag>
+                              <HTag variant="danger" size="sm">{t("stats.hidden")}</HTag>
                             ) : null,
                           ]
                         ) : null}
@@ -209,7 +201,7 @@ export default defineComponent({
             )}
           </div>
         </div>
-      </SModal>
+      </HModal>
     );
   },
 });

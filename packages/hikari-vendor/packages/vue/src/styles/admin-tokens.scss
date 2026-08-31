@@ -1,0 +1,740 @@
+/* === Plana UI Shared Layout Tokens ===
+   Used by plana-ui components and consuming apps (arona, shittim-chest).
+   Defines layout variables needed by plana-ui + hikari components.
+   Color tokens are provided by hikari's initTheme(). */
+
+:root {
+  /* ── Layout tokens ─ */
+  --s-footer-height: 3rem;
+  --s-header-height: 3rem;
+  --z-header: 100;
+  /* Apple-style stack + CJK UI tail — keep in sync with packages/vue/src/theme/fontContext.ts */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+  --font-reading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --blur-sm: 8px;
+  --blur-md: 16px;
+  --blur-lg: 24px;
+  --z-sidebar: 900; /* app-sheet band — drawer sidebars (see theme/_layout.scss) */
+  --z-base: 0; /* z tokens mirror theme/styles/_layout.scss — keep both in sync */
+  --space-2: 0.125rem;
+  --space-4: 0.25rem;
+  --space-6: 0.375rem;
+  --space-8: 0.5rem;
+  --space-10: 0.625rem;
+  --space-12: 0.75rem;
+  --space-14: 0.875rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-28: 1.75rem;
+  --space-32: 2rem;
+  --space-40: 2.5rem;
+  --text-2xs: 0.625rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --opacity-half: 0.92;
+  --duration-short: 0.15s;
+  --duration-normal: 0.3s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-in-expo: cubic-bezier(0.95, 0.05, 0.795, 0.035);
+
+  /* ── Shared color aliases ─ */
+  --c-primary: rgb(var(--color-primary, 255 107 157));
+  --c-primary-light: rgb(var(--color-primary, 255 107 157) / 15%);
+  --c-primary-subtle: rgb(var(--color-primary, 255 107 157) / 8%);
+  --c-primary-overlay: rgb(var(--color-primary, 255 107 157) / 15%);
+  --border-faint: rgb(var(--color-border, 100 100 100) / 10%);
+
+  /* ── Hikari color bridge ─ */
+  --hi-color-primary: rgb(var(--color-primary, 255 107 157));
+  --hi-color-primary-rgb: var(--color-primary, 255 107 157);
+  --hi-color-surface: rgb(var(--color-surface, 255 255 255));
+  --hi-color-border: rgb(var(--color-border, 100 100 100) / 15%);
+  --hi-color-text-primary: rgb(var(--color-text, 0 0 0));
+  --hi-color-text-on-primary: rgb(var(--color-on-primary, 255 255 255));
+  --color-on-solid: 255 255 255;
+  --hi-color-text-secondary: color-mix(in srgb, rgb(var(--color-text, 0 0 0)) 60%, transparent);
+  --hi-color-muted: rgb(var(--color-muted, 100 100 100));
+  --hi-color-background: rgb(var(--color-background, 246 246 246));
+  --hi-color-bg-canvas: rgb(var(--color-background, 246 246 246));
+  --hi-color-bg-elevated: rgb(var(--color-surface, 255 255 255));
+  --hi-color-bg-subtle: rgb(var(--color-surface, 255 255 255) / 0.5);
+  --hi-secondary-bg: rgb(var(--color-surface, 255 255 255) / 0.5);
+  --hi-color-danger: rgb(var(--color-error, 200 50 50));
+  --hi-color-success: rgb(var(--color-success, 0 150 0));
+  --hi-color-warning: rgb(var(--color-warning, 200 150 0));
+  --hi-color-info: rgb(var(--color-info, 255 107 157));
+  --hi-color-black-10: rgb(0 0 0 / 0.1);
+  --hi-color-white-5: rgb(255 255 255 / 0.05);
+  --hi-color-white-10: rgb(255 255 255 / 0.1);
+  --hi-shadow-button: 0 4px 14px rgb(var(--color-primary) / 35%);
+  --hi-shadow-elevated: 0 2px 16px rgb(0 0 0 / 8%);
+
+  /* ── Hk component tokens (theme bridge) ─
+   * Chrome-level component styles read these RGB-triplet tokens.
+   * Without a definition they fall back to hardcoded light-theme values
+   * (white surfaces, near-black text, blue focus ring) inside dark
+   * themes. Bridging them to the runtime --color-* tokens keeps the
+   * controls on the active theme; consumer-local definitions still win
+   * by load order. (--hk-surface's only in-tree consumer — the retired
+   * HTabs tail overlay — is gone; the token stays published for
+   * external plana-ui readers.) */
+  --hk-surface: var(--color-surface, 255 255 255);
+  --hk-primary: var(--color-primary, 60 120 240);
+}
+
+/* Global reset (opt-in: import this explicitly) */
+.plana-global-reset {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* === Plana shared UI classes ===
+   Used by plana-ui components (PStatusBar, PFooter, PAdminShell).
+   Both arona and shittim-chest import this file. */
+
+/* ── Status bar (footer) ─ */
+.s-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--s-footer-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-16);
+  background: rgb(var(--color-surface));
+  backdrop-filter: blur(var(--blur-md));
+  border-top: 1px solid var(--border-faint, rgb(var(--color-border) / 10%));
+  z-index: var(--z-footer, 110);
+  flex-shrink: 0;
+}
+
+.s-status-bar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1;
+  min-width: 0;
+}
+
+.s-status-bar-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Shrinkable with a floor so a wide tab strip hands its overflow to
+     the HTabs scroller (scrollable mode) instead of pushing the footer
+     past the viewport. No effect while the strip fits. */
+  flex-shrink: 1;
+  min-width: 0;
+
+  .s-tabs,
+  .hk-tabs {
+    width: auto;
+  }
+}
+
+.s-status-bar-right {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.s-status-bar-tag {
+  display: inline-flex;
+  align-items: center;
+  /* min-height + auto so the pill can grow with the stacked two-row
+     version block instead of clipping/overlapping text. */
+  min-height: 24px;
+  height: auto;
+  /* The version block stacks two rows tall, so the small status dot
+     needs more than the old 5px to read as separated from the text. */
+  gap: 10px;
+  padding: 3px 8px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-muted));
+  user-select: none;
+  cursor: pointer;
+  transition: background var(--duration-short);
+}
+
+.s-status-bar-tag:active {
+  background: var(--c-primary-overlay);
+}
+
+.s-status-bar-tag-label {
+  font-family: var(--font-mono);
+  /* Match the value's opacity: a faded label next to the version value
+     reads as a different typeface/weight, especially with CJK fallback. */
+  opacity: 0.85;
+  /* CJK flex/grid items have a one-character min-content — without nowrap
+     the label ("面板") stacks vertically when the status tag is squeezed.
+     Keep the label on one line. */
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.s-status-bar-tag-value {
+  font-family: var(--font-mono);
+  color: rgb(var(--color-text));
+  opacity: 0.85;
+  /* Version block as a two-column grid: row 1 = panel label + version,
+     row 2 = engine label + version. Labels form one left-aligned column
+     and values another, so the two rows share a true left edge — no
+     separator, no wrap-dependent layout. */
+  display: inline-grid;
+  grid-auto-flow: row;
+  grid-template-columns: auto auto;
+  column-gap: 5px;
+  row-gap: 2px;
+  align-items: baseline;
+  justify-items: start;
+  line-height: 1.25;
+}
+
+.s-status-bar-tag-value .s-status-bar-tag-label {
+  color: rgb(var(--color-muted));
+  opacity: 1;
+}
+
+.s-status-bar-version {
+  white-space: nowrap;
+}
+
+/* Compact traffic light (logged-in mobile footers): drop the version
+   rows, keep a finger-sized dot-only pill. Versions stay reachable
+   through the hover/tap popover and the aria label. */
+.s-status-bar-tag[data-compact] {
+  gap: 0;
+  padding: 8px;
+  min-height: 28px;
+
+  .s-status-bar-tag-value {
+    display: none;
+  }
+
+  /* Invisible touch slop around the pill: the visible light is
+     intentionally tiny, but its tap target must satisfy the same
+     thumb-reach standard as the mobile sheet/confirm controls (the
+     landed effective target is ~35x56px). The tag itself carries
+     position:relative inline, so this pseudo rides along with zero
+     layout shift; vertical slop dominates because corner taps land
+     off-axis, horizontal stays small so the sliver stolen from the
+     footer gap never covers the first tab. */
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -14px -6px;
+  }
+}
+
+.s-status-bar-version,
+.s-status-bar-version-sep {
+  white-space: nowrap;
+}
+
+.s-status-bar-version-sep {
+  opacity: 0.5;
+}
+
+.s-status-bar-tag-reconnecting {
+  background: rgb(var(--color-warning) / 14%);
+  transition: background var(--duration-short), width var(--duration-short) var(--ease-standard);
+}
+
+.s-status-bar-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: rgb(var(--color-warning));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.s-status-bar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  --pulse: 0;
+  transform-origin: center;
+  box-shadow: 0 0 0 calc(var(--pulse) * 5px) rgb(var(--color-success) / calc(var(--pulse) * 0.55));
+  transform: scale(calc(1 + var(--pulse) * 0.25));
+}
+
+/* ── Status bar tabs (pill row) ── */
+.s-status-bar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.s-status-bar-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+
+  &:hover {
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-text));
+  }
+
+  &-active {
+    background: rgb(var(--color-primary) / 12%);
+    color: rgb(var(--color-primary));
+  }
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 767px) {
+  .s-status-bar {
+    /* Keep a visible margin at both ends on phones: 6px read as flush
+       against the screen edge, especially for the right-side tray. */
+    padding: 0 var(--space-12);
+  }
+
+  /* Shrink-flex layout: the center tab strip owns the flexible space and
+     hands its overflow via the HTabs scroller — no more 45% cap + raw
+     overflow-x on this wrapper. */
+  .s-status-bar-left {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .s-status-bar-center {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .s-status-bar-right {
+    flex: 0 0 auto;
+  }
+
+  .s-status-bar-gamepad {
+    display: none;
+  }
+}
+
+/* ── Glass header ─ */
+.s-glass-header {
+  position: relative;
+  z-index: var(--z-header);
+  display: flex;
+  align-items: center;
+  height: var(--s-header-height);
+  padding: 0 var(--space-12);
+  background: rgb(var(--color-surface) / var(--opacity-half));
+  backdrop-filter: blur(var(--blur-md));
+  border-bottom: 1px solid var(--border-faint, rgb(var(--color-border) / 10%));
+  flex-shrink: 0;
+}
+
+/* ── Popup menu items ─ */
+.s-popup-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-14);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: inherit;
+  color: rgb(var(--color-text));
+  cursor: pointer;
+  transition: background var(--duration-normal) ease;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  /* Rows are flex containers (icon + label + optional trailing caret).
+     Without an explicit justification, Chrome's button UA default
+     (justify-content: center) applies — invisible on shrink-to-fit
+     popovers, glaring in full-width mobile sheets where icon+label
+     float to the middle. Pin to flex-start; trailing carets keep
+     parking at the far edge via their own margin-left: auto. */
+  justify-content: flex-start;
+  outline: none;
+  border-radius: var(--radius-sm);
+}
+
+/* Hover = background wash only, never on the active item (active >
+   hover precedence — hue and font-weight never change on hover). */
+.s-popup-menu-item:hover:not([data-active]) {
+  background: var(--c-primary-subtle);
+}
+
+.s-popup-menu-item[data-active] {
+  color: rgb(var(--color-primary));
+  font-weight: 600;
+}
+
+/* ── User identity header (shared) ─ */
+/* One identity block for every account surface — the admin user
+   dropdown's header, a mobile drawer's user panel footer — so all
+   account surfaces read identically: nickname, login email, then
+   permission badges. Consumers that nest it inside their own padded
+   container (a drawer footer) drop the padding via context
+   overrides. */
+.s-user-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  /* In menus this aligns with .s-popup-menu-item's own space-14 (menu
+     padding applies equally to both); bare surfaces (the popover
+     wrapper) rely on it entirely. The bottom margin restores the
+     separation the removed section divider used to provide. */
+  padding: var(--space-10) var(--space-14) var(--space-12);
+  margin-bottom: var(--space-4);
+}
+
+/* Pending variant (identity not yet hydrated): spinner beside the
+   label reads as "actively working", not a frozen panel. */
+.s-user-header--pending {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-8, 8px);
+}
+
+.s-user-header-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-user-header-email {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-user-header-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4, 4px);
+  margin-top: var(--space-4, 4px);
+}
+
+/* ── Nav sidebar ─ */
+.s-nav-item-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1;
+  min-width: 0;
+}
+
+.s-nav-item-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-error));
+  color: #fff;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1;
+  animation: s-nav-item-badge-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes s-nav-item-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-error) / 0.6); }
+  50%      { box-shadow: 0 0 0 4px rgb(var(--color-error) / 0); }
+}
+
+/* ── System tray (gamepad + clock) ─ */
+.s-status-bar-system-tray {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4, 4px);
+}
+
+.s-status-bar-gamepad {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.s-status-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-muted));
+  opacity: 0.45;
+  transition:
+    color var(--duration-normal) ease,
+    opacity var(--duration-normal) ease;
+
+  svg {
+    width: 9px;
+    height: 9px;
+    display: block;
+    stroke-width: 2.5;
+  }
+}
+
+.s-status-bar-btn[data-shape="x"] svg {
+  width: 11px;
+  height: 11px;
+}
+
+.s-status-bar-btn[data-active] {
+  opacity: 1;
+}
+
+.s-status-bar-time {
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono);
+  color: rgb(var(--color-muted));
+  opacity: 0.6;
+  line-height: 1;
+}
+
+/* ── Auth card (login/register pages) ─ */
+.s-auth-card {
+  max-width: 28rem;
+  width: 100%;
+  background: color-mix(in srgb, rgb(var(--color-surface, 255 255 255)) 70%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-text, 30 30 30)) 12%, transparent);
+  border-radius: var(--hi-radius-sm, 4px);
+  box-shadow: 0 2px 16px rgb(0 0 0 / 8%);
+  animation: s-auth-card-in 0.45s var(--ease-out-expo, cubic-bezier(0.19, 1, 0.22, 1)) both;
+}
+
+@keyframes s-auth-card-in {
+  from { opacity: 0; transform: translateY(-16px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.s-auth-card input {
+  transition: color calc(infinity * 1s) step-end, background-color calc(infinity * 1s) step-end;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 0;
+}
+
+.s-auth-card input:-webkit-autofill,
+.s-auth-card input:-webkit-autofill:hover,
+.s-auth-card input:-webkit-autofill:focus,
+.s-auth-card input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--hi-color-text-primary, #333) !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--hi-color-surface, #fff) inset !important;
+  caret-color: var(--hi-color-text-primary, #333);
+}
+
+.s-auth-card input:-webkit-autofill::first-line {
+  font-size: inherit !important;
+  font-family: inherit !important;
+  color: var(--hi-color-text-primary, #333);
+}
+
+.s-auth-header {
+  padding: var(--space-32, 2rem) var(--space-32, 2rem) 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8, 0.5rem);
+}
+
+.s-auth-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--hi-color-text-primary, #333);
+  margin: 0 0 var(--space-4, 0.25rem);
+}
+
+.s-auth-subtitle {
+  font-size: var(--text-base, 0.875rem);
+  color: var(--hi-color-muted, #666);
+  margin: 0;
+}
+
+.s-auth-form {
+  padding: var(--space-24, 1.5rem) var(--space-32, 2rem) var(--space-32, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16, 1rem);
+}
+
+.s-auth-form > form,
+.s-auth-form > * {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16, 1rem);
+}
+
+.s-auth-form .s-tabs,
+.s-auth-form .hk-tabs {
+  margin-bottom: var(--space-12, 0.75rem);
+  display: flex;
+  justify-content: center;
+}
+
+.s-auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8, 0.5rem);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--hi-color-danger, #f85149);
+  background: color-mix(in srgb, var(--hi-color-danger, #ef4444) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hi-color-danger, #ef4444) 20%, transparent);
+  border-radius: 6px;
+  padding: var(--space-8, 0.5rem) var(--space-12, 0.75rem);
+}
+
+.s-auth-footer {
+  /* Stack footer rows (remember-me, protocol consent, sign-in link…) the
+     same way the header stacks its children: one row per child at every
+     card width and locale (a plain block left the rows as inline-level
+     siblings sharing one text line-box, so two short rows fused onto one
+     line after the 8-23 de-customization dropped the per-row wrappers).
+     The rows share one LEFT edge and the group is centered as a whole:
+     fit-content sizes the block to the widest row and auto side margins
+     center it, so individually centering each row no longer scatters
+     their left edges when the labels differ in width. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8, 0.5rem);
+  width: fit-content;
+  margin: var(--space-16, 1rem) auto 0;
+  text-align: start;
+  padding: 0 var(--space-32, 2rem) var(--space-24, 1.5rem);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--hi-color-muted, #666);
+}
+
+/* When a footer follows the form, collapse the form's bottom padding so
+   the whitespace around the footer rows stays symmetric — last field →
+   first row (8px + the footer's 16px top margin = 24px) equals last row
+   → card edge (the footer's 24px bottom padding). Without this the form
+   padding stacks onto the footer margin and the rows sit visibly closer
+   to the card's bottom edge. Specificity (0,2,0) also beats the ≤480px
+   media-query re-declaration, keeping the rhythm symmetric at both
+   breakpoints. Browsers without :has keep the previous padding — a
+   graceful, spacing-only degradation. */
+.s-auth-form:has(+ .s-auth-footer) {
+  padding-bottom: var(--space-8, 0.5rem);
+}
+
+.s-auth-link {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--hi-color-text-secondary, #999);
+  text-decoration: none;
+  transition: color var(--duration-normal, 0.3s) ease;
+}
+
+.s-auth-link:hover {
+  color: var(--hi-color-primary, #58a6ff);
+}
+
+.s-auth-invite-banner {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--hi-color-warning, #ffa500);
+  background: color-mix(in srgb, var(--hi-color-warning, #ffa500) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hi-color-warning, #ffa500) 20%, transparent);
+  border-radius: 6px;
+  padding: var(--space-8, 0.5rem) var(--space-12, 0.75rem);
+  text-align: center;
+}
+
+.s-auth-invite-banner.expired {
+  color: var(--hi-color-danger, #f85149);
+  background: color-mix(in srgb, var(--hi-color-danger, #ef4444) 10%, transparent);
+  border-color: color-mix(in srgb, var(--hi-color-danger, #ef4444) 20%, transparent);
+}
+
+@media (max-width: 480px) {
+  .s-auth-header { padding-left: var(--space-16, 1rem); padding-right: var(--space-16, 1rem); }
+  .s-auth-form  { padding: var(--space-20, 1.25rem) var(--space-16, 1rem) var(--space-24, 1.5rem); }
+  .s-auth-footer { padding-left: var(--space-16, 1rem); padding-right: var(--space-16, 1rem); }
+}
+
+/* ── Arona app utility classes ── */
+.a-text-primary {
+  color: var(--color-text-primary);
+}
+
+.a-text-secondary {
+  color: var(--color-text-secondary);
+}
+
+.a-text-tertiary {
+  color: var(--color-text-tertiary);
+}
+
+.a-text-danger {
+  color: var(--hi-color-danger, #ef4444);
+}
+
+.a-icon-inline {
+  display: inline;
+}
+
+.a-icon-success {
+  color: var(--color-success, #22c55e);
+}
+
+.a-icon-warning {
+  color: var(--color-warning, #f59e0b);
+}
+
+.a-bg-secondary {
+  background: var(--color-bg-secondary, #18181b);
+}
+
+.a-bg-tertiary {
+  background: var(--color-bg-tertiary, #27272a);
+}
+
+.a-latency-text {
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+}
+
+.a-error-banner {
+  background: var(--hi-color-danger, rgba(239, 68, 68, 0.1));
+  border: 1px solid color-mix(in srgb, var(--hi-color-danger, #ef4444) 20%, transparent);
+}
+
+.a-tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.a-auth-page {
+  min-height: calc(100vh - var(--s-footer-height, 3rem));
+}

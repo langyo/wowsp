@@ -1,8 +1,8 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
 
-import SModal from "@/components/base/SModal";
-import STag from "@/components/base/STag";
+import { HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
+
 import NationFlag from "@/components/base/NationFlag";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -10,7 +10,6 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
 import { t } from "@/i18n";
-import { useToast } from "@/composables/useToast";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import SkillBuilder from "./SkillBuilder";
@@ -72,7 +71,7 @@ export default defineComponent({
       gpError.value = null;
       const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
       // Safety timeout: dismiss loading toast after 15s if still pending.
-      const timer = setTimeout(() => toast.dismiss(toastId), 15000);
+      const timer = setTimeout(() => toast.remove(toastId), 15000);
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
@@ -83,7 +82,7 @@ export default defineComponent({
         clearTimeout(timer);
         gpLoading.value = false;
         gpFetched.value = true;
-        toast.dismiss(toastId);
+        toast.remove(toastId);
       }
     }
 
@@ -229,7 +228,7 @@ export default defineComponent({
     );
 
     return () => (
-      <SModal
+      <HModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
         title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
@@ -254,8 +253,8 @@ export default defineComponent({
 
             {/* identity header */}
             <div class="ship-detail__id">
-              <STag variant="primary">{tierToRoman(props.ship.tier)}</STag>
-              <STag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</STag>
+              <HTag variant="primary">{tierToRoman(props.ship.tier)}</HTag>
+              <HTag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</HTag>
               <NationFlag
                 nation={props.ship.nation}
                 label={nationLabel(props.ship.nation)}
@@ -263,29 +262,25 @@ export default defineComponent({
                 size="md"
                 showLabel
               />
-              <STag variant={RARITY_VARIANT[rarity.value]}>
+              <HTag variant={RARITY_VARIANT[rarity.value]}>
                 {t(`ships.rarity.${rarity.value}`)}
-              </STag>
+              </HTag>
             </div>
 
             {props.ship.description ? (
               <p class="ship-detail__desc">{props.ship.description}</p>
             ) : null}
 
-            {/* tab bar */}
-            <div class="ship-detail__tabs">
-              {(["specs", "mystats", "community", "skill"] as const).map((name) => (
-                <button
-                  class={[
-                    "ship-detail__tab",
-                    tab.value === name ? "ship-detail__tab--on" : "",
-                  ]}
-                  onClick={() => selectTab(name)}
-                >
-                  {t(`ships.detail.tab${name === "specs" ? "Specs" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`)}
-                </button>
-              ))}
-            </div>
+            {/* tab bar — hikari pill tab strip */}
+            <HTabs
+              variant="pill"
+              modelValue={tab.value}
+              onUpdate:modelValue={(v: string) => selectTab(v as typeof tab.value)}
+              tabs={(["specs", "mystats", "community", "skill"] as const).map((name) => ({
+                key: name,
+                label: t(`ships.detail.tab${name === "specs" ? "Specs" : name === "mystats" ? "MyStats" : name === "community" ? "Community" : "Skill"}`),
+              }))}
+            />
 
             {/* tab content */}
             <div class="ship-detail__body">
@@ -356,7 +351,7 @@ export default defineComponent({
             </div>
           </div>
         )}
-      </SModal>
+      </HModal>
     );
   },
 });

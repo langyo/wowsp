@@ -11,7 +11,7 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vue";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { useTheme } from "@/theme/useTheme";
+import { useTheme } from "@/theme";
 
 export interface ThreeScene {
   scene: THREE.Scene;

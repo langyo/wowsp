@@ -17,6 +17,12 @@
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      // Theme globals read by hikari's theme module at import time: the
+      // site defaults to the WoWSP "ocean" brand preset, mode "system".
+      window.__celestiaThemes = { ocean: true };
+      window.__celestiaDefaultTheme = "ocean";
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

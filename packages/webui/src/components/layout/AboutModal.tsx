@@ -2,7 +2,8 @@ import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { Check, Download, RefreshCw } from "lucide-vue-next";
 
-import SModal from "@/components/base/SModal";
+import { HButton, HModal } from "@celestia-island/hikari";
+
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
 import "./AboutModal.scss";
@@ -36,7 +37,7 @@ export default defineComponent({
     });
 
     return () => (
-      <SModal
+      <HModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("about.title")}
@@ -53,17 +54,17 @@ export default defineComponent({
             {updater.portable ? (
               <span class="about-modal__portable">Portable</span>
             ) : updater.available ? (
-              <button class="about-modal__update" onClick={() => void updater.downloadAndInstall()}>
+              <HButton variant="secondary" size="sm" onClick={() => void updater.downloadAndInstall()}>
                 <Download size={12} /> {t("about.updateAvailable")}
-              </button>
+              </HButton>
             ) : updater.checked ? (
               <span class="about-modal__up-to-date">
                 <Check size={12} /> {t("about.upToDate")}
               </span>
             ) : (
-              <button class="about-modal__check" onClick={() => void updater.check()}>
+              <HButton variant="ghost" size="sm" onClick={() => void updater.check()}>
                 <RefreshCw size={12} /> {t("about.checkUpdate")}
-              </button>
+              </HButton>
             )}
           </div>
 
@@ -88,7 +89,7 @@ export default defineComponent({
             <span>{t("about.license", { author: "langyo" })}</span>
           </footer>
         </div>
-      </SModal>
+      </HModal>
     );
   },
 });

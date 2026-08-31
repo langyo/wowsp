@@ -1,6 +1,6 @@
 import { computed, defineComponent } from "vue";
 
-import STag from "@/components/base/STag";
+import { HTag } from "@celestia-island/hikari";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
@@ -80,9 +80,9 @@ export default defineComponent({
             <h3 class="stats-card__name">{props.stats.name}</h3>
           </div>
           <div class="stats-card__badges">
-            <STag variant="neutral" size="sm">{props.stats.realm.toUpperCase()}</STag>
+            <HTag variant="default" size="sm">{props.stats.realm.toUpperCase()}</HTag>
             {props.stats.hidden ? (
-              <STag variant="danger" size="sm">{t("stats.hidden")}</STag>
+              <HTag variant="danger" size="sm">{t("stats.hidden")}</HTag>
             ) : null}
           </div>
         </header>

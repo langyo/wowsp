@@ -1,0 +1,54 @@
+// Essential theme CSS variables for hikari-vue components
+// Color/radius/space/text tokens are NOT defined here —
+// they come from the consumer's theme bridge.
+// Component SCSS has fallback values in every var() call.
+
+:root {
+  --hi-z-above: 1;
+
+  // Popup z bands — MUST mirror POPUP_Z_BANDS in
+  // runtime/usePopupManager.ts (the manager hands out dynamic in-band
+  // values inline; these tokens are the static fallbacks used before a
+  // handle resolves or when a host renders the sheets without JS).
+  // overlay (modal/drawer) < dropdown < tooltip < toast (topmost).
+  --hi-z-overlay: 1000;
+  --hi-z-dropdown: 2000;
+  --hi-z-tooltip: 3000;
+  --hk-z-toast: 4000;
+  // Drag ghosts float above page chrome (--z-sidebar 900) but below
+  // every popup band.
+  --hk-z-drag: 950;
+  // Stacked-modal breadcrumb strip: above every popup band's content and
+  // scrim (modal 1000+, dropdown 2000+; in-band steps of 2 mean real
+  // stacks stay dozens of levels below the strip) but below tooltips
+  // (3000) and toasts (4000).
+  --hk-breadcrumb-z: 2500;
+}
+
+[data-mode="dark"] body {
+  color-scheme: dark;
+}
+
+[data-mode="light"] body {
+  color-scheme: light;
+}
+
+// ── Global CSS animation switch ────────────────────────────────────────
+// The animation registrar (`src/animation/registerAnimations.ts`) flips
+// `html[data-css-animations]` between "0" and "1" when the runtime
+// suspends animations (reduced motion via `setReducedMotion`, or
+// performance problems detected by the animation context). Pausing —
+// not display:none — keeps layouts stable and is cheap. The rules are
+// attribute-scoped so they compose with the per-component
+// `prefers-reduced-motion` blocks instead of fighting them.
+html[data-css-animations="0"] *,
+html[data-css-animations="0"] *::before,
+html[data-css-animations="0"] *::after {
+  animation-play-state: paused !important;
+}
+
+// Smooth scrolling is the keyframes' most expensive friend — it drives
+// sustained compositor work outside the animation-play-state switch.
+html[data-css-animations="0"] {
+  scroll-behavior: auto !important;
+}

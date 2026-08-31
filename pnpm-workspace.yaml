@@ -2,6 +2,8 @@ packages:
   - 'packages/webui'
   - 'packages/website'
   - 'packages/holo'
+  # Vendored upstream checkout (see packages/hikari-vendor/VENDOR.md).
+  - 'packages/hikari-vendor/packages/vue'
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true

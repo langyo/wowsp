@@ -1,11 +1,8 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { AlertTriangle, RotateCcw } from "lucide-vue-next";
 
-import SSelect from "@/components/base/SSelect";
-import SButton from "@/components/base/SButton";
-import SSegmented from "@/components/base/SSegmented";
-import SSpinner from "@/components/base/SSpinner";
-import STag from "@/components/base/STag";
+import { HButton, HInput, HSelect, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
+
 import NationFlag from "@/components/base/NationFlag";
 import TechTreeView from "@/components/ships/TechTreeView";
 import { resolveShipImage } from "@/utils/shipImages";
@@ -13,7 +10,6 @@ import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
-import { useToast } from "@/composables/useToast";
 import { useTrendsStore } from "@/stores/trends";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
@@ -69,7 +65,7 @@ export default defineComponent({
         if (v) {
           loadToastId = toast.loading(t("ships.loading"));
         } else if (loadToastId) {
-          toast.dismiss(loadToastId);
+          toast.remove(loadToastId);
           loadToastId = 0;
         }
       },
@@ -203,24 +199,24 @@ export default defineComponent({
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
           <div class="ships-view__header-right">
-            <SSegmented
+            <HTabs
+              variant="segmented"
               modelValue={viewMode.value}
               onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid")}
-              options={[
-                { value: "tree", label: t("ships.viewMode.tree") },
-                { value: "grid", label: t("ships.viewMode.grid") },
+              tabs={[
+                { key: "tree", label: t("ships.viewMode.tree") },
+                { key: "grid", label: t("ships.viewMode.grid") },
               ]}
             />
             <div class="ships-view__realm">
-              <SSelect
-                size="sm"
+              <HSelect
                 modelValue={realm.value}
                 onUpdate:modelValue={(v: string) => (realm.value = v)}
                 options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
               />
-              <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+              <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
-              </SButton>
+              </HButton>
             </div>
           </div>
         </header>
@@ -239,9 +235,9 @@ export default defineComponent({
           <div class="ships-view__error-banner">
             <AlertTriangle size={16} />
             <span>{encyclopedia.error}</span>
-            <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+            <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
               <RotateCcw size={12} /> {t("ships.retry")}
-            </SButton>
+            </HButton>
           </div>
         ) : null}
 
@@ -250,19 +246,17 @@ export default defineComponent({
 
         {/* ── loading state ── */}
         {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
-          <div class="ships-view__status"><SSpinner center size="md" /></div>
+          <div class="ships-view__status"><HSpinner center size="md" /></div>
         ) : null}
 
         {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
         {viewMode.value === "tree" ? null : (
           <div class="ships-view__filters">
             <div class="ships-view__filter-top">
-              <input
-                class="ships-view__search"
-                type="text"
+              <HInput
+                modelValue={searchText.value}
+                onUpdate:modelValue={(v: string) => (searchText.value = v)}
                 placeholder={t("ships.search")}
-                value={searchText.value}
-                onInput={(e) => (searchText.value = (e.target as HTMLInputElement).value)}
               />
               {hasActiveFilters.value ? (
                 <button class="ships-view__clear" onClick={() => clearFilters()}>
@@ -349,9 +343,9 @@ export default defineComponent({
             <div class="ships-view__status ships-view__status--error" key="error">
               <AlertTriangle size={24} />
               <p>{encyclopedia.error}</p>
-              <SButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+              <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
-              </SButton>
+              </HButton>
             </div>
           ) : viewMode.value === "tree" ? (
             <div class="ships-view__tree-body" key="tree">
@@ -414,9 +408,9 @@ export default defineComponent({
                       <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
-                    <STag variant="neutral" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</STag>
+                    <HTag variant="default" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</HTag>
                     <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
-                    <STag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</STag>
+                    <HTag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</HTag>
                   </div>
                   <div class="ship-card__stats">
                     {hp(ship) != null ? (

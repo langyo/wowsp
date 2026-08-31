@@ -12,8 +12,8 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import type { PlayerShipStats } from "@/api";
 import { ArrowDown, ArrowUp, Search } from "lucide-vue-next";
 
-import SSegmented from "@/components/base/SSegmented";
-import SSearchInput from "@/components/base/SSearchInput";
+import { HSearchInput, HTabs } from "@celestia-island/hikari";
+
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { matchShipNames } from "@/features/search/pinyinSearch";
@@ -205,17 +205,19 @@ export default defineComponent({
 
     const totalBattles = computed(() => filteredShips.value.reduce((a, s) => a + s.battles, 0));
 
-    const typeOptions = () => [
+    const toTabs = (opts: { value: string; label: string }[]) =>
+      opts.map((o) => ({ key: o.value, label: o.label }));
+    const typeOptions = () => toTabs([
       { value: "", label: "全部" },
       ...TYPE_ORDER.filter((k) => k && props.ships.some((s) => (infoOf(s.shipId)?.type ?? "").startsWith(k))).map((k) => ({
         value: k,
         label: t(`dashboard.shipType.${k}`, {}),
       })),
-    ];
-    const tierOptions = () => [
+    ]);
+    const tierOptions = () => toTabs([
       { value: "", label: "全部" },
       ...TIER_FILTERS.map(([k, label]) => ({ value: k, label })),
-    ];
+    ]);
 
     return () => (
       <div class="ship-filter-bar">
@@ -226,71 +228,76 @@ export default defineComponent({
           </span>
         </div>
         <div class="ship-filter-bar__row">
-          <SSegmented
+          <HTabs
+            variant="segmented"
             modelValue={groupMode.value}
             onUpdate:modelValue={(v: string) => (groupMode.value = v as typeof groupMode.value)}
-            options={[
-              { value: "type", label: t("dashboard.byType") },
-              { value: "nation", label: t("dashboard.byNation") },
-              { value: "tier", label: t("dashboard.byTier") },
+            tabs={[
+              { key: "type", label: t("dashboard.byType") },
+              { key: "nation", label: t("dashboard.byNation") },
+              { key: "tier", label: t("dashboard.byTier") },
             ]}
           />
           {!shipQuery.value.trim() ? (
             groupMode.value === "type" ? (
-              <SSegmented
+              <HTabs
+                variant="segmented"
                 modelValue={typeFilter.value}
                 onUpdate:modelValue={(v: string) => (typeFilter.value = v)}
-                options={typeOptions()}
+                tabs={typeOptions()}
               />
             ) : groupMode.value === "nation" ? (
-              <SSegmented
+              <HTabs
+                variant="segmented"
                 modelValue={nationFilter.value}
                 onUpdate:modelValue={(v: string) => (nationFilter.value = v)}
-                options={[
+                tabs={toTabs([
                   { value: "", label: "全部" },
                   ...nations.value.map((n) => ({ value: n, label: NATION_LABELS[n] ?? n })),
-                ]}
+                ])}
               />
             ) : (
-              <SSegmented
+              <HTabs
+                variant="segmented"
                 modelValue={tierFilter.value}
                 onUpdate:modelValue={(v: string) => (tierFilter.value = v)}
-                options={tierOptions()}
+                tabs={tierOptions()}
               />
             )
           ) : null}
         </div>
         <div class="ship-filter-bar__row">
-          <SSegmented
+          <HTabs
+            variant="segmented"
             modelValue={minBattles.value}
             onUpdate:modelValue={(v: string) => (minBattles.value = v)}
-            options={[
-              { value: "", label: "全部" },
-              { value: "30", label: "≥30 场" },
-              { value: "60", label: "≥60 场" },
+            tabs={[
+              { key: "", label: "全部" },
+              { key: "30", label: "≥30 场" },
+              { key: "60", label: "≥60 场" },
             ]}
           />
-          {/* Sort — segmented group; clicking the active key flips direction. */}
-          <SSegmented
+          {/* Sort — segmented group; clicking the active key flips direction.
+              The direction arrow rides the active tab's icon field. */}
+          <HTabs
+            variant="segmented"
             modelValue={sortKey.value}
             onUpdate:modelValue={(v: string) => toggleSort(v as typeof sortKey.value)}
-            options={[
-              { value: "battles", label: t("dashboard.battles") },
-              { value: "winrate", label: t("dashboard.winrate") },
-              { value: "avgDamage", label: t("dashboard.avgDamage") },
-            ]}
-            renderOption={(opt, active) => (
-              <span class="ship-filter-bar__sort-label">
-                {opt.label}
-                {active ? (
+            tabs={[
+              { key: "battles", label: t("dashboard.battles") },
+              { key: "winrate", label: t("dashboard.winrate") },
+              { key: "avgDamage", label: t("dashboard.avgDamage") },
+            ].map((tb) => ({
+              ...tb,
+              icon:
+                sortKey.value === tb.key ? (
                   sortDir.value === "desc" ? (
                     <ArrowDown size={11} class="ship-filter-bar__sort-arrow" />
                   ) : (
                     <ArrowUp size={11} class="ship-filter-bar__sort-arrow" />
                   )
-                ) : null}
-              </span>
-            )}
+                ) : undefined,
+            }))}
           />
           {/* Search — one button; the input lives in a popup panel that
               opens leftwards from the button (roomier than an inline box). */}
@@ -320,18 +327,29 @@ export default defineComponent({
                     ✕
                   </button>
                 </div>
-                <SSearchInput
+                <HSearchInput
                   modelValue={shipQuery.value}
                   onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
-                  onPick={(v: string) => {
-                    shipQuery.value = v;
-                    searchOpen.value = false;
-                  }}
                   placeholder={t("common.search.fuzzy")}
-                  candidates={searchCandidates.value}
-                  autofocus
-                  block
                 />
+                {shipQuery.value.trim() && searchCandidates.value.length > 0 ? (
+                  <div class="ship-filter-bar__candidates">
+                    {searchCandidates.value.slice(0, 12).map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        class="ship-filter-bar__candidate"
+                        onClick={() => {
+                          shipQuery.value = c.value;
+                          searchOpen.value = false;
+                        }}
+                      >
+                        <span>{c.label}</span>
+                        {c.sub ? <em>{c.sub}</em> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {!shipQuery.value.trim() ? (
                   <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>
                 ) : null}
