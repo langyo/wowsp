@@ -5,7 +5,7 @@ import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
 import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
-import { useTheme } from "@/theme/useTheme";
+import { useTheme } from "@/theme";
 import {
   resolveMapModelUrl,
   resolveMapMinimapUrl,
@@ -189,7 +189,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
-import SCheckbox from "@/components/base/SCheckbox";
+import { HSwitch } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import "./HolographicMap.scss";
 
@@ -4265,14 +4265,16 @@ export default defineComponent({
           <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
             <div class="holo-map__mmzoom-head">
               <span>{i18nT("replay.minimap.zoom")}</span>
-              <SCheckbox
-                modelValue={minimapShowTrails.value}
-                variant="switch"
-                onClick={(e: MouseEvent) => e.stopPropagation()}
-                onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
-              >
-                {i18nT("replay.minimap.trails")}
-              </SCheckbox>
+              {/* click guard: the head sits inside the zoom overlay, which
+                  closes on any unhandled click */}
+              <span onClick={(e: MouseEvent) => e.stopPropagation()}>
+                <HSwitch
+                  modelValue={minimapShowTrails.value}
+                  onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
+                >
+                  {i18nT("replay.minimap.trails")}
+                </HSwitch>
+              </span>
             </div>
             <canvas ref={zoomCanvas} width={760} height={760} class="holo-map__mmzoom-canvas" />
           </div>

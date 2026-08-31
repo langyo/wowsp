@@ -103,3 +103,34 @@
     @media (min-width: 560px) { display: inline-flex; }
   }
 }
+
+/* Language menu trigger — a pill button anchoring the hikari HMenu panel
+   (previously UiMenu's internal trigger style). */
+.site-nav__lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 34px;
+  padding: 0 var(--space-12) 0 var(--space-16);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-ring);
+  cursor: pointer;
+  backdrop-filter: blur(var(--blur-sm));
+  transition:
+    border-color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard),
+    box-shadow var(--duration-short) var(--ease-standard);
+
+  &:hover { border-color: var(--glass-border-strong); }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(var(--color-primary) / 35%);
+  }
+}

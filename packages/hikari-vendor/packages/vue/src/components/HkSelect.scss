@@ -1,0 +1,322 @@
+@use "../tokens";
+
+/* HkSelect — popup select component */
+
+.hk-select-wrapper {
+  display: block;
+  width: 100%;
+}
+
+.hk-select-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: var(--space-4);
+  /* 72% keeps the caption hierarchy while surviving dark-theme tinted
+   * surfaces; override per-app with --hk-field-label-alpha. */
+  color: rgb(var(--color-text) / var(--hk-field-label-alpha, 72%));
+}
+
+.hk-select-required {
+  margin-left: var(--space-2);
+  color: rgb(var(--color-error));
+}
+
+.hk-select-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-8) var(--space-32) var(--space-8) var(--space-12);
+  min-height: 2.5rem;
+  background: color-mix(in srgb, rgb(var(--color-surface)) 55%, transparent);
+  
+  border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 14%, transparent);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: rgb(var(--color-text));
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  transition: background-color, border-color, color, box-shadow, opacity, transform, filter var(--duration-normal) var(--ease-standard);
+  position: relative;
+}
+
+.hk-select-trigger:hover:not([data-disabled]) {
+  border-color: var(--c-primary-strong);
+}
+
+.hk-select-trigger:focus,
+.hk-select-trigger[data-state="open"] {
+  border-color: rgb(var(--color-focused-border));
+  box-shadow: var(--shadow-focus);
+  background: rgb(var(--color-surface));
+}
+
+.hk-select-trigger[data-error] {
+  border-color: var(--c-error-strong);
+}
+
+.hk-select-trigger[data-error]:focus,
+.hk-select-trigger[data-error][data-state="open"] {
+  border-color: rgb(var(--color-error));
+  box-shadow: var(--shadow-focus-error);
+}
+
+.hk-select-trigger[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hk-select-value {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hk-select-arrow {
+  position: absolute;
+  right: 0.75rem;
+  color: color-mix(in srgb, rgb(var(--color-muted)) 70%, rgb(var(--color-background)));
+  pointer-events: none;
+  flex-shrink: 0;
+  transition: transform var(--duration-normal) ease;
+}
+
+.hk-select-trigger[data-state="open"] .hk-select-arrow {
+  transform: rotate(180deg);
+}
+
+/* Fixed positioning wrapper around the desktop popout (HkSelectPanel):
+ * carries the inline anchor coords + popup-manager z-index and is the
+ * track host for the overlay scrollbar (the popout teleports to body,
+ * whose box is no positioning context). Geometry-neutral: the popout
+ * shrink-wraps the host exactly as the popout shrink-wrapped itself
+ * when it was the fixed element. The 180px width floor lives HERE, not
+ * on the popout: matchAnchorWidth's inline `min-width` lands on the host,
+ * and a stylesheet floor on the CHILD would override that match for
+ * anchors narrower than 180px (the floor must lose to the inline style,
+ * which can only happen on the same element). */
+.hk-select-popout-host {
+  position: fixed;
+  min-width: 180px;
+}
+
+.hk-select-popout {
+  /* Positioning lives on the host wrapper above — the popout is its
+   * static, box-filling child (width resolves from the host, whose
+   * floor/match rule is documented there). */
+  position: static;
+  /* Menu/switcher panels overflow a bare 240px cap even on tall viewports
+     (user feedback 2026-08-30: identity header + rows ≈ 320px+). Keep 240px
+     as the floor for select lists on short viewports, otherwise let the
+     panel size to its content up to a viewport-relative ceiling. */
+  max-height: max(240px, min(36rem, calc(100vh - 32px)));
+  max-height: max(240px, min(36rem, calc(100dvh - 32px)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* 8px panel inset (was 4px): option hover blocks used to run almost
+     edge-to-edge, reading as a glued full-width strip on touch widths. */
+  padding: var(--space-8);
+  border-radius: var(--radius-md);
+  overflow-y: auto;
+  background: color-mix(in srgb, rgb(var(--color-surface)) 55%, transparent);
+  backdrop-filter: blur(var(--blur-md));
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-dropdown);
+
+  /* Overlay scrollbar (useOverlayScrollbar) — the native chrome is
+     always hidden, never styled. */
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.hk-select-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-10) var(--space-16);
+  font-size: var(--text-base);
+  color: rgb(var(--color-text));
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  outline: none;
+  transition: background-color, border-color, color, box-shadow, opacity, transform, filter var(--duration-normal) ease;
+  text-align: left;
+}
+
+.hk-select-option:hover,
+.hk-select-option[data-highlighted] {
+  background: var(--c-primary-subtle);
+  border-color: var(--c-primary-medium);
+}
+
+.hk-select-option[data-checked] {
+  background: var(--c-primary-dim);
+  border-color: var(--c-primary-strong);
+  color: rgb(var(--color-primary));
+  font-weight: 600;
+}
+
+.hk-select-option[data-disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hk-select-error {
+  margin-top: var(--space-4);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-error));
+}
+
+// ------
+// Mobile bottom sheet (useBreakpoint().isMobile) — the popout docks to the
+// bottom edge: scrim (click closes) + grabber + label + touch-sized option
+// rows. Desktop popout above is untouched. Same visual contract as the
+// popover/modal mobile dockings.
+// ------
+.hk-select-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+  background: rgb(0 0 0 / 40%);
+}
+
+.hk-select-sheet-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /* Float off the bottom edge with the SAME host-tunable gap as the
+   * HkModal mobile docking (--hk-sheet-bottom-gap) — every bottom-up
+   * window reads as one sheet family; was glued to bottom: 0, which is
+   * exactly why dropdown sheets read as "not the standard modal". */
+  bottom: var(--hk-sheet-bottom-gap, 0.375rem);
+  display: flex;
+  flex-direction: column;
+  max-height: min(
+    72vh,
+    calc(
+      100vh - var(--hk-sheet-top-inset, 4.25rem) -
+        var(--hk-sheet-bottom-gap, 0.375rem)
+    )
+  );
+  background: rgb(var(--color-surface));
+  border-radius: var(--hk-modal-radius, var(--hi-radius-lg, 12px))
+                 var(--hk-modal-radius, var(--hi-radius-lg, 12px))
+                 0 0;
+  box-shadow: 0 -8px 32px rgb(0 0 0 / 20%);
+  outline: none;
+}
+
+.hk-select-sheet-grabber {
+  flex-shrink: 0;
+  padding: 14px 0 20px;
+  margin: 0 auto;
+  width: 100%;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+
+  &::before {
+    content: "";
+    width: 2.25rem;
+    height: 4px;
+    border-radius: 999px;
+    background: rgb(var(--color-border, 100 100 100) / 40%);
+  }
+}
+
+.hk-select-sheet-title {
+  flex-shrink: 0;
+  /* Left inset tracks the sheet ENTRIES' text edge, not their card
+   * edge: the list pads option blocks in by --space-16 and rows carry
+   * roughly another --space-16 of leading padding inside, so the old
+   * single --space-16 left the title hanging left of every row it
+   * named instead of reading as the list's heading. Hosts tune it via
+   * --hk-sheet-title-inset; the trailing inset stays --space-16. */
+  padding: 0 var(--space-16) var(--space-8)
+    var(--hk-sheet-title-inset, calc(var(--space-16) * 2));
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgb(var(--color-muted));
+}
+
+/* Track host for the sheet list's overlay scrollbar — owns the flex
+   slot in the sheet column so the rail hugs the LIST band, not the
+   grabber/title bands above it. */
+.hk-select-sheet-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.hk-select-sheet-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Side insets so the option blocks (full-row hover pills) read as
+     cards inside the sheet instead of an edge-to-edge strip glued to
+     both screen sides — matching the popover family's breathing room.
+     Bottom padding stacks the home-bar safe-area inset ON TOP of the
+     base row gap, so the last row never hides behind the gesture bar
+     on notched phones (the modal footer adds a --hk-sheet-footer-gap
+     on top of this family baseline for its action buttons). */
+  padding-inline: var(--space-16);
+  padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom, 0px));
+
+  /* Overlay scrollbar (useOverlayScrollbar) — native chrome hidden. */
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hk-select-option {
+    padding: var(--space-14) var(--space-16);
+    font-size: var(--text-base);
+  }
+}
+
+/* Leading in-content heading hidden by the sheet duplicate-title
+ * filter (HkSelectPanel) — must beat any consumer display rule, like
+ * the UA [hidden] contract. */
+.hk-select-sheet-list .hk-sheet-dup-title {
+  display: none !important;
+}
+
+.hk-select-sheet-enter-active {
+  transition:
+    opacity 0.25s ease-out,
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hk-select-sheet-leave-active {
+  transition:
+    opacity 0.2s ease-in,
+    transform 0.25s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.hk-select-sheet-enter-from,
+.hk-select-sheet-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hk-select-sheet-enter-active,
+  .hk-select-sheet-leave-active {
+    transition: none;
+  }
+}

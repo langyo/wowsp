@@ -3,14 +3,12 @@ import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
-import SButton from "@/components/base/SButton";
-import SSegmented from "@/components/base/SSegmented";
-import SSelect from "@/components/base/SSelect";
+import { HButton, HInput, HSelect, HTabs, useToast } from "@celestia-island/hikari";
+
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
-import { useToast } from "@/composables/useToast";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
 import { winrateColor } from "@/utils/winrate";
@@ -205,7 +203,7 @@ export default defineComponent({
       } catch {
         // error surfaced via stats.error
       } finally {
-        toast.dismiss(toastId);
+        toast.remove(toastId);
       }
     }
 
@@ -228,24 +226,20 @@ export default defineComponent({
         {/* Level-2 sidebar: search on top, query history below */}
         <aside class="lookup-view__sidebar">
           <div class="lookup-view__search">
-            <SSelect
+            <HSelect
               modelValue={realm.value}
               onUpdate:modelValue={(v: string) => (realm.value = v)}
               options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
             />
-            <input
-              class="lookup-view__input"
-              type="text"
+            <HInput
+              modelValue={nickname.value}
+              onUpdate:modelValue={(v: string) => (nickname.value = v)}
               placeholder={t("account.nickname")}
-              value={nickname.value}
-              onInput={(e) => (nickname.value = (e.target as HTMLInputElement).value)}
-              onKeydown={(e: KeyboardEvent) => {
-                if (e.key === "Enter") void search();
-              }}
+              submitOnEnter={() => void search()}
             />
-            <SButton size="md" onClick={() => void search()} loading={stats.loading}>
+            <HButton onClick={() => void search()} loading={stats.loading}>
               {t("account.search")}
-            </SButton>
+            </HButton>
           </div>
           <div class="lookup-view__history">
             <div class="lookup-view__history-title">查询记录</div>
@@ -289,10 +283,11 @@ export default defineComponent({
                   </div>
                 ) : null}
                 <div class="lookup-view__controls">
-                  <SSegmented
+                  <HTabs
+                    variant="segmented"
                     modelValue={dateRange.value}
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                    options={rangeOptions}
+                    tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
                   />
                 </div>
                 <ShipFilterBar

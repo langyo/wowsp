@@ -2,6 +2,8 @@ import { computed, defineComponent, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { BarChart3, Search, Ship, Film, Settings, Package } from "lucide-vue-next";
 
+import { HTooltip } from "@celestia-island/hikari";
+
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
@@ -103,22 +105,26 @@ export default defineComponent({
             {running.value ? (
               <div class="sidebar__game-detail">
                 {clientLabel.value ? (
-                  <span class="sidebar__game-client" v-tooltip={proc.value.exePath ?? undefined}>
-                    {clientLabel.value}
-                  </span>
+                  <HTooltip
+                    text={proc.value.exePath ?? ""}
+                    placement="right"
+                  >
+                    <span class="sidebar__game-client">{clientLabel.value}</span>
+                  </HTooltip>
                 ) : null}
                 {proc.value.pid != null ? (
-                  <span
-                    class="sidebar__game-pid"
-                    v-tooltip={t("common.clickToCopy")}
-                    onClick={(e: MouseEvent) => {
-                      e.stopPropagation();
-                      copyPid();
-                    }}
-                  >
-                    {t("common.game.pid")}:{" "}
-                    <span class="sidebar__game-pid-val">{proc.value.pid}</span>
-                  </span>
+                  <HTooltip text={t("common.clickToCopy")} placement="right">
+                    <span
+                      class="sidebar__game-pid"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        copyPid();
+                      }}
+                    >
+                      {t("common.game.pid")}:{" "}
+                      <span class="sidebar__game-pid-val">{proc.value.pid}</span>
+                    </span>
+                  </HTooltip>
                 ) : null}
               </div>
             ) : null}
@@ -128,9 +134,11 @@ export default defineComponent({
               <span class="sidebar__account-name">{accountLabel.value}</span>
             </div>
             {/* Settings as an icon button in the bottom-left */}
-            <RouterLink to="/settings" class="sidebar__settings-btn" activeClass="is-active" v-tooltip={t("nav.settings")}>
-              <Settings size={18} />
-            </RouterLink>
+            <HTooltip text={t("nav.settings")} placement="right">
+              <RouterLink to="/settings" class="sidebar__settings-btn" activeClass="is-active">
+                <Settings size={18} />
+              </RouterLink>
+            </HTooltip>
           </div>
         </div>
 

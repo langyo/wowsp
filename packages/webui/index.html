@@ -47,6 +47,27 @@
       <span>WoWSP loading…</span>
     </div>
     <div id="app"></div>
+    <script>
+      // Theme globals read by hikari's theme module at import time (before
+      // any bundle code runs): "ocean" is the WoWSP brand default. Also
+      // migrate the pre-hikari localStorage keys once so existing installs
+      // keep their mode/preset choice.
+      window.__celestiaThemes = { ocean: true };
+      window.__celestiaDefaultTheme = "ocean";
+      (function () {
+        try {
+          if (!localStorage.getItem("hikari-theme-mode") && localStorage.getItem("wowsp-theme-mode")) {
+            localStorage.setItem("hikari-theme-mode", localStorage.getItem("wowsp-theme-mode"));
+          }
+          if (!localStorage.getItem("hikari-theme")) {
+            var preset = localStorage.getItem("wowsp-theme-preset");
+            if (preset === "ocean" || preset === "nord" || preset === "gruvbox" || preset === "tokyonight") {
+              localStorage.setItem("hikari-theme", preset);
+            }
+          }
+        } catch (e) { /* private mode etc. — fall back to defaults */ }
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
     <script>
       // Hide the loading screen once the app has mounted.

@@ -5,7 +5,8 @@ import App from "./App";
 import OverlayApp from "@/OverlayApp";
 import router from "@/router";
 import { i18n } from "@/i18n";
-import { vTooltip } from "@/composables/useTooltip";
+import { bootstrap } from "./bootstrap";
+import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
 import "virtual:uno.css";
 
@@ -17,17 +18,20 @@ import "virtual:uno.css";
  * The Rust side creates the overlay window on demand (transparent, always on
  * top, skip taskbar) pointing at the same URL with the query param. main.ts
  * branches here so each window gets the right root component + plugins.
+ * bootstrap() runs the shared global hooks (viewport policy, brand themes +
+ * hikari theme/font init, deep-link theme forcing, hikari i18n seeding).
  */
 const isOverlay = new URLSearchParams(window.location.search).get("window") === "overlay";
 
 if (isOverlay) {
+  bootstrap();
   const app = createApp(OverlayApp);
   app.use(createPinia());
   app.use(i18n);
   app.mount("#app");
 } else {
+  bootstrap();
   const app = createApp(App);
-  app.directive("tooltip", vTooltip);
   app.use(createPinia());
   app.use(router);
   app.use(i18n);

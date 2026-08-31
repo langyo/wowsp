@@ -67,52 +67,35 @@
   --scrollbar-track: transparent;
 }
 
-/* ── Color — abyssal dark (default) ───────────────────────
+/* ── Color — hikari theme system ──────────────────────────
+   All --color-* RGB-channel tokens are emitted by hikari's theme runtime
+   (bootstrap in main.ts registers the "ocean" brand preset + initTheme,
+   mode "system" follows the sun like the app). Two site aliases bridge the
+   old marketing-site names onto hikari tokens; they are var() references,
+   so they track every theme/mode switch. Glass recipes — the signature
+   surface — stay local, keyed off the hikari-managed data-mode attribute.
    NOTE: values are SPACE-separated RGB channels so that
    `rgb(var(--x) / alpha)` uses valid modern syntax — comma-separated
    channels silently invalidate every alpha declaration. */
 :root {
-  --color-background: 4 8 16;              /* #040810 — abyss */
-  --color-surface: 13 20 34;               /* #0d1422 — solid fallback */
-  --color-text: 232 241 251;               /* #e8f1fb */
-  --color-text-secondary: 148 166 194;     /* #94a6c2 */
-  --color-border: 148 180 230;             /* used at low alpha */
-  --color-primary: 56 189 248;             /* #38bdf8 — holo sky */
-  --color-accent: 34 211 238;              /* #22d3ee — cyan */
-  --color-gold: 245 184 92;                /* #f5b85c — signal amber */
-  --color-success: 52 211 153;             /* #34d399 */
-  --color-error: 248 113 113;              /* #f87171 */
-  --color-warning: 251 191 36;             /* #fbbf24 */
+  /* Site aliases over hikari tokens (site "accent" is the holo cyan). */
+  --color-gold: var(--color-accent);
 
-  /* Glass recipe — the signature surface */
+  /* Glass recipe — dark */
   --glass-bg: linear-gradient(165deg, rgb(255 255 255 / 5.5%), rgb(255 255 255 / 2%));
   --glass-border: rgb(255 255 255 / 9%);
   --glass-border-strong: rgb(255 255 255 / 16%);
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --color-background: 244 247 251;
-    --color-surface: 255 255 255;
-    --color-text: 13 24 40;
-    --color-text-secondary: 84 103 130;
-    --color-border: 15 45 85;
-    --color-primary: 2 132 199;            /* #0284c7 */
-    --color-accent: 8 145 178;             /* #0891b2 */
-    --color-gold: 180 120 20;
-    --color-success: 5 150 105;
-    --color-error: 220 38 38;
-    --color-warning: 217 119 6;
-
-    --glass-bg: linear-gradient(165deg, rgb(255 255 255 / 72%), rgb(255 255 255 / 48%));
-    --glass-border: rgb(15 45 85 / 10%);
-    --glass-border-strong: rgb(15 45 85 / 18%);
-    --shadow-card: 0 1px 2px rgb(15 45 85 / 6%), 0 12px 40px rgb(15 45 85 / 10%);
-    --shadow-elevated: 0 2px 4px rgb(15 45 85 / 8%), 0 24px 80px rgb(15 45 85 / 14%);
-    --shadow-ring: inset 0 1px 0 rgb(255 255 255 / 60%);
-    color-scheme: light;
-  }
+[data-mode="light"] {
+  --glass-bg: linear-gradient(165deg, rgb(255 255 255 / 72%), rgb(255 255 255 / 48%));
+  --glass-border: rgb(15 45 85 / 10%);
+  --glass-border-strong: rgb(15 45 85 / 18%);
+  --shadow-card: 0 1px 2px rgb(15 45 85 / 6%), 0 12px 40px rgb(15 45 85 / 10%);
+  --shadow-elevated: 0 2px 4px rgb(15 45 85 / 8%), 0 24px 80px rgb(15 45 85 / 14%);
+  --shadow-ring: inset 0 1px 0 rgb(255 255 255 / 60%);
+  color-scheme: light;
 }
 
 /* ── Layout helper ──────────────────────────────────────── */
@@ -155,7 +138,7 @@
   &::after {
     width: 46vw; height: 46vw;
     bottom: -22%; right: -8%;
-    background: radial-gradient(circle, rgb(var(--color-accent) / 14%), transparent 65%);
+    background: radial-gradient(circle, rgb(var(--color-secondary) / 14%), transparent 65%);
   }
 }
 
@@ -183,7 +166,7 @@ a.glass-panel:hover,
 
 /* ── Gradient text — holo cyan → sky ────────────────────── */
 .gradient-text {
-  background: linear-gradient(120deg, rgb(var(--color-accent)) 0%, rgb(var(--color-primary)) 55%, rgb(var(--color-primary)) 100%);
+  background: linear-gradient(120deg, rgb(var(--color-secondary)) 0%, rgb(var(--color-primary)) 55%, rgb(var(--color-primary)) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;

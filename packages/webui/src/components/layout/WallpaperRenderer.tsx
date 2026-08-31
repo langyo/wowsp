@@ -1,7 +1,8 @@
 import { computed, defineComponent, watchEffect } from "vue";
 
+import { getThemeTokens, useTheme } from "@celestia-island/hikari";
+
 import { useWallpaper } from "@/theme/useWallpaper";
-import { getThemeTokens } from "@/theme/presets";
 
 /**
  * Renderless component that applies the active wallpaper to <body> via CSS
@@ -18,12 +19,10 @@ export default defineComponent({
   name: "WallpaperRenderer",
   setup() {
     const wp = useWallpaper();
+    const theme = useTheme();
 
     const style = computed(() => {
-      const root = document.documentElement;
-      const mode = root.getAttribute("data-mode") === "light" ? "light" : "dark";
-      const preset = root.getAttribute("data-theme") ?? "ocean";
-      const tokens = getThemeTokens(preset, mode);
+      const tokens = getThemeTokens(theme.currentTheme.value, theme.effectiveMode.value);
 
       const s: Record<string, string> = {};
 
@@ -32,10 +31,14 @@ export default defineComponent({
         s["--wallpaper-image"] = "none";
       } else if (wp.mediaUrl.value) {
         s["--wallpaper-image"] = `url(${wp.mediaUrl.value})`;
-        s["--wallpaper-solid-color"] = `rgb(${tokens.background})`;
+        s["--wallpaper-solid-color"] = tokens
+          ? `rgb(${tokens.background.r} ${tokens.background.g} ${tokens.background.b})`
+          : "transparent";
       } else {
         // Fallback: theme background.
-        s["--wallpaper-solid-color"] = `rgb(${tokens.background})`;
+        s["--wallpaper-solid-color"] = tokens
+          ? `rgb(${tokens.background.r} ${tokens.background.g} ${tokens.background.b})`
+          : "transparent";
         s["--wallpaper-image"] = "none";
       }
       s["--wallpaper-overlay-opacity"] = String(wp.overlayOpacity.value);

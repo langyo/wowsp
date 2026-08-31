@@ -3,7 +3,8 @@ import { useI18n } from "vue-i18n";
 import {
   HardDriveDownload, Usb, Zap, Download, ExternalLink, FileDown, Monitor, Apple, Terminal, Check, Clock3,
 } from "lucide-vue-next";
-import { UiButton, Reveal, UiTag } from "@/components/ui";
+import { HTag } from "@celestia-island/hikari";
+import { LinkButton, Reveal } from "@/components/ui";
 import "./DownloadView.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -46,11 +47,11 @@ export default defineComponent({
               <p class="download__lede">{t("download.lede")}</p>
             </Reveal>
             <Reveal delay={200}>
-              <UiButton size="lg" href={RELEASES} external>
+              <LinkButton size="lg" href={RELEASES} external>
                 <Download size={17} />
                 {t("download.assets")}
                 <ExternalLink size={13} />
-              </UiButton>
+              </LinkButton>
             </Reveal>
           </div>
         </section>
@@ -70,10 +71,10 @@ export default defineComponent({
                     <p>{t(`download.platform.${p.key}.desc`)}</p>
                     {p.ready ? (
                       <span class="platform-card__status">
-                        <UiTag tone="success">
+                        <HTag variant="success">
                           <Check size={11} />
                           {t("download.platform.ready")}
-                        </UiTag>
+                        </HTag>
                         <a href={RELEASES} target="_blank" rel="noopener" class="platform-card__link">
                           {t("download.platform.get")}
                           <ExternalLink size={12} />
@@ -81,10 +82,10 @@ export default defineComponent({
                       </span>
                     ) : (
                       <span class="platform-card__status">
-                        <UiTag tone="gold">
+                        <HTag variant="warning">
                           <Clock3 size={11} />
                           {t("download.platform.soon")}
-                        </UiTag>
+                        </HTag>
                       </span>
                     )}
                   </article>

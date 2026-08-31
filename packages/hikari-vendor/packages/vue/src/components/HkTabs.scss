@@ -1,0 +1,243 @@
+/* HkTabs — THE unified button-group / tab-strip primitive.
+ *
+ * ONE look (the centered pill strip of the page-level top/bottom bars)
+ * is shared by every button group, radio group and tab strip. Variants
+ * only switch the working mode (pill = tablist, segmented = radiogroup)
+ * and layout extras (block) — never the visual language. */
+
+.hk-tabs {
+  width: 100%;
+}
+
+/* === Scrollable (default) === */
+
+/* The scroller (a horizontal HkScrollContainer) bounds the list: it
+   sizes to the content up to the available width, then the list
+   scrolls inside with safe centering. min-width: 0 lets the whole
+   chain shrink inside constrained flex parents (status bars, header
+   centres). */
+.hk-tabs[data-scrollable] {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.hk-tabs-scroller {
+  width: 100%;
+}
+
+/* === Protruding end actions (startAction / endAction) === */
+
+/* With an end action the whole strip sits inside an HkHoverRevealAction
+   host (`.hk-tabs-addwrap`) and the button protrudes at the host's edge
+   (left:100% / right:100% in HkHoverRevealAction.scss) — outside the
+   scroll viewport, so it never scrolls away. Shrink-wrap the strip the
+   same way the scrollable variant does, so the hover-reveal chain can
+   cap inside constrained flex parents and the tabs keep their safe
+   centering. */
+.hk-tabs[data-actions] {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* The reveal host itself must be able to shrink below its content and
+   must not be clipped by rigid parents — mirrors HkHoverRevealAction's
+   own min/max rules; no flex shorthand here, the host's natural
+   shrink-wrap keeps the centered-bar geometry. */
+.hk-tabs-addwrap {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* === The one shared track (every variant) === */
+
+.hk-tabs-list {
+  position: relative;
+  display: inline-flex;
+  gap: 0;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-faint);
+  background: rgb(var(--color-surface) / 60%);
+}
+
+/* === The one shared trigger (every variant) === */
+
+.hk-tabs-trigger {
+  position: relative;
+  /* Paint above the sliding indicator. */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  flex: none;
+  padding: var(--space-4) var(--space-12);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-muted));
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  transition: color var(--duration-short) ease,
+              transform var(--duration-short) ease;
+
+  &:hover {
+    color: rgb(var(--color-text));
+  }
+
+  /* Tactile press feedback — every button-group click animates, even
+     before the sliding indicator arrives. */
+  &:active:not([data-disabled]) {
+    transform: scale(0.96);
+  }
+
+  &[data-active] {
+    color: rgb(var(--color-primary));
+  }
+
+  /* Inset ring: the track padding and the scroller's edge-fade mask
+     would clip an outset outline. */
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: -2px;
+  }
+}
+
+.hk-tabs-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* === The one shared sliding indicator (every variant) ===
+ * Starts transparent: the first measured frame only fades it in (no
+ * pop-in from a stale corner), later frames slide via left/width. */
+.hk-tabs-indicator {
+  position: absolute;
+  top: 2px;
+  height: calc(100% - 4px);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-primary) / 12%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: left var(--duration-normal) var(--ease-standard),
+              width var(--duration-normal) var(--ease-standard),
+              opacity var(--duration-short) ease;
+}
+
+.hk-tabs-indicator[data-ready] {
+  opacity: 1;
+}
+
+/* === Option swap transitions (dynamic options / merged cell) ===
+ * Entering options/cells fade and settle in; leaving ones fade out
+ * absolutely so siblings reflow at once. Geometry motion belongs to
+ * the sliding indicator, so there is deliberately no move FLIP. */
+.hk-tabs-swap-enter-active,
+.hk-tabs-swap-leave-active {
+  transition: opacity var(--duration-short) ease,
+              transform var(--duration-short) ease;
+}
+
+.hk-tabs-swap-enter-from {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.hk-tabs-swap-leave-to {
+  opacity: 0;
+}
+
+/* Child-selector form, NOT the bare `.hk-tabs-swap-leave-active`: the
+   leaving element may be a trigger or the merged cell whose own rules
+   (`.hk-tabs-trigger` / `.hk-tabs-merged`, position:relative) share the
+   same one-class specificity and could win by source order — the
+   two-class selector lifts the ghost to absolute regardless of order. */
+.hk-tabs-list > .hk-tabs-swap-leave-active {
+  position: absolute;
+  z-index: 0;
+}
+
+/* === Panel (pill / tablist mode) === */
+
+.hk-tabs-panel {
+  outline: none;
+
+  &:not([data-active]) {
+    display: none;
+  }
+}
+
+/* === segmented = radiogroup working mode ===
+ * Same chrome; only the form-row layout extra lives here:
+ * row-filling (block). */
+
+/* block outside the scroller (scrollable opted out): legacy fill —
+   triggers may shrink below their content. */
+.hk-tabs-list[data-variant="segmented"][data-block="true"] {
+  display: flex;
+  width: 100%;
+}
+
+.hk-tabs-list[data-variant="segmented"][data-block="true"] .hk-tabs-trigger {
+  flex: 1 1 auto;
+}
+
+/* block inside the scroller (the default): fill the row while it fits,
+   scroll with edge fades when it doesn't — triggers never shrink below
+   their content, so option labels are never clipped. */
+.hk-tabs-scroller .hk-tabs-list[data-variant="segmented"][data-block="true"] {
+  width: max-content;
+  min-width: 100%;
+}
+
+.hk-tabs-scroller .hk-tabs-list[data-variant="segmented"][data-block="true"] .hk-tabs-trigger {
+  flex: 1 0 auto;
+}
+
+/* === Merged cell (dynamic merged-option rendering) ===
+ * The contiguous run of options listed in `mergeKeys` collapses into ONE
+ * combined cell (the #merged slot) — a REAL flex child of the track,
+ * not an absolute cover: it joins layout and the animation context
+ * (hk-tabs-swap enter/leave + the sliding indicator measures it when
+ * the active option is merged). Chrome follows the unselected-option
+ * grammar: NAKED — no border, no own surface; only the sliding
+ * indicator ever frames the active option, so a merged cell must never
+ * grow a box of its own. Interactive slot content (e.g. the theme
+ * toggle's altitude strip) fills the cell and owns its hover/press. */
+.hk-tabs-merged {
+  position: relative;
+  /* Same layer as the triggers, above the sliding indicator. */
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Whole-strip disabled mutes the cell's interactive slot content too —
+   the triggers get the native disabled attribute, the cell gets this. */
+.hk-tabs-merged[data-disabled] {
+  pointer-events: none;
+}
+
+/* block (row-filling) strips: the merged cell shares the triggers'
+   flex growth so it lands on the merged run's share of the row. */
+.hk-tabs-list[data-variant="segmented"][data-block="true"] .hk-tabs-merged {
+  flex: 1 1 auto;
+}
+
+.hk-tabs-scroller .hk-tabs-list[data-variant="segmented"][data-block="true"] .hk-tabs-merged {
+  flex: 1 0 auto;
+}

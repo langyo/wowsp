@@ -5,7 +5,6 @@
  */
 
 export { default as App } from "./App";
-export { default as SButton } from "@/components/base/SButton";
 export * from "@/rpc";
 export * from "@/transport";
 export * from "@/stores/config";
