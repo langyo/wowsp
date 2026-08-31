@@ -13,7 +13,7 @@
   "themeModeLight": "Light",
   "themePreset": "Color preset",
   "geolocation": "Location",
-  "geolocationHint": "Used for solar-based auto theme. Resolved via IP, cached 24h.",
+  "geolocationHint": "Used for solar-based auto theme. Native fix when the shell provides one, otherwise IP — cached for the session.",
   "currentPeriod": "Sun period",
   "periodDay": "Day",
   "periodDusk": "Dusk",
