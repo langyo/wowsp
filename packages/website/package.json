@@ -16,16 +16,16 @@
     "@lucide/vue": "^1.38.0",
     "@wowsp/holo": "workspace:*",
     "three": "^0.185.1",
-    "vue": "^3",
-    "vue-i18n": "^11",
-    "vue-router": "^4"
+    "vue": "^3.5.42",
+    "vue-i18n": "^11.4.10",
+    "vue-router": "^5.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitejs/plugin-vue-jsx": "^5.1.6",
     "sass": "^1.103.1",
-    "typescript": "^5",
-    "vite": "^8",
-    "vue-tsc": "^3"
+    "typescript": "^6.0.3",
+    "vite": "^8.2.2",
+    "vue-tsc": "^3.3.11"
   }
 }

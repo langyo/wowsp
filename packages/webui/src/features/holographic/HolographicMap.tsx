@@ -3662,8 +3662,9 @@ export default defineComponent({
         const role = m.userData.role as TeamRole;
         const killer = role === "ally" || role === "self" ? "enemy" : "ally";
         const type = (m.userData.type as string | undefined) ?? "";
-        let kill = 0;
-        let death = 0;
+        // Both branches below assign before any read — no initializer.
+        let kill: number;
+        let death: number;
         if (special) {
           kill = 40;
           death = -25;
