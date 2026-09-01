@@ -27,5 +27,6 @@
   "networkNone": "不使用代理",
   "networkManual": "手动代理",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
-  "networkSave": "保存"
+  "networkSave": "保存",
+  "networkSaved": "已保存"
 }

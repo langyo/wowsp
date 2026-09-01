@@ -86,6 +86,16 @@ export default defineComponent({
           </div>
 
           <footer class="about-modal__footer">
+            {/* License name links to the official SySL repository (the
+                authoritative text per the LICENSE file). */}
+            <a
+              class="about-modal__license"
+              href="https://github.com/celestia-island/sysl"
+              target="_blank"
+              rel="noopener"
+            >
+              SySL-1.0
+            </a>
             <span>{t("about.license", { author: "langyo" })}</span>
           </footer>
         </div>
