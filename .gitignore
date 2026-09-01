@@ -1,10 +1,12 @@
 # Rust
 /target/
+**/target/
 **/*.rs.bk
 # IDE
 .idea/
 .vscode/
 .opencode/
+.zed/
 *.swp
 *.swo
 *~
