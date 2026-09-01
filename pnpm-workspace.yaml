@@ -21,6 +21,3 @@ overrides:
   # hikari checkout (whose "^*" specs otherwise keep stale lockfile picks).
   "@vitejs/plugin-vue": ^*
   "@vitejs/plugin-vue-jsx": ^*
-  # typescript-eslint caps the TS language API at <6.1.0 — relax to ^* when
-  # it ships 7.x support, until then this holds the toolchain at TS 6.
-  typescript: ^6.0.3

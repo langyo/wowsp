@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext .vue,.ts,.tsx --fix",
-    "typecheck": "vue-tsc --noEmit",
+    "lint": "oxlint --fix .",
+    "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -24,8 +24,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitejs/plugin-vue-jsx": "^5.1.6",
     "sass": "^1.103.1",
-    "typescript": "^6.0.3",
-    "vite": "^8.2.2",
-    "vue-tsc": "^3.3.11"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
   }
 }
