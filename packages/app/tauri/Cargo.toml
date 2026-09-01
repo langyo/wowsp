@@ -36,8 +36,14 @@ byteorder.workspace = true
 flate2.workspace = true
 tar.workspace = true
 
-# HTTP client for Wargaming public API lookups (M9)
+# HTTP client for Wargaming public API lookups (M9) + mod catalog downloads
 reqwest.workspace = true
+
+# Catalog package integrity + unpacking (Mod Hub)
+sha2.workspace = true
+hex.workspace = true
+chrono.workspace = true
+zip.workspace = true
 
 # Service supervision — graceful shutdown / signal handling
 malkuth.workspace = true

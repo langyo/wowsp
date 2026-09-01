@@ -9,6 +9,7 @@ pub mod arena_info;
 pub mod encyclopedia;
 pub mod game_detect;
 pub mod gameparams;
+pub mod mod_catalog;
 pub mod mod_hub;
 pub mod mod_install;
 pub mod model_pack;

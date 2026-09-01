@@ -39,6 +39,11 @@ query($owner: String!, $name: String!, $cursor: String) {
 
 FRONT_MATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 SIGNAL_RE = re.compile(r"\bgame\s+([0-9][\w.]*)\s+(ok|broken)\b", re.IGNORECASE)
+# Publisher template body line (see scripts/mod_hub_publish.py):
+#   - [`asset.zip`](url) — 57 KB · SHA-256 `abc…`
+DOWNLOAD_RE = re.compile(
+    r"-\s*\[`([^`]+)`\]\((https?://[^)]+)\)\s*[—-]\s*(\d+)\s*KB\s*[·.]\s*SHA-256\s*`([0-9a-fA-F]{64})`"
+)
 
 
 def parse_front_matter(body: str) -> tuple[dict[str, str], str]:
@@ -85,11 +90,17 @@ def index_discussions(nodes: list[dict]) -> dict:
             },
         )
         version = meta.get("version", "0")
+        packages = [
+            {"url": url, "sha256": digest.lower(), "size": int(kb) * 1024, "name": name}
+            for name, url, kb, digest in DOWNLOAD_RE.findall(d.get("body") or "")
+        ]
         entry["versions"][version] = {
             "game": meta.get("game", "*"),
             "title": d.get("title"),
             "author": (d.get("author") or {}).get("login"),
         }
+        if packages:
+            entry["versions"][version]["packages"] = packages
         for ver, reporters in signals.items():
             entry["signals"].setdefault(ver, []).extend(reporters)
     # Only the newest version is catalog-facing; keep compatibility verdicts.

@@ -464,6 +464,77 @@ export interface InstallReport {
   warnings: string[];
 }
 
+// ── Mod Hub online catalog (mirrors wowsp_tauri_shared, commands/mod_catalog.rs) ──
+
+/** One downloadable package of a catalog entry (mod-hub release asset). */
+export interface CatalogPackage {
+  url: string;
+  sha256: string;
+  size: number;
+  name: string;
+}
+
+/** The latest version payload of one mod in `mod-index.json`. */
+export interface CatalogEntry {
+  id: string;
+  /** `battle | minimap | port | texts`. */
+  category: string;
+  /** Discussions thread carrying the full post (source, hashes, feedback). */
+  discussion?: number | null;
+  version: string;
+  /** Game-version range as published, e.g. `>=15.7 <15.8`. */
+  game: string;
+  title: string;
+  nameZh: string;
+  nameEn: string;
+  description: string;
+  authorUrl: string;
+  packages: CatalogPackage[];
+}
+
+/** Parsed `mod-index.json` — the online plugin list the hub page renders. */
+export interface CatalogIndex {
+  /** Upstream catalog stamp, e.g. `v.15.7.0 #10 (2026.08.30)`. */
+  sourceVersion: string;
+  gameVersion: string;
+  fetchedAt: string;
+  mods: CatalogEntry[];
+}
+
+/** Install book-keeping for one mod (`mods/installed.json`). */
+export interface ModInstallRecord {
+  id: string;
+  name: string;
+  version: string;
+  category: string;
+  /** `mod-hub` for catalog installs, `local` for folder installs. */
+  source: string;
+  discussion?: number | null;
+  binVersion: string;
+  installedAt: string;
+  files: string[];
+  restoreDir?: string | null;
+}
+
+/** Result of uninstalling a catalog mod. */
+export interface UninstallReport {
+  id: string;
+  name: string;
+  removedFiles: number;
+  restoredFiles: number;
+}
+
+/** Progress push for a catalog install (`wowsp://mod-catalog-progress`). */
+export interface CatalogProgress {
+  id: string;
+  /** `downloading | installing | done`. */
+  phase: string;
+  package: number;
+  packages: number;
+  received: number;
+  total: number;
+}
+
 /** Mirrors `wowsp_tauri_shared::DogTag` — player's personalized emblem. */
 export interface DogTag {
   textureId: number;
@@ -564,4 +635,15 @@ export const api = {
     transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
   modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>
     transport.invoke<InstallReport>(RPC.mod_hub_install, { sourceRoot, gameRoot, plan }),
+  // ── Mod Hub online catalog ──
+  /** Fetch (or serve cached) `mod-index.json` from the mod-hub release. */
+  modCatalogRefresh: (force: boolean) =>
+    transport.invoke<CatalogIndex>(RPC.mod_catalog_refresh, { force }),
+  modCatalogInstall: (modId: string, gameRoot: string) =>
+    transport.invoke<InstallReport>(RPC.mod_catalog_install, { modId, gameRoot }),
+  modCatalogUninstall: (modId: string, gameRoot: string) =>
+    transport.invoke<UninstallReport>(RPC.mod_catalog_uninstall, { modId, gameRoot }),
+  modHubRecords: () => transport.invoke<ModInstallRecord[]>(RPC.mod_hub_records),
+  listenCatalogProgress: (handler: (p: CatalogProgress) => void) =>
+    transport.listen?.<CatalogProgress>("wowsp://mod-catalog-progress", handler),
 };

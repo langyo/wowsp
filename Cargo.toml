@@ -75,6 +75,9 @@ byteorder = "^1"
 flate2 = { version = "^1", features = ["zlib-rs"] }
 tar = "^0.4"
 
+# Mod Hub package unpacking (catalog zips); tauri's updater already pulls zip 4
+zip = { version = "^4", default-features = false, features = ["deflate"] }
+
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
 # window-close lifecycle). Published to crates.io.
