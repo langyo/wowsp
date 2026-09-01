@@ -1,0 +1,250 @@
+// Settings modal. Sections live in titled cards stacked in the modal's
+// scrolling body; the modal caps the width, so form controls keep a sane
+// size on wide windows instead of stretching across the shell.
+
+.settings-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  /* One titled card per settings area. Slightly translucent so the cards
+     sit quietly on image wallpapers. */
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: rgb(var(--color-surface) / 55%);
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-md);
+  }
+
+  &__group-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  /* Titled sub-block inside a card (color presets, wallpaper). */
+  &__sub {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  &__sub-title {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  /* ── language ─────────────────────────────────────────────────────────── */
+
+  &__langs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+  }
+
+  &__lang {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 12rem;
+    flex: 1 1 12rem;
+  }
+
+  &__lang-label {
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+    font-weight: 500;
+  }
+
+  /* ── color presets ──────────────────────────────────────────────────────
+     Uniform card chrome; each theme only peeks through a small preview
+     chip, so the unselected cards no longer read as random colored slabs. */
+
+  &__presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+  }
+
+  &__preset {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: rgb(var(--color-surface));
+    /* Reserved border — selection never shifts the grid. */
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard),
+                transform var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      transform: translateY(-1px);
+      border-color: rgb(var(--color-border) / 30%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &--on {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  &__preset-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex: none;
+    width: 2.4rem;
+    height: 1.5rem;
+    border-radius: var(--radius-xs);
+    border: 1px solid rgb(var(--color-border) / 25%);
+  }
+
+  &__preset-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  &__preset-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: rgb(var(--color-text));
+  }
+
+  &__preset-check {
+    flex: none;
+    color: rgb(var(--color-primary));
+  }
+
+  /* ── wallpaper ────────────────────────────────────────────────────────── */
+
+  &__wallpapers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.5rem;
+  }
+
+  &__wallpaper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    background: rgb(var(--color-surface));
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-border) / 30%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &--on {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  &__wallpaper-preview {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border-radius: var(--radius-xs);
+    border: 1px solid rgb(var(--color-border) / 25%);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__wallpaper-swatch {
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-xs);
+
+    &--image {
+      background-size: cover;
+      background-position: center;
+    }
+  }
+
+  &__wallpaper-name {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* ── solar status (appearance card footer) ────────────────────────────── */
+
+  &__geoline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 1rem;
+    margin: 0.25rem 0 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
+
+    strong {
+      font-weight: 600;
+    }
+  }
+
+  &__geo-coords {
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono, ui-monospace, monospace);
+  }
+
+  /* ── network ──────────────────────────────────────────────────────────── */
+
+  &__netmanual {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* The row never disappears: with system/none active the saved URL stays
+     visible (greyed out) instead of the layout jumping on mode switches. */
+  &__netinput {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── about ────────────────────────────────────────────────────────────── */
+
+  &__about {
+    display: flex;
+  }
+}

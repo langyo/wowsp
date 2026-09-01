@@ -187,15 +187,20 @@
     word-break: break-word;
   }
 
-  /* Settings icon button — sits in the footer next to account info. */
+  /* Settings icon button — sits in the footer next to account info and
+     opens the settings modal. */
   &__settings-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 32px;
+    padding: 0;
+    background: none;
+    border: none;
     border-radius: var(--radius-sm);
     color: rgb(var(--color-muted));
+    cursor: pointer;
     transition: background var(--duration-short), color var(--duration-short);
     flex-shrink: 0;
 
@@ -204,9 +209,9 @@
       color: rgb(var(--color-primary));
     }
 
-    &.is-active {
-      color: rgb(var(--color-primary));
-      background: rgb(var(--color-primary) / 10%);
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
     }
   }
 }

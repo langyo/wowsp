@@ -27,5 +27,6 @@
   "networkNone": "No proxy",
   "networkManual": "Manual proxy",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
-  "networkSave": "Save"
+  "networkSave": "Save",
+  "networkSaved": "Saved"
 }
