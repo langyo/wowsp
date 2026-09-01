@@ -5,7 +5,7 @@ import { resolveShipImage } from "@/utils/shipImages";
 import { nationTree, techTreeNode, type TechTreeNode } from "@/utils/techTreeData";
 import { archetypeKey } from "@/utils/archetypeLabels";
 import { tierToRoman } from "@/utils/tierRoman";
-import { GitBranch } from "lucide-vue-next";
+import { GitBranch } from "@lucide/vue";
 import type { ShipInfo } from "@/api";
 import "./TechTreeView.scss";
 

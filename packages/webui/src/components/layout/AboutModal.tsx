@@ -1,6 +1,6 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Check, Download, RefreshCw } from "lucide-vue-next";
+import { Check, Download, RefreshCw } from "@lucide/vue";
 
 import { HButton, HModal } from "@celestia-island/hikari";
 

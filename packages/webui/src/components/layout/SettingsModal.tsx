@@ -1,5 +1,5 @@
 import { computed, defineComponent, onMounted, ref } from "vue";
-import { Check, Monitor, Moon, Sun } from "lucide-vue-next";
+import { Check, Monitor, Moon, Sun } from "@lucide/vue";
 
 import { HButton, HInput, HModal, HSelect, HTabs, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 

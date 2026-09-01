@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { BarChart3, Search, Ship, Film, Settings, Package } from "lucide-vue-next";
+import { BarChart3, Search, Ship, Film, Settings, Package } from "@lucide/vue";
 
 import { HTooltip } from "@celestia-island/hikari";
 

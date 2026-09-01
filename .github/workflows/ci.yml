@@ -67,9 +67,8 @@ jobs:
       - name: i18n parity
         run: python scripts/check_i18n.py --no-fail
       - name: npm audit
-        # Dev-toolchain advisories (brace-expansion via typescript-eslint /
-        # eslint / vue-tsc) currently trip `high`; production deps stay gated
-        # at `critical`.
+        # Dev-toolchain advisories (e.g. brace-expansion chains) have
+        # tripped `high` before; production deps stay gated at `critical`.
         run: pnpm audit --audit-level=critical
       # cargo-deny is disabled until its dockerized action can run with the
       # pinned toolchain + deny.toml (see PLAN.md); pnpm audit covers npm.

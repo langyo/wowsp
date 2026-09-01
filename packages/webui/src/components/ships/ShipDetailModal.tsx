@@ -1,5 +1,5 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
-import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
+import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
 import { HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
 

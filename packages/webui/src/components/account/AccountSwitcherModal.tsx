@@ -1,5 +1,5 @@
 import { defineComponent, ref, watch } from "vue";
-import { X, Trophy, Swords } from "lucide-vue-next";
+import { X, Trophy, Swords } from "@lucide/vue";
 
 import { HButton, HInput, HModal, HSelect, HTag } from "@celestia-island/hikari";
 

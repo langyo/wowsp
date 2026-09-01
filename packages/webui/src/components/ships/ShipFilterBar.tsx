@@ -10,7 +10,7 @@
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PlayerShipStats } from "@/api";
-import { ArrowDown, ArrowUp, Search } from "lucide-vue-next";
+import { ArrowDown, ArrowUp, Search } from "@lucide/vue";
 
 import { HSearchInput, HTabs } from "@celestia-island/hikari";
 

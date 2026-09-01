@@ -3,7 +3,7 @@ import { useI18n } from "vue-i18n";
 import {
   Ship, Crosshair, Map, SlidersHorizontal, Volume2, Palette, Layers,
   Search, Waves, CloudFog, Radar, Timer, Crosshair as CrosshairIcon,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 import { HButton, HSwitch, HTag } from "@celestia-island/hikari";
 import "./ModWindow.scss";
 

@@ -1,5 +1,5 @@
 import { defineComponent, computed, type PropType } from "vue";
-import { Crosshair, Target, Wind, Rocket, Anchor } from "lucide-vue-next";
+import { Crosshair, Target, Wind, Rocket, Anchor } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import type { FocusZone } from "./ShipStage";
