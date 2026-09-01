@@ -4,15 +4,36 @@ import { computed, ref, watch } from "vue";
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
+import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
+
+/** Replace API names with localized names from the offline game-file DB
+ *  (ship_names.json, extracted from res/texts/<lang> gettext catalogs).
+ *  The WG API serves the same harmonized simplified Chinese on every realm,
+ *  so the 亚服/国服 distinction the user picks cannot be sourced from it —
+ *  the game client files are the only realm-distinct source. Ships missing
+ *  from the offline DB keep their API name. Event-ship bracket tags
+ *  ("[TS] Yamato") are carried over unchanged so `displayShips` filtering
+ *  and `isEventShip` keep working. */
+function localizeShipNames(list: ShipInfo[], lang: string): ShipInfo[] {
+  return list.map((s) => {
+    const localized = shipNameFromOfflineDb(s.shipId, lang);
+    if (!localized || localized === s.name) return s;
+    const tags = s.name.match(/\[[^\]]*\]/g)?.join(" ") ?? "";
+    return { ...s, name: tags ? `${localized} ${tags}` : localized };
+  });
+}
 
 /** Ship encyclopedia store. Caches the full shipopedia in memory after the
  *  first load; the Rust layer handles disk caching + version invalidation.
  *  The `version` ref lets views show "Data from game vX.Y.Z".
  *
  *  Language: the data-language setting determines which WG API language code
- *  to use (zh-cn, zh-sg, zh-tw, en, ...). Switching realm or language
- *  triggers a re-load. */
+ *  to use (zh-cn, zh-tw, en, ...). Switching realm or language triggers a
+ *  re-load. Display names are then overlaid from the offline game-file DB
+ *  (ship_names.json) — the WG API only carries one simplified Chinese (the
+ *  harmonized CN translation) on every realm, so the 亚服简体 original names
+ *  can only come from the game client files. */
 export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   const ships = ref<ShipInfo[]>([]);
   const version = ref<GameVersionInfo | null>(null);
@@ -20,6 +41,12 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   const error = ref<string | null>(null);
   const loadedRealm = ref<string | null>(null);
   const loadedLanguage = ref<string | null>(null);
+
+  /** Monotonic generation for loads. Switching language/realm while a fetch
+   *  is in flight bumps it; the stale response is discarded on arrival. The
+   *  previous `if (loading) return` silently DROPPED the switch instead, so
+   *  the UI kept showing the previous language's names under the new setting. */
+  let loadSeq = 0;
 
   /** In-game nation order (matching the port tech-tree panel left-to-right). */
   const NATION_ORDER: Record<string, number> = {
@@ -75,8 +102,9 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   /** Load the full encyclopedia for a realm. Safe to call repeatedly — the
    *  Rust layer serves from disk cache when version+language hasn't changed.
    *  On failure the existing ships list is preserved so the UI doesn't go blank.
-   *  Concurrent calls are deduplicated: if a load is already in flight the
-   *  second caller waits for it.
+   *  A language/realm switch supersedes any in-flight load (generation
+   *  counter) — the stale response is discarded instead of clobbering the
+   *  freshly selected language.
    *  INVALID_LANGUAGE errors from the WG API are silently retried with English. */
   async function load(realm: string, forceRefresh = false) {
     const lang = useLanguage().dataLanguage.value;
@@ -84,17 +112,19 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     // the canonical lang-loc ("zh-CN").
     const apiLang = wgApiLanguage(lang);
     if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
-    if (loading.value) return;
+    const seq = ++loadSeq;
     loading.value = true;
     error.value = null;
     try {
       const ver = await api.getGameVersion();
       const fresh = await api.getShipEncyclopedia(realm, forceRefresh, apiLang);
+      if (seq !== loadSeq) return; // a newer realm/language load took over
       version.value = ver;
-      ships.value = fresh;
+      ships.value = localizeShipNames(fresh, lang);
       loadedRealm.value = realm;
       loadedLanguage.value = lang;
     } catch (e) {
+      if (seq !== loadSeq) return;
       const msg = (e as Error).message || String(e);
       // WG API returns INVALID_LANGUAGE for unsupported language codes — retry
       // silently with English so data is always available. loadedLanguage
@@ -103,8 +133,9 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
         try {
           const ver = await api.getGameVersion();
           const fresh = await api.getShipEncyclopedia(realm, true, "en");
+          if (seq !== loadSeq) return;
           version.value = ver;
-          ships.value = fresh;
+          ships.value = localizeShipNames(fresh, lang);
           loadedRealm.value = realm;
           loadedLanguage.value = lang; // stay as user's preference
           console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
@@ -115,7 +146,7 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
         error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
       }
     } finally {
-      loading.value = false;
+      if (seq === loadSeq) loading.value = false;
     }
   }
 

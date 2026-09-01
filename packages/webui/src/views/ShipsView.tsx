@@ -11,6 +11,8 @@ import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
+import { useLanguage } from "@/i18n/useLanguage";
+import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
@@ -187,7 +189,13 @@ export default defineComponent({
     }
 
     function nationLabel(code: string): string {
-      return t(`ships.nation.${code}`, {}) || code;
+      // Nation display names follow the 素材翻译 setting (the game's own
+      // localization — e.g. 国服 shows the harmonized X-系 names), with the
+      // UI i18n strings as fallback for codes the game DB doesn't cover.
+      return (
+        nationNameFromDb(code, useLanguage().dataLanguage.value) ??
+        (t(`ships.nation.${code}`, {}) || code)
+      );
     }
 
     function typeLabel(code: string): string {

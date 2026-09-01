@@ -82,7 +82,7 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
 /// `force_refresh` bypasses the cache.
 ///
 /// **Language selection**: The frontend resolves and passes an explicit WG
-/// language code (zh-cn, zh-sg, zh-tw, en, ja, ko, ru, fr, es) converted from
+/// language code (zh-cn, zh-tw, en, ja, ko, ru, fr, es) converted from
 /// the canonical lang-loc data language (zh-CN, zh-SG, zh-TW, en-US, ...).
 /// Compound cache keys are `<wg-lang>-<realm>` (e.g. "zh-cn-asia").
 /// The cache is keyed by `<version>-<compound>` so switching realm or
@@ -260,11 +260,15 @@ fn parse_ship_images(images: Option<&serde_json::Value>) -> wowsp_tauri_shared::
 
 /// Resolve the WG API `language` parameter for encyclopedia requests.
 ///
-/// The frontend sends an explicit WG language code (e.g. "zh-cn", "zh-sg",
-/// "zh-tw", "en", "ja", ...) converted from the canonical lang-loc data
-/// language. The WG code is passed directly to the API; the compound cache
-/// key is simply `<wg-lang>-<realm>` (e.g. "zh-cn-asia") — WG codes are
-/// already compact and unique per server language.
+/// The frontend sends an explicit WG language code (e.g. "zh-cn", "zh-tw",
+/// "en", "ja", ...) converted from the canonical lang-loc data language.
+/// Note the frontend never sends "zh-sg": the WG API answers 407
+/// INVALID_LANGUAGE for it on every realm, so both simplified-Chinese
+/// options arrive as "zh-cn" and the realm-distinct display names are
+/// overlaid client-side from the offline game-file DB. The WG code is passed
+/// directly to the API; the compound cache key is simply `<wg-lang>-<realm>`
+/// (e.g. "zh-cn-asia") — WG codes are already compact and unique per server
+/// language.
 fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> (String, String) {
     let wg_lang = data_language.unwrap_or_else(|| "en".to_string());
     let compound = format!("{wg_lang}-{realm}");
@@ -410,9 +414,11 @@ mod tests {
 
     #[test]
     fn asia_realm_uses_wg_code_compound() {
-        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
-        assert_eq!(compound, "zh-sg-asia");
-        assert_eq!(wg, "zh-sg");
+        // Both simplified-Chinese lang-locs arrive as "zh-cn" — the API's
+        // only simplified Chinese; "zh-sg" is rejected with 407 upstream.
+        let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-cn".into()));
+        assert_eq!(compound, "zh-cn-asia");
+        assert_eq!(wg, "zh-cn");
 
         let (compound, wg) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         assert_eq!(compound, "zh-tw-asia");
@@ -445,9 +451,9 @@ mod tests {
         let cache = format!("encyclopedia/ships-{v}-{compound}-s{SCHEMA}.json");
         assert_eq!(cache, "encyclopedia/ships-15.5.0-zh-cn-cn-s2.json");
 
-        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zh-sg".into()));
+        let (compound2, _) = resolve_encyclopedia_language("asia", Some("zh-cn".into()));
         let cache2 = format!("encyclopedia/ships-{v}-{compound2}-s{SCHEMA}.json");
-        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zh-sg-asia-s2.json");
+        assert_eq!(cache2, "encyclopedia/ships-15.5.0-zh-cn-asia-s2.json");
 
         let (compound3, _) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         let cache3 = format!("encyclopedia/ships-{v}-{compound3}-s{SCHEMA}.json");
