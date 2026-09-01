@@ -25,9 +25,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use wowsp_tauri_shared::{
-    InstallReport, InstalledMod, ModKind, PackagePlan, PackagePlanEntry,
-};
+use wowsp_tauri_shared::{InstallReport, InstalledMod, ModKind, PackagePlan, PackagePlanEntry};
+
+/// What [`install_plan`] did, beyond the user-facing report: the exact files
+/// written (res_mods-relative) and where overwritten originals were snapshotted.
+pub(crate) struct PlanApply {
+    pub report: InstallReport,
+    pub written: Vec<String>,
+    /// Directory holding pre-overwrite copies, `None` when nothing was replaced.
+    pub restore_dir: Option<PathBuf>,
+}
 
 /// Locate the newest numeric `bin/<version>/` dir. Same rule as the overlay
 /// mod installer — the client runs from the highest-numbered version dir.
@@ -66,33 +73,69 @@ fn registered_ship_id(main_py: &str) -> Option<String> {
 }
 
 /// Copy a subtree (or a single mapped file) recursively, counting writes.
-fn copy_tree(from: &Path, to: &Path) -> Result<usize, String> {
+/// `written` collects every file landing under `res_mods` (res_mods-relative);
+/// files about to be overwritten are first snapshotted into `restore_dir`.
+fn copy_tree(
+    from: &Path,
+    to: &Path,
+    res_mods: &Path,
+    restore_dir: &Option<PathBuf>,
+    written: &mut Vec<String>,
+) -> Result<usize, String> {
     if !from.exists() {
         return Err(format!("{} does not exist", from.display()));
     }
     if from.is_file() {
         fs::create_dir_all(to.parent().unwrap_or(to))
             .map_err(|e| format!("create {}: {e}", to.display()))?;
+        snapshot_before_overwrite(to, res_mods, restore_dir);
         fs::copy(from, to).map_err(|e| format!("copy {}: {e}", from.display()))?;
+        record_written(to, res_mods, written);
         return Ok(1);
     }
     fs::create_dir_all(to).map_err(|e| format!("create {}: {e}", to.display()))?;
     let mut count = 0usize;
     let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
     while let Some((src, dst)) = stack.pop() {
-        for ent in fs::read_dir(&src).map_err(|e| format!("read {}: {e}", src.display()))?.flatten() {
+        for ent in fs::read_dir(&src)
+            .map_err(|e| format!("read {}: {e}", src.display()))?
+            .flatten()
+        {
             let s = ent.path();
             let d = dst.join(ent.file_name());
             if s.is_dir() {
                 fs::create_dir_all(&d).map_err(|e| format!("create {}: {e}", d.display()))?;
                 stack.push((s, d));
             } else {
+                snapshot_before_overwrite(&d, res_mods, restore_dir);
                 fs::copy(&s, &d).map_err(|e| format!("copy {}: {e}", s.display()))?;
+                record_written(&d, res_mods, written);
                 count += 1;
             }
         }
     }
     Ok(count)
+}
+
+/// Copy an existing target aside before it gets clobbered (best effort — a
+/// failed snapshot only means that file can't be restored later).
+fn snapshot_before_overwrite(target: &Path, res_mods: &Path, restore_dir: &Option<PathBuf>) {
+    let (Some(dir), Ok(rel)) = (restore_dir.as_deref(), target.strip_prefix(res_mods)) else {
+        return;
+    };
+    if !target.is_file() {
+        return;
+    }
+    let snap = dir.join(rel);
+    if fs::copy(target, &snap).is_ok() {
+        tracing::debug!(from = %target.display(), to = %snap.display(), "restore snapshot");
+    }
+}
+
+fn record_written(written: &Path, res_mods: &Path, out: &mut Vec<String>) {
+    if let Ok(rel) = written.strip_prefix(res_mods) {
+        out.push(rel.to_string_lossy().replace('\\', "/"));
+    }
 }
 
 // ── Scan installed ──────────────────────────────────────────────────────────
@@ -130,10 +173,17 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
                 continue;
             };
             for root in bank_roots.flatten() {
-                if !root.path().is_dir() || !root.file_name().to_string_lossy().eq_ignore_ascii_case("mods") {
+                if !root.path().is_dir()
+                    || !root
+                        .file_name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case("mods")
+                {
                     continue;
                 }
-                let Ok(banks) = fs::read_dir(root.path()) else { continue };
+                let Ok(banks) = fs::read_dir(root.path()) else {
+                    continue;
+                };
                 for bank in banks.flatten() {
                     if bank.path().is_dir() && bank.path().join("mod.xml").is_file() {
                         let detail = fs::read_to_string(bank.path().join("mod.xml"))
@@ -157,7 +207,9 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
 
         // PnFMods/<Name>/Main.py — one entry per skin folder.
         if name_str.eq_ignore_ascii_case("PnFMods") && entry.path().is_dir() {
-            let Ok(skins) = fs::read_dir(entry.path()) else { continue };
+            let Ok(skins) = fs::read_dir(entry.path()) else {
+                continue;
+            };
             for skin in skins.flatten() {
                 let main_py = skin.path().join("Main.py");
                 if !main_py.is_file() {
@@ -214,13 +266,18 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             });
         }
     }
-    mods.sort_by(|a, b| (a.kind as u8).cmp(&(b.kind as u8)).then(a.name.cmp(&b.name)));
+    mods.sort_by(|a, b| {
+        (a.kind as u8)
+            .cmp(&(b.kind as u8))
+            .then(a.name.cmp(&b.name))
+    });
     mods
 }
 
 // ── Classify incoming package ───────────────────────────────────────────────
 
-const UNSUPPORTED_ARCHIVE: &str = "archive payloads need M10.2 unpack support — extract it to a folder first";
+const UNSUPPORTED_ARCHIVE: &str =
+    "archive payloads need M10.2 unpack support — extract it to a folder first";
 
 #[tauri::command]
 pub fn mod_hub_classify_path(source_path: String) -> Result<PackagePlan, String> {
@@ -254,7 +311,7 @@ pub fn mod_hub_classify_path(source_path: String) -> Result<PackagePlan, String>
 }
 
 /// Classify the contents of an unpacked package directory.
-fn classify_package(src: &Path) -> Result<PackagePlan, String> {
+pub(crate) fn classify_package(src: &Path) -> Result<PackagePlan, String> {
     let mut plan = classify_package_layout(src)?;
 
     // Real-world packs often ship behind a single naming-wrapper folder
@@ -302,11 +359,7 @@ fn single_wrapper_dir(src: &Path) -> Option<String> {
         }
         dirs.push(name);
     }
-    if dirs.len() == 1 {
-        dirs.pop()
-    } else {
-        None
-    }
+    if dirs.len() == 1 { dirs.pop() } else { None }
 }
 
 /// Signature-level classification of one directory layout (no wrapper peel).
@@ -320,7 +373,11 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
     let has = |name: &str| entries_raw.iter().any(|n| n.eq_ignore_ascii_case(name));
 
     // Bare audio pack: root AudioModification xml + loose .wem files.
-    if has("mod.xml") && entries_raw.iter().any(|n| n.to_ascii_lowercase().ends_with(".wem")) {
+    if has("mod.xml")
+        && entries_raw
+            .iter()
+            .any(|n| n.to_ascii_lowercase().ends_with(".wem"))
+    {
         let body = fs::read_to_string(src.join("mod.xml")).unwrap_or_default();
         let label = first_xml_tag(&body, "Name")
             .or_else(|| src.file_name().map(|n| n.to_string_lossy().into_owned()))
@@ -372,7 +429,13 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
         }
     }
     if has("PnFMods") {
-        push_entry(&mut plan, &mut kinds_seen, "PnFMods", "PnFMods", ModKind::Skin);
+        push_entry(
+            &mut plan,
+            &mut kinds_seen,
+            "PnFMods",
+            "PnFMods",
+            ModKind::Skin,
+        );
         // Parse every skin's Main.py for the ship ids + remember names/details.
         let pnf = src.join("PnFMods");
         if let Ok(skins) = fs::read_dir(&pnf) {
@@ -399,7 +462,13 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
         }
     }
     if has("content") {
-        push_entry(&mut plan, &mut kinds_seen, "content", "content", ModKind::Textures);
+        push_entry(
+            &mut plan,
+            &mut kinds_seen,
+            "content",
+            "content",
+            ModKind::Textures,
+        );
     }
     if has("gui") {
         push_entry(&mut plan, &mut kinds_seen, "gui", "gui", ModKind::Gui);
@@ -437,14 +506,36 @@ pub fn mod_hub_install(
     game_root: String,
     plan: PackagePlan,
 ) -> Result<InstallReport, String> {
-    let src = Path::new(&source_root);
+    install_plan(Path::new(&source_root), &game_root, &plan).map(|applied| applied.report)
+}
+
+/// Core installer shared by the local-folder command and the online catalog:
+/// applies `plan` for `game_root`, records every written file (res_mods-
+/// relative) and snapshots overwritten originals for later restore.
+pub(crate) fn install_plan(
+    src: &Path,
+    game_root: &str,
+    plan: &PackagePlan,
+) -> Result<PlanApply, String> {
     if !src.is_dir() {
         return Err(format!("package not found: {}", src.display()));
     }
-    let (bin_version, ver_dir) = latest_bin_version(&game_root)
+    let (bin_version, ver_dir) = latest_bin_version(game_root)
         .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
     let res_mods = ver_dir.join("res_mods");
 
+    // Lazily-used snapshot dir; dropped again when nothing was overwritten.
+    let restore_dir = restore_root().join(format!(
+        "{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        sanitize_dir_name(&plan.name)
+    ));
+    fs::create_dir_all(&restore_dir).map_err(|e| format!("create restore dir: {e}"))?;
+
+    let mut written: Vec<String> = Vec::new();
     let mut wrote = 0usize;
     let mut warnings = plan.warnings.clone();
     let mut touched_pnf = false;
@@ -455,7 +546,13 @@ pub fn mod_hub_install(
             src.join(&entry.from_rel)
         };
         let to = res_mods.join(&entry.to_rel);
-        wrote += copy_tree(&from, &to)?;
+        wrote += copy_tree(
+            &from,
+            &to,
+            &res_mods,
+            &Some(restore_dir.clone()),
+            &mut written,
+        )?;
         if entry.from_rel.eq_ignore_ascii_case("PnFMods") {
             touched_pnf = true;
         }
@@ -466,22 +563,47 @@ pub fn mod_hub_install(
         let loader = res_mods.join("PnFModsLoader.py");
         if !loader.is_file() {
             fs::write(&loader, "").map_err(|e| format!("touch loader: {e}"))?;
-            if !warnings
-                .iter()
-                .any(|w| w.contains("PnFModsLoader"))
-            {
+            record_written(&loader, &res_mods, &mut written);
+            if !warnings.iter().any(|w| w.contains("PnFModsLoader")) {
                 warnings.push("created missing PnFModsLoader.py".into());
             }
         }
     }
 
-    tracing::info!(name = %plan.name, wrote, "mod_hub_install done");
-    Ok(InstallReport {
-        name: plan.name,
-        bin_version,
-        wrote_files: wrote,
-        warnings,
+    // An untouched restore dir means nothing was overwritten — drop it so
+    // uninstall does not chase ghosts.
+    let restore_dir = if restore_root_has_files(&restore_dir) {
+        Some(restore_dir)
+    } else {
+        fs::remove_dir(&restore_dir).ok();
+        None
+    };
+    written.sort();
+    tracing::info!(name = %plan.name, wrote, "install_plan done");
+    Ok(PlanApply {
+        report: InstallReport {
+            name: plan.name.clone(),
+            bin_version,
+            wrote_files: wrote,
+            warnings,
+        },
+        written,
+        restore_dir,
     })
+}
+
+fn restore_root_has_files(dir: &Path) -> bool {
+    fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some())
+}
+
+/// `<data>/mods/restore/` — pre-overwrite snapshots, keyed by ts + mod name.
+pub(crate) fn restore_root() -> PathBuf {
+    let base = crate::paths::ensure_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("mods")
+        .join("restore");
+    fs::create_dir_all(&base).ok();
+    base
 }
 
 #[cfg(test)]
@@ -500,7 +622,11 @@ mod tests {
         let rm = tmp.join("bin/12668706/res_mods");
         // banks with BOTH case variants (real OTTO pack uses Mods).
         touch(&rm.join("banks/mods/Hoshino/mod.xml"));
-        fs::write(rm.join("banks/mods/Hoshino/mod.xml"), "<AudioModification><Name>Hoshino</Name></AudioModification>").unwrap();
+        fs::write(
+            rm.join("banks/mods/Hoshino/mod.xml"),
+            "<AudioModification><Name>Hoshino</Name></AudioModification>",
+        )
+        .unwrap();
         touch(&rm.join("banks/Mods/OTTO Ver1.0/mod.xml"));
         // PnF skin
         fs::create_dir_all(rm.join("PnFMods/Hina_Moskva")).unwrap();
@@ -517,11 +643,18 @@ mod tests {
         let mods = classify_installed_root(&rm);
         let voices: Vec<_> = mods.iter().filter(|m| m.kind == ModKind::Voice).collect();
         assert_eq!(voices.len(), 2);
-        assert!(voices.iter().any(|m| m.detail.as_deref() == Some("Hoshino")));
+        assert!(
+            voices
+                .iter()
+                .any(|m| m.detail.as_deref() == Some("Hoshino"))
+        );
         let skins: Vec<_> = mods.iter().filter(|m| m.kind == ModKind::Skin).collect();
         assert_eq!(skins[0].detail.as_deref(), Some("RSC110_Pr_66_Moskva"));
         assert!(mods.iter().any(|m| m.kind == ModKind::Gui));
-        assert!(mods.iter().any(|m| m.kind == ModKind::Patch && m.rel_path == "ime_config.xml"));
+        assert!(
+            mods.iter()
+                .any(|m| m.kind == ModKind::Patch && m.rel_path == "ime_config.xml")
+        );
 
         fs::remove_dir_all(&tmp).ok();
     }
@@ -531,7 +664,11 @@ mod tests {
         let tmp = std::env::temp_dir().join("wowsp_barepack_test");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
-        fs::write(tmp.join("mod.xml"), "<AudioModification><Name>聖園ミカ</Name></AudioModification>").unwrap();
+        fs::write(
+            tmp.join("mod.xml"),
+            "<AudioModification><Name>聖園ミカ</Name></AudioModification>",
+        )
+        .unwrap();
         touch(&tmp.join("01.wem"));
 
         let plan = classify_package(&tmp).unwrap();
@@ -596,9 +733,12 @@ mod tests {
 
         let plan = classify_package(&pkg).unwrap();
         assert_eq!(plan.kind, ModKind::Patch);
-        let report =
-            mod_hub_install(pkg.to_str().unwrap().into(), game.to_str().unwrap().into(), plan)
-                .unwrap();
+        let report = mod_hub_install(
+            pkg.to_str().unwrap().into(),
+            game.to_str().unwrap().into(),
+            plan,
+        )
+        .unwrap();
         assert_eq!(report.wrote_files, 1);
         assert!(game.join("bin/1/res_mods/ime_config.xml").is_file());
 
@@ -617,9 +757,12 @@ mod tests {
         fs::create_dir_all(game.join("bin/12668706")).unwrap();
 
         let plan = classify_package(&pkg).unwrap();
-        let report =
-            mod_hub_install(pkg.to_str().unwrap().into(), game.to_str().unwrap().into(), plan)
-                .unwrap();
+        let report = mod_hub_install(
+            pkg.to_str().unwrap().into(),
+            game.to_str().unwrap().into(),
+            plan,
+        )
+        .unwrap();
         assert_eq!(report.wrote_files, 1);
         assert_eq!(report.bin_version, "12668706");
         let rm = game.join("bin/12668706/res_mods");
@@ -674,7 +817,7 @@ mod tests {
                         plan.warnings
                     );
                     assert!(!plan.entries.is_empty(), "{name}: empty plan");
-                }
+                },
                 Err(err) => {
                     // Archives must always hit the structured unpack hint.
                     // Non-package payloads (SDK/tutorial trees, standalone
@@ -688,7 +831,7 @@ mod tests {
                         assert!(err.contains("no recognizable"), "{name}: {err}");
                         println!("{name}: NOT-A-PACKAGE (rejected by design)");
                     }
-                }
+                },
             }
             seen += 1;
         }
@@ -709,8 +852,12 @@ mod tests {
         // 1. ime_config.xml (config-patch, folder layout).
         let ime = find_dir(&dir, "输入法").expect("ime sample");
         let plan = classify_package(&ime).unwrap();
-        let report =
-            mod_hub_install(ime.to_string_lossy().into_owned(), game.to_string_lossy().into_owned(), plan).unwrap();
+        let report = mod_hub_install(
+            ime.to_string_lossy().into_owned(),
+            game.to_string_lossy().into_owned(),
+            plan,
+        )
+        .unwrap();
         assert!(report.wrote_files >= 1);
         assert!(game.join("bin/12668706/res_mods/ime_config.xml").is_file());
 
@@ -718,10 +865,21 @@ mod tests {
         let miyako = find_dir(&dir, "Miyako_soundmod").expect("banks sample");
         let plan = classify_package(&miyako).unwrap();
         assert_eq!(plan.kind, ModKind::Voice);
-        let report =
-            mod_hub_install(miyako.to_string_lossy().into_owned(), game.to_string_lossy().into_owned(), plan).unwrap();
-        assert!(report.wrote_files > 90, "banks pack copied {} files", report.wrote_files);
-        assert!(game.join("bin/12668706/res_mods/banks/mods/Miyako/mod.xml").is_file());
+        let report = mod_hub_install(
+            miyako.to_string_lossy().into_owned(),
+            game.to_string_lossy().into_owned(),
+            plan,
+        )
+        .unwrap();
+        assert!(
+            report.wrote_files > 90,
+            "banks pack copied {} files",
+            report.wrote_files
+        );
+        assert!(
+            game.join("bin/12668706/res_mods/banks/mods/Miyako/mod.xml")
+                .is_file()
+        );
 
         // 3. 莫斯科日奈换色版 — PnF skin with its own loader, nested one level.
         let hina = find_dir(&dir, "莫斯科日奈换色版").expect("pnf sample");
@@ -736,9 +894,19 @@ mod tests {
             plan,
         )
         .unwrap();
-        assert!(report.wrote_files > 100, "pnf pack copied {} files", report.wrote_files);
-        assert!(game.join("bin/12668706/res_mods/PnFMods/Hina_Moskva/Main.py").is_file());
-        assert!(game.join("bin/12668706/res_mods/PnFModsLoader.py").is_file());
+        assert!(
+            report.wrote_files > 100,
+            "pnf pack copied {} files",
+            report.wrote_files
+        );
+        assert!(
+            game.join("bin/12668706/res_mods/PnFMods/Hina_Moskva/Main.py")
+                .is_file()
+        );
+        assert!(
+            game.join("bin/12668706/res_mods/PnFModsLoader.py")
+                .is_file()
+        );
         assert!(
             game.join("bin/12668706/res_mods/content/gameplay").is_dir(),
             "texture overrides copied alongside"
@@ -748,11 +916,15 @@ mod tests {
     }
 
     fn find_dir(root: &Path, needle: &str) -> Option<PathBuf> {
-        fs::read_dir(root).ok()?.flatten().map(|e| e.path()).find(|p| {
-            p.file_name()
-                .map(|n| n.to_string_lossy().contains(needle))
-                .unwrap_or(false)
-        })
+        fs::read_dir(root)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().contains(needle))
+                    .unwrap_or(false)
+            })
     }
 
     /// Peel single-wrapper layers until the PNF payload is exposed.
@@ -762,7 +934,9 @@ mod tests {
             if dir.join(marker).is_file() {
                 return Some(dir);
             }
-            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
             for e in entries.flatten() {
                 if e.path().is_dir() {
                     stack.push(e.path());

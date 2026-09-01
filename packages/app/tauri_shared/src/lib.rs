@@ -752,3 +752,85 @@ pub struct InstallReport {
     pub wrote_files: usize,
     pub warnings: Vec<String>,
 }
+
+// ── Mod Hub online catalog (mirrors scripts/mod_hub_publish.py output) ──────
+
+/// One downloadable package of a catalog entry: a zip re-hosted as an asset of
+/// the repo's `mod-hub` release. `sha256` is verified before unpacking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogPackage {
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+    pub name: String,
+}
+
+/// The `latest` version payload of one mod in `mod-index.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogEntry {
+    pub id: String,
+    /// `battle | minimap | port | texts`.
+    pub category: String,
+    /// Discussions thread number carrying the full post (source, hashes).
+    pub discussion: Option<u64>,
+    pub version: String,
+    /// Game-version range string as published, e.g. `>=15.7 <15.8`.
+    pub game: String,
+    pub title: String,
+    pub name_zh: String,
+    pub name_en: String,
+    pub description: String,
+    pub author_url: String,
+    pub packages: Vec<CatalogPackage>,
+}
+
+/// Parsed `mod-index.json` — the online plugin list the hub page renders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogIndex {
+    /// Upstream catalog stamp, e.g. `v.15.7.0 #10 (2026.08.30)`.
+    pub source_version: String,
+    /// Game marketing version the catalog targets, e.g. `15.7.0`.
+    pub game_version: String,
+    /// RFC3339 timestamp of when this copy was fetched.
+    pub fetched_at: String,
+    pub mods: Vec<CatalogEntry>,
+}
+
+/// Install book-keeping for one mod, persisted in `mods/installed.json`.
+/// Uninstall and the future migration engine both work off this record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModInstallRecord {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub category: String,
+    /// `mod-hub` for catalog installs, `local` for folder installs.
+    pub source: String,
+    pub discussion: Option<u64>,
+    /// `bin/<version>` the files were written into.
+    pub bin_version: String,
+    /// RFC3339 timestamp.
+    pub installed_at: String,
+    /// Every file written, relative to `res_mods/<bin_version>/`.
+    pub files: Vec<String>,
+    /// Where pre-overwrite snapshots of replaced files live, if any.
+    pub restore_dir: Option<String>,
+}
+
+/// Progress push for a catalog install (`wowsp://mod-catalog-progress`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogProgress {
+    pub id: String,
+    /// `downloading | installing | done`.
+    pub phase: String,
+    /// 1-based index of the package in flight.
+    pub package: u32,
+    pub packages: u32,
+    pub received: u64,
+    pub total: u64,
+}

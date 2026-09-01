@@ -200,6 +200,75 @@ async def cmd_mod_hub_install(request: Request) -> dict:
     }
 
 
+# ── Mod Hub online catalog (commands/mod_catalog.rs): serves a miniature
+# mod-index.json so the browser preview can render the catalog grid.
+_MOCK_CATALOG = {
+    "sourceVersion": "v.15.7.0 #10 (mock)",
+    "gameVersion": "15.7.0",
+    "fetchedAt": "2026-09-01T00:00:00Z",
+    "mods": [
+        {
+            "id": "ui-timers-shot-timer", "category": "battle",
+            "discussion": 91, "version": "15.7.0.10",
+            "game": ">=15.7 <15.8",
+            "title": "Shot Timer / 开火后倒计时20s",
+            "nameZh": "开火后倒计时20s", "nameEn": "Shot Timer",
+            "description": "Counts down the 20s detection window after firing main guns.",
+            "authorUrl": "",
+            "packages": [{"url": "https://example.com/a.zip", "sha256": "",
+                          "size": 13312, "name": "a.zip"}],
+        },
+        {
+            "id": "port-mods-sessionstats-ollin", "category": "port",
+            "discussion": 92, "version": "15.7.0.10",
+            "game": ">=15.7 <15.8",
+            "title": "Session Stats v2 / 战报统计",
+            "nameZh": "战报统计", "nameEn": "Session Stats v2",
+            "description": "Per-session battle statistics right in the port.",
+            "authorUrl": "",
+            "packages": [{"url": "https://example.com/b.zip", "sha256": "",
+                          "size": 87040, "name": "b.zip"}],
+        },
+    ],
+}
+_MOCK_RECORDS: list[dict] = []
+
+
+@app.post("/api/mod_catalog_refresh")
+async def cmd_mod_catalog_refresh(request: Request) -> dict:
+    return _MOCK_CATALOG
+
+
+@app.post("/api/mod_catalog_install")
+async def cmd_mod_catalog_install(request: Request) -> dict:
+    body = await request.json()
+    mod_id = body.get("modId", "?")
+    entry = next((m for m in _MOCK_CATALOG["mods"] if m["id"] == mod_id), None)
+    _MOCK_RECORDS[:] = [r for r in _MOCK_RECORDS if r["id"] != mod_id]
+    _MOCK_RECORDS.append({
+        "id": mod_id, "name": entry["nameEn"] if entry else mod_id,
+        "version": entry["version"] if entry else "0", "category": "battle",
+        "source": "mod-hub", "discussion": entry["discussion"] if entry else None,
+        "binVersion": "12668706", "installedAt": "2026-09-01T00:00:00Z",
+        "files": ["res_mods/dummy.xml"], "restoreDir": None,
+    })
+    return {"name": entry["nameEn"] if entry else mod_id, "binVersion": "12668706",
+            "wroteFiles": 4, "warnings": ["mock install — nothing was downloaded"]}
+
+
+@app.post("/api/mod_catalog_uninstall")
+async def cmd_mod_catalog_uninstall(request: Request) -> dict:
+    body = await request.json()
+    mod_id = body.get("modId", "?")
+    _MOCK_RECORDS[:] = [r for r in _MOCK_RECORDS if r["id"] != mod_id]
+    return {"id": mod_id, "name": mod_id, "removedFiles": 1, "restoredFiles": 0}
+
+
+@app.post("/api/mod_hub_records")
+async def cmd_mod_hub_records() -> list[dict]:
+    return _MOCK_RECORDS
+
+
 @app.get("/api/is_game_running")
 async def cmd_is_game_running() -> bool:
     return False
