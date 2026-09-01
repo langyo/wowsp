@@ -7,6 +7,13 @@
      the app's dark pill — plain white works on either */
   --holo-neutral: #ffffff;
 
+  /* Size to the widest row (the 24-ship strip), not to the available box:
+     the component hangs off an absolutely-positioned `left: 50%` wrapper,
+     whose shrink-to-fit clamp is only HALF the map width — that clamp made
+     the pill narrower than the fixed-size ship icons, spilling them past
+     the rounded glass on both sides. */
+  width: max-content;
+
   display: inline-flex;
   flex-direction: column;
   align-items: center;
@@ -79,7 +86,10 @@
   }
 }
 
-/* ETA tag under a capturing chip: "xx s" to complete if it holds. */
+/* ETA tag under a capturing chip: "xx s" to complete if it holds. The pill
+   background is hard-coded dark (it floats over the map in BOTH themes), so
+   the text must be light too — `--color-text` flips dark in the light theme
+   and rendered the countdown dark-on-dark. */
 .holo-scorebar__cap-eta {
   position: absolute;
   top: 100%;
@@ -88,7 +98,7 @@
   padding: 0 3px;
   border-radius: 4px;
   background: rgb(9 13 22 / 78%);
-  color: rgb(var(--color-text, 235 240 248) / 85%);
+  color: rgb(235 240 248 / 92%);
   font-size: 9px;
   font-weight: 600;
   line-height: 1.35;

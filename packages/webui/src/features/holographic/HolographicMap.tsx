@@ -4084,6 +4084,26 @@ export default defineComponent({
     // Recompute markers whenever the scrubber moves.
     watch(current, (t) => updateMarkersAt(t));
 
+    // Keep the range input's DOM value in lockstep with the playback clock.
+    // Relying on the reactive `value`/`max` props alone let the thumb drift
+    // from `current` (the pill's duration grows in steps while the replay
+    // streams in, and patch props only fire on vnode diffs, never on live
+    // DOM drift) — at 0:00 the thumb sat visibly inside the track. Post
+    // flush = after each render's own patch, so this is the final word.
+    const scrubEl = ref<HTMLInputElement | null>(null);
+    watch(
+      [current, duration],
+      () => {
+        const el = scrubEl.value;
+        if (!el) return;
+        const max = duration.value || 0;
+        const val = Math.min(current.value, max);
+        if (el.max !== String(max)) el.max = String(max);
+        if (el.value !== String(val)) el.value = String(val);
+      },
+      { flush: "post" },
+    );
+
     // Deep link ?play=1: start playback once the trajectories are in —
     // headless render checks exercise the NATURAL playback path (the RAF
     // loop advancing current), not just seeks.
@@ -4403,12 +4423,14 @@ export default defineComponent({
               {playing.value ? "❚❚" : "▶"}
             </button>
             <input
+              ref={scrubEl}
               class="holo-map__scrub"
               type="range"
               min={0}
               max={duration.value || 0}
               step={0.1}
               value={current.value}
+              style={{ "--scrub-pct": `${duration.value ? (current.value / duration.value) * 100 : 0}%` }}
               onInput={(e) => {
                 playing.value = false;
                 current.value = Number((e.target as HTMLInputElement).value);
