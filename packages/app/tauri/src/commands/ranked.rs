@@ -244,7 +244,9 @@ fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Optio
                     if let Some(rb) = rb {
                         // Lower league number = better (1 gold > 2 silver > 3 bronze);
                         // within a league, lower rank number = better.
-                        if best_league.is_none_or(|bl| league < bl || (league == bl && rb < best_rank)) {
+                        if best_league
+                            .is_none_or(|bl| league < bl || (league == bl && rb < best_rank))
+                        {
                             best_league = Some(league);
                             best_rank = rb;
                         }
@@ -252,7 +254,9 @@ fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Optio
                     if let Some(rr) = r {
                         // The latest sprint with any data; within a sprint the
                         // furthest league (lowest number) is where they ended.
-                        if latest.is_none_or(|(_, l, _)| league < l) || latest.is_none_or(|(s, _, _)| sprint_no > s) {
+                        if latest.is_none_or(|(_, l, _)| league < l)
+                            || latest.is_none_or(|(s, _, _)| sprint_no > s)
+                        {
                             latest = Some((sprint_no, league, rr));
                         }
                     }
@@ -262,7 +266,11 @@ fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Optio
     }
 
     let bl = best_league?;
-    Some((latest.map(|(_, _, r)| r).unwrap_or(best_rank), best_rank, bl))
+    Some((
+        latest.map(|(_, _, r)| r).unwrap_or(best_rank),
+        best_rank,
+        bl,
+    ))
 }
 
 fn get_i64(v: &serde_json::Value, key: &str) -> i64 {

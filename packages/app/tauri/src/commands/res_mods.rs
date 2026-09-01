@@ -25,7 +25,10 @@ pub fn ribbon_skin_dir(game_path: String) -> Option<String> {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                if p.file_name().is_some_and(|n| n == "ribbons") && p.parent().is_some_and(|g| g.file_name().is_some_and(|n| n == "gui")) {
+                if p.file_name().is_some_and(|n| n == "ribbons")
+                    && p.parent()
+                        .is_some_and(|g| g.file_name().is_some_and(|n| n == "gui"))
+                {
                     let depth = p.components().count();
                     if best.as_ref().is_none_or(|(d, _)| depth > *d) {
                         best = Some((depth, p.clone()));

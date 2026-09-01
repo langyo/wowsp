@@ -153,5 +153,7 @@ pub async fn ensure_model_pack() -> Result<String, String> {
         }
     }
 
-    Err(format!("failed to download model pack from any tag: {last_err}"))
+    Err(format!(
+        "failed to download model pack from any tag: {last_err}"
+    ))
 }

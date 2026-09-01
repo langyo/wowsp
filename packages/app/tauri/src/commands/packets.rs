@@ -280,8 +280,7 @@ fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
 /// (current clients are all modern).
 fn packet_layout_is_legacy(version: &str) -> bool {
     let mut parts = version.split(',');
-    let (Some(major), Some(minor), Some(patch)) = (parts.next(), parts.next(), parts.next())
-    else {
+    let (Some(major), Some(minor), Some(patch)) = (parts.next(), parts.next(), parts.next()) else {
         return false;
     };
     match (
@@ -354,7 +353,11 @@ fn walk_frames(
             break;
         }
         let payload = &inflated[cur + 12..payload_end];
-        let logical_type = if legacy { remap_legacy_packet_id(ptype) } else { ptype };
+        let logical_type = if legacy {
+            remap_legacy_packet_id(ptype)
+        } else {
+            ptype
+        };
         match logical_type {
             PACKET_POSITION => {
                 if let Some(sample) = parse_position(payload, time) {
@@ -397,7 +400,12 @@ fn walk_frames(
             },
             PACKET_ENTITY_METHOD => {
                 if let Some(call) = parse_entity_method(payload, time) {
-                    method_histogram.push((call.time, call.entity_id, call.method_id, call.args.len() as u32));
+                    method_histogram.push((
+                        call.time,
+                        call.entity_id,
+                        call.method_id,
+                        call.args.len() as u32,
+                    ));
                     let entry = method_arg_samples
                         .entry((call.entity_id, call.method_id))
                         .or_default();
@@ -590,10 +598,7 @@ fn walk_frames(
 /// Decode `receive_addSquadron` args: u32 paramsId, u8, u64 planeId, u32
 /// skinId, u8, u8, f32×3 position, ... Only the head fields are decoded;
 /// the rest of the fixed-dict state is ignored.
-fn decode_squadron_add(
-    time: f32,
-    args: &[u8],
-) -> Option<wowsp_tauri_shared::SquadronCreate> {
+fn decode_squadron_add(time: f32, args: &[u8]) -> Option<wowsp_tauri_shared::SquadronCreate> {
     if args.len() < 31 {
         return None;
     }
@@ -614,10 +619,7 @@ fn decode_squadron_add(
 
 /// Decode `receive_updateSquadron` args: u64 planeId, f32 dt, u8 count,
 /// then count × {f32×3 position, f32 yaw, u16 time, u8 type, i8 pitch}.
-fn decode_squadron_update(
-    time: f32,
-    args: &[u8],
-) -> Vec<wowsp_tauri_shared::SquadronPlane> {
+fn decode_squadron_update(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::SquadronPlane> {
     let mut out = Vec::new();
     if args.len() < 13 {
         return out;
@@ -741,10 +743,7 @@ fn parse_nested_property(payload: &[u8], time: f32) -> Option<RawNestedProperty>
 
 /// Parse a SetWeaponLock (0x30) payload: three u32s (weapon_type, lock_type,
 /// target_id).
-fn parse_weapon_lock(
-    payload: &[u8],
-    time: f32,
-) -> Option<wowsp_tauri_shared::WeaponLockEvent> {
+fn parse_weapon_lock(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::WeaponLockEvent> {
     if payload.len() < 12 {
         return None;
     }
@@ -808,7 +807,9 @@ fn parse_entity_method(payload: &[u8], time: f32) -> Option<RawMethodCall> {
     let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
     let method_id = i32::from_le_bytes(payload[4..8].try_into().ok()?);
     let args_len = u32::from_le_bytes(payload[8..12].try_into().ok()?) as usize;
-    let args = payload.get(12..12 + args_len.min(payload.len() - 12))?.to_vec();
+    let args = payload
+        .get(12..12 + args_len.min(payload.len() - 12))?
+        .to_vec();
     Some(RawMethodCall {
         time,
         entity_id,
@@ -822,7 +823,9 @@ fn parse_entity_method(payload: &[u8], time: f32) -> Option<RawMethodCall> {
 fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::ExplosionEvent> {
     let mut out = Vec::new();
     let mut off = 0usize;
-    let Some(&count) = args.first() else { return out };
+    let Some(&count) = args.first() else {
+        return out;
+    };
     off += 1;
     for _ in 0..count {
         if off + 17 > args.len() {
@@ -928,7 +931,9 @@ fn scan_state_for_team(state: &[u8]) -> Option<i8> {
 /// Strike/event zones keep componentsState empty (`0a 00`) and never match.
 /// Verified byte-identical across domination, PvE, and brawl modes.
 fn scan_state_for_control_point(state: &[u8]) -> Option<i32> {
-    const SIG: [u8; 11] = [0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
+    const SIG: [u8; 11] = [
+        0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+    ];
     state
         .windows(SIG.len() + 2)
         .position(|w| w[..SIG.len()] == SIG)
@@ -1202,7 +1207,10 @@ mod tests {
         // Stable ids pass through untouched.
         assert_eq!(remap_legacy_packet_id(PACKET_POSITION), PACKET_POSITION);
         assert_eq!(remap_legacy_packet_id(PACKET_VERSION), PACKET_VERSION);
-        assert_eq!(remap_legacy_packet_id(PACKET_BASE_PLAYER_CREATE_STUB), PACKET_BASE_PLAYER_CREATE_STUB);
+        assert_eq!(
+            remap_legacy_packet_id(PACKET_BASE_PLAYER_CREATE_STUB),
+            PACKET_BASE_PLAYER_CREATE_STUB
+        );
     }
 
     /// End-to-end against a real replay when `WOWSP_TEST_REPLAY` is set. Asserts
@@ -1344,7 +1352,8 @@ mod tests {
                         let mut hits = Vec::new();
                         if state.len() >= 4 {
                             for off in 0..=state.len() - 4 {
-                                let val = u32::from_le_bytes(state[off..off + 4].try_into().unwrap());
+                                let val =
+                                    u32::from_le_bytes(state[off..off + 4].try_into().unwrap());
                                 if candidates.contains(&val) {
                                     hits.push((off, val));
                                 }

@@ -22,12 +22,16 @@ pub const PORTABLE_MARKER: &str = ".portable";
 
 /// Directory that contains the running WoWSP executable.
 pub fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf))
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
 }
 
 /// Whether the app runs in portable (USB / green) mode.
 pub fn portable_mode() -> bool {
-    exe_dir().map(|d| d.join(PORTABLE_MARKER).exists()).unwrap_or(false)
+    exe_dir()
+        .map(|d| d.join(PORTABLE_MARKER).exists())
+        .unwrap_or(false)
 }
 
 /// Resolve the writable data root:
