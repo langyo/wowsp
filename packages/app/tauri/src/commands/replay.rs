@@ -41,9 +41,7 @@ pub fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
 /// metadata (entity-create: type / vehicleId / initial position) so the frontend
 /// can filter ships from capture zones / avatars.
 #[tauri::command]
-pub fn read_replay_positions(
-    path: String,
-) -> Result<wowsp_tauri_shared::ReplayStream, String> {
+pub fn read_replay_positions(path: String) -> Result<wowsp_tauri_shared::ReplayStream, String> {
     let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
     let stream = packet_stream_after_blocks(&bytes)
         .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
@@ -190,9 +188,7 @@ fn detect_hp_property(
 /// Group the decoded per-entity positions into trajectories, attaching each
 /// entity's creation metadata (type / vehicleId / spawn position) from the
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
-fn group_by_entity(
-    decoded: super::packets::DecodedReplay,
-) -> wowsp_tauri_shared::ReplayStream {
+fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared::ReplayStream {
     let super::packets::DecodedReplay {
         positions,
         kinds,
@@ -254,10 +250,7 @@ fn group_by_entity(
     // sample is the sink instant; the client stops updating HP afterwards).
     // The EntityDestroy (0x06) packet is absent on modern clients, so without
     // this every ship would render alive until match end.
-    fn infer_death_time(
-        hp: &[wowsp_tauri_shared::HpSample],
-        existing: Option<f32>,
-    ) -> Option<f32> {
+    fn infer_death_time(hp: &[wowsp_tauri_shared::HpSample], existing: Option<f32>) -> Option<f32> {
         if existing.is_some() {
             return existing;
         }
@@ -848,7 +841,10 @@ mod tests {
         let mut cver: Option<String> = None;
         if let Some(json) = extract_descriptor_json(&bytes) {
             if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
-                cver = raw.get("clientVersionFromExe").and_then(|x| x.as_str()).map(str::to_string);
+                cver = raw
+                    .get("clientVersionFromExe")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
                 if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
                     for v in arr {
                         if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
@@ -858,9 +854,12 @@ mod tests {
                 }
             }
         }
-        let decoded = crate::commands::packets::decode_replay(pstream, &candidates, cver.as_deref()).expect("decode");
+        let decoded =
+            crate::commands::packets::decode_replay(pstream, &candidates, cver.as_deref())
+                .expect("decode");
         // (entityType, methodId) histogram with arg-length stats.
-        let mut histo: std::collections::BTreeMap<(i16, i32), (u32, u32, f32, f32)> = std::collections::BTreeMap::new();
+        let mut histo: std::collections::BTreeMap<(i16, i32), (u32, u32, f32, f32)> =
+            std::collections::BTreeMap::new();
         for (t, eid, mid, alen) in &decoded.method_histogram {
             let et = decoded.kinds.get(eid).map(|k| k.entity_type).unwrap_or(-1);
             let e = histo.entry((et, *mid)).or_insert((0, *alen, *t, *t));
@@ -872,9 +871,14 @@ mod tests {
         for (eid, changes) in &decoded.properties {
             props.insert(
                 eid.to_string(),
-                changes.iter().map(|c| serde_json::json!({
-                    "t": c.time, "p": c.property_index, "v": c.value, "s": c.size,
-                })).collect::<Vec<_>>(),
+                changes
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "t": c.time, "p": c.property_index, "v": c.value, "s": c.size,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
             );
         }
         let histo_json: serde_json::Value = histo
