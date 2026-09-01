@@ -2,9 +2,10 @@ import { defineAsyncComponent, defineComponent, onBeforeUnmount, onMounted } fro
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import {
-  MonitorPlay, Eye, BarChart3, Ship, ChevronDown, ChevronRight, Download, Github,
-} from "lucide-vue-next";
+  MonitorPlay, Eye, BarChart3, Ship, ChevronDown, ChevronRight, Download,
+} from "@lucide/vue";
 import { HButton } from "@celestia-island/hikari";
+import GithubMark from "@/components/GithubMark";
 import { LinkButton, Reveal, FitScale } from "@/components/ui";
 import ModWindow from "@/components/showcase/ModWindow";
 import LookupWindow from "@/components/showcase/LookupWindow";
@@ -132,7 +133,7 @@ export default defineComponent({
                   )}
                 </RouterLink>
                 <LinkButton size="lg" variant="ghost" href={GITHUB} external>
-                  <Github size={16} />
+                  <GithubMark size={16} />
                   {t("hero.github")}
                 </LinkButton>
               </div>
@@ -310,7 +311,7 @@ export default defineComponent({
                   {t("cta.download")}
                 </LinkButton>
                 <LinkButton size="lg" variant="ghost" href={GITHUB} external>
-                  <Github size={16} />
+                  <GithubMark size={16} />
                   GitHub
                 </LinkButton>
               </div>

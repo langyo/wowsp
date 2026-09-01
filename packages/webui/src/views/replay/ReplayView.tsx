@@ -1,5 +1,5 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
-import { Play, RefreshCw } from "lucide-vue-next";
+import { Play, RefreshCw } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";

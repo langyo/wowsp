@@ -7,7 +7,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "peerDependencies": {
-    "three": "^0.184",
-    "vue": "^3"
+    "three": "^0.*",
+    "vue": "^*"
   }
 }

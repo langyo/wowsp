@@ -1,5 +1,5 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
-import { AlertTriangle, RotateCcw } from "lucide-vue-next";
+import { AlertTriangle, RotateCcw } from "@lucide/vue";
 
 import { HButton, HInput, HSelect, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
 

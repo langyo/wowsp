@@ -1,5 +1,5 @@
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
-import { RotateCcw, Lock } from "lucide-vue-next";
+import { RotateCcw, Lock } from "@lucide/vue";
 
 import { HButton } from "@celestia-island/hikari";
 import { t } from "@/i18n";

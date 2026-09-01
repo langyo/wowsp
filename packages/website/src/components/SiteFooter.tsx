@@ -1,7 +1,7 @@
 import { defineComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
-import { Github } from "lucide-vue-next";
+import GithubMark from "@/components/GithubMark";
 import "./SiteFooter.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -25,7 +25,7 @@ export default defineComponent({
             <RouterLink to="/download" class="site-footer__link">{t("nav.download")}</RouterLink>
             <a href={docsHref} class="site-footer__link">{t("nav.docs")}</a>
             <a href={GITHUB} target="_blank" rel="noopener" class="site-footer__link">
-              <Github size={12} style="vertical-align: -2px; margin-right: 4px;" />
+              <GithubMark size={12} style="vertical-align: -2px; margin-right: 4px;" />
               GitHub
             </a>
           </nav>

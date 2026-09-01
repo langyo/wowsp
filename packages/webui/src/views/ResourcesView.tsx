@@ -9,7 +9,7 @@ import {
   Puzzle,
   RefreshCw,
   ScrollText,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 
 import { api, type InstalledMod, type ModKind, type PackagePlan } from "@/api";
 import { useConfigStore } from "@/stores/config";

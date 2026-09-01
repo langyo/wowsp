@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Flat eslint.config.js replacement: oxlint parses TS with its own parser,
+  // so the linter no longer pins the typescript package version.
+  "plugins": ["typescript"],
+  "ignorePatterns": ["dist/", "node_modules/", "target/", ".cache/"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-empty": ["error", { "allowEmptyCatch": true }],
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "destructuredArrayIgnorePattern": "^_"
+      }
+    ],
+    "no-explicit-any": "warn",
+    // Former typescript-eslint/recommended entries.
+    "ban-ts-comment": "error",
+    "no-empty-object-type": "error",
+    "no-namespace": "error",
+    "no-non-null-asserted-optional-chain": "error",
+    "no-require-imports": "error",
+    "no-unsafe-function-type": "error",
+    "no-wrapper-object-types": "error",
+    "prefer-as-const": "error",
+    "triple-slash-reference": "error"
+  },
+  "env": {
+    "builtin": true
+  }
+}

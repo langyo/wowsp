@@ -1,5 +1,5 @@
 import { defineComponent, onBeforeUnmount, ref, Transition } from "vue";
-import { ArrowUp } from "lucide-vue-next";
+import { ArrowUp } from "@lucide/vue";
 
 import "./SScrollTop.scss";
 

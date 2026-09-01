@@ -1,7 +1,6 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@wowsp/shared_ui": ["./src"],

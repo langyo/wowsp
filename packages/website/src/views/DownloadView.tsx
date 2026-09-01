@@ -2,7 +2,7 @@ import { defineComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   HardDriveDownload, Usb, Zap, Download, ExternalLink, FileDown, Monitor, Apple, Terminal, Check, Clock3,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 import { HTag } from "@celestia-island/hikari";
 import { LinkButton, Reveal } from "@/components/ui";
 import "./DownloadView.scss";

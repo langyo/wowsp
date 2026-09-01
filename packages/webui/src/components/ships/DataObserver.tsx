@@ -1,5 +1,5 @@
 import { computed, defineComponent, type PropType } from "vue";
-import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "lucide-vue-next";
+import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats } from "./modifierPipeline";

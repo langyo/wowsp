@@ -3,7 +3,7 @@ import { useI18n } from "vue-i18n";
 import {
   Boxes, ShieldCheck, Sparkles, MessagesSquare, ChevronRight,
   Compass, DownloadCloud, BadgeCheck, RefreshCcw,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 import { HButton, HCheckbox, HInput, HRadio, HTag } from "@celestia-island/hikari";
 import { LinkButton, Reveal } from "@/components/ui";
 import "./ModsView.scss";
