@@ -1,7 +1,7 @@
 import { computed, defineComponent, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
-import { Languages, Download } from "lucide-vue-next";
+import { Languages, Download } from "@lucide/vue";
 import { LOCALE_OPTIONS, type Locale } from "@/locales";
 import { HButton, HMenu } from "@celestia-island/hikari";
 import "./SiteNav.scss";

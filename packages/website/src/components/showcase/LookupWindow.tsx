@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Search, Database, Ship } from "lucide-vue-next";
+import { Search, Database, Ship } from "@lucide/vue";
 import { HTag } from "@celestia-island/hikari";
 import { ships, shipName, nationFlag } from "@/data/ships";
 import "./WindowFrames.scss";

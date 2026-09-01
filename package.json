@@ -23,7 +23,7 @@
     "@types/three": "^0.185.4",
     "@unocss/preset-wind": "^66.7.0",
     "eslint": "^9.0.0",
-    "sass": "^1.102.0",
+    "sass": "^1.103.1",
     "typescript-eslint": "^8.60.0",
     "unocss": "^66.7.0"
   }

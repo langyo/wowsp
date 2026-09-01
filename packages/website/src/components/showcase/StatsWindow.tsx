@@ -1,6 +1,6 @@
 import { defineComponent } from "vue";
 import { useI18n } from "vue-i18n";
-import { Activity, Crosshair, Gauge, Star, Swords, Trophy } from "lucide-vue-next";
+import { Activity, Crosshair, Gauge, Star, Swords, Trophy } from "@lucide/vue";
 import { HTag } from "@celestia-island/hikari";
 import "./WindowFrames.scss";
 
