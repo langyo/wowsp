@@ -9,6 +9,8 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
+import { useLanguage } from "@/i18n/useLanguage";
+import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
@@ -214,7 +216,11 @@ export default defineComponent({
     });
 
     function nationLabel(code: string): string {
-      return t(`ships.nation.${code}`, {}) || code;
+      // Follows the 素材翻译 setting (国服 → X-系 names), UI i18n fallback.
+      return (
+        nationNameFromDb(code, useLanguage().dataLanguage.value) ??
+        (t(`ships.nation.${code}`, {}) || code)
+      );
     }
     function typeLabel(code: string): string {
       return t(`ships.type.${code}`, {}) || code;
