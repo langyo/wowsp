@@ -32,6 +32,12 @@
   align-items: center;
 }
 
+/* Wrapper that only hosts the sort strip's direction-flip click hook —
+   boxless, so the strip itself stays the row's flex child. */
+.ship-filter-bar__sort {
+  display: contents;
+}
+
 .ship-filter-bar__sort-arrow {
   opacity: 0.85;
 }
