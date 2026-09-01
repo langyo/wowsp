@@ -183,7 +183,8 @@ export default defineComponent({
           rows = rows.filter((s) => s.battles >= min);
         }
       }
-      const dir = sortDir.value === "desc" ? -1 : 1;
+      // Descending base comparator (b - a); asc flips the sign.
+      const dir = sortDir.value === "desc" ? 1 : -1;
       return [...rows].sort((a, b) =>
         sortKey.value === "battles"
           ? (b.battles - a.battles) * dir
@@ -291,27 +292,40 @@ export default defineComponent({
             ]}
           />
           {/* Sort — segmented group; clicking the active key flips direction.
-              The direction arrow rides the active tab's icon field. */}
-          <HTabs
-            variant="segmented"
-            modelValue={sortKey.value}
-            onUpdate:modelValue={(v: string) => toggleSort(v as typeof sortKey.value)}
-            tabs={[
-              { key: "battles", label: t("dashboard.battles") },
-              { key: "winrate", label: t("dashboard.winrate") },
-              { key: "avgDamage", label: t("dashboard.avgDamage") },
-            ].map((tb) => ({
-              ...tb,
-              icon:
-                sortKey.value === tb.key ? (
-                  sortDir.value === "desc" ? (
-                    <ArrowDown size={11} class="ship-filter-bar__sort-arrow" />
-                  ) : (
-                    <ArrowUp size={11} class="ship-filter-bar__sort-arrow" />
-                  )
-                ) : undefined,
-            }))}
-          />
+              The direction arrow rides the active tab's icon field. HTabs has
+              radio semantics — it never re-emits for the already-active
+              option (its trigger handler no-ops without stopping
+              propagation) — so the flip rides a wrapper click: an active
+              trigger flips direction, inactive triggers fall through to the
+              normal update below. */}
+          <span
+            class="ship-filter-bar__sort"
+            onClick={(e: MouseEvent) => {
+              const trigger = (e.target as HTMLElement | null)?.closest(".hk-tabs-trigger");
+              if (trigger?.hasAttribute("data-active")) toggleSort(sortKey.value);
+            }}
+          >
+            <HTabs
+              variant="segmented"
+              modelValue={sortKey.value}
+              onUpdate:modelValue={(v: string) => toggleSort(v as typeof sortKey.value)}
+              tabs={[
+                { key: "battles", label: t("dashboard.battles") },
+                { key: "winrate", label: t("dashboard.winrate") },
+                { key: "avgDamage", label: t("dashboard.avgDamage") },
+              ].map((tb) => ({
+                ...tb,
+                icon:
+                  sortKey.value === tb.key ? (
+                    sortDir.value === "desc" ? (
+                      <ArrowDown size={11} class="ship-filter-bar__sort-arrow" />
+                    ) : (
+                      <ArrowUp size={11} class="ship-filter-bar__sort-arrow" />
+                    )
+                  ) : undefined,
+              }))}
+            />
+          </span>
           {/* Search — one button; the input lives in a popup panel that
               opens leftwards from the button (roomier than an inline box). */}
           <div ref={searchAnchor} class="ship-filter-bar__search-anchor">
