@@ -7,6 +7,7 @@ import { HTooltip } from "@celestia-island/hikari";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
+import SettingsModal from "@/components/layout/SettingsModal";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
 import type { GameInstallKind } from "@/api";
@@ -34,6 +35,7 @@ export default defineComponent({
     const gameStatus = useGameStatusStore();
     const { copy } = useClipboard();
     const showSwitcher = ref(false);
+    const showSettings = ref(false);
 
     const accountLabel = computed(() => {
       const a = accounts.activeAccount;
@@ -133,11 +135,16 @@ export default defineComponent({
             <div class="sidebar__account" onClick={() => (showSwitcher.value = true)}>
               <span class="sidebar__account-name">{accountLabel.value}</span>
             </div>
-            {/* Settings as an icon button in the bottom-left */}
+            {/* Settings as an icon button in the bottom-left — opens the
+                settings modal instead of routing to a dedicated page */}
             <HTooltip text={t("nav.settings")} placement="right">
-              <RouterLink to="/settings" class="sidebar__settings-btn" activeClass="is-active">
+              <button
+                type="button"
+                class="sidebar__settings-btn"
+                onClick={() => (showSettings.value = true)}
+              >
                 <Settings size={18} />
-              </RouterLink>
+              </button>
             </HTooltip>
           </div>
         </div>
@@ -145,6 +152,10 @@ export default defineComponent({
         <AccountSwitcherModal
           modelValue={showSwitcher.value}
           onUpdate:modelValue={(v: boolean) => (showSwitcher.value = v)}
+        />
+        <SettingsModal
+          modelValue={showSettings.value}
+          onUpdate:modelValue={(v: boolean) => (showSettings.value = v)}
         />
       </aside>
     );

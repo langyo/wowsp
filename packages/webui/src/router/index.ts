@@ -30,11 +30,6 @@ export const router = createRouter({
       name: "resources",
       component: () => import("@/views/ResourcesView"),
     },
-    {
-      path: "/settings",
-      name: "settings",
-      component: () => import("@/views/SettingsView"),
-    },
   ],
 });
 
