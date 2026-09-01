@@ -18,6 +18,7 @@
 
 import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
+import nationNamesDbRaw from "../../data/nation_names.json";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
@@ -159,6 +160,14 @@ export function resolveShipModelByShipId(
     const url = shipModelUrl(fallbackName);
     if (url) return url;
   }
+  // GLB filenames are English stems — a localized display name (the
+  // encyclopedia store overlays names per the data-language setting) never
+  // matches. Try the offline DB's English name before giving up.
+  const english = shipNameFromOfflineDb(shipId, "en-US");
+  if (english) {
+    const url = shipModelUrl(english);
+    if (url) return url;
+  }
   return null;
 }
 
@@ -243,6 +252,27 @@ export function shipNameFromOfflineDb(
   if (lang && entry.names[lang]) return entry.names[lang];
   const values = Object.values(entry.names);
   return entry.names["en"] ?? (values.length > 0 ? values[0] : null);
+}
+
+/** Localized nation label from the baked game-file DB (nation_names.json,
+ *  produced by scripts/model_convert/extract_nation_names.py). The WG API
+ *  only returns nation codes; the display names follow the selected data
+ *  language — including the 国服-only X-系 harmonized names (R系/M系/...)
+ *  which no WG locale file carries. `nation` accepts both WG API codes
+ *  ("uk", "ussr") and GameParams codes ("united_kingdom", "russia"); the DB
+ *  bakes both spellings. Falls back en-US → null. */
+export function nationNameFromDb(
+  nation: string | undefined | null,
+  lang?: string,
+): string | null {
+  if (!nation) return null;
+  const key = nation.toLowerCase();
+  const db = nationNamesDbRaw as Record<string, Record<string, string>>;
+  for (const code of lang ? [lang, "en-US"] : ["en-US"]) {
+    const label = db[code]?.[key];
+    if (label) return label;
+  }
+  return null;
 }
 
 export function resolveMapModelUrl(spaceId: string | undefined): string | null {

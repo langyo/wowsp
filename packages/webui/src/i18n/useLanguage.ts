@@ -12,7 +12,13 @@
  *                   简体新加坡 distinct.
  *
  * Every external boundary converts from the canonical lang-loc:
- *   - WG API (`wgApiLanguage`): "zh-CN" → "zh-cn" (API uses lowercase codes)
+ *   - WG API (`wgApiLanguage`): "zh-CN" → "zh-cn", "zh-SG" → "zh-cn".
+ *     IMPORTANT: the WG API has no "zh-sg" language — every realm answers
+ *     INVALID_LANGUAGE (407) for it. The API's ONLY simplified Chinese is
+ *     "zh-cn", and its content is the harmonized CN translation (IJN ships
+ *     get animal names) on every realm. The realm-distinct 亚服简体 original
+ *     names live only in the game client files (res/texts/zh_sg) and reach
+ *     the UI through the offline ship-name DB — NOT through the WG API.
  *   - game gettext dirs (`gettextDir`): "zh-CN" → "zh", "zh-SG" → "zh_sg",
  *     "zh-TW" → "zh_tw" (WG uses underscore dirs for the regional variants)
  *
@@ -44,10 +50,17 @@ interface LangLoc {
 
 export const LANG_LOCS: LangLoc[] = [
   { code: "zh-CN", label: "简体中文（国服）", wgApi: "zh-cn", gettext: "zh" },
-  { code: "zh-SG", label: "简体中文（亚服）", wgApi: "zh-sg", gettext: "zh_sg" },
+  // wgApi "zh-cn", NOT "zh-sg": the WG API rejects "zh-sg" with 407
+  // INVALID_LANGUAGE on every realm (verified against the live API). Both
+  // simplified-Chinese options share the API's single zh-cn content; the
+  // 亚服 original names come from the offline game-file DB instead.
+  { code: "zh-SG", label: "简体中文（亚服）", wgApi: "zh-cn", gettext: "zh_sg" },
   { code: "zh-TW", label: "繁體中文（亞服）", wgApi: "zh-tw", gettext: "zh_tw" },
   { code: "en-US", label: "English", wgApi: "en", gettext: "en" },
   { code: "ja-JP", label: "日本語", wgApi: "ja", gettext: "ja" },
+  // NOTE: "ko" is not accepted by the asia realm API either — the
+  // encyclopedia store falls back to en for the API call while display
+  // names still resolve through the offline DB.
   { code: "ko-KR", label: "한국어", wgApi: "ko", gettext: "ko" },
   { code: "ru-RU", label: "Русский", wgApi: "ru", gettext: "ru" },
   { code: "fr-FR", label: "Français", wgApi: "fr", gettext: "fr" },

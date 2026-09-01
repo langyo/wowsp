@@ -20,7 +20,8 @@ import {
   SHIP_TYPE_SHORT,
   type DateRange,
 } from "@/utils/shipAggregation";
-import { shipNameFromModelDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { shipNameFromModelDb, shipNameFromOfflineDb, nationNameFromDb } from "@/features/holographic/modelLoader";
+import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./DashboardView.scss";
 
@@ -105,11 +106,17 @@ export default defineComponent({
       }
       if (filterState.value.groupMode === "nation") {
         const m = new Map<string, ShipGroup>();
+        const { dataLanguage } = useLanguage();
         for (const s of ships) {
           const nation = encyclopedia.byId.get(s.shipId)?.nation ?? "unknown";
           let g = m.get(nation);
           if (!g) {
-            g = { key: nation, label: t(`ships.nation.${nation}`, {}), ships: [] };
+            // Nation labels follow the 素材翻译 setting (国服 → X-系 names).
+            g = {
+              key: nation,
+              label: nationNameFromDb(nation, dataLanguage.value) ?? t(`ships.nation.${nation}`, {}),
+              ships: [],
+            };
             m.set(nation, g);
           }
           g.ships.push(s);

@@ -15,7 +15,8 @@ import { ArrowDown, ArrowUp, Search } from "lucide-vue-next";
 import { HSearchInput, HTabs } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
+import { useLanguage } from "@/i18n/useLanguage";
 import { matchShipNames } from "@/features/search/pinyinSearch";
 import { t } from "@/i18n";
 import "./ShipFilterBar.scss";
@@ -84,6 +85,7 @@ export default defineComponent({
   },
   setup(props, { emit }) {
     const encyclopedia = useEncyclopediaStore();
+    const { dataLanguage } = useLanguage();
 
     const groupMode = ref<"type" | "nation" | "tier">("type");
     const typeFilter = ref("");
@@ -111,7 +113,9 @@ export default defineComponent({
     });
 
     /** Unified ship metadata: encyclopedia first (full API list), offline
-     *  DB as fallback for brand-new ships. */
+     *  DB as fallback for brand-new ships. Display names follow the
+     *  素材翻译 setting (the encyclopedia store overlays them already; the
+     *  offline fallback resolves through the same data language). */
     const infoOf = (shipId: number) => {
       const enc = encyclopedia.byId.get(shipId);
       if (enc) return enc;
@@ -122,7 +126,10 @@ export default defineComponent({
             tier: off.tier ?? 0,
             type: off.type ?? "",
             nation: off.nation ?? "",
-            name: off.names?.["zh-CN"] ?? off.names?.["en-US"] ?? `#${shipId}`,
+            name:
+              off.names?.[dataLanguage.value] ??
+              off.names?.["en-US"] ??
+              `#${shipId}`,
           }
         : null;
     };
@@ -142,7 +149,7 @@ export default defineComponent({
       if (!shipQuery.value.trim()) return hits;
       for (const s of props.ships) {
         const info = infoOf(s.shipId);
-        const names = info ? { "zh-CN": info.name } : undefined;
+        const names = info ? { [dataLanguage.value]: info.name } : undefined;
         const hit = matchShipNames(shipQuery.value, names, s.shipId);
         if (hit) hits.set(s.shipId, hit.matchedName);
       }
@@ -253,7 +260,13 @@ export default defineComponent({
                 onUpdate:modelValue={(v: string) => (nationFilter.value = v)}
                 tabs={toTabs([
                   { value: "", label: "全部" },
-                  ...nations.value.map((n) => ({ value: n, label: NATION_LABELS[n] ?? n })),
+                  ...nations.value.map((n) => ({
+                    value: n,
+                    label:
+                      nationNameFromDb(n, dataLanguage.value) ??
+                      NATION_LABELS[n] ??
+                      n,
+                  })),
                 ])}
               />
             ) : (
