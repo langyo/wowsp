@@ -149,6 +149,13 @@ lint target='full' *FLAGS='':
 check:
     cargo check --workspace
 
+# ── lint-msg ──────────────────────────────────────────────────────────
+#   just lint-msg              → check commit subjects on master..HEAD (AGENTS.md §1)
+#   just lint-msg origin/dev   → check against another base
+
+lint-msg base='master':
+    @git log --no-merges --format='%s' {{base}}..HEAD | python scripts/commit_msg_lint.py check --stdin-subjects
+
 # ── fmt ───────────────────────────────────────────────────────────────
 #   just fmt           → auto-fix: organize imports + clippy fix + cargo fmt + pnpm lint --fix
 #   just fmt check     → cargo fmt --check only

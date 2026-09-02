@@ -217,7 +217,12 @@ Each milestone was a focused PR against `dev`; all of them now live on `master`.
 
 ## Known CI gaps
 
-- cargo-deny steps are disabled: the dockerized action trips over
-  rust-toolchain.toml (stable-musl fetch) and rejects deny.toml values.
-  Re-enable once the action/deny.toml combo is compatible. pnpm audit still
-  runs for the npm side.
+- ~~cargo-deny steps are disabled~~ Resolved (2026-09-02): the CI `deny` job
+  installs the native cargo-deny binary via taiki-e/install-action instead of
+  the dockerized action, which sidesteps both the rust-toolchain.toml
+  (stable-musl) fetch failure and the action's deny.toml validator. pnpm
+  audit still covers the npm side.
+- ~~Rust steps never ran~~ Resolved (2026-09-02): the old single-job CI gated
+  fmt/clippy/check/test on `runner.os == 'Windows'` while only ever running
+  on ubuntu-latest; they now live in a dedicated `rust` job on
+  windows-latest (windows-future 0.2.1 does not compile on Linux).
