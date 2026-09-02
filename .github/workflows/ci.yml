@@ -1,22 +1,31 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [dev, master]
   pull_request:
     branches: [dev, master]
 
+# Full per-push triggering is kept deliberately (public repo, hosted runners);
+# concurrency + cancel-in-progress drops superseded runs for the same PR/ref
+# (AGENTS.md §8.3).
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  web:
+    name: Frontend (ubuntu)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: pnpm/action-setup@v6
         # Version comes from the "packageManager" field in package.json
         # (pnpm 11 — workspace-level overrides live in pnpm-workspace.yaml).
@@ -24,40 +33,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Cache cargo
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
       - name: Generate shader bundle
         run: python scripts/glsl_bundle.py --verbose
       - name: Generate Tauri icons
         run: python scripts/ensure_tauri_icons.py
-      - name: Rustfmt
-        # Only the app crates are in-repo code; wowsunpack/wows-core are
-        # vendored wows-toolkit sources that keep upstream formatting.
-        # Windows-only: windows-future 0.2.1 (pulled by tauri on Linux) fails
-        # to compile on Linux (uses windows_core::imp::marshaler behind a
-        # cfg(windows) gate — upstream bug, fixed in 0.3.x which the locked
-        # windows 0.61 doesn't accept).
-        if: runner.os == 'Windows'
-        run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
-      - name: Clippy
-        if: runner.os == 'Windows'
-        # App crates only — vendored wowsunpack/wows-core are dependency-only.
-        run: cargo clippy -p wowsp_tauri --bins -- -D warnings
-      - name: Check
-        if: runner.os == 'Windows'
-        run: cargo check -p wowsp_tauri
-      - name: Test (backend)
-        if: runner.os == 'Windows'
-        run: cargo test -p wowsp_tauri
       - name: Frontend typecheck
         run: pnpm -r typecheck
       - name: Frontend lint
@@ -70,5 +51,78 @@ jobs:
         # Dev-toolchain advisories (e.g. brace-expansion chains) have
         # tripped `high` before; production deps stay gated at `critical`.
         run: pnpm audit --audit-level=critical
-      # cargo-deny is disabled until its dockerized action can run with the
-      # pinned toolchain + deny.toml (see PLAN.md); pnpm audit covers npm.
+
+  rust:
+    name: Rust (windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Rustfmt
+        # Only the app crates are in-repo code; wowsunpack/wows-core are
+        # vendored wows-toolkit sources that keep upstream formatting.
+        run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
+      - name: Clippy
+        # App crates only — vendored wowsunpack/wows-core are dependency-only.
+        run: cargo clippy -p wowsp_tauri --bins -- -D warnings
+      - name: Check
+        run: cargo check -p wowsp_tauri
+      - name: Test (backend)
+        run: cargo test -p wowsp_tauri
+    # NOTE: Rust checks must stay on Windows runners: windows-future 0.2.1
+    # (pulled by tauri on Linux) fails to compile on Linux (uses
+    # windows_core::imp::marshaler behind a cfg(windows) gate — upstream bug,
+    # fixed in 0.3.x which the locked windows 0.61 doesn't accept). The old
+    # single-job workflow gated these steps on runner.os == 'Windows' while
+    # only ever running on ubuntu — they never executed.
+
+  deny:
+    name: cargo-deny (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # Native cargo-deny binary instead of the dockerized action: the
+      # container trips over rust-toolchain.toml (stable-musl fetch) and
+      # rejects deny.toml values (see the former "Known CI gaps" note in
+      # PLAN.md). cargo-deny only reads cargo metadata, so the windows-only
+      # deps resolve fine on Linux.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo-deny (advisories)
+        run: cargo deny check advisories
+      - name: cargo-deny (licenses)
+        run: cargo deny check licenses
+      - name: cargo-deny (sources)
+        run: cargo deny check sources
+
+  versions:
+    name: Verify version consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check version fields
+        # All manifests (Cargo workspace, tauri.conf.json, the three
+        # package.jsons) must move together in the same PR (AGENTS.md §5).
+        run: python scripts/check_versions.py
