@@ -146,6 +146,12 @@ The full posting rules (template, i18n block, update flow, content scope)
 live in the pinned Discussions post; the indexer refuses ids that do not
 match this shape.
 
+**Thread titles are English-only** — `[Mod] <English name> <slug> <version>`.
+Localized names live in the i18n block, which also renders as a collapsed
+`📖 Description in 8 languages` details section in every thread; the rules
+post itself is locked with one comment per locale carrying the translated
+rules.
+
 #### Localized name & description (`wowsp:i18n`)
 
 Every thread carries an invisible HTML comment right after the front-matter,

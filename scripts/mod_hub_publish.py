@@ -104,6 +104,29 @@ def build_i18n_block(i18n: dict) -> str:
     return "\n".join(lines)
 
 
+def thread_title(mod: dict) -> str:
+    """Thread titles are English-only; localized names live in the i18n
+    block and the collapsed description section."""
+    return f"[Mod] {mod['name_en']} {mod['id']} {mod['version']}"
+
+
+def build_i18n_details(i18n: dict) -> str:
+    """Visible collapsed section listing the description in every locale."""
+    lines = ["<details>", "<summary>📖 Description in 8 languages</summary>", ""]
+    for lang in I18N_LOCALES:
+        entry = (i18n or {}).get(lang) or {}
+        name = entry.get("name", "")
+        desc = " ".join(entry.get("desc", "").split())
+        if not name and not desc:
+            continue
+        label = f"**{name}**" if name else ""
+        body = f": {desc}" if desc else ""
+        lines.append(f"- **`{lang}`** {label}{body}".replace("  ", " "))
+    lines.append("")
+    lines.append("</details>")
+    return "\n".join(lines)
+
+
 def parse_i18n_block(body: str) -> dict:
     """Read the wowsp:i18n block back out of a raw discussion body."""
     m = re.search(r"wowsp:i18n\n(.*?)\nwowsp:i18n", body or "", re.DOTALL)
@@ -151,13 +174,20 @@ def gh_graphql(query: str, **fields) -> dict:
     # Object-typed variables (CreateDiscussionInput) only survive as real
     # objects when the whole request goes through as JSON on stdin.
     payload = json.dumps({"query": query, "variables": fields})
-    out = subprocess.run(
-        ["gh", "api", "graphql", "--input", "-"],
-        input=payload, capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0:
-        raise RuntimeError(f"gh api graphql failed: {out.stderr.strip()[:500]}")
-    return json.loads(out.stdout)["data"]
+    last_err = ""
+    for attempt in range(1, 4):
+        out = subprocess.run(
+            ["gh", "api", "graphql", "--input", "-"],
+            input=payload, capture_output=True, text=True, check=False,
+        )
+        if out.returncode == 0:
+            return json.loads(out.stdout)["data"]
+        last_err = out.stderr.strip()[:500]
+        if "dial tcp" in last_err or "timed out" in last_err or "Could not resolve" in last_err:
+            time.sleep(3 * attempt)
+            continue
+        break
+    raise RuntimeError(f"gh api graphql failed: {last_err}")
 
 
 def resolve_url(base: str, relative: str) -> str:
@@ -465,6 +495,8 @@ def discussion_body(mod: dict) -> str:
     if mod.get("i18n"):
         lines.append(build_i18n_block(mod["i18n"]))
         lines.append("")
+        lines.append(build_i18n_details(mod["i18n"]))
+        lines.append("")
     if mod.get("preview_attachment"):
         lines.append(f"![{mod['name_en']}]({mod['preview_attachment']})")
         lines.append("")
@@ -527,7 +559,7 @@ def discussions(cache: Path) -> None:
         if mod["id"] in existing:
             print(f"  = {mod['id']} -> #{existing[mod['id']]}")
             continue
-        title = f"[Mod] {mod['name_zh'] or mod['name_en']} {mod['id']} {mod['version']}"
+        title = thread_title(mod)
         result = gh_graphql(
             CREATE_MUTATION,
             input={
@@ -599,7 +631,7 @@ def update_bodies(cache: Path) -> None:
             UPDATE_MUTATION,
             input={
                 "discussionId": thread["id"],
-                "title": f"[Mod] {mod['name_zh'] or mod['name_en']} {mod['id']} {mod['version']}",
+                "title": thread_title(mod),
                 "body": discussion_body(mod),
             },
         )
@@ -665,7 +697,7 @@ def build_index(state: dict) -> dict:
         )
         entry["versions"][mod["version"]] = {
             "game": mod["game"],
-            "title": f"{mod['name_zh']} / {mod['name_en']}".strip(" /"),
+            "title": mod["name_en"],
             "name_en": mod["name_en"],
             "name_zh": mod["name_zh"],
             "description": mod["description"],
