@@ -47,8 +47,8 @@ const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> = {
   textures: { icon: PackageCheck, class: "textures" },
 };
 
-type CatalogCat = "battle" | "minimap" | "port" | "texts";
-const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "texts"];
+type CatalogCat = "battle" | "minimap" | "port" | "text" | "patch";
+const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text", "patch"];
 
 const REPO = "langyo/wowsp";
 

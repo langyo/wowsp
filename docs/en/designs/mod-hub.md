@@ -120,6 +120,32 @@ Discussions resource post template (excerpt):
     Body (Markdown, with preview images)…
     Attachment: sea-haze-skins-1.4.0.zip (SHA-256: …)
 
+#### Slug taxonomy (`category.genus.species`)
+
+Every mod id is a permanent, three-field taxonomical name — big to small, like
+biological nomenclature:
+
+    battle.timer.shot        port.carousel.filters
+    battle.marker.regen      port.sessionstats.v2
+    minimap.rpf.2d           text.shipname.real
+    patch.ime.compat
+
+- `category` is a closed whitelist: `battle` / `minimap` / `port` / `text` /
+  `patch` (new categories are maintainer-gated);
+- `genus` is the functional family (`timer`, `meter`, `marker`, `panel`,
+  `carousel`, `techtree`, `crew`, `chat`, `shipname`, `font`, …);
+- `species` carries the specifics, hyphenated modifiers and variant tails
+  (`-v2`, `-cb`, author names when the author *is* the identity).
+- Character set per field: `[a-z0-9]` plus inner hyphens. **Never** dates,
+  package versions, `final`/`new`/`latest` suffixes, or underscores. The
+  version lives in the `version:` front-matter, compatibility in `game:`,
+  integrity in the thread's SHA-256 — never in the name.
+- Package files mirror the slug exactly: `<slug>.zip` or `<slug>.partN.zip`.
+
+The full posting rules (template, i18n block, update flow, content scope)
+live in the pinned Discussions post; the indexer refuses ids that do not
+match this shape.
+
 #### Localized name & description (`wowsp:i18n`)
 
 Every thread carries an invisible HTML comment right after the front-matter,

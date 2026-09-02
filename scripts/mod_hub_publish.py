@@ -120,6 +120,11 @@ def parse_i18n_block(body: str) -> dict:
     return out
 
 
+# Slug migration table: legacy ingest ids -> taxonomical slugs
+# (category.genus.species). Maintained in scripts/mod_hub_slugs.py; curate
+# consults it so future Aslain refreshes land on the same names.
+from mod_hub_slugs import CATEGORY_RENAME, SLUG_MAP  # noqa: E402 - repo-local
+
 CATEGORY_MAP = {
     "Team_Panel": "battle",
     "Team_Mini_Panel": "battle",
@@ -258,9 +263,9 @@ def curate(cache: Path, dry_run: bool = False) -> list[dict]:
             preview = mod.attrib.get("Preview", "")
             mods.append(
                 {
-                    "id": slugify(mid),
+                    "id": SLUG_MAP.get(slugify(mid), slugify(mid)),
                     "aslain_id": mid,
-                    "category": CATEGORY_MAP[cid],
+                    "category": CATEGORY_RENAME.get(CATEGORY_MAP[cid], CATEGORY_MAP[cid]),
                     "aslain_category": cid,
                     "version": version,
                     "game": ">=15.7 <15.8",
@@ -579,9 +584,12 @@ def update_bodies(cache: Path) -> None:
     template tweaks). Threads are located by front-matter slug."""
     state = downloaded_state(cache)
     ids = crawl_thread_ids()
+    by_number = {t["number"]: t for t in ids.values()}
     updated = 0
     for mod in state["mods"]:
-        thread = ids.get(mod["id"])
+        # Locate by recorded number (the slug may have just been renamed);
+        # fall back to the slug for threads never seen before.
+        thread = by_number.get(mod.get("discussion_number")) or ids.get(mod["id"])
         if not thread:
             print(f"  ! no thread for {mod['id']}", flush=True)
             continue
@@ -591,6 +599,7 @@ def update_bodies(cache: Path) -> None:
             UPDATE_MUTATION,
             input={
                 "discussionId": thread["id"],
+                "title": f"[Mod] {mod['name_zh'] or mod['name_en']} {mod['id']} {mod['version']}",
                 "body": discussion_body(mod),
             },
         )
@@ -602,6 +611,42 @@ def update_bodies(cache: Path) -> None:
         time.sleep(0.4)
     (cache / "downloaded.json").write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{updated} discussion bodies updated")
+
+
+def migrate_assets(cache: Path) -> None:
+    """One-shot asset rename: delete every release asset whose name does not
+    match the current `<slug>[-partN].zip` scheme, then upload the packages
+    under their standardized names. mod-index.json is refreshed by `index`."""
+    state = downloaded_state(cache)
+    expected: dict[str, Path] = {}
+    for mod in state["mods"]:
+        origin = mod.get("prev_id", mod["id"])
+        n_pkgs = len(mod["packages"])
+        for i, pkg in enumerate(mod["packages"], start=1):
+            suffix = "" if n_pkgs == 1 else f"-part{i}"
+            local = Path(cache) / "packages" / origin / pkg["name"]
+            assert local.is_file(), f"missing local package {local}"
+            expected[f"{mod['id']}{suffix}.zip"] = local
+
+    release = json.loads(gh(f"repos/{REPO}/releases/tags/{RELEASE_TAG}"))
+    stale = [a for a in release["assets"] if a["name"] not in expected and a["name"] != "mod-index.json"]
+    for a in stale:
+        gh("-X", "DELETE", f"repos/{REPO}/releases/assets/{a['id']}")
+    print(f"deleted {len(stale)} stale assets", flush=True)
+
+    uploads = sorted(expected.items())
+    for i in range(0, len(uploads), 20):
+        batch = uploads[i : i + 20]
+        args = ["release", "upload", RELEASE_TAG, "--repo", REPO, "--clobber"]
+        for name, local in batch:
+            staged = Path(cache) / "assets" / "_migrated" / name
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            if not staged.exists():
+                staged.write_bytes(local.read_bytes())
+            args.append(str(staged))
+        subprocess.run(["gh", *args], check=True)
+        print(f"  uploaded {i + len(batch)}/{len(uploads)}", flush=True)
+    print(f"{len(uploads)} standardized assets ensured")
 
 
 def build_index(state: dict) -> dict:
@@ -664,7 +709,7 @@ def index(cache: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "update-bodies", "index"])
+    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "update-bodies", "migrate-assets", "index"])
     ap.add_argument("--cache-dir", default=str(Path(tempfile.gettempdir()) / "wowsp-modhub"))
     ap.add_argument("--dry-run", action="store_true", help="curate only: print the selection and exit")
     args = ap.parse_args(argv)
@@ -682,6 +727,8 @@ def main(argv: list[str] | None = None) -> int:
         discussions(cache)
     elif args.stage == "update-bodies":
         update_bodies(cache)
+    elif args.stage == "migrate-assets":
+        migrate_assets(cache)
     elif args.stage == "index":
         index(cache)
     return 0
