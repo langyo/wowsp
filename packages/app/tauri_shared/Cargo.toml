@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license = "SySL-1.0"
+publish = false  # desktop app crate, never published (also marks it private for cargo-deny)
 description = "Shared DTOs between the WoWSP Tauri shell and the frontend"
 
 [dependencies]

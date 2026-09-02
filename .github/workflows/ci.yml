@@ -106,7 +106,7 @@ jobs:
       # deps resolve fine on Linux.
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.20.2  # pinned to the version deny.toml is validated against
       - name: cargo-deny (advisories)
         run: cargo deny check advisories
       - name: cargo-deny (licenses)

@@ -1,13 +1,30 @@
+# WoWSP ships Windows-only (tauri x86_64-pc-windows-msvc); restrict checks
+# to that target so tauri's Linux-only stack (gtk-rs etc.) stays out of
+# license/advisory scope.
+[graph]
+targets = [
+    { triple = "x86_64-pc-windows-msvc" },
+]
+
 [advisories]
 db-path = "~/.cargo/advisory-db"
-vulnerability = "deny"
-unmaintained = "warn"
-unsound = "warn"
+# Org convention (arona): only flag advisories for workspace-member crates;
+# transitive unmaintained noise (instant, paste, unic-*, …) is not actionable.
+unmaintained = "workspace"
+unsound = "workspace"
 yanked = "warn"
-notice = "warn"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0258"
+reason = "h2 unbounded empty DATA frames — low severity, server-side exposure. WoWSP uses h2 only as an HTTP/2 *client* through reqwest (WG API lookups, mod catalog + GitHub downloads) against fixed endpoints, so the attacker-controlled-stream precondition does not apply. Drop this ignore once a patched h2 (> 0.4.15) ships."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0436"
+reason = "paste is unmaintained but functional, and is a direct dependency of the vendored wows-toolkit sources (packages/tools/wowsunpack-vendor) which we keep in sync with upstream — swapping in the pastey fork would fork the vendor diff. Revisit when upstream wows-toolkit migrates."
 
 [licenses]
-unlicensed = "deny"
+# Removed keys (vulnerability/notice/unlicensed/copyleft/default) are built
+# in since cargo-deny PR #611: unallowed licenses deny, everything else warns.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -19,25 +36,23 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
-    "AGPL-3.0",
+    "CDLA-Permissive-2.0",
+    # Synthetic Source License 1.0 — malkuth ships it via license-file;
+    # LicenseRef- form for the unregistered SPDX term (org convention).
+    "LicenseRef-sysl-1.0",
 ]
-copyleft = "warn"
-default = "deny"
 confidence-threshold = 0.8
+# WoWSP's own crates carry `license = "SySL-1.0"` (raw string, not a
+# registered SPDX id). They are private, never-published app crates
+# (`publish = false`), so skip them instead of naming an unknown SPDX term.
+private = { ignore = true }
 
-# WoWSP's own workspace crates are licensed under the Synthetic Source License
-# 1.0 (SySL-1.0), which is not yet a registered SPDX identifier. cargo-deny
-# cannot resolve it from the allow list, so we declare it explicitly here for
-# the path-dependency crates that carry `license = "SySL-1.0"`.
-[[licenses.exceptions]]
-allow = ["SySL-1.0"]
-name = "wowsp_tauri"
-version = "*"
-
-[[licenses.exceptions]]
-allow = ["SySL-1.0"]
-name = "wowsp_tauri_shared"
-version = "*"
+# malkuth declares `license-file = "LICENSE"` (no SPDX expression), so
+# clarify it from the license file itself (SySL-1.0, same license as WoWSP).
+[[licenses.clarify]]
+name = "malkuth"
+expression = "LicenseRef-sysl-1.0"
+license-files = [{ path = "LICENSE", hash = 0xda2b7c13 }]
 
 [[licenses.clarify]]
 name = "ring"

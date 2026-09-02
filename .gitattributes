@@ -1,5 +1,6 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto detect text files; force LF at checkout so rustfmt's
+# newline_style = "Unix" holds on Windows runners (CRLF checkouts broke CI)
+* text=auto eol=lf
 
 # Tooling configs — exclude from git stats / linguist
 /eslint.config.*     linguist-generated
