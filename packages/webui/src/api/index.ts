@@ -12,6 +12,7 @@ export type {
   InstallReport,
   CatalogPackage,
   CatalogEntry,
+  CatalogEntryI18n,
   CatalogIndex,
   ModInstallRecord,
   UninstallReport,

@@ -18,8 +18,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
+
 use wowsp_tauri_shared::{
-    CatalogEntry, CatalogIndex, CatalogPackage, CatalogProgress, InstallReport, ModInstallRecord,
+    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogProgress, InstallReport,
+    ModInstallRecord,
 };
 
 use super::mod_hub;
@@ -144,6 +146,8 @@ struct RawVersion {
     name_zh: Option<String>,
     #[serde(default)]
     description: Option<String>,
+    #[serde(default)]
+    i18n: std::collections::HashMap<String, RawI18n>,
     /// Present in the publisher index; not rendered in-app (CSP blocks the
     /// remote image host), kept deserializable so the shape stays documented.
     #[serde(default)]
@@ -153,6 +157,14 @@ struct RawVersion {
     author_url: Option<String>,
     #[serde(default)]
     packages: Option<Vec<RawPackage>>,
+}
+
+#[derive(Clone, Deserialize)]
+struct RawI18n {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    desc: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -222,6 +234,19 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
                 .unwrap_or_else(|| ver.title.clone().unwrap_or_else(|| id.clone())),
             description: ver.description.clone().unwrap_or_default(),
             author_url: ver.author_url.clone().unwrap_or_default(),
+            i18n: ver
+                .i18n
+                .iter()
+                .map(|(lang, text)| {
+                    (
+                        lang.clone(),
+                        CatalogEntryI18n {
+                            name: text.name.clone().unwrap_or_default(),
+                            description: text.desc.clone().unwrap_or_default(),
+                        },
+                    )
+                })
+                .collect(),
             packages,
         });
     }
@@ -827,6 +852,10 @@ mod tests {
                             "title": "Shot Timer",
                             "name_en": "Shot Timer",
                             "name_zh": "开火后倒计时20s",
+                            "i18n": {
+                                "zh-CN": {"name": "开火后倒计时20s", "desc": "主炮开火被点亮后按 20 秒倒计时提示灭点。"},
+                                "ja-JP": {"name": "射撃後タイマー", "desc": "主砲発射後に20秒のカウントダウンを表示。"}
+                            },
                             "packages": [
                                 {"url": "https://github.com/x/a.zip", "sha256": "aa", "size": 10, "name": "a.zip"}
                             ]
@@ -845,6 +874,8 @@ mod tests {
         assert_eq!(m.name_zh, "开火后倒计时20s");
         assert_eq!(m.discussion, Some(111));
         assert_eq!(m.packages[0].size, 10);
+        assert_eq!(m.i18n.len(), 2, "both locales survive the round-trip");
+        assert_eq!(m.i18n["ja-JP"].name, "射撃後タイマー");
     }
 
     #[test]

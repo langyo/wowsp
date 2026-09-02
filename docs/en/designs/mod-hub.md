@@ -120,6 +120,63 @@ Discussions resource post template (excerpt):
     Body (Markdown, with preview images)…
     Attachment: sea-haze-skins-1.4.0.zip (SHA-256: …)
 
+#### Slug taxonomy (`category.genus.species`)
+
+Every mod id is a permanent, three-field taxonomical name — big to small, like
+biological nomenclature:
+
+    battle.timer.shot        port.carousel.filters
+    battle.marker.regen      port.sessionstats.v2
+    minimap.rpf.2d           text.shipname.real
+    patch.ime.compat
+
+- `category` is a closed whitelist: `battle` / `minimap` / `port` / `text` /
+  `patch` (new categories are maintainer-gated);
+- `genus` is the functional family (`timer`, `meter`, `marker`, `panel`,
+  `carousel`, `techtree`, `crew`, `chat`, `shipname`, `font`, …);
+- `species` carries the specifics, hyphenated modifiers and variant tails
+  (`-v2`, `-cb`, author names when the author *is* the identity).
+- Character set per field: `[a-z0-9]` plus inner hyphens. **Never** dates,
+  package versions, `final`/`new`/`latest` suffixes, or underscores. The
+  version lives in the `version:` front-matter, compatibility in `game:`,
+  integrity in the thread's SHA-256 — never in the name.
+- Package files mirror the slug exactly: `<slug>.zip` or `<slug>.partN.zip`.
+
+The full posting rules (template, i18n block, update flow, content scope)
+live in the pinned Discussions post; the indexer refuses ids that do not
+match this shape.
+
+**Thread titles are English-only** — `[Mod] <English name> <slug> <version>`.
+Localized names live in the i18n block, which also renders as a collapsed
+`📖 Description in 8 languages` details section in every thread; the rules
+post itself is locked with one comment per locale carrying the translated
+rules.
+
+#### Localized name & description (`wowsp:i18n`)
+
+Every thread carries an invisible HTML comment right after the front-matter,
+holding the name + one-line description in all supported locales (8 today:
+en-US, zh-CN, zh-TW, ja-JP, ko-KR, ru-RU, de-DE, fr-FR). It renders as nothing
+on GitHub but is machine-readable in the raw body, so the indexer and the app
+share one translation source:
+
+    <!--
+    wowsp:i18n
+    en-US: Shot Timer | Counts down the 20s detection window after firing.
+    zh-CN: 开火后倒计时20s | 主炮开火被点亮后按 20 秒倒计时提示灭点。
+    zh-TW: 開火後倒計時 | 主炮開火被點亮後按 20 秒倒數提示滅點。
+    ja-JP: 射撃後タイマー | 主砲発射後に20秒のカウントダウンを表示。
+    ko-KR: 발사 후 타이머 | 주포 발사 후 20초 카운트다운을 표시합니다.
+    ru-RU: Таймер после залпа | Отсчёт 20 секунд после выстрела ГК.
+    de-DE: Schuss-Timer | 20-Sekunden-Countdown nach dem Schuss.
+    fr-FR: Minuteur de tir | Compte à rebours de 20 s après le tir.
+    wowsp:i18n
+    -->
+
+Constraints: one entry per line, `<BCP-47>: <name> | <description>`; the
+description is a single line (no markup); unknown locales are preserved by
+the indexer and ignored by the app; missing locales fall back to en-US.
+
 Why Discussions and not Releases: the comment thread *is* the feedback and
 compatibility channel ("works on 14.6" reports get absorbed by the indexer
 as compatibility signals), Watch = subscription, zero backend cost.

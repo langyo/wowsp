@@ -58,6 +58,7 @@
     "battle": "Battle",
     "minimap": "Minimap",
     "port": "Port",
-    "texts": "Texts & chat"
+    "text": "Texts & chat",
+    "patch": "Patches"
   }
 }

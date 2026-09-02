@@ -44,6 +44,30 @@ SIGNAL_RE = re.compile(r"\bgame\s+([0-9][\w.]*)\s+(ok|broken)\b", re.IGNORECASE)
 DOWNLOAD_RE = re.compile(
     r"-\s*\[`([^`]+)`\]\((https?://[^)]+)\)\s*[—-]\s*(\d+)\s*KB\s*[·.]\s*SHA-256\s*`([0-9a-fA-F]{64})`"
 )
+# Hidden localization block (invisible when rendered, present in raw body):
+#   <!--
+#   wowsp:i18n
+#   en-US: Shot Timer | Counts down the 20s detection window…
+#   zh-CN: 开火后倒计时20s | …
+#   wowsp:i18n
+#   -->
+I18N_BLOCK_RE = re.compile(r"wowsp:i18n\n(.*?)\nwowsp:i18n", re.DOTALL)
+I18N_LOCALE_RE = re.compile(r"^([a-z]{2,3}-[A-Za-z]{2,4}):\s*(.+)$")
+
+
+def parse_i18n(body: str) -> dict:
+    """Extract {locale: {name, desc}} from the wowsp:i18n comment block."""
+    m = I18N_BLOCK_RE.search(body or "")
+    if not m:
+        return {}
+    out: dict[str, dict] = {}
+    for line in m.group(1).splitlines():
+        loc = I18N_LOCALE_RE.match(line.strip())
+        if not loc:
+            continue
+        name, _, desc = loc.group(2).partition("|")
+        out[loc.group(1)] = {"name": name.strip(), "desc": desc.strip()}
+    return out
 
 
 def parse_front_matter(body: str) -> tuple[dict[str, str], str]:
@@ -101,6 +125,9 @@ def index_discussions(nodes: list[dict]) -> dict:
         }
         if packages:
             entry["versions"][version]["packages"] = packages
+        i18n = parse_i18n(d.get("body") or "")
+        if i18n:
+            entry["versions"][version]["i18n"] = i18n
         for ver, reporters in signals.items():
             entry["signals"].setdefault(ver, []).extend(reporters)
     # Only the newest version is catalog-facing; keep compatibility verdicts.
@@ -153,6 +180,13 @@ def main(argv: list[str] | None = None) -> int:
         ])
         assert idx["mods"]["ime-config"]["latest"] == "1"
         assert idx["mods"]["ime-config"]["signals"] == {"14.6": ["u"]}
+        i18n = parse_i18n(
+            "<!--\nwowsp:i18n\nen-US: Shot Timer | Counts down 20s\n"
+            "zh-CN: 开火后倒计时20s | 主炮开火后提示灭点窗口\nwowsp:i18n\n-->\nbody"
+        )
+        assert i18n["en-US"] == {"name": "Shot Timer", "desc": "Counts down 20s"}, i18n
+        assert i18n["zh-CN"]["name"] == "开火后倒计时20s", i18n
+        assert parse_i18n("no block here") == {}
         print("selftest ok")
         return 0
 
