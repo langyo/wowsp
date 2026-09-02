@@ -72,6 +72,16 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+      - name: Placeholder frontendDist for generate_context!
+        # tauri::generate_context!() embeds the frontendDist directory at
+        # compile time and panics when it is missing. CI only lints/tests
+        # the Rust side (the web job typechecks the frontend; the release
+        # workflow builds the real bundle via tauri-action), so a
+        # placeholder index.html is enough.
+        shell: bash
+        run: |
+          mkdir -p dist/webui
+          printf '<!doctype html><title>ci placeholder</title>\n' > dist/webui/index.html
       - name: Rustfmt
         # Only the app crates are in-repo code; wowsunpack/wows-core are
         # vendored wows-toolkit sources that keep upstream formatting.
