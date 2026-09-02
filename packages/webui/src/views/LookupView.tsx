@@ -26,6 +26,12 @@ interface HistoryEntry {
 const HISTORY_KEY = "wowsp.lookup.history";
 const HISTORY_MAX = 20;
 
+/** Last successful lookup, kept at module scope so route switches don't
+ *  lose the result view: LookupView unmounts on navigation (no KeepAlive),
+ *  but on remount the overview card + ship table re-seed from the stats
+ *  stores' in-memory caches — no WG API re-hit. */
+const lastLookup = ref<{ name: string; realm: string; accountId: number } | null>(null);
+
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
@@ -65,10 +71,14 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const toast = useToast();
     const route = useRoute();
-    const nickname = ref("");
-    const realm = ref("asia");
+    const nickname = ref(lastLookup.value?.name ?? "");
+    const realm = ref(lastLookup.value?.realm ?? "asia");
     const realms = ["ru", "eu", "na", "asia"];
-    const result = ref<PlayerStats | null>(null);
+    const result = ref<PlayerStats | null>(
+      lastLookup.value
+        ? (stats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.accountId}`) ?? null)
+        : null,
+    );
     const history = ref<HistoryEntry[]>(loadHistory());
     const encyclopedia = useEncyclopediaStore();
 
@@ -197,6 +207,7 @@ export default defineComponent({
         // Explicit user query — always re-pull from the WG API.
         const acc = await stats.lookup(nm, rl, { force: true });
         result.value = acc;
+        lastLookup.value = { name: nm, realm: rl, accountId: acc.accountId };
         pushHistory(nm, rl);
         // Per-ship stats load in the background (toast stays until done).
         await shipStats.load(acc.accountId, rl).catch(() => {});
