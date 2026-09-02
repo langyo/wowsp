@@ -120,6 +120,31 @@ Discussions resource post template (excerpt):
     Body (Markdown, with preview images)…
     Attachment: sea-haze-skins-1.4.0.zip (SHA-256: …)
 
+#### Localized name & description (`wowsp:i18n`)
+
+Every thread carries an invisible HTML comment right after the front-matter,
+holding the name + one-line description in all supported locales (8 today:
+en-US, zh-CN, zh-TW, ja-JP, ko-KR, ru-RU, de-DE, fr-FR). It renders as nothing
+on GitHub but is machine-readable in the raw body, so the indexer and the app
+share one translation source:
+
+    <!--
+    wowsp:i18n
+    en-US: Shot Timer | Counts down the 20s detection window after firing.
+    zh-CN: 开火后倒计时20s | 主炮开火被点亮后按 20 秒倒计时提示灭点。
+    zh-TW: 開火後倒計時 | 主炮開火被點亮後按 20 秒倒數提示滅點。
+    ja-JP: 射撃後タイマー | 主砲発射後に20秒のカウントダウンを表示。
+    ko-KR: 발사 후 타이머 | 주포 발사 후 20초 카운트다운을 표시합니다.
+    ru-RU: Таймер после залпа | Отсчёт 20 секунд после выстрела ГК.
+    de-DE: Schuss-Timer | 20-Sekunden-Countdown nach dem Schuss.
+    fr-FR: Minuteur de tir | Compte à rebours de 20 s après le tir.
+    wowsp:i18n
+    -->
+
+Constraints: one entry per line, `<BCP-47>: <name> | <description>`; the
+description is a single line (no markup); unknown locales are preserved by
+the indexer and ignored by the app; missing locales fall back to en-US.
+
 Why Discussions and not Releases: the comment thread *is* the feedback and
 compatibility channel ("works on 14.6" reports get absorbed by the indexer
 as compatibility signals), Watch = subscription, zero backend cost.

@@ -33,6 +33,7 @@ import {
 } from "@/api";
 import { useConfigStore } from "@/stores/config";
 import { t } from "@/i18n";
+import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
 
 const KIND_ORDER: ModKind[] = ["voice", "skin", "gui", "patch", "textures"];
@@ -66,6 +67,7 @@ export default defineComponent({
   setup() {
     const config = useConfigStore();
     const toast = useToast();
+    const { uiLocale, dataLanguage } = useLanguage();
 
     const installed = ref<InstalledMod[]>([]);
     const scanning = ref(false);
@@ -241,6 +243,18 @@ export default defineComponent({
       });
     });
 
+    /** Localized name/description from the thread's wowsp:i18n block:
+     *  UI locale first, then the game-data language, then en-US. */
+    function localized(entry: CatalogEntry): { name: string; desc: string } {
+      for (const lang of [uiLocale.value, dataLanguage.value, "en-US"]) {
+        const text = entry.i18n?.[lang];
+        if (text?.name || text?.description) {
+          return { name: text.name, desc: text.description };
+        }
+      }
+      return { name: entry.nameZh || entry.nameEn, desc: entry.description };
+    }
+
     const catalogKb = (entry: CatalogEntry) =>
       entry.packages.reduce((sum, p) => sum + p.size, 0) > 0
         ? Math.max(1, Math.round(entry.packages.reduce((s, p) => s + p.size, 0) / 1024))
@@ -349,6 +363,7 @@ export default defineComponent({
               ) : (
                 <div class="catalog-grid">
                   {catalogShown.value.map((entry) => {
+                    const text = localized(entry);
                     const record = recordOf(entry.id);
                     const upToDate = record && record.version === entry.version;
                     const busyInstall =
@@ -361,7 +376,7 @@ export default defineComponent({
                       <div key={entry.id} class="catalog-card">
                         <div class="catalog-card__head">
                           <span class="catalog-card__name">
-                            {entry.nameZh || entry.title || entry.nameEn}
+                            {text.name || entry.title || entry.nameEn}
                           </span>
                           {upToDate && (
                             <span class="catalog-card__badge catalog-card__badge--ok">
@@ -369,12 +384,12 @@ export default defineComponent({
                             </span>
                           )}
                         </div>
-                        <div class="catalog-card__sub">
-                          {entry.nameZh ? entry.nameEn : ""}
-                        </div>
-                        {entry.description && (
-                          <div class="catalog-card__desc" title={entry.description}>
-                            {entry.description}
+                        {text.name && text.name !== entry.nameEn && (
+                          <div class="catalog-card__sub">{entry.nameEn}</div>
+                        )}
+                        {text.desc && (
+                          <div class="catalog-card__desc" title={text.desc}>
+                            {text.desc}
                           </div>
                         )}
                         <div class="catalog-card__meta">

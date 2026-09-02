@@ -474,6 +474,12 @@ export interface CatalogPackage {
   name: string;
 }
 
+/** Localized name + one-line description (from the wowsp:i18n thread block). */
+export interface CatalogEntryI18n {
+  name: string;
+  description: string;
+}
+
 /** The latest version payload of one mod in `mod-index.json`. */
 export interface CatalogEntry {
   id: string;
@@ -490,6 +496,8 @@ export interface CatalogEntry {
   description: string;
   authorUrl: string;
   packages: CatalogPackage[];
+  /** Localized variants keyed by BCP-47 locale; empty for older posts. */
+  i18n: Record<string, CatalogEntryI18n>;
 }
 
 /** Parsed `mod-index.json` — the online plugin list the hub page renders. */

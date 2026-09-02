@@ -84,6 +84,42 @@ EXCLUDE_MODS = {
     "Port_mods_No_funnel_smoke_in_port",
     "Port_mods_commander_perks_colored_vito78m",
 }
+# Discussion-level localization: an invisible HTML comment that carries the
+# name + one-line description in every supported locale. The indexer and the
+# app both parse the raw body, so the block doubles as the machine-readable
+# translation source. Missing locales fall back to en-US on the consumer side.
+I18N_LOCALES = ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "de-DE", "fr-FR"]
+
+
+def build_i18n_block(i18n: dict) -> str:
+    """Render the hidden <!-- wowsp:i18n ... --> localization block."""
+    lines = ["<!--", "wowsp:i18n"]
+    for lang in I18N_LOCALES:
+        entry = (i18n or {}).get(lang) or {}
+        name = entry.get("name", "")
+        desc = " ".join(entry.get("desc", "").split())
+        lines.append(f"{lang}: {name} | {desc}".rstrip(" |"))
+    lines.append("wowsp:i18n")
+    lines.append("-->")
+    return "\n".join(lines)
+
+
+def parse_i18n_block(body: str) -> dict:
+    """Read the wowsp:i18n block back out of a raw discussion body."""
+    m = re.search(r"wowsp:i18n\n(.*?)\nwowsp:i18n", body or "", re.DOTALL)
+    if not m:
+        return {}
+    out: dict = {}
+    for line in m.group(1).splitlines():
+        lang, sep, rest = line.partition(":")
+        lang = lang.strip()
+        if not sep or "/" not in lang:
+            continue
+        name, _, desc = rest.partition("|")
+        out[lang] = {"name": name.strip(), "desc": desc.strip()}
+    return out
+
+
 CATEGORY_MAP = {
     "Team_Panel": "battle",
     "Team_Mini_Panel": "battle",
@@ -396,7 +432,7 @@ query($owner: String!, $name: String!, $cursor: String) {
     id
     discussions(first: 100, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number body }
+      nodes { id number title body }
     }
   }
 }
@@ -421,6 +457,9 @@ def discussion_body(mod: dict) -> str:
         "---",
         "",
     ]
+    if mod.get("i18n"):
+        lines.append(build_i18n_block(mod["i18n"]))
+        lines.append("")
     if mod.get("preview_attachment"):
         lines.append(f"![{mod['name_en']}]({mod['preview_attachment']})")
         lines.append("")
@@ -442,9 +481,12 @@ def discussion_body(mod: dict) -> str:
     lines.append("| --- | --- |")
     lines.append(f"| 版本 / version | `{mod['version']}` |")
     lines.append(f"| 兼容 / game | `{mod['game']}` |")
-    source = "[Aslain's WoWs Modpack](https://aslain.com/) · catalog v.15.7.0"
-    if mod["author_url"]:
-        source += f" · [author]({mod['author_url']})"
+    if mod.get("first_party"):
+        source = "WoWSP official patch (first-party, CC0-1.0)"
+    else:
+        source = "[Aslain's WoWs Modpack](https://aslain.com/) · catalog v.15.7.0"
+        if mod["author_url"]:
+            source += f" · [author]({mod['author_url']})"
     lines.append(f"| 来源 / source | {source} |")
     lines.append("")
     lines.append(SIGNAL_NOTE)
@@ -502,6 +544,66 @@ def discussions(cache: Path) -> None:
 # ---------------------------------------------------------------- index
 
 
+UPDATE_MUTATION = """
+mutation($input: UpdateDiscussionInput!) {
+  updateDiscussion(input: $input) { discussion { number } }
+}
+"""
+
+
+def crawl_thread_ids() -> dict[str, dict]:
+    """slug -> {number, id} for every discussion carrying front-matter."""
+    fm = re.compile(r"\A---\s*\n(.*?)\n---", re.DOTALL)
+    kv = re.compile(r"wowsp-mod:\s*(\S+)")
+    data = gh_graphql(CRAWL_QUERY, owner=REPO.split("/")[0], name=REPO.split("/")[1])
+    repo_node = data["repository"]
+    nodes = repo_node["discussions"]["nodes"]
+    page = repo_node["discussions"]["pageInfo"]
+    while page["hasNextPage"]:
+        data = gh_graphql(CRAWL_QUERY, owner=REPO.split("/")[0], name=REPO.split("/")[1], cursor=page["endCursor"])
+        nodes.extend(data["repository"]["discussions"]["nodes"])
+        page = data["repository"]["discussions"]["pageInfo"]
+    out: dict[str, dict] = {}
+    for node in nodes:
+        m = fm.match(node["body"] or "")
+        if not m:
+            continue
+        slug = kv.search(m.group(1))
+        if slug:
+            out[slug.group(1)] = {"number": node["number"], "id": node["id"]}
+    return out
+
+
+def update_bodies(cache: Path) -> None:
+    """Rewrite every published thread from the current state (i18n refits,
+    template tweaks). Threads are located by front-matter slug."""
+    state = downloaded_state(cache)
+    ids = crawl_thread_ids()
+    updated = 0
+    for mod in state["mods"]:
+        thread = ids.get(mod["id"])
+        if not thread:
+            print(f"  ! no thread for {mod['id']}", flush=True)
+            continue
+        mod["discussion_number"] = thread["number"]
+        mod["discussion_id"] = thread["id"]
+        result = gh_graphql(
+            UPDATE_MUTATION,
+            input={
+                "discussionId": thread["id"],
+                "body": discussion_body(mod),
+            },
+        )
+        check = result["updateDiscussion"]["discussion"]["number"]
+        assert check == thread["number"], f"{mod['id']}: updated #{check} instead of #{thread['number']}"
+        updated += 1
+        if updated % 20 == 0:
+            print(f"  updated {updated}", flush=True)
+        time.sleep(0.4)
+    (cache / "downloaded.json").write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"{updated} discussion bodies updated")
+
+
 def build_index(state: dict) -> dict:
     mods: dict[str, dict] = {}
     for mod in state["mods"]:
@@ -522,6 +624,7 @@ def build_index(state: dict) -> dict:
             "name_en": mod["name_en"],
             "name_zh": mod["name_zh"],
             "description": mod["description"],
+            "i18n": mod.get("i18n") or {},
             "preview": mod.get("preview_attachment") or "",
             "author_url": mod["author_url"],
             "packages": [
@@ -561,7 +664,7 @@ def index(cache: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "index"])
+    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "update-bodies", "index"])
     ap.add_argument("--cache-dir", default=str(Path(tempfile.gettempdir()) / "wowsp-modhub"))
     ap.add_argument("--dry-run", action="store_true", help="curate only: print the selection and exit")
     args = ap.parse_args(argv)
@@ -577,6 +680,8 @@ def main(argv: list[str] | None = None) -> int:
         release(cache)
     elif args.stage == "discussions":
         discussions(cache)
+    elif args.stage == "update-bodies":
+        update_bodies(cache)
     elif args.stage == "index":
         index(cache)
     return 0

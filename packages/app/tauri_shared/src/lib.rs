@@ -766,6 +766,20 @@ pub struct CatalogPackage {
     pub name: String,
 }
 
+/// Localized name + one-line description of a catalog entry, keyed by
+/// BCP-47 locale in `CatalogEntry::i18n` (source: the `wowsp:i18n` block in
+/// the Discussions thread). Consumers fall back to en-US.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogEntryI18n {
+    #[serde(default)]
+    pub name: String,
+    /// Index JSON carries this as `desc` (discussion line format); aliased so
+    /// both shapes deserialize.
+    #[serde(default, alias = "desc")]
+    pub description: String,
+}
+
 /// The `latest` version payload of one mod in `mod-index.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -784,6 +798,9 @@ pub struct CatalogEntry {
     pub description: String,
     pub author_url: String,
     pub packages: Vec<CatalogPackage>,
+    /// Localized name/description variants; may be empty for older posts.
+    #[serde(default)]
+    pub i18n: std::collections::HashMap<String, CatalogEntryI18n>,
 }
 
 /// Parsed `mod-index.json` — the online plugin list the hub page renders.
