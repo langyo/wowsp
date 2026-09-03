@@ -911,7 +911,7 @@ export default defineComponent({
                 />
                 <div class="replay-live__controls">
                   <button
-                    class="replay-live__ctl"
+                    class={["replay-live__ctl", "replay-live__ctl--play"].join(" ")}
                     onClick={togglePlay}
                     title={playing.value ? t("showcase.replay.live.pause") : t("showcase.replay.live.play")}
                   >
@@ -924,7 +924,12 @@ export default defineComponent({
                     max={currentDuration}
                     step={0.1}
                     value={currentT.value}
-                    onInput={(e) => scrubTo(Number((e.target as HTMLInputElement).value))}
+                    style={{ "--scrub-pct": `${currentDuration ? (currentT.value / currentDuration) * 100 : 0}%` }}
+                    onInput={(e) => {
+                      // App parity: grabbing the timeline pauses playback.
+                      playing.value = false;
+                      scrubTo(Number((e.target as HTMLInputElement).value));
+                    }}
                   />
                   <span class="replay-live__time">{fmtTime(currentT.value)}</span>
                   <div class="replay-live__speed">
@@ -950,7 +955,7 @@ export default defineComponent({
                     ) : null}
                   </div>
                   <button
-                    class="replay-live__ctl"
+                    class={["replay-live__ctl", mmShowTags.value ? "is-on" : ""].join(" ")}
                     onClick={() => { mmShowTags.value = !mmShowTags.value; }}
                     title={mmShowTags.value ? t("showcase.replay.live.labelsHide") : t("showcase.replay.live.labelsShow")}
                   >

@@ -32,8 +32,11 @@ export default defineComponent({
       if (natural <= 0 || naturalW <= 0) return;
       // Fill both ways (up AND down), clamped so a tiny window never
       // blasts to billboard size and a wide one never leaves the viewport.
+      // The up-fill cap keeps every mock near its natural width: pages
+      // are (100dvh − 4rem) tall, so a 1.8× blow-up used to stretch the
+      // windows across the whole container.
       const s = Math.min(avail / natural, availW / naturalW);
-      scale.value = Math.min(1.8, Math.max(0.35, s));
+      scale.value = Math.min(1.35, Math.max(0.35, s));
     }
 
     onMounted(() => {

@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "Hoja de ruta",
-      desc: "La gestión de mods es el siguiente hito tras la 1.0 (M10)",
-      statusDesign: "En diseño",
+      desc: "El Mod Hub ya está disponible: manifiesto, indexador, instalador y catálogo en línea activos — el motor de migración, a continuación",
+      statusShipped: "Disponible",
       statusPlanned: "Planificado",
       manifest: { title: "Manifiesto y convenciones", desc: "Definir el manifiesto de mod (id, versión, rango de versiones del juego, hashes, mapa de archivos) y la plantilla de post de Discussions." },
       indexer: { title: "Indexador de Discussions", desc: "Rastrear los posts de recursos con plantilla para generar un índice JSON compartido por el sitio y la app." },
       installer: { title: "Instalador y estructura Aslain", desc: "Escribir en res_mods/<versión>/ según la convención, con archivos arrastrados, hashes y puntos de restauración." },
       migrator: { title: "Motor de migración", desc: "Migración automática tras cada actualización con confirmación de compatibilidad por mod y reversión de un clic." },
-      browser: { title: "Navegador de contenido", desc: "Exploración de skins/voces con vistas previas, instalación en lote y descargas reanudables." },
+      browser: { title: "Catálogo en línea", desc: "Plugins de herramienta curados con filtros por categoría, búsqueda e instalación de un clic — cada entrada con versión y verificación SHA-256." },
     },
     cta: {
       title: "Publica tu trabajo en Discussions",

@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "落地路线",
-      desc: "插件管理是 1.0 之后的下一个里程碑（M10）",
-      statusDesign: "设计中",
+      desc: "插件中枢已上线：清单、索引器、安装器与在线目录就绪，版本迁移引擎在路上",
+      statusShipped: "已上线",
       statusPlanned: "规划中",
       manifest: { title: "清单格式与仓库约定", desc: "定义 mod manifest（id、版本、游戏版本区间、哈希、文件映射），确定 Discussions 资源帖的发布模板。" },
       indexer: { title: "Discussions 索引器", desc: "抓取带模板的资源帖生成索引 JSON，官网与应用内共用一份目录。" },
       installer: { title: "安装器与 Aslain 兼容布局", desc: "按 res_mods/<版本>/ 约定写入，支持压缩包拖装、哈希校验与还原点。" },
       migrator: { title: "版本迁移引擎", desc: "游戏更新后自动迁移、逐项确认兼容性，支持一键回滚。" },
-      browser: { title: "内容浏览器", desc: "皮肤 / 语音分类浏览、预览试听、批量安装与断点续传。" },
+      browser: { title: "在线插件目录", desc: "精选工具类插件：分类筛选、搜索与一键安装，全部带版本号与 SHA-256 校验。" },
     },
     cta: {
       title: "来 Discussions 发布你的作品",

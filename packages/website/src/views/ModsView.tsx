@@ -29,7 +29,15 @@ export default defineComponent({
     ] as const;
 
     const cats = ["aux", "skins", "voice", "patches"] as const;
-    const roadmap = ["manifest", "indexer", "installer", "migrator", "browser"] as const;
+    /* Roadmap mirrored from the app: everything but the version migrator
+       already ships in the Mod Hub (catalog, indexer, installer). */
+    const roadmap = [
+      { key: "manifest", shipped: true },
+      { key: "indexer", shipped: true },
+      { key: "installer", shipped: true },
+      { key: "migrator", shipped: false },
+      { key: "browser", shipped: true },
+    ] as const;
 
     /* interactive installer demo state */
     const source = ref("zip");
@@ -171,17 +179,17 @@ export default defineComponent({
           </Reveal>
           <div class="mods__roadmap">
             {roadmap.map((r, i) => (
-              <Reveal delay={i * 70} key={r}>
+              <Reveal delay={i * 70} key={r.key}>
                 <div class="mods__road-item glass-panel">
                   <span class="mods__road-index gradient-text">{String(i + 1).padStart(2, "0")}</span>
                   <div class="mods__road-body">
                     <h3 class="mods__road-title">
-                      {t(`mods.roadmap.${r}.title`)}
-                      <HTag variant={i === 0 ? "primary" : "default"}>
-                        {t(i === 0 ? "mods.roadmap.statusDesign" : "mods.roadmap.statusPlanned")}
+                      {t(`mods.roadmap.${r.key}.title`)}
+                      <HTag variant={r.shipped ? "success" : "default"}>
+                        {t(r.shipped ? "mods.roadmap.statusShipped" : "mods.roadmap.statusPlanned")}
                       </HTag>
                     </h3>
-                    <p class="mods__road-desc">{t(`mods.roadmap.${r}.desc`)}</p>
+                    <p class="mods__road-desc">{t(`mods.roadmap.${r.key}.desc`)}</p>
                   </div>
                 </div>
               </Reveal>

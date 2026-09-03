@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "Feuille de route",
-      desc: "La gestion des mods est le prochain jalon après la 1.0 (M10)",
-      statusDesign: "En conception",
+      desc: "Le hub de mods est en ligne : manifeste, indexeur, installateur et catalogue en ligne sont actifs — le moteur de migration suit",
+      statusShipped: "En ligne",
       statusPlanned: "Planifié",
       manifest: { title: "Manifeste et conventions", desc: "Définir le manifeste de mod (id, version, plage de versions du jeu, hachages, cartographie des fichiers) et le modèle de post Discussions." },
       indexer: { title: "Indexeur Discussions", desc: "Explorer les posts de ressources modélisés pour générer un index JSON partagé par le site et l'application." },
       installer: { title: "Installateur et structure Aslain", desc: "Écrire dans res_mods/<version>/ selon la convention, avec archives glissées, hachages et points de restauration." },
       migrator: { title: "Moteur de migration", desc: "Migration automatique après chaque mise à jour avec confirmation de compatibilité par mod et retour en un clic." },
-      browser: { title: "Navigateur de contenu", desc: "Parcours skins/voix avec aperçus, installations en masse et téléchargements reprenables." },
+      browser: { title: "Catalogue en ligne", desc: "Plugins d'outils sélectionnés avec filtres par catégorie, recherche et installation en un clic — chaque entrée versionnée et vérifiée par SHA-256." },
     },
     cta: {
       title: "Publiez vos créations sur Discussions",

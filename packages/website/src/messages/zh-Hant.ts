@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "落地路線",
-      desc: "模組管理是 1.0 之後的下一個里程碑（M10）",
-      statusDesign: "設計中",
+      desc: "插件中樞已上線：清單、索引器、安裝器與線上目錄就緒，版本遷移引擎在路上",
+      statusShipped: "已上線",
       statusPlanned: "規劃中",
       manifest: { title: "清單格式與倉庫約定", desc: "定義 mod manifest（id、版本、遊戲版本區間、雜湊、檔案映射），確定 Discussions 資源帖的發佈範本。" },
       indexer: { title: "Discussions 索引器", desc: "抓取帶範本的資源帖生成索引 JSON，官網與應用內共用一份目錄。" },
       installer: { title: "安裝器與 Aslain 相容佈局", desc: "按 res_mods/<版本>/ 約定寫入，支援壓縮包拖裝、雜湊校驗與還原點。" },
       migrator: { title: "版本遷移引擎", desc: "遊戲更新後自動遷移、逐項確認相容性，支援一鍵還原。" },
-      browser: { title: "內容瀏覽器", desc: "外觀 / 語音分類瀏覽、預覽試聽、批次安裝與斷點續傳。" },
+      browser: { title: "線上插件目錄", desc: "嚴選工具類插件：分類篩選、搜尋與一鍵安裝，全部附版本號與 SHA-256 驗證。" },
     },
     cta: {
       title: "來 Discussions 發佈你的作品",

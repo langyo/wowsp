@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "로드맵",
-      desc: "모드 관리는 1.0 이후의 다음 마일스톤(M10)입니다",
-      statusDesign: "설계 중",
+      desc: "모드 허브가 출시되었습니다: 매니페스트, 인덱서, 인스톨러, 온라인 카탈로그가 이미 동작하며 이전 엔진이 다음 단계입니다",
+      statusShipped: "출시됨",
       statusPlanned: "계획됨",
       manifest: { title: "매니페스트와 저장소 규약", desc: "모드 매니페스트(id, 버전, 게임 버전 범위, 해시, 파일 매핑)와 Discussions 게시 템플릿 정의." },
       indexer: { title: "Discussions 인덱서", desc: "템플릿이 있는 리소스 게시글을 크롤링해 색인 JSON 생성. 사이트와 앱이 공유." },
       installer: { title: "인스톨러와 Aslain 호환 레이아웃", desc: "res_mods/<버전>/ 규약으로 기록. 압축 파일 드래그 설치, 해시 검증, 복원 지점 지원." },
       migrator: { title: "버전 이전 엔진", desc: "게임 업데이트 후 자동 이전, 모드별 호환성 확인, 원클릭 롤백." },
-      browser: { title: "콘텐츠 브라우저", desc: "스킨/보이스 분류 탐색, 미리 보기·듣기, 일괄 설치, 이어받기 다운로드." },
+      browser: { title: "온라인 카탈로그", desc: "엄선된 도구형 모드를 카테고리 필터·검색·원클릭 설치로 제공. 모든 항목에 버전과 SHA-256 검증 포함." },
     },
     cta: {
       title: "Discussions에 작품을 올려 보세요",

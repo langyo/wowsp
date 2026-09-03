@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "ロードマップ",
-      desc: "Mod 管理は 1.0 の次のマイルストーン（M10）です",
-      statusDesign: "設計中",
+      desc: "Mod ハブは公開済み：マニフェスト、インデクサー、インストーラー、オンラインカタログが稼働中。移行エンジンは次のステップです",
+      statusShipped: "リリース済み",
       statusPlanned: "計画中",
       manifest: { title: "マニフェストとリポジトリ規約", desc: "Mod マニフェスト（id、バージョン、対応ゲームバージョン範囲、ハッシュ、ファイルマップ）と Discussions 投稿テンプレートを定義。" },
       indexer: { title: "Discussions インデクサー", desc: "テンプレート付きリソース投稿をクロールして索引 JSON を生成。サイトとアプリで共有。" },
       installer: { title: "インストーラーと Aslain 互換レイアウト", desc: "res_mods/<バージョン>/ 規約で書き込み。アーカイブのドラッグ&ドロップ、ハッシュ検証、復元ポイント対応。" },
       migrator: { title: "バージョン移行エンジン", desc: "ゲーム更新後に自動移行し、Mod ごとに互換性を確認。ワンクリックでロールバック。" },
-      browser: { title: "コンテンツブラウザ", desc: "スキン/ボイスの分類ブラウズ、プレビュー試聴、一括インストール、レジューム対応ダウンロード。" },
+      browser: { title: "オンラインカタログ", desc: "厳選したツール系 Mod をカテゴリ絞り込み・検索・ワンクリックインストール。すべてバージョン番号と SHA-256 検証付き。" },
     },
     cta: {
       title: "Discussions で作品を公開しましょう",

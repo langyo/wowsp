@@ -5,7 +5,9 @@
   position: relative;
   height: 100%;
   width: 100%;
-  max-width: 1100px;
+  /* The battle-preview map sits inside a (100dvh − 4rem) page, so it keeps
+     to the deck's narrowed stage width instead of spanning the container. */
+  max-width: 880px;
   margin-inline: auto;
   border-radius: var(--radius-xl);
   overflow: hidden;
@@ -127,13 +129,13 @@
     border-radius: var(--radius-md);
     background: var(--holo-hud-bg, rgb(10 16 28 / 78%));
     border: 1px solid rgb(var(--color-border) / 30%);
-    border-left: 2px solid rgb(56 189 248 / 60%);
+    border-left: 3px solid rgb(60 180 120 / 65%);
     backdrop-filter: blur(10px);
     font-size: var(--text-xs);
     color: rgb(255 255 255 / 85%);
     white-space: nowrap;
 
-    &.is-enemy { border-left-color: rgb(248 113 113 / 60%); }
+    &.is-enemy { border-left-color: rgb(204 51 51 / 65%); }
 
     &-ico { display: inline-flex; width: 15px; justify-content: center; }
     &-ship { font-weight: 600; }
@@ -154,54 +156,104 @@
     pointer-events: auto;
   }
 
+  /* Playback chips — sized and painted like the app's HUD controls
+     (28px hit area, mono digits, primary fill on play/active states). */
   &__ctl {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 26px;
-    height: 26px;
+    min-width: 28px;
+    height: 28px;
     padding: 0 6px;
-    border-radius: 6px;
-    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgb(var(--color-primary) / 50%);
     background: rgb(255 255 255 / 6%);
-    color: rgb(255 255 255 / 85%);
-    font-size: 12px;
+    color: rgb(var(--color-primary));
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
     font-weight: 600;
     line-height: 1;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
-    &:hover { background: rgb(255 255 255 / 14%); }
+    &:hover { opacity: 0.85; }
+
+    /* Play carries the app's solid primary fill… */
+    &--play {
+      border: none;
+      background: rgb(var(--color-primary));
+      color: rgb(var(--color-on-solid, 255 255 255));
+    }
+
+    /* …and the labels toggle mirrors the app's lbltoggle--on state. */
+    &.is-on {
+      background: rgb(var(--color-primary));
+      color: rgb(var(--color-on-solid, 255 255 255));
+    }
   }
 
+  /* Drawn scrub bar, straight from the app: filled progress segment +
+     bordered thumb, so value 0 sits flush and the played part reads. */
   &__scrub {
-    width: 150px;
-    height: 3px;
     appearance: none;
     -webkit-appearance: none;
-    background: rgb(255 255 255 / 22%);
-    border-radius: 999px;
+    width: 200px;
+    height: 14px;
+    background: transparent;
     outline: none;
     cursor: pointer;
+
+    &::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(
+        to right,
+        rgb(var(--color-primary)) var(--scrub-pct, 0%),
+        rgb(var(--color-border, 148 163 184) / 45%) var(--scrub-pct, 0%)
+      );
+    }
 
     &::-webkit-slider-thumb {
       appearance: none;
       -webkit-appearance: none;
-      width: 11px;
-      height: 11px;
+      width: 12px;
+      height: 12px;
+      margin-top: -4px; /* (track 4px − thumb 12px) / 2 → centred */
       border-radius: 50%;
-      background: #fff;
-      border: none;
-      box-shadow: 0 0 6px rgb(0 0 0 / 50%);
+      background: rgb(var(--color-primary));
+      border: 2px solid rgb(var(--color-on-solid, 255 255 255));
+      box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+    }
+
+    &::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background: rgb(var(--color-border, 148 163 184) / 45%);
+    }
+
+    &::-moz-range-progress {
+      height: 4px;
+      border-radius: 2px;
+      background: rgb(var(--color-primary));
+    }
+
+    &::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgb(var(--color-primary));
+      border: 2px solid rgb(var(--color-on-solid, 255 255 255));
+      box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
     }
   }
 
   &__time {
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     font-weight: 600;
     color: rgb(255 255 255 / 85%);
     font-variant-numeric: tabular-nums;
-    min-width: 38px;
+    min-width: 8ch;
     text-align: center;
   }
 
@@ -272,7 +324,7 @@
     }
 
     &-canvas {
-      width: min(72vmin, 620px);
+      width: min(64vmin, 540px);
       aspect-ratio: 1;
       border-radius: var(--radius-md);
       border: 1px solid rgb(255 255 255 / 20%);
@@ -345,17 +397,14 @@
       &-name { color: rgb(20 32 52 / 70%); }
     }
 
-    &__ctl {
-      border-color: rgb(20 32 52 / 18%);
-      background: rgb(20 32 52 / 6%);
-      color: rgb(20 32 52 / 85%);
-      &:hover { background: rgb(20 32 52 / 12%); }
+    /* Only repaint the plain chips — the play / active fills keep the
+       primary background from the base block in both schemes. */
+    &__ctl:not(.replay-live__ctl--play):not(.is-on) {
+      background: rgb(255 255 255 / 62%);
+      &:hover { background: rgb(255 255 255 / 88%); }
     }
 
-    &__scrub {
-      background: rgb(20 32 52 / 22%);
-      &::-webkit-slider-thumb { background: rgb(20 32 52 / 85%); }
-    }
+    &__ctl--play, &__ctl.is-on { color: rgb(255 255 255 / 95%); }
 
     &__time { color: rgb(20 32 52 / 85%); }
 
