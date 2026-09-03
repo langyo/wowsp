@@ -215,6 +215,9 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         minimap_squadron_adds,
         minimap_squadron_moves,
         minimap_squadron_removes,
+        wards,
+        ward_removes,
+        shot_kills,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -337,6 +340,9 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         minimap_squadron_adds,
         minimap_squadron_moves,
         minimap_squadron_removes,
+        wards,
+        ward_removes,
+        shot_kills,
     }
 }
 
@@ -933,6 +939,9 @@ mod tests {
             "minimapSquadronAdds": stream.minimap_squadron_adds,
             "minimapSquadronMoves": stream.minimap_squadron_moves,
             "minimapSquadronRemoves": stream.minimap_squadron_removes,
+            "wards": stream.wards,
+            "wardRemoves": stream.ward_removes,
+            "shotKills": stream.shot_kills,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());

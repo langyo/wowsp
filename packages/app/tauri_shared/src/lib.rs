@@ -366,6 +366,56 @@ pub struct MinimapSquadronRemove {
     pub plane_id: u64,
 }
 
+/// A fighter-patrol ward appearing (`receive_wardAdded`): the patrol circle
+/// aircraft hold while orbiting. The arg layout gained a trailing `wardType`
+/// byte in 13.2.0 — the decoder fills `0` (unknown) on older replays.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WardEvent {
+    pub time: f32,
+    /// Patrol id (same composite plane-id space as squadron markers).
+    pub squadron_id: u64,
+    /// Owning carrier vehicle id (joins EntityTrajectory.entityId).
+    pub owner_id: i64,
+    /// Team id as broadcast (-1 neutral, 0/1 teams).
+    pub team_id: i8,
+    /// Patrol centre (world space).
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Patrol radius in world metres — scene units match world metres.
+    pub radius: f32,
+    /// Ward kind (13.2.0+); 0 = unknown on older replays.
+    pub ward_type: u8,
+}
+
+/// A patrol ward disappearing (`receive_wardRemoved`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WardRemoveEvent {
+    pub time: f32,
+    pub plane_id: u64,
+}
+
+/// One projectile kill (`receiveShotKills`): the terminal position of a shell
+/// or torpedo that destroyed something. Joins [`ShellLaunchEvent`] /
+/// [`TorpedoLaunch`] by (ownerId, shotId) to snap arcs onto the victim and
+/// stop in-flight torpedoes at the hit.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotKillEvent {
+    pub time: f32,
+    /// Firing vehicle entity id.
+    pub owner_id: i32,
+    /// Hit type from the pack (penetration/overpen/... — raw id).
+    pub hit_type: u8,
+    pub shot_id: u16,
+    /// Terminal (impact) position in world space.
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
 /// A weapon-lock state change (`SetWeaponLock`, 0x30): the recorder's own
 /// vehicle locking/unlocking a target entity. The lock timeline lets the
 /// frontend draw an aim line to the locked ship and prefer it when
@@ -501,6 +551,14 @@ pub struct ReplayStream {
     pub minimap_squadron_moves: Vec<MinimapSquadronMove>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub minimap_squadron_removes: Vec<MinimapSquadronRemove>,
+    /// Fighter-patrol wards (receive_wardAdded / receive_wardRemoved).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wards: Vec<WardEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ward_removes: Vec<WardRemoveEvent>,
+    /// Projectile kills (receiveShotKills) — terminal impact points.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shot_kills: Vec<ShotKillEvent>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

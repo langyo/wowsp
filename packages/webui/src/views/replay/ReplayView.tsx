@@ -18,6 +18,9 @@ import type {
   MinimapSquadronAdd,
   MinimapSquadronMove,
   MinimapSquadronRemove,
+  ShotKillEvent,
+  WardEvent,
+  WardRemoveEvent,
   NetStatsSample,
   ShellLaunchEvent,
   SquadronCreate,
@@ -1078,6 +1081,9 @@ export default defineComponent({
     const minimapSquadronAdds = ref<MinimapSquadronAdd[]>([]);
     const minimapSquadronMoves = ref<MinimapSquadronMove[]>([]);
     const minimapSquadronRemoves = ref<MinimapSquadronRemove[]>([]);
+    const wards = ref<WardEvent[]>([]);
+    const wardRemoves = ref<WardRemoveEvent[]>([]);
+    const shotKills = ref<ShotKillEvent[]>([]);
     const showResults = ref(false);
     /** True while the packet stream is decoding (post-battle results pending). */
     const resultsLoading = ref(false);
@@ -1106,6 +1112,9 @@ export default defineComponent({
         minimapSquadronAdds.value = [];
         minimapSquadronMoves.value = [];
         minimapSquadronRemoves.value = [];
+        wards.value = [];
+        wardRemoves.value = [];
+        shotKills.value = [];
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -1130,6 +1139,9 @@ export default defineComponent({
           minimapSquadronAdds.value = stream.minimapSquadronAdds ?? [];
           minimapSquadronMoves.value = stream.minimapSquadronMoves ?? [];
           minimapSquadronRemoves.value = stream.minimapSquadronRemoves ?? [];
+          wards.value = stream.wards ?? [];
+          wardRemoves.value = stream.wardRemoves ?? [];
+          shotKills.value = stream.shotKills ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1436,6 +1448,9 @@ export default defineComponent({
                       minimapSquadronAdds={minimapSquadronAdds.value}
                       minimapSquadronMoves={minimapSquadronMoves.value}
                       minimapSquadronRemoves={minimapSquadronRemoves.value}
+                      wards={wards.value}
+                      wardRemoves={wardRemoves.value}
+                      shotKills={shotKills.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}

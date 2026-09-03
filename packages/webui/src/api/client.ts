@@ -321,6 +321,40 @@ export interface MinimapSquadronRemove {
   planeId: number;
 }
 
+/** A fighter-patrol ward (receive_wardAdded): the circle aircraft hold while
+ *  orbiting. World-space centre + radius; scene units match world metres. */
+export interface WardEvent {
+  time: number;
+  squadronId: number;
+  ownerId: number;
+  teamId: number;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  /** Ward kind (13.2.0+); 0 = unknown on older replays. */
+  wardType: number;
+}
+
+/** A patrol ward disappearing (receive_wardRemoved). */
+export interface WardRemoveEvent {
+  time: number;
+  planeId: number;
+}
+
+/** One projectile kill (receiveShotKills): the terminal position of a shell
+ *  or torpedo that destroyed something. Joins ShellLaunchEvent /
+ *  TorpedoLaunch by (ownerId, shotId). */
+export interface ShotKillEvent {
+  time: number;
+  ownerId: number;
+  hitType: number;
+  shotId: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
@@ -354,6 +388,11 @@ export interface ReplayStream {
   minimapSquadronAdds?: MinimapSquadronAdd[];
   minimapSquadronMoves?: MinimapSquadronMove[];
   minimapSquadronRemoves?: MinimapSquadronRemove[];
+  /** Fighter-patrol wards (receive_wardAdded / receive_wardRemoved). */
+  wards?: WardEvent[];
+  wardRemoves?: WardRemoveEvent[];
+  /** Projectile kills (receiveShotKills) — terminal impact points. */
+  shotKills?: ShotKillEvent[];
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

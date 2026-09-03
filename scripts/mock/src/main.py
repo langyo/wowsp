@@ -393,6 +393,9 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "minimapSquadronAdds": dump.get("minimapSquadronAdds", []),
             "minimapSquadronMoves": dump.get("minimapSquadronMoves", []),
             "minimapSquadronRemoves": dump.get("minimapSquadronRemoves", []),
+            "wards": dump.get("wards", []),
+            "wardRemoves": dump.get("wardRemoves", []),
+            "shotKills": dump.get("shotKills", []),
         }
     return {
         "trajectories": [],
@@ -414,6 +417,9 @@ async def cmd_read_replay_positions(request: Request) -> dict:
         "minimapSquadronAdds": [],
         "minimapSquadronMoves": [],
         "minimapSquadronRemoves": [],
+        "wards": [],
+        "wardRemoves": [],
+        "shotKills": [],
     }
 
 

@@ -37,6 +37,9 @@ AVATAR_METHODS = [
     "receive_addMinimapSquadron",
     "receive_updateMinimapSquadron",
     "receive_removeMinimapSquadron",
+    "receive_wardAdded",
+    "receive_wardRemoved",
+    "receiveShotKills",
 ]
 
 
@@ -189,6 +192,9 @@ mod tests {
                 t.avatar_receive_add_minimap_squadron,
                 t.avatar_receive_update_minimap_squadron,
                 t.avatar_receive_remove_minimap_squadron,
+                t.avatar_receive_ward_added,
+                t.avatar_receive_ward_removed,
+                t.avatar_receive_shot_kills,
             ] {
                 assert!(id > 0, "unpopulated id in table {v:?}");
             }
