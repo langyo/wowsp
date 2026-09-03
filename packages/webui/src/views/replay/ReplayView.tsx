@@ -15,10 +15,15 @@ import type {
   ExplosionEvent,
   GameInstallKind,
   HpSample,
+  MinimapSquadronAdd,
+  MinimapSquadronMove,
+  MinimapSquadronRemove,
   NetStatsSample,
+  ShellLaunchEvent,
   SquadronCreate,
   SquadronPlane,
   TorpedoLaunch,
+  TorpedoSteer,
   VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
@@ -1056,8 +1061,10 @@ export default defineComponent({
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
     // open so the header parse stays fast; the decode is the expensive step.
     const trajectories = ref<EntityTrajectory[]>([]);
+    const shellLaunches = ref<ShellLaunchEvent[]>([]);
     const explosions = ref<ExplosionEvent[]>([]);
     const torpedoes = ref<TorpedoLaunch[]>([]);
+    const torpedoSteers = ref<TorpedoSteer[]>([]);
     const weaponLocks = ref<WeaponLockEvent[]>([]);
     const battleResults = ref<string | null>(null);
     const replayVersion = ref<string | null>(null);
@@ -1068,6 +1075,9 @@ export default defineComponent({
     const cameraModes = ref<HpSample[]>([]);
     const squadronCreates = ref<SquadronCreate[]>([]);
     const squadronPlanes = ref<SquadronPlane[]>([]);
+    const minimapSquadronAdds = ref<MinimapSquadronAdd[]>([]);
+    const minimapSquadronMoves = ref<MinimapSquadronMove[]>([]);
+    const minimapSquadronRemoves = ref<MinimapSquadronRemove[]>([]);
     const showResults = ref(false);
     /** True while the packet stream is decoding (post-battle results pending). */
     const resultsLoading = ref(false);
@@ -1079,8 +1089,10 @@ export default defineComponent({
       () => parser.current.value?.path,
       async (path) => {
         trajectories.value = [];
+        shellLaunches.value = [];
         explosions.value = [];
         torpedoes.value = [];
+        torpedoSteers.value = [];
         weaponLocks.value = [];
         battleResults.value = null;
         replayVersion.value = null;
@@ -1091,6 +1103,9 @@ export default defineComponent({
         cameraModes.value = [];
         squadronCreates.value = [];
         squadronPlanes.value = [];
+        minimapSquadronAdds.value = [];
+        minimapSquadronMoves.value = [];
+        minimapSquadronRemoves.value = [];
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -1098,8 +1113,10 @@ export default defineComponent({
         try {
           const stream = await api.readReplayPositions(path);
           trajectories.value = stream.trajectories;
+          shellLaunches.value = stream.shellLaunches ?? [];
           explosions.value = stream.explosions ?? [];
           torpedoes.value = stream.torpedoes ?? [];
+          torpedoSteers.value = stream.torpedoSteers ?? [];
           weaponLocks.value = stream.weaponLocks ?? [];
           battleResults.value = stream.battleResults ?? null;
           replayVersion.value = stream.version ?? null;
@@ -1110,6 +1127,9 @@ export default defineComponent({
           cameraModes.value = stream.cameraModes ?? [];
           squadronCreates.value = stream.squadronCreates ?? [];
           squadronPlanes.value = stream.squadronPlanes ?? [];
+          minimapSquadronAdds.value = stream.minimapSquadronAdds ?? [];
+          minimapSquadronMoves.value = stream.minimapSquadronMoves ?? [];
+          minimapSquadronRemoves.value = stream.minimapSquadronRemoves ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1399,8 +1419,10 @@ export default defineComponent({
                     <HolographicMap
                       replayPath={parser.current.value.path}
                       trajectories={trajectories.value}
+                      shellLaunches={shellLaunches.value}
                       explosions={explosions.value}
                       torpedoes={torpedoes.value}
+                      torpedoSteers={torpedoSteers.value}
                       weaponLocks={weaponLocks.value}
                       battleResults={battleResults.value ?? undefined}
                       replayVersion={replayVersion.value ?? undefined}
@@ -1411,6 +1433,9 @@ export default defineComponent({
                       cameraModes={cameraModes.value}
                       squadronCreates={squadronCreates.value}
                       squadronPlanes={squadronPlanes.value}
+                      minimapSquadronAdds={minimapSquadronAdds.value}
+                      minimapSquadronMoves={minimapSquadronMoves.value}
+                      minimapSquadronRemoves={minimapSquadronRemoves.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}

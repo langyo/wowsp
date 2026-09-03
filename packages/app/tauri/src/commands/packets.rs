@@ -4,14 +4,17 @@
 //! Blowfish-ECB-encrypted with a hardcoded 16-byte game key, XOR-chained across
 //! consecutive 8-byte plaintext blocks, then zlib-compressed. This module
 //! reverses that and walks the resulting frame stream to extract entity
-//! position trajectories (Position, 0x0a) AND entity-creation metadata
-//! (EntityCreate, 0x05) so the frontend can tell ships from capture zones.
+//! position trajectories (Position, 0x0a), entity-creation metadata
+//! (EntityCreate, 0x05) and the battle-effect entity-method events (0x08):
+//! artillery launches, torpedo launches/spreads and aircraft squadrons.
 //!
-//! Reference: `Monstrofil/replays_unpack` (Python). The Blowfish key, the XOR
-//! chain (previous *plaintext* block), and the first-block skip are all from
-//! `replay_unpack/replay_reader.py`. Packet framing `[u32 size][u32 type][f32
-//! time][payload]` is from `core/network/net_packet.py`; the `Position` (0x0a)
-//! and `EntityCreate` (0x05) layouts are from `core/packets/*.py`.
+//! Reference: `Monstrofil/replays_unpack` for framing, and
+//! `MarshalPartyByJack/replay_unpack` (vendored in the local minimap_renderer
+//! checkout) for the entity-method semantics. EntityMethod ids are BigWorld
+//! "exposed indices" (client-method tables sorted by wire size) that drift
+//! every game version — [`method_tables`] resolves them per replay version.
+//! Battle-effect arg layouts come from the per-version `alias.xml` type
+//! definitions: `SHOTS_PACK` / `TORPEDOES_PACK` / `receive_*MinimapSquadron`.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -22,6 +25,8 @@ use byteorder::BigEndian;
 use flate2::read::ZlibDecoder;
 
 use wowsp_tauri_shared::{EntityKind, PositionSample};
+
+use super::method_tables::{MethodIds, method_ids_for_version};
 
 /// WoWS uses the big-endian Blowfish variant (PyCryptodome default).
 type WowsBlowfish = Blowfish<BigEndian>;
@@ -53,27 +58,20 @@ const PACKET_ENTITY_DESTROY: u32 = 0x06;
 /// Current clients (WoWS 12.6+) use 0x2c; older builds use 0x2b.
 const PACKET_PLAYER_POSITION: u32 = 0x2c;
 const PACKET_PLAYER_POSITION_LEGACY: u32 = 0x2b;
-/// Secondary position stream used by aircraft/squadrons (entityType 4) and
-/// other transient entities on current clients. Same 32-byte layout as
-/// PlayerPosition.
+/// Secondary position stream (0x2a) sharing the PlayerPosition 32-byte
+/// layout; carried by transient entities on current clients (the reference
+/// replay_unpack leaves it undecoded).
 const PACKET_POSITION_AUX: u32 = 0x2a;
 /// Packet type for the recorder's own-player entity creation ("CellPlayerCreate"
 /// in Monstrofil's `replays_unpack`). The avatar (the recorder's own player)
 /// is created with this packet rather than EntityCreate (0x05); same layout.
 const PACKET_CELL_PLAYER_CREATE: u32 = 0x01;
-/// Packet type for entity method calls (0x08). Battle events that have no
-/// dedicated entity (shell explosions, torpedo launches) arrive here as
-/// method calls on the avatar (the recorder's own player entity) and the
-/// firing vehicle. Method ids are per-entity-type tables:
-///   Avatar client method 126 = receiveExplosions (world-space impact points)
-///   Vehicle client method  47 = shootTorpedo (launch direction vector)
-const PACKET_ENTITY_METHOD: u32 = 0x08;
-/// Avatar entity type id (spec index 1). Its method table drives
-/// `receiveExplosions` (id 126) parsing.
+/// Avatar entity type id (spec index 1). Its method table drives the
+/// battle-effect events (shots, torpedoes, squadrons, explosions).
 const ENTITY_TYPE_AVATAR: i16 = 1;
 /// NestedPropertyUpdate (0x23): nested property blob updates, used by
-/// capture zones to stream their live capture progress (0..1 fraction at the
-/// tail of the payload).
+/// capture zones (InteractiveZone — type 13 pre-14.5.0, 14 after) to stream
+/// their live capture progress (0..1 fraction at the tail of the payload).
 const PACKET_NESTED_PROPERTY: u32 = 0x23;
 /// SetWeaponLock (0x30): the recorder's weapon lock state change.
 /// Payload: `u32 weapon_type, u32 lock_type, u32 target_id`.
@@ -110,19 +108,23 @@ const PACKET_SUB_CONTROLLER: u32 = 0x31;
 const PACKET_CRUISE_STATE: u32 = 0x32;
 const PACKET_SHOT_TRACKING: u32 = 0x33;
 const PACKET_GUN_MARKER: u32 = 0x18;
-/// Avatar client-method id for `receiveExplosions` on current clients
-/// (15.x): array of {Vector3 pos, u32 paramsID, u8 hitType}.
-const METHOD_RECEIVE_EXPLOSIONS: i32 = 126;
-/// Vehicle client-method id for `shootTorpedo` on current clients (15.x):
-/// {i32 tube, Vector3 dir, i32, i32, u8}.
-const METHOD_SHOOT_TORPEDO: i32 = 47;
-/// Avatar client-method ids for aircraft squadrons on current clients:
-/// receive_addSquadron (114) creates a squadron (u32 paramsId, u8, u64
-/// planeId, ...), receive_updateSquadron (140) streams per-plane positions
-/// (u64 planeId, f32 dt, u8 count, count × {Vector3 pos, f32 yaw, u16 time,
-/// u8 type, i8 pitch}).
-const METHOD_RECEIVE_ADD_SQUADRON: i32 = 114;
-const METHOD_RECEIVE_UPDATE_SQUADRON: i32 = 140;
+/// Packet type for entity method calls (0x08). Battle events that have no
+/// dedicated entity (artillery salvos, torpedo spreads, squadron markers)
+/// arrive here as client-method calls on the avatar (the recorder's own
+/// entity). Method ids are per-version exposed indices — resolved through
+/// [`method_ids_for_version`], never hardcoded.
+const PACKET_ENTITY_METHOD: u32 = 0x08;
+
+/// Version-dependent decoder inputs resolved once per replay: the method-id
+/// table and the InteractiveZone entity-type index (13 before 14.5.0, 14 after
+/// — `VehicleAppearance` was inserted into `entities.xml` ahead of it).
+struct LayoutProfile {
+    /// `None` when the replay predates every shipped table (pre-0.11.6): the
+    /// exposed indices can't be trusted, so battle-effect decoding is disabled
+    /// rather than risk plausible-looking garbage.
+    methods: Option<&'static MethodIds>,
+    zone_entity_type: i16,
+}
 
 /// A single property change sample — one field of an entity updated at a
 /// specific time. Health, speed, consumable state, etc.
@@ -151,10 +153,15 @@ pub struct DecodedReplay {
     pub destroys: BTreeMap<i32, f32>,
     /// Per-entity per-property change timelines (property_index → samples).
     pub properties: BTreeMap<i32, Vec<PropertyChange>>,
+    /// Artillery launches (`receiveArtilleryShots` on the avatar): per-shell
+    /// muzzle point, aim point and flight time.
+    pub shell_launches: Vec<wowsp_tauri_shared::ShellLaunchEvent>,
     /// World-space shell impact points (`receiveExplosions` on the avatar).
     pub explosions: Vec<wowsp_tauri_shared::ExplosionEvent>,
-    /// Torpedo launches (`shootTorpedo` on the firing vehicle).
+    /// Torpedo launches (`receiveTorpedoes` on the avatar).
     pub torpedoes: Vec<wowsp_tauri_shared::TorpedoLaunch>,
+    /// Homing-torpedo guidance updates (`receiveTorpedoDirection`).
+    pub torpedo_steers: Vec<wowsp_tauri_shared::TorpedoSteer>,
     /// Capture-zone progress streams (NestedPropertyUpdate 0x23, entity
     /// type 14): 0..1 fraction of the current capture per entity.
     pub cap_progress: BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>>,
@@ -187,9 +194,13 @@ pub struct DecodedReplay {
     pub camera_modes: Vec<wowsp_tauri_shared::HpSample>,
     /// Counts of decoded system packets (diagnostics).
     pub diagnostics: wowsp_tauri_shared::DiagnosticCounts,
-    /// Aircraft squadrons (avatar methods 114 / 140).
+    /// Aircraft squadrons (avatar receive_add/updateSquadron — 3D stream).
     pub squadron_creates: Vec<wowsp_tauri_shared::SquadronCreate>,
     pub squadron_planes: Vec<wowsp_tauri_shared::SquadronPlane>,
+    /// Minimap squadron markers (avatar receive_add/update/removeMinimapSquadron).
+    pub minimap_squadron_adds: Vec<wowsp_tauri_shared::MinimapSquadronAdd>,
+    pub minimap_squadron_moves: Vec<wowsp_tauri_shared::MinimapSquadronMove>,
+    pub minimap_squadron_removes: Vec<wowsp_tauri_shared::MinimapSquadronRemove>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -221,7 +232,9 @@ struct RawMethodCall {
 ///
 /// `client_version`: the header's `clientVersionFromExe` (comma-separated
 /// `major,minor,patch,build`). Selects the packet-ID layout: pre-12.6.0 replays
-/// shift ids down and carry no `BattleResults`. `None` assumes the modern layout.
+/// shift ids down and carry no `BattleResults`; it also selects the
+/// entity-method id table (see [`method_tables`]) and the InteractiveZone
+/// entity-type index. `None` assumes the modern layout.
 pub fn decode_replay(
     packet_stream: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
@@ -229,11 +242,39 @@ pub fn decode_replay(
 ) -> Result<DecodedReplay, String> {
     let decrypted = decrypt_stream(packet_stream)?;
     let inflated = inflate_zlib(&decrypted)?;
-    let legacy = match client_version {
-        Some(v) => packet_layout_is_legacy(v),
+    let version_key = client_version.and_then(parse_version_key);
+    let legacy = match version_key {
+        Some(k) => k < (12, 6, 0),
         None => false,
     };
-    Ok(walk_frames(&inflated, ship_id_candidates, legacy))
+    // Battle-effect method decoding requires a table that actually covers the
+    // replay's version: below the oldest shipped table (0.11.6) the exposed
+    // indices predate anything we know, so events stay empty.
+    // Oldest shipped table is 0.11.6 (u32 tuple to match `version_key`).
+    let in_table_range = version_key.map(|k| k >= (0, 11, 6)).unwrap_or(true);
+    let profile = LayoutProfile {
+        methods: in_table_range.then(|| method_ids_for_version(client_version)),
+        // VehicleAppearance joins entities.xml in 14.5.0, pushing
+        // InteractiveZone from 13 to 14.
+        zone_entity_type: match version_key {
+            Some(k) if k < (14, 5, 0) => 13,
+            _ => 14,
+        },
+    };
+    Ok(walk_frames(&inflated, ship_id_candidates, legacy, &profile))
+}
+
+/// `\"15,0,0,11791718\"` → `(15, 0, 0)`; malformed input yields `None`.
+fn parse_version_key(v: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = v.split(',');
+    let (Some(a), Some(b), Some(c)) = (parts.next(), parts.next(), parts.next()) else {
+        return None;
+    };
+    Some((
+        a.trim().parse().ok()?,
+        b.trim().parse().ok()?,
+        c.trim().parse().ok()?,
+    ))
 }
 
 /// Blowfish-ECB decrypt with the WoWS key + XOR chain. Skips the first 8-byte
@@ -274,25 +315,6 @@ fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Whether a `clientVersionFromExe` string (comma-separated
-/// `major,minor,patch[,build]`) predates the modern BigWorld packet-ID layout
-/// introduced in 12.6.0. Malformed versions fall back to the modern layout
-/// (current clients are all modern).
-fn packet_layout_is_legacy(version: &str) -> bool {
-    let mut parts = version.split(',');
-    let (Some(major), Some(minor), Some(patch)) = (parts.next(), parts.next(), parts.next()) else {
-        return false;
-    };
-    match (
-        major.trim().parse::<u32>(),
-        minor.trim().parse::<u32>(),
-        patch.trim().parse::<u32>(),
-    ) {
-        (Ok(major), Ok(minor), Ok(patch)) => (major, minor, patch) < (12, 6, 0),
-        _ => false,
-    }
-}
-
 /// Map a legacy (<12.6.0) wire packet id to its modern-layout equivalent so the
 /// frame loop can match against the modern constants. The modern layout inserts
 /// `BattleResults` at 0x22 and `CameraMode` at 0x27, shifting every later id up;
@@ -317,11 +339,13 @@ fn remap_legacy_packet_id(raw: u32) -> u32 {
 /// samples (grouped by entity id) and EntityCreate metadata. Stops cleanly if a
 /// frame header is truncated or declares an absurd size (trailing padding).
 ///
-/// `legacy` selects the pre-12.6.0 packet-id layout (see [`remap_legacy_packet_id`]).
+/// `legacy` selects the pre-12.6.0 packet-id layout (see [`remap_legacy_packet_id`]);
+/// `profile` carries the per-version method ids and entity-type indices.
 fn walk_frames(
     inflated: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
     legacy: bool,
+    profile: &LayoutProfile,
 ) -> DecodedReplay {
     let mut positions: BTreeMap<i32, Vec<PositionSample>> = BTreeMap::new();
     let mut kinds: BTreeMap<i32, EntityKind> = BTreeMap::new();
@@ -343,6 +367,9 @@ fn walk_frames(
     let mut diagnostics = wowsp_tauri_shared::DiagnosticCounts::default();
     let mut squadron_creates: Vec<wowsp_tauri_shared::SquadronCreate> = Vec::new();
     let mut squadron_planes: Vec<wowsp_tauri_shared::SquadronPlane> = Vec::new();
+    let mut minimap_squadron_adds: Vec<wowsp_tauri_shared::MinimapSquadronAdd> = Vec::new();
+    let mut minimap_squadron_moves: Vec<wowsp_tauri_shared::MinimapSquadronMove> = Vec::new();
+    let mut minimap_squadron_removes: Vec<wowsp_tauri_shared::MinimapSquadronRemove> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -370,7 +397,8 @@ fn walk_frames(
                 }
             },
             PACKET_ENTITY_CREATE => {
-                if let Some(created) = parse_entity_create(payload, time) {
+                if let Some(created) = parse_entity_create(payload, time, profile.zone_entity_type)
+                {
                     let eid = created.entity_id;
                     let mut kind = created.clone_into_kind();
                     kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
@@ -504,12 +532,12 @@ fn walk_frames(
         }
         cur = payload_end;
     }
-    // Capture-zone progress: nested-property payloads on type-14 entities
-    // carry the live capture fraction as a trailing f32 (0..1). Keep only
-    // those, keyed by entity.
+    // Capture-zone progress: nested-property payloads on InteractiveZone
+    // entities (type index is version-dependent) carry the live capture
+    // fraction as a trailing f32 (0..1). Keep only those, keyed by entity.
     let mut cap_progress: BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>> = BTreeMap::new();
     for n in &nested {
-        if kinds.get(&n.entity_id).map(|k| k.entity_type) != Some(14) {
+        if kinds.get(&n.entity_id).map(|k| k.entity_type) != Some(profile.zone_entity_type) {
             continue;
         }
         if n.payload.len() >= 4 {
@@ -533,28 +561,50 @@ fn walk_frames(
         });
     }
     // Resolve method calls into events once the entity types are known: the
-    // method ids live in per-entity-type tables, so e.g. id 126 is only
-    // `receiveExplosions` when the receiver is the avatar entity (type 1).
+    // method ids live in per-entity-type exposed-index tables (version-drifting,
+    // see `method_tables`), and only the avatar entity (type 1) carries the
+    // battle-effect broadcast methods.
+    let mut shell_launches: Vec<wowsp_tauri_shared::ShellLaunchEvent> = Vec::new();
     let mut explosions: Vec<wowsp_tauri_shared::ExplosionEvent> = Vec::new();
     let mut torpedoes: Vec<wowsp_tauri_shared::TorpedoLaunch> = Vec::new();
+    let mut torpedo_steers: Vec<wowsp_tauri_shared::TorpedoSteer> = Vec::new();
     for call in &methods {
         let entity_type = kinds.get(&call.entity_id).map(|k| k.entity_type);
-        if entity_type == Some(ENTITY_TYPE_AVATAR) && call.method_id == METHOD_RECEIVE_EXPLOSIONS {
+        let Some(m) = profile.methods else {
+            break;
+        };
+        if entity_type != Some(ENTITY_TYPE_AVATAR) {
+            continue;
+        }
+        if call.method_id == m.avatar_receive_artillery_shots {
+            shell_launches.extend(decode_artillery_shots(call.time, &call.args));
+        } else if call.method_id == m.avatar_receive_torpedoes {
+            torpedoes.extend(decode_torpedo_salvos(call.time, &call.args));
+        } else if call.method_id == m.avatar_receive_explosions {
             explosions.extend(decode_explosions(call.time, &call.args));
-        } else if entity_type == Some(ENTITY_TYPE_AVATAR)
-            && call.method_id == METHOD_RECEIVE_ADD_SQUADRON
-        {
+        } else if call.method_id == m.avatar_receive_torpedo_direction {
+            torpedo_steers.extend(decode_torpedo_directions(call.time, &call.args));
+        } else if call.method_id == m.avatar_receive_add_squadron {
             if let Some(s) = decode_squadron_add(call.time, &call.args) {
                 squadron_creates.push(s);
             }
-        } else if entity_type == Some(ENTITY_TYPE_AVATAR)
-            && call.method_id == METHOD_RECEIVE_UPDATE_SQUADRON
-        {
+        } else if call.method_id == m.avatar_receive_update_squadron {
             squadron_planes.extend(decode_squadron_update(call.time, &call.args));
-        } else if entity_type == Some(2) && call.method_id == METHOD_SHOOT_TORPEDO {
-            if let Some(t) = decode_torpedo_launch(call.time, call.entity_id, &call.args) {
-                torpedoes.push(t);
+        } else if call.method_id == m.avatar_receive_add_minimap_squadron {
+            if let Some(s) = decode_minimap_squadron_add(call.time, &call.args) {
+                minimap_squadron_adds.push(s);
             }
+        } else if call.method_id == m.avatar_receive_update_minimap_squadron {
+            if let Some(s) = decode_minimap_squadron_move(call.time, &call.args) {
+                minimap_squadron_moves.push(s);
+            }
+        } else if call.method_id == m.avatar_receive_remove_minimap_squadron
+            && args_is_plane_id(&call.args)
+        {
+            minimap_squadron_removes.push(wowsp_tauri_shared::MinimapSquadronRemove {
+                time: call.time,
+                plane_id: u64::from_le_bytes(call.args[0..8].try_into().unwrap()),
+            });
         }
     }
     for samples in positions.values_mut() {
@@ -576,8 +626,10 @@ fn walk_frames(
         kinds,
         destroys,
         properties,
+        shell_launches,
         explosions,
         torpedoes,
+        torpedo_steers,
         cap_progress,
         weapon_locks,
         battle_results,
@@ -592,12 +644,17 @@ fn walk_frames(
         diagnostics,
         squadron_creates,
         squadron_planes,
+        minimap_squadron_adds,
+        minimap_squadron_moves,
+        minimap_squadron_removes,
     }
 }
 
-/// Decode `receive_addSquadron` args: u32 paramsId, u8, u64 planeId, u32
-/// skinId, u8, u8, f32×3 position, ... Only the head fields are decoded;
-/// the rest of the fixed-dict state is ignored.
+/// Decode `receive_addSquadron` args (15.x `SQUADRON_STATE` layout):
+/// u32 paramsID, u8 totalNumPlanes, then the squadron state fixed dict —
+/// i64 planeID, u32 skinID, u8 isActive, u8 numPlanes, f32×3 position, ... —
+/// then i64 parentID, u32 maxHealth, f32 squadronHealthPart, u64 planeHealth.
+/// Only the head fields (through the position) are decoded.
 fn decode_squadron_add(time: f32, args: &[u8]) -> Option<wowsp_tauri_shared::SquadronCreate> {
     if args.len() < 31 {
         return None;
@@ -615,6 +672,219 @@ fn decode_squadron_add(time: f32, args: &[u8]) -> Option<wowsp_tauri_shared::Squ
         y,
         z,
     })
+}
+
+/// Decode `receive_addMinimapSquadron` args: `i64 planeId, i8 teamId,
+/// u32 paramsId, VECTOR2 pos, u8 flag`. The VECTOR2's second component is the
+/// world Z (not negated — cross-checked against the 3D squadron stream and the
+/// carrier position on a 15.0 replay). The plane id packs the owning carrier
+/// vehicle id in its low 32 bits.
+fn decode_minimap_squadron_add(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::MinimapSquadronAdd> {
+    if args.len() < 22 {
+        return None;
+    }
+    let plane_id = u64::from_le_bytes(args[0..8].try_into().ok()?);
+    let team_id = args[8] as i8;
+    let params_id = u32::from_le_bytes(args[9..13].try_into().ok()?);
+    let x = f32::from_le_bytes(args[13..17].try_into().ok()?);
+    let z = f32::from_le_bytes(args[17..21].try_into().ok()?);
+    Some(wowsp_tauri_shared::MinimapSquadronAdd {
+        time,
+        plane_id,
+        owner_id: plane_owner_id(plane_id),
+        team_id,
+        params_id,
+        x,
+        z,
+    })
+}
+
+/// Decode `receive_updateMinimapSquadron` args: `i64 planeId, VECTOR2 pos`.
+fn decode_minimap_squadron_move(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::MinimapSquadronMove> {
+    if args.len() < 16 {
+        return None;
+    }
+    let plane_id = u64::from_le_bytes(args[0..8].try_into().ok()?);
+    let x = f32::from_le_bytes(args[8..12].try_into().ok()?);
+    let z = f32::from_le_bytes(args[12..16].try_into().ok()?);
+    Some(wowsp_tauri_shared::MinimapSquadronMove {
+        time,
+        plane_id,
+        x,
+        z,
+    })
+}
+
+/// The owning carrier's vehicle entity id: low 32 bits of the composite
+/// squadron id (bit layout from the reference `unpack_plane_id`:
+/// [owner 32 | index 3 | purpose 3 | departures 1]).
+fn plane_owner_id(plane_id: u64) -> i32 {
+    (plane_id & 0xFFFF_FFFF) as u32 as i32
+}
+
+/// `receive_removeMinimapSquadron` guards its read with a length check.
+fn args_is_plane_id(args: &[u8]) -> bool {
+    args.len() == 8
+}
+
+/// Decode `receiveArtilleryShots` args (per the `SHOTS_PACK` alias): a u8
+/// count of packs, each `{u32 paramsID, i32 ownerID, i32 salvoID, u8 shots[],
+/// SHOT}` where `SHOT` is `{VECTOR3 pos, f32 pitch, f32 speed, VECTOR3 tarPos,
+/// u16 shotID, u16 gunBarrelID, f32 serverTimeLeft, f32 shooterHeight,
+/// f32 hitDistance}` — 48 bytes.
+fn decode_artillery_shots(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::ShellLaunchEvent> {
+    let mut out = Vec::new();
+    let Some(&packs) = args.first() else {
+        return out;
+    };
+    let mut off = 1usize;
+    'packs: for _ in 0..packs {
+        // paramsID + ownerID + salvoID + shots-count header.
+        if off + 13 > args.len() {
+            break;
+        }
+        let params_id = u32::from_le_bytes(args[off..off + 4].try_into().unwrap());
+        let owner_id = i32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
+        let salvo_id = i32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        let shots = args[off + 12] as usize;
+        off += 13;
+        for _ in 0..shots {
+            if off + 48 > args.len() {
+                break 'packs;
+            }
+            let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+            out.push(wowsp_tauri_shared::ShellLaunchEvent {
+                time,
+                owner_id,
+                params_id,
+                salvo_id,
+                shot_id: u16::from_le_bytes(args[off + 32..off + 34].try_into().unwrap()),
+                x: f(off),
+                y: f(off + 4),
+                z: f(off + 8),
+                target_x: f(off + 20),
+                target_y: f(off + 24),
+                target_z: f(off + 28),
+                server_time_left: f(off + 36),
+                speed: f(off + 16),
+                gun_barrel_id: u16::from_le_bytes(args[off + 34..off + 36].try_into().unwrap()),
+            });
+            off += 48;
+        }
+    }
+    out
+}
+
+/// Decode `receiveTorpedoes` args (per the `TORPEDOES_PACK` alias): a u8 count
+/// of packs, each `{u32 paramsID, i32 ownerID, i32 salvoID, u32 skinID, u8
+/// count, TORPEDO}` where `TORPEDO` is `{VECTOR3 pos, VECTOR3 dir, u16 shotID,
+/// u8 armed, TORPEDO_MANEUVER_DUMP?, TORPEDO_ACOUSTIC_DUMP?}`. The dumps are
+/// nullable fixed dicts: a flag byte 0 skips them, 1 parses them (any other
+/// value rewinds and parses — the reference's recovery path).
+fn decode_torpedo_salvos(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::TorpedoLaunch> {
+    let mut out = Vec::new();
+    let Some(&packs) = args.first() else {
+        return out;
+    };
+    let mut off = 1usize;
+    'packs: for _ in 0..packs {
+        if off + 17 > args.len() {
+            break;
+        }
+        let params_id = u32::from_le_bytes(args[off..off + 4].try_into().unwrap());
+        let owner_id = i32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
+        let salvo_id = i32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        let count = args[off + 16] as usize;
+        off += 17;
+        for _ in 0..count {
+            // Fixed part (pos + dir + shotID + armed) is 27 bytes; the two
+            // nullable-dump flag bytes follow, so 29 bytes must remain.
+            if off + 29 > args.len() {
+                break 'packs;
+            }
+            let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+            let shot_id = u16::from_le_bytes(args[off + 24..off + 26].try_into().unwrap());
+            let armed = args[off + 26] != 0;
+            out.push(wowsp_tauri_shared::TorpedoLaunch {
+                time,
+                owner_id,
+                params_id,
+                salvo_id,
+                shot_id,
+                x: f(off),
+                y: f(off + 4),
+                z: f(off + 8),
+                dir_x: f(off + 12),
+                dir_y: f(off + 16),
+                dir_z: f(off + 20),
+                armed,
+            });
+            off += 27;
+            // maneuverDump: targetYaw/changeTime/stopTime/currentTime/yawSpeed
+            // (5×f32 = 20) + armPos + finalPos (2×VECTOR3 = 24) = 44 bytes.
+            match nullable_dict(args, &mut off, 44) {
+                Some(_) => (),
+                None => break 'packs,
+            }
+            // acousticDump: 3×u8 + 7×f32 = 31 bytes.
+            match nullable_dict(args, &mut off, 31) {
+                Some(_) => (),
+                None => break 'packs,
+            }
+        }
+    }
+    out
+}
+
+/// Consume one nullable fixed dict of `body` bytes: flag 0 → skipped; flag 1
+/// → consume the body; any other flag → the dict body starts AT the flag byte
+/// (the reference rewinds one byte and parses), so only `body - 1` more bytes
+/// are consumed after the flag. Returns `None` when the stream is truncated.
+fn nullable_dict(args: &[u8], off: &mut usize, body: usize) -> Option<()> {
+    let flag = *args.get(*off)?;
+    *off += 1;
+    let len = if flag == 0 {
+        0
+    } else if flag == 1 {
+        body
+    } else {
+        body - 1
+    };
+    if *off + len > args.len() {
+        return None;
+    }
+    *off += len;
+    Some(())
+}
+
+/// Decode `receiveTorpedoDirection` args (acoustic torpedo guidance):
+/// `i32 vehicleId, u16 shotId, VECTOR3 pos, f32 targetYaw, f32 targetDepth,
+/// f32 speedCoef, f32 curYawSpeed, f32 curPitchSpeed, u8 canReachDepth`
+/// (39 bytes; only the head fields through targetYaw are kept).
+fn decode_torpedo_directions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::TorpedoSteer> {
+    let mut out = Vec::new();
+    if args.len() < 22 {
+        return out;
+    }
+    let owner_id = i32::from_le_bytes(args[0..4].try_into().unwrap());
+    let shot_id = u16::from_le_bytes(args[4..6].try_into().unwrap());
+    let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+    out.push(wowsp_tauri_shared::TorpedoSteer {
+        time,
+        owner_id,
+        shot_id,
+        x: f(6),
+        y: f(10),
+        z: f(14),
+        target_yaw: f(18),
+    });
+    out
 }
 
 /// Decode `receive_updateSquadron` args: u64 planeId, f32 dt, u8 count,
@@ -847,27 +1117,6 @@ fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Explosio
     out
 }
 
-/// Decode `shootTorpedo` args: `i32 tube, f32×3 direction, i32, i32, u8`.
-fn decode_torpedo_launch(
-    time: f32,
-    entity_id: i32,
-    args: &[u8],
-) -> Option<wowsp_tauri_shared::TorpedoLaunch> {
-    if args.len() < 21 {
-        return None;
-    }
-    let dir_x = f32::from_le_bytes(args[4..8].try_into().ok()?);
-    let dir_y = f32::from_le_bytes(args[8..12].try_into().ok()?);
-    let dir_z = f32::from_le_bytes(args[12..16].try_into().ok()?);
-    Some(wowsp_tauri_shared::TorpedoLaunch {
-        time,
-        entity_id,
-        dir_x,
-        dir_y,
-        dir_z,
-    })
-}
-
 /// Parsed EntityCreate used internally to key the kinds map; converted to
 /// [`EntityKind`] before insertion. Carries the entity id separately.
 struct ParsedCreate {
@@ -879,7 +1128,8 @@ struct ParsedCreate {
     z: f32,
     creation_time: f32,
     /// Capture-zone radius (metres) recovered from the state stream when the
-    /// entity type is 14; `None` for other types or when no candidate is found.
+    /// entity is an InteractiveZone; `None` for other types or when no
+    /// candidate is found.
     radius: Option<f32>,
     /// 0-based capture-point index (A=0, B=1, ...) when the create state
     /// carries a real `controlPoint` component; `None` otherwise (strike /
@@ -986,7 +1236,11 @@ fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
 /// `clients/wows/network/packets/EntityCreate.py`):
 ///   i32 entity_id, i16 type, i32 vehicle_id, i32 space_id,
 ///   f32×3 position, f32×3 direction, [BinaryStream state — skipped]
-fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
+///
+/// `zone_entity_type` is the version-dependent InteractiveZone index (13
+/// before 14.5.0, 14 after) — only zone entities get the radius / control
+/// point / team state scans.
+fn parse_entity_create(payload: &[u8], time: f32, zone_entity_type: i16) -> Option<ParsedCreate> {
     // Fixed header is 4+2+4+4+12+12 = 38 bytes; trailing state is variable.
     if payload.len() < 38 {
         return None;
@@ -998,17 +1252,18 @@ fn parse_entity_create(payload: &[u8], time: f32) -> Option<ParsedCreate> {
     let x = f32::from_le_bytes(payload[14..18].try_into().ok()?);
     let y = f32::from_le_bytes(payload[18..22].try_into().ok()?);
     let z = f32::from_le_bytes(payload[22..26].try_into().ok()?);
-    let radius = if entity_type == 14 && payload.len() > 38 {
+    let is_zone = entity_type == zone_entity_type && payload.len() > 38;
+    let radius = if is_zone {
         scan_state_for_radius(&payload[38..])
     } else {
         None
     };
-    let control_point_index = if entity_type == 14 && payload.len() > 38 {
+    let control_point_index = if is_zone {
         scan_state_for_control_point(&payload[38..])
     } else {
         None
     };
-    let initial_team = if entity_type == 14 && payload.len() > 38 {
+    let initial_team = if is_zone {
         scan_state_for_team(&payload[38..])
     } else {
         None
@@ -1140,7 +1395,7 @@ mod tests {
         payload.extend_from_slice(&(-516.4f32).to_le_bytes());
         payload.extend_from_slice(&0.0f32.to_le_bytes());
         payload.extend_from_slice(&500.0f32.to_le_bytes());
-        payload.extend_from_slice(&3.14f32.to_le_bytes());
+        payload.extend_from_slice(&3.5f32.to_le_bytes());
         payload.extend_from_slice(&0.0f32.to_le_bytes());
         payload.extend_from_slice(&0.0f32.to_le_bytes());
         let s = parse_player_position(&payload, 1.5).expect("must parse");
@@ -1148,7 +1403,7 @@ mod tests {
         assert_eq!(s.vehicle_id, 962014);
         assert!((s.x - -516.4).abs() < 0.01);
         assert!((s.z - 500.0).abs() < 0.01);
-        assert!((s.yaw - 3.14).abs() < 0.01);
+        assert!((s.yaw - 3.5).abs() < 0.01);
         assert!((s.time - 1.5).abs() < 0.001);
         // Short payload is rejected.
         assert!(parse_player_position(&payload[..20], 0.0).is_none());
@@ -1176,18 +1431,17 @@ mod tests {
         );
     }
 
-    /// The 12.6.0 layout boundary: legacy versions use the shifted packet-id
-    /// table, modern versions use the current one.
+    /// The 12.6.0 layout boundary + InteractiveZone index flip at 14.5.0:
+    /// `parse_version_key` drives both (legacy packet ids / zone type 13 vs 14).
     #[test]
-    fn packet_layout_boundary() {
-        assert!(packet_layout_is_legacy("12,5,0,12345"));
-        assert!(packet_layout_is_legacy("0,11,4,1"));
-        assert!(!packet_layout_is_legacy("12,6,0,1"));
-        assert!(!packet_layout_is_legacy("14,5,0,10087791"));
-        // Malformed versions assume the modern layout.
-        assert!(!packet_layout_is_legacy(""));
-        assert!(!packet_layout_is_legacy("garbage"));
-        assert!(!packet_layout_is_legacy("12"));
+    fn version_key_boundaries() {
+        assert_eq!(parse_version_key("12,5,0,12345"), Some((12, 5, 0)));
+        assert_eq!(parse_version_key("0,11,4,1"), Some((0, 11, 4)));
+        assert_eq!(parse_version_key("15,0,0,11791718"), Some((15, 0, 0)));
+        // Malformed versions yield None (callers fall back to modern layouts).
+        assert_eq!(parse_version_key(""), None);
+        assert_eq!(parse_version_key("garbage"), None);
+        assert_eq!(parse_version_key("12"), None);
     }
 
     /// Legacy packet ids remap onto their modern equivalents so the frame loop
@@ -1214,7 +1468,8 @@ mod tests {
     }
 
     /// End-to-end against a real replay when `WOWSP_TEST_REPLAY` is set. Asserts
-    /// positions AND EntityCreate kinds are extracted and look sane.
+    /// positions AND EntityCreate kinds are extracted and look sane, and that
+    /// the version-selected method table yields battle-effect events.
     #[test]
     fn decodes_real_replay_positions_and_entities() {
         let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
@@ -1223,12 +1478,27 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
         let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
         let mut cur = 8;
-        for _ in 0..block_count {
+        let mut client_version: Option<String> = None;
+        for i in 0..block_count {
             let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
-            cur += 4 + bl;
+            cur += 4;
+            if i == 0 {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[cur..cur + bl])
+                {
+                    client_version = json
+                        .get("clientVersionFromExe")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                }
+            }
+            cur += bl;
         }
-        let decoded = decode_replay(&bytes[cur..], &std::collections::HashSet::new(), None)
-            .expect("decode must succeed");
+        let decoded = decode_replay(
+            &bytes[cur..],
+            &std::collections::HashSet::new(),
+            client_version.as_deref(),
+        )
+        .expect("decode must succeed");
         let total_samples: usize = decoded.positions.values().map(|v| v.len()).sum();
         assert!(total_samples > 0, "must extract position samples");
         // Ships are entity_type 2; a real match has several.
@@ -1241,14 +1511,45 @@ mod tests {
         // dies). We don't hard-assert destroys > 0 (a stomps game can have
         // none), but log it so the EntityDestroy path is observable in CI.
         eprintln!(
-            "[m3+entity+destroy] {} position samples across {} entities; {} EntityCreates ({} type=2 ships); {} destroyed",
+            "[m3+entity+destroy] version={:?} {} position samples across {} entities; {} EntityCreates ({} type=2 ships); {} destroyed; {} shell launches; {} torpedoes; {} explosions; {} minimap squadron adds",
+            client_version,
             total_samples,
             decoded.positions.len(),
             decoded.kinds.len(),
             ships,
             decoded.destroys.len(),
+            decoded.shell_launches.len(),
+            decoded.torpedoes.len(),
+            decoded.explosions.len(),
+            decoded.minimap_squadron_adds.len(),
         );
         assert!(ships >= 2, "a real match has at least 2 ships");
+        // Artillery fire is universal in a real match — a zero count means the
+        // method table misresolved (the bug this layout fixes). Pre-0.11.6
+        // replays predate the shipped tables, where decoding is disabled.
+        let in_table_range = client_version
+            .as_deref()
+            .and_then(parse_version_key)
+            .map(|k| k >= (0, 11, 6))
+            .unwrap_or(true);
+        if in_table_range {
+            assert!(
+                !decoded.shell_launches.is_empty(),
+                "receiveArtilleryShots must decode on a real replay"
+            );
+        }
+        // Every shell must have finite coordinates and a positive flight time.
+        for s in &decoded.shell_launches {
+            assert!(s.x.is_finite() && s.z.is_finite(), "non-finite shot origin");
+            assert!(
+                s.target_x.is_finite() && s.target_z.is_finite(),
+                "non-finite shot target"
+            );
+            assert!(
+                s.server_time_left > 0.0 && s.server_time_left < 150.0,
+                "implausible flight time (raw units; seconds = value / 2.75)"
+            );
+        }
         // Every entity kind must have finite initial coords.
         for k in decoded.kinds.values() {
             assert!(
@@ -1432,5 +1733,155 @@ mod tests {
             }
             pos = payload_end;
         }
+    }
+
+    /// receiveArtilleryShots: a 1-pack, 2-shot salvo decodes muzzle + aim
+    /// points and flight times per the SHOTS_PACK/SHOT alias layouts.
+    #[test]
+    fn decodes_artillery_shots_pack() {
+        let mut args = Vec::new();
+        args.push(1u8); // 1 pack
+        args.extend_from_slice(&4158636752u32.to_le_bytes()); // paramsID
+        args.extend_from_slice(&631854i32.to_le_bytes()); // ownerID
+        args.extend_from_slice(&7i32.to_le_bytes()); // salvoID
+        args.push(2u8); // 2 shots
+        for (i, dist) in [100.0f32, 200.0f32].into_iter().enumerate() {
+            args.extend_from_slice(&(10.0 + i as f32).to_le_bytes()); // pos.x
+            args.extend_from_slice(&5.0f32.to_le_bytes()); // pos.y
+            args.extend_from_slice(&20.0f32.to_le_bytes()); // pos.z
+            args.extend_from_slice(&0.5f32.to_le_bytes()); // pitch
+            args.extend_from_slice(&780.0f32.to_le_bytes()); // speed
+            args.extend_from_slice(&dist.to_le_bytes()); // tarPos.x
+            args.extend_from_slice(&0.0f32.to_le_bytes()); // tarPos.y
+            args.extend_from_slice(&25.0f32.to_le_bytes()); // tarPos.z
+            args.extend_from_slice(&(i as u16).to_le_bytes()); // shotID
+            args.extend_from_slice(&(3 + i as u16).to_le_bytes()); // gunBarrelID
+            args.extend_from_slice(&(4.0 + i as f32).to_le_bytes()); // serverTimeLeft
+            args.extend_from_slice(&15.0f32.to_le_bytes()); // shooterHeight
+            args.extend_from_slice(&(dist - 10.0).to_le_bytes()); // hitDistance
+        }
+        let shots = decode_artillery_shots(12.5, &args);
+        assert_eq!(shots.len(), 2);
+        assert_eq!(shots[0].owner_id, 631854);
+        assert_eq!(shots[0].params_id, 4158636752);
+        assert_eq!(shots[0].salvo_id, 7);
+        assert_eq!(shots[0].shot_id, 0);
+        assert!((shots[0].x - 10.0).abs() < 1e-4);
+        assert!((shots[0].target_x - 100.0).abs() < 1e-4);
+        assert!((shots[0].server_time_left - 4.0).abs() < 1e-4);
+        assert!((shots[0].speed - 780.0).abs() < 1e-4);
+        assert_eq!(shots[1].shot_id, 1);
+        assert!((shots[1].target_x - 200.0).abs() < 1e-4);
+    }
+
+    /// receiveTorpedoes: nullable maneuver/acoustic dumps consume exactly their
+    /// flag byte when absent (0), letting multi-torpedo packs walk correctly.
+    #[test]
+    fn decodes_torpedo_salvo_with_nullable_dumps() {
+        let mut args = Vec::new();
+        args.push(1u8); // 1 pack
+        args.extend_from_slice(&4283843536u32.to_le_bytes()); // paramsID
+        args.extend_from_slice(&631866i32.to_le_bytes()); // ownerID
+        args.extend_from_slice(&3i32.to_le_bytes()); // salvoID
+        args.extend_from_slice(&0u32.to_le_bytes()); // skinID
+        args.push(3u8); // 3 torpedoes
+        for i in 0..3u16 {
+            args.extend_from_slice(&(-254.0 + i as f32).to_le_bytes()); // pos.x
+            args.extend_from_slice(&0.0f32.to_le_bytes()); // pos.y
+            args.extend_from_slice(&(-28.0f32).to_le_bytes()); // pos.z
+            args.extend_from_slice(&0.7f32.to_le_bytes()); // dir.x
+            args.extend_from_slice(&0.0f32.to_le_bytes()); // dir.y
+            args.extend_from_slice(&5.4f32.to_le_bytes()); // dir.z
+            args.extend_from_slice(&i.to_le_bytes()); // shotID
+            args.push(1u8); // armed
+            args.push(0u8); // maneuverDump = None
+            args.push(0u8); // acousticDump = None
+        }
+        let torps = decode_torpedo_salvos(146.0, &args);
+        assert_eq!(torps.len(), 3, "all three fish decode");
+        assert_eq!(torps[0].owner_id, 631866);
+        assert_eq!(torps[2].shot_id, 2);
+        assert!(torps[1].armed);
+        assert!((torps[0].dir_z - 5.4).abs() < 1e-4);
+        // A present (flag=1) maneuver dump of 44 bytes (5×f32 + 2×VECTOR3)
+        // is skipped whole.
+        let mut with_dump = args.clone();
+        // pack header = 1 count + 4+4+4+4 fixed + 1 count = 18 bytes.
+        let t0 = 18;
+        with_dump[t0 + 27] = 1; // maneuverDump present
+        let mut body = vec![0u8; 44];
+        body[..4].copy_from_slice(&1.5f32.to_le_bytes());
+        with_dump.splice(t0 + 28..t0 + 28, body);
+        let torps2 = decode_torpedo_salvos(146.0, &with_dump);
+        assert_eq!(torps2.len(), 3, "dump bytes consumed without desync");
+        assert!((torps2[1].x - -253.0).abs() < 1e-4);
+
+        // Unexpected flag (not 0/1): the reference rewinds one byte, so the
+        // dict body STARTS at the flag — total consumption is exactly 44.
+        let mut odd = args.clone();
+        odd[t0 + 27] = 0x7f;
+        let mut body2 = vec![0u8; 43];
+        body2[..4].copy_from_slice(&2.5f32.to_le_bytes());
+        odd.splice(t0 + 28..t0 + 28, body2);
+        let torps3 = decode_torpedo_salvos(146.0, &odd);
+        assert_eq!(torps3.len(), 3, "recovery path rewinds to the flag byte");
+        assert_eq!(torps3[2].shot_id, 2);
+    }
+
+    /// Minimap squadron add/update/remove: the composite plane id's low 32
+    /// bits carry the owning carrier's vehicle id.
+    #[test]
+    fn decodes_minimap_squadron_stream() {
+        // owner 631874 at bits 32.., index 1, purpose 4 — from a real 15.0 CV.
+        let plane_id: u64 = 631874 | (1 << 32) | (4 << 35);
+        let mut add = Vec::new();
+        add.extend_from_slice(&plane_id.to_le_bytes());
+        add.push(0i8 as u8); // teamId
+        add.extend_from_slice(&4287037136u32.to_le_bytes()); // paramsId
+        add.extend_from_slice(&(-58.4f32).to_le_bytes()); // pos.x
+        add.extend_from_slice(&321.8f32.to_le_bytes()); // pos.y (== world z)
+        add.push(0u8);
+        let a = decode_minimap_squadron_add(93.0, &add).expect("must parse");
+        assert_eq!(a.plane_id, 141734552642);
+        assert_eq!(a.owner_id, 631874);
+        assert_eq!(a.team_id, 0);
+        assert_eq!(a.params_id, 4287037136);
+        assert!((a.x - -58.4).abs() < 1e-3);
+        assert!((a.z - 321.8).abs() < 1e-3);
+
+        let mut mv = Vec::new();
+        mv.extend_from_slice(&plane_id.to_le_bytes());
+        mv.extend_from_slice(&(-83.5f32).to_le_bytes());
+        mv.extend_from_slice(&339.2f32.to_le_bytes());
+        let m = decode_minimap_squadron_move(97.0, &mv).expect("must parse");
+        assert_eq!(m.plane_id, plane_id);
+        assert!((m.z - 339.2).abs() < 1e-3);
+        // Short payloads are rejected.
+        assert!(decode_minimap_squadron_add(0.0, &add[..20]).is_none());
+        assert!(decode_minimap_squadron_move(0.0, &mv[..12]).is_none());
+        assert!(args_is_plane_id(&mv[..8]));
+        assert!(!args_is_plane_id(&mv));
+    }
+
+    /// receiveTorpedoDirection: fixed 38-byte layout decodes owner/shot/pos.
+    #[test]
+    fn decodes_torpedo_direction() {
+        let mut args = Vec::new();
+        args.extend_from_slice(&631866i32.to_le_bytes());
+        args.extend_from_slice(&11u16.to_le_bytes());
+        args.extend_from_slice(&(-100.5f32).to_le_bytes());
+        args.extend_from_slice(&(-2.0f32).to_le_bytes());
+        args.extend_from_slice(&300.0f32.to_le_bytes());
+        for v in [0.8f32, 6.0, 1.1, 0.5, 0.2] {
+            args.extend_from_slice(&v.to_le_bytes());
+        }
+        args.push(1u8);
+        let steers = decode_torpedo_directions(200.0, &args);
+        assert_eq!(steers.len(), 1);
+        assert_eq!(steers[0].owner_id, 631866);
+        assert_eq!(steers[0].shot_id, 11);
+        assert!((steers[0].target_yaw - 0.8).abs() < 1e-4);
+        // Truncated payloads (below the decoded head fields) yield nothing.
+        assert!(decode_torpedo_directions(0.0, &args[..15]).is_empty());
     }
 }

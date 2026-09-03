@@ -33,11 +33,16 @@ import type {
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
+  MinimapSquadronAdd,
+  MinimapSquadronMove,
+  MinimapSquadronRemove,
   NetStatsSample,
+  ShellLaunchEvent,
   ShipInfo,
   SquadronCreate,
   SquadronPlane,
   TorpedoLaunch,
+  TorpedoSteer,
   VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
@@ -207,19 +212,51 @@ import "./HolographicMap.scss";
  * Coordinates: WoWS world space is x=east, z=north (planar). We map (x,z)
  * straight onto the three.js XZ plane and drop y. Bounds auto-fit to the data.
  */
+/** One shell flight, as plain data — launch/impact window, arc height and
+ *  colors. GPU objects are NOT per shell: matches carry 10k+ shells but only
+ *  a few dozen are airborne at once, so the renderer draws them from a fixed
+ *  pool of [`ShellTraceSlot`]s assigned per frame. */
+interface ShellTraceState {
+  t0: number;
+  t1: number;
+  h: number;
+  /** Launch point (three.js coords; null when the firing ship is unknown). */
+  from: THREE.Vector3 | null;
+  to: THREE.Vector3;
+  color: number;
+  impact: { x: number; z: number };
+}
+
+/** A pooled trace's GPU objects; tinted per assignment. */
+interface ShellTraceSlot {
+  line: THREE.Line;
+  lineMat: THREE.LineBasicMaterial;
+  dots: THREE.Points;
+  dotMat: THREE.PointsMaterial;
+  shell: THREE.Object3D;
+  flash: THREE.Mesh;
+  halo: THREE.Mesh;
+}
+
 export default defineComponent({
   name: "HolographicMap",
   props: {
     replayPath: { type: String, default: "" },
     trajectories: { type: Array as () => EntityTrajectory[], default: () => [] },
+    /** Artillery launches (receiveArtilleryShots on the avatar) — the primary
+     *  shell data: muzzle point, aim point and flight time per projectile. */
+    shellLaunches: { type: Array as () => ShellLaunchEvent[], default: () => [] },
     /** World-space shell impacts (receiveExplosions on the avatar). */
     explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
-    /** Torpedo launches (shootTorpedo on firing vehicles). */
+    /** Torpedo launches (receiveTorpedoes on the avatar). */
     torpedoes: { type: Array as () => TorpedoLaunch[], default: () => [] },
+    /** Homing-torpedo guidance updates (receiveTorpedoDirection). */
+    torpedoSteers: { type: Array as () => TorpedoSteer[], default: () => [] },
     /** Recorder weapon-lock timeline (SetWeaponLock 0x30). */
     weaponLocks: { type: Array as () => WeaponLockEvent[], default: () => [] },
     /** Raw post-battle statistics JSON (BattleResults 0x22). */
-    battleResults: { type: String, default: "" },    /** Replay protocol version (Version 0x16). */
+    battleResults: { type: String, default: "" },
+    /** Replay protocol version (Version 0x16). */
     replayVersion: { type: String, default: "" },
     /** Map name from the Map packet (0x28). */
     mapNamePkt: { type: String, default: "" },
@@ -234,6 +271,11 @@ export default defineComponent({
     /** Aircraft squadrons (avatar receive_addSquadron / updateSquadron). */
     squadronCreates: { type: Array as () => SquadronCreate[], default: () => [] },
     squadronPlanes: { type: Array as () => SquadronPlane[], default: () => [] },
+    /** Minimap squadron markers (receive_add/update/removeMinimapSquadron) —
+     *  the 2D trail stream the in-game minimap itself renders. */
+    minimapSquadronAdds: { type: Array as () => MinimapSquadronAdd[], default: () => [] },
+    minimapSquadronMoves: { type: Array as () => MinimapSquadronMove[], default: () => [] },
+    minimapSquadronRemoves: { type: Array as () => MinimapSquadronRemove[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -642,26 +684,15 @@ export default defineComponent({
       rings: THREE.Mesh[];
       timeSprite: THREE.Sprite | null;
     }[] = [];
-    /** Reconstructed shell flights: a curved trace from a nearby ship that
-     *  was aimed at the impact when it exploded. */
-    let shellTraces: {
-      line: THREE.Line;
-      dots: THREE.Points;
-      flash: THREE.Mesh;
-      halo: THREE.Mesh;
-      /** In-flight projectile visual — a cone until the real shell GLB swaps
-       *  in, then a wrapped model group (driven identically). */
-      shell: THREE.Object3D;
-      /** Ammo tint (kept so the async GLB swap can re-tint the model). */
-      color: number;
-      t0: number;
-      t1: number;
-      from: () => THREE.Vector3 | null;
-      to: THREE.Vector3;
-      h: number;
-    }[] = [];
+    /** Shell flight states (see ShellTraceState). */
+    let shellStates: ShellTraceState[] = [];
+    /** Fixed pool of trace GPU objects, assigned to airborne shells each
+     *  frame — bounded cost regardless of how many shells a match carries. */
+    let shellTraceSlots: ShellTraceSlot[] = [];
     /** In-flight torpedoes: straight capsules from the launch point along
-     *  the launch direction (swapped for the real torpedo GLB once loaded). */
+     *  the launch direction (swapped for the real torpedo GLB once loaded).
+     *  Homing fish re-anchor at each receiveTorpedoDirection guidance
+     *  update (position + heading), bending the otherwise straight run. */
     let torpedoMeshes: {
       mesh: THREE.Object3D;
       wake: THREE.Line;
@@ -669,6 +700,14 @@ export default defineComponent({
       life: number;
       base: THREE.Vector3;
       dir: THREE.Vector3;
+      /** Guidance updates for this fish (owner+shot keyed), time-sorted. */
+      steers: TorpedoSteer[];
+      steerIdx: number;
+      /** Launch anchor — steering rebases from here when the playhead
+       *  scrubs backwards past applied guidance updates. */
+      launchT0: number;
+      launchBase: THREE.Vector3;
+      launchDir: THREE.Vector3;
     }[] = [];
     /** Transient explosion rings (splash hits). */
     let explosionFx: { ring: THREE.Mesh; born: number }[] = [];
@@ -683,6 +722,9 @@ export default defineComponent({
     let planeCloud: THREE.Points | null = null;
     /** Per-plane sample lists grouped by plane id, sorted by time. */
     let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
+    /** planeId → squadron remove time (receive_removeMinimapSquadron) — caps
+     *  trail lifetimes; read by the per-frame loop, so it lives here. */
+    const minimapTrailEnd = new Map<number, number>();
     /** planeId*16+index → aircraft type (fighter/dive/torpedo/...). */
     const planeTypesById = new Map<number, string>();
     /** planeId*16+index → GameParams index (for the baked model GLB). */
@@ -1477,25 +1519,26 @@ export default defineComponent({
         }
       }
       smokeClusters = [];
-      for (const st of shellTraces) {
-        scene.remove(st.line);
-        st.line.geometry.dispose();
-        (st.line.material as THREE.Material).dispose();
-        scene.remove(st.dots);
-        st.dots.geometry.dispose();
-        (st.dots.material as THREE.Material).dispose();
-        // st.shell may be a primitive mesh or a wrapped GLB group (after the
+      for (const slot of shellTraceSlots) {
+        scene.remove(slot.line);
+        slot.line.geometry.dispose();
+        slot.lineMat.dispose();
+        scene.remove(slot.dots);
+        slot.dots.geometry.dispose();
+        slot.dotMat.dispose();
+        // slot.shell may be a primitive mesh or a wrapped GLB group (after the
         // model swap) — dispose generically.
-        scene.remove(st.shell);
-        disposeAny(st.shell);
-        scene.remove(st.flash);
-        st.flash.geometry.dispose();
-        (st.flash.material as THREE.Material).dispose();
-        scene.remove(st.halo);
-        st.halo.geometry.dispose();
-        (st.halo.material as THREE.Material).dispose();
+        scene.remove(slot.shell);
+        disposeAny(slot.shell);
+        scene.remove(slot.flash);
+        slot.flash.geometry.dispose();
+        (slot.flash.material as THREE.Material).dispose();
+        scene.remove(slot.halo);
+        slot.halo.geometry.dispose();
+        (slot.halo.material as THREE.Material).dispose();
       }
-      shellTraces = [];
+      shellTraceSlots = [];
+      shellStates = [];
       for (const tm of torpedoMeshes) {
         scene.remove(tm.mesh);
         disposeAny(tm.mesh);
@@ -1955,41 +1998,111 @@ export default defineComponent({
         }
       }
 
-      // Shell flights reconstructed between a launch and its impact: for
-      // every explosion find the nearest ship that was alive, within 15 km,
-      // and pointed within ~25° of the impact at the estimated launch time;
-      // draw a ballistic arc from its position to the impact point. Launch
-      // time is estimated from distance with a ~800 m/s muzzle velocity.
-      const shipForImpact = (e: ExplosionEvent) => {
-        let best: { tr: EntityTrajectory; score: number; t0: number; h: number } | null = null;
-        for (const tr of props.trajectories) {
-          if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
-          const s = sampleAt(tr, e.time);
-          if (!s) continue;
-          const dist = Math.hypot(s.x - e.x, s.z - e.z);
-          // A main-battery round can't come from 300 m away — requiring a
-          // minimum range rejects near-impact ships that merely sail past the
-          // splash (those read as short, flat, "not a shell" streaks).
-          if (dist < 300 || dist > 15000) continue;
-          const flightT = Math.min(8, Math.max(0.8, dist / 800));
-          const t0 = e.time - flightT;
-          const s0 = sampleAt(tr, t0);
-          if (!s0) continue;
-          const dx = e.x - s0.x;
-          const dz = e.z - s0.z;
-          const aim = Math.atan2(dx, dz);
-          let dYaw = Math.abs(aim - s0.yaw);
-          if (dYaw > Math.PI) dYaw = 2 * Math.PI - dYaw;
-          if (dYaw > 0.45) continue; // ~25°
-          const score = dist + dYaw * 4000;
-          if (!best || score < best.score) {
+      // Shell flight states: ballistic arcs from launch to impact. Primary
+      // source: the avatar's receiveArtilleryShots stream (per-shell muzzle
+      // point, server aim point and flight time — no guessing). Fallback for
+      // streams without it (pre-table replays): reconstruct flights from the
+      // receiveExplosions impact points by proximity-matching a firing ship.
+      const shellAmmoColor = (paramsId?: number) => shellAmmoOf(paramsId).color;
+      if (props.shellLaunches.length > 0) {
+        for (const sh of props.shellLaunches) {
+          const dist = Math.hypot(sh.targetX - sh.x, sh.targetZ - sh.z);
+          shellStates.push({
+            t0: sh.time,
+            // Flight time from the server's own clock (raw units — battle
+            // seconds = value / 2.75, the minimap_renderer calibration).
+            t1: sh.time + sh.serverTimeLeft / 2.75,
             // Ballistic height: steep enough to read as a shell arc, growing
             // with range (a flat 10-unit curve looks like a laser beam).
-            best = { tr, score, t0, h: Math.min(420, 60 + dist * 0.16) };
-          }
+            h: Math.min(420, 60 + dist * 0.16),
+            from: new THREE.Vector3(sh.x, 0, -sh.z),
+            to: new THREE.Vector3(sh.targetX, 0, -sh.targetZ),
+            color: shellAmmoColor(sh.paramsId),
+            impact: { x: sh.targetX, z: sh.targetZ },
+          });
         }
-        return best;
-      };
+      } else {
+        // Fallback — for every explosion find the nearest ship that was
+        // alive, within 15 km, and pointed within ~25° of the impact at the
+        // estimated launch time; draw a ballistic arc from its position to
+        // the impact point (launch time estimated with ~800 m/s muzzle
+        // velocity).
+        const shipForImpact = (e: ExplosionEvent) => {
+          let best: { tr: EntityTrajectory; score: number; t0: number; h: number } | null = null;
+          for (const tr of props.trajectories) {
+            if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
+            const s = sampleAt(tr, e.time);
+            if (!s) continue;
+            const dist = Math.hypot(s.x - e.x, s.z - e.z);
+            // A main-battery round can't come from 300 m away — requiring a
+            // minimum range rejects near-impact ships that merely sail past
+            // the splash (those read as short, flat, "not a shell" streaks).
+            if (dist < 300 || dist > 15000) continue;
+            const flightT = Math.min(8, Math.max(0.8, dist / 800));
+            const t0 = e.time - flightT;
+            const s0 = sampleAt(tr, t0);
+            if (!s0) continue;
+            const dx = e.x - s0.x;
+            const dz = e.z - s0.z;
+            const aim = Math.atan2(dx, dz);
+            let dYaw = Math.abs(aim - s0.yaw);
+            if (dYaw > Math.PI) dYaw = 2 * Math.PI - dYaw;
+            if (dYaw > 0.45) continue; // ~25°
+            const score = dist + dYaw * 4000;
+            if (!best || score < best.score) {
+              best = { tr, score: score, t0, h: Math.min(420, 60 + dist * 0.16) };
+            }
+          }
+          return best;
+        };
+        // The enemy ship nearest the impact point at impact time, INSIDE the
+        // launch-direction cone — arcs end at the TARGET SHIP (not the bare
+        // water splash) so they read as fire against the opposing fleet. The
+        // cone keeps the endpoint on the shell's actual heading: a nearby
+        // enemy that is off to the side must not bend the arc sideways.
+        const targetShipAt = (e: ExplosionEvent, from: { x: number; z: number }) => {
+          let best: { x: number; z: number } | null = null;
+          let bestD = 500;
+          const baseAim = Math.atan2(e.x - from.x, e.z - from.z);
+          for (const tr of props.trajectories) {
+            if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
+            const s = sampleAt(tr, e.time);
+            if (!s) continue;
+            const d = Math.hypot(s.x - e.x, s.z - e.z);
+            if (d > bestD) continue;
+            const aim = Math.atan2(s.x - from.x, s.z - from.z);
+            let dAim = Math.abs(aim - baseAim);
+            if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
+            if (dAim > 0.35) continue; // ~20° cone around the launch heading
+            bestD = d;
+            best = { x: s.x, z: s.z };
+          }
+          return best;
+        };
+        for (const e of props.explosions) {
+          const match = shipForImpact(e);
+          if (!match) continue;
+          const launch = sampleAt(match.tr, match.t0);
+          const target = targetShipAt(e, {
+            x: launch?.x ?? e.x,
+            z: launch?.z ?? e.z,
+          });
+          shellStates.push({
+            t0: match.t0,
+            t1: e.time,
+            h: match.h,
+            // Launch point is fixed at the firing ship's position at t0 —
+            // using a later position would drag the arc across the map.
+            from: launch ? new THREE.Vector3(launch.x, 0, -launch.z) : null,
+            to: new THREE.Vector3(target?.x ?? e.x, 0, -(target?.z ?? e.z)),
+            color: shellAmmoColor(e.paramsId),
+            impact: { x: e.x, z: e.z },
+          });
+        }
+      }
+      // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
+      // at once even in heavy matches, so 220 slots cover the busiest frames;
+      // overflow shells are simply not drawn that frame.
       const flashGeom = new THREE.SphereGeometry(20, 10, 10);
       const flashMat = new THREE.MeshBasicMaterial({
         color: 0xffe08a,
@@ -2004,113 +2117,59 @@ export default defineComponent({
         opacity: 0.45,
         depthWrite: false,
       });
-      const curvePts = new Float32Array(28 * 3);
       // Shared cone geometry for in-flight shells (tip pointing +Y; oriented
-      // along the trajectory tangent each frame for a smooth補间).
+      // along the trajectory tangent each frame for a smooth arc).
       const shellGeom = new THREE.ConeGeometry(3, 12, 8);
-      // The enemy ship nearest the impact point at impact time, INSIDE the
-      // launch-direction cone — arcs end at the TARGET SHIP (not the bare
-      // water splash) so they read as fire against the opposing fleet. The
-      // cone keeps the endpoint on the shell's actual heading: a nearby enemy
-      // that is off to the side must not bend the arc sideways.
-      const targetShipAt = (e: ExplosionEvent, from: { x: number; z: number }) => {
-        let best: { x: number; z: number } | null = null;
-        let bestD = 500;
-        const baseAim = Math.atan2(e.x - from.x, e.z - from.z);
-        for (const tr of props.trajectories) {
-          if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
-          const s = sampleAt(tr, e.time);
-          if (!s) continue;
-          const d = Math.hypot(s.x - e.x, s.z - e.z);
-          if (d > bestD) continue;
-          const aim = Math.atan2(s.x - from.x, s.z - from.z);
-          let dAim = Math.abs(aim - baseAim);
-          if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
-          if (dAim > 0.35) continue; // ~20° cone around the launch heading
-          bestD = d;
-          best = { x: s.x, z: s.z };
+      shellTraceSlots = [];
+      if (shellStates.length > 0) {
+        for (let i = 0; i < 220; i++) {
+          const curveArr = new Float32Array(28 * 3);
+          // Manual BufferGeometry has no bounding sphere; without computing
+          // one (or disabling culling) the frustum culler skips these lines.
+          const lineGeo = new THREE.BufferGeometry();
+          lineGeo.setAttribute("position", new THREE.BufferAttribute(curveArr, 3));
+          lineGeo.computeBoundingSphere();
+          const lineMat = new THREE.LineBasicMaterial({
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+          });
+          const line = new THREE.Line(lineGeo, lineMat);
+          line.visible = false;
+          scene.add(line);
+          // Same curve rendered as fixed-pixel points so the flight reads
+          // even at full-map zoom (a 1px line vanishes at that distance).
+          const dotGeo = new THREE.BufferGeometry();
+          dotGeo.setAttribute("position", new THREE.BufferAttribute(curveArr.slice(), 3));
+          dotGeo.computeBoundingSphere();
+          const dotMat = new THREE.PointsMaterial({
+            size: 3.5,
+            sizeAttenuation: false,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false,
+          });
+          const dots = new THREE.Points(dotGeo, dotMat);
+          dots.visible = false;
+          scene.add(dots);
+          // In-flight shell: a pointed cone sliding along the arc (swapped
+          // for the real shell GLB once loaded; driven identically).
+          const shell = new THREE.Mesh(
+            shellGeom,
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, depthWrite: false }),
+          );
+          shell.visible = false;
+          scene.add(shell);
+          const flash = new THREE.Mesh(flashGeom, flashMat);
+          flash.visible = false;
+          scene.add(flash);
+          const halo = new THREE.Mesh(flashHaloGeom, flashHaloMat);
+          halo.visible = false;
+          scene.add(halo);
+          shellTraceSlots.push({ line, lineMat, dots, dotMat, shell, flash, halo });
+          trajectoryLines.push(line);
         }
-        return best;
-      };
-      for (const e of props.explosions) {
-        const match = shipForImpact(e);
-        if (!match) continue;
-        // Per-ammo colors: HE yellow, AP silver, SAP grey.
-        const ammo = shellAmmoOf(e.paramsId);
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute("position", new THREE.BufferAttribute(curvePts, 3));
-        // Manual BufferGeometry has no bounding sphere; without computing one
-        // (or disabling culling) the frustum culler skips these lines.
-        geom.computeBoundingSphere();
-        const mat = new THREE.LineBasicMaterial({
-          color: ammo.color,
-          transparent: true,
-          opacity: 0.9,
-          depthWrite: false,
-        });
-        const line = new THREE.Line(geom, mat);
-        line.visible = false;
-        scene.add(line);
-        // Same curve rendered as fixed-pixel points so the flight reads even
-        // at full-map zoom (a 1px line vanishes at that distance).
-        const dotGeo = new THREE.BufferGeometry();
-        dotGeo.setAttribute("position", new THREE.BufferAttribute(curvePts, 3));
-        dotGeo.computeBoundingSphere();
-        const dotMat = new THREE.PointsMaterial({
-          color: ammo.color,
-          size: 3.5,
-          sizeAttenuation: false,
-          transparent: true,
-          opacity: 0.95,
-          depthWrite: false,
-        });
-        const dots = new THREE.Points(dotGeo, dotMat);
-        dots.visible = false;
-        scene.add(dots);
-        // In-flight shell: a pointed cone sliding along the arc (interpolated
-        // every frame so playback looks smooth).
-        const shellMat = new THREE.MeshBasicMaterial({
-          color: ammo.color,
-          transparent: true,
-          opacity: 0.95,
-          depthWrite: false,
-        });
-        const shell = new THREE.Mesh(shellGeom, shellMat);
-        shell.visible = false;
-        scene.add(shell);
-        const flash = new THREE.Mesh(flashGeom, flashMat);
-        flash.position.set(e.x, 1, -e.z);
-        flash.visible = false;
-        scene.add(flash);
-        const flashHalo = new THREE.Mesh(flashHaloGeom, flashHaloMat);
-        flashHalo.position.set(e.x, 1, -e.z);
-        flashHalo.visible = false;
-        scene.add(flashHalo);
-        const target = targetShipAt(e, {
-          x: sampleAt(match.tr, match.t0)?.x ?? e.x,
-          z: sampleAt(match.tr, match.t0)?.z ?? e.z,
-        });
-        shellTraces.push({
-          line,
-          dots,
-          flash,
-          halo: flashHalo,
-          shell,
-          color: ammo.color,
-          t0: match.t0,
-          t1: e.time,
-          // Launch point is fixed at the firing ship's position at t0 — using
-          // the live playhead position would drag the whole arc (and the
-          // shell) across the map as playback moves on.
-          from: () => {
-            const s = sampleAt(match.tr, match.t0);
-            return s ? new THREE.Vector3(s.x, 0, -s.z) : null;
-          },
-          to: new THREE.Vector3(target?.x ?? e.x, 0, -(target?.z ?? e.z)),
-          h: match.h,
-        });
       }
-      trajectoryLines.push(...shellTraces.map((st) => st.line));
 
       // Torpedoes: straight white capsules from the firing ship's position at
       // launch time along the launch direction. Speed ~33 m/s (60 knots);
@@ -2134,10 +2193,17 @@ export default defineComponent({
         opacity: 0.55,
         depthWrite: false,
       });
+      // Torpedo guidance updates keyed by (owner, shot) — the pair uniquely
+      // identifies one fish across its salvo.
+      const steerByFish = new Map<string, TorpedoSteer[]>();
+      for (const st of props.torpedoSteers) {
+        const key = `${st.ownerId}:${st.shotId}`;
+        const list = steerByFish.get(key);
+        if (list) list.push(st);
+        else steerByFish.set(key, [st]);
+      }
+      for (const list of steerByFish.values()) list.sort((a, b) => a.time - b.time);
       for (const tp of props.torpedoes) {
-        const traj = props.trajectories.find((tr) => tr.entityId === tp.entityId);
-        const s = traj ? sampleAt(traj, tp.time) : null;
-        if (!s) continue;
         const mesh = new THREE.Mesh(torpedoGeom, torpedoMat);
         const wake = new THREE.Line(wakeGeom, wakeMat);
         mesh.visible = false;
@@ -2149,8 +2215,13 @@ export default defineComponent({
           wake,
           t0: tp.time,
           life: 240,
-          base: new THREE.Vector3(s.x, 0, -s.z),
+          base: new THREE.Vector3(tp.x, 0, -tp.z),
           dir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
+          steers: steerByFish.get(`${tp.ownerId}:${tp.shotId}`) ?? [],
+          steerIdx: 0,
+          launchT0: tp.time,
+          launchBase: new THREE.Vector3(tp.x, 0, -tp.z),
+          launchDir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
         });
       }
 
@@ -2159,16 +2230,16 @@ export default defineComponent({
       // the replacement exactly like the primitive it replaces.
       const shellPropUrl = resolvePropModelUrl("shell");
       if (shellPropUrl) {
-        for (const st of shellTraces) {
-          buildPropMarker({ url: shellPropUrl, color: st.color, axis: "y", targetLen: 9 })
+        for (const slot of shellTraceSlots) {
+          buildPropMarker({ url: shellPropUrl, color: 0xffffff, axis: "y", targetLen: 9 })
             .then((g) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
-              g.visible = st.shell.visible;
-              g.position.copy(st.shell.position);
-              g.quaternion.copy(st.shell.quaternion);
+              g.visible = slot.shell.visible;
+              g.position.copy(slot.shell.position);
+              g.quaternion.copy(slot.shell.quaternion);
               scene.add(g);
-              scene.remove(st.shell);
-              st.shell = g;
+              scene.remove(slot.shell);
+              slot.shell = g;
             })
             .catch(() => { /* keep the cone fallback */ });
         }
@@ -2248,18 +2319,58 @@ export default defineComponent({
         id,
         samples: samples.sort((a, b) => a.time - b.time),
       }));
-      // (planeId, index) → aircraft type (via the squadron create's
-      // paramsId). Trails keyed by planeId*16+index, so every formation
-      // member maps to its squadron's type.
-      planeTypesById.clear();
-      for (const c of props.squadronCreates) {
-        const type = PLANE_TYPES[String(c.paramsId)]?.type ?? "attack";
-        const index = PLANE_TYPES[String(c.paramsId)]?.index;
-        for (let i = 0; i < 16; i++) {
-          planeTypesById.set(c.planeId * 16 + i, type);
-          if (index) planeIndexById.set(c.planeId * 16 + i, index);
+      // Minimap squadron stream (receive_add/update/removeMinimapSquadron):
+      // the 2D trail the in-game minimap itself renders. Squadrons without
+      // 3D aerial-path samples get their CENTER trail from here; the remove
+      // events cap every trail's lifetime (landed / shot down / recalled).
+      const minimapAddFirst = new Map<number, MinimapSquadronAdd>();
+      for (const a of props.minimapSquadronAdds) {
+        if (!minimapAddFirst.has(a.planeId)) minimapAddFirst.set(a.planeId, a);
+      }
+      minimapTrailEnd.clear();
+      for (const r of props.minimapSquadronRemoves) {
+        const prev = minimapTrailEnd.get(r.planeId);
+        if (prev == null || r.time < prev) minimapTrailEnd.set(r.planeId, r.time);
+      }
+      {
+        const extra = new Map<number, SquadronPlane[]>();
+        const push = (planeId: number, time: number, x: number, z: number) => {
+          const end = minimapTrailEnd.get(planeId);
+          if (end != null && time > end) return;
+          let list = extra.get(planeId);
+          if (!list) {
+            list = [];
+            extra.set(planeId, list);
+          }
+          // Altitude ~20: the patrol orbit lifts anchors below this anyway.
+          list.push({ time, planeId, index: 0, x, y: 20, z, yaw: 0 });
+        };
+        for (const a of props.minimapSquadronAdds) push(a.planeId, a.time, a.x, a.z);
+        for (const m of props.minimapSquadronMoves) push(m.planeId, m.time, m.x, m.z);
+        for (const [pid, list] of extra) {
+          list.sort((a, b) => a.time - b.time);
+          if (!planeTrails.some((tr) => Math.floor(tr.id / 16) === pid)) {
+            planeTrails.push({ id: pid * 16, samples: list });
+          }
         }
       }
+      // (planeId, index) → aircraft type (via the squadron create's
+      // paramsId). Trails keyed by planeId*16+index, so every formation
+      // member maps to its squadron's type. The minimap stream names the
+      // same paramsId and covers squadrons the 3D stream missed.
+      planeTypesById.clear();
+      const typesOf = (paramsId: number, planeId: number) => {
+        const type = PLANE_TYPES[String(paramsId)]?.type ?? "attack";
+        const index = PLANE_TYPES[String(paramsId)]?.index;
+        for (let i = 0; i < 16; i++) {
+          if (!planeTypesById.has(planeId * 16 + i)) {
+            planeTypesById.set(planeId * 16 + i, type);
+            if (index) planeIndexById.set(planeId * 16 + i, index);
+          }
+        }
+      };
+      for (const c of props.squadronCreates) typesOf(c.paramsId, c.planeId);
+      for (const a of minimapAddFirst.values()) typesOf(a.paramsId, a.planeId);
       if (planeTrails.length > 0) {
         const colors = new Float32Array(planeTrails.length * 3);
         for (let i = 0; i < planeTrails.length; i++) {
@@ -2573,6 +2684,13 @@ export default defineComponent({
           createFirst.set(c.planeId, { x: c.x, z: c.z, time: c.time, paramsId: c.paramsId });
         }
       }
+      // The minimap stream's create events also seed the first-create table
+      // (same launch semantics; covers squadrons the 3D stream never saw).
+      for (const a of minimapAddFirst.values()) {
+        if (!createFirst.has(a.planeId)) {
+          createFirst.set(a.planeId, { x: a.x, z: a.z, time: a.time, paramsId: a.paramsId });
+        }
+      }
       for (const [planeId, first] of createFirst) {
         // Match against the ship's position AT LAUNCH TIME (ships move — the
         // current playhead position would pair a sortie with the wrong ship).
@@ -2605,14 +2723,19 @@ export default defineComponent({
             anyId = m.userData.entityId as number;
           }
         }
-        const carrierId = cvId ?? anyId;
+        // The minimap stream names the owner outright (the carrier's vehicle
+        // id is packed into the squadron id) — trust it over the proximity
+        // heuristic, which can pin a sortie to a nearby hybrid/BB.
+        const owner = minimapAddFirst.get(planeId)?.ownerId ?? null;
+        const owned =
+          owner != null && shipMarkers.some((m) => m.userData.entityId === owner);
+        const carrierId = owned ? owner : (cvId ?? anyId);
         planeCarrierOf.set(planeId, carrierId);
         const carrierMarker = carrierId == null
           ? null
           : shipMarkers.find((m) => m.userData.entityId === carrierId);
         planeRoleById.set(planeId, carrierMarker?.userData.role ?? "enemy");
-        const firstCreate = props.squadronCreates.find((c) => c.planeId === planeId);
-        const planeIdx = PLANE_TYPES[String(firstCreate?.paramsId)]?.index;
+        const planeIdx = PLANE_TYPES[String(createFirst.get(planeId)?.paramsId)]?.index;
         if (planeIdx) planeIndexById.set(planeId * 16, planeIdx);
       }
       // One label per carrier that controls any aircraft.
@@ -3095,7 +3218,11 @@ export default defineComponent({
           const s = sampleOf(trail.samples);
           if (!s) continue;
           const born = trail.samples[0].time;
-          const expiry = trail.samples[trail.samples.length - 1].time + 5;
+          const removed = minimapTrailEnd.get(planeId);
+          const expiry = Math.min(
+            trail.samples[trail.samples.length - 1].time + 5,
+            removed ?? Infinity,
+          );
           if (t >= born && t <= expiry) {
             formationAnchor.set(planeId, { s, born, expiry });
           }
@@ -3161,72 +3288,112 @@ export default defineComponent({
           attr.needsUpdate = true;
         }
       }
-      // Shell traces: ballistic arc from the firing ship (updated live) to
-      // the impact point, shown during [t0, t1]; the impact flash lingers
-      // 1s past the impact. The in-flight shell cone is interpolated along
-      // the arc every frame (smooth補间 during playback).
+      // Shell traces: ballistic arc from the firing ship to the impact
+      // point, shown during [t0, t1]; the impact flash lingers 1s past the
+      // impact. Pool slots are assigned to whichever shells are airborne THIS
+      // frame (a match carries 10k+ shells; only a few dozen fly at once).
       // Elements outside the fitted battle bounds are stray data — hidden so
       // they can't flash out in empty space.
       const inBounds = (x: number, z: number) =>
         !bounds || (x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ);
-      for (const st of shellTraces) {
+      const hideSlot = (slot: ShellTraceSlot) => {
+        slot.line.visible = false;
+        slot.dots.visible = false;
+        slot.shell.visible = false;
+        slot.flash.visible = false;
+        slot.halo.visible = false;
+      };
+      let slotIdx = 0;
+      for (const st of shellStates) {
+        if (slotIdx >= shellTraceSlots.length) break;
         const inFlight = t >= st.t0 && t <= st.t1;
-        const flashOn = t >= st.t1 && t <= st.t1 + 1;
+        const flashOn = !inFlight && t <= st.t1 + 1;
+        if (!inFlight && !flashOn) continue;
         // Traces whose launch OR impact point lies outside the fitted battle
         // bounds are stray data — hide the whole trace so it can't flash out
         // in empty space (both endpoints must be in-bounds).
-        const fromP = st.from();
-        const impactIn = inBounds(st.to.x, st.to.z) && !!fromP && inBounds(fromP.x, fromP.z);
-        st.flash.visible = flashOn && impactIn;
-        st.halo.visible = flashOn && impactIn;
-        st.line.visible = inFlight && impactIn;
-        st.dots.visible = inFlight && impactIn;
-        st.shell.visible = inFlight && impactIn;
+        const impactIn = inBounds(st.to.x, st.to.z) && !!st.from && inBounds(st.from.x, st.from.z);
+        const slot = shellTraceSlots[slotIdx];
+        if (!impactIn || !st.from) {
+          hideSlot(slot);
+          slotIdx++;
+          continue;
+        }
+        slotIdx++;
+        const from = st.from;
+        slot.lineMat.color.setHex(st.color);
+        slot.dotMat.color.setHex(st.color);
+        // Cone or swapped GLB — tint whatever material it now wears.
+        slot.shell.traverse((child) => {
+          const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+          if (mat && mat.color) mat.color.setHex(st.color);
+        });
+        slot.flash.visible = flashOn;
+        slot.halo.visible = flashOn;
+        if (flashOn) {
+          slot.flash.position.set(st.impact.x, 1, -st.impact.z);
+          slot.halo.position.set(st.impact.x, 1, -st.impact.z);
+        }
+        slot.line.visible = inFlight;
+        slot.dots.visible = inFlight;
+        slot.shell.visible = inFlight;
         if (inFlight) {
-          const from = st.from();
-          if (from) {
-            const attr = st.line.geometry.getAttribute("position") as THREE.BufferAttribute;
-            const arr = attr.array as Float32Array;
-            for (let i = 0; i < 28; i++) {
-              const k = i / 27;
-              const kx = k * 2 - 1;
-              const px = from.x + (st.to.x - from.x) * k;
-              const pz = from.z + (st.to.z - from.z) * k;
-              const py = Math.max(0, st.h * (1 - kx * kx));
-              arr[i * 3] = px;
-              arr[i * 3 + 1] = py;
-              arr[i * 3 + 2] = pz;
-            }
-            attr.needsUpdate = true;
-            const dotAttr = st.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
-            dotAttr.needsUpdate = true;
-            // Shell position + orientation: interpolate k across the flight,
-            // tip pointing along the local tangent.
-            const k = Math.min(1, Math.max(0, (t - st.t0) / (st.t1 - st.t0)));
+          const attr = slot.line.geometry.getAttribute("position") as THREE.BufferAttribute;
+          const arr = attr.array as Float32Array;
+          for (let i = 0; i < 28; i++) {
+            const k = i / 27;
             const kx = k * 2 - 1;
             const px = from.x + (st.to.x - from.x) * k;
-            const py = Math.max(0, st.h * (1 - kx * kx));
             const pz = from.z + (st.to.z - from.z) * k;
-            st.shell.position.set(px, py, pz);
-            const k2 = Math.min(1, k + 0.03);
-            const kx2 = k2 * 2 - 1;
-            const tx = from.x + (st.to.x - from.x) * k2 - px;
-            const ty = Math.max(0, st.h * (1 - kx2 * kx2)) - py;
-            const tz = from.z + (st.to.z - from.z) * k2 - pz;
-            const len = Math.hypot(tx, ty, tz) || 1;
-            _shellDir.set(tx / len, ty / len, tz / len);
-            st.shell.quaternion.setFromUnitVectors(_shellUp, _shellDir);
-          } else {
-            st.line.visible = false;
-            st.dots.visible = false;
-            st.shell.visible = false;
+            const py = Math.max(0, st.h * (1 - kx * kx));
+            arr[i * 3] = px;
+            arr[i * 3 + 1] = py;
+            arr[i * 3 + 2] = pz;
           }
+          attr.needsUpdate = true;
+          const dotAttr = slot.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
+          dotAttr.needsUpdate = true;
+          // Shell position + orientation: interpolate k across the flight,
+          // tip pointing along the local tangent.
+          const k = Math.min(1, Math.max(0, (t - st.t0) / (st.t1 - st.t0)));
+          const kx = k * 2 - 1;
+          const px = from.x + (st.to.x - from.x) * k;
+          const py = Math.max(0, st.h * (1 - kx * kx));
+          const pz = from.z + (st.to.z - from.z) * k;
+          slot.shell.position.set(px, py, pz);
+          const k2 = Math.min(1, k + 0.03);
+          const kx2 = k2 * 2 - 1;
+          const tx = from.x + (st.to.x - from.x) * k2 - px;
+          const ty = Math.max(0, st.h * (1 - kx2 * kx2)) - py;
+          const tz = from.z + (st.to.z - from.z) * k2 - pz;
+          const len = Math.hypot(tx, ty, tz) || 1;
+          _shellDir.set(tx / len, ty / len, tz / len);
+          slot.shell.quaternion.setFromUnitVectors(_shellUp, _shellDir);
         }
+      }
+      for (; slotIdx < shellTraceSlots.length; slotIdx++) {
+        hideSlot(shellTraceSlots[slotIdx]);
       }
       // Torpedoes: advance straight along the launch direction. The capsule
       // geometry runs along +Y, so orient it flat along the travel direction
-      // (a plain rotation.y would leave it standing upright).
+      // (a plain rotation.y would leave it standing upright). Homing fish
+      // re-anchor at each guidance update as the playhead passes it.
       for (const tm of torpedoMeshes) {
+        // Backward scrub rewinds the guidance anchors so replays stay correct
+        // in both directions; the while-loop then re-applies every past steer.
+        if (tm.steerIdx > 0 && t < tm.steers[tm.steerIdx - 1].time) {
+          tm.steerIdx = 0;
+          tm.t0 = tm.launchT0;
+          tm.base.copy(tm.launchBase);
+          tm.dir.copy(tm.launchDir);
+        }
+        while (tm.steerIdx < tm.steers.length && t >= tm.steers[tm.steerIdx].time) {
+          const st = tm.steers[tm.steerIdx++];
+          tm.base.set(st.x, 0, -st.z);
+          tm.t0 = st.time;
+          // Ship yaw convention: heading = (sin yaw, cos yaw) in world XZ.
+          tm.dir.set(Math.sin(st.targetYaw), 0, -Math.cos(st.targetYaw)).normalize();
+        }
         const age = t - tm.t0;
         const on = age >= 0 && age <= tm.life;
         tm.mesh.visible = on;

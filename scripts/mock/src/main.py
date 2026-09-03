@@ -375,8 +375,10 @@ async def cmd_read_replay_positions(request: Request) -> dict:
     if dump is not None:
         return {
             "trajectories": dump.get("trajectories", []),
+            "shellLaunches": dump.get("shellLaunches", []),
             "explosions": dump.get("explosions", []),
             "torpedoes": dump.get("torpedoes", []),
+            "torpedoSteers": dump.get("torpedoSteers", []),
             "weaponLocks": dump.get("weaponLocks", []),
             "battleResults": dump.get("battleResults"),
             "version": dump.get("version"),
@@ -388,11 +390,16 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "diagnostics": dump.get("diagnostics", {}),
             "squadronCreates": dump.get("squadronCreates", []),
             "squadronPlanes": dump.get("squadronPlanes", []),
+            "minimapSquadronAdds": dump.get("minimapSquadronAdds", []),
+            "minimapSquadronMoves": dump.get("minimapSquadronMoves", []),
+            "minimapSquadronRemoves": dump.get("minimapSquadronRemoves", []),
         }
     return {
         "trajectories": [],
+        "shellLaunches": [],
         "explosions": [],
         "torpedoes": [],
+        "torpedoSteers": [],
         "weaponLocks": [],
         "battleResults": None,
         "version": None,
@@ -404,6 +411,9 @@ async def cmd_read_replay_positions(request: Request) -> dict:
         "diagnostics": {},
         "squadronCreates": [],
         "squadronPlanes": [],
+        "minimapSquadronAdds": [],
+        "minimapSquadronMoves": [],
+        "minimapSquadronRemoves": [],
     }
 
 

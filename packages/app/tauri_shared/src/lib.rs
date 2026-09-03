@@ -230,10 +230,10 @@ pub struct HpSample {
     pub value: u32,
 }
 
-/// An explosion event observed by the recorder's avatar (`receiveExplosions`,
-/// Avatar client-method 126 on current clients). Carries the world-space impact
-/// point, so the frontend can render shell splashes / hits even though shells
-/// themselves are client-side and never recorded.
+/// An explosion impact observed by the recorder's avatar (`receiveExplosions`,
+/// method id version-dependent — see the decoder's method tables). Carries the
+/// world-space impact point for shell splash FX; the flight paths themselves
+/// come from [`ShellLaunchEvent`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExplosionEvent {
@@ -246,17 +246,124 @@ pub struct ExplosionEvent {
     pub params_id: u32,
 }
 
-/// A torpedo launch (`shootTorpedo`, Vehicle client-method 47): the firing
-/// ship's entity id plus the launch direction unit vector (torpedoes travel
-/// straight from the firing position).
+/// One artillery shell in flight (`receiveArtilleryShots` on the avatar): the
+/// launch position, the server-computed target point, and the remaining flight
+/// time — everything needed to draw a true ballistic arc per shell without
+/// guessing the shooter from impact points.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLaunchEvent {
+    pub time: f32,
+    /// Firing vehicle entity id (joins EntityTrajectory.entityId).
+    pub owner_id: i32,
+    /// GameParams id of the shell (HE/AP/SAP colour resolution).
+    pub params_id: u32,
+    /// Salvo id shared by shells fired in one click.
+    pub salvo_id: i32,
+    /// Per-barrel shot id within the salvo (unique per owner).
+    pub shot_id: u16,
+    /// Muzzle position (world space).
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Server-side aim point (world space) — where this shell will land.
+    pub target_x: f32,
+    pub target_y: f32,
+    pub target_z: f32,
+    /// Seconds until impact in the server's time units — divide by 2.75 for
+    /// battle seconds (the minimap_renderer reference's calibrated constant:
+    /// flight ticks = serverTimeLeft / 2.75).
+    pub server_time_left: f32,
+    /// Muzzle velocity (m/s).
+    pub speed: f32,
+    /// Firing barrel index (main vs secondary battery hints).
+    pub gun_barrel_id: u16,
+}
+
+/// A torpedo launch (`receiveTorpedoes` on the avatar): each fish carries its
+/// own spawn point, direction and shot id, so spreads fan out correctly.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TorpedoLaunch {
     pub time: f32,
-    pub entity_id: i32,
+    /// Firing vehicle entity id (joins EntityTrajectory.entityId).
+    pub owner_id: i32,
+    /// GameParams id of the torpedo.
+    pub params_id: u32,
+    /// Salvo id shared by torpedoes launched together.
+    pub salvo_id: i32,
+    /// Shot id within the salvo — (owner, shot) uniquely identifies the fish.
+    pub shot_id: u16,
+    /// Spawn position (world space).
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Launch direction (world space, not normalized — magnitude carries the
+    /// server's speed coefficient).
     pub dir_x: f32,
     pub dir_y: f32,
     pub dir_z: f32,
+    /// Whether the torpedo left the launcher armed.
+    pub armed: bool,
+}
+
+/// A guidance update for a homing torpedo (`receiveTorpedoDirection`): the
+/// current position and target heading of an already-launched acoustic
+/// torpedo, letting the viewer bend its track instead of drawing a straight
+/// line from the launch point.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoSteer {
+    pub time: f32,
+    /// Firing vehicle entity id (matches TorpedoLaunch.ownerId).
+    pub owner_id: i32,
+    /// Shot id (matches TorpedoLaunch.shotId).
+    pub shot_id: u16,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Heading the torpedo is turning towards (radians).
+    pub target_yaw: f32,
+}
+
+/// An aircraft-squadron marker appearing on the minimap
+/// (`receive_addMinimapSquadron` on the avatar). The composite plane id packs
+/// the owning carrier in its low 32 bits.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinimapSquadronAdd {
+    pub time: f32,
+    /// Composite squadron id (low 32 bits: owner vehicle id).
+    pub plane_id: u64,
+    /// Owning carrier vehicle entity id (joins EntityTrajectory.entityId).
+    pub owner_id: i32,
+    /// Team id as broadcast (-1 neutral, 0/1 teams).
+    pub team_id: i8,
+    /// GameParams id of the aircraft type.
+    pub params_id: u32,
+    /// Squadron position (world space; y = minimap VECTOR2 second component).
+    pub x: f32,
+    pub z: f32,
+}
+
+/// A squadron marker move (`receive_updateMinimapSquadron`): the new squadron
+/// position in the same world-space terms as [`MinimapSquadronAdd`].
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinimapSquadronMove {
+    pub time: f32,
+    pub plane_id: u64,
+    pub x: f32,
+    pub z: f32,
+}
+
+/// A squadron marker disappearing (`receive_removeMinimapSquadron`) — landed,
+/// shot down, or recalled.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinimapSquadronRemove {
+    pub time: f32,
+    pub plane_id: u64,
 }
 
 /// A weapon-lock state change (`SetWeaponLock`, 0x30): the recorder's own
@@ -300,8 +407,9 @@ pub struct NetStatsSample {
     pub is_lagging: bool,
 }
 
-/// An aircraft-squadron creation (`receive_addSquadron`, avatar method 114):
-/// the squadron's game-params id and its spawn position.
+/// An aircraft-squadron creation (`receive_addSquadron` on the avatar): the
+/// squadron's game-params id and its spawn position. Method id resolves via
+/// the decoder's per-version tables.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadronCreate {
@@ -315,8 +423,9 @@ pub struct SquadronCreate {
     pub z: f32,
 }
 
-/// One aircraft position sample (`receive_updateSquadron`, avatar method 140):
-/// a per-plane point of the squadron's formation.
+/// One aircraft position sample (`receive_updateSquadron` on the avatar): a
+/// per-plane waypoint of the squadron's 3D aerial path. Method id resolves via
+/// the decoder's per-version tables.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadronPlane {
@@ -339,10 +448,17 @@ pub struct SquadronPlane {
 #[serde(rename_all = "camelCase")]
 pub struct ReplayStream {
     pub trajectories: Vec<EntityTrajectory>,
+    /// Artillery launches (`receiveArtilleryShots`) — the primary shell data:
+    /// muzzle point, aim point and flight time per projectile.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_launches: Vec<ShellLaunchEvent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub explosions: Vec<ExplosionEvent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub torpedoes: Vec<TorpedoLaunch>,
+    /// Homing-torpedo guidance updates (`receiveTorpedoDirection`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub torpedo_steers: Vec<TorpedoSteer>,
     /// Recorder weapon-lock timeline (SetWeaponLock, 0x30).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weapon_locks: Vec<WeaponLockEvent>,
@@ -377,6 +493,14 @@ pub struct ReplayStream {
     pub squadron_creates: Vec<SquadronCreate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub squadron_planes: Vec<SquadronPlane>,
+    /// Minap squadron markers (receive_add/update/removeMinimapSquadron) —
+    /// the 2D trail source the in-game minimap itself uses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub minimap_squadron_adds: Vec<MinimapSquadronAdd>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub minimap_squadron_moves: Vec<MinimapSquadronMove>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub minimap_squadron_removes: Vec<MinimapSquadronRemove>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

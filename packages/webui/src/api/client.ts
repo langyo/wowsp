@@ -159,6 +159,29 @@ export interface HpSample {
   value: number;
 }
 
+/** A shell in flight (receiveArtilleryShots on the avatar): muzzle point,
+ *  server-computed aim point and remaining flight time — the primary source
+ *  for shell trajectory arcs. */
+export interface ShellLaunchEvent {
+  time: number;
+  /** Firing vehicle entity id (joins EntityTrajectory.entityId). */
+  ownerId: number;
+  /** GameParams id of the shell — resolves to HE/AP/SAP for colors. */
+  paramsId: number;
+  salvoId: number;
+  shotId: number;
+  x: number;
+  y: number;
+  z: number;
+  targetX: number;
+  targetY: number;
+  targetZ: number;
+  /** Server time units until impact — battle seconds = value / 2.75. */
+  serverTimeLeft: number;
+  speed: number;
+  gunBarrelId: number;
+}
+
 /** A shell impact / explosion observed by the recorder's avatar
  *  (receiveExplosions). World-space point in map coordinates. */
 export interface ExplosionEvent {
@@ -170,14 +193,34 @@ export interface ExplosionEvent {
   paramsId?: number;
 }
 
-/** A torpedo launch (shootTorpedo): firing ship entity id + launch direction
- *  unit vector. Torpedoes travel straight from the firing position. */
+/** A torpedo launch (receiveTorpedoes on the avatar): each fish carries its
+ *  own spawn point, direction and shot id. */
 export interface TorpedoLaunch {
   time: number;
-  entityId: number;
+  /** Firing vehicle entity id (joins EntityTrajectory.entityId). */
+  ownerId: number;
+  paramsId: number;
+  salvoId: number;
+  shotId: number;
+  x: number;
+  y: number;
+  z: number;
+  /** Launch direction (world space, not normalized). */
   dirX: number;
   dirY: number;
   dirZ: number;
+  armed: boolean;
+}
+
+/** A guidance update for a homing torpedo (receiveTorpedoDirection). */
+export interface TorpedoSteer {
+  time: number;
+  ownerId: number;
+  shotId: number;
+  x: number;
+  y: number;
+  z: number;
+  targetYaw: number;
 }
 
 /** A weapon-lock state change (SetWeaponLock 0x30) by the recorder's ship. */
@@ -228,7 +271,7 @@ export interface DiagnosticCounts {
   gunMarkers?: number;
 }
 
-/** An aircraft-squadron creation (receive_addSquadron, avatar method 114). */
+/** An aircraft-squadron creation (receive_addSquadron on the avatar). */
 export interface SquadronCreate {
   time: number;
   planeId: number;
@@ -238,7 +281,7 @@ export interface SquadronCreate {
   z: number;
 }
 
-/** One aircraft position sample (receive_updateSquadron, avatar method 140).
+/** One aircraft position sample (receive_updateSquadron on the avatar).
  *  Each update packet carries `count` planes of one squadron; `index` is the
  *  position within that formation, so (planeId, index) is one aircraft. */
 export interface SquadronPlane {
@@ -251,12 +294,42 @@ export interface SquadronPlane {
   yaw: number;
 }
 
+/** A squadron marker appearing on the minimap (receive_addMinimapSquadron).
+ *  The composite plane id packs the owning carrier's vehicle id in its low
+ *  32 bits (`ownerId` here, already unpacked). */
+export interface MinimapSquadronAdd {
+  time: number;
+  planeId: number;
+  ownerId: number;
+  teamId: number;
+  paramsId: number;
+  x: number;
+  z: number;
+}
+
+/** A squadron marker move (receive_updateMinimapSquadron). */
+export interface MinimapSquadronMove {
+  time: number;
+  planeId: number;
+  x: number;
+  z: number;
+}
+
+/** A squadron marker disappearing (receive_removeMinimapSquadron). */
+export interface MinimapSquadronRemove {
+  time: number;
+  planeId: number;
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
   trajectories: EntityTrajectory[];
+  /** Artillery launches (receiveArtilleryShots) — true shell trajectories. */
+  shellLaunches?: ShellLaunchEvent[];
   explosions?: ExplosionEvent[];
   torpedoes?: TorpedoLaunch[];
+  torpedoSteers?: TorpedoSteer[];
   weaponLocks?: WeaponLockEvent[];
   /** Raw post-battle statistics JSON (BattleResults 0x22). */
   battleResults?: string | null;
@@ -273,9 +346,14 @@ export interface ReplayStream {
   /** Camera-mode changes (0x27). */
   cameraModes?: HpSample[];
   diagnostics?: DiagnosticCounts;
-  /** Aircraft squadrons (avatar methods 114/140). */
+  /** Aircraft squadrons (avatar receive_add/updateSquadron — 3D stream). */
   squadronCreates?: SquadronCreate[];
   squadronPlanes?: SquadronPlane[];
+  /** Minimap squadron markers (receive_add/update/removeMinimapSquadron) —
+   *  the 2D trail source the in-game minimap itself uses. */
+  minimapSquadronAdds?: MinimapSquadronAdd[];
+  minimapSquadronMoves?: MinimapSquadronMove[];
+  minimapSquadronRemoves?: MinimapSquadronRemove[];
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
