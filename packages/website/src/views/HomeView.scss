@@ -7,7 +7,10 @@
    a long page can be read in thirds without ever resting off-grid. */
 html {
   /* The 1/3-page grid is driven by JS (see HomeView setup) — CSS
-     scroll-snap cannot express sub-page steps portably. */
+     scroll-snap cannot express sub-page steps portably. Anchor jumps
+     (the hero's #showcase-ships cue, the nav's #features link) must
+     land a page BELOW the fixed 4rem header instead of under it. */
+  scroll-padding-top: 4rem;
 }
 
 .home {
@@ -248,9 +251,12 @@ html {
   }
 }
 
-@media (max-width: 720px) {
-  /* Sections may exceed one viewport on phones (content stacks) —
-     mandatory snap would trap the scroll, so relax to proximity. */
+/* Phones in portrait AND any very short viewport (landscape phones, half
+   tiled windows): fixed one-viewport pages would clip their content, so
+   sections fall back to natural height. */
+@media (max-width: 720px), (max-height: 600px) {
+  /* Sections may exceed one viewport, so the 1/3-page grid no longer
+     matches the content — relax the (mobile) snap to proximity. */
   html { scroll-snap-type: y proximity; }
 
   .hero, .showcase, .features, .cta-band {
