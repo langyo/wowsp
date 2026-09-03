@@ -1,80 +1,188 @@
+/* ShipFilterBar — inline filter strip meant to share a row with the view's
+ * date-range tabs (the parent supplies the flex row). The chip styling
+ * mirrors the hikari segmented button-group trigger so the strip reads as
+ * part of the same control family. */
 .ship-filter-bar {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+
+  /* While a chip drag is live, keep text selection off so pointer moves
+     don't paint highlights across the strip. */
+  &[data-dragging] {
+    cursor: grabbing;
+    user-select: none;
+  }
 }
 
-.ship-filter-bar__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+/* ── Filter chips: collapsed categories, drag-reorderable ──
+   Leftmost chip = primary sort key; a chip at its "全部…" state is grayed
+   (the trigger's muted ink) and takes no part in filtering or sorting. */
+.ship-filter-bar__chip-anchor {
+  position: relative;
 }
 
-.ship-filter-bar__title {
-  font-weight: 700;
+.ship-filter-bar__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6, 6px);
+  padding: var(--space-4) var(--space-12);
+  font-family: inherit;
   font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-muted));
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+  /* One-button echo of the hk-tabs track chrome. */
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface) / 60%);
+  transition:
+    color var(--duration-short) ease,
+    background var(--duration-short) var(--ease-standard),
+    border-color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    color: rgb(var(--color-text));
+  }
+
+  &:active:not([data-dragging]) {
+    transform: scale(0.96);
+  }
+
+  &[data-dragging] {
+    cursor: grabbing;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+  }
+
+  /* Concrete selection — the active trigger's primary ink + indicator tint. */
+  &--on {
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 12%);
+    border-color: rgb(var(--color-primary) / 25%);
+
+    &:hover {
+      color: rgb(var(--color-primary));
+    }
+  }
+}
+
+.ship-filter-bar__chip-grip {
+  opacity: 0.5;
+  flex: 0 0 auto;
+}
+
+.ship-filter-bar__dir {
+  opacity: 0.85;
+  flex: 0 0 auto;
 }
 
 .ship-filter-bar__summary {
+  margin-left: auto;
   color: rgba(255, 255, 255, 0.5);
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
-.ship-filter-bar__row {
+/* ── Chip popup: the category's original segmented button group ── */
+.ship-filter-bar__pop {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  width: max-content;
+  max-width: min(560px, 90vw);
+  padding: 10px 12px 8px;
+  border-radius: 10px;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  z-index: 50;
+  animation: ship-filter-pop var(--duration-normal) var(--ease-standard);
+}
+
+/* The right-most chip's popup opens leftwards so it never leaves the strip. */
+.ship-filter-bar__chip-anchor[data-edge] .ship-filter-bar__pop {
+  left: auto;
+  right: 0;
+}
+
+@keyframes ship-filter-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ship-filter-bar__pop-head {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
-/* Wrapper that only hosts the sort strip's direction-flip click hook —
-   boxless, so the strip itself stays the row's flex child. */
-.ship-filter-bar__sort {
-  display: contents;
+.ship-filter-bar__pop-close {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+
+  &:hover {
+    color: rgb(var(--color-text));
+  }
 }
 
-.ship-filter-bar__sort-arrow {
-  opacity: 0.85;
+/* Box hosting the popup's HTabs so the segmented track sizes naturally. */
+.ship-filter-bar__pop-tabs {
+  display: flex;
+  justify-content: flex-start;
 }
 
-.ship-filter-bar__sort-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.ship-filter-bar__pop-hint {
+  margin-top: 8px;
+  font-size: var(--text-2xs);
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* ── Search: one compact button, roomy leftward popup panel ── */
 .ship-filter-bar__search-anchor {
   position: relative;
-  margin-left: auto;
 }
 
 .ship-filter-bar__search-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.75);
-  font-size: var(--text-2xs);
+  padding: var(--space-4) var(--space-12);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface) / 60%);
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
   transition: background var(--duration-short) var(--ease-standard);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
+    color: rgb(var(--color-text));
   }
 
   &--on {
-    background: rgb(var(--color-accent) / 22%);
-    color: rgb(var(--color-accent));
-    border-color: rgb(var(--color-accent) / 40%);
+    color: rgb(var(--color-primary));
+    border-color: rgb(var(--color-primary) / 25%);
+    background: rgb(var(--color-primary) / 12%);
   }
 }
 

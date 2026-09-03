@@ -20,8 +20,7 @@ import {
   SHIP_TYPE_SHORT,
   type DateRange,
 } from "@/utils/shipAggregation";
-import { shipNameFromModelDb, shipNameFromOfflineDb, nationNameFromDb } from "@/features/holographic/modelLoader";
-import { useLanguage } from "@/i18n/useLanguage";
+import { shipNameFromModelDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import "./DashboardView.scss";
 
@@ -72,72 +71,16 @@ export default defineComponent({
     // Ships filtered by the selected date range.
     const dateFiltered = computed(() => filterByDateRange(playerShips.value, dateRange.value));
 
-    /** Filtered ships + group mode + search-hit names, from ShipFilterBar. */
+    /** Filtered + multi-key-sorted ships and search-hit names, from
+     *  ShipFilterBar (the chip drag order defines the sort priority). */
     const filterState = ref<{
       ships: typeof dateFiltered.value;
-      groupMode: "type" | "nation" | "tier";
       hits: Map<number, string>;
-    }>({ ships: [], groupMode: "type", hits: new Map() });
+    }>({ ships: [], hits: new Map() });
     const filteredShips = computed(() => filterState.value.ships);
     function displayShipName(s: { shipId: number; name: string }): string {
       return filterState.value.hits.get(s.shipId) ?? shipName(s.shipId, s.name);
     }
-
-    /** Group ships by the selected dimension (type/nation/tier bracket). */
-    interface ShipGroup {
-      key: string;
-      label: string;
-      ships: typeof filteredShips.value;
-    }
-    const groupedShips = computed<ShipGroup[]>(() => {
-      const ships = filteredShips.value;
-      if (filterState.value.groupMode === "type") {
-        const m = new Map<string, ShipGroup>();
-        for (const s of ships) {
-          const type = encyclopedia.byId.get(s.shipId)?.type ?? "Unknown";
-          let g = m.get(type);
-          if (!g) {
-            g = { key: type, label: t(`dashboard.shipType.${type}`, {}), ships: [] };
-            m.set(type, g);
-          }
-          g.ships.push(s);
-        }
-        return [...m.values()];
-      }
-      if (filterState.value.groupMode === "nation") {
-        const m = new Map<string, ShipGroup>();
-        const { dataLanguage } = useLanguage();
-        for (const s of ships) {
-          const nation = encyclopedia.byId.get(s.shipId)?.nation ?? "unknown";
-          let g = m.get(nation);
-          if (!g) {
-            // Nation labels follow the 素材翻译 setting (国服 → X-系 names).
-            g = {
-              key: nation,
-              label: nationNameFromDb(nation, dataLanguage.value) ?? t(`ships.nation.${nation}`, {}),
-              ships: [],
-            };
-            m.set(nation, g);
-          }
-          g.ships.push(s);
-        }
-        return [...m.values()];
-      }
-      // tier bracket: I-V, VI-VII, VIII-IX, X-*
-      const brackets: [string, string, number[]][] = [
-        ["I-V", "I \u2013 V", [1, 2, 3, 4, 5]],
-        ["VI-VII", "VI \u2013 VII", [6, 7]],
-        ["VIII-IX", "VIII \u2013 IX", [8, 9]],
-        ["X-star", "X \u2013 \u2605", [10, 11]],
-      ];
-      return brackets
-        .map(([key, label, tiers]) => ({
-          key,
-          label,
-          ships: ships.filter((s) => tiers.includes(encyclopedia.byId.get(s.shipId)?.tier ?? 0)),
-        }))
-        .filter((g) => g.ships.length > 0);
-    });
 
     // Per-ship-type aggregation (computed from filtered ships + encyclopedia).
     const typeSummary = computed(() =>
@@ -249,7 +192,7 @@ export default defineComponent({
                 </section>
               ) : null}
 
-              {/* ── Ship stats: date range + packaged filter bar ── */}
+              {/* ── Ship stats: date range + inline filter chips ── */}
               <section class="dash-section">
                 <div class="dash-section__controls">
                   <HTabs
@@ -258,12 +201,12 @@ export default defineComponent({
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
                     tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
                   />
+                  <ShipFilterBar
+                    ships={dateFiltered.value}
+                    realm={activeAccount.value?.realm ?? ""}
+                    onChange={(v) => (filterState.value = v)}
+                  />
                 </div>
-                <ShipFilterBar
-                  ships={dateFiltered.value}
-                  realm={activeAccount.value?.realm ?? ""}
-                  onChange={(v) => (filterState.value = v)}
-                />
 
                 {/* Group summary cards (compact) */}
                 {typeSummary.value.length > 0 ? (
@@ -278,37 +221,33 @@ export default defineComponent({
                   </div>
                 ) : null}
 
-                {/* Grouped ship table */}
-                {groupedShips.value.length === 0 ? (
+                {/* Flat ship table — multi-key sorted by the filter chips'
+                    drag order (leftmost active chip = primary key). */}
+                {filteredShips.value.length === 0 ? (
                   <p class="dash-empty">{t("dashboard.noShipsInRange")}</p>
                 ) : (
-                  groupedShips.value.map((group) => (
-                    <div class="dash-ship-group" key={group.key}>
-                      <h4 class="dash-ship-group__title">{group.label} <span class="dash-ship-group__count">({group.ships.length})</span></h4>
-                      <div class="dash-ship-table">
-                        {group.ships.map((s) => (
-                          <div class="dash-ship-table__row" key={s.shipId}>
-                            <span class="dash-ship-table__col-name">
-                              <HTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HTag>
-                              <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
-                            </span>
-                            <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>
-                            <span
-                              class="dash-ship-table__col-num"
-                              style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
-                            >
-                              {s.winrate.toFixed(1)}%
-                            </span>
-                            <span class="dash-ship-table__col-num">{s.avgDamage.toFixed(0)}</span>
-                            <span class="dash-ship-table__col-num">
-                              {(s.frags / Math.max(1, s.battles)).toFixed(2)}
-                            </span>
-                            <span class="dash-ship-table__col-date">{formatDate(s.lastBattleTime)}</span>
-                          </div>
-                        ))}
+                  <div class="dash-ship-table">
+                    {filteredShips.value.map((s) => (
+                      <div class="dash-ship-table__row" key={s.shipId}>
+                        <span class="dash-ship-table__col-name">
+                          <HTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HTag>
+                          <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
+                        </span>
+                        <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>
+                        <span
+                          class="dash-ship-table__col-num"
+                          style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
+                        >
+                          {s.winrate.toFixed(1)}%
+                        </span>
+                        <span class="dash-ship-table__col-num">{s.avgDamage.toFixed(0)}</span>
+                        <span class="dash-ship-table__col-num">
+                          {(s.frags / Math.max(1, s.battles)).toFixed(2)}
+                        </span>
+                        <span class="dash-ship-table__col-date">{formatDate(s.lastBattleTime)}</span>
                       </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
               </section>
             </div>

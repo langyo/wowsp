@@ -54,7 +54,14 @@ fn data_file(rel: &str) -> Result<PathBuf, String> {
 pub async fn mod_catalog_refresh(force: bool) -> Result<CatalogIndex, String> {
     if !force {
         if let Some(cached) = load_cached_index() {
-            return Ok(cached);
+            // A cache written by an older app build can lack the i18n maps
+            // (schema drifted when threads gained the wowsp:i18n block);
+            // such a copy is stale by definition — refetch instead.
+            let localized = cached.mods.iter().any(|m| !m.i18n.is_empty());
+            if localized || cached.mods.is_empty() {
+                return Ok(cached);
+            }
+            tracing::info!("cached mod catalog predates i18n — refetching");
         }
     }
     let index = fetch_index().await?;
