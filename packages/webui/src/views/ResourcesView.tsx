@@ -244,10 +244,21 @@ export default defineComponent({
     });
 
     /** Localized name/description from the thread's wowsp:i18n block:
-     *  UI locale first, then the game-data language, then en-US. */
+     *  UI locale first, then the game-data language, then en-US. Matching
+     *  falls back to the language subtag so `zh-SG` still finds `zh-CN`. */
     function localized(entry: CatalogEntry): { name: string; desc: string } {
-      for (const lang of [uiLocale.value, dataLanguage.value, "en-US"]) {
-        const text = entry.i18n?.[lang];
+      const table = entry.i18n ?? {};
+      const wanted = [uiLocale.value, dataLanguage.value, "en-US"];
+      for (const lang of wanted) {
+        const text = table[lang];
+        if (text?.name || text?.description) {
+          return { name: text.name, desc: text.description };
+        }
+      }
+      for (const lang of wanted) {
+        const base = lang.split("-")[0]?.toLowerCase();
+        const key = base && Object.keys(table).find((k) => k.split("-")[0].toLowerCase() === base);
+        const text = key ? table[key] : undefined;
         if (text?.name || text?.description) {
           return { name: text.name, desc: text.description };
         }

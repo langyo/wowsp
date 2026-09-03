@@ -3,7 +3,7 @@
 
 .resources-view {
   padding: 1.5rem 2rem;
-  max-width: 48rem;
+  max-width: 88rem;
   margin: 0 auto;
 
   &__head {
@@ -374,7 +374,7 @@
 
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
   gap: 0.625rem;
 }
 
