@@ -194,8 +194,10 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         kinds,
         destroys,
         properties,
+        shell_launches,
         explosions,
         torpedoes,
+        torpedo_steers,
         mut cap_progress,
         weapon_locks,
         battle_results,
@@ -210,6 +212,9 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         diagnostics,
         squadron_creates,
         squadron_planes,
+        minimap_squadron_adds,
+        minimap_squadron_moves,
+        minimap_squadron_removes,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -276,7 +281,7 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
             let cap_samples = cap_map.remove(&entity_id).unwrap_or_default();
             let cap_progress = cap_progress.remove(&entity_id).unwrap_or_default();
             let kind = kinds.get(&entity_id).cloned();
-            // Only ships have meaningful HP streams — planes/zones never do.
+            // Only ships have meaningful HP streams — smoke/zones never do.
             let death_time = if kind.as_ref().map(|k| k.entity_type) == Some(2) {
                 infer_death_time(&hp_samples, destroys.get(&entity_id).copied())
             } else {
@@ -314,8 +319,10 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
     out.sort_by_key(|t| Reverse(t.samples.len()));
     wowsp_tauri_shared::ReplayStream {
         trajectories: out,
+        shell_launches,
         explosions,
         torpedoes,
+        torpedo_steers,
         weapon_locks,
         battle_results,
         version,
@@ -327,6 +334,9 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         diagnostics,
         squadron_creates,
         squadron_planes,
+        minimap_squadron_adds,
+        minimap_squadron_moves,
+        minimap_squadron_removes,
     }
 }
 
@@ -905,8 +915,10 @@ mod tests {
             "methods": histo_json,
             "meta": meta,
             "trajectories": stream.trajectories,
+            "shellLaunches": stream.shell_launches,
             "explosions": stream.explosions,
             "torpedoes": stream.torpedoes,
+            "torpedoSteers": stream.torpedo_steers,
             "weaponLocks": stream.weapon_locks,
             "battleResults": stream.battle_results,
             "version": stream.version,
@@ -918,6 +930,9 @@ mod tests {
             "diagnostics": stream.diagnostics,
             "squadronCreates": stream.squadron_creates,
             "squadronPlanes": stream.squadron_planes,
+            "minimapSquadronAdds": stream.minimap_squadron_adds,
+            "minimapSquadronMoves": stream.minimap_squadron_moves,
+            "minimapSquadronRemoves": stream.minimap_squadron_removes,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
