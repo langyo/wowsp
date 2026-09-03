@@ -18,7 +18,7 @@
     "@celestia-island/hikari": "workspace:*",
     "@lucide/vue": "^1.38.0",
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-updater": "^2.10.1",
+    "@tauri-apps/plugin-updater": "^2.11.0",
     "@vue/devtools-api": "^8.2.1",
     "@vueuse/core": "^14.4.0",
     "@wowsp/holo": "workspace:*",
