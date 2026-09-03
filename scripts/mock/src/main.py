@@ -215,6 +215,10 @@ _MOCK_CATALOG = {
             "nameZh": "开火后倒计时20s", "nameEn": "Shot Timer",
             "description": "Counts down the 20s detection window after firing main guns.",
             "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Shot Timer", "description": "Counts down the 20s detection window after firing main guns."},
+                "zh-CN": {"name": "开火后倒计时20s", "description": "主炮开火被点亮后按 20 秒倒计时提示灭点。"},
+            },
             "packages": [{"url": "https://example.com/a.zip", "sha256": "",
                           "size": 13312, "name": "a.zip"}],
         },
@@ -226,6 +230,10 @@ _MOCK_CATALOG = {
             "nameZh": "战报统计", "nameEn": "Session Stats v2",
             "description": "Per-session battle statistics right in the port.",
             "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Session Stats v2", "description": "Per-session battle statistics right in the port."},
+                "zh-CN": {"name": "战报统计v2", "description": "在港口直接查看本时段的战报统计。"},
+            },
             "packages": [{"url": "https://example.com/b.zip", "sha256": "",
                           "size": 87040, "name": "b.zip"}],
         },

@@ -129,10 +129,13 @@
   margin-bottom: 6px;
 }
 
+/* Date-range tabs + inline ship-filter strip share one row. */
 .lookup-view__controls {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .lookup-view__controlrow {
@@ -196,21 +199,6 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.lookup-view__shipgroup-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-weight: 600;
-  font-size: var(--text-sm);
-  margin-bottom: 6px;
-  em {
-    font-style: normal;
-    color: rgba(255, 255, 255, 0.45);
-    font-size: var(--text-2xs);
-    font-weight: 400;
-  }
 }
 
 .lookup-view__shiplist {

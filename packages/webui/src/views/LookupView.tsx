@@ -51,8 +51,8 @@ function saveHistory(h: HistoryEntry[]) {
   }
 }
 
-/** Ship-type groups for the per-ship list, biggest first (i18n keys are
- *  capitalized, mirroring DashboardView). */
+/** Ship-type canonical order for summary cards + row badges, biggest first
+ *  (i18n keys are capitalized, mirroring DashboardView). */
 const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submarine", ""];
 const TYPE_SHORT: Record<string, string> = {
   Battleship: "BB",
@@ -92,12 +92,12 @@ export default defineComponent({
         : null;
     };
 
-    /** Filtered ships + group mode + search-hit names, from ShipFilterBar. */
+    /** Filtered + multi-key-sorted ships and search-hit names, from
+     *  ShipFilterBar (the chip drag order defines the sort priority). */
     const filterState = ref<{
       ships: PlayerShipStats[];
-      groupMode: "type" | "nation" | "tier";
       hits: Map<number, string>;
-    }>({ ships: [], groupMode: "type", hits: new Map() });
+    }>({ ships: [], hits: new Map() });
     const filteredShips = computed(() => filterState.value.ships);
     function displayName(s: PlayerShipStats): string {
       return (
@@ -123,47 +123,6 @@ export default defineComponent({
       const acc = result.value;
       if (!acc) return [];
       return shipStats.cache.get(`${realm.value}_${acc.accountId}`) ?? [];
-    });
-    const grouped = computed(() => {
-      const rows = [...filteredShips.value];
-      const mode = filterState.value.groupMode;
-      if (mode === "type") {
-        const byType = new Map<string, PlayerShipStats[]>();
-        for (const s of rows) {
-          const type = infoOf(s.shipId)?.type ?? "";
-          const key = TYPE_ORDER.find((k) => k && type.startsWith(k)) ?? "";
-          if (!byType.has(key)) byType.set(key, []);
-          byType.get(key)!.push(s);
-        }
-        return TYPE_ORDER.filter((k) => byType.has(k)).map((k) => ({
-          key: k,
-          label: k ? t(`dashboard.shipType.${k}`, {}) : t("dashboard.shipType.Unknown", {}),
-          ships: byType.get(k)!,
-        }));
-      }
-      if (mode === "nation") {
-        const byNation = new Map<string, PlayerShipStats[]>();
-        for (const s of rows) {
-          const nation = infoOf(s.shipId)?.nation ?? "unknown";
-          if (!byNation.has(nation)) byNation.set(nation, []);
-          byNation.get(nation)!.push(s);
-        }
-        return [...byNation.entries()].map(([k, ships]) => ({ key: k, label: k, ships }));
-      }
-      // tier brackets (mirrors Dashboard)
-      const brackets: [string, string, number[]][] = [
-        ["I–V", "I – V", [1, 2, 3, 4, 5]],
-        ["VI–VII", "VI – VII", [6, 7]],
-        ["VIII–IX", "VIII – IX", [8, 9]],
-        ["X–★", "X – ★", [10, 11]],
-      ];
-      return brackets
-        .map(([key, label, tiers]) => ({
-          key: key,
-          label: label,
-          ships: rows.filter((s) => tiers.includes(infoOf(s.shipId)?.tier ?? 0)),
-        }))
-        .filter((g) => g.ships.length > 0);
     });
     /** Per-type summary cards (battles + winrate), matching the Dashboard. */
     const typeSummary = computed(() => {
@@ -300,12 +259,13 @@ export default defineComponent({
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
                     tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
                   />
+                  {/* Filter chips share the date-range row's height */}
+                  <ShipFilterBar
+                    ships={dateFiltered.value}
+                    realm={realm.value}
+                    onChange={(v) => (filterState.value = v)}
+                  />
                 </div>
-                <ShipFilterBar
-                  ships={dateFiltered.value}
-                  realm={realm.value}
-                  onChange={(v) => (filterState.value = v)}
-                />
                 {/* Per-type summary cards */}
                 {typeSummary.value.length > 0 ? (
                   <div class="lookup-view__typegrid">
@@ -318,55 +278,50 @@ export default defineComponent({
                     ))}
                   </div>
                 ) : null}
-                {/* Grouped ship table */}
+                {/* Flat ship table — multi-key sorted by the filter chips'
+                    drag order (leftmost active chip = primary key). */}
                 <div class="lookup-view__ships">
-                  {grouped.value.map((g) => (
-                    <div class="lookup-view__shipgroup" key={g.key}>
-                      <div class="lookup-view__shipgroup-title">
-                        {g.label}
-                        <em>{g.ships.reduce((a, s) => a + s.battles, 0)} 场</em>
-                      </div>
-                      <div class="lookup-view__shiplist">
-                        {g.ships.map((s) => {
-                          const off = shipOfflineEntry(s.shipId);
-                          const icon = shipIcon(off?.type ?? "", "plain");
-                          const typeKey = TYPE_ORDER.find((k) => k && (off?.type ?? "").startsWith(k)) ?? "";
-                          return (
-                            <div class="lookup-view__ship" key={s.shipId}>
-                              <span class="lookup-view__ship-ico">
-                                {icon && icon.complete && icon.naturalWidth > 0 ? (
-                                  <img src={icon.src} width={22} height={22} alt="" />
-                                ) : null}
-                              </span>
-                              <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
-                              <span class="lookup-view__ship-name">
-                                {displayName(s)}
-                                {off?.tier != null ? (
-                                  <em class="lookup-view__ship-tier">{off.tier}</em>
-                                ) : null}
-                              </span>
-                              <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
-                              <span
-                                class="lookup-view__ship-wr"
-                                style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
-                              >
-                                {s.winrate.toFixed(1)}%
-                              </span>
-                              <span class="lookup-view__ship-dmg">{Math.round(s.avgDamage).toLocaleString()}</span>
-                              <span class="lookup-view__ship-kd">
-                                {(s.frags / Math.max(1, s.battles)).toFixed(2)}
-                              </span>
-                              <span class="lookup-view__ship-date">
-                                {s.lastBattleTime
-                                  ? new Date(s.lastBattleTime * 1000).toLocaleDateString()
-                                  : "—"}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {filteredShips.value.length > 0 ? (
+                    <div class="lookup-view__shiplist">
+                      {filteredShips.value.map((s) => {
+                        const off = shipOfflineEntry(s.shipId);
+                        const icon = shipIcon(off?.type ?? "", "plain");
+                        const typeKey = TYPE_ORDER.find((k) => k && (off?.type ?? "").startsWith(k)) ?? "";
+                        return (
+                          <div class="lookup-view__ship" key={s.shipId}>
+                            <span class="lookup-view__ship-ico">
+                              {icon && icon.complete && icon.naturalWidth > 0 ? (
+                                <img src={icon.src} width={22} height={22} alt="" />
+                              ) : null}
+                            </span>
+                            <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
+                            <span class="lookup-view__ship-name">
+                              {displayName(s)}
+                              {off?.tier != null ? (
+                                <em class="lookup-view__ship-tier">{off.tier}</em>
+                              ) : null}
+                            </span>
+                            <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
+                            <span
+                              class="lookup-view__ship-wr"
+                              style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
+                            >
+                              {s.winrate.toFixed(1)}%
+                            </span>
+                            <span class="lookup-view__ship-dmg">{Math.round(s.avgDamage).toLocaleString()}</span>
+                            <span class="lookup-view__ship-kd">
+                              {(s.frags / Math.max(1, s.battles)).toFixed(2)}
+                            </span>
+                            <span class="lookup-view__ship-date">
+                              {s.lastBattleTime
+                                ? new Date(s.lastBattleTime * 1000).toLocaleDateString()
+                                : "—"}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  ) : null}
                 </div>
               </div>
             ) : null}
