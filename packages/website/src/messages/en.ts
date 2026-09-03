@@ -198,14 +198,14 @@ export default {
     },
     roadmap: {
       title: "Roadmap",
-      desc: "Mod management is the next milestone after 1.0 (M10)",
-      statusDesign: "In design",
+      desc: "The Mod Hub has shipped: manifest, indexer, installer and the online catalog are live — the migration engine is next",
+      statusShipped: "Shipped",
       statusPlanned: "Planned",
       manifest: { title: "Manifest & repo conventions", desc: "Define the mod manifest (id, version, game-version range, hashes, file map) and the Discussions post template." },
       indexer: { title: "Discussions indexer", desc: "Crawl templated resource posts into an index JSON shared by the site and the app." },
       installer: { title: "Installer & Aslain layout", desc: "Write into res_mods/<version>/ per convention, with drag-in archives, hash checks and restore points." },
       migrator: { title: "Version migration engine", desc: "Auto-migrate after game updates with per-mod compatibility confirmation and one-click rollback." },
-      browser: { title: "Content browser", desc: "Skin & voice browsing with previews, batch installs and resumable downloads." },
+      browser: { title: "Online catalog", desc: "Curated tool-type plugins with category filters, search and one-click installs — every entry versioned and SHA-256 verified." },
     },
     cta: {
       title: "Publish your work on Discussions",
