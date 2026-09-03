@@ -124,6 +124,11 @@ struct LayoutProfile {
     /// rather than risk plausible-looking garbage.
     methods: Option<&'static MethodIds>,
     zone_entity_type: i16,
+    /// receive_wardAdded carries a trailing `wardType` byte from 13.2.0 on.
+    ward_has_type: bool,
+    /// SHOTKILL entries carry a nullable TERMINAL_BALLISTICS_INFO from 12.7.0
+    /// on (flag byte; 29 bytes when present).
+    shotkill_has_ballistics: bool,
 }
 
 /// A single property change sample — one field of an entity updated at a
@@ -201,6 +206,11 @@ pub struct DecodedReplay {
     pub minimap_squadron_adds: Vec<wowsp_tauri_shared::MinimapSquadronAdd>,
     pub minimap_squadron_moves: Vec<wowsp_tauri_shared::MinimapSquadronMove>,
     pub minimap_squadron_removes: Vec<wowsp_tauri_shared::MinimapSquadronRemove>,
+    /// Fighter-patrol wards (avatar receive_wardAdded / receive_wardRemoved).
+    pub wards: Vec<wowsp_tauri_shared::WardEvent>,
+    pub ward_removes: Vec<wowsp_tauri_shared::WardRemoveEvent>,
+    /// Projectile kills (avatar receiveShotKills) — terminal impact points.
+    pub shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -260,6 +270,8 @@ pub fn decode_replay(
             Some(k) if k < (14, 5, 0) => 13,
             _ => 14,
         },
+        ward_has_type: version_key.map(|k| k >= (13, 2, 0)).unwrap_or(true),
+        shotkill_has_ballistics: version_key.map(|k| k >= (12, 7, 0)).unwrap_or(true),
     };
     Ok(walk_frames(&inflated, ship_id_candidates, legacy, &profile))
 }
@@ -370,6 +382,9 @@ fn walk_frames(
     let mut minimap_squadron_adds: Vec<wowsp_tauri_shared::MinimapSquadronAdd> = Vec::new();
     let mut minimap_squadron_moves: Vec<wowsp_tauri_shared::MinimapSquadronMove> = Vec::new();
     let mut minimap_squadron_removes: Vec<wowsp_tauri_shared::MinimapSquadronRemove> = Vec::new();
+    let mut wards: Vec<wowsp_tauri_shared::WardEvent> = Vec::new();
+    let mut ward_removes: Vec<wowsp_tauri_shared::WardRemoveEvent> = Vec::new();
+    let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
@@ -605,6 +620,21 @@ fn walk_frames(
                 time: call.time,
                 plane_id: u64::from_le_bytes(call.args[0..8].try_into().unwrap()),
             });
+        } else if call.method_id == m.avatar_receive_ward_added {
+            if let Some(w) = decode_ward_added(call.time, &call.args, profile.ward_has_type) {
+                wards.push(w);
+            }
+        } else if call.method_id == m.avatar_receive_ward_removed && args_is_plane_id(&call.args) {
+            ward_removes.push(wowsp_tauri_shared::WardRemoveEvent {
+                time: call.time,
+                plane_id: u64::from_le_bytes(call.args[0..8].try_into().unwrap()),
+            });
+        } else if call.method_id == m.avatar_receive_shot_kills {
+            shot_kills.extend(decode_shot_kills(
+                call.time,
+                &call.args,
+                profile.shotkill_has_ballistics,
+            ));
         }
     }
     for samples in positions.values_mut() {
@@ -647,6 +677,9 @@ fn walk_frames(
         minimap_squadron_adds,
         minimap_squadron_moves,
         minimap_squadron_removes,
+        wards,
+        ward_removes,
+        shot_kills,
     }
 }
 
@@ -719,6 +752,85 @@ fn decode_minimap_squadron_move(
         x,
         z,
     })
+}
+
+/// Decode `receive_wardAdded` args: `i64 squadronId, VECTOR3 position,
+/// f32 time, f32 radius, i8 teamId, u64 ownerId` (+ trailing `u8 wardType`
+/// from 13.2.0 — `ward_has_type`). The reference treats a zero radius as the
+/// default 60 m patrol ring; we keep the raw value and let the caller decide.
+fn decode_ward_added(
+    time: f32,
+    args: &[u8],
+    ward_has_type: bool,
+) -> Option<wowsp_tauri_shared::WardEvent> {
+    let need = if ward_has_type { 38 } else { 37 };
+    if args.len() < need {
+        return None;
+    }
+    let squadron_id = u64::from_le_bytes(args[0..8].try_into().ok()?);
+    let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+    Some(wowsp_tauri_shared::WardEvent {
+        time,
+        squadron_id,
+        owner_id: i64::from_le_bytes(args[29..37].try_into().ok()?),
+        team_id: args[28] as i8,
+        x: f(8),
+        y: f(12),
+        z: f(16),
+        radius: f(24),
+        ward_type: if ward_has_type { args[37] } else { 0 },
+    })
+}
+
+/// Decode `receiveShotKills` args (per the `SHOTKILLS_PACK` alias): a u8
+/// count of packs, each `{i32 ownerID, u8 hitType, u8 kills[], SHOTKILL}`
+/// where `SHOTKILL` is `{VECTOR3 pos, u16 shotID}` plus a nullable
+/// `TERMINAL_BALLISTICS_INFO` (flag byte; 29 bytes when present) on 12.7.0+.
+/// The ballistics details are skipped — only the terminal position is kept.
+fn decode_shot_kills(
+    time: f32,
+    args: &[u8],
+    has_ballistics: bool,
+) -> Vec<wowsp_tauri_shared::ShotKillEvent> {
+    let mut out = Vec::new();
+    let Some(&packs) = args.first() else {
+        return out;
+    };
+    let mut off = 1usize;
+    'packs: for _ in 0..packs {
+        // ownerID + hitType + kills-count header.
+        if off + 6 > args.len() {
+            break;
+        }
+        let owner_id = i32::from_le_bytes(args[off..off + 4].try_into().unwrap());
+        let hit_type = args[off + 4];
+        let kills = args[off + 5] as usize;
+        off += 6;
+        for _ in 0..kills {
+            let fixed = if has_ballistics { 15 } else { 14 };
+            if off + fixed > args.len() {
+                break 'packs;
+            }
+            let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+            out.push(wowsp_tauri_shared::ShotKillEvent {
+                time,
+                owner_id,
+                hit_type,
+                shot_id: u16::from_le_bytes(args[off + 12..off + 14].try_into().unwrap()),
+                x: f(off),
+                y: f(off + 4),
+                z: f(off + 8),
+            });
+            off += 14;
+            if has_ballistics {
+                match nullable_dict(args, &mut off, 29) {
+                    Some(_) => (),
+                    None => break 'packs,
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The owning carrier's vehicle entity id: low 32 bits of the composite
@@ -1511,7 +1623,7 @@ mod tests {
         // dies). We don't hard-assert destroys > 0 (a stomps game can have
         // none), but log it so the EntityDestroy path is observable in CI.
         eprintln!(
-            "[m3+entity+destroy] version={:?} {} position samples across {} entities; {} EntityCreates ({} type=2 ships); {} destroyed; {} shell launches; {} torpedoes; {} explosions; {} minimap squadron adds",
+            "[m3+entity+destroy] version={:?} {} position samples across {} entities; {} EntityCreates ({} type=2 ships); {} destroyed; {} shell launches; {} torpedoes; {} explosions; {} minimap squadron adds; {} wards; {} shot kills",
             client_version,
             total_samples,
             decoded.positions.len(),
@@ -1522,6 +1634,8 @@ mod tests {
             decoded.torpedoes.len(),
             decoded.explosions.len(),
             decoded.minimap_squadron_adds.len(),
+            decoded.wards.len(),
+            decoded.shot_kills.len(),
         );
         assert!(ships >= 2, "a real match has at least 2 ships");
         // Artillery fire is universal in a real match — a zero count means the
@@ -1548,6 +1662,15 @@ mod tests {
             assert!(
                 s.server_time_left > 0.0 && s.server_time_left < 150.0,
                 "implausible flight time (raw units; seconds = value / 2.75)"
+            );
+        }
+        // Wards must carry plausible patrol rings when present.
+        for w in &decoded.wards {
+            assert!(w.x.is_finite() && w.z.is_finite(), "non-finite ward centre");
+            assert!(
+                (10.0..=2_000.0).contains(&w.radius),
+                "implausible ward radius {}",
+                w.radius
             );
         }
         // Every entity kind must have finite initial coords.
@@ -1861,6 +1984,79 @@ mod tests {
         assert!(decode_minimap_squadron_move(0.0, &mv[..12]).is_none());
         assert!(args_is_plane_id(&mv[..8]));
         assert!(!args_is_plane_id(&mv));
+    }
+
+    /// receive_wardAdded: both arg layouts (37 bytes pre-13.2.0, +wardType
+    /// after) decode the patrol centre, radius and owner.
+    #[test]
+    fn decodes_ward_added_both_layouts() {
+        let mut args = Vec::new();
+        args.extend_from_slice(&(631874u64 | (5 << 32)).to_le_bytes()); // squadronId
+        args.extend_from_slice(&(-320.5f32).to_le_bytes()); // pos.x
+        args.extend_from_slice(&25.0f32.to_le_bytes()); // pos.y
+        args.extend_from_slice(&480.25f32.to_le_bytes()); // pos.z
+        args.extend_from_slice(&3.0f32.to_le_bytes()); // time
+        args.extend_from_slice(&420.0f32.to_le_bytes()); // radius
+        args.push(1u8); // teamId
+        args.extend_from_slice(&631874u64.to_le_bytes()); // ownerId
+        // Pre-13.2.0: exactly 37 bytes.
+        let w = decode_ward_added(60.0, &args, false).expect("must parse");
+        assert_eq!(w.squadron_id, 631874 | (5 << 32));
+        assert_eq!(w.owner_id, 631874);
+        assert_eq!(w.team_id, 1);
+        assert!((w.x + 320.5).abs() < 1e-3);
+        assert!((w.z - 480.25).abs() < 1e-3);
+        assert!((w.radius - 420.0).abs() < 1e-3);
+        assert_eq!(w.ward_type, 0);
+        // 13.2.0+: trailing wardType byte.
+        let mut with_type = args.clone();
+        with_type.push(2u8);
+        let w2 = decode_ward_added(61.0, &with_type, true).expect("must parse");
+        assert_eq!(w2.ward_type, 2);
+        assert!((w2.radius - 420.0).abs() < 1e-3);
+        // Short payloads are rejected under both layouts.
+        assert!(decode_ward_added(0.0, &args[..30], false).is_none());
+        assert!(decode_ward_added(0.0, &with_type[..37], true).is_none());
+    }
+
+    /// receiveShotKills: packs flatten into per-kill events; the nullable
+    /// ballistics dict (12.7.0+) is skipped whole so multi-kill packs stay in
+    /// sync.
+    #[test]
+    fn decodes_shot_kills_packs() {
+        let mut args = Vec::new();
+        args.push(1u8); // 1 pack
+        args.extend_from_slice(&631854i32.to_le_bytes()); // ownerID
+        args.push(3u8); // hitType
+        args.push(2u8); // 2 kills
+        for (i, shot) in [41u16, 42].into_iter().enumerate() {
+            args.extend_from_slice(&(300.0 + i as f32).to_le_bytes()); // pos.x
+            args.extend_from_slice(&1.0f32.to_le_bytes()); // pos.y
+            args.extend_from_slice(&(-275.0f32).to_le_bytes()); // pos.z
+            args.extend_from_slice(&shot.to_le_bytes()); // shotID
+            args.push(1u8); // ballistics present
+            args.extend_from_slice(&[0u8; 29]); // TERMINAL_BALLISTICS_INFO body
+        }
+        let kills = decode_shot_kills(101.5, &args, true);
+        assert_eq!(kills.len(), 2);
+        assert_eq!(kills[0].owner_id, 631854);
+        assert_eq!(kills[0].hit_type, 3);
+        assert_eq!(kills[0].shot_id, 41);
+        assert!((kills[1].x - 301.0).abs() < 1e-3);
+        // Pre-12.7.0: no ballistics bytes at all.
+        let mut legacy = Vec::new();
+        legacy.push(1u8);
+        legacy.extend_from_slice(&631854i32.to_le_bytes());
+        legacy.push(0u8);
+        legacy.push(1u8);
+        legacy.extend_from_slice(&10.0f32.to_le_bytes());
+        legacy.extend_from_slice(&0.0f32.to_le_bytes());
+        legacy.extend_from_slice(&20.0f32.to_le_bytes());
+        legacy.extend_from_slice(&7u16.to_le_bytes());
+        let legacy_kills = decode_shot_kills(50.0, &legacy, false);
+        assert_eq!(legacy_kills.len(), 1);
+        assert_eq!(legacy_kills[0].shot_id, 7);
+        assert!((legacy_kills[0].z - 20.0).abs() < 1e-3);
     }
 
     /// receiveTorpedoDirection: fixed 38-byte layout decodes owner/shot/pos.

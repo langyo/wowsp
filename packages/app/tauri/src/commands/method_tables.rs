@@ -19,6 +19,9 @@ pub struct MethodIds {
     pub avatar_receive_add_minimap_squadron: i32,
     pub avatar_receive_update_minimap_squadron: i32,
     pub avatar_receive_remove_minimap_squadron: i32,
+    pub avatar_receive_ward_added: i32,
+    pub avatar_receive_ward_removed: i32,
+    pub avatar_receive_shot_kills: i32,
 }
 
 /// (major, minor, patch) → ids, ascending. Produced from every version the
@@ -36,6 +39,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 94,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 51,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 53,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -50,6 +56,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 94,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 51,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 53,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -64,6 +73,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 89,
             avatar_receive_update_minimap_squadron: 81,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 96,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 107,
         },
     ),
     (
@@ -78,6 +90,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 83,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 110,
         },
     ),
     (
@@ -92,6 +107,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 83,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 110,
         },
     ),
     (
@@ -106,6 +124,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 83,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 110,
         },
     ),
     (
@@ -120,6 +141,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 89,
             avatar_receive_update_minimap_squadron: 81,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 97,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 108,
         },
     ),
     (
@@ -134,6 +158,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 89,
             avatar_receive_update_minimap_squadron: 81,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 97,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 108,
         },
     ),
     (
@@ -148,6 +175,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 89,
             avatar_receive_update_minimap_squadron: 81,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 97,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 108,
         },
     ),
     (
@@ -162,6 +192,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 83,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 110,
         },
     ),
     (
@@ -176,6 +209,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 90,
             avatar_receive_update_minimap_squadron: 82,
             avatar_receive_remove_minimap_squadron: 45,
+            avatar_receive_ward_added: 98,
+            avatar_receive_ward_removed: 47,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -190,6 +226,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 90,
             avatar_receive_update_minimap_squadron: 82,
             avatar_receive_remove_minimap_squadron: 45,
+            avatar_receive_ward_added: 98,
+            avatar_receive_ward_removed: 47,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -204,6 +243,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 82,
             avatar_receive_remove_minimap_squadron: 45,
+            avatar_receive_ward_added: 99,
+            avatar_receive_ward_removed: 47,
+            avatar_receive_shot_kills: 110,
         },
     ),
     (
@@ -218,6 +260,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 90,
             avatar_receive_update_minimap_squadron: 82,
             avatar_receive_remove_minimap_squadron: 45,
+            avatar_receive_ward_added: 98,
+            avatar_receive_ward_removed: 47,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -232,6 +277,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 90,
             avatar_receive_update_minimap_squadron: 82,
             avatar_receive_remove_minimap_squadron: 45,
+            avatar_receive_ward_added: 98,
+            avatar_receive_ward_removed: 47,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -246,6 +294,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 90,
             avatar_receive_update_minimap_squadron: 82,
             avatar_receive_remove_minimap_squadron: 45,
+            avatar_receive_ward_added: 98,
+            avatar_receive_ward_removed: 47,
+            avatar_receive_shot_kills: 109,
         },
     ),
     (
@@ -260,6 +311,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 90,
             avatar_receive_update_minimap_squadron: 83,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 100,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 112,
         },
     ),
     (
@@ -274,6 +328,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 84,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 101,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 113,
         },
     ),
     (
@@ -288,6 +345,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 84,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 101,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 113,
         },
     ),
     (
@@ -302,6 +362,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 84,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 101,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 113,
         },
     ),
     (
@@ -316,6 +379,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 91,
             avatar_receive_update_minimap_squadron: 84,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 101,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 113,
         },
     ),
     (
@@ -330,6 +396,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -344,6 +413,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -358,6 +430,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -372,6 +447,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -386,6 +464,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -400,6 +481,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -414,6 +498,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -428,6 +515,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -442,6 +532,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -456,6 +549,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 114,
         },
     ),
     (
@@ -470,6 +566,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -484,6 +583,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -498,6 +600,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -512,6 +617,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -526,6 +634,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -540,6 +651,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -554,6 +668,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 94,
             avatar_receive_update_minimap_squadron: 87,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 104,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 118,
         },
     ),
     (
@@ -568,6 +685,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -582,6 +702,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 93,
             avatar_receive_update_minimap_squadron: 86,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 103,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 117,
         },
     ),
     (
@@ -596,6 +719,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 116,
         },
     ),
     (
@@ -610,6 +736,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 116,
         },
     ),
     (
@@ -624,6 +753,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 116,
         },
     ),
     (
@@ -638,6 +770,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 92,
             avatar_receive_update_minimap_squadron: 85,
             avatar_receive_remove_minimap_squadron: 46,
+            avatar_receive_ward_added: 102,
+            avatar_receive_ward_removed: 48,
+            avatar_receive_shot_kills: 116,
         },
     ),
     (
@@ -652,6 +787,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 96,
             avatar_receive_update_minimap_squadron: 88,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 107,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 124,
         },
     ),
     (
@@ -666,6 +804,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 96,
             avatar_receive_update_minimap_squadron: 88,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 107,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 124,
         },
     ),
     (
@@ -680,6 +821,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 96,
             avatar_receive_update_minimap_squadron: 88,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 107,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 124,
         },
     ),
     (
@@ -694,6 +838,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 96,
             avatar_receive_update_minimap_squadron: 88,
             avatar_receive_remove_minimap_squadron: 47,
+            avatar_receive_ward_added: 107,
+            avatar_receive_ward_removed: 49,
+            avatar_receive_shot_kills: 122,
         },
     ),
     (
@@ -708,6 +855,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 99,
             avatar_receive_update_minimap_squadron: 91,
             avatar_receive_remove_minimap_squadron: 48,
+            avatar_receive_ward_added: 110,
+            avatar_receive_ward_removed: 50,
+            avatar_receive_shot_kills: 124,
         },
     ),
     (
@@ -722,6 +872,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 99,
             avatar_receive_update_minimap_squadron: 91,
             avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 110,
+            avatar_receive_ward_removed: 51,
+            avatar_receive_shot_kills: 125,
         },
     ),
     (
@@ -736,6 +889,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 99,
             avatar_receive_update_minimap_squadron: 91,
             avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 110,
+            avatar_receive_ward_removed: 51,
+            avatar_receive_shot_kills: 125,
         },
     ),
     (
@@ -750,6 +906,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 99,
             avatar_receive_update_minimap_squadron: 91,
             avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 110,
+            avatar_receive_ward_removed: 51,
+            avatar_receive_shot_kills: 125,
         },
     ),
     (
@@ -764,6 +923,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 99,
             avatar_receive_update_minimap_squadron: 91,
             avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 110,
+            avatar_receive_ward_removed: 51,
+            avatar_receive_shot_kills: 125,
         },
     ),
     (
@@ -778,6 +940,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_add_minimap_squadron: 101,
             avatar_receive_update_minimap_squadron: 93,
             avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 112,
+            avatar_receive_ward_removed: 51,
+            avatar_receive_shot_kills: 127,
         },
     ),
 ];
@@ -855,6 +1020,9 @@ mod tests {
                 t.avatar_receive_add_minimap_squadron,
                 t.avatar_receive_update_minimap_squadron,
                 t.avatar_receive_remove_minimap_squadron,
+                t.avatar_receive_ward_added,
+                t.avatar_receive_ward_removed,
+                t.avatar_receive_shot_kills,
             ] {
                 assert!(id > 0, "unpopulated id in table {v:?}");
             }

@@ -37,6 +37,9 @@ import type {
   MinimapSquadronMove,
   MinimapSquadronRemove,
   NetStatsSample,
+  ShotKillEvent,
+  WardEvent,
+  WardRemoveEvent,
   ShellLaunchEvent,
   ShipInfo,
   SquadronCreate,
@@ -225,6 +228,10 @@ interface ShellTraceState {
   to: THREE.Vector3;
   color: number;
   impact: { x: number; z: number };
+  /** Firing vehicle + per-barrel shot id — the join key into shotKills.
+   *  `shotId` is null for legacy explosion-derived traces (no join). */
+  ownerId: number;
+  shotId: number | null;
 }
 
 /** A pooled trace's GPU objects; tinted per assignment. */
@@ -276,6 +283,12 @@ export default defineComponent({
     minimapSquadronAdds: { type: Array as () => MinimapSquadronAdd[], default: () => [] },
     minimapSquadronMoves: { type: Array as () => MinimapSquadronMove[], default: () => [] },
     minimapSquadronRemoves: { type: Array as () => MinimapSquadronRemove[], default: () => [] },
+    /** Fighter-patrol wards (receive_wardAdded) — static patrol circles. */
+    wards: { type: Array as () => WardEvent[], default: () => [] },
+    wardRemoves: { type: Array as () => WardRemoveEvent[], default: () => [] },
+    /** Projectile kills (receiveShotKills) — snap arcs onto victims, stop
+     *  in-flight torpedoes at the hit. */
+    shotKills: { type: Array as () => ShotKillEvent[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -689,6 +702,17 @@ export default defineComponent({
     /** Fixed pool of trace GPU objects, assigned to airborne shells each
      *  frame — bounded cost regardless of how many shells a match carries. */
     let shellTraceSlots: ShellTraceSlot[] = [];
+    /** Fighter-patrol wards: one flat ring per receive_wardAdded, alive from
+     *  its add time until the matching remove (or match end). */
+    let wardRings: {
+      ring: THREE.Mesh;
+      fill: THREE.Mesh;
+      t0: number;
+      t1: number | null;
+    }[] = [];
+    /** Projectile-kill bursts (receiveShotKills) — pooled rings like the
+     *  splash FX, tinted red to read as hits that connected. */
+    let killFx: { ring: THREE.Mesh; born: number }[] = [];
     /** In-flight torpedoes: straight capsules from the launch point along
      *  the launch direction (swapped for the real torpedo GLB once loaded).
      *  Homing fish re-anchor at each receiveTorpedoDirection guidance
@@ -703,6 +727,9 @@ export default defineComponent({
       /** Guidance updates for this fish (owner+shot keyed), time-sorted. */
       steers: TorpedoSteer[];
       steerIdx: number;
+      /** Join keys into shotKills (owner + shot). */
+      ownerId: number;
+      shotId: number;
       /** Launch anchor — steering rebases from here when the playhead
        *  scrubs backwards past applied guidance updates. */
       launchT0: number;
@@ -1539,6 +1566,21 @@ export default defineComponent({
       }
       shellTraceSlots = [];
       shellStates = [];
+      for (const w of wardRings) {
+        scene.remove(w.ring);
+        w.ring.geometry.dispose();
+        (w.ring.material as THREE.Material).dispose();
+        scene.remove(w.fill);
+        w.fill.geometry.dispose();
+        (w.fill.material as THREE.Material).dispose();
+      }
+      wardRings = [];
+      for (const fx of killFx) {
+        scene.remove(fx.ring);
+        fx.ring.geometry.dispose();
+        (fx.ring.material as THREE.Material).dispose();
+      }
+      killFx = [];
       for (const tm of torpedoMeshes) {
         scene.remove(tm.mesh);
         disposeAny(tm.mesh);
@@ -2019,6 +2061,8 @@ export default defineComponent({
             to: new THREE.Vector3(sh.targetX, 0, -sh.targetZ),
             color: shellAmmoColor(sh.paramsId),
             impact: { x: sh.targetX, z: sh.targetZ },
+            ownerId: sh.ownerId,
+            shotId: sh.shotId,
           });
         }
       } else {
@@ -2097,8 +2141,45 @@ export default defineComponent({
             to: new THREE.Vector3(target?.x ?? e.x, 0, -(target?.z ?? e.z)),
             color: shellAmmoColor(e.paramsId),
             impact: { x: e.x, z: e.z },
+            ownerId: match.tr.entityId,
+            shotId: null,
           });
         }
+      }
+      // Projectile kills (receiveShotKills) joined by (owner, shot): each
+      // shell's arc endpoint snaps onto the victim at the ACTUAL hit instant —
+      // the server aim point is where the shell would splash; the kill
+      // position is where it connected. Flight end tightens to the hit too.
+      const killsByOwnerShot = new Map<string, ShotKillEvent[]>();
+      for (const k of props.shotKills) {
+        const key = `${k.ownerId}:${k.shotId}`;
+        const list = killsByOwnerShot.get(key);
+        if (list) list.push(k);
+        else killsByOwnerShot.set(key, [k]);
+      }
+      for (const list of killsByOwnerShot.values()) list.sort((a, b) => a.time - b.time);
+      const killFor = (
+        ownerId: number,
+        shotId: number,
+        t0: number,
+        t1: number,
+      ): ShotKillEvent | null => {
+        const list = killsByOwnerShot.get(`${ownerId}:${shotId}`);
+        if (!list) return null;
+        // Shot ids recycle across salvos: take the first kill inside (or
+        // shortly after) this projectile's flight window.
+        for (const k of list) {
+          if (k.time >= t0 && k.time <= t1 + 12) return k;
+        }
+        return null;
+      };
+      for (const st of shellStates) {
+        if (st.shotId == null) continue;
+        const k = killFor(st.ownerId, st.shotId, st.t0, st.t1);
+        if (!k) continue;
+        st.to.set(k.x, 0, -k.z);
+        st.impact = { x: k.x, z: k.z };
+        if (k.time > st.t0) st.t1 = k.time;
       }
       // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
       // at once even in heavy matches, so 220 slots cover the busiest frames;
@@ -2222,7 +2303,15 @@ export default defineComponent({
           launchT0: tp.time,
           launchBase: new THREE.Vector3(tp.x, 0, -tp.z),
           launchDir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
+          ownerId: tp.ownerId,
+          shotId: tp.shotId,
         });
+      }
+      // Torpedoes stop at their kill: a fish that connects detonates instead
+      // of running out its full 8 km lane.
+      for (const tm of torpedoMeshes) {
+        const k = killFor(tm.ownerId, tm.shotId, tm.t0, tm.t0 + tm.life);
+        if (k) tm.life = Math.max(0, k.time - tm.t0);
       }
 
       // Swap the primitive placeholders for the real game models (baked GLBs
@@ -2261,6 +2350,76 @@ export default defineComponent({
         }
       }
 
+      // Fighter-patrol wards (receive_wardAdded): flat rings at the patrol
+      // centre. World metres map straight onto scene units — position (x, h,
+      // -z), radius as-is; a zero radius falls back to the reference's 60 m
+      // default. Colour follows the owning carrier's role, like squadron
+      // markers.
+      if (props.wards.length > 0) {
+        for (const w of props.wards) {
+          const owner = props.trajectories.find((tr) => tr.entityId === w.ownerId);
+          const role = owner ? resolveRoleQuick(owner) : "enemy";
+          const color = TEAM_COLOR[role as TeamRole] ?? 0x78d2ff;
+          const radius = Math.max(60, w.radius || 0);
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(Math.max(6, radius - 7), radius, 64),
+            new THREE.MeshBasicMaterial({
+              color,
+              transparent: true,
+              opacity: 0.8,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            }),
+          );
+          const fill = new THREE.Mesh(
+            new THREE.CircleGeometry(Math.max(6, radius - 7), 64),
+            new THREE.MeshBasicMaterial({
+              color,
+              transparent: true,
+              opacity: 0.08,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            }),
+          );
+          // Patrol altitude: the ward centre's own height (never below the
+          // water so the ring stays visible against the sea plane).
+          const h = Math.max(6, w.y ?? 0);
+          for (const m of [ring, fill]) {
+            m.rotation.x = -Math.PI / 2;
+            m.position.set(w.x, h, -w.z);
+            m.visible = false;
+            scene.add(m);
+          }
+          // Alive from the add until the first remove for this patrol after
+          // it (wards can be re-deployed under the same id).
+          let end: number | null = null;
+          for (const r of props.wardRemoves) {
+            if (r.planeId === w.squadronId && r.time >= w.time && (end == null || r.time < end)) {
+              end = r.time;
+            }
+          }
+          wardRings.push({ ring, fill, t0: w.time, t1: end });
+        }
+      }
+      // Reusable kill bursts (receiveShotKills) — red rings like the splash
+      // FX, spawned at the hit instant.
+      {
+        const ringGeomKill = new THREE.RingGeometry(0.35, 1, 24);
+        const ringMatKill = new THREE.MeshBasicMaterial({
+          color: 0xff6a5f,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        for (let i = 0; i < 12; i++) {
+          const ring = new THREE.Mesh(ringGeomKill, ringMatKill);
+          ring.visible = false;
+          ring.rotation.x = -Math.PI / 2;
+          scene.add(ring);
+          killFx.push({ ring, born: -1 });
+        }
+      }
       // Reusable explosion rings for shell impacts / splashes.
       const ringGeomFx = new THREE.RingGeometry(0.35, 1, 24);
       const ringMatFx = new THREE.MeshBasicMaterial({
@@ -3431,6 +3590,37 @@ export default defineComponent({
         }
         const k = age / 1.2;
         fx.ring.scale.setScalar(40 + k * 240);
+        (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k);
+      }
+      // Fighter-patrol wards: alive between their add and remove events.
+      for (const w of wardRings) {
+        const on = t >= w.t0 && (w.t1 == null || t <= w.t1);
+        w.ring.visible = on;
+        w.fill.visible = on;
+      }
+      // Kill bursts (receiveShotKills): spawn on the hit instant, expand and
+      // fade over ~1.2s — a red counterpart to the yellow splash rings so
+      // hits that connected read differently from splashes.
+      let nextKill = killFx.find((f) => !f.ring.visible);
+      for (const k of props.shotKills) {
+        if (k.time > t || t - k.time > 1.2) continue;
+        // bounds carries three.js Z (negated world z), like the splash loop.
+        if (!inBounds(k.x, -k.z)) continue;
+        if (!nextKill) break;
+        nextKill.ring.visible = true;
+        nextKill.ring.position.set(k.x, 1.5, -k.z);
+        nextKill.born = k.time;
+        nextKill = killFx.find((f) => !f.ring.visible);
+      }
+      for (const fx of killFx) {
+        if (!fx.ring.visible) continue;
+        const age = t - fx.born;
+        if (age > 1.2) {
+          fx.ring.visible = false;
+          continue;
+        }
+        const k = age / 1.2;
+        fx.ring.scale.setScalar(30 + k * 170);
         (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k);
       }
       // Recorder aim line: from the own ship to the currently locked target.
