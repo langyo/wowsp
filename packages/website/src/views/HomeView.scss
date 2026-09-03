@@ -226,7 +226,9 @@ html {
   position: relative;
   height: 100%;
   width: 100%;
-  max-width: 900px;
+  /* Pages are (100dvh − 4rem header) tall, so the stages stay well inside
+     the container width — a full-bleed 1100px+ stage reads as a flat band. */
+  max-width: 840px;
   margin-inline: auto;
   border-radius: var(--radius-xl);
   overflow: hidden;
@@ -290,6 +292,10 @@ html {
   }
 
   &__grid {
+    /* Capped inside the container: four cards across the full 72rem grid
+       stretch the same wide-band look the showcase stages just shed. */
+    max-width: 62rem;
+    margin-inline: auto;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: var(--space-16);
