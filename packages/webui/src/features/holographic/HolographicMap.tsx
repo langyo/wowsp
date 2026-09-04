@@ -231,6 +231,9 @@ interface ShellTraceState {
    *  `shotId` is null for legacy explosion-derived traces (no join). */
   ownerId: number;
   shotId: number | null;
+  /** True when a receiveShotKills entry snapped this shell onto a victim —
+   *  its endpoint and flight end are server-confirmed. */
+  joined: boolean;
 }
 
 /** A pooled trace's GPU objects; tinted per assignment. Impact moments are
@@ -2060,6 +2063,7 @@ export default defineComponent({
             color: shellAmmoColor(sh.paramsId),
             ownerId: sh.ownerId,
             shotId: sh.shotId,
+            joined: false, // set by the kill-join pass below
           });
         }
       } else {
@@ -2139,6 +2143,7 @@ export default defineComponent({
             color: shellAmmoColor(e.paramsId),
             ownerId: match.tr.entityId,
             shotId: null,
+            joined: false,
           });
         }
       }
@@ -2179,6 +2184,28 @@ export default defineComponent({
         if (!k) continue;
         st.to.set(k.x, 0, -k.z);
         if (k.time > st.t0) st.t1 = k.time;
+        st.joined = true;
+      }
+      // Unjoined shells (misses / bounced / shattered — no receiveShotKills
+      // entry): the aim point is only a launch-time prediction, so the tail
+      // trailing past the target into empty water is noise. When a ship sits
+      // at the predicted splash point at landing time, end the arc at that
+      // ship instead — the shell is visually absorbed by the hull.
+      const shipAt = (x: number, z: number, t: number, excludeId: number) => {
+        let best: { x: number; z: number; d: number } | null = null;
+        for (const tr of props.trajectories) {
+          if (tr.kind?.entityType !== 2 || tr.entityId === excludeId) continue;
+          const sp = sampleAt(tr, t);
+          if (!sp) continue;
+          const d = Math.hypot(sp.x - x, sp.z - z);
+          if (d <= 200 && (!best || d < best.d)) best = { x: sp.x, z: sp.z, d };
+        }
+        return best;
+      };
+      for (const st of shellStates) {
+        if (st.joined || !st.from) continue;
+        const p = shipAt(st.to.x, -st.to.z, st.t1, st.ownerId);
+        if (p) st.to.set(p.x, 0, -p.z);
       }
       // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
       // at once even in heavy matches, so 220 slots cover the busiest frames;
