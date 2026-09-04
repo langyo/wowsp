@@ -343,11 +343,14 @@ export interface WardRemoveEvent {
 }
 
 /** One projectile kill (receiveShotKills): the terminal position of a shell
- *  or torpedo that destroyed something. Joins ShellLaunchEvent /
+ *  or torpedo that hit something. Joins ShellLaunchEvent /
  *  TorpedoLaunch by (ownerId, shotId). */
 export interface ShotKillEvent {
   time: number;
   ownerId: number;
+  /** Raw hit-type bitfield. Observed on a 15.7 replay: shell hits cluster in
+   *  96–100 (0x60 | flags) with 64; torpedo hits include 0 and 104 alongside
+   *  shared values — semantics unconfirmed, do not filter on it. */
   hitType: number;
   shotId: number;
   x: number;
