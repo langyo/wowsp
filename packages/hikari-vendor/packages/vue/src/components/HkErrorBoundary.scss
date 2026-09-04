@@ -56,6 +56,15 @@
   font-family: ui-monospace, monospace;
 }
 
+// The height budget must be a flex box, not a bare max-height wrapper:
+// auto heights don't propagate to the scroll container inside it, so the
+// stack used to paint over the actions row instead of scrolling.
+.hk-error-boundary-stack {
+  max-height: 12rem;
+  display: flex;
+  flex-direction: column;
+}
+
 .hk-error-boundary-actions {
   display: flex;
   align-items: center;

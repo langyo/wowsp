@@ -61,7 +61,7 @@ export default defineComponent({
               )}
             </div>
             <div class="hk-error-boundary-msg">
-              <div style={{ maxHeight: "12rem" }}>
+              <div class="hk-error-boundary-stack">
                 <HScrollContainer>
                   {error.value}
                 </HScrollContainer>
