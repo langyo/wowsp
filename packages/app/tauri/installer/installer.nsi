@@ -76,11 +76,15 @@ Var OldMainBinaryName
 ; ── WoWSP install-mode selection ─────────────────────────────────────────
 ; $InstallMode: 1 = local install (default), 2 = USB / internet-cafe,
 ;               3 = green / direct-run (extract to folder and run).
+; Silent (/S) runs may force a mode via /MODE=local|usb|green - used by the
+; custom installer shell, which renders its own mode UI and drives this
+; engine headlessly.
 Var InstallMode
 Var InstallModeSelection
 Var ModeRadioLocal
 Var ModeRadioUsb
 Var ModeRadioGreen
+Var CmdMode
 
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
@@ -576,12 +580,17 @@ LangString WV2_FAILED ${LANG_SPANISH} "Error al instalar el runtime de WebView2.
 
 ; ── WoWSP mode page functions ───────────────────────────────────────────
 Function ModePageCreate
-  ; Skip the page entirely in passive/update/silent flows - those always
-  ; use the local-install mode (the updater only serves local installs).
+  ; Skip the page entirely in passive/update/silent flows. The updater and
+  ; passive runs always mean local install; a silent run driven by the
+  ; installer shell carries its mode in /MODE= (parsed in .onInit).
   ${If} $PassiveMode = 1
   ${OrIf} $UpdateMode = 1
   ${OrIf} ${Silent}
-    StrCpy $InstallMode 1
+    ${If} $CmdMode != ""
+      StrCpy $InstallMode $CmdMode
+    ${Else}
+      StrCpy $InstallMode 1
+    ${EndIf}
     StrCpy $InstallModeSelection 1
     Abort
   ${EndIf}
@@ -692,6 +701,20 @@ Function .onInit
   ${GetOptions} $CMDLINE "/UPDATE" $UpdateMode
   ${IfNot} ${Errors}
     StrCpy $UpdateMode 1
+  ${EndIf}
+
+  ; /MODE=local|usb|green (installer shell contract): force the install mode
+  ; for silent runs. Takes precedence over the interactive mode page only
+  ; when the page is skipped anyway.
+  ${GetOptions} $CMDLINE "/MODE=" $CmdMode
+  ${IfNot} ${Errors}
+    ${If} $CmdMode == "usb"
+      StrCpy $CmdMode 2
+    ${ElseIf} $CmdMode == "green"
+      StrCpy $CmdMode 3
+    ${Else}
+      StrCpy $CmdMode 1
+    ${EndIf}
   ${EndIf}
 
   !if "${DISPLAYLANGUAGESELECTOR}" == "true"

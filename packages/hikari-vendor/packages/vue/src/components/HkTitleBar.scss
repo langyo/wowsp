@@ -1,10 +1,10 @@
-/* ── TitleBar ───────────────────────────────────────────────────────────
-   Custom window chrome for the frameless (decorations: false) Tauri
-   window. Dark/light theme via the [data-mode] attribute that the
-   app's theme system sets on <html>. */
+/* ── HkTitleBar ────────────────────────────────────────────────────────
+   Window chrome for frameless (decorations: false) Tauri windows.
+   Dark/light theme via the [data-mode] attribute that the host app's
+   theme system sets on <html>. */
 
 /* ── Dark mode (default) ──────────────────────────────────────────── */
-.titlebar {
+.hk-titlebar {
   --tb-bg: rgba(18, 24, 38, 0.6);
   --tb-border: rgba(255, 255, 255, 0.06);
   --tb-fg: rgba(255, 255, 255, 0.55);
@@ -44,7 +44,7 @@
 }
 
 /* ── Brand (logo + name) ────────────────────────────────────────── */
-.titlebar__brand {
+.hk-titlebar__brand {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -56,7 +56,7 @@
   gap: 6px;
 }
 
-.titlebar__logo {
+.hk-titlebar__logo {
   width: 18px;
   height: 18px;
   border-radius: 3px;
@@ -64,19 +64,19 @@
   pointer-events: none;
 }
 
-.titlebar__spacer {
+.hk-titlebar__spacer {
   flex: 1;
 }
 
 /* ── Caption buttons ────────────────────────────────────────────── */
-.titlebar__btns {
+.hk-titlebar__btns {
   /* buttons stay interactive inside the Tauri drag region */
   display: flex;
   align-items: center;
   height: 100%;
 }
 
-.titlebar__btn {
+.hk-titlebar__btn {
   width: 46px;
   height: 32px;
   border: none;

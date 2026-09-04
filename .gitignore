@@ -36,6 +36,7 @@ Thumbs.db
 /coverage/
 **/__pycache__/
 packages/app/tauri/gen/
+packages/installer-shell/gen/
 .cache/
 
 # Python venvs

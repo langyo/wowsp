@@ -64,6 +64,7 @@ export { default as HSwitch } from "./components/HkSwitch";
 export { default as HTable } from "./components/HkTable";
 export { default as HTabs } from "./components/HkTabs";
 export { default as HTag } from "./components/HkTag";
+export { default as HTitleBar } from "./components/HkTitleBar";
 export { default as HTextarea } from "./components/HkTextarea";
 export { default as HToast } from "./components/HkToast";
 export { default as HTooltip } from "./components/HkTooltip";

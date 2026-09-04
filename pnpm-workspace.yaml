@@ -2,6 +2,7 @@ packages:
   - 'packages/webui'
   - 'packages/website'
   - 'packages/holo'
+  - 'packages/installer-shell/web'
   # Vendored upstream checkout (see packages/hikari-vendor/VENDOR.md).
   - 'packages/hikari-vendor/packages/vue'
 allowBuilds:

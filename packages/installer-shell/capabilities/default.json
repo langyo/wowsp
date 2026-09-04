@@ -1,0 +1,13 @@
+{
+  "identifier": "default",
+  "description": "Installer shell demo capabilities",
+  "windows": ["installer"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging",
+    "dialog:default"
+  ]
+}
