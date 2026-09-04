@@ -77,11 +77,17 @@ export default defineComponent({
     let running = 0;
     const queue: VehicleEntry[] = [];
     let drainTimer: ReturnType<typeof setTimeout> | null = null;
+    // Battle generation: bumped only when the battle itself changes, so
+    // lookups still in flight at that moment drop their results instead of
+    // writing them into the new battle's stats (vehicle ids repeat across
+    // battles).
+    let battleGen = 0;
 
-    function lookupOnce(v: VehicleEntry): Promise<boolean> {
+    function lookupOnce(v: VehicleEntry, gen: number): Promise<boolean> {
       return api
         .lookupPlayerStats(v.name, accounts.activeRealm)
         .then((s) => {
+          if (gen !== battleGen) return true;
           stats.set(v.id, {
             winrate: s.winrate ?? null,
             pr: s.pr ?? null,
@@ -91,6 +97,7 @@ export default defineComponent({
           return true;
         })
         .catch(() => {
+          if (gen !== battleGen) return true;
           stats.set(v.id, { winrate: null, pr: null, battles: null, loading: false });
           return false;
         });
@@ -100,10 +107,17 @@ export default defineComponent({
       while (running < 2 && queue.length > 0) {
         const v = queue.shift()!;
         running += 1;
-        void lookupOnce(v)
+        // Capture the generation once per attempt chain: re-capturing it in
+        // the retry would let a result from the previous battle (queued just
+        // before a battle change) land in the new battle's stats.
+        const gen = battleGen;
+        void lookupOnce(v, gen)
           .then((ok) =>
             // One retry after a pause — WG transient limits recover quickly.
-            ok ? false : new Promise((r) => setTimeout(r, 600)).then(() => lookupOnce(v)),
+            // Skipped when the battle changed while paused (stale request).
+            ok || gen !== battleGen
+              ? false
+              : new Promise((r) => setTimeout(r, 600)).then(() => lookupOnce(v, gen)),
           )
           .finally(() => {
             running -= 1;
@@ -127,9 +141,23 @@ export default defineComponent({
       if (!drainTimer) drainTimer = setTimeout(pump, 250);
     }
 
+    // The parent re-reads tempArenaInfo.json every few seconds while the
+    // live pane is open, and every read arrives as a fresh object — so the
+    // snapshot must never be compared by reference. Reset the queue only
+    // when the battle itself changed (dateTime is the battle-start stamp);
+    // within one battle, just pick up roster additions and keep every
+    // finished lookup.
+    let battleStamp: string | null | undefined;
     watch(
       () => props.arena,
       (a) => {
+        const stamp = a?.dateTime ?? null;
+        if (a && stamp === battleStamp) {
+          enqueue(a.vehicles);
+          return;
+        }
+        battleStamp = stamp;
+        battleGen += 1;
         stats.clear();
         queue.length = 0;
         if (a) enqueue(a.vehicles);
