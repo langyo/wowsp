@@ -1,0 +1,19 @@
+// hikari stylesheet entry for the installer shell — mirrors webui's
+// hikari.scss: the shared theme foundation plus hikari's admin tokens,
+// WITHOUT the legacy `packages/components` style aggregate.
+//
+// Loaded FIRST from main.ts so app-local rules (app.scss) can win the
+// cascade.
+@use "../../../../hikari-vendor/packages/theme/styles/variables.scss" as hikari-variables;
+@use "../../../../hikari-vendor/packages/theme/styles/mixins.scss" as hikari-mixins;
+@use "../../../../hikari-vendor/packages/theme/styles/foundation.scss" as hikari-foundation;
+@use "../../../../hikari-vendor/packages/theme/styles/themes.scss" as hikari-themes;
+@use "../../../../hikari-vendor/packages/theme/styles/base.scss" as hikari-base;
+@use "../../../../hikari-vendor/packages/vue/src/styles/admin-tokens.scss" as hikari-tokens;
+
+// Live alias kept for app-local scss written against wowsp's older token
+// set: hikari's theme system emits --color-background, wowsp components
+// read --color-bg. A var() reference tracks every theme/mode switch.
+:root {
+  --color-bg: var(--color-background);
+}

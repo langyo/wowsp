@@ -1,0 +1,23 @@
+{
+  "name": "@wowsp/installer-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontend of the WoWSP installer shell — Vue + hikari (shared title bar & components)",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@celestia-island/hikari": "workspace:*",
+    "lucide-vue-next": "^*",
+    "vue": "^3.5.42"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^*",
+    "@vitejs/plugin-vue-jsx": "^*",
+    "sass": "^*",
+    "typescript": "^*",
+    "vite": "^*"
+  }
+}
