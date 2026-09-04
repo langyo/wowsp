@@ -543,7 +543,7 @@ pub struct ReplayStream {
     pub squadron_creates: Vec<SquadronCreate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub squadron_planes: Vec<SquadronPlane>,
-    /// Minap squadron markers (receive_add/update/removeMinimapSquadron) —
+    /// Minimap squadron markers (receive_add/update/removeMinimapSquadron) —
     /// the 2D trail source the in-game minimap itself uses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub minimap_squadron_adds: Vec<MinimapSquadronAdd>,

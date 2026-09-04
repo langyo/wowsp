@@ -1023,6 +1023,9 @@ mod tests {
                 t.avatar_receive_ward_added,
                 t.avatar_receive_ward_removed,
                 t.avatar_receive_shot_kills,
+                t.avatar_receive_torpedo_direction,
+                t.avatar_receive_add_squadron,
+                t.avatar_receive_update_squadron,
             ] {
                 assert!(id > 0, "unpopulated id in table {v:?}");
             }

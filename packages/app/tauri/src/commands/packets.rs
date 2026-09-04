@@ -1189,9 +1189,9 @@ fn parse_entity_method(payload: &[u8], time: f32) -> Option<RawMethodCall> {
     let entity_id = i32::from_le_bytes(payload[0..4].try_into().ok()?);
     let method_id = i32::from_le_bytes(payload[4..8].try_into().ok()?);
     let args_len = u32::from_le_bytes(payload[8..12].try_into().ok()?) as usize;
-    let args = payload
-        .get(12..12 + args_len.min(payload.len() - 12))?
-        .to_vec();
+    // A declared length beyond the payload is a framing error — skip the
+    // call entirely rather than decode a truncated (half) argument blob.
+    let args = payload.get(12..12 + args_len)?.to_vec();
     Some(RawMethodCall {
         time,
         entity_id,
@@ -2059,7 +2059,7 @@ mod tests {
         assert!((legacy_kills[0].z - 20.0).abs() < 1e-3);
     }
 
-    /// receiveTorpedoDirection: fixed 38-byte layout decodes owner/shot/pos.
+    /// receiveTorpedoDirection: fixed 39-byte layout decodes owner/shot/pos.
     #[test]
     fn decodes_torpedo_direction() {
         let mut args = Vec::new();

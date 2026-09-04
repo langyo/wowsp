@@ -456,6 +456,7 @@ const PostBattleFallbackPanel = defineComponent({
     vehicles: { type: Array as () => VehicleEntry[], required: true },
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
     explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
+    shotKills: { type: Array as () => ShotKillEvent[], default: () => [] },
   },
   emits: ["close"],
   setup(props, { emit }) {
@@ -487,7 +488,7 @@ const PostBattleFallbackPanel = defineComponent({
     /** Recorder's own inferred damage dealt / frags / hits. */
     const selfStats = computed(() => {
       const self = props.vehicles.find((v) => v.relation === 0);
-      return computeSelfStats(props.trajectories, props.explosions, self?.shipId);
+      return computeSelfStats(props.trajectories, props.shotKills ?? [], self?.shipId);
     });
     const rows = computed(() =>
       props.vehicles.map((v) => {
@@ -831,11 +832,13 @@ function hpAtTime(hp: HpSample[] | undefined, t: number): number | null {
   return last;
 }
 
-/** Recorder's own damage dealt / frags / hits, inferred from the explosion
- *  stream (the same heuristic HolographicMap uses for its self-stats bar). */
+/** Recorder's own damage dealt / frags / hits, inferred from the projectile-
+ *  kill stream (receiveShotKills — server-confirmed hits carrying the firing
+ *  vehicle id). 15.7+ replays no longer carry receiveExplosions, so this —
+ *  not the explosion stream — is the reliable hit signal. */
 function computeSelfStats(
   trajectories: EntityTrajectory[],
-  explosions: ExplosionEvent[],
+  shotKills: ShotKillEvent[],
   selfShipId: number | undefined,
 ): { damage: number; frags: number; hits: number } {
   const out = { damage: 0, frags: 0, hits: 0 };
@@ -844,18 +847,11 @@ function computeSelfStats(
     (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
   );
   if (!selfTraj || selfTraj.samples.length === 0) return out;
-  for (const e of explosions) {
-    const s = sampleAtTraj(selfTraj, e.time);
-    if (!s) continue;
-    const dist = Math.hypot(s.x - e.x, s.z - e.z);
-    if (dist < 300 || dist > 15000) continue;
-    const aim = Math.atan2(e.x - s.x, e.z - s.z);
-    let dAim = Math.abs(aim - s.yaw);
-    if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
-    if (dAim > 0.35) continue;
+  for (const e of shotKills) {
+    if (e.ownerId !== selfTraj.entityId) continue;
     out.hits++;
     for (const tr of trajectories) {
-      if (tr.kind?.entityType !== 2 || tr.kind?.shipId === selfShipId) continue;
+      if (tr.kind?.entityType !== 2 || tr.entityId === selfTraj.entityId) continue;
       const at = sampleAtTraj(tr, e.time);
       if (!at) continue;
       if (Math.hypot(at.x - e.x, at.z - e.z) > 500) continue;
@@ -1413,6 +1409,7 @@ export default defineComponent({
                           vehicles={parser.current.value.vehicles}
                           trajectories={trajectories.value}
                           explosions={explosions.value}
+                          shotKills={shotKills.value}
                           onClose={() => (showResults.value = false)}
                         />
                       )}
