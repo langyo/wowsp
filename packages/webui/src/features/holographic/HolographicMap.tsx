@@ -746,6 +746,11 @@ export default defineComponent({
      *  receive_updateSquadron stream) — fallback for planes without a baked
      *  model; modeled planes render as GLB meshes in `planeMeshes`. */
     let planeCloud: THREE.Points | null = null;
+    /** squadron id → slot index in the planeCloud position buffer. The old
+     *  `planeId % 16` indexing collided (composite ids are large) and
+     *  silently dropped every slot ≥ 16, so squadrons flickered or never
+     *  appeared as points. */
+    const planeCloudSlots = new Map<number, number>();
     /** Per-plane sample lists grouped by plane id, sorted by time. */
     let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
     /** planeId → squadron remove time (receive_removeMinimapSquadron) — caps
@@ -2505,28 +2510,55 @@ export default defineComponent({
       for (const c of props.squadronCreates) typesOf(c.paramsId, c.planeId);
       for (const a of minimapAddFirst.values()) typesOf(a.paramsId, a.planeId);
       if (planeTrails.length > 0) {
+        // One cloud slot per unique SQUADRON (index-0 trails are anchors;
+        // formation members share the squadron's point). Slots are assigned
+        // in trail order — never derived from the composite id.
+        planeCloudSlots.clear();
         const colors = new Float32Array(planeTrails.length * 3);
+        let slot = 0;
         for (let i = 0; i < planeTrails.length; i++) {
+          const planeId = Math.floor(planeTrails[i].id / 16);
+          if (planeTrails[i].id % 16 !== 0) continue;
+          if (planeCloudSlots.has(planeId)) continue;
+          planeCloudSlots.set(planeId, slot);
           // Team colour (ally green / enemy red) instead of per-type tint —
           // the HUD paints aircraft by allegiance, not by airframe.
-          const planeId = Math.floor(planeTrails[i].id / 16);
           const role = planeRoleById.get(planeId) ?? "enemy";
           const c = new THREE.Color(TEAM_COLOR[role as TeamRole] ?? 0x78d2ff);
-          colors[i * 3] = c.r;
-          colors[i * 3 + 1] = c.g;
-          colors[i * 3 + 2] = c.b;
+          colors[slot * 3] = c.r;
+          colors[slot * 3 + 1] = c.g;
+          colors[slot * 3 + 2] = c.b;
+          slot++;
         }
+        const slotCount = Math.max(1, slot);
         const pg = new THREE.BufferGeometry();
         pg.setAttribute(
           "position",
-          new THREE.BufferAttribute(new Float32Array(planeTrails.length * 3), 3),
+          new THREE.BufferAttribute(new Float32Array(slotCount * 3), 3),
         );
         pg.setAttribute("color", new THREE.BufferAttribute(colors, 3));
         pg.computeBoundingSphere();
+        // Round dot texture: raw Points render as SQUARES, which read as
+        // strange blocks hovering over ships.
+        const dotCanvas = document.createElement("canvas");
+        dotCanvas.width = 32;
+        dotCanvas.height = 32;
+        const dctx = dotCanvas.getContext("2d")!;
+        const grad = dctx.createRadialGradient(16, 16, 2, 16, 16, 15);
+        grad.addColorStop(0, "rgba(255,255,255,1)");
+        grad.addColorStop(0.7, "rgba(255,255,255,1)");
+        grad.addColorStop(1, "rgba(255,255,255,0)");
+        dctx.fillStyle = grad;
+        dctx.fillRect(0, 0, 32, 32);
+        const dotTex = new THREE.CanvasTexture(dotCanvas);
         const pm = new THREE.PointsMaterial({
-          size: 5,
+          size: 7,
           sizeAttenuation: false,
           vertexColors: true,
+          map: dotTex,
+          transparent: true,
+          alphaTest: 0.4,
+          depthWrite: false,
         });
         const points = new THREE.Points(pg, pm);
         points.visible = false;
@@ -2906,6 +2938,39 @@ export default defineComponent({
         }
       }
       shipLabels.value = newLabels;
+
+      // Dev-only scene introspection hook (vite debug page: window.__holoDebug).
+      if (import.meta.env.DEV) {
+        (window as unknown as Record<string, unknown>).__holoDebug = {
+          get scene() {
+            return api.value?.scene ?? null;
+          },
+          get t() {
+            return current.value;
+          },
+          get shellStates() {
+            return shellStates;
+          },
+          get shellTraceSlots() {
+            return shellTraceSlots;
+          },
+          get planeTrails() {
+            return planeTrails;
+          },
+          get planeMeshes() {
+            return planeMeshes;
+          },
+          get wardRings() {
+            return wardRings;
+          },
+          get bounds() {
+            return bounds;
+          },
+          get torpedoMeshes() {
+            return torpedoMeshes;
+          },
+        };
+      }
 
       // Opening view: aim the camera at the allied fleet and skip any
       // pre-battle countdown (ships frozen before the first movement).
@@ -3403,10 +3468,11 @@ export default defineComponent({
             }
           } else {
             // No model pool (yet): fall back to a point at the centroid.
-            if (arr) {
-              arr[(planeId % 16) * 3] = cx;
-              arr[(planeId % 16) * 3 + 1] = yBase;
-              arr[(planeId % 16) * 3 + 2] = -cz;
+            const cloudSlot = planeCloudSlots.get(planeId);
+            if (arr && cloudSlot != null) {
+              arr[cloudSlot * 3] = cx;
+              arr[cloudSlot * 3 + 1] = yBase;
+              arr[cloudSlot * 3 + 2] = -cz;
               anyPoints = true;
             }
           }
