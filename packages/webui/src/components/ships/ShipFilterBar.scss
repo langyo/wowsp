@@ -19,8 +19,9 @@
 }
 
 /* ── Filter chips: collapsed categories, drag-reorderable ──
-   Leftmost chip = primary sort key; a chip at its "全部…" state is grayed
-   (the trigger's muted ink) and takes no part in filtering or sorting. */
+   Leftmost sorting chip = primary sort key. A chip purely sorting from its
+   全部… state (no filter) wears --sort; a chip with a concrete selection
+   wears --on; an inert chip is grayed --all and takes no part in anything. */
 .ship-filter-bar__chip-anchor {
   position: relative;
 }
@@ -66,6 +67,19 @@
     border-color: rgb(var(--color-primary) / 25%);
 
     &:hover {
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  /* 全部…-state sort — the category filters nothing but still orders the
+     list. Quieter than --on: text ink stays, the direction arrow and a
+     faint primary chrome mark the engagement. */
+  &--sort {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-primary) / 6%);
+    border-color: rgb(var(--color-primary) / 25%);
+
+    .ship-filter-bar__dir {
       color: rgb(var(--color-primary));
     }
   }
@@ -144,10 +158,55 @@
   }
 }
 
-/* Box hosting the popup's HTabs so the segmented track sizes naturally. */
-.ship-filter-bar__pop-tabs {
+/* ── Chip popup option group ──
+   Multi-select can't use HTabs (radio semantics, one sliding indicator), so
+   the group hand-rolls the same segmented track: shared chrome around
+   per-option buttons; the active option carries the indicator's tint
+   directly instead of the sliding pill. */
+.ship-filter-bar__opts {
+  display: inline-flex;
+  gap: 0;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-faint);
+  background: rgb(var(--color-surface) / 60%);
+}
+
+.ship-filter-bar__opt {
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-12);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-muted));
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: color var(--duration-short) ease,
+              transform var(--duration-short) ease;
+
+  &:hover {
+    color: rgb(var(--color-text));
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  &[data-active] {
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 12%);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: -2px;
+  }
 }
 
 .ship-filter-bar__pop-hint {
