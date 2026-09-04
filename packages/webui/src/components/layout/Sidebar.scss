@@ -47,6 +47,10 @@
     &:hover {
       color: rgb(var(--color-text));
       background: rgb(var(--color-primary) / 8%);
+      /* hikari's global `a:hover { text-decoration: underline }` has higher
+         specificity than the base `text-decoration: none` above, so it must
+         be re-asserted on hover to keep nav links underline-free. */
+      text-decoration: none;
     }
     &.is-active {
       color: rgb(var(--color-primary));
