@@ -1,0 +1,37 @@
+{
+  "productName": "WoWSP Installer",
+  "version": "0.1.0",
+  "identifier": "com.langyo.wowsp.installer",
+  "build": {
+    "beforeBuildCommand": "pnpm --filter @wowsp/installer-web build",
+    "frontendDist": "./web/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "installer",
+        "title": "WoWSP 安装器",
+        "width": 800,
+        "height": 620,
+        "resizable": false,
+        "fullscreen": false,
+        "center": true,
+        "visible": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "minimizable": true,
+        "maximizable": false,
+        "closable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["../app/tauri/icons/icon.ico"]
+  }
+}

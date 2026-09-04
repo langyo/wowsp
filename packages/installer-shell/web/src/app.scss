@@ -1,0 +1,132 @@
+/* Installer shell page scaffold — sits under the shared HTitleBar (fixed,
+   32px). Every color reads the app token layer (theme.scss); no local hex
+   palette. hikari components style themselves. */
+
+html,
+body {
+  overflow: hidden;
+}
+
+body {
+  /* Ambient glow over the token background — tints of the app primary /
+     secondary hues, so the surface stays coherent in dark mode. */
+  background-image:
+    radial-gradient(1200px 500px at 20% -10%, rgb(var(--color-primary) / 12%), transparent 60%),
+    radial-gradient(900px 420px at 110% 15%, rgb(var(--color-secondary) / 9%), transparent 55%);
+}
+
+#app {
+  height: 100vh;
+}
+
+.installer {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 44px 28px 20px;
+
+  h1 {
+    color: rgb(var(--color-text));
+  }
+}
+
+.installer__hero {
+  h1 {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 600;
+  }
+
+  p {
+    margin: 6px 0 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+}
+
+.installer__target {
+  .installer__label {
+    display: block;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+    margin-bottom: 8px;
+  }
+
+  .installer__row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+
+    input {
+      flex: 1;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgb(var(--color-border));
+      background: rgb(var(--color-surface) / 55%);
+      color: rgb(var(--color-text));
+      font-size: var(--text-sm);
+      font-family: var(--font-mono);
+      outline: none;
+      user-select: text;
+      transition: border-color var(--duration-short) var(--ease-standard),
+        box-shadow var(--duration-short) var(--ease-standard);
+
+      &:focus {
+        border-color: rgb(var(--color-focused-border) / 60%);
+        box-shadow: 0 0 0 2px rgb(var(--color-focused-border) / 16%);
+      }
+
+      &:disabled {
+        opacity: 0.6;
+      }
+    }
+  }
+
+  .installer__hint {
+    margin: 7px 0 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+}
+
+.installer__progress {
+  .installer__step {
+    margin: 8px 0 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+
+  .installer__cmd {
+    margin: 6px 0 0;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: rgb(var(--color-muted) / 80%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.installer__footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  .installer__note {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+
+    &--ok {
+      color: rgb(var(--color-success));
+    }
+
+    &--err {
+      color: rgb(var(--color-error));
+    }
+  }
+}

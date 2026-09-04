@@ -95,6 +95,31 @@ importers:
         specifier: ^*
         version: 3.5.42(typescript@7.0.2)
 
+  packages/installer-shell/web:
+    dependencies:
+      '@celestia-island/hikari':
+        specifier: workspace:*
+        version: link:../../hikari-vendor/packages/vue
+      lucide-vue-next:
+        specifier: ^*
+        version: 1.0.0(vue@3.5.42(typescript@7.0.2))
+      vue:
+        specifier: ^3.5.42
+        version: 3.5.42(typescript@7.0.2)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^*
+        version: 6.0.8(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))(vue@3.5.42(typescript@7.0.2))
+      '@vitejs/plugin-vue-jsx':
+        specifier: ^*
+        version: 5.1.6(supports-color@7.2.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))(vue@3.5.42(typescript@7.0.2))
+      sass:
+        specifier: ^*
+        version: 1.103.1
+      vite:
+        specifier: ^*
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1)
+
   packages/website:
     dependencies:
       '@celestia-island/hikari':

@@ -1,0 +1,33 @@
+[package]
+name = "wowsp_installer_shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "SySL-1.0"
+publish = false # prototype/demo crate, never published (also marks it private for cargo-deny)
+description = "WoWSP custom installer shell (demo): modern UI over the silent NSIS engine"
+
+[[bin]]
+name = "wowsp-installer"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# Direct (non-workspace) deps so the shell compiles without the app's extra
+# tauri features (tray-icon / image-png) — a setup exe should build lean.
+tauri = { version = "^2" }
+tauri-plugin-dialog = { version = "^2" }
+
+# Removable-drive detection for the USB-mode default directory
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+
+[features]
+# This feature is required by `cargo tauri build` and is injected by default.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

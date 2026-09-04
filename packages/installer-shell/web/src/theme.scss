@@ -1,0 +1,125 @@
+/* WoWSP installer shell theme tokens. Adapted from webui's theme.scss
+   (shittim-chest discipline): structural tokens + color RGB-channel
+   triplets seeded here, consumed by hikari components and app-local scss
+   alike. The installer ships dark-only, so index.html sets
+   <html data-mode="dark"> and this file also pins hikari's theme-package
+   tokens (--hi-color-*, normally prefers-color-scheme driven) to the dark
+   set — otherwise base typography and HkSelectionGrid render their light
+   palette over the dark surface. */
+
+/* === Tokens === */
+:root {
+  /* Radius scale — softened for the Abyssal Glass language */
+  --radius: 14px;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --radius-full: 9999px;
+
+  /* Font sizes */
+  --text-2xs: 0.625rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+
+  /* Font families */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, blinkmacsystemfont, "Segoe UI", roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", sfmono-regular, "Fira Code", Menlo, Consolas, monospace;
+
+  /* Motion */
+  --duration-instant: 80ms;
+  --duration-short: 160ms;
+  --duration-normal: 240ms;
+  --duration-fade: 160ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Default color tokens (light) — kept for parity with webui; the
+     installer always runs with [data-mode="dark"] below.
+     Values are space-separated RGB channels for `rgb(var(--color-x) / a%)`. */
+  --color-primary: 0 120 200;
+  --color-secondary: 110 200 240;
+  --color-accent: 255 180 60;
+  --color-text: 30 40 55;
+  --color-muted: 90 100 115;
+  --color-border: 200 210 220;
+  --color-focused-border: 0 120 200;
+  --color-background: 245 248 252;
+  --color-surface: 255 255 255;
+  --color-selected-bg: 0 120 200;
+  --color-selected-text: 255 255 255;
+  --color-on-solid: 255 255 255;
+  --color-on-primary: 255 255 255;
+  --color-success: 60 180 120;
+  --color-error: 220 80 80;
+  --color-warning: 230 170 50;
+  --color-info: 90 160 220;
+}
+
+[data-mode="dark"] {
+  --color-text: 220 228 238;
+  --color-muted: 150 160 175;
+  --color-border: 50 60 75;
+  --color-background: 12 18 30;
+  --color-surface: 22 30 46;
+}
+
+/* hikari theme-package tokens: hikari only seeds these under
+   @media (prefers-color-scheme: dark). Pin the dark set under
+   [data-mode="dark"] so the installer's theme does not depend on the OS
+   scheme reported by the WebView. Values mirror themes.scss; the three
+   extras (primary / border / text-tertiary) back HkSelectionGrid and keep
+   the app's primary hue instead of the GitHub-ish fallbacks. */
+[data-mode="dark"] {
+  --hi-color-background: #0f172a;
+  --hi-color-surface: #1e293b;
+  --hi-color-text-primary: rgba(255, 255, 255, 0.9);
+  --hi-color-text-secondary: rgba(255, 255, 255, 0.6);
+  --hi-color-text-tertiary: rgba(255, 255, 255, 0.45);
+  --hi-color-text-on-primary: rgba(0, 0, 0, 0.9);
+  --hi-color-text-on-secondary: rgba(255, 255, 255, 0.95);
+  --hi-color-text-on-ghost: rgba(255, 255, 255, 0.9);
+  --hi-color-text-on-danger: rgba(255, 255, 255, 0.95);
+  --hi-color-text-on-success: rgba(0, 0, 0, 0.9);
+  --hi-color-text-on-warning: rgba(0, 0, 0, 0.9);
+  --hi-color-text-on-info: rgba(0, 0, 0, 0.9);
+  --hi-color-primary: rgb(var(--color-primary));
+  --hi-color-border: rgb(var(--color-border));
+}
+
+/* === Reset === */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: rgb(var(--color-text));
+  background-color: rgb(var(--color-background));
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+}
