@@ -472,12 +472,12 @@ export default defineComponent({
       enemies.sort(sortEnemy);
       return { allies, enemies };
     });
-    // Live self statistics (top-right): derived from the explosion stream,
-    // tracking the current playhead. An explosion counts as the recorder's
-    // when its bearing matches the own ship's heading at that moment (same
-    // heuristic as shell-arc reconstruction). Damage is the HP loss of enemy
-    // ships near the impact right after it; a sinking near an impact counts
-    // as a frag.
+    // Live self statistics (top-right): derived from the projectile-kill
+    // stream (receiveShotKills — server-confirmed hits carrying the firing
+    // vehicle id), tracking the current playhead. 15.7+ replays no longer
+    // carry receiveExplosions, so this — not the explosion stream — is the
+    // reliable hit signal. Damage is the HP loss of ships near the impact
+    // right after it; a sinking near an impact counts as a frag.
     const selfStats = computed(() => {
       const selfTraj = props.trajectories.find(
         (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(tr) === "self",
@@ -494,20 +494,13 @@ export default defineComponent({
         const drop = hps[i - 1].value - hps[i].value;
         if (drop > 0) taken += drop;
       }
-      for (const e of props.explosions) {
+      for (const e of props.shotKills) {
+        if (e.ownerId !== selfTraj.entityId) continue;
         if (e.time > current.value) continue; // not time-sorted in all dumps
-        const s = sampleAt(selfTraj, e.time);
-        if (!s) continue;
-        const dist = Math.hypot(s.x - e.x, s.z - e.z);
-        if (dist < 300 || dist > 15000) continue;
-        const aim = Math.atan2(e.x - s.x, e.z - s.z);
-        let dAim = Math.abs(aim - s.yaw);
-        if (dAim > Math.PI) dAim = 2 * Math.PI - dAim;
-        if (dAim > 0.35) continue; // ~20° firing cone
         hits++;
-        // Damage: enemy HP drop across the impact (500 m window).
+        // Damage: HP drop of ships near the impact (500 m window).
         for (const tr of props.trajectories) {
-          if (tr.kind?.entityType !== 2 || resolveRoleQuick(tr) !== "enemy") continue;
+          if (tr.kind?.entityType !== 2 || tr.entityId === selfTraj.entityId) continue;
           const at = sampleAt(tr, e.time);
           if (!at) continue;
           if (Math.hypot(at.x - e.x, at.z - e.z) > 500) continue;
@@ -723,7 +716,6 @@ export default defineComponent({
       mesh: THREE.Object3D;
       wake: THREE.Line;
       t0: number;
-      life: number;
       base: THREE.Vector3;
       dir: THREE.Vector3;
       /** Guidance updates for this fish (owner+shot keyed), time-sorted. */
@@ -737,6 +729,10 @@ export default defineComponent({
       launchT0: number;
       launchBase: THREE.Vector3;
       launchDir: THREE.Vector3;
+      /** Absolute battle time at which the fish disappears (launch + 240 s,
+       *  or its detonation instant when a shotKill joins). Absolute — not a
+       *  relative life — because steering rebases t0 forward. */
+      endT: number;
     }[] = [];
     /** Transient explosion rings (splash hits). */
     let explosionFx: { ring: THREE.Mesh; born: number }[] = [];
@@ -754,6 +750,8 @@ export default defineComponent({
      *  silently dropped every slot ≥ 16, so squadrons flickered or never
      *  appeared as points. */
     const planeCloudSlots = new Map<number, number>();
+    /** Live colour buffer of the plane cloud (rebuilt with the cloud). */
+    let colorsCloud = new Float32Array(0);
     /** Per-plane sample lists grouped by plane id, sorted by time. */
     let planeTrails: { id: number; samples: SquadronPlane[] }[] = [];
     /** planeId → squadron remove time (receive_removeMinimapSquadron) — caps
@@ -2301,7 +2299,7 @@ export default defineComponent({
           mesh,
           wake,
           t0: tp.time,
-          life: 240,
+          endT: tp.time + 240,
           base: new THREE.Vector3(tp.x, 0, -tp.z),
           dir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
           steers: steerByFish.get(`${tp.ownerId}:${tp.shotId}`) ?? [],
@@ -2314,10 +2312,12 @@ export default defineComponent({
         });
       }
       // Torpedoes stop at their kill: a fish that connects detonates instead
-      // of running out its full 8 km lane.
+      // of running out its full 8 km lane. Absolute end time — steering
+      // rebases t0 forward, so a relative life would extend the swim past
+      // the detonation.
       for (const tm of torpedoMeshes) {
-        const k = killFor(tm.ownerId, tm.shotId, tm.t0, tm.t0 + tm.life);
-        if (k) tm.life = Math.max(0, k.time - tm.t0);
+        const k = killFor(tm.ownerId, tm.shotId, tm.t0, tm.t0 + 240);
+        if (k) tm.endT = Math.max(tm.t0, k.time);
       }
 
       // Swap the primitive placeholders for the real game models (baked GLBs
@@ -2400,7 +2400,9 @@ export default defineComponent({
           // it (wards can be re-deployed under the same id).
           let end: number | null = null;
           for (const r of props.wardRemoves) {
-            if (r.planeId === w.squadronId && r.time >= w.time && (end == null || r.time < end)) {
+            // Strictly after the add: a remove in the same tick as a re-add
+            // belongs to the PREVIOUS deployment of this id.
+            if (r.planeId === w.squadronId && r.time > w.time && (end == null || r.time < end)) {
               end = r.time;
             }
           }
@@ -2542,6 +2544,7 @@ export default defineComponent({
         // in trail order — never derived from the composite id.
         planeCloudSlots.clear();
         const colors = new Float32Array(planeTrails.length * 3);
+        colorsCloud = colors;
         let slot = 0;
         for (let i = 0; i < planeTrails.length; i++) {
           const planeId = Math.floor(planeTrails[i].id / 16);
@@ -2956,6 +2959,34 @@ export default defineComponent({
           dead: false,
         });
         planeLabelCarriers.set(2_000_000_000 + Number(carrierId), carrierId);
+      }
+      // Re-tint the aircraft layer now that roles are final: the cloud and
+      // formation builds ran EARLIER in this pass, when planeRoleById was
+      // still empty (first build) or held the previous replay's mapping.
+      {
+        for (const [planeId, slotIdx] of planeCloudSlots) {
+          const role = planeRoleById.get(planeId) ?? "enemy";
+          const c = new THREE.Color(TEAM_COLOR[role as TeamRole] ?? 0x78d2ff);
+          colorsCloud[slotIdx * 3] = c.r;
+          colorsCloud[slotIdx * 3 + 1] = c.g;
+          colorsCloud[slotIdx * 3 + 2] = c.b;
+        }
+        const cloudAttr = planeCloud?.geometry.getAttribute("color") as
+          | THREE.BufferAttribute
+          | undefined;
+        if (cloudAttr) cloudAttr.needsUpdate = true;
+        for (const [planeId, pool] of planeMeshes) {
+          const role = planeRoleById.get(planeId) ?? "enemy";
+          const c = new THREE.Color(TEAM_COLOR[role as TeamRole] ?? 0x78d2ff);
+          for (const mesh of pool) {
+            mesh.traverse((child) => {
+              const mat = (child as THREE.Mesh).material as
+                | THREE.MeshBasicMaterial
+                | undefined;
+              if (mat && mat.color) mat.color.copy(c);
+            });
+          }
+        }
       }
       // Keep a per-plane → labelId map for the per-frame position update.
       planeLabelOfPlane.clear();
@@ -3617,7 +3648,7 @@ export default defineComponent({
           tm.dir.set(Math.sin(st.targetYaw), 0, -Math.cos(st.targetYaw)).normalize();
         }
         const age = t - tm.t0;
-        const on = age >= 0 && age <= tm.life;
+        const on = age >= 0 && t <= tm.endT;
         tm.mesh.visible = on;
         tm.wake.visible = on;
         if (on) {
