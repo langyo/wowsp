@@ -227,22 +227,21 @@ interface ShellTraceState {
   from: THREE.Vector3 | null;
   to: THREE.Vector3;
   color: number;
-  impact: { x: number; z: number };
   /** Firing vehicle + per-barrel shot id — the join key into shotKills.
    *  `shotId` is null for legacy explosion-derived traces (no join). */
   ownerId: number;
   shotId: number | null;
 }
 
-/** A pooled trace's GPU objects; tinted per assignment. */
+/** A pooled trace's GPU objects; tinted per assignment. Impact moments are
+ *  NOT drawn here — splashes come from the explosion-ring pool and hits from
+ *  the red kill-burst pool, so a shell trace is just arc + in-flight cone. */
 interface ShellTraceSlot {
   line: THREE.Line;
   lineMat: THREE.LineBasicMaterial;
   dots: THREE.Points;
   dotMat: THREE.PointsMaterial;
   shell: THREE.Object3D;
-  flash: THREE.Mesh;
-  halo: THREE.Mesh;
 }
 
 export default defineComponent({
@@ -1557,12 +1556,6 @@ export default defineComponent({
         // model swap) — dispose generically.
         scene.remove(slot.shell);
         disposeAny(slot.shell);
-        scene.remove(slot.flash);
-        slot.flash.geometry.dispose();
-        (slot.flash.material as THREE.Material).dispose();
-        scene.remove(slot.halo);
-        slot.halo.geometry.dispose();
-        (slot.halo.material as THREE.Material).dispose();
       }
       shellTraceSlots = [];
       shellStates = [];
@@ -2060,7 +2053,6 @@ export default defineComponent({
             from: new THREE.Vector3(sh.x, 0, -sh.z),
             to: new THREE.Vector3(sh.targetX, 0, -sh.targetZ),
             color: shellAmmoColor(sh.paramsId),
-            impact: { x: sh.targetX, z: sh.targetZ },
             ownerId: sh.ownerId,
             shotId: sh.shotId,
           });
@@ -2140,7 +2132,6 @@ export default defineComponent({
             from: launch ? new THREE.Vector3(launch.x, 0, -launch.z) : null,
             to: new THREE.Vector3(target?.x ?? e.x, 0, -(target?.z ?? e.z)),
             color: shellAmmoColor(e.paramsId),
-            impact: { x: e.x, z: e.z },
             ownerId: match.tr.entityId,
             shotId: null,
           });
@@ -2166,10 +2157,14 @@ export default defineComponent({
       ): ShotKillEvent | null => {
         const list = killsByOwnerShot.get(`${ownerId}:${shotId}`);
         if (!list) return null;
-        // Shot ids recycle across salvos: take the first kill inside (or
-        // shortly after) this projectile's flight window.
+        // Shot ids recycle across salvos, so the window must be TIGHT: a kill
+        // matches when it lands within the flight and no later than ~1s past
+        // the predicted splash (kill times align with serverTimeLeft/2.75 to
+        // well under a second; impacts BEFORE the predicted end are real —
+        // the shell hit a closer ship than it was aimed at). Anything later
+        // belongs to the next salvo reusing the same shot id.
         for (const k of list) {
-          if (k.time >= t0 && k.time <= t1 + 12) return k;
+          if (k.time >= t0 && k.time <= t1 + 1) return k;
         }
         return null;
       };
@@ -2178,26 +2173,11 @@ export default defineComponent({
         const k = killFor(st.ownerId, st.shotId, st.t0, st.t1);
         if (!k) continue;
         st.to.set(k.x, 0, -k.z);
-        st.impact = { x: k.x, z: k.z };
         if (k.time > st.t0) st.t1 = k.time;
       }
       // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
       // at once even in heavy matches, so 220 slots cover the busiest frames;
       // overflow shells are simply not drawn that frame.
-      const flashGeom = new THREE.SphereGeometry(20, 10, 10);
-      const flashMat = new THREE.MeshBasicMaterial({
-        color: 0xffe08a,
-        transparent: true,
-        opacity: 1,
-        depthWrite: false,
-      });
-      const flashHaloGeom = new THREE.SphereGeometry(46, 10, 10);
-      const flashHaloMat = new THREE.MeshBasicMaterial({
-        color: 0xffb347,
-        transparent: true,
-        opacity: 0.45,
-        depthWrite: false,
-      });
       // Shared cone geometry for in-flight shells (tip pointing +Y; oriented
       // along the trajectory tangent each frame for a smooth arc).
       const shellGeom = new THREE.ConeGeometry(3, 12, 8);
@@ -2241,13 +2221,7 @@ export default defineComponent({
           );
           shell.visible = false;
           scene.add(shell);
-          const flash = new THREE.Mesh(flashGeom, flashMat);
-          flash.visible = false;
-          scene.add(flash);
-          const halo = new THREE.Mesh(flashHaloGeom, flashHaloMat);
-          halo.visible = false;
-          scene.add(halo);
-          shellTraceSlots.push({ line, lineMat, dots, dotMat, shell, flash, halo });
+          shellTraceSlots.push({ line, lineMat, dots, dotMat, shell });
           trajectoryLines.push(line);
         }
       }
@@ -3448,26 +3422,26 @@ export default defineComponent({
         }
       }
       // Shell traces: ballistic arc from the firing ship to the impact
-      // point, shown during [t0, t1]; the impact flash lingers 1s past the
-      // impact. Pool slots are assigned to whichever shells are airborne THIS
-      // frame (a match carries 10k+ shells; only a few dozen fly at once).
-      // Elements outside the fitted battle bounds are stray data — hidden so
-      // they can't flash out in empty space.
+      // point, shown while the shell is airborne [t0, t1]. Pool slots are
+      // assigned to whichever shells are airborne THIS frame (a match
+      // carries 10k+ shells; only a few dozen fly at once). Impact moments
+      // are drawn by the splash/kill ring pools, not here. Elements outside
+      // the fitted battle bounds are stray data — hidden so they can't flash
+      // out in empty space.
       const inBounds = (x: number, z: number) =>
         !bounds || (x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ);
       const hideSlot = (slot: ShellTraceSlot) => {
         slot.line.visible = false;
         slot.dots.visible = false;
         slot.shell.visible = false;
-        slot.flash.visible = false;
-        slot.halo.visible = false;
       };
       let slotIdx = 0;
       for (const st of shellStates) {
         if (slotIdx >= shellTraceSlots.length) break;
+        // Only airborne shells render; pre-flight and landed states skip
+        // without consuming a slot.
         const inFlight = t >= st.t0 && t <= st.t1;
-        const flashOn = !inFlight && t <= st.t1 + 1;
-        if (!inFlight && !flashOn) continue;
+        if (!inFlight) continue;
         // Traces whose launch OR impact point lies outside the fitted battle
         // bounds are stray data — hide the whole trace so it can't flash out
         // in empty space (both endpoints must be in-bounds).
@@ -3487,16 +3461,10 @@ export default defineComponent({
           const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
           if (mat && mat.color) mat.color.setHex(st.color);
         });
-        slot.flash.visible = flashOn;
-        slot.halo.visible = flashOn;
-        if (flashOn) {
-          slot.flash.position.set(st.impact.x, 1, -st.impact.z);
-          slot.halo.position.set(st.impact.x, 1, -st.impact.z);
-        }
-        slot.line.visible = inFlight;
-        slot.dots.visible = inFlight;
-        slot.shell.visible = inFlight;
-        if (inFlight) {
+        slot.line.visible = true;
+        slot.dots.visible = true;
+        slot.shell.visible = true;
+        {
           const attr = slot.line.geometry.getAttribute("position") as THREE.BufferAttribute;
           const arr = attr.array as Float32Array;
           for (let i = 0; i < 28; i++) {
