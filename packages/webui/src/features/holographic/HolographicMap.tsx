@@ -708,6 +708,9 @@ export default defineComponent({
     /** Projectile-kill bursts (receiveShotKills) — pooled rings like the
      *  splash FX, tinted red to read as hits that connected. */
     let killFx: { ring: THREE.Mesh; born: number }[] = [];
+    /** Open-water landings of unjoined shells — the synthesized splash feed
+     *  for 15.7+ replays whose real receiveExplosions stream is empty. */
+    let waterSplashes: { x: number; z: number; time: number }[] = [];
     /** In-flight torpedoes: straight capsules from the launch point along
      *  the launch direction (swapped for the real torpedo GLB once loaded).
      *  Homing fish re-anchor at each receiveTorpedoDirection guidance
@@ -1580,6 +1583,7 @@ export default defineComponent({
         (fx.ring.material as THREE.Material).dispose();
       }
       killFx = [];
+      waterSplashes = [];
       for (const tm of torpedoMeshes) {
         scene.remove(tm.mesh);
         disposeAny(tm.mesh);
@@ -2200,10 +2204,15 @@ export default defineComponent({
         }
         return best;
       };
+      // Unjoined shells that end in OPEN WATER (no ship at the splash point)
+      // double as synthesized splash markers on 15.7+ replays, where WG no
+      // longer broadcasts receiveExplosions and the real splash feed is empty.
+      waterSplashes = [];
       for (const st of shellStates) {
         if (st.joined || !st.from) continue;
         const p = shipAt(st.to.x, -st.to.z, st.t1, st.ownerId);
         if (p) st.to.set(p.x, 0, -p.z);
+        else waterSplashes.push({ x: st.to.x, z: -st.to.z, time: st.t1 });
       }
       // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
       // at once even in heavy matches, so 220 slots cover the busiest frames;
@@ -3662,11 +3671,16 @@ export default defineComponent({
           wakeAttr.needsUpdate = true;
         }
       }
-      // Explosion rings: spawn on impacts, expand + fade over ~1.2s. Impacts
-      // outside the fitted battle bounds are skipped so stray data points
-      // don't flash rings out in empty space.
+      // Splash rings: spawn on impacts, expand + fade over ~1.2s. Feed is the
+      // real receiveExplosions stream when the game broadcasts it (pre-15.7);
+      // on 15.7+ it is the synthesized open-water landings of unjoined shells.
+      // Impacts outside the fitted battle bounds are skipped so stray data
+      // points don't flash rings out in empty space.
+      const splashFeed = props.explosions.length
+        ? props.explosions.map((e) => ({ x: e.x, z: e.z, time: e.time }))
+        : waterSplashes;
       let nextFx = explosionFx.find((f) => !f.ring.visible);
-      for (const e of props.explosions) {
+      for (const e of splashFeed) {
         if (e.time > t || t - e.time > 1.2) continue;
         if (!inBounds(e.x, -e.z)) continue;
         if (!nextFx) break;

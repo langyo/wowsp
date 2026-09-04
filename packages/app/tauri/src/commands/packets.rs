@@ -57,7 +57,6 @@ const PACKET_ENTITY_DESTROY: u32 = 0x06;
 ///   i32 entity_id, i32 linked_entity_id, f32×3 position, f32 yaw/pitch/roll.
 /// Current clients (WoWS 12.6+) use 0x2c; older builds use 0x2b.
 const PACKET_PLAYER_POSITION: u32 = 0x2c;
-const PACKET_PLAYER_POSITION_LEGACY: u32 = 0x2b;
 /// Secondary position stream (0x2a) sharing the PlayerPosition 32-byte
 /// layout; carried by transient entities on current clients (the reference
 /// replay_unpack leaves it undecoded).
@@ -253,6 +252,14 @@ pub fn decode_replay(
     let decrypted = decrypt_stream(packet_stream)?;
     let inflated = inflate_zlib(&decrypted)?;
     let version_key = client_version.and_then(parse_version_key);
+    if client_version.is_some() && version_key.is_none() {
+        // A present-but-unparseable version would silently flip every
+        // version-gated layout — surface it instead.
+        tracing::warn!(
+            "unparseable clientVersionFromExe {:?}; assuming modern layout",
+            client_version
+        );
+    }
     let legacy = match version_key {
         Some(k) => k < (12, 6, 0),
         None => false,
@@ -406,7 +413,9 @@ fn walk_frames(
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
-            PACKET_PLAYER_POSITION | PACKET_PLAYER_POSITION_LEGACY | PACKET_POSITION_AUX => {
+            // 0x2b needs no arm: the legacy remap already maps it onto
+            // PACKET_PLAYER_POSITION, and modern clients never emit it.
+            PACKET_PLAYER_POSITION | PACKET_POSITION_AUX => {
                 if let Some(sample) = parse_player_position(payload, time) {
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
@@ -683,11 +692,13 @@ fn walk_frames(
     }
 }
 
-/// Decode `receive_addSquadron` args (15.x `SQUADRON_STATE` layout):
-/// u32 paramsID, u8 totalNumPlanes, then the squadron state fixed dict —
-/// i64 planeID, u32 skinID, u8 isActive, u8 numPlanes, f32×3 position, ... —
-/// then i64 parentID, u32 maxHealth, f32 squadronHealthPart, u64 planeHealth.
-/// Only the head fields (through the position) are decoded.
+/// Decode `receive_addSquadron` args: u32 paramsID, u8 totalNumPlanes, then
+/// the `SQUADRON_STATE` fixed dict — i64 planeID, u32 skinID, u8 isActive,
+/// u8 numPlanes, f32×3 position, ... — then i64 parentID, u32 maxHealth,
+/// f32 squadronHealthPart, u64 planeHealth. Only the head fields through
+/// `position` are decoded; they are byte-identical across every shipped
+/// definition (0.11.6–15.7.0 — later versions append tail fields after
+/// `position`), so the fixed offsets are safe without version gating.
 fn decode_squadron_add(time: f32, args: &[u8]) -> Option<wowsp_tauri_shared::SquadronCreate> {
     if args.len() < 31 {
         return None;
