@@ -39,18 +39,6 @@ inert here.
   the monorepo-relative structure (`packages/vue` + `packages/theme`) is
   preserved — but we simply don't use that entry.
 
-## Local patches
-
-The vendored tree carries WoWSP-local additions that are NOT upstream
-hikari components; re-apply them after every refresh (the re-copy in
-"Refreshing" wipes them):
-
-- `packages/vue/src/components/HkTitleBar.tsx` / `.scss` — Tauri window
-  chrome for frameless (`decorations: false`) windows, shared by webui
-  and `packages/installer-shell/web`. Exported from the package index as
-  `HTitleBar`. Talks to the `withGlobalTauri` global API so the vendored
-  library carries no `@tauri-apps/api` dependency.
-
 ## Refreshing
 
 ```bash
@@ -72,3 +60,14 @@ cp -r <hikari-checkout>/packages/{vue,theme} packages/hikari-vendor/packages/
   `var(--font-mono, vars.$hikari-font-family-mono)` via `@use "./hikari-vars"`,
   which this tree does not consume; re-apply the hardcoded fallback after a
   refresh or the font silently changes.
+- `packages/vue/src/components/HkTitleBar.tsx` + `.scss`: WoWSP-local Tauri
+  window chrome for frameless (`decorations: false`) windows, shared by webui
+  and `packages/installer-shell/web`. Exported from the package index as
+  `HTitleBar`. Talks to the `withGlobalTauri` global API so the vendored
+  library carries no `@tauri-apps/api` dependency.
+- `packages/vue/package.json`: the typecheck scripts run plain `tsc --noEmit`
+  (with a `typecheck` script wired into `pnpm -r typecheck`) instead of
+  upstream's `vue-tsc`, which cannot resolve the TypeScript 7 package exports
+  (vue-tsc 3.x crashes with ERR_PACKAGE_PATH_NOT_EXPORTED); `vue-tsc` is
+  dropped from devDependencies accordingly. All hikari components are tsx, so
+  plain tsc covers them.
