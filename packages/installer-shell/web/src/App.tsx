@@ -12,7 +12,7 @@ import { invoke, listen, openDirectory } from "./tauri";
 /**
  * Installer shell UI — three WoWSP install modes rendered with hikari
  * components (shared HTitleBar chrome, HSelectionGrid mode picker), driving
- * the NSIS engine on the Rust side.
+ * the silent NSIS engine on the Rust side.
  */
 
 type Mode = "local" | "usb" | "green";
@@ -50,12 +50,6 @@ interface DirDefaults {
   removable: boolean;
 }
 
-interface Progress {
-  percent: number;
-  step: string;
-  command: string | null;
-}
-
 export default defineComponent({
   name: "InstallerApp",
   setup() {
@@ -64,10 +58,8 @@ export default defineComponent({
     const hint = ref("");
     const running = ref(false);
     const done = ref(false);
-    const percent = ref(0);
     const step = ref("");
-    const command = ref("");
-    const note = ref("演示模式：未检测到 NSIS 安装包，安装流程为模拟。");
+    const note = ref("");
     const noteKind = ref<"" | "ok" | "err">("");
 
     async function refreshDefaults() {
@@ -87,10 +79,8 @@ export default defineComponent({
       refreshDefaults().catch((err) => {
         hint.value = String(err);
       });
-      listen<Progress>("install-progress", (payload) => {
-        percent.value = payload.percent;
+      listen<{ step: string }>("install-progress", (payload) => {
         step.value = payload.step;
-        if (payload.command) command.value = payload.command;
       });
     });
 
@@ -111,21 +101,20 @@ export default defineComponent({
     async function start() {
       if (running.value || done.value) return;
       running.value = true;
+      note.value = "";
       noteKind.value = "";
-      note.value = "正在安装…";
-      percent.value = 0;
-      command.value = "";
+      step.value = "正在准备安装…";
       try {
-        const cmdline = await invoke<string>("start_install", {
+        await invoke("start_install", {
           mode: mode.value,
           dir: dir.value.trim(),
         });
-        command.value = cmdline;
         done.value = true;
-        note.value = `✔ 已就绪（演示）：${dir.value.trim()}`;
+        note.value = `✔ 安装完成：${dir.value.trim()}`;
         noteKind.value = "ok";
       } catch (err) {
         running.value = false;
+        step.value = "";
         note.value = String(err);
         noteKind.value = "err";
       }
@@ -166,33 +155,31 @@ export default defineComponent({
             <p class="installer__hint">{hint.value}</p>
           </section>
 
-          {(running.value || done.value) && (
+          {running.value && (
             <section class="installer__progress">
-              <HProgressBar
-                value={percent.value}
-                status={done.value ? "done" : "loading"}
-                size="md"
-              />
+              <HProgressBar status="loading" size="md" />
               {step.value && <p class="installer__step">{step.value}</p>}
-              {command.value && (
-                <p class="installer__cmd" title={command.value}>
-                  {command.value}
-                </p>
-              )}
+            </section>
+          )}
+          {done.value && (
+            <section class="installer__progress">
+              <HProgressBar status="done" size="md" />
             </section>
           )}
 
           <footer class="installer__footer">
-            <p class={`installer__note installer__note--${noteKind.value || "muted"}`}>
-              {note.value}
-            </p>
+            {note.value && (
+              <p class={`installer__note installer__note--${noteKind.value || "muted"}`}>
+                {note.value}
+              </p>
+            )}
             <HButton
               variant="primary"
               size="lg"
               disabled={running.value || done.value}
               onClick={start}
             >
-              开始安装
+              {done.value ? "已完成" : "开始安装"}
             </HButton>
           </footer>
         </main>

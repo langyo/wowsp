@@ -116,6 +116,9 @@ importers:
       sass:
         specifier: ^*
         version: 1.103.1
+      typescript:
+        specifier: ^*
+        version: 7.0.2
       vite:
         specifier: ^*
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1)

@@ -26,10 +26,10 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   return invoke(cmd, args) as Promise<T>;
 }
 
-export async function listen(event: string, handler: (payload: unknown) => void): Promise<void> {
+export async function listen<T>(event: string, handler: (payload: T) => void): Promise<void> {
   const listen = tauri()?.event?.listen;
   if (!listen) return;
-  await listen(event, (e) => handler(e.payload));
+  await listen(event, (e) => handler(e.payload as T));
 }
 
 export async function openDirectory(title: string): Promise<string | null> {

@@ -32,6 +32,11 @@
   },
   "bundle": {
     "active": false,
-    "icon": ["../app/tauri/icons/icon.ico"]
+    "icon": ["../app/tauri/icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      }
+    }
   }
 }

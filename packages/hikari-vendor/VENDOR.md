@@ -39,6 +39,18 @@ inert here.
   the monorepo-relative structure (`packages/vue` + `packages/theme`) is
   preserved — but we simply don't use that entry.
 
+## Local patches
+
+The vendored tree carries WoWSP-local additions that are NOT upstream
+hikari components; re-apply them after every refresh (the re-copy in
+"Refreshing" wipes them):
+
+- `packages/vue/src/components/HkTitleBar.tsx` / `.scss` — Tauri window
+  chrome for frameless (`decorations: false`) windows, shared by webui
+  and `packages/installer-shell/web`. Exported from the package index as
+  `HTitleBar`. Talks to the `withGlobalTauri` global API so the vendored
+  library carries no `@tauri-apps/api` dependency.
+
 ## Refreshing
 
 ```bash

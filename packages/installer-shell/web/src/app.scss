@@ -97,16 +97,6 @@ body {
     font-size: var(--text-sm);
     color: rgb(var(--color-muted));
   }
-
-  .installer__cmd {
-    margin: 6px 0 0;
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
-    color: rgb(var(--color-muted) / 80%);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 .installer__footer {

@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Frontend of the WoWSP installer shell — Vue + hikari (shared title bar & components)",
   "scripts": {
-    "build": "vite build"
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@celestia-island/hikari": "workspace:*",
@@ -16,6 +17,7 @@
     "@vitejs/plugin-vue": "^*",
     "@vitejs/plugin-vue-jsx": "^*",
     "sass": "^*",
+    "typescript": "^*",
     "vite": "^*"
   }
 }
