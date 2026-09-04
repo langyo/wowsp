@@ -42,10 +42,11 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit",
+    "build": "tsc --noEmit",
     "build:docs": "vite build",
     "lint": "echo ok",
-    "prepublishOnly": "vue-tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "tsc --noEmit"
   },
   "peerDependencies": {
     "vue": "^*"
@@ -65,7 +66,6 @@
     "sass": "^*",
     "typescript": "^*",
     "vite": "^*",
-    "vue-tsc": "^*",
     "vitest": "^*",
     "@types/node": "^*"
   },
