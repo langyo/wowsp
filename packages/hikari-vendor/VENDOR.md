@@ -46,3 +46,17 @@ rm -rf packages/hikari-vendor/packages/{vue,theme}
 cp -r <hikari-checkout>/packages/{vue,theme} packages/hikari-vendor/packages/
 # update this file's vendored-commit line, pnpm install, typecheck, build
 ```
+
+## Local deviations (re-apply after refreshing)
+
+- `packages/vue/src/components/HkErrorBoundary.tsx` + `.scss`: the stack-trace
+  height budget is a flex-clamped `.hk-error-boundary-stack` wrapper. Upstream
+  wraps the scroll container in a bare `max-height` div, which cannot clamp a
+  flex scroll container (auto heights don't propagate), so long stack traces
+  paint over the actions row instead of scrolling. Kept local until fixed
+  upstream; drop it once a vendored commit includes the equivalent clamp.
+- `packages/vue/src/components/HkErrorBoundary.scss`: the mono font is
+  hardcoded to `ui-monospace, monospace` (tag + msg). Upstream resolves
+  `var(--font-mono, vars.$hikari-font-family-mono)` via `@use "./hikari-vars"`,
+  which this tree does not consume; re-apply the hardcoded fallback after a
+  refresh or the font silently changes.

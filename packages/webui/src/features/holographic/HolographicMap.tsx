@@ -3444,8 +3444,10 @@ export default defineComponent({
         if (!inFlight) continue;
         // Traces whose launch OR impact point lies outside the fitted battle
         // bounds are stray data — hide the whole trace so it can't flash out
-        // in empty space (both endpoints must be in-bounds).
-        const impactIn = inBounds(st.to.x, st.to.z) && !!st.from && inBounds(st.from.x, st.from.z);
+        // in empty space (both endpoints must be in-bounds). Endpoints are
+        // guarded rather than assumed: a trace that somehow lacks one hides
+        // its slot instead of crashing the whole refresh.
+        const impactIn = !!st.to && !!st.from && inBounds(st.to.x, st.to.z) && inBounds(st.from.x, st.from.z);
         const slot = shellTraceSlots[slotIdx];
         if (!impactIn || !st.from) {
           hideSlot(slot);
