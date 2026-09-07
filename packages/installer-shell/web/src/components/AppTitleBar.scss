@@ -1,0 +1,5 @@
+/* AppTitleBar wrapper — the hikari bar is position:fixed on its own root;
+   the wrapper must not introduce a box that shifts the layout. */
+.app-titlebar {
+  display: contents;
+}

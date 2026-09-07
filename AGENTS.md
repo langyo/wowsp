@@ -123,8 +123,11 @@
   fmt/clippy 只针对 app crates（`wowsp_tauri` / `wowsp_tauri_shared`），
   vendored `wowsunpack` / `wows-core` 是依赖源，保持上游格式。
 - **跨仓依赖**：一律用发布件 / vendored checkout，不用指向本机外部目录的
-  path 依赖——hikari 通过 `packages/hikari-vendor`（见其 VENDOR.md）引入，
-  malkuth 走 crates.io 发布版。
+  path 依赖——hikari 走 npm 发布包 `@celestia-island/hikari`（组件全部基于
+  其公开导出搭建，不再 fork 源码；样式用 `styles/theme/*`、
+  `styles/admin-tokens.scss` 颗粒子路径，别用会逃出包外的 `styles` 聚合
+  入口），malkuth 走 crates.io 发布版，`wowsunpack` / `wows-core` 保持
+  vendored。
 
 ## 7. 敏感信息红线（强制，违反视为事故）
 

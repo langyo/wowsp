@@ -220,6 +220,8 @@ fn default_dir(mode: String) -> DirDefaults {
 
 /// Finds the NSIS setup payload next to the shell; prefers the
 /// bundled-WebView2 variant so offline machines get the runtime too.
+/// Accepts every WoWSP setup naming in the wild (bundler `WoWSP_0.1.0_x64-
+/// setup.exe`, release asset `WoWSP-0.1.0-x64-setup.exe`).
 fn find_setup_exe(exe_dir: &Path) -> Option<PathBuf> {
     let mut best: Option<(u8, PathBuf)> = None;
     for entry in std::fs::read_dir(exe_dir).ok()?.flatten() {
@@ -227,13 +229,11 @@ fn find_setup_exe(exe_dir: &Path) -> Option<PathBuf> {
         let Some(name) = file_name.to_str() else {
             continue;
         };
-        let score = if name.starts_with("WoWSP_") && name.ends_with("-setup-webview2.exe") {
-            2
-        } else if name.starts_with("WoWSP_") && name.ends_with("-setup.exe") {
-            1
-        } else {
+        let lower = name.to_lowercase();
+        if !lower.starts_with("wowsp") || !lower.contains("setup") || !lower.ends_with(".exe") {
             continue;
-        };
+        }
+        let score = if lower.contains("webview2") { 2 } else { 1 };
         if best.as_ref().is_none_or(|(s, _)| score > *s) {
             best = Some((score, entry.path()));
         }
