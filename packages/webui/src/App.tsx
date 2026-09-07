@@ -1,11 +1,12 @@
 import { defineComponent } from "vue";
-import { HTitleBar } from "@celestia-island/hikari";
+import AppTitleBar from "@/components/layout/AppTitleBar";
 import AppShell from "@/components/layout/AppShell";
 
 /**
- * Root component for the MAIN window — mounts the shared HTitleBar (frameless
- * window chrome, from hikari) above the AppShell (sidebar + content).
- * HTitleBar self-guards: it renders nothing outside Tauri.
+ * Root component for the MAIN window — mounts AppTitleBar (our shell around
+ * hikari's HTitleBar, frameless window chrome) above the AppShell (sidebar +
+ * content). The wrapper self-guards: outside Tauri the caption buttons are
+ * inert.
  *
  * The overlay window uses OverlayApp instead (no title bar).
  */
@@ -14,7 +15,7 @@ export default defineComponent({
   setup() {
     return () => (
       <>
-        <HTitleBar logoSrc="/logo.webp" appName="WoWSP" />
+        <AppTitleBar icon="/logo.webp" title="WoWSP" />
         <AppShell />
       </>
     );

@@ -1,18 +1,14 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { Box, Monitor, Usb } from "lucide-vue-next";
-import {
-  HButton,
-  HProgressBar,
-  HSelectionGrid,
-  HTitleBar,
-} from "@celestia-island/hikari";
+import { HButton, HProgressBar, HSelectionGrid } from "@celestia-island/hikari";
 
+import AppTitleBar from "./components/AppTitleBar";
 import { invoke, listen, openDirectory } from "./tauri";
 
 /**
  * Installer shell UI — three WoWSP install modes rendered with hikari
- * components (shared HTitleBar chrome, HSelectionGrid mode picker), driving
- * the silent NSIS engine on the Rust side.
+ * components (AppTitleBar chrome over upstream HTitleBar, HSelectionGrid
+ * mode picker), driving the silent NSIS engine on the Rust side.
  */
 
 type Mode = "local" | "usb" | "green";
@@ -122,7 +118,7 @@ export default defineComponent({
 
     return () => (
       <>
-        <HTitleBar logoSrc="/logo.webp" appName="WoWSP 安装器" maximizable={false} />
+        <AppTitleBar icon="/logo.webp" title="WoWSP 安装器" showMaximize={false} />
         <main class="installer">
           <section class="installer__hero">
             <h1>选择 WoWSP 的安装方式</h1>
