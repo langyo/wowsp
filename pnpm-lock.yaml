@@ -34,55 +34,6 @@ importers:
         specifier: ^66.8.1
         version: 66.8.1(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))
 
-  packages/hikari-vendor/packages/vue:
-    dependencies:
-      dompurify:
-        specifier: ^*
-        version: 3.4.14
-      echarts:
-        specifier: ^*
-        version: 6.1.0
-      highlight.js:
-        specifier: ^*
-        version: 11.12.0
-      lucide-vue-next:
-        specifier: ^*
-        version: 1.0.0(vue@3.5.42(typescript@7.0.2))
-      marked:
-        specifier: ^*
-        version: 18.0.11
-      vue:
-        specifier: ^*
-        version: 3.5.42(typescript@7.0.2)
-    devDependencies:
-      '@types/node':
-        specifier: ^*
-        version: 26.4.0
-      '@vitejs/plugin-vue':
-        specifier: ^*
-        version: 6.0.8(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))(vue@3.5.42(typescript@7.0.2))
-      '@vitejs/plugin-vue-jsx':
-        specifier: ^*
-        version: 5.1.6(supports-color@7.2.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))(vue@3.5.42(typescript@7.0.2))
-      '@vue/server-renderer':
-        specifier: ^*
-        version: 3.5.42
-      happy-dom:
-        specifier: ^*
-        version: 20.12.0
-      sass:
-        specifier: ^*
-        version: 1.103.1
-      typescript:
-        specifier: ^*
-        version: 7.0.2
-      vite:
-        specifier: ^*
-        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1)
-      vitest:
-        specifier: ^*
-        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))
-
   packages/holo:
     dependencies:
       three:
@@ -95,8 +46,8 @@ importers:
   packages/installer-shell/web:
     dependencies:
       '@celestia-island/hikari':
-        specifier: workspace:*
-        version: link:../../hikari-vendor/packages/vue
+        specifier: ^0.40.18
+        version: 0.40.18(vue@3.5.42(typescript@7.0.2))
       lucide-vue-next:
         specifier: ^*
         version: 1.0.0(vue@3.5.42(typescript@7.0.2))
@@ -123,8 +74,8 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: workspace:*
-        version: link:../hikari-vendor/packages/vue
+        specifier: ^0.40.18
+        version: 0.40.18(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.38.0
         version: 1.38.0(vue@3.5.42(typescript@7.0.2))
@@ -163,8 +114,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: workspace:*
-        version: link:../hikari-vendor/packages/vue
+        specifier: ^0.40.18
+        version: 0.40.18(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.38.0
         version: 1.38.0(vue@3.5.42(typescript@7.0.2))
@@ -354,6 +305,11 @@ packages:
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
+
+  '@celestia-island/hikari@0.40.18':
+    resolution: {integrity: sha512-rXMt8cN9SKLyvUllJJEpABmVkG+IDSYRRseTGTGpoA37pjq1V+DJ0dcr+GdGoeQGGgIYiD7W1dmzK27O6LXtVg==}
+    peerDependencies:
+      vue: ^*
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
@@ -2347,6 +2303,15 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@celestia-island/hikari@0.40.18(vue@3.5.42(typescript@7.0.2))':
+    dependencies:
+      dompurify: 3.4.14
+      echarts: 6.1.0
+      highlight.js: 11.12.0
+      lucide-vue-next: 1.0.0(vue@3.5.42(typescript@7.0.2))
+      marked: 18.0.11
+      vue: 3.5.42(typescript@7.0.2)
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 

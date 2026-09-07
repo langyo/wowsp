@@ -4,20 +4,28 @@
  * for this tiny frontend.
  */
 
+export interface TauriWindow {
+  isMaximized(): Promise<boolean>;
+  onResized(handler: () => void): Promise<() => void>;
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<void>;
+  close(): Promise<void>;
+  startDragging(): Promise<void>;
+}
+
 interface TauriGlobal {
   core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
   event?: { listen?: (event: string, handler: (e: { payload: unknown }) => void) => Promise<() => void> };
   dialog?: { open?: (options?: { directory?: boolean; title?: string }) => Promise<string | string[] | null> };
-  window?: {
-    getCurrentWindow?: () => {
-      minimize(): Promise<void>;
-      close(): Promise<void>;
-    };
-  };
+  window?: { getCurrentWindow?: () => TauriWindow };
 }
 
 function tauri(): TauriGlobal | null {
   return (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
+}
+
+export function tauriWindow(): TauriWindow | null {
+  return tauri()?.window?.getCurrentWindow?.() ?? null;
 }
 
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
