@@ -18,6 +18,7 @@ tauri-build.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+shun = "0.1.0"
 
 # WebView2 runtime detection (same registry layout as installer.nsi)
 winreg.workspace = true
@@ -39,3 +40,11 @@ windows-sys = { version = "0.59", features = [
 # This feature is required by `cargo tauri build` and is injected by default.
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[package.metadata.shun]
+product = "WoWSP"
+publisher = "langyo"
+
+[package.metadata.shun.install]
+local = true
+portable = true
