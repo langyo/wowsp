@@ -3,6 +3,8 @@ import { Box, CheckCircle2, Monitor, Usb } from "lucide-vue-next";
 import {
   HAlert,
   HButton,
+  HCheckbox,
+  HMarkdownRenderer,
   HProgressBar,
   HSelectionGrid,
   HTimeline,
@@ -10,13 +12,6 @@ import {
 
 import AppTitleBar from "./components/AppTitleBar";
 import { invoke, listen, openDirectory } from "./tauri";
-
-/**
- * Installer shell UI — three WoWSP install modes rendered with hikari
- * components (AppTitleBar chrome over upstream HTitleBar, HSelectionGrid
- * mode picker, HTimeline step rail), driving the silent NSIS engine on the
- * Rust side.
- */
 
 type Mode = "local" | "usb" | "green";
 type Phase = "configure" | "installing" | "done";
@@ -33,16 +28,7 @@ const HINTS: Record<Mode, string> = {
   green: "默认解压到安装器旁边，可改为任意可写目录。",
 };
 
-const STEPS: { key: Phase; label: string }[] = [
-  { key: "configure", label: "配置" },
-  { key: "installing", label: "安装" },
-  { key: "done", label: "完成" },
-];
-
-interface DirDefaults {
-  dir: string;
-  removable: boolean;
-}
+interface DirDefaults { dir: string; removable: boolean }
 
 export default defineComponent({
   name: "InstallerApp",
@@ -52,6 +38,7 @@ export default defineComponent({
     const dir = ref("");
     const hint = ref("");
     const progressStep = ref("");
+    const progressPercent = ref<number | null>(null);
     const note = ref<{ text: string; kind: "ok" | "err" } | null>(null);
 
     async function refreshDefaults() {
@@ -95,16 +82,9 @@ export default defineComponent({
       }
     }
 
-    function showNote(text: string, kind: "ok" | "err" = "ok") {
-      note.value = { text, kind };
-    }
-
     return () => {
-      const t = (key: string) => key;
-
       const timelineSteps = STEPS.map((s) => ({ key: s.key, label: s.label }));
       const modeItems = MODE_ITEMS.map((m) => ({ ...m }));
-
       const configuring = phase.value === "configure";
       const installing = phase.value === "installing";
       const finished = phase.value === "done";
@@ -113,14 +93,12 @@ export default defineComponent({
         <>
           <AppTitleBar icon="/logo.webp" title="WoWSP 安装器" showMaximize={false} />
           <main class="installer">
-            {/* ── step rail (horizontal, above pane) ── */}
             <HTimeline
               steps={timelineSteps}
               currentKey={phase.value}
               orientation="horizontal"
             />
 
-            {/* ── configure phase ── */}
             {configuring && (
               <div class="wizard-body">
                 <HSelectionGrid
@@ -145,45 +123,24 @@ export default defineComponent({
               </div>
             )}
 
-            {/* ── installing phase ── */}
             {installing && (
               <div class="wizard-center">
-                <img src="/logo.webp" alt="" class="wizard-logo" />
-                <p class="wizard-product">WoWSP</p>
                 <HProgressBar status="loading" size="md" />
                 <p class="installer__step">{progressStep.value}</p>
               </div>
             )}
 
-            {/* ── done phase ── */}
             {finished && (
               <div class="wizard-center">
-                <CheckCircle2
-                  size={56}
-                  color="rgb(var(--color-success))"
-                  stroke-width={1.5}
-                />
+                <HProgressBar status="done" size="md" />
                 <p class="wizard-done-title">安装完成</p>
                 <p class="wizard-done-path">{dir.value.trim()}</p>
-                {mode.value === "local" && (
-                  <p class="installer__hint">
-                    WoWSP 已登记到系统「应用」列表，可从开始菜单启动。
-                  </p>
-                )}
-                {mode.value === "green" && (
-                  <p class="installer__hint">
-                    便携副本已就绪，可从目标目录直接运行。
-                  </p>
-                )}
+                <p class="installer__hint">
+                  {mode.value === "local"
+                    ? "已登记到系统「应用」列表，可从设置或下方按钮卸载。"
+                    : "便携副本已就绪，可从目标目录直接运行。"}
+                </p>
               </div>
-            )}
-
-            {note.value && (
-              <HAlert
-                variant={note.value.kind === "err" ? "error" : "success"}
-                message={note.value.text}
-                banner
-              />
             )}
 
             <footer class="installer__footer">
@@ -201,12 +158,7 @@ export default defineComponent({
                     安装中…
                   </HButton>
                 )}
-                {finished && mode.value === "local" && (
-                  <HButton variant="ghost" onClick={() => currentWindow()?.close()}>
-                    完成
-                  </HButton>
-                )}
-                {finished && mode.value !== "local" && (
+                {finished && (
                   <HButton variant="primary" size="lg" onClick={() => currentWindow()?.close()}>
                     完成
                   </HButton>
@@ -219,12 +171,3 @@ export default defineComponent({
     };
   },
 });
-
-function currentWindow() {
-  return (window as unknown as {
-    __TAURI__?: { window?: { getCurrentWindow?: () => {
-      minimize(): Promise<void>;
-      close(): Promise<void>;
-    } } };
-  }).__TAURI__?.window?.getCurrentWindow?.() ?? null;
-}
