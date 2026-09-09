@@ -54,6 +54,13 @@ name = "malkuth"
 expression = "LicenseRef-sysl-1.0"
 license-files = [{ path = "LICENSE", hash = 0xda2b7c13 }]
 
+# shun declares `license-file = "LICENSE"` (no SPDX expression), so
+# clarify it from the license file itself (SySL-1.0, same license as WoWSP).
+[[licenses.clarify]]
+name = "shun"
+expression = "LicenseRef-sysl-1.0"
+license-files = [{ path = "LICENSE", hash = 0xda2b7c13 }]
+
 [[licenses.clarify]]
 name = "ring"
 expression = "MIT AND ISC AND OpenSSL"
