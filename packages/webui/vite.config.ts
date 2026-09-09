@@ -66,6 +66,12 @@ export default defineConfig({
       '@shaders': resolve(pkgDir, '.generated/shaders'),
     },
   },
+  // hikari ships uncompiled Vue JSX source; Vite 8's Rolldown dep optimizer
+  // strips types but leaves JSX raw, so it must be excluded and served
+  // through the plugin pipeline where vue-jsx transforms it.
+  optimizeDeps: {
+    exclude: ['@celestia-island/hikari'],
+  },
   define: {
     __APP_VERSION__: JSON.stringify(readPkgVersion(pkgDir)),
   },
