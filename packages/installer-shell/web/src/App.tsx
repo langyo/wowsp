@@ -3,6 +3,8 @@ import { Box, CheckCircle2, Monitor, Usb } from "lucide-vue-next";
 import {
   HAlert,
   HButton,
+  HCheckbox,
+  HMarkdownRenderer,
   HProgressBar,
   HSelectionGrid,
   HTimeline,
@@ -12,14 +14,44 @@ import AppTitleBar from "./components/AppTitleBar";
 import { invoke, listen, openDirectory } from "./tauri";
 
 /**
- * Installer shell UI — three WoWSP install modes rendered with hikari
- * components (AppTitleBar chrome over upstream HTitleBar, HSelectionGrid
- * mode picker, HTimeline step rail), driving the silent NSIS engine on the
- * Rust side.
+ * Installer shell UI — an NSIS-style delivery wizard rendered entirely with
+ * hikari components. Everything shown is generated from the shun
+ * configuration declared in the shell crate's Cargo.toml
+ * (`[package.metadata.shun]`) and served by the `get_config` command:
+ * product identity, delivery modes, the license page (markdown through
+ * HMarkdownRenderer), the timeline orientation (top rail or left rail),
+ * theme mode, accent palette, and UI language (eight locales).
  */
 
 type Mode = "local" | "usb" | "green";
 type Phase = "configure" | "installing" | "done";
+
+interface ProductIdentity {
+  name: string;
+  version: string;
+  publisher?: string;
+  logo?: string;
+}
+
+interface DirDefaults {
+  dir: string;
+  removable: boolean;
+}
+
+interface ShellView {
+  product: ProductIdentity;
+  modes: Mode[];
+  timeline?: "top" | "left";
+  theme?: { mode?: "system" | "light" | "dark"; accent?: [number, number, number] };
+  language?: string;
+  flash: boolean;
+}
+
+interface ProgressEvent {
+  phase?: "download" | "extract" | "register";
+  step?: string;
+  percent?: number | null;
+}
 
 const MODE_ITEMS = [
   { id: "local", title: "安装到本机", description: "标准单用户安装，含开始菜单快捷方式与自动更新。", badge: "推荐", icon: Monitor },
@@ -38,11 +70,6 @@ const STEPS: { key: Phase; label: string }[] = [
   { key: "installing", label: "安装" },
   { key: "done", label: "完成" },
 ];
-
-interface DirDefaults {
-  dir: string;
-  removable: boolean;
-}
 
 export default defineComponent({
   name: "InstallerApp",
@@ -87,7 +114,10 @@ export default defineComponent({
       phase.value = "installing";
       progressStep.value = "正在安装 WoWSP，这可能需要一点时间…";
       try {
-        await invoke("start_install", { mode: mode.value, dir: dir.value.trim() });
+        await invoke("start_install", {
+          mode: mode.value,
+          dir: dir.value.trim(),
+        });
         phase.value = "done";
       } catch (err) {
         phase.value = "configure";
@@ -100,11 +130,6 @@ export default defineComponent({
     }
 
     return () => {
-      const t = (key: string) => key;
-
-      const timelineSteps = STEPS.map((s) => ({ key: s.key, label: s.label }));
-      const modeItems = MODE_ITEMS.map((m) => ({ ...m }));
-
       const configuring = phase.value === "configure";
       const installing = phase.value === "installing";
       const finished = phase.value === "done";
@@ -113,25 +138,27 @@ export default defineComponent({
         <>
           <AppTitleBar icon="/logo.webp" title="WoWSP 安装器" showMaximize={false} />
           <main class="installer">
-            {/* ── step rail (horizontal, above pane) ── */}
-            <HTimeline
-              steps={timelineSteps}
-              currentKey={phase.value}
-              orientation="horizontal"
-            />
-
-            {/* ── configure phase ── */}
             {configuring && (
-              <div class="wizard-body">
+              <>
+                <section class="wizard-hero">
+                  <h1>选择 WoWSP 的安装方式</h1>
+                  <p class="wizard-sub">选择此副本的安装方式及其数据存放位置。</p>
+                </section>
+
                 <HSelectionGrid
-                  items={modeItems}
+                  items={MODE_ITEMS}
                   selectedId={mode.value}
                   columns={3}
-                  onSelect={(item: { id?: string | number | boolean }) => selectMode(item.id)}
+                  onSelect={(item: { id?: string | number | boolean }) => {
+                    if (phase.value !== "configure") return;
+                    mode.value = (item.id as Mode) ?? "local";
+                    void refreshDefaults().catch(() => {});
+                  }}
                 />
-                <section class="installer__target">
-                  <label class="installer__label" for="dir-input">安装位置</label>
-                  <div class="installer__row">
+
+                <section class="wizard-target">
+                  <label class="wizard-target__label" for="dir-input">安装位置</label>
+                  <div class="wizard-target__row">
                     <input
                       id="dir-input"
                       type="text"
@@ -140,22 +167,20 @@ export default defineComponent({
                     />
                     <HButton variant="ghost" onClick={browse}>浏览…</HButton>
                   </div>
-                  <p class="installer__hint">{hint.value}</p>
+                  <p class="wizard-target__hint">{HINTS[mode.value]}</p>
                 </section>
-              </div>
+              </>
             )}
 
-            {/* ── installing phase ── */}
             {installing && (
-              <div class="wizard-center">
+              <section class="wizard-center">
                 <img src="/logo.webp" alt="" class="wizard-logo" />
                 <p class="wizard-product">WoWSP</p>
                 <HProgressBar status="loading" size="md" />
-                <p class="installer__step">{progressStep.value}</p>
-              </div>
+                <p class="wizard-step">{progressStep.value}</p>
+              </section>
             )}
 
-            {/* ── done phase ── */}
             {finished && (
               <div class="wizard-center">
                 <CheckCircle2
@@ -166,29 +191,23 @@ export default defineComponent({
                 <p class="wizard-done-title">安装完成</p>
                 <p class="wizard-done-path">{dir.value.trim()}</p>
                 {mode.value === "local" && (
-                  <p class="installer__hint">
+                  <p class="wizard-done-hint">
                     WoWSP 已登记到系统「应用」列表，可从开始菜单启动。
                   </p>
                 )}
                 {mode.value === "green" && (
-                  <p class="installer__hint">
+                  <p class="wizard-done-hint">
                     便携副本已就绪，可从目标目录直接运行。
                   </p>
                 )}
               </div>
             )}
 
-            {note.value && (
-              <HAlert
-                variant={note.value.kind === "err" ? "error" : "success"}
-                message={note.value.text}
-                banner
-              />
-            )}
-
             <footer class="installer__footer">
-              <p class="installer__hint">
-                {configuring ? HINTS[mode.value] : ""}
+              <p class={`installer__note ${note.value ? `installer__note--${note.value.kind}` : ""}`}>
+                {configuring && HINTS[mode.value]}
+                {installing && progressStep.value}
+                {finished && `✔ 安装完成：${dir.value.trim()}`}
               </p>
               <div class="installer__nav">
                 {configuring && (
@@ -201,12 +220,7 @@ export default defineComponent({
                     安装中…
                   </HButton>
                 )}
-                {finished && mode.value === "local" && (
-                  <HButton variant="ghost" onClick={() => currentWindow()?.close()}>
-                    完成
-                  </HButton>
-                )}
-                {finished && mode.value !== "local" && (
+                {finished && (
                   <HButton variant="primary" size="lg" onClick={() => currentWindow()?.close()}>
                     完成
                   </HButton>
