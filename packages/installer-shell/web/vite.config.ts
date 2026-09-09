@@ -8,6 +8,12 @@ import { defineConfig } from "vite";
 // time via generate_context!, so run `pnpm build` before `cargo build`.
 export default defineConfig({
   plugins: [vueSfc(), vueJsx()],
+  // hikari ships uncompiled Vue JSX source; Vite 8's Rolldown dep optimizer
+  // strips types but leaves JSX raw, so it must be excluded and served
+  // through the plugin pipeline where vue-jsx transforms it.
+  optimizeDeps: {
+    exclude: ["@celestia-island/hikari"],
+  },
   publicDir: resolve(__dirname, "public"),
   build: {
     outDir: resolve(__dirname, "dist"),
