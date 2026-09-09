@@ -1,7 +1,7 @@
 import vueSfc from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 import { readdirSync, rmSync, readFileSync } from "fs";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
 import { defineConfig, type Plugin } from "vite";
 
 import UnoCSS from "unocss/vite";
@@ -18,6 +18,21 @@ function readPkgVersion(pkgDir: string): string {
 const pkgDir = resolve(__dirname);
 
 const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
+
+// hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
+// excluded from optimizeDeps those files are served raw in dev, and a raw CJS
+// module has no default export. Alias the whole `lib/` tree onto the package's
+// identical ESM build under `es/` — resolved through hikari's own dependency
+// set, since highlight.js is not a direct dependency here. hikari's bare "."
+// export is import-condition-only, so locate the package through its
+// condition-free `./components/*` export instead.
+const hikariDir = dirname(
+  dirname(require.resolve('@celestia-island/hikari/components/HkButton.tsx')),
+);
+const hljsEsDir = resolve(
+  dirname(require.resolve('highlight.js/package.json', { paths: [hikariDir] })),
+  'es',
+);
 
 // outDir lives outside the package (../../dist/webui) and is consumed by the
 // Tauri shell (frontendDist). Because it can be Docker bind-mounted we wipe
@@ -61,6 +76,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      'highlight.js/lib': hljsEsDir,
       '@': resolve(pkgDir, 'src'),
       '@wowsp/shared_ui': resolve(pkgDir, 'src'),
       '@shaders': resolve(pkgDir, '.generated/shaders'),
