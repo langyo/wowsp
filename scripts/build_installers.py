@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """Build the WoWSP shun installer artifacts.
 
-1. Build the application (``cargo tauri build --no-bundle``) and stage its
-   executable as the installer payload.
-2. Build the installer shell with ``SHUN_PAYLOAD`` pointing at the staging
-   directory — the payload is packed into the shell binary (the single-file
-   installer pattern; see packages/installer-shell/build.rs).
+1. Build the application and stage its executable as the installer payload.
+2. Build the installer shell twice with ``SHUN_PAYLOAD`` pointing at the
+   staging directory (the payload is packed into the shell binary — the
+   single-file installer pattern; see packages/installer-shell/build.rs):
+
+   - bare payload, and
+   - payload + ``webview2/`` subtree carrying the Evergreen offline runtime
+     installer, which the shell extracts and runs when the WebView2 runtime
+     is missing.
+
 3. Emit both delivery artifacts under ``target/release/bundle/installer/``:
 
    - ``WoWSP_<version>_x64-installer.exe`` — needs the system WebView2
      runtime (the shell falls back to the releases page without it), and
-   - ``WoWSP_<version>_x64-installer-webview2.zip`` — the installer paired
-     with the Evergreen offline runtime; the shell runs the offline
-     installer beside it when the runtime is missing.
+   - ``WoWSP_<version>_x64-installer-webview2.exe`` — fully self-contained
+     for machines without the runtime.
 
 The offline runtime (~180 MB) is cached under
 ``packages/installer-shell/vendor/`` (gitignored).
@@ -29,7 +33,6 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -38,6 +41,7 @@ SHELL = REPO / "packages" / "installer-shell"
 VENDOR = SHELL / "vendor"
 WV2_URL = "https://go.microsoft.com/fwlink/?linkid=2099617"
 WV2_NAME = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+WV2_PAYLOAD_PREFIX = "webview2"
 TARGET = REPO / "target" / "release"
 OUT = TARGET / "bundle" / "installer"
 
@@ -71,9 +75,10 @@ def stage_payload(app_exe: Path) -> Path:
     return stage
 
 
-def build_installer(stage: Path) -> Path:
-    print("[installer] cargo build -p wowsp_installer_shell --release …")
-    env = {**os.environ, "SHUN_PAYLOAD": str(stage)}
+def build_installer(stage: Path, env_extra: dict[str, str] | None = None) -> Path:
+    label = "bare" if not env_extra else "webview2"
+    print(f"[installer:{label}] cargo build -p wowsp_installer_shell --release …")
+    env = {**os.environ, "SHUN_PAYLOAD": str(stage), **(env_extra or {})}
     subprocess.run(
         ["cargo", "build", "-p", "wowsp_installer_shell", "--release"],
         check=True,
@@ -83,6 +88,15 @@ def build_installer(stage: Path) -> Path:
     if not exe.is_file():
         sys.exit(f"installer binary missing: {exe}")
     return exe
+
+
+def stage_webview2(stage: Path, wv2: Path) -> Path:
+    """Copy the offline runtime into the staging tree under ``webview2/`` —
+    the payload-relative prefix the shell extracts it from."""
+    dest = stage / WV2_PAYLOAD_PREFIX
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(wv2, dest / WV2_NAME)
+    return stage
 
 
 def ensure_payload() -> Path:
@@ -107,23 +121,22 @@ def ensure_payload() -> Path:
     return payload
 
 
-def emit(version: str, installer: Path, wv2: Path | None) -> None:
+def emit(version: str, installer: Path, suffix: str) -> Path:
+    """Copies a freshly built installer into the artifact name. Called right
+    after each variant's build: the second build overwrites the shared
+    target/release/wowsp-installer.exe, so the bare copy must land on disk
+    before the webview2 build starts."""
     OUT.mkdir(parents=True, exist_ok=True)
-    main = OUT / f"WoWSP_{version}_x64-installer.exe"
-    shutil.copy2(installer, main)
-    print(f"[ok] {main.name}: {main.stat().st_size:,} bytes")
-    if wv2:
-        zip_path = OUT / f"WoWSP_{version}_x64-installer-webview2.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(installer, installer.name)
-            zf.write(wv2, WV2_NAME)
-        print(f"[ok] {zip_path.name}: {zip_path.stat().st_size:,} bytes")
+    artifact = OUT / f"WoWSP_{version}_x64-installer{suffix}.exe"
+    shutil.copy2(installer, artifact)
+    print(f"[ok] {artifact.name}: {artifact.stat().st_size:,} bytes")
+    return artifact
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe")
-    ap.add_argument("--skip-shell-build", action="store_true", help="reuse target/release/wowsp-installer.exe")
+    ap.add_argument("--skip-shell-build", action="store_true", help="reuse target/release/wowsp-installer.exe (bare variant only)")
     args = ap.parse_args()
 
     version = app_version()
@@ -136,17 +149,23 @@ def main() -> int:
     else:
         app_exe = build_app()
     stage = stage_payload(app_exe)
+    wv2 = ensure_payload()
 
     installer = TARGET / "wowsp-installer.exe"
     if args.skip_shell_build:
         if not installer.is_file():
             sys.exit(f"--skip-shell-build but {installer} is missing")
-        print("[installer] skipped cargo build (--skip-shell-build)")
+        print("[installer:bare] skipped cargo build (--skip-shell-build)")
     else:
         installer = build_installer(stage)
+    # Copy before the webview2 build overwrites the shared output binary.
+    emit(version, installer, "")
 
-    wv2 = ensure_payload()
-    emit(version, installer, wv2)
+    # The webview2 variant always rebuilds: its payload carries the offline
+    # runtime in addition to the bare one.
+    stage_webview2(stage, wv2)
+    installer_wv2 = build_installer(stage)
+    emit(version, installer_wv2, "-webview2")
     return 0
 
 
