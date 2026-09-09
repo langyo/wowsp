@@ -32,8 +32,13 @@ use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 
 /// WebView2 Evergreen runtime product GUID.
 const WEBVIEW2_APP_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
-/// Offline WebView2 Evergreen installer expected next to the shell.
+/// Offline WebView2 Evergreen installer file name. Delivered two ways: a
+/// file beside the shell (paired delivery), or a `webview2/` subtree
+/// inside the embedded payload (the single-file -webview2 build — see
+/// scripts/build_installers.py).
 const WEBVIEW2_PAYLOAD: &str = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe";
+/// Payload-relative directory carrying the offline installer.
+const WEBVIEW2_PAYLOAD_PREFIX: &str = "webview2";
 /// Page opened when WebView2 is missing and no offline payload is available.
 const RELEASES_URL: &str = "https://github.com/langyo/wowsp/releases/latest";
 
@@ -208,19 +213,32 @@ fn open_url(url: &str) {
 }
 
 /// Makes sure the WebView2 runtime is present before the Tauri UI starts.
-/// Returns normally once installed; otherwise shows a native error, opens
-/// the releases page and exits — a WebView-less shell cannot render UI.
-fn ensure_webview2(exe_dir: &Path) {
+/// The offline installer comes either from beside the shell or, in the
+/// single-file -webview2 build, out of the embedded payload (extracted
+/// once into a per-user cache). Returns normally once installed;
+/// otherwise shows a native error, opens the releases page and exits — a
+/// WebView-less shell cannot render UI.
+fn ensure_webview2(exe_dir: &Path, payload: &ArchivePayload) {
     if webview2_installed() {
         return;
     }
 
-    let payload = exe_dir.join(WEBVIEW2_PAYLOAD);
-    if payload.is_file() {
-        if let Ok(status) = run_waiting(&payload, &["/silent", "/install"]) {
-            if status.success() && webview2_installed() {
-                return;
-            }
+    // Paired delivery: the offline installer sits next to the shell.
+    let beside = exe_dir.join(WEBVIEW2_PAYLOAD);
+    if beside.is_file() && run_offline_installer(&beside) {
+        return;
+    }
+
+    // Single-file delivery: extract the `webview2/` subtree from the
+    // embedded payload into a per-user cache and run it from there.
+    let cache = local_appdata().join("wowsp-installer").join("webview2");
+    if payload
+        .extract_prefix(&cache, Path::new(WEBVIEW2_PAYLOAD_PREFIX), &mut |_| {})
+        .is_ok()
+    {
+        let extracted = cache.join(WEBVIEW2_PAYLOAD_PREFIX).join(WEBVIEW2_PAYLOAD);
+        if extracted.is_file() && run_offline_installer(&extracted) {
+            return;
         }
     }
 
@@ -232,6 +250,15 @@ fn ensure_webview2(exe_dir: &Path) {
     );
     open_url(RELEASES_URL);
     std::process::exit(1);
+}
+
+/// Runs the Evergreen offline installer and reports whether the runtime
+/// is present afterwards.
+fn run_offline_installer(installer: &Path) -> bool {
+    if let Ok(status) = run_waiting(installer, &["/silent", "/install"]) {
+        return status.success() && webview2_installed();
+    }
+    false
 }
 
 fn install_dir_for(mode: &str) -> PathBuf {
@@ -281,13 +308,24 @@ fn start_install(
     let ctx = state.install_context(&mode, &dir, answers)?;
 
     let payload = state.payload.clone();
+    let install_dir = ctx.install_dir.clone();
     let flow = InstallFlow {
         payload: &payload,
         registration: &WindowsRegistration,
         ctx,
     };
     flow.run(&mut |event| emit_progress(&app, &event))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    cleanup_bootstrap_payload(&install_dir);
+    Ok(())
+}
+
+/// The -webview2 build carries the Evergreen offline installer inside the
+/// payload purely for the shell's own gate; the installed application has
+/// no use for it, so it is removed after the flow delivers the payload.
+/// (Uninstall tolerates the missing files — removal ignores errors.)
+fn cleanup_bootstrap_payload(install_dir: &Path) {
+    let _ = std::fs::remove_dir_all(install_dir.join(WEBVIEW2_PAYLOAD_PREFIX));
 }
 
 /// Automated-install arguments (headless mode): `--silent` skips the UI
@@ -346,6 +384,7 @@ fn run_headless(
         println!("shun: uninstalled {}", ctx.install_dir.display());
         return Ok(());
     }
+    let install_dir = ctx.install_dir.clone();
     let flow = InstallFlow {
         payload,
         registration: &WindowsRegistration,
@@ -357,6 +396,7 @@ fn run_headless(
         _ => {},
     })
     .map_err(|e| e.to_string())?;
+    cleanup_bootstrap_payload(&install_dir);
     Ok(())
 }
 
@@ -380,7 +420,7 @@ fn main() {
     }
 
     if let Some(dir) = exe_dir() {
-        ensure_webview2(&dir);
+        ensure_webview2(&dir, &payload);
     }
 
     tauri::Builder::default()

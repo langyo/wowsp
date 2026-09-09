@@ -67,7 +67,7 @@ dev target='tauri' *FLAGS='':
 #   just build webui             → pnpm build @wowsp/webui
 #   just build site              → site + lagrange docs → dist/
 #   just build package           → cargo tauri build (app only, no install bundles)
-#   just build installers [--skip-app-build] [--skip-shell-build] → shun single-file installer + webview2 zip
+#   just build installers [--skip-app-build] [--skip-shell-build] → shun installers (bare + self-contained webview2)
 #   just build wowsunpack        → clone + compile vendored wowsunpack
 #   just build all               → webui + site + app
 
