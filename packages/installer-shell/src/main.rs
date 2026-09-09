@@ -1,9 +1,13 @@
 //! WoWSP installer shell.
 //!
 //! A small Tauri front-end that renders the three WoWSP install modes and
-//! drives the real NSIS engine headlessly: `WoWSP_*_setup*.exe /S
-//! /MODE=<mode> /D=<dir>` (the `/MODE=` contract lives in
-//! `installer/installer.nsi`).
+//! drives the shun install flow directly: the payload (staged application
+//! directory, packed at build time — see build.rs) is embedded in this
+//! single binary, and `shun::targets::install` performs the delivery.
+//! Local mode registers the ARP entry, the self-copying uninstaller, and
+//! Start-menu/desktop shortcuts; USB and green modes drop the app's
+//! `.portable` marker with no registration at all (config
+//! `portable-marker`).
 //!
 //! The shell is itself a Tauri app, so the WebView2 runtime is a hard
 //! prerequisite for its own UI: before any window is created we check the
@@ -18,21 +22,65 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use shun::config::{ShunConfig, TargetConfig};
+use shun::flow::{Flow, FlowEvent};
+use shun::payload::ArchivePayload;
+use shun::targets::install::{InstallContext, InstallFlow, WindowsRegistration, WizardAnswers};
 use tauri::Emitter;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 
-/// WebView2 Evergreen runtime product GUID (same constant as installer.nsi).
+/// WebView2 Evergreen runtime product GUID.
 const WEBVIEW2_APP_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
 /// Offline WebView2 Evergreen installer expected next to the shell.
 const WEBVIEW2_PAYLOAD: &str = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe";
-/// Page opened when WebView2 is missing and no offline payload is available
-/// (same target as the NSIS template's WEBVIEW2_BUNDLED_URL).
+/// Page opened when WebView2 is missing and no offline payload is available.
 const RELEASES_URL: &str = "https://github.com/langyo/wowsp/releases/latest";
 
-#[derive(Serialize, Clone)]
-struct Progress {
-    step: String,
+/// The resolved configuration, embedded by build.rs.
+const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-config.json"));
+/// The payload archive packed by build.rs from `metadata.shun.payload`.
+const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
+
+/// State shared by the commands: the resolved config and the payload
+/// (cloned per install run).
+struct AppState {
+    config: ShunConfig,
+    payload: ArchivePayload,
+}
+
+impl AppState {
+    fn install_target(&self) -> Result<shun::config::InstallConfig, String> {
+        self.config
+            .targets
+            .iter()
+            .find_map(|t| match t {
+                TargetConfig::Install(install) => Some(install.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| "此配置未声明安装目标".to_string())
+    }
+
+    /// The install context for a wizard run: `local` registers the
+    /// install, `usb` / `green` deliver a portable copy.
+    fn install_context(
+        &self,
+        mode: &str,
+        dir: &str,
+        answers: WizardAnswers,
+    ) -> Result<InstallContext, String> {
+        let install = self.install_target()?;
+        let mut ctx = InstallContext::new(
+            self.config.product.name.clone(),
+            self.config.product.version.clone(),
+            PathBuf::from(dir),
+            mode != "local",
+        );
+        ctx.publisher = self.config.product.publisher.clone();
+        ctx.main_exe = install.main_exe.clone();
+        ctx.apply_config(&install, answers);
+        Ok(ctx)
+    }
 }
 
 #[derive(Serialize)]
@@ -59,8 +107,7 @@ fn exe_dir() -> Option<PathBuf> {
 /// deprecated `Win32_System_WindowsProgramming` module.
 const DRIVE_REMOVABLE: u32 = 2;
 
-/// First removable drive letter (A..Z), mirroring the NSIS template's
-/// `${GetDrives} "FDD"` lookup.
+/// First removable drive letter (A..Z), the USB-mode default directory.
 fn first_removable_drive() -> Option<char> {
     use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
 
@@ -170,7 +217,6 @@ fn ensure_webview2(exe_dir: &Path) {
 
     let payload = exe_dir.join(WEBVIEW2_PAYLOAD);
     if payload.is_file() {
-        // Same invocation as the NSIS template's bundled-WebView2 variant.
         if let Ok(status) = run_waiting(&payload, &["/silent", "/install"]) {
             if status.success() && webview2_installed() {
                 return;
@@ -181,123 +227,165 @@ fn ensure_webview2(exe_dir: &Path) {
     show_fatal_error(
         "WoWSP 安装器",
         "本系统缺少 WoWSP 运行所必需的 Microsoft WebView2 运行时。\n\n\
-         请从即将打开的发布页下载自带 WebView2 的完整安装包\n\
-         （WoWSP_*_setup-webview2.exe），或先安装 WebView2 运行时后重试。",
+         请从即将打开的发布页下载自带 WebView2 的完整安装包，\
+         或先安装 WebView2 运行时后重试。",
     );
     open_url(RELEASES_URL);
     std::process::exit(1);
 }
 
+fn install_dir_for(mode: &str) -> PathBuf {
+    match mode {
+        "usb" => match first_removable_drive() {
+            Some(drive) => PathBuf::from(format!("{drive}:\\WoWSP")),
+            None => local_appdata().join("WoWSP"),
+        },
+        "green" => exe_dir()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+            .join("WoWSP"),
+        _ => local_appdata().join("WoWSP"),
+    }
+}
+
 #[tauri::command]
 fn default_dir(mode: String) -> DirDefaults {
-    let fallback = local_appdata().join("WoWSP");
-    match mode.as_str() {
-        "usb" => match first_removable_drive() {
-            Some(drive) => DirDefaults {
-                dir: format!("{drive}:\\WoWSP"),
-                removable: true,
-            },
-            None => DirDefaults {
-                dir: fallback.to_string_lossy().into_owned(),
-                removable: false,
-            },
-        },
-        "green" => {
-            let dir = exe_dir()
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
-                .join("WoWSP");
-            DirDefaults {
-                dir: dir.to_string_lossy().into_owned(),
-                removable: false,
-            }
-        },
-        _ => DirDefaults {
-            dir: fallback.to_string_lossy().into_owned(),
-            removable: false,
-        },
+    let dir = install_dir_for(&mode);
+    let removable = mode == "usb" && first_removable_drive().is_some();
+    DirDefaults {
+        dir: dir.to_string_lossy().into_owned(),
+        removable,
     }
 }
 
-/// Finds the NSIS setup payload next to the shell; prefers the
-/// bundled-WebView2 variant so offline machines get the runtime too.
-/// Accepts every WoWSP setup naming in the wild (bundler `WoWSP_0.1.0_x64-
-/// setup.exe`, release asset `WoWSP-0.1.0-x64-setup.exe`).
-fn find_setup_exe(exe_dir: &Path) -> Option<PathBuf> {
-    let mut best: Option<(u8, PathBuf)> = None;
-    for entry in std::fs::read_dir(exe_dir).ok()?.flatten() {
-        let file_name = entry.file_name();
-        let Some(name) = file_name.to_str() else {
-            continue;
-        };
-        let lower = name.to_lowercase();
-        if !lower.starts_with("wowsp") || !lower.contains("setup") || !lower.ends_with(".exe") {
-            continue;
-        }
-        let score = if lower.contains("webview2") { 2 } else { 1 };
-        if best.as_ref().is_none_or(|(s, _)| score > *s) {
-            best = Some((score, entry.path()));
-        }
-    }
-    best.map(|(_, path)| path)
+fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
+    let _ = app.emit("install-progress", event);
 }
 
 #[tauri::command]
-fn start_install(app: tauri::AppHandle, mode: String, dir: String) -> Result<(), String> {
+fn start_install(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    mode: String,
+    dir: String,
+    // The desktop-shortcut checkbox; absent (older front-ends) = checked.
+    desktop: Option<bool>,
+) -> Result<(), String> {
     let dir = dir.trim().trim_end_matches('\\').to_string();
     if dir.is_empty() {
         return Err("安装目录不能为空".into());
     }
-    let mode_flag = match mode.as_str() {
-        "usb" => "usb",
-        "green" => "green",
-        _ => "local",
+    let answers = WizardAnswers {
+        desktop_shortcut: desktop.unwrap_or(true),
+        machine: false,
     };
-    let Some(exe_dir) = exe_dir() else {
-        return Err("无法定位安装器目录".into());
-    };
-    let Some(setup) = find_setup_exe(&exe_dir) else {
-        return Err(
-            "未找到 WoWSP 安装引擎（WoWSP_*_setup.exe）。请将安装器与安装包放在同一目录后重试。"
-                .into(),
-        );
-    };
+    let ctx = state.install_context(&mode, &dir, answers)?;
 
-    let _ = app.emit(
-        "install-progress",
-        Progress {
-            step: "正在安装 WoWSP，这可能需要一点时间…".into(),
-        },
+    let payload = state.payload.clone();
+    let flow = InstallFlow {
+        payload: &payload,
+        registration: &WindowsRegistration,
+        ctx,
+    };
+    flow.run(&mut |event| emit_progress(&app, &event))
+        .map_err(|e| e.to_string())
+}
+
+/// Automated-install arguments (headless mode): `--silent` skips the UI
+/// and runs the flow headlessly with `--mode=local|usb|green`,
+/// `--dir=<path>`, `--desktop`/`--no-desktop`, and an optional
+/// `--uninstall`. The ARP `UninstallString` invokes the copied shell with
+/// `/uninstall` during removal.
+fn run_headless(
+    args: &[String],
+    config: &ShunConfig,
+    payload: &ArchivePayload,
+) -> Result<(), String> {
+    let mut mode = "local".to_string();
+    let mut dir: Option<PathBuf> = None;
+    let mut uninstall_mode = false;
+    let mut desktop: Option<bool> = None;
+    for arg in args {
+        if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = value.to_string();
+        } else if let Some(value) = arg.strip_prefix("--dir=") {
+            dir = Some(PathBuf::from(value.trim_matches('"')));
+        } else if arg == "--uninstall" || arg == "/uninstall" {
+            uninstall_mode = true;
+        } else if arg == "--desktop" {
+            desktop = Some(true);
+        } else if arg == "--no-desktop" {
+            desktop = Some(false);
+        }
+    }
+    let product = config.product.name.clone();
+    let dir = dir.unwrap_or_else(|| install_dir_for(&mode));
+    let mut ctx = InstallContext::new(
+        product,
+        config.product.version.clone(),
+        dir,
+        mode != "local",
     );
-
-    // NSIS quirk: `/D=` must be the LAST argument and must stay unquoted
-    // even when the path contains spaces, hence raw_arg.
-    use std::os::windows::process::CommandExt;
-    let status = std::process::Command::new(&setup)
-        .arg("/S")
-        .arg(format!("/MODE={mode_flag}"))
-        .raw_arg(format!("/D={dir}"))
-        .status()
-        .map_err(|e| format!("无法启动安装引擎：{e}"))?;
-    if !status.success() {
-        return Err(format!("安装引擎异常退出（{:?}）", status.code()));
+    ctx.publisher = config.product.publisher.clone();
+    ctx.main_exe = config.targets.iter().find_map(|t| match t {
+        TargetConfig::Install(install) => install.main_exe.clone(),
+        _ => None,
+    });
+    let answers = WizardAnswers {
+        desktop_shortcut: desktop.unwrap_or(true),
+        machine: false,
+    };
+    if let Some(install) = config.targets.iter().find_map(|t| match t {
+        TargetConfig::Install(install) => Some(install),
+        _ => None,
+    }) {
+        ctx.apply_config(install, answers);
     }
 
-    let _ = app.emit(
-        "install-progress",
-        Progress {
-            step: "安装完成。".into(),
-        },
-    );
+    if uninstall_mode {
+        shun::targets::install::uninstall(&ctx, &WindowsRegistration).map_err(|e| e.to_string())?;
+        println!("shun: uninstalled {}", ctx.install_dir.display());
+        return Ok(());
+    }
+    let flow = InstallFlow {
+        payload,
+        registration: &WindowsRegistration,
+        ctx,
+    };
+    flow.run(&mut |event| match &event {
+        FlowEvent::Progress { step, .. } => println!("shun: {step}"),
+        FlowEvent::Completed => println!("shun: install complete"),
+        _ => {},
+    })
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn main() {
+    let config: ShunConfig =
+        serde_json::from_str(SHUN_CONFIG_JSON).expect("embedded config decodes");
+    let payload = ArchivePayload::from_bytes(EMBEDDED_PAYLOAD).expect("embedded payload decodes");
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Headless entry points: explicit `--silent` runs, and the ARP
+    // `UninstallString` (`...uninstall.exe" /uninstall`) which must
+    // uninstall without opening the wizard.
+    let silent = args.iter().any(|a| a == "--silent" || a == "/S");
+    let uninstalling = args.iter().any(|a| a == "--uninstall" || a == "/uninstall");
+    if silent || uninstalling {
+        if let Err(err) = run_headless(&args, &config, &payload) {
+            eprintln!("shun: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     if let Some(dir) = exe_dir() {
         ensure_webview2(&dir);
     }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(AppState { config, payload })
         .invoke_handler(tauri::generate_handler![default_dir, start_install])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP installer shell");

@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license = "SySL-1.0"
 publish = false # prototype/demo crate, never published (also marks it private for cargo-deny)
-description = "WoWSP installer shell: hikari UI driving the silent NSIS engine"
+description = "WoWSP installer shell: hikari UI driving the shun install flow"
 
 [[bin]]
 name = "wowsp-installer"
@@ -14,17 +14,19 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build.workspace = true
+serde_json.workspace = true
+shun = "0.2.3"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-shun = "0.1.0"
+shun = "0.2.3"
 
-# WebView2 runtime detection (same registry layout as installer.nsi)
+# WebView2 runtime detection (same registry layout the NSIS engine used)
 winreg.workspace = true
 
 # Direct (non-workspace) deps so the shell compiles without the app's extra
-# tauri features (tray-icon / image-png) — a setup exe should build lean.
+# tauri features (tray-icon / image-png) — an installer exe should build lean.
 tauri = { version = "^2" }
 tauri-plugin-dialog = { version = "^2" }
 
@@ -44,7 +46,13 @@ custom-protocol = ["tauri/custom-protocol"]
 [package.metadata.shun]
 product = "WoWSP"
 publisher = "langyo"
+# Smoke payload for plain `cargo build` (CI). Release staging overrides it
+# with the real application directory: SHUN_PAYLOAD=<staged wowsp.exe dir>.
+payload = "payload"
 
 [package.metadata.shun.install]
 local = true
 portable = true
+# The wowsp app detects this marker beside its executable (paths.rs).
+portable-marker = ".portable"
+main-exe = "wowsp.exe"
