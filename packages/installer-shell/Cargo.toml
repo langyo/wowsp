@@ -15,12 +15,12 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
-shun = "0.2.3"
+shun = "0.2.4"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-shun = "0.2.3"
+shun = "0.2.4"
 
 # WebView2 runtime detection (same registry layout the NSIS engine used)
 winreg.workspace = true

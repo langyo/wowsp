@@ -81,6 +81,7 @@ packages/webui/src/res/models/planes/*.glb
 packages/webui/src/res/models/props/*.glb
 packages/webui/src/res/models/maps/*.glb
 
-# NSIS variant payload: the Evergreen WebView2 offline installer downloaded by
-# scripts/build_installers.py (~180 MB, never tracked).
-packages/app/tauri/installer/vendor/
+# WebView2 Evergreen offline installer cached by scripts/build_installers.py
+# (~180 MB, never tracked) for the -webview2.zip delivery artifact.
+packages/installer-shell/vendor/
+installer-shell/vendor/

@@ -65,16 +65,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Build & publish Tauri app
-        uses: tauri-apps/tauri-action@v1
+      - name: Build shun installers
+        run: python scripts/build_installers.py
+
+      - name: Upload release artifacts (draft)
+        # Only tag pushes publish: a workflow_dispatch on a branch has no
+        # release to upload to (parity with the old tauri-action flow).
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'WoWSP ${{ github.ref_name }}'
-          releaseBody: 'See the GitHub Releases page for details.'
-          releaseDraft: true
-          prerelease: false
-          args: '--target x86_64-pc-windows-msvc'
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ref="${{ github.ref_name }}"
+          case "$ref" in
+            v*)
+              gh release create "$ref" --draft --title "WoWSP $ref" \
+                --notes "See the GitHub Releases page for details." || true
+              gh release upload "$ref" target/release/bundle/installer/* --clobber
+              ;;
+            *) echo "not a tag push ($ref) — skipping release upload" ;;
+          esac
