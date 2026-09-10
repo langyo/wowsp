@@ -1,11 +1,12 @@
 /* WoWSP installer shell theme tokens. Adapted from webui's theme.scss
    (shittim-chest discipline): structural tokens + color RGB-channel
    triplets seeded here, consumed by hikari components and app-local scss
-   alike. The installer ships dark-only, so index.html sets
-   <html data-mode="dark"> and this file also pins hikari's theme-package
-   tokens (--hi-color-*, normally prefers-color-scheme driven) to the dark
-   set — otherwise base typography and HkSelectionGrid render their light
-   palette over the dark surface. */
+   alike. The installer follows the SYSTEM theme: light values live in
+   :root, dark overrides apply under @media (prefers-color-scheme: dark),
+   and [data-mode="dark"] keeps working as an explicit pin. hikari's own
+   theme-package tokens (--hi-color-*) are prefers-color-scheme driven;
+   only the app-hue extras are seeded here, derived from our flipping
+   tokens so they track the mode automatically. */
 
 /* === Tokens === */
 :root {
@@ -38,9 +39,8 @@
   --duration-fade: 160ms;
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Default color tokens (light) — kept for parity with webui; the
-     installer always runs with [data-mode="dark"] below.
-     Values are space-separated RGB channels for `rgb(var(--color-x) / a%)`. */
+  /* Default color tokens (light) — space-separated RGB channels for
+     `rgb(var(--color-x) / a%)`. */
   --color-primary: 0 120 200;
   --color-secondary: 110 200 240;
   --color-accent: 255 180 60;
@@ -58,37 +58,33 @@
   --color-error: 220 80 80;
   --color-warning: 230 170 50;
   --color-info: 90 160 220;
+
+  --hi-color-text-tertiary: rgba(15, 23, 42, 0.45);
+
+  /* App-hue extras for hikari's theme package — derived from our own
+     flipping tokens, so they track light/dark without per-mode blocks. */
+  --hi-color-primary: rgb(var(--color-primary));
+  --hi-color-border: rgb(var(--color-border));
 }
 
-[data-mode="dark"] {
+/* Dark palette — system-driven by default; [data-mode="dark"] pins it. */
+@mixin dark-color-tokens {
   --color-text: 220 228 238;
   --color-muted: 150 160 175;
   --color-border: 50 60 75;
   --color-background: 12 18 30;
   --color-surface: 22 30 46;
+  --hi-color-text-tertiary: rgba(255, 255, 255, 0.45);
 }
 
-/* hikari theme-package tokens: hikari only seeds these under
-   @media (prefers-color-scheme: dark). Pin the dark set under
-   [data-mode="dark"] so the installer's theme does not depend on the OS
-   scheme reported by the WebView. Values mirror themes.scss; the three
-   extras (primary / border / text-tertiary) back HkSelectionGrid and keep
-   the app's primary hue instead of the GitHub-ish fallbacks. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    @include dark-color-tokens;
+  }
+}
+
 [data-mode="dark"] {
-  --hi-color-background: #0f172a;
-  --hi-color-surface: #1e293b;
-  --hi-color-text-primary: rgba(255, 255, 255, 0.9);
-  --hi-color-text-secondary: rgba(255, 255, 255, 0.6);
-  --hi-color-text-tertiary: rgba(255, 255, 255, 0.45);
-  --hi-color-text-on-primary: rgba(0, 0, 0, 0.9);
-  --hi-color-text-on-secondary: rgba(255, 255, 255, 0.95);
-  --hi-color-text-on-ghost: rgba(255, 255, 255, 0.9);
-  --hi-color-text-on-danger: rgba(255, 255, 255, 0.95);
-  --hi-color-text-on-success: rgba(0, 0, 0, 0.9);
-  --hi-color-text-on-warning: rgba(0, 0, 0, 0.9);
-  --hi-color-text-on-info: rgba(0, 0, 0, 0.9);
-  --hi-color-primary: rgb(var(--color-primary));
-  --hi-color-border: rgb(var(--color-border));
+  @include dark-color-tokens;
 }
 
 /* === Reset === */

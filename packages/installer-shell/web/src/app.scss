@@ -1,6 +1,7 @@
 /* Installer shell page scaffold — sits under the shared HTitleBar (fixed,
    32px). Every color reads the app token layer (theme.scss); no local hex
-   palette. hikari components style themselves. */
+   palette. hikari components style themselves. Layout follows the shun demo
+   shell: a left step rail beside a centered wizard pane. */
 
 html,
 body {
@@ -25,79 +26,210 @@ body {
   flex-direction: column;
   gap: 18px;
   padding: 44px 28px 20px;
+  overflow: hidden;
 
   h1 {
+    margin: 0 0 6px;
+    font-size: var(--text-xl);
+    font-weight: 600;
     color: rgb(var(--color-text));
   }
 }
 
-.installer__hero {
-  h1 {
-    margin: 0;
-    font-size: var(--text-2xl);
-    font-weight: 600;
-  }
+/* ── wizard layout: left step rail + pane ─────────────────────────── */
 
-  p {
-    margin: 6px 0 0;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-muted));
-  }
+.wizard-layout {
+  flex: 1;
+  min-height: 0;
 }
 
-.installer__target {
-  .installer__label {
-    display: block;
+.wizard-layout--left {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 22px;
+  align-items: stretch;
+}
+
+.wizard-layout__pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wizard-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Install / done panes center their content both ways */
+.wizard-pane--center {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.wizard-sub {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  color: rgb(var(--color-muted));
+}
+
+.wizard-pane__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+}
+
+/* Product logo on the install pane — the 256px source downscales crisply;
+   never upscale it. */
+.wizard-logo {
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
+  box-shadow: 0 8px 28px rgb(var(--color-primary) / 25%);
+}
+
+.wizard-step {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: rgb(var(--color-muted));
+  max-width: 70%;
+  overflow-wrap: anywhere;
+}
+
+/* ── mode pane: install location field ────────────────────────────── */
+
+.wizard-target {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .wizard-target__label {
     font-size: var(--text-sm);
     color: rgb(var(--color-muted));
-    margin-bottom: 8px;
   }
 
-  .installer__row {
+  .wizard-target__row {
     display: flex;
     gap: 10px;
     align-items: center;
 
-    input {
+    // Field = folder badge + input; the browse button sits outside it,
+    // pinned to the row's right end.
+    .wizard-target__field {
       flex: 1;
-      height: 36px;
-      padding: 0 12px;
-      border-radius: var(--radius-sm);
-      border: 1px solid rgb(var(--color-border));
-      background: rgb(var(--color-surface) / 55%);
-      color: rgb(var(--color-text));
-      font-size: var(--text-sm);
-      font-family: var(--font-mono);
-      outline: none;
-      user-select: text;
-      transition: border-color var(--duration-short) var(--ease-standard),
-        box-shadow var(--duration-short) var(--ease-standard);
+      position: relative;
+      display: flex;
+      align-items: center;
 
-      &:focus {
-        border-color: rgb(var(--color-focused-border) / 60%);
-        box-shadow: 0 0 0 2px rgb(var(--color-focused-border) / 16%);
+      // shittim-chest file-picker look: a primary-tinted rounded
+      // square carrying the folder glyph inside the field's left pad.
+      .wizard-target__field-icon {
+        position: absolute;
+        left: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: var(--radius-sm);
+        background: rgb(var(--color-primary) / 14%);
+        color: rgb(var(--color-primary));
+        pointer-events: none;
       }
 
-      &:disabled {
-        opacity: 0.6;
+      input {
+        flex: 1;
+        width: 100%;
+        height: 36px;
+        padding: 0 12px 0 40px;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgb(var(--color-border));
+        background: rgb(var(--color-surface) / 55%);
+        color: rgb(var(--color-text));
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        outline: none;
+        user-select: text;
+        transition: border-color var(--duration-short) var(--ease-standard),
+          box-shadow var(--duration-short) var(--ease-standard);
+
+        &:focus {
+          border-color: rgb(var(--color-focused-border) / 60%);
+          box-shadow: 0 0 0 2px rgb(var(--color-focused-border) / 16%);
+        }
+
+        &:disabled {
+          opacity: 0.6;
+        }
       }
     }
   }
 
-  .installer__hint {
-    margin: 7px 0 0;
+  .wizard-target__hint {
+    margin: 0;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
   }
 }
 
-.installer__progress {
-  .installer__step {
-    margin: 8px 0 0;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-muted));
+/* ── license pane ─────────────────────────────────────────────────── */
+
+.license-box {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-md);
+  background: rgb(var(--color-surface) / 55%);
+
+  pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.55;
+    color: rgb(var(--color-text));
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-focused-border) / 60%);
   }
 }
+
+/* ── done pane ────────────────────────────────────────────────────── */
+
+.wizard-done {
+  .wizard-done__title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: rgb(var(--color-success));
+  }
+
+  .wizard-done__path {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+  }
+
+  .wizard-done__hint {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+    max-width: 80%;
+  }
+}
+
+/* ── footer ───────────────────────────────────────────────────────── */
 
 .installer__footer {
   margin-top: auto;
@@ -106,17 +238,14 @@ body {
   justify-content: space-between;
   gap: 16px;
 
-  .installer__note {
-    margin: 0;
+  .wizard-live {
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
-
-    &--ok {
-      color: rgb(var(--color-success));
-    }
-
-    &--err {
-      color: rgb(var(--color-error));
-    }
   }
+}
+
+.installer__nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }

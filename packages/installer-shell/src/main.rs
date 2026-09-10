@@ -309,6 +309,7 @@ fn start_install(
 
     let payload = state.payload.clone();
     let install_dir = ctx.install_dir.clone();
+    let portable = ctx.portable;
     let flow = InstallFlow {
         payload: &payload,
         registration: &WindowsRegistration,
@@ -317,6 +318,7 @@ fn start_install(
     flow.run(&mut |event| emit_progress(&app, &event))
         .map_err(|e| e.to_string())?;
     cleanup_bootstrap_payload(&install_dir);
+    relocate_model_pack(&install_dir, portable);
     Ok(())
 }
 
@@ -326,6 +328,55 @@ fn start_install(
 /// (Uninstall tolerates the missing files — removal ignores errors.)
 fn cleanup_bootstrap_payload(install_dir: &Path) {
     let _ = std::fs::remove_dir_all(install_dir.join(WEBVIEW2_PAYLOAD_PREFIX));
+}
+
+/// Relocates the payload's shipped model pack into the location the
+/// application's model-pack cache resolves to (the paths.rs conventions:
+/// portable → `<dir>/data/cache`, local → `%LOCALAPPDATA%\WoWSP`). The
+/// extraction lands at `<dir>/models`; a rename usually suffices, falling
+/// back to a recursive copy across volumes.
+fn relocate_model_pack(install_dir: &Path, portable: bool) {
+    let from = install_dir.join("models");
+    if !from.is_dir() {
+        return;
+    }
+    let mut to = if portable {
+        install_dir.join("data").join("cache")
+    } else {
+        local_appdata().join("WoWSP")
+    };
+    let _ = std::fs::create_dir_all(&to);
+    to.push("models");
+    if to == from {
+        return;
+    }
+    if std::fs::rename(&from, &to).is_ok() {
+        return;
+    }
+    if copy_dir_recursive(&from, &to) {
+        let _ = std::fs::remove_dir_all(&from);
+    }
+}
+
+/// Recursively copies `from` into `to` (creating directories as needed).
+/// Existing files are overwritten; unreadable entries are skipped — the
+/// app re-downloads the model pack when the cache turns out incomplete.
+fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
+    let _ = std::fs::create_dir_all(to);
+    let Ok(entries) = std::fs::read_dir(from) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let target = to.join(entry.file_name());
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if !copy_dir_recursive(&entry.path(), &target) {
+                return false;
+            }
+        } else if std::fs::copy(entry.path(), &target).is_err() {
+            return false;
+        }
+    }
+    true
 }
 
 /// Automated-install arguments (headless mode): `--silent` skips the UI
@@ -385,6 +436,7 @@ fn run_headless(
         return Ok(());
     }
     let install_dir = ctx.install_dir.clone();
+    let portable = ctx.portable;
     let flow = InstallFlow {
         payload,
         registration: &WindowsRegistration,
@@ -397,6 +449,7 @@ fn run_headless(
     })
     .map_err(|e| e.to_string())?;
     cleanup_bootstrap_payload(&install_dir);
+    relocate_model_pack(&install_dir, portable);
     Ok(())
 }
 
