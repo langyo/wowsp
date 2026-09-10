@@ -38,6 +38,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 TAURI = REPO / "packages" / "app" / "tauri"
 SHELL = REPO / "packages" / "installer-shell"
+MODELS = REPO / "packages" / "webui" / "src" / "res" / "models"
 VENDOR = SHELL / "vendor"
 WV2_URL = "https://go.microsoft.com/fwlink/?linkid=2099617"
 WV2_NAME = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
@@ -75,10 +76,29 @@ def stage_payload(app_exe: Path) -> Path:
     return stage
 
 
+def stage_models(stage: Path) -> None:
+    """Stage the baked model pack (2D/3D resources) into the payload. The
+    shell relocates it into the app's model-pack cache after extraction, so
+    a fresh install has ships/maps/planes models without touching the
+    network."""
+    dest = stage / "models"
+    shutil.copytree(MODELS, dest)
+    print(f"[stage] model pack: {dest}")
+
+
 def build_installer(stage: Path, env_extra: dict[str, str] | None = None) -> Path:
     label = "bare" if not env_extra else "webview2"
     print(f"[installer:{label}] cargo build -p wowsp_installer_shell --release …")
-    env = {**os.environ, "SHUN_PAYLOAD": str(stage), **(env_extra or {})}
+    env = {
+        **os.environ,
+        "SHUN_PAYLOAD": str(stage),
+        # The multi-hundred-MB embedded payload defeats LTO (the link step
+        # fail-fasts with STATUS_STACK_BUFFER_OVERRUN under thin LTO) and
+        # gains nothing from it; skip LTO and any rustc wrapper cache.
+        "CARGO_PROFILE_RELEASE_LTO": "off",
+        "RUSTC_WRAPPER": "",
+        **(env_extra or {}),
+    }
     subprocess.run(
         ["cargo", "build", "-p", "wowsp_installer_shell", "--release"],
         check=True,
@@ -137,6 +157,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe")
     ap.add_argument("--skip-shell-build", action="store_true", help="reuse target/release/wowsp-installer.exe (bare variant only)")
+    ap.add_argument("--skip-models", action="store_true", help="omit the 2D/3D model pack (~1.2 GB) from the payload")
     args = ap.parse_args()
 
     version = app_version()
@@ -149,6 +170,8 @@ def main() -> int:
     else:
         app_exe = build_app()
     stage = stage_payload(app_exe)
+    if not args.skip_models:
+        stage_models(stage)
     wv2 = ensure_payload()
 
     installer = TARGET / "wowsp-installer.exe"
