@@ -153,6 +153,19 @@ pub async fn ensure_model_pack() -> Result<String, String> {
         }
     }
 
+    // Installer-shipped pack: the shun installer stages models/ beside the
+    // executable. When no release is reachable (offline machine, res-latest
+    // not published yet), serve what shipped instead of failing — otherwise
+    // the frontend would fall back to empty publicDir placeholders.
+    let models_root = cache_dir.join("models");
+    let shipped = fs::read_dir(&models_root)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false);
+    if shipped {
+        tracing::warn!(?cache_dir, "using installer-shipped model pack");
+        return Ok(cache_dir.to_string_lossy().to_string());
+    }
+
     Err(format!(
         "failed to download model pack from any tag: {last_err}"
     ))
