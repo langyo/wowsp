@@ -45,9 +45,47 @@ body {
 
 .wizard-layout--left {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 22px;
-  align-items: stretch;
+  grid-template-columns: auto 1fr;
+  gap: 26px;
+
+  // hikari's HkTimeline ships horizontal geometry only; the vertical rail
+  // layout lives here until the component styles this orientation itself.
+  .hk-timeline[data-orientation="vertical"] {
+    --rail-node: 28px;
+
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-step {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+  }
+
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-step [data-el="indicator"] {
+    width: var(--rail-node);
+    height: var(--rail-node);
+    flex: none;
+  }
+
+  // Connector joining this step's node to the previous one (a 2px column
+  // through the node centers across the inter-step padding).
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-step + .hk-timeline-step::before {
+    content: "";
+    position: absolute;
+    left: calc(var(--rail-node) / 2 - 1px);
+    top: 0;
+    height: 14px;
+    width: 2px;
+    background: rgb(var(--color-border));
+  }
+
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-links {
+    display: none;
+  }
 }
 
 .wizard-layout__pane {
@@ -182,17 +220,17 @@ body {
 .license-box {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 14px 16px;
+  min-width: 0;
   border: 1px solid rgb(var(--color-border));
   border-radius: var(--radius-md);
   background: rgb(var(--color-surface) / 55%);
 
   pre {
     margin: 0;
+    padding: 12px 14px;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.55;
+    line-height: 1.5;
     color: rgb(var(--color-text));
     white-space: pre-wrap;
     overflow-wrap: anywhere;
