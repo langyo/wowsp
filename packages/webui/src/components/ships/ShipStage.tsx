@@ -12,7 +12,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
 import { createCycleTimer } from "@wowsp/holo";
-import { resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
+import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
+import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
@@ -65,6 +66,8 @@ export default defineComponent({
     const containerRef = ref<HTMLElement | null>(null);
     const viewMode = ref<"2d" | "3d">("3d");
     const loading = ref(false);
+    /** Set while the model pack downloads after a 3D toggle on a lite install. */
+    const modelPackDownloading = ref(false);
     const errorMsg = ref<string | null>(null);
     /** Whether a baked 3D model resolves for this ship. */
     const hasModel = ref(true);
@@ -912,9 +915,25 @@ export default defineComponent({
     }
 
     // ── View mode switch ──────────────────────────────────────────────────
-    function setViewMode(mode: "2d" | "3d") {
+    async function setViewMode(mode: "2d" | "3d") {
       if (mode === viewMode.value) return;
       if (mode === "3d") {
+        // Lite installs ship without the model pack: fetch it on demand
+        // (the installer's done pane offers the same download up front).
+        if (!isModelPackReady()) {
+          if (modelPackDownloading.value) return;
+          modelPackDownloading.value = true;
+          toast.show("3D 视图需要下载模型资源包（约 1.2 GB），已开始下载…");
+          try {
+            await initModelPack(() => api.ensureModelPack());
+            toast.success("模型资源包就绪");
+          } catch {
+            toast.error("模型资源包下载失败，请稍后重试");
+            modelPackDownloading.value = false;
+            return;
+          }
+          modelPackDownloading.value = false;
+        }
         viewMode.value = "3d";
         // Wait for the container to render, then init.
         requestAnimationFrame(() => {

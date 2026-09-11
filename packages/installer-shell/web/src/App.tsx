@@ -36,6 +36,13 @@ interface FlowEventPayload {
   message?: string;
 }
 
+interface AttachmentView {
+  key: string;
+  title: string;
+  included: boolean;
+  size?: number;
+}
+
 const MODE_ITEMS = [
   { id: "local", title: "安装到本机", description: "标准单用户安装，含开始菜单快捷方式与自动更新。", badge: "推荐", icon: Monitor },
   { id: "usb", title: "U 盘（网吧模式）", description: "便携副本放在可移动磁盘上，无注册表项，数据全部留在盘内。", icon: Usb },
@@ -77,6 +84,12 @@ export default defineComponent({
     const failMessage = ref("");
     const note = ref<{ text: string; kind: "ok" | "err" } | null>(null);
 
+    // Declared attachments not carried by this build (lite builds): the
+    // done pane offers to fetch them right after installing.
+    const attachments = ref<AttachmentView[]>([]);
+    const downloaded = ref<Set<string>>(new Set());
+    const downloading = ref<string | null>(null);
+
     const running = ref(false);
 
     async function refreshDefaults() {
@@ -90,6 +103,9 @@ export default defineComponent({
 
     onMounted(() => {
       refreshDefaults().catch((err) => { hint.value = String(err); });
+      invoke<AttachmentView[]>("get_attachments")
+        .then((list) => { attachments.value = list; })
+        .catch(() => {});
       listen<FlowEventPayload>("install-progress", (event) => {
         if (event.step) flowStep.value = event.step;
         if (event.percent != null) overall.value = Math.round(event.percent);
@@ -138,6 +154,24 @@ export default defineComponent({
         failMessage.value = String(err);
       } finally {
         running.value = false;
+      }
+    }
+
+    async function fetchAttachment(attachment: AttachmentView) {
+      if (downloading.value) return;
+      downloading.value = attachment.key;
+      try {
+        await invoke("download_attachment", {
+          key: attachment.key,
+          dir: dir.value.trim(),
+          mode: mode.value,
+        });
+        downloaded.value.add(attachment.key);
+        showNote(`✔ ${attachment.title} 已就绪`, "ok");
+      } catch (err) {
+        showNote(String(err), "err");
+      } finally {
+        downloading.value = null;
       }
     }
 
@@ -248,6 +282,22 @@ export default defineComponent({
                   ? "便携副本已就绪：数据全部留在可移动磁盘内。"
                   : "便携副本已就绪，可从目标目录直接运行。"}
             </p>
+            {attachments.value
+              .filter((a) => !a.included && !downloaded.value.has(a.key))
+              .map((a) => (
+                <HButton
+                  variant="ghost"
+                  size="sm"
+                  disabled={downloading.value != null}
+                  onClick={() => fetchAttachment(a)}
+                >
+                  {downloading.value === a.key
+                    ? "下载中…"
+                    : a.size
+                      ? `下载 ${a.title}（约 ${Math.round(a.size / 1024 / 1024)} MB）`
+                      : `下载 ${a.title}`}
+                </HButton>
+              ))}
           </section>
         );
 
