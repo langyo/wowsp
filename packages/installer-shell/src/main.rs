@@ -95,15 +95,6 @@ struct DirDefaults {
     removable: bool,
 }
 
-#[derive(Serialize)]
-struct AttachmentView {
-    key: String,
-    title: String,
-    /// True when this build's payload already carries the attachment.
-    included: bool,
-    size: Option<u64>,
-}
-
 fn local_appdata() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
@@ -291,54 +282,6 @@ fn default_dir(mode: String) -> DirDefaults {
         dir: dir.to_string_lossy().into_owned(),
         removable,
     }
-}
-
-/// The manifest-declared attachments resolved against this build's
-/// payload: entries flagged `included` shipped inside the installer, the
-/// rest are downloadable at the done step.
-#[tauri::command]
-fn get_attachments(state: tauri::State<'_, AppState>) -> Vec<AttachmentView> {
-    shun::attachments::resolve(&state.config, &state.payload)
-        .into_iter()
-        .map(|a| AttachmentView {
-            key: a.config.key,
-            title: a.config.title,
-            included: a.included,
-            size: a.config.size,
-        })
-        .collect()
-}
-
-/// Streams a declared attachment (e.g. the 2D/3D model pack in lite
-/// builds) into the install directory, then relocates it into the
-/// application's model-pack cache exactly like a full build's payload.
-#[tauri::command]
-fn download_attachment(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    key: String,
-    dir: String,
-    mode: String,
-) -> Result<(), String> {
-    let dir = dir.trim().trim_end_matches('\\').to_string();
-    if dir.is_empty() {
-        return Err("安装目录不能为空".into());
-    }
-    let resolved = shun::attachments::resolve(&state.config, &state.payload);
-    let attachment = resolved
-        .iter()
-        .find(|a| a.config.key == key)
-        .ok_or_else(|| format!("未知附件：{key}"))?;
-    if attachment.included {
-        return Ok(());
-    }
-
-    shun::attachments::download(&attachment.config, Path::new(&dir), &mut |event| {
-        emit_progress(&app, &event)
-    })
-    .map_err(|e| e.to_string())?;
-    relocate_model_pack(Path::new(&dir), mode != "local");
-    Ok(())
 }
 
 fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
@@ -536,12 +479,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { config, payload })
-        .invoke_handler(tauri::generate_handler![
-            default_dir,
-            get_attachments,
-            download_attachment,
-            start_install
-        ])
+        .invoke_handler(tauri::generate_handler![default_dir, start_install])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP installer shell");
 }
