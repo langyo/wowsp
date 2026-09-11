@@ -22,6 +22,7 @@ Requires `gh` CLI authenticated with `repo` scope.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models"
 REPO = "langyo/wowsp"
 ARCHIVE_NAME = "wowsp-models.tar.gz"
+SHUN_ARCHIVE_NAME = "wowsp-models.shun"
 PRIMARY_TAG = "res-latest"
 FALLBACK_TAGS = ["res-latest-old-1", "res-latest-old-2"]
 
@@ -93,6 +95,18 @@ def main() -> None:
         size_mb = tmp_archive.stat().st_size / 1024 / 1024
         print(f"  archive: {size_mb:.1f} MB")
 
+        # Companion shun archive for installer-attachment downloads (the
+        # shun shell's download_attachment streams this variant; entries
+        # verify against its embedded manifest). Requires the `shun` CLI
+        # (cargo install shun).
+        tmp_shun = Path(tmp) / SHUN_ARCHIVE_NAME
+        shun = shutil.which("shun")
+        if not shun:
+            print("  shun CLI not found — skip (cargo install shun)")
+        else:
+            run([shun, "pack", str(MODELS_DIR), "--out", str(tmp_shun)])
+            print(f"  shun archive: {tmp_shun.stat().st_size / 1024 / 1024:.1f} MB")
+
         # ── Rotate tags ─────────────────────────────────────────────────
         print(f"[2/3] rotating release tags ...")
         # Shift old-1 → old-2, old-0 (primary) → old-1.
@@ -154,10 +168,13 @@ def main() -> None:
         })
         gh_api(f"repos/{REPO}/releases", method="POST", stdin=body)
 
-        # Upload the archive.
+        # Upload the archive(s).
+        uploads = [str(tmp_archive)]
+        if tmp_shun.exists():
+            uploads.append(str(tmp_shun))
         run([
             "gh", "release", "upload", PRIMARY_TAG,
-            str(tmp_archive),
+            *uploads,
             "--repo", REPO,
             "--clobber",
         ])

@@ -45,6 +45,11 @@ export async function initModelPack(fetch: () => Promise<string>): Promise<void>
   }
 }
 
+/** Whether the model-pack cache is wired up (initModelPack succeeded). */
+export function isModelPackReady(): boolean {
+  return _modelCacheRoot != null;
+}
+
 // ── Ship model availability (lowercase → original-casing stem map) ──────
 const _shipGlobKeys = Object.keys(
   import.meta.glob("../../res/models/ships/*.glb"),
