@@ -56,7 +56,10 @@ def run(cmd: list[str], **kwargs) -> None:
 
 def build_app() -> Path:
     print("[app] building webui + wowsp_tauri (release) …")
-    run(["pnpm", "--filter", "@wowsp/webui", "build"])
+    # pnpm ships as a .cmd shim on Windows — subprocess needs the resolved
+    # path (bare "pnpm" fails CreateProcess's extension-less lookup).
+    pnpm = shutil.which("pnpm") or "pnpm"
+    run([pnpm, "--filter", "@wowsp/webui", "build"])
     run(["cargo", "build", "-p", "wowsp_tauri", "--release"])
     exe = TARGET / "wowsp.exe"
     if not exe.is_file():
@@ -175,17 +178,11 @@ def main() -> int:
     else:
         app_exe = build_app()
 
-    # Staging trees: the lite payload (application only) and the full
-    # payload (application + model pack). Each flavor's build repacks its
-    # stage into the shell binary.
-    lite_stage = stage_payload(app_exe)
-    full_stage = None
-    if any("full" in f for f in flavors):
-        full_stage = stage_payload(app_exe)
-        stage_models(full_stage)
+    # One shared staging directory, re-staged just-in-time before each
+    # flavor pair: lite (application only) vs full (application + model
+    # pack). Staging everything up front would let the full payload bleed
+    # into the lite builds — both flavors pack the same path.
     wv2 = ensure_payload()
-
-    installer = TARGET / "wowsp-installer.exe"
 
     def build_variant(stage: Path, with_wv2: bool, suffix: str) -> None:
         if with_wv2:
@@ -195,14 +192,23 @@ def main() -> int:
         # shared output binary.
         emit(version, exe, suffix)
 
-    if "lite" in flavors:
-        build_variant(lite_stage, False, "")
-    if "lite-webview2" in flavors:
-        build_variant(lite_stage, True, "-webview2")
-    if "full" in flavors:
-        build_variant(full_stage, False, "-full")
-    if "full-webview2" in flavors:
-        build_variant(full_stage, True, "-full-webview2")
+    lite_flavors = [f for f in flavors if f.startswith("lite")]
+    full_flavors = [f for f in flavors if f.startswith("full")]
+
+    if lite_flavors:
+        lite_stage = stage_payload(app_exe)
+        if "lite" in flavors:
+            build_variant(lite_stage, False, "")
+        if "lite-webview2" in flavors:
+            build_variant(lite_stage, True, "-webview2")
+
+    if full_flavors:
+        full_stage = stage_payload(app_exe)
+        stage_models(full_stage)
+        if "full" in flavors:
+            build_variant(full_stage, False, "-full")
+        if "full-webview2" in flavors:
+            build_variant(full_stage, True, "-full-webview2")
     return 0
 
 
