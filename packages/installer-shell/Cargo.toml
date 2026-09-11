@@ -50,14 +50,6 @@ publisher = "langyo"
 # with the real application directory: SHUN_PAYLOAD=<staged wowsp.exe dir>.
 payload = "payload"
 
-[[package.metadata.shun.attachments]]
-key = "models"
-title = "2D/3D 模型资源包"
-dest = "models"
-
-[package.metadata.shun.attachments.online]
-url = "https://github.com/langyo/wowsp/releases/latest/download/wowsp-models.shun"
-
 [package.metadata.shun.install]
 local = true
 portable = true

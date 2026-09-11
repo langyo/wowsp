@@ -10,6 +10,7 @@
 @use "@celestia-island/hikari/styles/theme/foundation.scss" as hikari-foundation;
 @use "@celestia-island/hikari/styles/theme/themes.scss" as hikari-themes;
 @use "@celestia-island/hikari/styles/theme/base.scss" as hikari-base;
+@use "@celestia-island/hikari/styles/theme/_scrollbar.scss" as hikari-scrollbar;
 @use "@celestia-island/hikari/styles/admin-tokens.scss" as hikari-tokens;
 
 // Live alias kept for app-local scss written against wowsp's older token

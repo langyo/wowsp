@@ -1,16 +1,17 @@
 import { defineComponent, onMounted, ref } from "vue";
-import { Box, CheckCircle2, FolderOpen, Monitor, Usb } from "lucide-vue-next";
+import { Box, CheckCircle2, FolderPlus, Monitor, Usb } from "lucide-vue-next";
 import {
   HAlert,
   HButton,
   HCheckbox,
   HProgressBar,
+  HScrollContainer,
   HSelectionGrid,
   HTimeline,
 } from "@celestia-island/hikari";
 
 import AppTitleBar from "./components/AppTitleBar";
-import { invoke, listen, openDirectory } from "./tauri";
+import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 import licenseText from "../../../../LICENSE?raw";
 
 /**
@@ -34,13 +35,6 @@ interface FlowEventPayload {
   step?: string;
   percent?: number | null;
   message?: string;
-}
-
-interface AttachmentView {
-  key: string;
-  title: string;
-  included: boolean;
-  size?: number;
 }
 
 const MODE_ITEMS = [
@@ -84,11 +78,6 @@ export default defineComponent({
     const failMessage = ref("");
     const note = ref<{ text: string; kind: "ok" | "err" } | null>(null);
 
-    // Declared attachments not carried by this build (lite builds): the
-    // done pane offers to fetch them right after installing.
-    const attachments = ref<AttachmentView[]>([]);
-    const downloaded = ref<Set<string>>(new Set());
-    const downloading = ref<string | null>(null);
 
     const running = ref(false);
 
@@ -103,9 +92,6 @@ export default defineComponent({
 
     onMounted(() => {
       refreshDefaults().catch((err) => { hint.value = String(err); });
-      invoke<AttachmentView[]>("get_attachments")
-        .then((list) => { attachments.value = list; })
-        .catch(() => {});
       listen<FlowEventPayload>("install-progress", (event) => {
         if (event.step) flowStep.value = event.step;
         if (event.percent != null) overall.value = Math.round(event.percent);
@@ -157,24 +143,6 @@ export default defineComponent({
       }
     }
 
-    async function fetchAttachment(attachment: AttachmentView) {
-      if (downloading.value) return;
-      downloading.value = attachment.key;
-      try {
-        await invoke("download_attachment", {
-          key: attachment.key,
-          dir: dir.value.trim(),
-          mode: mode.value,
-        });
-        downloaded.value.add(attachment.key);
-        showNote(`✔ ${attachment.title} 已就绪`, "ok");
-      } catch (err) {
-        showNote(String(err), "err");
-      } finally {
-        downloading.value = null;
-      }
-    }
-
     function showNote(text: string, kind: "ok" | "err" = "ok") {
       note.value = { text, kind };
     }
@@ -204,7 +172,7 @@ export default defineComponent({
               <div class="wizard-target__row">
                 <div class="wizard-target__field">
                   <span class="wizard-target__field-icon" aria-hidden="true">
-                    <FolderOpen size={18} />
+                    <FolderPlus size={18} />
                   </span>
                   <input
                     id="dir-input"
@@ -218,11 +186,6 @@ export default defineComponent({
                   浏览…
                 </HButton>
               </div>
-              <HCheckbox
-                modelValue={desktop.value}
-                label="同时创建桌面快捷方式"
-                onUpdate:modelValue={(v: boolean) => (desktop.value = v)}
-              />
               <p class="wizard-target__hint">{hint.value}</p>
             </section>
           </section>
@@ -230,13 +193,18 @@ export default defineComponent({
           <section class="wizard-pane">
             <h1>用户协议</h1>
             <p class="wizard-sub">安装前请阅读以下开源许可（Synthetic Source License 1.0）。</p>
-            <div class="license-box">
+            <HScrollContainer class="license-box" axis="vertical">
               <pre>{licenseText}</pre>
-            </div>
+            </HScrollContainer>
             <HCheckbox
               modelValue={agreed.value}
               label="我已阅读并同意本协议的全部条款"
               onUpdate:modelValue={(v: boolean) => (agreed.value = v)}
+            />
+            <HCheckbox
+              modelValue={desktop.value}
+              label="同时创建桌面快捷方式"
+              onUpdate:modelValue={(v: boolean) => (desktop.value = v)}
             />
           </section>
         ) : step.value === "install" ? (
@@ -282,22 +250,6 @@ export default defineComponent({
                   ? "便携副本已就绪：数据全部留在可移动磁盘内。"
                   : "便携副本已就绪，可从目标目录直接运行。"}
             </p>
-            {attachments.value
-              .filter((a) => !a.included && !downloaded.value.has(a.key))
-              .map((a) => (
-                <HButton
-                  variant="ghost"
-                  size="sm"
-                  disabled={downloading.value != null}
-                  onClick={() => fetchAttachment(a)}
-                >
-                  {downloading.value === a.key
-                    ? "下载中…"
-                    : a.size
-                      ? `下载 ${a.title}（约 ${Math.round(a.size / 1024 / 1024)} MB）`
-                      : `下载 ${a.title}`}
-                </HButton>
-              ))}
           </section>
         );
 
@@ -348,6 +300,11 @@ export default defineComponent({
                       同意并安装
                     </HButton>
                   </>
+                )}
+                {step.value === "done" && (
+                  <HButton variant="primary" size="lg" onClick={() => tauriWindow()?.close()}>
+                    完成安装
+                  </HButton>
                 )}
               </div>
             </footer>
