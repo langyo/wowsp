@@ -1,5 +1,5 @@
 import { defineComponent, onMounted, ref } from "vue";
-import { Box, CheckCircle2, FolderPlus, Monitor, Usb } from "lucide-vue-next";
+import { Box, CheckCircle2, FolderTree, Monitor, Usb } from "lucide-vue-next";
 import {
   HAlert,
   HButton,
@@ -49,6 +49,13 @@ const HINTS: Record<Mode, string> = {
   green: "默认解压到安装器旁边，可改为任意可写目录。",
 };
 
+const FLAVOR_LABELS: Record<string, string> = {
+  lite: "精简版（不含模型资源包，可联网获取）",
+  "lite-webview2": "精简版 · 含 WebView2 运行时（不含模型资源包）",
+  full: "完整版 · 含 2D/3D 模型资源包",
+  "full-webview2": "完整版 · 含 2D/3D 模型资源包与 WebView2 运行时",
+};
+
 const STEPS: { key: StepKey; label: string }[] = [
   { key: "mode", label: "安装方式" },
   { key: "license", label: "用户协议" },
@@ -90,8 +97,13 @@ export default defineComponent({
           : HINTS[mode.value];
     }
 
+    const identity = ref<{ version: string; flavor: string } | null>(null);
+
     onMounted(() => {
       refreshDefaults().catch((err) => { hint.value = String(err); });
+      invoke<{ version: string; flavor: string }>("get_identity")
+        .then((id) => { identity.value = id; })
+        .catch(() => {});
       listen<FlowEventPayload>("install-progress", (event) => {
         if (event.step) flowStep.value = event.step;
         if (event.percent != null) overall.value = Math.round(event.percent);
@@ -172,7 +184,7 @@ export default defineComponent({
               <div class="wizard-target__row">
                 <div class="wizard-target__field">
                   <span class="wizard-target__field-icon" aria-hidden="true">
-                    <FolderPlus size={18} />
+                    <FolderTree size={16} />
                   </span>
                   <input
                     id="dir-input"
@@ -187,6 +199,12 @@ export default defineComponent({
                 </HButton>
               </div>
               <p class="wizard-target__hint">{hint.value}</p>
+              {identity.value && (
+                <p class="wizard-identity">
+                  {`WoWSP ${identity.value.version} · `}
+                  {FLAVOR_LABELS[identity.value.flavor] ?? identity.value.flavor}
+                </p>
+              )}
             </section>
           </section>
         ) : step.value === "license" ? (
