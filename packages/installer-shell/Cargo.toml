@@ -15,12 +15,12 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
-shun = "0.2.4"
+shun = "0.2.6"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-shun = "0.2.4"
+shun = "0.2.6"
 
 # WebView2 runtime detection (same registry layout the NSIS engine used)
 winreg.workspace = true
@@ -49,6 +49,14 @@ publisher = "langyo"
 # Smoke payload for plain `cargo build` (CI). Release staging overrides it
 # with the real application directory: SHUN_PAYLOAD=<staged wowsp.exe dir>.
 payload = "payload"
+
+[[package.metadata.shun.attachments]]
+key = "models"
+title = "2D/3D 模型资源包"
+dest = "models"
+
+[package.metadata.shun.attachments.online]
+url = "https://github.com/langyo/wowsp/releases/latest/download/wowsp-models.shun"
 
 [package.metadata.shun.install]
 local = true
