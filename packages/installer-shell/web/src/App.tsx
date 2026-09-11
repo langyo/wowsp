@@ -11,6 +11,7 @@ import {
 } from "@celestia-island/hikari";
 
 import AppTitleBar from "./components/AppTitleBar";
+import LogPane, { type LogLine } from "./components/LogPane";
 import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 import licenseText from "../../../../LICENSE?raw";
 
@@ -35,6 +36,14 @@ interface FlowEventPayload {
   step?: string;
   percent?: number | null;
   message?: string;
+  record?: {
+    type: string;
+    path?: string;
+    line?: string;
+    command?: string;
+    code?: string;
+    detail?: string;
+  };
 }
 
 const MODE_ITEMS = [
@@ -85,6 +94,42 @@ export default defineComponent({
     const failMessage = ref("");
     const note = ref<{ text: string; kind: "ok" | "err" } | null>(null);
 
+    // Install log pane: structured events composed into localized lines
+    // with HH:MM:SS stamps; ordering follows the manifest (newest-first
+    // default) with a per-run toggle.
+    const zh = navigator.language.toLowerCase().startsWith("zh");
+    const logLines = ref<LogLine[]>([]);
+    const logOrder = ref<"newest" | "oldest">("newest");
+    const stamp = () => new Date().toTimeString().slice(0, 8);
+    const pushLog = (kind: LogLine["kind"], text: string) => {
+      logLines.value.push({ time: stamp(), kind, text });
+      if (logLines.value.length > 500) logLines.value.shift();
+    };
+    // The flow's progress labels are composed English verbs; render the
+    // ones we know in the UI language and pass the rest through.
+    const localizeStep = (step: string): string => {
+      if (!zh) return step;
+      const m = /^(Extracting|Reusing|Downloading|Registering|Writing)\s+(.+)$/.exec(step);
+      if (!m) return step;
+      const verbs: Record<string, string> = {
+        Extracting: "正在解压",
+        Reusing: "正在复用",
+        Downloading: "正在下载",
+        Registering: "正在登记",
+        Writing: "正在写入",
+      };
+      return `${verbs[m[1]] ?? m[1]} ${m[2]}`;
+    };
+    const phaseLabel = (phase: string | undefined): string => {
+      if (!zh) return phase ?? "";
+      switch (phase) {
+        case "download": return "正在下载资源";
+        case "extract": return "正在解压文件";
+        case "register": return "正在登记系统信息";
+        default: return "正在安装";
+      }
+    };
+
 
     const running = ref(false);
 
@@ -104,12 +149,33 @@ export default defineComponent({
       invoke<{ version: string; flavor: string }>("get_identity")
         .then((id) => { identity.value = id; })
         .catch(() => {});
+      invoke<{ log_level: string; log_order: string }>("get_shell_prefs")
+        .then((prefs) => {
+          logOrder.value = prefs.log_order === "oldest" ? "oldest" : "newest";
+        })
+        .catch(() => {});
       listen<FlowEventPayload>("install-progress", (event) => {
-        if (event.step) flowStep.value = event.step;
+        // Structured log records compose into localized pane lines.
+        if (event.record) {
+          const r = event.record;
+          if (r.type === "file-write" && r.path) {
+            pushLog("echo", zh ? `写入 ${r.path}` : `Writing ${r.path}`);
+          } else if (r.type === "file-reuse" && r.path) {
+            pushLog("echo", zh ? `复用 ${r.path}` : `Reusing ${r.path}`);
+          } else if (r.type === "warning") {
+            pushLog("error", r.detail ?? r.code ?? "");
+          } else if (r.type === "script-line" && r.line) {
+            pushLog("echo", r.line);
+          } else if (r.type === "command-done" && r.command) {
+            pushLog("ok", `✓ ${r.command}`);
+          }
+        }
+        if (event.phase) flowStep.value = localizeStep(event.step ?? "") || phaseLabel(event.phase);
         if (event.percent != null) overall.value = Math.round(event.percent);
         if (event.message) {
           installFailed.value = true;
           failMessage.value = event.message;
+          pushLog("error", event.message);
         }
       });
     });
@@ -121,7 +187,9 @@ export default defineComponent({
         installFailed.value = false;
         failMessage.value = "";
         overall.value = null;
-        flowStep.value = "正在准备安装…";
+        flowStep.value = zh ? "正在准备安装…" : "Preparing the install…";
+        logLines.value = [];
+        pushLog("step", zh ? "开始安装" : "Install started");
       }
     }
 
@@ -150,6 +218,7 @@ export default defineComponent({
       } catch (err) {
         installFailed.value = true;
         failMessage.value = String(err);
+        logLines.value = [];
       } finally {
         running.value = false;
       }
@@ -226,31 +295,40 @@ export default defineComponent({
             />
           </section>
         ) : step.value === "install" ? (
-          <section class="wizard-pane wizard-pane--center">
-            {installFailed.value ? (
-              <>
-                <HAlert
-                  variant="error"
-                  title="安装失败"
-                  message={failMessage.value}
-                />
-                <HButton variant="primary" onClick={() => go("license")}>
-                  返回
-                </HButton>
-              </>
-            ) : (
-              <>
-                <img src="/logo.webp" alt="" class="wizard-logo" />
-                <p class="wizard-pane__title">WoWSP</p>
-                <HProgressBar
-                  status="loading"
-                  size="md"
-                  value={overall.value ?? undefined}
-                  showLabel={overall.value != null}
-                />
-                <p class="wizard-step">{flowStep.value || "正在安装 WoWSP，这可能需要一点时间…"}</p>
-              </>
-            )}
+          <section class="wizard-pane wizard-pane--install">
+            <div class="wizard-install__main">
+              {installFailed.value ? (
+                <>
+                  <HAlert
+                    variant="error"
+                    title="安装失败"
+                    message={failMessage.value}
+                  />
+                  <HButton variant="primary" onClick={() => go("license")}>
+                    返回
+                  </HButton>
+                </>
+              ) : (
+                <>
+                  <img src="/logo.webp" alt="" class="wizard-logo" />
+                  <p class="wizard-pane__title">WoWSP</p>
+                  <HProgressBar
+                    status="loading"
+                    size="md"
+                    value={overall.value ?? undefined}
+                    showLabel={overall.value != null}
+                  />
+                  <p class="wizard-step">{flowStep.value || "正在安装 WoWSP，这可能需要一点时间…"}</p>
+                </>
+              )}
+            </div>
+            <LogPane
+              lines={logLines.value}
+              order={logOrder.value}
+              onToggleOrder={() => {
+                logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
+              }}
+            />
           </section>
         ) : (
           <section class="wizard-pane wizard-pane--center wizard-done">

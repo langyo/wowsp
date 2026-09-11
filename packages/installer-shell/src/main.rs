@@ -296,6 +296,31 @@ struct Identity {
     flavor: String,
 }
 
+#[derive(Serialize)]
+struct ShellPrefs {
+    log_level: String,
+    log_order: String,
+}
+
+/// Install-pane preferences from the manifest's `[shun.shell]` table —
+/// log verbosity and line ordering (newest-first is the default).
+#[tauri::command]
+fn get_shell_prefs(state: tauri::State<'_, AppState>) -> ShellPrefs {
+    let shell = state.config.shell.clone().unwrap_or_default();
+    ShellPrefs {
+        log_level: match shell.log_level {
+            Some(shun::config::LogVerbosity::Files) => "files".into(),
+            Some(shun::config::LogVerbosity::Scripts) => "scripts".into(),
+            Some(shun::config::LogVerbosity::Off) => "off".into(),
+            _ => "all".into(),
+        },
+        log_order: match shell.log_order {
+            Some(shun::config::LogOrder::Oldest) => "oldest".into(),
+            _ => "newest".into(),
+        },
+    }
+}
+
 /// The installer's identity: product version plus the build flavor
 /// (which components the payload carries), shown under the install
 /// location.
@@ -498,7 +523,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { config, payload })
-        .invoke_handler(tauri::generate_handler![default_dir, get_identity, start_install])
+        .invoke_handler(tauri::generate_handler![default_dir, get_identity, get_shell_prefs, start_install])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP installer shell");
 }

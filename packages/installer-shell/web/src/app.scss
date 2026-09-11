@@ -146,6 +146,23 @@ body {
   text-align: center;
 }
 
+/* Install pane: progress on the left, live log on the right */
+.wizard-pane--install {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 22px;
+}
+
+.wizard-install__main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+  min-height: 0;
+}
+
 .wizard-sub {
   margin: 4px 0 0;
   font-size: var(--text-sm);
