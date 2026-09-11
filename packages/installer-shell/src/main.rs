@@ -46,6 +46,8 @@ const RELEASES_URL: &str = "https://github.com/langyo/wowsp/releases/latest";
 const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-config.json"));
 /// The payload archive packed by build.rs from `metadata.shun.payload`.
 const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
+/// Build flavor (lite/full + WebView2 bundling), stamped by build.rs.
+const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.txt"));
 
 /// State shared by the commands: the resolved config and the payload
 /// (cloned per install run).
@@ -288,6 +290,23 @@ fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
     let _ = app.emit("install-progress", event);
 }
 
+#[derive(Serialize)]
+struct Identity {
+    version: String,
+    flavor: String,
+}
+
+/// The installer's identity: product version plus the build flavor
+/// (which components the payload carries), shown under the install
+/// location.
+#[tauri::command]
+fn get_identity(state: tauri::State<'_, AppState>) -> Identity {
+    Identity {
+        version: state.config.product.version.clone(),
+        flavor: SHUN_FLAVOR.trim().to_string(),
+    }
+}
+
 #[tauri::command]
 fn start_install(
     app: tauri::AppHandle,
@@ -479,7 +498,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { config, payload })
-        .invoke_handler(tauri::generate_handler![default_dir, start_install])
+        .invoke_handler(tauri::generate_handler![default_dir, get_identity, start_install])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP installer shell");
 }

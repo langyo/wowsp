@@ -78,16 +78,46 @@ body {
     flex: none;
   }
 
-  // Connector joining this step's node to the previous one (a 2px column
-  // through the node centers across the inter-step padding).
+  // Connectors: two halves per inter-node span so the rail is continuous
+  // regardless of node internals — the top half (previous node center →
+  // step start) rides on ::before of the FOLLOWING step, the bottom half
+  // (this node center → step end) on ::after of every non-last step.
+  // Both sit behind the indicator, which carries an opaque background.
   .hk-timeline[data-orientation="vertical"] .hk-timeline-step + .hk-timeline-step::before {
     content: "";
     position: absolute;
     left: calc(var(--rail-node) / 2 - 1px);
     top: 0;
-    height: var(--rail-gap);
+    height: calc(var(--rail-gap) + var(--rail-node) / 2);
     width: 2px;
     background: rgb(var(--color-border));
+  }
+
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-step:not([data-last])::after {
+    content: "";
+    position: absolute;
+    left: calc(var(--rail-node) / 2 - 1px);
+    top: calc(var(--rail-gap) + var(--rail-node) / 2);
+    bottom: 0;
+    width: 2px;
+    background: rgb(var(--color-border));
+  }
+
+  // Opaque node fills so the rail never shows through the translucent
+  // active tint (hikari's active indicator is 15% primary over nothing).
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-step[data-status="active"] [data-el="indicator"] {
+    background-color: color-mix(in srgb, var(--hi-color-primary) 15%, rgb(var(--color-surface)));
+  }
+
+  .hk-timeline[data-orientation="vertical"] .hk-timeline-step [data-el="indicator"] {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wizard-identity {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
   }
 
   .hk-timeline[data-orientation="vertical"] .hk-timeline-links {

@@ -42,5 +42,10 @@ fn main() {
     std::fs::write(out_dir.join("wowsp-payload.shun"), &archive).expect("write embedded payload");
     println!("cargo:rerun-if-changed={}", payload_dir.display());
 
+    // 3. Flavor identity (lite/full + WebView2 bundling) shown by the UI.
+    println!("cargo:rerun-if-env-changed=SHUN_FLAVOR");
+    let flavor = std::env::var("SHUN_FLAVOR").unwrap_or_else(|_| "dev".into());
+    std::fs::write(out_dir.join("shun-flavor.txt"), flavor).expect("write flavor");
+
     tauri_build::build()
 }
