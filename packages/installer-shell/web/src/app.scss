@@ -205,15 +205,10 @@ body {
       // square carrying the folder glyph inside the field's left pad.
       .wizard-target__field-icon {
         position: absolute;
-        left: 4px;
+        left: 12px;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        width: 36px;
-        height: 36px;
-        border-radius: var(--radius-sm);
-        background: rgb(var(--color-primary) / 14%);
-        color: rgb(var(--color-primary));
+        color: rgb(var(--color-muted));
         pointer-events: none;
       }
 
@@ -221,7 +216,7 @@ body {
         flex: 1;
         width: 100%;
         height: 36px;
-        padding: 0 12px 0 48px;
+        padding: 0 12px 0 36px;
         border-radius: var(--radius-sm);
         border: 1px solid rgb(var(--color-border));
         background: rgb(var(--color-surface) / 55%);
