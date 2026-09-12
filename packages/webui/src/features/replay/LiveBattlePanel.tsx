@@ -1,10 +1,22 @@
 /**
  * Live-battle panel (the first item in the replay rail while the game is
  * running). Shows the current battle's mode, map, roster with per-player
- * WR / PR (queried on-demand from the WG public API through a throttled
- * queue — WG rate-limits bursts hard) and the elapsed battle clock.
+ * WR / PR (fetched as ONE batched WG-API call per roster update — the
+ * backend resolves N names with bounded parallelism and two combined
+ * lookups) and the elapsed battle clock.
+ *
+ * Every human card is clickable and jumps to the lookup (水表) view for that
+ * player; hidden profiles show a red notice instead of a fake "no data".
  */
-import { computed, defineComponent, reactive, watch, type CSSProperties } from "vue";
+import {
+  computed,
+  defineComponent,
+  onBeforeUnmount,
+  reactive,
+  watch,
+  type CSSProperties,
+} from "vue";
+import { useRouter } from "vue-router";
 
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 import { useAccountStore } from "@/stores/account";
@@ -44,8 +56,23 @@ interface PlayerStat {
   winrate: number | null;
   pr: number | null;
   battles: number | null;
+  hidden: boolean;
   loading: boolean;
 }
+
+/** Resolved stat lines cached by `${realm}:${name}` at module scope. Players
+ *  queue together for many games, so re-encountered names render instantly
+ *  without another WG hit. Cloned into the per-battle reactive map. */
+const statCache = new Map<string, PlayerStat>();
+const STAT_CACHE_MAX = 2000;
+
+const emptyStat = (loading: boolean): PlayerStat => ({
+  winrate: null,
+  pr: null,
+  battles: null,
+  hidden: false,
+  loading,
+});
 
 export default defineComponent({
   name: "LiveBattlePanel",
@@ -55,13 +82,21 @@ export default defineComponent({
      *  (the game writes the file when the battle ends) — the battle is on
      *  the results screen, stats final but replay still settling. */
     settling: { type: Boolean, default: false },
+    /** Realm the battle is played on (from the active client install);
+     *  used for both the stats lookup and the lookup-view jump. */
+    realm: { type: String, default: "" },
   },
   setup(props) {
     const accounts = useAccountStore();
+    const router = useRouter();
     const { dataLanguage } = useLanguage();
     const stats = reactive(new Map<number, PlayerStat>());
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
+    );
+
+    const realm = computed(
+      () => props.realm || accounts.activeRealm || "asia",
     );
 
     const allies = computed(
@@ -71,74 +106,123 @@ export default defineComponent({
       () => props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
     );
 
-    // WG's public API rate-limits hard bursts (each lookup = 4 requests;
-    // 12 players at once = 48 parallel calls → everything gets 429/407'd).
-    // Run the queue at low concurrency with a stagger and one retry.
-    let running = 0;
-    const queue: VehicleEntry[] = [];
-    let drainTimer: ReturnType<typeof setTimeout> | null = null;
-    // Battle generation: bumped only when the battle itself changes, so
-    // lookups still in flight at that moment drop their results instead of
-    // writing them into the new battle's stats (vehicle ids repeat across
-    // battles).
+    // Batch pipeline: names missing from the cache are collected and sent as
+    // one debounced RPC (the backend fans them out with bounded parallelism).
+    // Battle generation guards in-flight results: when the battle changes,
+    // stale responses drop instead of writing into the new battle's stats
+    // (vehicle ids repeat across battles).
     let battleGen = 0;
+    const pendingNames = new Set<string>();
+    /** Names waiting for the backoff retry (kept apart from `pendingNames`
+     *  so the post-batch reschedule only ever picks up fresh names). */
+    const retryNames = new Set<string>();
+    let batchTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    /** Batch retries left for the current battle (reset on battle change) —
+     *  keeps a hard-down WG API from being probed all battle long. */
+    let retriesLeft = 2;
 
-    function lookupOnce(v: VehicleEntry, gen: number): Promise<boolean> {
-      return api
-        .lookupPlayerStats(v.name, accounts.activeRealm)
-        .then((s) => {
-          if (gen !== battleGen) return true;
-          stats.set(v.id, {
-            winrate: s.winrate ?? null,
-            pr: s.pr ?? null,
-            battles: s.battles ?? null,
-            loading: false,
-          });
-          return true;
-        })
-        .catch(() => {
-          if (gen !== battleGen) return true;
-          stats.set(v.id, { winrate: null, pr: null, battles: null, loading: false });
-          return false;
-        });
+    function cacheKey(name: string): string {
+      return `${realm.value}:${name}`;
     }
 
-    function pump() {
-      while (running < 2 && queue.length > 0) {
-        const v = queue.shift()!;
-        running += 1;
-        // Capture the generation once per attempt chain: re-capturing it in
-        // the retry would let a result from the previous battle (queued just
-        // before a battle change) land in the new battle's stats.
-        const gen = battleGen;
-        void lookupOnce(v, gen)
-          .then((ok) =>
-            // One retry after a pause — WG transient limits recover quickly.
-            // Skipped when the battle changed while paused (stale request).
-            ok || gen !== battleGen
-              ? false
-              : new Promise((r) => setTimeout(r, 600)).then(() => lookupOnce(v, gen)),
-          )
-          .finally(() => {
-            running -= 1;
-            pump();
-          });
-      }
-      if (queue.length === 0 && running === 0 && drainTimer) {
-        clearTimeout(drainTimer);
-        drainTimer = null;
-      }
-    }
-
-    function enqueue(vehicles: VehicleEntry[]) {
+    /** Seed per-vehicle stats from cache; queue the rest for a batch call. */
+    function ensureStats(vehicles: VehicleEntry[]) {
       for (const v of vehicles) {
-        if (AI_NAME.test(v.name) || stats.has(v.id)) continue;
-        stats.set(v.id, { winrate: null, pr: null, battles: null, loading: true });
-        queue.push(v);
+        if (AI_NAME.test(v.name)) continue;
+        const cached = statCache.get(cacheKey(v.name));
+        if (cached) {
+          stats.set(v.id, { ...cached });
+          continue;
+        }
+        if (stats.has(v.id)) continue;
+        stats.set(v.id, emptyStat(true));
+        pendingNames.add(v.name);
       }
-      // Stagger the very start too — the panel often mounts while the WG
-      // client is also fetching its own roster.
-      if (!drainTimer) drainTimer = setTimeout(pump, 250);
+      if (pendingNames.size > 0 && !batchTimer && !inFlight) {
+        batchTimer = setTimeout(runBatch, 250);
+      }
+    }
+
+    function applyStat(name: string, st: PlayerStat) {
+      if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
+      statCache.set(cacheKey(name), st);
+      // Write into every roster slot carrying this name (one per battle).
+      for (const v of props.arena?.vehicles ?? []) {
+        if (v.name === name && !AI_NAME.test(name)) stats.set(v.id, { ...st });
+      }
+    }
+
+    async function runBatch() {
+      batchTimer = null;
+      if (pendingNames.size === 0) return;
+      if (inFlight) {
+        // A call is still out; retry shortly with the (possibly grown) set.
+        batchTimer = setTimeout(runBatch, 400);
+        return;
+      }
+      const names = [...pendingNames];
+      pendingNames.clear();
+      const gen = battleGen;
+      inFlight = true;
+      try {
+        const results = await api.lookupPlayersStatsBatch(names, realm.value);
+        if (gen !== battleGen) return;
+        names.forEach((name, i) => {
+          const r = results[i];
+          applyStat(
+            name,
+            r
+              ? {
+                  winrate: r.winrate ?? null,
+                  pr: r.pr ?? null,
+                  battles: r.battles ?? null,
+                  hidden: r.hidden,
+                  loading: false,
+                }
+              : // Not found on this realm — resolve to "no data" so the card
+                // doesn't spin forever.
+                emptyStat(false),
+          );
+        });
+      } catch {
+        if (gen !== battleGen) return;
+        // Transient (WG limits / network): settle the spinners, then retry
+        // the failed batch after a backoff pause — at most `retriesLeft`
+        // times per battle (a hard-down API must not be probed all battle
+        // long). Cards show "—" until a retry lands.
+        for (const name of names) {
+          for (const v of props.arena?.vehicles ?? []) {
+            if (v.name === name && stats.get(v.id)?.loading) {
+              stats.set(v.id, emptyStat(false));
+            }
+          }
+        }
+        if (retriesLeft > 0) {
+          retriesLeft -= 1;
+          for (const name of names) retryNames.add(name);
+          if (!retryTimer) {
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              if (gen !== battleGen) return;
+              for (const name of retryNames) pendingNames.add(name);
+              retryNames.clear();
+              if (!batchTimer && !inFlight && pendingNames.size > 0) {
+                batchTimer = setTimeout(runBatch, 100);
+              }
+            }, 3000);
+          }
+        }
+      } finally {
+        inFlight = false;
+        // Players often load into the roster mid-battle — pick up the delta
+        // here. Fresh names only: a scheduled backoff retry owns its own
+        // timing and drains `retryNames` on fire.
+        if (pendingNames.size > 0 && !batchTimer && !retryTimer) {
+          batchTimer = setTimeout(runBatch, 250);
+        }
+      }
     }
 
     // The parent re-reads tempArenaInfo.json every few seconds while the
@@ -146,24 +230,40 @@ export default defineComponent({
     // snapshot must never be compared by reference. Reset the queue only
     // when the battle itself changed (dateTime is the battle-start stamp);
     // within one battle, just pick up roster additions and keep every
-    // finished lookup.
+    // finished lookup (cache hits are instant anyway).
     let battleStamp: string | null | undefined;
     watch(
       () => props.arena,
       (a) => {
         const stamp = a?.dateTime ?? null;
         if (a && stamp === battleStamp) {
-          enqueue(a.vehicles);
+          ensureStats(a.vehicles);
           return;
         }
         battleStamp = stamp;
         battleGen += 1;
         stats.clear();
-        queue.length = 0;
-        if (a) enqueue(a.vehicles);
+        pendingNames.clear();
+        retryNames.clear();
+        retriesLeft = 2;
+        if (a) ensureStats(a.vehicles);
       },
       { immediate: true },
     );
+
+    onBeforeUnmount(() => {
+      battleGen += 1;
+      if (batchTimer) clearTimeout(batchTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      // Empty the queues so an in-flight batch's reschedule path finds
+      // nothing to re-run after unmount.
+      pendingNames.clear();
+      retryNames.clear();
+    });
+
+    function openLookup(name: string) {
+      void router.push({ path: "/lookup", query: { name, realm: realm.value } });
+    }
 
     return () => {
       if (!props.arena || props.arena.vehicles.length === 0) {
@@ -183,12 +283,33 @@ export default defineComponent({
         </span>
       ) : null;
 
-      const cell = (v: VehicleEntry) => {
+      const statLine = (v: VehicleEntry) => {
+        if (AI_NAME.test(v.name)) return "—";
         const st = stats.get(v.id);
+        if (!st || st.loading) return <HSpinner size="xs" tone="current" />;
+        if (st.hidden) {
+          return (
+            <span class="live-battle__player-hidden">
+              {t("replay.live.hiddenProfile")}
+            </span>
+          );
+        }
+        if (st.winrate != null) {
+          return (
+            <span>
+              <b>{st.winrate.toFixed(1)}%</b> WR · <b>{st.pr ?? "—"}</b> PR
+            </span>
+          );
+        }
+        return "—";
+      };
+
+      const cell = (v: VehicleEntry) => {
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
-        return (
-          <div class="live-battle__player" key={v.id}>
+        const clickable = !AI_NAME.test(v.name);
+        const content = (
+          <>
             <span class="live-battle__player-name">
               {v.name}
               {AI_NAME.test(v.name) ? (
@@ -196,19 +317,22 @@ export default defineComponent({
               ) : null}
             </span>
             <span class="live-battle__player-ship">{shipName}</span>
-            <span class="live-battle__player-stat">
-              {AI_NAME.test(v.name) ? (
-                "—"
-              ) : st?.loading ? (
-                <HSpinner size="xs" tone="current" />
-              ) : st?.winrate != null ? (
-                <span>
-                  <b>{st.winrate.toFixed(1)}%</b> WR · <b>{st.pr ?? "—"}</b> PR
-                </span>
-              ) : (
-                "—"
-              )}
-            </span>
+            <span class="live-battle__player-stat">{statLine(v)}</span>
+          </>
+        );
+        return clickable ? (
+          <button
+            class="live-battle__player live-battle__player--link"
+            key={v.id}
+            type="button"
+            title={t("replay.live.viewProfile")}
+            onClick={() => openLookup(v.name)}
+          >
+            {content}
+          </button>
+        ) : (
+          <div class="live-battle__player" key={v.id}>
+            {content}
           </div>
         );
       };
