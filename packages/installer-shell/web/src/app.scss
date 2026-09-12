@@ -150,11 +150,32 @@ body {
   text-align: center;
 }
 
-/* Install pane: progress on the left, live log on the right */
+/* Install pane: progress centered on top, live log strip along the
+   bottom — Docker-Desktop style: no card chrome, just stamped lines. */
 .wizard-pane--install {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.wizard-install__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+}
+
+.wizard-install__logs {
+  flex: none;
+  border-top: 1px solid rgb(var(--color-border));
+  padding-top: 12px;
+  max-height: 180px;
+  display: flex;
+  flex-direction: column;
 }
 
 .wizard-install__main {
