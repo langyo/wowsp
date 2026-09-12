@@ -1,5 +1,5 @@
 import { defineComponent, onMounted, ref } from "vue";
-import { Box, CheckCircle2, FolderTree, Monitor, Usb } from "lucide-vue-next";
+import { CheckCircle2, FolderTree, Monitor, Usb } from "lucide-vue-next";
 import {
   HAlert,
   HButton,
@@ -22,7 +22,7 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  * build time through Vite's ?raw import.
  */
 
-type Mode = "local" | "usb" | "green";
+type Mode = "local" | "usb";
 type StepKey = "mode" | "license" | "install" | "done";
 
 interface DirDefaults {
@@ -48,13 +48,11 @@ interface FlowEventPayload {
 const MODE_ITEMS = [
   { id: "local", title: "安装到本机", description: "标准单用户安装，含开始菜单快捷方式与自动更新。", badge: "推荐", icon: Monitor },
   { id: "usb", title: "U 盘（网吧模式）", description: "便携副本放在可移动磁盘上，无注册表项，数据全部留在盘内。", icon: Usb },
-  { id: "green", title: "绿色版直接运行", description: "解压到指定文件夹独立运行，与本机安装完全隔离。", icon: Box },
 ];
 
 const HINTS: Record<Mode, string> = {
   local: "数据写入 %APPDATA%，可自动更新；卸载信息会登记到系统。",
   usb: "检测到可移动磁盘时自动定位；否则回退到本机路径。",
-  green: "默认解压到安装器旁边，可改为任意可写目录。",
 };
 
 const FLAVOR_LABELS: Record<string, string> = {
@@ -331,7 +329,7 @@ export default defineComponent({
             <h1>用户协议</h1>
             <p class="wizard-sub">安装前请阅读以下开源许可（Synthetic Source License 1.0）。</p>
             <HScrollContainer class="license-box" axis="vertical">
-              <pre>{licenseText}</pre>
+              <pre>{licenseText.value}</pre>
             </HScrollContainer>
             <HCheckbox
               modelValue={agreed.value}
@@ -389,9 +387,7 @@ export default defineComponent({
             <p class="wizard-done__hint">
               {mode.value === "local"
                 ? "WoWSP 已登记到系统「应用」列表，可从开始菜单启动。"
-                : mode.value === "usb"
-                  ? "便携副本已就绪：数据全部留在可移动磁盘内。"
-                  : "便携副本已就绪，可从目标目录直接运行。"}
+                : "便携副本已就绪：数据全部留在可移动磁盘内。"}
             </p>
             {mode.value === "local" && (
               <>
