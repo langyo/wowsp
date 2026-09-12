@@ -23,6 +23,8 @@ thiserror.workspace = true
 
 # Async runtime
 tokio.workspace = true
+# Bounded-parallel name resolution for the live-roster batch lookup
+futures.workspace = true
 
 # Logging
 tracing.workspace = true

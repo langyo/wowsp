@@ -28,6 +28,7 @@ export const RPC = {
   destroy_overlay_window: "destroy_overlay_window",
   set_overlay_visible: "set_overlay_visible",
   lookup_player_stats: "lookup_player_stats",
+  lookup_players_stats_batch: "lookup_players_stats_batch",
   get_game_version: "get_game_version",
   get_ship_encyclopedia: "get_ship_encyclopedia",
   lookup_player_ship_stats: "lookup_player_ship_stats",

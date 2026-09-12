@@ -319,6 +319,49 @@ async def cmd_lookup_player_stats(request: Request) -> dict:
     }
 
 
+@app.post("/api/lookup_players_stats_batch")
+async def cmd_lookup_players_stats_batch(request: Request) -> list:
+    """Roster fast path: one entry per input name, in order. null = not found.
+    Mixes in a hidden profile so the UI's red "hidden stats" path is exercised
+    in mock/dev runs."""
+    body = await request.json()
+    names: list[str] = body.get("names", [])
+    out: list[dict | None] = []
+    for i, name in enumerate(names):
+        if name.startswith(":"):
+            out.append(None)
+        elif i % 4 == 3:
+            out.append({
+                "accountId": 2024711808 + i,
+                "name": name,
+                "realm": body.get("realm", "asia"),
+                "battles": None,
+                "winrate": None,
+                "hidden": True,
+                "clanTag": None,
+            })
+        else:
+            out.append({
+                "accountId": 2024711808 + i,
+                "name": name,
+                "realm": body.get("realm", "asia"),
+                "battles": 900 + 111 * i,
+                "winrate": 48.0 + (i % 7) * 1.7,
+                "hidden": False,
+                "clanTag": "MOCK",
+                "avgDamage": 42000 + 900 * i,
+                "avgXp": 1100,
+                "kdRatio": 1.4,
+                "survivalRate": 38.0,
+                "hitRate": 31.0,
+                "pr": 1400 + 40 * i,
+                "shipsPlayed": 60,
+                "levelingTier": 11,
+                "levelingPoints": 3100,
+            })
+    return out
+
+
 @app.post("/api/lookup_player_ship_stats")
 async def cmd_lookup_player_ship_stats(request: Request) -> list:
     body = await request.json()
