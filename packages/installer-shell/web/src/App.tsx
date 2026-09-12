@@ -288,7 +288,7 @@ export default defineComponent({
             <HSelectionGrid
               items={MODE_ITEMS}
               selectedId={mode.value}
-              columns={3}
+              columns={MODE_ITEMS.length as 2}
               onSelect={(item: { id?: string | number | boolean }) => {
                 if (step.value !== "mode") return;
                 mode.value = (item.id as Mode) ?? "local";

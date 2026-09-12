@@ -70,5 +70,25 @@ fn main() {
             .expect("write embedded license");
     }
 
+    // The dist is embedded at compile time (generate_context!) — a proc
+    // macro, which cargo does not track. Declare it explicitly so a rebuilt
+    // frontend always triggers a re-embed.
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("web/dist").display()
+    );
+
+    // tauri-codegen caches compressed assets under OUT_DIR and misses
+    // invalidation for DELETED dist files (old hashed names would keep
+    // riding along, and the cached index.html keeps serving the old
+    // assets). Wipe the cache every build — asset recompression is cheap.
+    for entry in std::fs::read_dir(out_dir).into_iter().flatten().flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("__tauri_cache__") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+
     tauri_build::build()
 }
