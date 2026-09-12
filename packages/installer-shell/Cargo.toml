@@ -15,12 +15,12 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
-shun = "0.2.7"
+shun = "0.2.8"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-shun = "0.2.7"
+shun = "0.2.8"
 
 # WebView2 runtime detection (same registry layout the NSIS engine used)
 winreg.workspace = true
@@ -30,10 +30,14 @@ winreg.workspace = true
 tauri = { version = "^2" }
 tauri-plugin-dialog = { version = "^2" }
 
+# Done-page shortcut toggles (create/remove .lnk in place).
+mslnk = "^0.1.8"
+
 # Removable-drive detection for the USB-mode default directory;
 # native message box / shell open for the WebView2 fatal-error path.
 windows-sys = { version = "0.59", features = [
     "Win32_Storage_FileSystem",
+    "Win32_System_Com",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
@@ -49,6 +53,9 @@ publisher = "langyo"
 # Smoke payload for plain `cargo build` (CI). Release staging overrides it
 # with the real application directory: SHUN_PAYLOAD=<staged wowsp.exe dir>.
 payload = "payload"
+
+[package.metadata.shun.license-sysl]
+locales = ["zh-Hans", "zh-Hant"]
 
 [package.metadata.shun.install]
 local = true
