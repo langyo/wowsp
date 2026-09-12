@@ -344,18 +344,11 @@ fn start_menu_link(install_dir: &str, portable: bool) -> PathBuf {
 }
 
 fn desktop_link() -> PathBuf {
-    use windows_sys::Win32::UI::Shell::{
-        FOLDERID_Desktop, SHGetKnownFolderPath,
-    };
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath};
 
     unsafe {
         let mut path = std::ptr::null_mut();
-        let hr = SHGetKnownFolderPath(
-            &FOLDERID_Desktop,
-            0,
-            std::ptr::null_mut(),
-            &mut path,
-        );
+        let hr = SHGetKnownFolderPath(&FOLDERID_Desktop, 0, std::ptr::null_mut(), &mut path);
         if hr == 0 && !path.is_null() {
             let mut len = 0usize;
             while *path.add(len) != 0 {
