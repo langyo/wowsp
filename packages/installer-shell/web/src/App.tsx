@@ -390,7 +390,7 @@ export default defineComponent({
                 : "便携副本已就绪：数据全部留在可移动磁盘内。"}
             </p>
             {mode.value === "local" && (
-              <>
+              <div class="wizard-done__shortcuts">
                 <HCheckbox
                   modelValue={startMenuShortcut.value}
                   label="创建开始菜单快捷方式"
@@ -401,7 +401,7 @@ export default defineComponent({
                   label="创建桌面快捷方式"
                   onUpdate:modelValue={(v: boolean) => toggleDesktop(v)}
                 />
-              </>
+              </div>
             )}
           </section>
         );

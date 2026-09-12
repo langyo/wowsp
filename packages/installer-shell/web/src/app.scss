@@ -339,6 +339,14 @@ body {
     color: rgb(var(--color-muted));
     max-width: 80%;
   }
+
+  // Shortcut toggles: the block centers with the pane, items align left.
+  .wizard-done__shortcuts {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
 }
 
 /* ── footer ───────────────────────────────────────────────────────── */
