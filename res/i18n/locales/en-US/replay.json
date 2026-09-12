@@ -81,7 +81,9 @@
   "live": {
     "title": "Live battle",
     "notStarted": "A new battle has not started yet",
-    "settling": "Settling"
+    "settling": "Settling",
+    "hiddenProfile": "This player has hidden their stats",
+    "viewProfile": "View this player's stats"
   },
   "tier": "Tier",
   "damageTaken": "Damage taken",

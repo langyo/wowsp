@@ -13,6 +13,10 @@
 //! Realm → host suffix: ru→ru, eu→eu, na→com, asia→asia, cn→cn (the cn realm
 //! uses a different host; treated as unsupported here with a clear error).
 
+use std::collections::HashMap;
+use std::time::Duration;
+
+use futures::stream::{self, StreamExt};
 use serde::Deserialize;
 use wowsp_tauri_shared::PlayerStats;
 
@@ -20,12 +24,22 @@ use wowsp_tauri_shared::PlayerStats;
 /// not secret). Override with the `WOWSP_WG_APPLICATION_ID` env var.
 const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
 
+/// Concurrency cap for the batch name→account resolution. WG public API
+/// rate-limits ~20 req/s per IP; 4 in-flight keeps a full 24-player roster
+/// inside a couple of waves without tripping it.
+const BATCH_CONCURRENCY: usize = 4;
+
 /// Look up one player's stats by name on the given realm.
 #[tauri::command]
 pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerStats, String> {
     let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
     let host = realm_host(&realm)?;
-    let client = crate::commands::network::build_http_client()?;
+    // Per-request timeout — a hung connection must not block a UI lookup
+    // indefinitely.
+    let client = crate::commands::network::http_client_builder()?
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
 
     // 1. Resolve name → account_id via account/list.
     let list_url = format!(
@@ -50,97 +64,189 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         .and_then(|mut d| d.pop())
         .ok_or_else(|| format!("no account found for '{name}' on {realm}"))?;
 
-    // 2. Fetch account/info for battles + winrate. Hidden profiles return null
-    //    statistics; we surface those as hidden=true.
-    let info_url = format!(
-        "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={}",
-        entry.account_id
-    );
-    let info: WgResponse<serde_json::Value> = client
-        .get(&info_url)
-        .send()
-        .await
-        .map_err(|e| format!("account/info request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("account/info parse: {e}"))?;
-    let player_node = info.data.as_ref().and_then(|d| {
-        let key = entry.account_id.to_string();
-        d.get(&key)
-    });
-    let stats_node = player_node.and_then(|v| v.get("statistics"));
-    let p = PvpStats::extract(stats_node);
-    let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p| p.is_null()));
-    // Service record tier + points (for rank badge rendering).
-    let leveling_tier = player_node
-        .and_then(|v| v.get("leveling_tier"))
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
-    let leveling_points = player_node
-        .and_then(|v| v.get("leveling_points"))
-        .and_then(|v| v.as_i64());
-
-    // 3. Optional clan tag lookup (best-effort — never fails the whole call).
-    let clan_tag = match client
-        .get(format!(
-            "https://api.worldofwarships.{host}/wows/clans/accountinfo/?application_id={app_id}&account_id={}&extra=clan",
+    // 2-4. account/info, clan tag and Vortex dog tag only need the account
+    //    id — run the three requests concurrently instead of serially.
+    let info_fut = async {
+        let url = format!(
+            "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={}",
             entry.account_id
-        ))
-        .send()
-        .await
-    {
-        Ok(r) => r
+        );
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("account/info request: {e}"))?;
+        resp.json::<WgResponse<serde_json::Value>>()
+            .await
+            .map_err(|e| format!("account/info parse: {e}"))
+    };
+    let clan_fut = async { fetch_clan_tags(&client, &app_id, host, &[entry.account_id]).await };
+    let dog_tag_fut = async {
+        let resp = client
+            .get(format!(
+                "https://vortex.worldofwarships.{host}/api/accounts/{}",
+                entry.account_id
+            ))
+            .send()
+            .await
+            .ok()?;
+        let vortex: Option<serde_json::Value> = resp.json().await.ok();
+        vortex
+            .as_ref()
+            .and_then(|v| {
+                v.get("data")
+                    .and_then(|d| d.get(entry.account_id.to_string()))
+                    .and_then(|p| p.get("dog_tag"))
+                    .filter(|t| !t.is_null())
+            })
+            .and_then(parse_dog_tag)
+    };
+    let (info, clan_map, dog_tag) = tokio::join!(info_fut, clan_fut, dog_tag_fut);
+    let info: WgResponse<serde_json::Value> = info?;
+
+    // Hidden profiles return null statistics; player_stats_from_info surfaces
+    // that as hidden=true.
+    let mut stats = player_stats_from_info(entry, realm, info.data.as_ref(), &clan_map);
+    stats.dog_tag = dog_tag;
+    Ok(stats)
+}
+
+/// Look up many players in one shot (live-roster fast path): N× account/list
+/// resolved with bounded parallelism, then ONE account/info and ONE
+/// clans/accountinfo for all ids combined. Returns one entry per input name,
+/// in order; `None` = account not found (or the lookup failed — roster UIs
+/// render that as "no data" rather than failing the whole panel).
+#[tauri::command]
+pub async fn lookup_players_stats_batch(
+    names: Vec<String>,
+    realm: String,
+) -> Result<Vec<Option<PlayerStats>>, String> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
+    let host = realm_host(&realm)?;
+    // Per-request timeout so one hung connection can't stall the roster all
+    // battle long.
+    let client = crate::commands::network::http_client_builder()?
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+
+    // 1. name → account, bounded-parallel. `names` is consumed: owned items
+    //    keep the per-item futures lifetime-free (collect() preserves order).
+    //    A rate-limited / failed list response fails the whole batch — it
+    //    must not degrade into "not found" (the frontend would cache that).
+    let total = names.len();
+    let results: Vec<Result<Option<AccountListEntry>, String>> = {
+        let client_ref = &client;
+        stream::iter(names)
+            .map(|name| {
+                let url = format!(
+                    "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
+                );
+                async move {
+                    let resp = client_ref
+                        .get(&url)
+                        .send()
+                        .await
+                        .map_err(|e| format!("account/list request: {e}"))?;
+                    let list = resp
+                        .json::<WgResponse<Vec<AccountListEntry>>>()
+                        .await
+                        .map_err(|e| format!("account/list parse: {e}"))?;
+                    if list.status != "ok" {
+                        return Err(format!(
+                            "account/list: {}",
+                            list.error.message.unwrap_or_default()
+                        ));
+                    }
+                    Ok(list.data.and_then(|mut d| d.pop()))
+                }
+            })
+            .buffered(BATCH_CONCURRENCY)
+            .collect()
+            .await
+    };
+    if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
+        return Err(e.clone());
+    }
+    let entries: Vec<Option<AccountListEntry>> =
+        results.into_iter().map(|r| r.unwrap_or(None)).collect();
+
+    let ids: Vec<i64> = entries.iter().flatten().map(|e| e.account_id).collect();
+    if ids.is_empty() {
+        return Ok(vec![None; total]);
+    }
+
+    // 2+3. ONE account/info + ONE clan-tag lookup for the whole roster (the
+    //       endpoints accept comma-joined id lists); independent, so run
+    //       them concurrently.
+    let id_list = ids
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let info_fut = async {
+        let resp = client
+            .get(format!(
+                "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
+            ))
+            .send()
+            .await
+            .map_err(|e| format!("account/info request: {e}"))?;
+        let parsed = resp
             .json::<WgResponse<serde_json::Value>>()
             .await
-            .ok()
-            .and_then(|resp| resp.data)
-            .and_then(|d| {
-                let key = entry.account_id.to_string();
-                d.get(&key).cloned()
+            .map_err(|e| format!("account/info parse: {e}"))?;
+        // A WG app-level failure (e.g. rate limit) surfaces as
+        // status:"error" — failing the batch lets the frontend's backoff
+        // retry handle it instead of silently caching hidden=true for
+        // everyone.
+        if parsed.status != "ok" {
+            return Err(format!(
+                "account/info: {}",
+                parsed.error.message.unwrap_or_default()
+            ));
+        }
+        Ok(parsed)
+    };
+    let clan_fut = async { fetch_clan_tags(&client, &app_id, host, &ids).await };
+    let (info, clan_map) = tokio::join!(info_fut, clan_fut);
+    let info: WgResponse<serde_json::Value> = info?;
+
+    Ok(entries
+        .into_iter()
+        .map(|entry| {
+            entry.map(|entry| {
+                player_stats_from_info(entry, realm.clone(), info.data.as_ref(), &clan_map)
             })
-            .and_then(|v| {
-                v.get("clan")
-                    .and_then(|c| c.get("tag"))
-                    .and_then(|t| t.as_str())
-                    .map(str::to_owned)
-            }),
-        Err(_) => None,
-    };
+        })
+        .collect())
+}
 
-    // 4. Dog tag lookup via the WG Vortex API (best-effort — never fails the
-    //    whole call). Vortex returns the player's personalized emblem
-    //    components (background, texture, symbol, border/background colors).
-    let dog_tag = match client
-        .get(format!(
-            "https://vortex.worldofwarships.{host}/api/accounts/{}",
-            entry.account_id
-        ))
-        .send()
-        .await
-    {
-        Ok(r) => {
-            let vortex: Option<serde_json::Value> = r.json().await.ok();
-            vortex
-                .as_ref()
-                .and_then(|v| {
-                    v.get("data")
-                        .and_then(|d| d.get(entry.account_id.to_string()))
-                        .and_then(|p| p.get("dog_tag"))
-                        .filter(|t| !t.is_null())
-                })
-                .and_then(parse_dog_tag)
-        },
-        Err(_) => None,
-    };
-
-    Ok(PlayerStats {
+/// Build a `PlayerStats` from the batch account/info response map. The dog
+/// tag is always None here — roster panels render WR/PR only, and the per-id
+/// Vortex calls would dominate the request budget.
+fn player_stats_from_info(
+    entry: AccountListEntry,
+    realm: String,
+    info_data: Option<&serde_json::Value>,
+    clan_map: &HashMap<i64, String>,
+) -> PlayerStats {
+    let player_node = info_data.and_then(|d| d.get(entry.account_id.to_string()));
+    let stats_node = player_node.and_then(|v| v.get("statistics"));
+    let p = PvpStats::extract(stats_node);
+    let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p2| p2.is_null()));
+    let (leveling_tier, leveling_points) = leveling_of(player_node);
+    PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
         realm,
         battles: p.battles,
         winrate: p.winrate,
         hidden,
-        clan_tag,
+        clan_tag: clan_map.get(&entry.account_id).cloned(),
         avg_damage: p.avg_damage,
         avg_xp: p.avg_xp,
         kd_ratio: p.kd_ratio,
@@ -150,11 +256,65 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         ships_played: p.ships_played,
         leveling_tier,
         leveling_points,
-        dog_tag,
+        dog_tag: None,
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
-    })
+    }
+}
+
+/// Service-record tier + points (for rank badge rendering).
+fn leveling_of(player_node: Option<&serde_json::Value>) -> (Option<i32>, Option<i64>) {
+    let tier = player_node
+        .and_then(|v| v.get("leveling_tier"))
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let points = player_node
+        .and_then(|v| v.get("leveling_points"))
+        .and_then(|v| v.as_i64());
+    (tier, points)
+}
+
+/// Clan tags for a list of account ids in one request. Best-effort: any
+/// failure yields an empty map (clan tag is display sugar, never fatal).
+async fn fetch_clan_tags(
+    client: &reqwest::Client,
+    app_id: &str,
+    host: &str,
+    ids: &[i64],
+) -> HashMap<i64, String> {
+    let id_list = ids
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let Ok(resp) = client
+        .get(format!(
+            "https://api.worldofwarships.{host}/wows/clans/accountinfo/?application_id={app_id}&account_id={id_list}&extra=clan"
+        ))
+        .send()
+        .await
+    else {
+        return HashMap::new();
+    };
+    let Ok(parsed) = resp.json::<WgResponse<serde_json::Value>>().await else {
+        return HashMap::new();
+    };
+    let mut map = HashMap::new();
+    if let Some(obj) = parsed.data.as_ref().and_then(|d| d.as_object()) {
+        for (k, v) in obj {
+            if let Ok(id) = k.parse::<i64>() {
+                if let Some(tag) = v
+                    .get("clan")
+                    .and_then(|c| c.get("tag"))
+                    .and_then(|t| t.as_str())
+                {
+                    map.insert(id, tag.to_owned());
+                }
+            }
+        }
+    }
+    map
 }
 
 /// Parse a dog_tag JSON object from the Vortex API into a DogTag struct.
@@ -439,5 +599,48 @@ mod tests {
         assert_eq!(compute_pr(None, Some(55.0), Some(100)), None);
         assert_eq!(compute_pr(Some(1500.0), None, Some(100)), None);
         assert!(compute_pr(Some(1500.0), Some(55.0), Some(100)).is_some());
+    }
+
+    #[test]
+    fn player_stats_from_info_builds_visible_profile() {
+        let info = serde_json::json!({
+            "2024711808": {
+                "statistics": {
+                    "pvp": { "battles": 1000, "wins": 550, "damage_dealt": 1_500_000 },
+                    "pvp_solo": { "battles": 600, "wins": 330 }
+                },
+                "leveling_tier": 12,
+                "leveling_points": 3400
+            }
+        });
+        let clan_map = HashMap::from([(2024711808i64, "FOO".to_string())]);
+        let entry = AccountListEntry {
+            account_id: 2024711808,
+            nickname: "langyo".to_string(),
+        };
+        let s = player_stats_from_info(entry, "asia".to_string(), Some(&info), &clan_map);
+        assert_eq!(s.name, "langyo");
+        assert_eq!(s.winrate, Some(55.0));
+        assert!(!s.hidden);
+        assert_eq!(s.clan_tag.as_deref(), Some("FOO"));
+        assert_eq!(s.leveling_tier, Some(12));
+        assert_eq!(s.avg_damage, Some(1500.0));
+        assert!(s.pr.is_some());
+        // Batch path never pays for Vortex dog tags.
+        assert!(s.dog_tag.is_none());
+    }
+
+    #[test]
+    fn player_stats_from_info_marks_missing_stats_hidden() {
+        // A null player node (id absent from the batch info map) counts as a
+        // hidden profile — same rule as the single lookup.
+        let entry = AccountListEntry {
+            account_id: 7,
+            nickname: "ghost".to_string(),
+        };
+        let s = player_stats_from_info(entry, "eu".to_string(), None, &HashMap::new());
+        assert!(s.hidden);
+        assert_eq!(s.winrate, None);
+        assert_eq!(s.clan_tag, None);
     }
 }

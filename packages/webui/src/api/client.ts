@@ -709,6 +709,11 @@ export const api = {
   destroyOverlayWindow: () => transport.invoke<null>(RPC.destroy_overlay_window),
   lookupPlayerStats: (name: string, realm: string) =>
     transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
+  /** Batch roster lookup: one entry per input name, in order; null = not
+   *  found / lookup failed (the panel renders that as "no data"). Skips the
+   *  per-player Vortex dog-tag call — roster cards show WR/PR only. */
+  lookupPlayersStatsBatch: (names: string[], realm: string) =>
+    transport.invoke<(PlayerStats | null)[]>(RPC.lookup_players_stats_batch, { names, realm }),
   getGameVersion: () => transport.invoke<GameVersionInfo>(RPC.get_game_version),
   getShipEncyclopedia: (realm: string, forceRefresh: boolean, language?: string) =>
     transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh, language }),

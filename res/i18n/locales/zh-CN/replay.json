@@ -81,7 +81,9 @@
   "live": {
     "title": "实时对局",
     "notStarted": "尚未开始新的对局",
-    "settling": "结算中"
+    "settling": "结算中",
+    "hiddenProfile": "该玩家隐藏了水表",
+    "viewProfile": "查看该玩家的水表"
   },
   "tier": "等级",
   "damageTaken": "承伤",

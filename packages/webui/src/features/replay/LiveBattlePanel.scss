@@ -104,6 +104,24 @@
     background: rgb(var(--color-text) / 0.04);
   }
 
+  /* Human players: the whole card jumps to the lookup view. */
+  &__player--link {
+    border: none;
+    color: rgb(var(--color-text));
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover {
+      background: rgb(var(--color-text) / 0.1);
+    }
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-text) / 0.4);
+    }
+  }
+
   &__player-name {
     display: flex;
     align-items: center;
@@ -143,5 +161,15 @@
       color: #ffd93d;
       font-weight: 600;
     }
+  }
+
+  /* Hidden profile: a red notice, not a bare "—" (the player could have
+   * stats — they chose to hide them). */
+  &__player-hidden {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgb(var(--color-danger, 239 68 68));
   }
 }

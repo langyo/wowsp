@@ -457,15 +457,18 @@ const PostBattleFallbackPanel = defineComponent({
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
     explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
     shotKills: { type: Array as () => ShotKillEvent[], default: () => [] },
+    /** Query realm (shared with the parent view) — the replay belongs to
+     *  the client install, not to the bound account. */
+    realm: { type: String, default: "asia" },
   },
   emits: ["close"],
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
-    const accounts = useAccountStore();
     const router = useRouter();
     const toast = useToast();
     /** AI/bot players (":Name:") have no WG account. */
     const AI_NAME = /^:.*:$/;
+    const realm = computed(() => props.realm || "asia");
 
     /** Death time per shipId (same join the scorebar strip uses). */
     const deathByShipId = computed(() => {
@@ -553,7 +556,7 @@ const PostBattleFallbackPanel = defineComponent({
       globalLoading.value = true;
       const tid = toast.loading("加载 " + name + " 全局战绩…");
       try {
-        globalStats.value = await api.lookupPlayerStats(name, accounts.activeRealm);
+        globalStats.value = await api.lookupPlayerStats(name, realm.value);
         toast.remove(tid);
       } catch {
         toast.remove(tid);
@@ -578,7 +581,7 @@ const PostBattleFallbackPanel = defineComponent({
       if (p) {
         void router.push({
           path: "/lookup",
-          query: { name: p.vehicle.name, realm: accounts.activeRealm },
+          query: { name: p.vehicle.name, realm: realm.value },
         });
       }
     }
@@ -1320,7 +1323,11 @@ export default defineComponent({
 
         <section class="replay-view__main">
           {pane.value.kind === "live" ? (
-            <LiveBattlePanel arena={overlay.arenaInfo} settling={livePhase.value === "settling"} />
+            <LiveBattlePanel
+              arena={overlay.arenaInfo}
+              settling={livePhase.value === "settling"}
+              realm={realm.value}
+            />
           ) : parser.current.value ? (
             <div class="replay-view__content">
               {parser.error.value ? (
@@ -1410,6 +1417,7 @@ export default defineComponent({
                           trajectories={trajectories.value}
                           explosions={explosions.value}
                           shotKills={shotKills.value}
+                          realm={realm.value}
                           onClose={() => (showResults.value = false)}
                         />
                       )}

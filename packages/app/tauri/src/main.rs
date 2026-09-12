@@ -239,6 +239,7 @@ fn main() {
             commands::network::get_network_config,
             commands::network::set_network_config,
             commands::wg_api::lookup_player_stats,
+            commands::wg_api::lookup_players_stats_batch,
             commands::encyclopedia::get_game_version,
             commands::encyclopedia::get_ship_encyclopedia,
             commands::ship_stats::lookup_player_ship_stats,
