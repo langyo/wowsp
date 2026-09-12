@@ -47,25 +47,23 @@ fn main() {
     let flavor = std::env::var("SHUN_FLAVOR").unwrap_or_else(|_| "dev".into());
     std::fs::write(out_dir.join("shun-flavor.txt"), flavor).expect("write flavor");
 
-    // 3. License: the SySL text plus official translations, fetched from
-    //    the upstream repo (shun::license_sysl) so the wizard can show the
-    //    agreement in the user's language. Offline builds fall back to the
-    //    vendored English LICENSE for every locale.
-    let license_locales = ["en", "zh-Hans", "zh-Hant"];
-    let fallback = std::fs::read_to_string(manifest_dir.join("../../../../LICENSE"))
-        .unwrap_or_else(|_| String::from("Licensed under the Synthetic Source License 1.0."));
-    for locale in license_locales {
-        let text = match shun::license_sysl::fetch_locale(
-            "celestia-island/sysl",
-            "main",
-            locale,
-        ) {
-            Ok(text) => text,
-            Err(err) => {
-                println!("cargo:warning=SySL fetch for {locale} failed ({err}); using fallback");
-                fallback.clone()
-            },
-        };
+    // 3. License: the SySL text plus official translations. The zh texts
+    //    are vendored from celestia-island/sysl (licenses/); en comes from
+    //    the repo-root LICENSE. When the network is reachable the fetch
+    //    refreshes each file from upstream first; otherwise the vendored
+    //    copies are used as-is.
+    let license_sources = [
+        ("en", manifest_dir.join("../../LICENSE")),
+        ("zh-Hans", manifest_dir.join("licenses/zh-Hans.txt")),
+        ("zh-Hant", manifest_dir.join("licenses/zh-Hant.txt")),
+    ];
+    for (locale, vendored) in license_sources {
+        let mut text = std::fs::read_to_string(&vendored)
+            .unwrap_or_else(|_| String::from("Licensed under the Synthetic Source License 1.0."));
+        if let Ok(fresh) = shun::license_sysl::fetch_locale("celestia-island/sysl", "main", locale)
+        {
+            text = fresh;
+        }
         std::fs::write(out_dir.join(format!("license-{locale}.txt")), text)
             .expect("write embedded license");
     }
