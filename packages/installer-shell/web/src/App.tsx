@@ -13,7 +13,6 @@ import {
 import AppTitleBar from "./components/AppTitleBar";
 import LogPane, { type LogLine } from "./components/LogPane";
 import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
-import licenseText from "../../../../LICENSE?raw";
 
 /**
  * Installer shell UI — a step-driven delivery wizard rendered with hikari
@@ -86,8 +85,10 @@ export default defineComponent({
     const mode = ref<Mode>("local");
     const dir = ref("");
     const hint = ref("");
+    const licenseText = ref("");
     const agreed = ref(false);
-    const desktop = ref(true);
+    const desktopShortcut = ref(true);
+    const startMenuShortcut = ref(true);
     const overall = ref<number | null>(null);
     const flowStep = ref("");
     const installFailed = ref(false);
@@ -148,6 +149,13 @@ export default defineComponent({
       refreshDefaults().catch((err) => { hint.value = String(err); });
       invoke<{ version: string; flavor: string }>("get_identity")
         .then((id) => { identity.value = id; })
+        .catch(() => {});
+      invoke<string>("get_license", {
+        locale: navigator.language,
+      })
+        .then((text) => {
+          licenseText.value = text;
+        })
         .catch(() => {});
       invoke<{ log_level: string; log_order: string }>("get_shell_prefs")
         .then((prefs) => {
@@ -211,8 +219,10 @@ export default defineComponent({
         await invoke("start_install", {
           mode: mode.value,
           dir: dir.value.trim(),
-          desktop: desktop.value,
         });
+        // The install creates both shortcuts; the done pane's toggles then
+        // apply the user's choices live (local mode only).
+        await syncShortcuts();
         overall.value = 100;
         step.value = "done";
       } catch (err) {
@@ -221,6 +231,46 @@ export default defineComponent({
         logLines.value = [];
       } finally {
         running.value = false;
+      }
+    }
+
+    async function syncShortcuts() {
+      if (mode.value !== "local") return;
+      await invoke("set_shortcuts", {
+        desktop: desktopShortcut.value,
+        menu: startMenuShortcut.value,
+        dir: dir.value.trim(),
+        mode: mode.value,
+      });
+    }
+
+    async function toggleDesktop(v: boolean) {
+      desktopShortcut.value = v;
+      try {
+        await invoke("set_shortcuts", {
+          desktop: v,
+          menu: undefined,
+          dir: dir.value.trim(),
+          mode: mode.value,
+        });
+      } catch (err) {
+        desktopShortcut.value = !v;
+        showNote(String(err), "err");
+      }
+    }
+
+    async function toggleMenu(v: boolean) {
+      startMenuShortcut.value = v;
+      try {
+        await invoke("set_shortcuts", {
+          desktop: undefined,
+          menu: v,
+          dir: dir.value.trim(),
+          mode: mode.value,
+        });
+      } catch (err) {
+        startMenuShortcut.value = !v;
+        showNote(String(err), "err");
       }
     }
 
@@ -288,11 +338,6 @@ export default defineComponent({
               label="我已阅读并同意本协议的全部条款"
               onUpdate:modelValue={(v: boolean) => (agreed.value = v)}
             />
-            <HCheckbox
-              modelValue={desktop.value}
-              label="同时创建桌面快捷方式"
-              onUpdate:modelValue={(v: boolean) => (desktop.value = v)}
-            />
           </section>
         ) : step.value === "install" ? (
           <section class="wizard-pane wizard-pane--install">
@@ -322,13 +367,15 @@ export default defineComponent({
                 </>
               )}
             </div>
-            <LogPane
-              lines={logLines.value}
-              order={logOrder.value}
-              onToggleOrder={() => {
-                logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
-              }}
-            />
+            <div class="wizard-install__logs">
+              <LogPane
+                lines={logLines.value}
+                order={logOrder.value}
+                onToggleOrder={() => {
+                  logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
+                }}
+              />
+            </div>
           </section>
         ) : (
           <section class="wizard-pane wizard-pane--center wizard-done">
@@ -346,6 +393,20 @@ export default defineComponent({
                   ? "便携副本已就绪：数据全部留在可移动磁盘内。"
                   : "便携副本已就绪，可从目标目录直接运行。"}
             </p>
+            {mode.value === "local" && (
+              <>
+                <HCheckbox
+                  modelValue={startMenuShortcut.value}
+                  label="创建开始菜单快捷方式"
+                  onUpdate:modelValue={(v: boolean) => toggleMenu(v)}
+                />
+                <HCheckbox
+                  modelValue={desktopShortcut.value}
+                  label="创建桌面快捷方式"
+                  onUpdate:modelValue={(v: boolean) => toggleDesktop(v)}
+                />
+              </>
+            )}
           </section>
         );
 

@@ -48,6 +48,10 @@ const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-conf
 const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
 /// Build flavor (lite/full + WebView2 bundling), stamped by build.rs.
 const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.txt"));
+/// License texts per wizard locale (SySL + official translations).
+const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"));
+const LICENSE_ZH_HANS: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hans.txt"));
+const LICENSE_ZH_HANT: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hant.txt"));
 
 /// State shared by the commands: the resolved config and the payload
 /// (cloned per install run).
@@ -290,6 +294,105 @@ fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
     let _ = app.emit("install-progress", event);
 }
 
+/// Creates or removes the install's shortcuts in place — the done-page
+/// checkboxes apply live (the install itself always creates both, so the
+/// default checked state matches reality).
+#[tauri::command]
+fn set_shortcuts(
+    desktop: Option<bool>,
+    menu: Option<bool>,
+    dir: String,
+    mode: String,
+) -> Result<(), String> {
+    let dir = dir.trim().trim_end_matches('\\').to_string();
+    if dir.is_empty() {
+        return Err("安装目录不能为空".into());
+    }
+    let exe = Path::new(&dir).join("wowsp.exe");
+    if !exe.is_file() {
+        return Err("安装目录中未找到 wowsp.exe".into());
+    }
+    let portable = mode != "local";
+
+    if let Some(want) = menu {
+        let link = start_menu_link(&dir, portable);
+        apply_shortcut(&link, &exe, want)?;
+    }
+    if let Some(want) = desktop {
+        if portable {
+            return Err("便携模式不创建桌面快捷方式".into());
+        }
+        let link = desktop_link();
+        apply_shortcut(&link, &exe, want)?;
+    }
+    Ok(())
+}
+
+fn start_menu_link(install_dir: &str, portable: bool) -> PathBuf {
+    if portable {
+        // Self-contained copy: start-menu entry lives in its own data tree.
+        return Path::new(install_dir)
+            .join("data")
+            .join("start-menu")
+            .join("WoWSP.lnk");
+    }
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    base.join(r"Microsoft\Windows\Start Menu\Programs")
+        .join("WoWSP.lnk")
+}
+
+fn desktop_link() -> PathBuf {
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_Desktop, SHGetKnownFolderPath,
+    };
+
+    unsafe {
+        let mut path = std::ptr::null_mut();
+        let hr = SHGetKnownFolderPath(
+            &FOLDERID_Desktop,
+            0,
+            std::ptr::null_mut(),
+            &mut path,
+        );
+        if hr == 0 && !path.is_null() {
+            let mut len = 0usize;
+            while *path.add(len) != 0 {
+                len += 1;
+            }
+            let wide = std::slice::from_raw_parts(path, len);
+            let s = String::from_utf16_lossy(wide);
+            windows_sys::Win32::System::Com::CoTaskMemFree(path.cast());
+            return PathBuf::from(s).join("WoWSP.lnk");
+        }
+    }
+    let base = std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    base.join("Desktop").join("WoWSP.lnk")
+}
+
+fn apply_shortcut(link: &Path, exe: &Path, want: bool) -> Result<(), String> {
+    if want {
+        if link.is_file() {
+            return Ok(());
+        }
+        if let Some(parent) = link.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {e}"))?;
+        }
+        mslnk::ShellLink::new(exe)
+            .and_then(|l| l.create_lnk(link))
+            .map_err(|e| format!("创建快捷方式失败: {e}"))
+    } else {
+        match std::fs::remove_file(link) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("移除快捷方式失败: {e}")),
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct Identity {
     version: String,
@@ -329,6 +432,20 @@ fn get_identity(state: tauri::State<'_, AppState>) -> Identity {
     Identity {
         version: state.config.product.version.clone(),
         flavor: SHUN_FLAVOR.trim().to_string(),
+    }
+}
+
+/// The license agreement text for the requested locale (SySL +
+/// official translations, resolved at build time).
+#[tauri::command]
+fn get_license(locale: String) -> String {
+    let lower = locale.to_lowercase();
+    if lower.starts_with("zh-hant") || lower.starts_with("zh-tw") || lower.starts_with("zh-hk") {
+        LICENSE_ZH_HANT.to_string()
+    } else if lower.starts_with("zh") {
+        LICENSE_ZH_HANS.to_string()
+    } else {
+        LICENSE_EN.to_string()
     }
 }
 
@@ -523,7 +640,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { config, payload })
-        .invoke_handler(tauri::generate_handler![default_dir, get_identity, get_shell_prefs, start_install])
+        .invoke_handler(tauri::generate_handler![
+            default_dir,
+            get_identity,
+            get_shell_prefs,
+            get_license,
+            set_shortcuts,
+            start_install
+        ])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP installer shell");
 }
