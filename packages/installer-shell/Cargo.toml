@@ -35,7 +35,7 @@ mslnk = "^0.1.8"
 
 # Removable-drive detection for the USB-mode default directory;
 # native message box / shell open for the WebView2 fatal-error path.
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_UI_Shell",
