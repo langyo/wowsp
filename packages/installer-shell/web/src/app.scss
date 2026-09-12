@@ -129,6 +129,10 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+
+  // Align the pane's first heading with the rail's first node: the rail
+  // spends its top gap plus half a node before the indicator center.
+  padding-top: calc(var(--rail-gap, 16px) + var(--rail-node, 26px) / 2);
 }
 
 .wizard-pane {
