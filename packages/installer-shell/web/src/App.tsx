@@ -234,7 +234,9 @@ export default defineComponent({
       } catch (err) {
         installFailed.value = true;
         failMessage.value = String(err);
-        logLines.value = [];
+        // The log lines stay: the drawer auto-expanded on the error record,
+        // so the failure trail remains readable next to the alert. A retry
+        // resets them in go("install").
       } finally {
         running.value = false;
       }
