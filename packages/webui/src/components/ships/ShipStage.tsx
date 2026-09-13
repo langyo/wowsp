@@ -923,12 +923,12 @@ export default defineComponent({
         if (!isModelPackReady()) {
           if (modelPackDownloading.value) return;
           modelPackDownloading.value = true;
-          toast.show("3D 视图需要下载模型资源包（约 1.2 GB），已开始下载…");
+          toast.show(t("ships.model3d.downloadStart"));
           try {
             await initModelPack(() => api.ensureModelPack());
-            toast.success("模型资源包就绪");
+            toast.success(t("ships.model3d.ready"));
           } catch {
-            toast.error("模型资源包下载失败，请稍后重试");
+            toast.error(t("ships.model3d.failed"));
             modelPackDownloading.value = false;
             return;
           }

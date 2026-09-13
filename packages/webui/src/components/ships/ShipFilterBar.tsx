@@ -75,12 +75,8 @@ const WINRATE_BRACKETS: [string, string, (wr: number) => boolean][] = [
   ["50-60", "50–60%", (wr) => wr >= 50 && wr < 60],
   ["gte60", "≥60%", (wr) => wr >= 60],
 ];
-/** [min battles, label]. */
-const BATTLE_STEPS: [number, string][] = [
-  [30, "≥30 场"],
-  [60, "≥60 场"],
-  [100, "≥100 场"],
-];
+/** [min battles]. Labels come from `ships.filter.minBattles` at render time. */
+const BATTLE_STEPS: number[] = [30, 60, 100];
 
 /** Minimal metadata slice the category predicates/sorters need — both the
  *  encyclopedia entry and the offline-DB fallback satisfy it structurally. */
@@ -91,6 +87,7 @@ interface ShipMeta {
 }
 
 interface CatDef {
+  /** i18n keys (resolved via t() at render time, never stored as text). */
   title: string;
   allLabel: string;
   /** Filter predicate for one concrete selection. */
@@ -107,27 +104,27 @@ function typeRank(type: string): number {
 
 const CAT_DEFS: Record<CatKey, CatDef> = {
   type: {
-    title: "舰种",
-    allLabel: "全部舰种",
+    title: "ships.filter.typeTitle",
+    allLabel: "ships.filter.typeAll",
     matches: (_row, info, value) => (info?.type ?? "").startsWith(value),
     sortValue: (_row, info) => typeRank(info?.type ?? ""),
   },
   tier: {
-    title: "等级",
-    allLabel: "全部等级",
+    title: "ships.filter.tierTitle",
+    allLabel: "ships.filter.tierAll",
     matches: (_row, info, value) => bracketTiers(value).includes(info?.tier ?? 0),
     sortValue: (_row, info) => info?.tier ?? 0,
   },
   winrate: {
-    title: "胜率",
-    allLabel: "全部胜率",
+    title: "ships.filter.wrTitle",
+    allLabel: "ships.filter.wrAll",
     matches: (row, _info, value) =>
       WINRATE_BRACKETS.find(([v]) => v === value)?.[2](row.winrate) ?? true,
     sortValue: (row) => row.winrate,
   },
   battles: {
-    title: "场次",
-    allLabel: "全部场次",
+    title: "ships.filter.battlesTitle",
+    allLabel: "ships.filter.battlesAll",
     matches: (row, _info, value) => row.battles >= (Number(value) || 0),
     sortValue: (row) => row.battles,
   },
@@ -161,7 +158,7 @@ function isValidWinrateValue(v: string): boolean {
   return WINRATE_BRACKETS.some(([k]) => k === v);
 }
 function isValidBattleValue(v: string): boolean {
-  return BATTLE_STEPS.some(([n]) => String(n) === v);
+  return BATTLE_STEPS.some((n) => String(n) === v);
 }
 function isValidValue(key: CatKey, v: string): boolean {
   switch (key) {
@@ -307,22 +304,25 @@ export default defineComponent({
      *  so dead buttons never show up. */
     const catOptions = computed<Record<CatKey, { value: string; label: string }[]>>(() => ({
       type: [
-        { value: "", label: CAT_DEFS.type.allLabel },
+        { value: "", label: t(CAT_DEFS.type.allLabel) },
         ...TYPE_ORDER.filter((k) => k && props.ships.some((s) => (infoOf(s.shipId)?.type ?? "").startsWith(k))).map(
           (k) => ({ value: k, label: t(`dashboard.shipType.${k}`, {}) }),
         ),
       ],
       tier: [
-        { value: "", label: CAT_DEFS.tier.allLabel },
+        { value: "", label: t(CAT_DEFS.tier.allLabel) },
         ...TIER_FILTERS.map(([v, label]) => ({ value: v, label })),
       ],
       winrate: [
-        { value: "", label: CAT_DEFS.winrate.allLabel },
+        { value: "", label: t(CAT_DEFS.winrate.allLabel) },
         ...WINRATE_BRACKETS.map(([v, label]) => ({ value: v, label })),
       ],
       battles: [
-        { value: "", label: CAT_DEFS.battles.allLabel },
-        ...BATTLE_STEPS.map(([n, label]) => ({ value: String(n), label })),
+        { value: "", label: t(CAT_DEFS.battles.allLabel) },
+        ...BATTLE_STEPS.map((n) => ({
+          value: String(n),
+          label: t("ships.filter.minBattles", { n }),
+        })),
       ],
     }));
 
@@ -510,14 +510,14 @@ export default defineComponent({
      *  pure filters (re-click deselects instead of flipping direction). */
     const popHint = (key: CatKey) =>
       key === "type"
-        ? "可多选 · 舰种仅筛选，不参与正倒序 · 点击「全部舰种」可按舰种顺序排序"
-        : "可多选 · 再次点击已选项切换 正序 ↑ / 倒序 ↓ · 点击「全部…」重置，或按此列排序";
+        ? t("ships.filter.hintTypePop")
+        : t("ships.filter.hintSortPop");
 
     /** Chip tooltip — same split as the popup hint. */
     const chipTitle = (key: CatKey) =>
       key === "type"
-        ? "点击选择筛选（可多选） · 左右拖拽调整排序优先级"
-        : "点击选择筛选（可多选） · 再次点击已选项切换正序/倒序 · 左右拖拽调整排序优先级";
+        ? t("ships.filter.hintTypeChip")
+        : t("ships.filter.hintSortChip");
 
     const dirIcon = (dir: SortDir) =>
       dir === "desc" ? <ArrowDown size={11} class="ship-filter-bar__dir" /> : <ArrowUp size={11} class="ship-filter-bar__dir" />;
@@ -539,7 +539,7 @@ export default defineComponent({
             [...cur.values]
               .sort(byOrder)
               .map((v) => catOptions.value[key].find((o) => o.value === v)?.label ?? v)
-              .join("·") || def.allLabel;
+              .join("·") || t(def.allLabel);
           return (
             <div
               key={key}
@@ -572,7 +572,7 @@ export default defineComponent({
               {openPop.value === key ? (
                 <div class="ship-filter-bar__pop">
                   <div class="ship-filter-bar__pop-head">
-                    <span>{def.title}</span>
+                    <span>{t(def.title)}</span>
                     <button
                       type="button"
                       class="ship-filter-bar__pop-close"
@@ -609,7 +609,10 @@ export default defineComponent({
           );
         })}
         <span class="ship-filter-bar__summary">
-          {filteredShips.value.length} 艘 · {totalBattles.value.toLocaleString()} 场
+          {t("ships.filter.summary", {
+            ships: filteredShips.value.length,
+            battles: totalBattles.value.toLocaleString(),
+          })}
         </span>
         {/* Search — one button; the input lives in a popup panel that opens
             leftwards from the button (roomier than an inline box). The

@@ -22,5 +22,15 @@
   "tierAvg": "平均",
   "tierGood": "良好",
   "tierGreat": "优秀",
-  "tierUnicum": "紫色大神"
+  "tierUnicum": "紫色大神",
+  "dist": {
+    "battleship": "战列",
+    "aircarrier": "航母",
+    "cruiser": "巡洋",
+    "destroyer": "驱逐",
+    "submarine": "潜艇",
+    "battles": "场次",
+    "shipType": "舰种",
+    "pieTitle": "舰种构成"
+  }
 }

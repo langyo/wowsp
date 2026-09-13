@@ -85,6 +85,31 @@
     "hiddenProfile": "This player has hidden their stats",
     "viewProfile": "View this player's stats"
   },
+  "postbattle": {
+    "rawData": "Raw data",
+    "loadingGlobal": "Loading {name}'s global stats…",
+    "destroyedBy": "Destroyed by {name}",
+    "killerDamage": " ({n} dmg)",
+    "damageUnknownNote": "Replays don't include the full battle info — some damage sources can't be attributed",
+    "estimated": " (est.)",
+    "xp": "XP",
+    "credits": "Credits",
+    "globalFailed": "Global stats unavailable",
+    "globalFailedAi": "Global stats unavailable (possibly an AI player)",
+    "globalUnavailable": "Global stats unavailable",
+    "noRealm": " (no server info)",
+    "tierDist": "Tier distribution",
+    "fullStats": "Full stats →"
+  },
+  "capture": {
+    "contested": "Both sides capping — progress paused",
+    "capturing": "Capturing ({a} vs {b} ships)",
+    "neutral": "Neutral",
+    "ally": "Allied control",
+    "enemy": "Enemy control"
+  },
+  "killVerb": "sank",
+  "playbackSpeed": "Playback speed",
   "tier": "Tier",
   "damageTaken": "Damage taken",
   "hpRemaining": "remaining HP",

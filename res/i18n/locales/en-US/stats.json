@@ -22,5 +22,15 @@
   "tierAvg": "Average",
   "tierGood": "Good",
   "tierGreat": "Great",
-  "tierUnicum": "Unicum"
+  "tierUnicum": "Unicum",
+  "dist": {
+    "battleship": "BB",
+    "aircarrier": "CV",
+    "cruiser": "CA",
+    "destroyer": "DD",
+    "submarine": "SS",
+    "battles": "Battles",
+    "shipType": "Type",
+    "pieTitle": "By class"
+  }
 }

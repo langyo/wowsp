@@ -3855,14 +3855,14 @@ export default defineComponent({
         captureSide: c.captureTeam === 1 ? "ally" : c.captureTeam === 2 ? "enemy" : undefined,
         etaSeconds: c.etaSeconds,
         hint: c.contested
-          ? `${c.letter} 双方压点，进度暂停`
+          ? `${c.letter} ${i18nT("replay.capture.contested")}`
           : c.capturing
-            ? `${c.letter} 占领中（${c.alliesIn} vs ${c.enemiesIn} 船）`
+            ? `${c.letter} ${i18nT("replay.capture.capturing", { a: c.alliesIn, b: c.enemiesIn })}`
             : c.owner === 0
-              ? `${c.letter} 中立`
+              ? `${c.letter} ${i18nT("replay.capture.neutral")}`
               : c.owner === 1
-                ? `${c.letter} 我方控制`
-                : `${c.letter} 敌方控制`,
+                ? `${c.letter} ${i18nT("replay.capture.ally")}`
+                : `${c.letter} ${i18nT("replay.capture.enemy")}`,
       }));
       const ships: HoloShip[] = [
         ...shipRows.value.allies.map((s) => ({
@@ -4705,7 +4705,7 @@ export default defineComponent({
                     {k.killerName ?? ""}
                   </span>
                 </div>
-                <span class="holo-map__kill-verb">击沉了</span>
+                <span class="holo-map__kill-verb">{i18nT("replay.killVerb")}</span>
                 <div class="holo-map__kill-side holo-map__kill-side--victim">
                   <span class="holo-map__kill-ship">
                     <span class="holo-map__kill-ico">
@@ -4905,7 +4905,7 @@ export default defineComponent({
               <button
                 class="holo-map__speed-btn"
                 onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
-                title="播放速度"
+                title={i18nT("replay.playbackSpeed")}
               >
                 {playbackSpeed.value}×
               </button>
