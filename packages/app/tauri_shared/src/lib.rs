@@ -681,7 +681,9 @@ pub struct ClanSuggestion {
     pub members_count: Option<i64>,
 }
 
-/// Per-member PvP summary inside a clan roster. Hidden profiles yield
+/// Per-member PvP summary inside a clan roster — the same deep-stat set the
+/// player card shows, minus the per-ship table (that stays on the player
+/// page; it would need one WG request per member). Hidden profiles yield
 /// `hidden=true` with all stats None.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -691,6 +693,12 @@ pub struct ClanMemberStats {
     /// Winrate, percent (0–100).
     pub winrate: Option<f32>,
     pub avg_damage: Option<f32>,
+    /// Community PR proxy (same formula as the player card).
+    pub pr: Option<i64>,
+    pub avg_xp: Option<f32>,
+    pub kd_ratio: Option<f32>,
+    /// Survival rate, percent (0–100).
+    pub survival_rate: Option<f32>,
     pub hidden: bool,
 }
 
@@ -734,6 +742,9 @@ pub struct ClanInfo {
     pub winrate: f32,
     /// Sum of damage / total_battles (community-style clan average).
     pub avg_damage: f32,
+    /// Mean PR proxy across visible members that have one (None when no
+    /// visible member has stats).
+    pub avg_pr: Option<i64>,
     /// Members whose profile is hidden (no PvP stats).
     pub hidden_count: i64,
 }

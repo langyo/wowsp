@@ -50,8 +50,9 @@
 .clan-card__hero {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 12px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
   border-radius: 10px;
   background: rgb(var(--color-primary) / 6%);
 }
@@ -77,6 +78,24 @@
   color: var(--color-muted);
   font-size: var(--text-sm);
   margin-left: 8px;
+}
+
+.clan-card__pr-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.clan-card__pr-num {
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.clan-card__pr-label {
+  font-size: var(--text-2xs);
+  color: var(--color-muted);
 }
 
 .clan-card__kpis {
@@ -122,7 +141,7 @@
 .clan-card__roster-head,
 .clan-card__member {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px 72px 64px 76px;
+  grid-template-columns: minmax(0, 1fr) 84px 64px 62px 64px 74px;
   gap: 8px;
   align-items: center;
   padding: 4px 8px;
@@ -133,6 +152,28 @@
   color: var(--color-muted);
   border-bottom: 1px solid rgb(var(--color-border) / 14%);
   padding-bottom: 6px;
+}
+
+/* Sortable header cell — button reset + arrow chip styling. */
+.clan-card__sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  border: none;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text);
+  }
+
+  &--on {
+    color: rgb(var(--color-primary));
+  }
 }
 
 .clan-card__member {
