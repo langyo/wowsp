@@ -1,5 +1,5 @@
 import { defineComponent, onMounted, ref } from "vue";
-import { CheckCircle2, FolderTree, Monitor, Usb } from "lucide-vue-next";
+import { CheckCircle2, FolderTree, Monitor, Usb, XCircle } from "lucide-vue-next";
 import {
   HAlert,
   HButton,
@@ -19,8 +19,10 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  * components: a left step rail (mode → license → install → done), centered
  * panes, the bundled SySL 1.0 license agreement, and done-page shortcut
  * toggles that are applied only when the final confirmation runs (nothing
- * is created during the install itself). The license text is the
- * repository's LICENSE document, inlined at build time through Vite's
+ * is created during the install itself). An install failure lands on the
+ * done step as a failure variant with retry/close actions — nothing
+ * returns to earlier steps once the install started. The license text is
+ * the repository's LICENSE document, inlined at build time through Vite's
  * ?raw import.
  */
 
@@ -234,9 +236,11 @@ export default defineComponent({
       } catch (err) {
         installFailed.value = true;
         failMessage.value = String(err);
-        // The log lines stay: the drawer auto-expanded on the error record,
-        // so the failure trail remains readable next to the alert. A retry
-        // resets them in go("install").
+        // Failure lands on the done step too: the log lines stay (the
+        // drawer auto-expanded on the error record) so the failure trail
+        // remains readable next to the retry action. A retry resets them
+        // in go("install").
+        step.value = "done";
       } finally {
         running.value = false;
       }
@@ -343,30 +347,15 @@ export default defineComponent({
         ) : step.value === "install" ? (
           <section class="wizard-pane wizard-pane--install">
             <div class="wizard-install__main">
-              {installFailed.value ? (
-                <>
-                  <HAlert
-                    variant="error"
-                    title="安装失败"
-                    message={failMessage.value}
-                  />
-                  <HButton variant="primary" onClick={() => go("license")}>
-                    返回
-                  </HButton>
-                </>
-              ) : (
-                <>
-                  <img src="/logo.webp" alt="" class="wizard-logo" />
-                  <p class="wizard-pane__title">WoWSP</p>
-                  <HProgressBar
-                    status="loading"
-                    size="md"
-                    value={overall.value ?? undefined}
-                    showLabel={overall.value != null}
-                  />
-                  <p class="wizard-step">{flowStep.value || "正在安装 WoWSP，这可能需要一点时间…"}</p>
-                </>
-              )}
+              <img src="/logo.webp" alt="" class="wizard-logo" />
+              <p class="wizard-pane__title">WoWSP</p>
+              <HProgressBar
+                status="loading"
+                size="md"
+                value={overall.value ?? undefined}
+                showLabel={overall.value != null}
+              />
+              <p class="wizard-step">{flowStep.value || "正在安装 WoWSP，这可能需要一点时间…"}</p>
             </div>
             <div class="wizard-install__logs">
               <LogPane
@@ -380,6 +369,37 @@ export default defineComponent({
                   logExpanded.value = !logExpanded.value;
                 }}
               />
+            </div>
+          </section>
+        ) : installFailed.value ? (
+          <section class="wizard-pane wizard-pane--center wizard-done">
+            <XCircle
+              size={56}
+              color="rgb(var(--color-error))"
+              stroke-width={1.5}
+            />
+            <p class="wizard-done__title wizard-done__title--fail">安装失败</p>
+            <p class="wizard-done__error">{failMessage.value}</p>
+            <div class="wizard-install__logs">
+              <LogPane
+                lines={logLines.value}
+                order={logOrder.value}
+                expanded={logExpanded.value}
+                onToggleOrder={() => {
+                  logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
+                }}
+                onToggleExpanded={() => {
+                  logExpanded.value = !logExpanded.value;
+                }}
+              />
+            </div>
+            <div class="wizard-done__actions">
+              <HButton variant="primary" onClick={start}>
+                重试安装
+              </HButton>
+              <HButton variant="ghost" onClick={() => tauriWindow()?.close()}>
+                关闭
+              </HButton>
             </div>
           </section>
         ) : (
@@ -461,7 +481,7 @@ export default defineComponent({
                     </HButton>
                   </>
                 )}
-                {step.value === "done" && (
+                {step.value === "done" && !installFailed.value && (
                   <HButton
                     variant="primary"
                     size="lg"

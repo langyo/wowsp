@@ -8,6 +8,15 @@
   min-width: 0;
 }
 
+/* Expanded drawer: a visible frame enclosing bar + body so the open log
+   reads as one bounded box (collapsed stays a bare bar, no border). */
+.log-pane.is-expanded {
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-md);
+  background: rgb(var(--color-surface) / 55%);
+  padding: 6px 10px 10px;
+}
+
 .log-pane__bar {
   display: flex;
   align-items: center;

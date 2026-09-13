@@ -325,6 +325,11 @@ body {
     color: rgb(var(--color-success));
   }
 
+  // Failure variant of the done pane: same title geometry, error hue.
+  .wizard-done__title--fail {
+    color: rgb(var(--color-error));
+  }
+
   .wizard-done__path {
     margin: 0;
     font-family: var(--font-mono);
@@ -337,6 +342,30 @@ body {
     font-size: var(--text-sm);
     color: rgb(var(--color-muted));
     max-width: 80%;
+  }
+
+  // Failure sub-line: the raw backend error, muted and wrappable.
+  .wizard-done__error {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+    max-width: 80%;
+    overflow-wrap: anywhere;
+  }
+
+  // Failure action row: retry + close, centered with the pane.
+  .wizard-done__actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  // The failure variant reuses the install pane's log strip; the centered
+  // pane would shrink-wrap it, so stretch it across the full pane width.
+  .wizard-install__logs {
+    align-self: stretch;
+    width: 100%;
   }
 
   // Shortcut toggles: the block centers with the pane, items align left.

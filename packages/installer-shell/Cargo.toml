@@ -60,9 +60,12 @@ locales = ["zh-Hans", "zh-Hant"]
 [package.metadata.shun.install]
 local = true
 portable = true
-# The wizard defers both launchers to the done-page confirmation; headless
-# runs answer the ask policy through WizardAnswers instead.
-start-menu-shortcut = "ask"
+# Shortcuts are a done-page concern: the flow itself never creates any
+# ("never" here makes that structural, regardless of wizard answers) — the
+# shell applies the user's choices afterwards, via `set_shortcuts` in the
+# wizard and the tail of `run_headless` for silent installs.
+desktop-shortcut = "never"
+start-menu-shortcut = "never"
 # The wowsp app detects this marker beside its executable (paths.rs).
 portable-marker = ".portable"
 main-exe = "wowsp.exe"
