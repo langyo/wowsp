@@ -1,5 +1,32 @@
 {
+  "player": "Player",
+  "clan": "Clan",
+  "searchPlayerTitle": "Search players",
+  "searchPlayerPlaceholder": "Nickname or UID",
+  "searchClanTitle": "Search clans",
+  "searchClanPlaceholder": "Clan name or ID",
+  "searchHint": "Type at least 3 characters (UID exempt)",
+  "searching": "Searching…",
+  "noResults": "No matches",
   "history": "History",
   "historyEmpty": "No lookups yet",
-  "distTitle": "Ship distribution"
+  "distTitle": "Ship distribution",
+  "clanMembers": "Members",
+  "membersCount": "Members",
+  "createdAt": "Created",
+  "memberName": "Member",
+  "roleLabel": "Role",
+  "jumpClan": "View clan",
+  "role": {
+    "commander": "Commander",
+    "executive_officer": "Executive Officer",
+    "recruitment_officer": "Recruitment Officer",
+    "commissioned_officer": "Officer",
+    "officer": "Officer",
+    "personnel_officer": "Personnel Officer",
+    "intelligence_officer": "Intelligence Officer",
+    "quartermaster": "Quartermaster",
+    "junior_officer": "Junior Officer",
+    "private": "Member"
+  }
 }

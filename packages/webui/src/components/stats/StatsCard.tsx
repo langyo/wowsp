@@ -1,4 +1,4 @@
-import { computed, defineComponent } from "vue";
+import { computed, defineComponent, type PropType } from "vue";
 
 import { HTag } from "@celestia-island/hikari";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -22,6 +22,9 @@ export default defineComponent({
   name: "StatsCard",
   props: {
     stats: { type: Object as () => PlayerStats, required: true },
+    /** Clan tag clicked → jump to the clan view. Rendered as a link only
+     *  when the stats carry a clan id. */
+    onClanClick: Function as PropType<() => void>,
   },
   setup(props) {
     const pr = computed(() => prTier(props.stats.pr));
@@ -75,7 +78,18 @@ export default defineComponent({
               size={36}
             />
             {props.stats.clanTag ? (
-              <span class="stats-card__clan">[{props.stats.clanTag}]</span>
+              props.onClanClick && props.stats.clanId != null ? (
+                <button
+                  type="button"
+                  class="stats-card__clan stats-card__clan--link"
+                  onClick={() => props.onClanClick?.()}
+                  title={t("lookup.jumpClan")}
+                >
+                  [{props.stats.clanTag}]
+                </button>
+              ) : (
+                <span class="stats-card__clan">[{props.stats.clanTag}]</span>
+              )
             ) : null}
             <h3 class="stats-card__name">{props.stats.name}</h3>
           </div>

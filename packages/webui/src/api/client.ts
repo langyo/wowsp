@@ -407,6 +407,8 @@ export interface PlayerStats {
   winrate?: number | null;
   hidden: boolean;
   clanTag?: string | null;
+  /** Clan id (jump key from a player card to the clan view). */
+  clanId?: number | null;
   // ── Deep stats (PvP) ────────────────────────────────────────────────
   avgDamage?: number | null;
   avgXp?: number | null;
@@ -424,6 +426,56 @@ export interface PlayerStats {
   soloWr?: number | null;
   div2Wr?: number | null;
   div3Wr?: number | null;
+}
+
+/** Player-name autocomplete item (WG account/list). Mirrors `wowsp_tauri_shared::PlayerSuggestion`. */
+export interface PlayerSuggestion {
+  accountId: number;
+  nickname: string;
+}
+
+/** Clan autocomplete item (WG clans/list). Mirrors `wowsp_tauri_shared::ClanSuggestion`. */
+export interface ClanSuggestion {
+  clanId: number;
+  tag: string;
+  name: string;
+  membersCount?: number | null;
+}
+
+/** Per-member PvP summary inside a clan roster. Mirrors `wowsp_tauri_shared::ClanMemberStats`. */
+export interface ClanMemberStats {
+  battles?: number | null;
+  wins?: number | null;
+  winrate?: number | null;
+  avgDamage?: number | null;
+  hidden: boolean;
+}
+
+/** One clan member (roster row). Mirrors `wowsp_tauri_shared::ClanMember`. */
+export interface ClanMember {
+  accountId: number;
+  name: string;
+  /** WG role key (commander / executive_officer / private / …). */
+  role: string;
+  joinedAt?: number | null;
+  stats: ClanMemberStats;
+}
+
+/** Clan overview + roster with per-member stats. Mirrors `wowsp_tauri_shared::ClanInfo`. */
+export interface ClanInfo {
+  clanId: number;
+  tag: string;
+  name: string;
+  realm: string;
+  description?: string | null;
+  membersCount: number;
+  createdAt?: number | null;
+  members: ClanMember[];
+  totalBattles: number;
+  totalWins: number;
+  winrate: number;
+  avgDamage: number;
+  hiddenCount: number;
 }
 
 /** Mirrors `wowsp_tauri_shared::GameVersionInfo`. */
@@ -714,6 +766,15 @@ export const api = {
    *  per-player Vortex dog-tag call — roster cards show WR/PR only. */
   lookupPlayersStatsBatch: (names: string[], realm: string) =>
     transport.invoke<(PlayerStats | null)[]>(RPC.lookup_players_stats_batch, { names, realm }),
+  /** Live player autocomplete (nickname substring or numeric UID). */
+  suggestPlayers: (search: string, realm: string) =>
+    transport.invoke<PlayerSuggestion[]>(RPC.suggest_players, { search, realm }),
+  /** Live clan autocomplete (tag/name substring or numeric clan id). */
+  suggestClans: (search: string, realm: string) =>
+    transport.invoke<ClanSuggestion[]>(RPC.suggest_clans, { search, realm }),
+  /** Clan overview + roster (members' names/stats resolved server-side). */
+  lookupClanInfo: (clanId: number, realm: string) =>
+    transport.invoke<ClanInfo>(RPC.lookup_clan_info, { clanId, realm }),
   getGameVersion: () => transport.invoke<GameVersionInfo>(RPC.get_game_version),
   getShipEncyclopedia: (realm: string, forceRefresh: boolean, language?: string) =>
     transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh, language }),

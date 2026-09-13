@@ -618,6 +618,11 @@ pub struct PlayerStats {
     pub hidden: bool,
     /// Clan tag, if any.
     pub clan_tag: Option<String>,
+    /// Clan id the player belongs to, if any — the jump key from a player
+    /// card to the clan view. `#[serde(default)]` keeps old cache files
+    /// (written before this field existed) deserializable.
+    #[serde(default)]
+    pub clan_id: Option<i64>,
 
     // ── Deep stats (PvP) ────────────────────────────────────────────────
     /// Average damage per battle.
@@ -653,6 +658,84 @@ pub struct PlayerStats {
     pub solo_wr: Option<f32>,
     pub div2_wr: Option<f32>,
     pub div3_wr: Option<f32>,
+}
+
+/// One player name suggestion from the WG account/list autocomplete
+/// (live search-as-you-type in the lookup sidebar).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSuggestion {
+    pub account_id: i64,
+    pub nickname: String,
+}
+
+/// One clan suggestion from the WG clans/list autocomplete.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClanSuggestion {
+    pub clan_id: i64,
+    /// Short clan tag (rendered as [TAG]).
+    pub tag: String,
+    /// Full clan name.
+    pub name: String,
+    pub members_count: Option<i64>,
+}
+
+/// Per-member PvP summary inside a clan roster. Hidden profiles yield
+/// `hidden=true` with all stats None.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClanMemberStats {
+    pub battles: Option<i64>,
+    pub wins: Option<i64>,
+    /// Winrate, percent (0–100).
+    pub winrate: Option<f32>,
+    pub avg_damage: Option<f32>,
+    pub hidden: bool,
+}
+
+/// One clan member (roster row).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClanMember {
+    pub account_id: i64,
+    /// Player nickname (resolved via a batched account/info call).
+    pub name: String,
+    /// WG role key: commander / executive_officer / recruitment_officer /
+    /// private / … (mapped to a label on the frontend).
+    pub role: String,
+    /// Join timestamp, epoch seconds.
+    pub joined_at: Option<i64>,
+    pub stats: ClanMemberStats,
+}
+
+/// Clan overview card: WG clans/info metadata + the roster with per-member
+/// PvP stats (names and stats resolved in ONE batched account/info call —
+/// members ≤ 50, and the endpoint accepts up to 100 ids per request).
+/// Aggregate fields are computed across visible (non-hidden) members.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClanInfo {
+    pub clan_id: i64,
+    pub tag: String,
+    pub name: String,
+    /// Realm the lookup hit: ru / eu / na / asia.
+    pub realm: String,
+    pub description: Option<String>,
+    pub members_count: i64,
+    /// Clan creation timestamp, epoch seconds.
+    pub created_at: Option<i64>,
+    pub members: Vec<ClanMember>,
+    /// Sum over visible members.
+    pub total_battles: i64,
+    /// Sum over visible members.
+    pub total_wins: i64,
+    /// total_wins / total_battles, percent (0–100). 0 when no visible stats.
+    pub winrate: f32,
+    /// Sum of damage / total_battles (community-style clan average).
+    pub avg_damage: f32,
+    /// Members whose profile is hidden (no PvP stats).
+    pub hidden_count: i64,
 }
 
 /// Entity metadata from an EntityCreate (0x05) packet. The fixed header is

@@ -1,0 +1,136 @@
+/* AsyncSearchCombo — icon trigger + anchored async-autocomplete popup.
+   Sizes mirror hikari's segmented control (padding var(--space-4) …) so the
+   button can sit on the same row as an HTabs segmented group. */
+
+.async-search-combo {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.async-search-combo__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  align-self: stretch;
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface) / 60%);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-short) var(--ease-standard),
+    color var(--duration-short) var(--ease-standard);
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:hover {
+    color: var(--color-text);
+  }
+
+  &--on {
+    color: rgb(var(--color-primary));
+    border-color: rgb(var(--color-primary) / 25%);
+    background: rgb(var(--color-primary) / 12%);
+  }
+}
+
+.async-search-combo__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  width: min(360px, 70vw);
+  padding: 10px 12px 12px;
+  border-radius: 10px;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  z-index: 50;
+  animation: async-search-pop var(--duration-normal) var(--ease-standard);
+
+  &--left {
+    left: 0;
+  }
+
+  &--right {
+    right: 0;
+  }
+}
+
+@keyframes async-search-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.async-search-combo__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.async-search-combo__close {
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: 2px 4px;
+  border-radius: 4px;
+
+  &:hover {
+    color: var(--color-text);
+    background: rgb(var(--color-primary) / 10%);
+  }
+}
+
+.async-search-combo__hint {
+  margin-top: 8px;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+
+  &--error {
+    color: #ff6b6b;
+    word-break: break-all;
+  }
+}
+
+.async-search-combo__candidates {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.async-search-combo__candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--color-primary) / 10%);
+  }
+}
