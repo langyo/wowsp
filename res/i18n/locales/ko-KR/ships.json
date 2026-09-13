@@ -257,6 +257,10 @@
     "special": "특수",
     "empty": "이 국가에는 테크 트리가 없습니다."
   },
+  "banner": {
+    "imageFailed": "일부 함선 이미지를 불러오지 못했습니다",
+    "action": "리소스 설정 열기"
+  },
   "archetype": {
     "BB_Far": "원거리 전함",
     "BB_Mid": "중거리 전함",

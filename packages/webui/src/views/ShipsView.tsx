@@ -1,12 +1,14 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { RouterLink } from "vue-router";
 import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
 
-import { HButton, HInput, HSelect, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HButton, HInput, HSelect, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
 import TechTreeView from "@/components/ships/TechTreeView";
 import { resolveShipImage } from "@/utils/shipImages";
+import { recordShipImageFailure, shouldShowImageBanner } from "@/utils/shipImageFailures";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -159,6 +161,12 @@ export default defineComponent({
       void trends.loadCommunity(ship.shipId);
     }
 
+    // ── image banner (systemic portrait load failures) ─────────────────
+    const imageBannerDismissed = ref(false);
+    const showImageBanner = computed(
+      () => shouldShowImageBanner.value && !imageBannerDismissed.value,
+    );
+
     // ── card helpers ───────────────────────────────────────────────────
     function shipBattles(shipId: number): number | null {
       const acc = accounts.activeAccount;
@@ -248,6 +256,27 @@ export default defineComponent({
               <RotateCcw size={12} /> {t("ships.retry")}
             </HButton>
           </div>
+        ) : null}
+
+        {/* ── image banner (shown above content when portraits fail en masse) ── */}
+        {showImageBanner.value ? (
+          <HAlert
+            class="ships-view__image-banner"
+            variant="warning"
+            size="sm"
+            closable
+            message={t("ships.banner.imageFailed")}
+            onClose={() => {
+              imageBannerDismissed.value = true;
+            }}
+          >
+            <span class="ships-view__image-banner-row">
+              {t("ships.banner.imageFailed")}
+              <RouterLink class="ships-view__image-banner-link" to={{ name: "resources" }}>
+                {t("ships.banner.action")}
+              </RouterLink>
+            </span>
+          </HAlert>
         ) : null}
 
         {/* ── scrollable content body ── */}
@@ -414,6 +443,7 @@ export default defineComponent({
                             loading="lazy"
                             fallback={<Ship size={32} />}
                             fallbackTitle={t("common.imageUnavailable")}
+                            onError={() => recordShipImageFailure(ship.shipId)}
                           />
                         </div>
                       );

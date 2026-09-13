@@ -257,6 +257,10 @@
     "special": "Especial",
     "empty": "No hay árbol tecnológico para esta nación."
   },
+  "banner": {
+    "imageFailed": "No se pudieron cargar algunas imágenes de barcos",
+    "action": "Abrir ajustes de recursos"
+  },
   "archetype": {
     "BB_Far": "Acorazados de largo alcance",
     "BB_Mid": "Acorazados de medio alcance",

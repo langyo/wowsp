@@ -257,6 +257,10 @@
     "special": "Spécial",
     "empty": "Aucun arbre technologique pour cette nation."
   },
+  "banner": {
+    "imageFailed": "Échec du chargement de certains portraits de navires",
+    "action": "Ouvrir les paramètres des ressources"
+  },
   "archetype": {
     "BB_Far": "Cuirassés longue portée",
     "BB_Mid": "Cuirassés moyenne portée",
