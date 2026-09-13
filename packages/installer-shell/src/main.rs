@@ -4,10 +4,12 @@
 //! drives the shun install flow directly: the payload (staged application
 //! directory, packed at build time — see build.rs) is embedded in this
 //! single binary, and `shun::targets::install` performs the delivery.
-//! Local mode registers the ARP entry, the self-copying uninstaller, and
-//! Start-menu/desktop shortcuts; USB and green modes drop the app's
-//! `.portable` marker with no registration at all (config
-//! `portable-marker`).
+//! Local mode registers the ARP entry and the self-copying uninstaller;
+//! no shortcut is created during the flow — the done page creates the
+//! Start-menu/desktop shortcuts on confirmation via `set_shortcuts`
+//! (the headless `--silent` run still creates them in-flow). USB and
+//! green modes drop the app's `.portable` marker with no registration
+//! at all (config `portable-marker`).
 //!
 //! The shell is itself a Tauri app, so the WebView2 runtime is a hard
 //! prerequisite for its own UI: before any window is created we check the
@@ -25,7 +27,9 @@ use serde::Serialize;
 use shun::config::{ShunConfig, TargetConfig};
 use shun::flow::{Flow, FlowEvent};
 use shun::payload::ArchivePayload;
-use shun::targets::install::{InstallContext, InstallFlow, WindowsRegistration, WizardAnswers};
+use shun::targets::install::{
+    InstallContext, InstallFlow, WindowsRegistration, WizardAnswers, default_aumid,
+};
 use tauri::Emitter;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
@@ -294,11 +298,15 @@ fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
     let _ = app.emit("install-progress", event);
 }
 
-/// Creates or removes the install's shortcuts in place — the done-page
-/// checkboxes apply live (the install itself always creates both, so the
-/// default checked state matches reality).
+/// Applies the done-page confirmation in one shot: creates or removes
+/// the install's shortcuts per the checkboxes. The wizard flow itself
+/// creates nothing, so this is the only place the user's shortcut
+/// choices take effect; it is called once when the done page's finish
+/// button runs. Every changed `.lnk` path gets a shell-change
+/// notification so Explorer reflects it immediately.
 #[tauri::command]
 fn set_shortcuts(
+    state: tauri::State<'_, AppState>,
     desktop: Option<bool>,
     menu: Option<bool>,
     dir: String,
@@ -313,19 +321,38 @@ fn set_shortcuts(
         return Err("安装目录中未找到 wowsp.exe".into());
     }
     let portable = mode != "local";
+    let aumid = shortcut_aumid(&state);
 
+    let mut changed = Vec::new();
     if let Some(want) = menu {
         let link = start_menu_link(&dir, portable);
-        apply_shortcut(&link, &exe, want)?;
+        apply_shortcut(&link, &exe, want, &aumid, &mut changed)?;
     }
     if let Some(want) = desktop {
         if portable {
             return Err("便携模式不创建桌面快捷方式".into());
         }
         let link = desktop_link();
-        apply_shortcut(&link, &exe, want)?;
+        apply_shortcut(&link, &exe, want, &aumid, &mut changed)?;
     }
+    notify_shell_change(&changed);
     Ok(())
+}
+
+/// The shortcut grouping identity for the configured install target: the
+/// manifest's `aumid` when declared, else shun's `{publisher}.{product}`
+/// default — the same rule `InstallContext::apply_config` applies.
+fn shortcut_aumid(state: &AppState) -> String {
+    let configured = state
+        .install_target()
+        .ok()
+        .and_then(|install| install.aumid);
+    configured.unwrap_or_else(|| {
+        default_aumid(
+            state.config.product.publisher.as_deref(),
+            &state.config.product.name,
+        )
+    })
 }
 
 fn start_menu_link(install_dir: &str, portable: bool) -> PathBuf {
@@ -366,7 +393,17 @@ fn desktop_link() -> PathBuf {
     base.join("Desktop").join("WoWSP.lnk")
 }
 
-fn apply_shortcut(link: &Path, exe: &Path, want: bool) -> Result<(), String> {
+/// Creates or removes one `.lnk`, recording the path in `changed` when
+/// the filesystem actually changes. Creation stamps the app's AUMID on
+/// the link — best-effort: a failed stamp only warns and never fails
+/// the creation.
+fn apply_shortcut(
+    link: &Path,
+    exe: &Path,
+    want: bool,
+    aumid: &str,
+    changed: &mut Vec<PathBuf>,
+) -> Result<(), String> {
     if want {
         if link.is_file() {
             return Ok(());
@@ -376,13 +413,47 @@ fn apply_shortcut(link: &Path, exe: &Path, want: bool) -> Result<(), String> {
         }
         mslnk::ShellLink::new(exe)
             .and_then(|l| l.create_lnk(link))
-            .map_err(|e| format!("创建快捷方式失败: {e}"))
+            .map_err(|e| format!("创建快捷方式失败: {e}"))?;
+        if let Err(e) = shun::targets::aumid::stamp(link, aumid) {
+            eprintln!("shun: AUMID stamp on {}: {e}", link.display());
+        }
+        changed.push(link.to_path_buf());
     } else {
         match std::fs::remove_file(link) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("移除快捷方式失败: {e}")),
+            Ok(()) => changed.push(link.to_path_buf()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(format!("移除快捷方式失败: {e}")),
         }
+    }
+    Ok(())
+}
+
+/// Tells Explorer the shortcut surfaces changed — a per-path update
+/// event plus one association-level refresh — so freshly created or
+/// removed `.lnk` files show up (or vanish) without waiting for
+/// Explorer's own re-indexing. Mirrors shun's post-install notification.
+fn notify_shell_change(paths: &[PathBuf]) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{
+        SHCNE_ASSOCCHANGED, SHCNE_UPDATEITEM, SHCNF_PATH, SHChangeNotify,
+    };
+
+    unsafe {
+        for path in paths {
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            SHChangeNotify(
+                SHCNE_UPDATEITEM as i32,
+                SHCNF_PATH,
+                wide.as_ptr().cast(),
+                std::ptr::null(),
+            );
+        }
+        SHChangeNotify(
+            SHCNE_ASSOCCHANGED as i32,
+            0,
+            std::ptr::null(),
+            std::ptr::null(),
+        );
     }
 }
 
@@ -442,21 +513,24 @@ fn get_license(locale: String) -> String {
     }
 }
 
+/// Runs the install flow for the wizard UI. Both launchers are deferred
+/// to the done step: the wizard answers `false` to both shortcut
+/// policies so nothing is created in-flow, and the done page's
+/// confirmation applies the user's choices via `set_shortcuts`.
 #[tauri::command]
 fn start_install(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     mode: String,
     dir: String,
-    // The desktop-shortcut checkbox; absent (older front-ends) = checked.
-    desktop: Option<bool>,
 ) -> Result<(), String> {
     let dir = dir.trim().trim_end_matches('\\').to_string();
     if dir.is_empty() {
         return Err("安装目录不能为空".into());
     }
     let answers = WizardAnswers {
-        desktop_shortcut: desktop.unwrap_or(true),
+        desktop_shortcut: false,
+        start_menu_shortcut: false,
         machine: false,
     };
     let ctx = state.install_context(&mode, &dir, answers)?;
@@ -537,7 +611,9 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
 /// and runs the flow headlessly with `--mode=local|usb|green`,
 /// `--dir=<path>`, `--desktop`/`--no-desktop`, and an optional
 /// `--uninstall`. The ARP `UninstallString` invokes the copied shell with
-/// `/uninstall` during removal.
+/// `/uninstall` during removal. The start-menu shortcut is always
+/// created (headless runs never see the done page); the desktop one
+/// follows `--desktop`/`--no-desktop` (default on).
 fn run_headless(
     args: &[String],
     config: &ShunConfig,
@@ -575,6 +651,7 @@ fn run_headless(
     });
     let answers = WizardAnswers {
         desktop_shortcut: desktop.unwrap_or(true),
+        start_menu_shortcut: true,
         machine: false,
     };
     if let Some(install) = config.targets.iter().find_map(|t| match t {

@@ -14,10 +14,23 @@
   justify-content: space-between;
   gap: 10px;
   padding: 0 0 6px;
+  cursor: pointer;
+  user-select: none;
 }
 
 .log-pane__title {
   font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+.log-pane__preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
   color: rgb(var(--color-muted));
 }
 
@@ -35,9 +48,34 @@
   }
 }
 
+.log-pane__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+}
+
+// Drawer fold: the collapse wrapper rides grid-template-rows so the body
+// height animates between 0fr (folded) and 1fr (open, body is 240px).
+.log-pane__collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms var(--ease-standard, ease);
+
+  &.is-open {
+    grid-template-rows: 1fr;
+  }
+}
+
+.log-pane__body-clip {
+  overflow: hidden;
+  min-height: 0;
+}
+
 .log-pane__body {
   flex: 1;
   min-height: 0;
+  height: 240px;
   overflow: auto;
   display: flex;
   flex-direction: column;

@@ -17,9 +17,11 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 /**
  * Installer shell UI — a step-driven delivery wizard rendered with hikari
  * components: a left step rail (mode → license → install → done), centered
- * panes, the bundled SySL 1.0 license agreement, and a desktop-shortcut
- * toggle. The license text is the repository's LICENSE document, inlined at
- * build time through Vite's ?raw import.
+ * panes, the bundled SySL 1.0 license agreement, and done-page shortcut
+ * toggles that are applied only when the final confirmation runs (nothing
+ * is created during the install itself). The license text is the
+ * repository's LICENSE document, inlined at build time through Vite's
+ * ?raw import.
  */
 
 type Mode = "local" | "usb";
@@ -99,10 +101,14 @@ export default defineComponent({
     const zh = navigator.language.toLowerCase().startsWith("zh");
     const logLines = ref<LogLine[]>([]);
     const logOrder = ref<"newest" | "oldest">("newest");
+    // The log pane folds into a one-line drawer by default; error records
+    // force it open so the cause is visible without a manual click.
+    const logExpanded = ref(false);
     const stamp = () => new Date().toTimeString().slice(0, 8);
     const pushLog = (kind: LogLine["kind"], text: string) => {
       logLines.value.push({ time: stamp(), kind, text });
       if (logLines.value.length > 500) logLines.value.shift();
+      if (kind === "error") logExpanded.value = true;
     };
     // The flow's progress labels are composed English verbs; render the
     // ones we know in the UI language and pass the rest through.
@@ -131,6 +137,9 @@ export default defineComponent({
 
 
     const running = ref(false);
+    // True while the done-page confirmation is applying the shortcut
+    // choices — the finish button stays disabled for that window.
+    const finishing = ref(false);
 
     async function refreshDefaults() {
       const defaults = await invoke<DirDefaults>("default_dir", { mode: mode.value });
@@ -218,58 +227,52 @@ export default defineComponent({
           mode: mode.value,
           dir: dir.value.trim(),
         });
-        // The install creates both shortcuts; the done pane's toggles then
-        // apply the user's choices live (local mode only).
-        await syncShortcuts();
+        // No shortcut work here: the install creates none, and the done
+        // pane's toggles take effect only on the final confirmation.
         overall.value = 100;
         step.value = "done";
       } catch (err) {
         installFailed.value = true;
         failMessage.value = String(err);
-        logLines.value = [];
+        // The log lines stay: the drawer auto-expanded on the error record,
+        // so the failure trail remains readable next to the alert. A retry
+        // resets them in go("install").
       } finally {
         running.value = false;
       }
     }
 
-    async function syncShortcuts() {
-      if (mode.value !== "local") return;
-      await invoke("set_shortcuts", {
-        desktop: desktopShortcut.value,
-        menu: startMenuShortcut.value,
-        dir: dir.value.trim(),
-        mode: mode.value,
-      });
+    // The done-page confirmation: applies the shortcut choices in one
+    // shot for local installs (closing the window only on success) and
+    // closes directly for the portable copy, which has no shortcuts.
+    async function finish() {
+      if (finishing.value) return;
+      if (mode.value !== "local") {
+        tauriWindow()?.close();
+        return;
+      }
+      finishing.value = true;
+      try {
+        await invoke("set_shortcuts", {
+          desktop: desktopShortcut.value,
+          menu: startMenuShortcut.value,
+          dir: dir.value.trim(),
+          mode: mode.value,
+        });
+        tauriWindow()?.close();
+      } catch (err) {
+        showNote(String(err), "err");
+      } finally {
+        finishing.value = false;
+      }
     }
 
-    async function toggleDesktop(v: boolean) {
+    function toggleDesktop(v: boolean) {
       desktopShortcut.value = v;
-      try {
-        await invoke("set_shortcuts", {
-          desktop: v,
-          menu: undefined,
-          dir: dir.value.trim(),
-          mode: mode.value,
-        });
-      } catch (err) {
-        desktopShortcut.value = !v;
-        showNote(String(err), "err");
-      }
     }
 
-    async function toggleMenu(v: boolean) {
+    function toggleMenu(v: boolean) {
       startMenuShortcut.value = v;
-      try {
-        await invoke("set_shortcuts", {
-          desktop: undefined,
-          menu: v,
-          dir: dir.value.trim(),
-          mode: mode.value,
-        });
-      } catch (err) {
-        startMenuShortcut.value = !v;
-        showNote(String(err), "err");
-      }
     }
 
     function showNote(text: string, kind: "ok" | "err" = "ok") {
@@ -369,8 +372,12 @@ export default defineComponent({
               <LogPane
                 lines={logLines.value}
                 order={logOrder.value}
+                expanded={logExpanded.value}
                 onToggleOrder={() => {
                   logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
+                }}
+                onToggleExpanded={() => {
+                  logExpanded.value = !logExpanded.value;
                 }}
               />
             </div>
@@ -386,7 +393,7 @@ export default defineComponent({
             <p class="wizard-done__path">{dir.value.trim()}</p>
             <p class="wizard-done__hint">
               {mode.value === "local"
-                ? "WoWSP 已登记到系统「应用」列表，可从开始菜单启动。"
+                ? "WoWSP 已登记到系统「应用」列表；勾选的快捷方式会在点击「完成安装」时创建。"
                 : "便携副本已就绪：数据全部留在可移动磁盘内。"}
             </p>
             {mode.value === "local" && (
@@ -455,7 +462,12 @@ export default defineComponent({
                   </>
                 )}
                 {step.value === "done" && (
-                  <HButton variant="primary" size="lg" onClick={() => tauriWindow()?.close()}>
+                  <HButton
+                    variant="primary"
+                    size="lg"
+                    disabled={finishing.value}
+                    onClick={finish}
+                  >
                     完成安装
                   </HButton>
                 )}

@@ -15,12 +15,12 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
-shun = "0.2.9"
+shun = "0.2.10"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-shun = "0.2.9"
+shun = "0.2.10"
 
 # WebView2 runtime detection (same registry layout the NSIS engine used)
 winreg.workspace = true
@@ -30,7 +30,7 @@ winreg.workspace = true
 tauri = { version = "^2" }
 tauri-plugin-dialog = { version = "^2" }
 
-# Done-page shortcut toggles (create/remove .lnk in place).
+# Done-page confirmation creates the .lnk files on demand (set_shortcuts).
 mslnk = "^0.1.8"
 
 # Removable-drive detection for the USB-mode default directory;
@@ -60,6 +60,9 @@ locales = ["zh-Hans", "zh-Hant"]
 [package.metadata.shun.install]
 local = true
 portable = true
+# The wizard defers both launchers to the done-page confirmation; headless
+# runs answer the ask policy through WizardAnswers instead.
+start-menu-shortcut = "ask"
 # The wowsp app detects this marker beside its executable (paths.rs).
 portable-marker = ".portable"
 main-exe = "wowsp.exe"
