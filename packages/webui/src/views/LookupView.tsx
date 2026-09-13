@@ -212,9 +212,9 @@ export default defineComponent({
             </HButton>
           </div>
           <div class="lookup-view__history">
-            <div class="lookup-view__history-title">查询记录</div>
+            <div class="lookup-view__history-title">{t("lookup.history")}</div>
             {history.value.length === 0 ? (
-              <div class="lookup-view__history-empty">暂无记录</div>
+              <div class="lookup-view__history-empty">{t("lookup.historyEmpty")}</div>
             ) : (
               history.value.map((h) => (
                 <button
@@ -246,7 +246,7 @@ export default defineComponent({
                 {/* Ship distribution charts */}
                 {shipRows.value.length > 0 ? (
                   <div class="lookup-view__dist">
-                    <div class="lookup-view__dist-title">舰船分布</div>
+                    <div class="lookup-view__dist-title">{t("lookup.distTitle")}</div>
                     <ShipDistCharts
                       ships={filteredShips.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
                     />

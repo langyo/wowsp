@@ -289,5 +289,26 @@
       "speed": "Speed",
       "torpedoSpeed": "Torpedo speed"
     }
+  },
+  "filter": {
+    "typeTitle": "Type",
+    "typeAll": "All types",
+    "tierTitle": "Tier",
+    "tierAll": "All tiers",
+    "wrTitle": "Win rate",
+    "wrAll": "All win rates",
+    "battlesTitle": "Battles",
+    "battlesAll": "All battles",
+    "minBattles": "≥{n} battles",
+    "hintTypePop": "Multi-select · types only filter (no sort direction) · click \"All types\" to sort by class order",
+    "hintSortPop": "Multi-select · click a selection again to flip asc ↑ / desc ↓ · click \"All…\" to reset, or sort by this column",
+    "hintTypeChip": "Click to filter (multi-select) · drag left/right to change sort priority",
+    "hintSortChip": "Click to filter (multi-select) · click a selection again to flip asc/desc · drag left/right to change sort priority",
+    "summary": "{ships} ships · {battles} battles"
+  },
+  "model3d": {
+    "downloadStart": "The 3D view needs the model pack (~1.2 GB) — download started…",
+    "ready": "Model pack ready",
+    "failed": "Model pack download failed — try again later"
   }
 }

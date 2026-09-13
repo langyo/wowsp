@@ -6,16 +6,18 @@
  */
 import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as echarts from "echarts";
+import { t } from "@/i18n";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
 import "./ShipDistCharts.scss";
 
-const TYPE_LABELS: Record<string, string> = {
-  battleship: "战列",
-  aircarrier: "航母",
-  cruiser: "巡洋",
-  destroyer: "驱逐",
-  submarine: "潜艇",
-};
+/** Localized short class label ("stats.dist.<type>"); falls back to the raw
+ *  type key for unknown classes. Resolved at call time so a locale switch
+ *  re-renders. */
+function typeLabel(typeKey: string): string {
+  const i18nKey = `stats.dist.${typeKey}`;
+  const lbl = t(i18nKey);
+  return lbl === i18nKey ? typeKey : lbl;
+}
 
 export interface DistDatum {
   shipId: number;
@@ -72,7 +74,7 @@ export default defineComponent({
             yAxis: { type: "value", show: false },
             series: [
               {
-                name: "场次",
+                name: t("stats.dist.battles"),
                 type: "bar",
                 barWidth: "55%",
                 data: tierData.map((d) => d.value),
@@ -92,7 +94,7 @@ export default defineComponent({
       if (!props.tiersOnly && pieEl.value && pieChart) {
         const typeData = Object.entries(types)
           .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => ({ name: TYPE_LABELS[k] ?? k, value: v }));
+          .map(([k, v]) => ({ name: typeLabel(k), value: v }));
         pieChart.setOption(
           {
             animation: false,
@@ -100,7 +102,7 @@ export default defineComponent({
             tooltip: { trigger: "item" },
             series: [
               {
-                name: "舰种",
+                name: t("stats.dist.shipType"),
                 type: "pie",
                 radius: ["38%", "66%"],
                 label: {
@@ -145,7 +147,7 @@ export default defineComponent({
         <div ref={barEl} class="ship-dist-charts__bar" style="height: 150px" />
         {!props.tiersOnly ? (
           <div class="ship-dist-charts__piewrap">
-            <div class="ship-dist-charts__pie-title">舰种构成</div>
+            <div class="ship-dist-charts__pie-title">{t("stats.dist.pieTitle")}</div>
             <div ref={pieEl} class="ship-dist-charts__pie" style="height: 150px" />
           </div>
         ) : null}

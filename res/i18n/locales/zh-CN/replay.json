@@ -85,6 +85,31 @@
     "hiddenProfile": "该玩家隐藏了水表",
     "viewProfile": "查看该玩家的水表"
   },
+  "postbattle": {
+    "rawData": "原始数据",
+    "loadingGlobal": "加载 {name} 全局战绩…",
+    "destroyedBy": "被 {name} 摧毁",
+    "killerDamage": "（{n} 伤害）",
+    "damageUnknownNote": "录像不包含完整的对局信息，部分伤害来源不可见",
+    "estimated": "（推测）",
+    "xp": "经验",
+    "credits": "银币",
+    "globalFailed": "无法获取全局战绩",
+    "globalFailedAi": "无法获取全局战绩（可能为 AI 玩家）",
+    "globalUnavailable": "全局战绩不可用",
+    "noRealm": "（无服务器信息）",
+    "tierDist": "常玩等级分布",
+    "fullStats": "查看完整战绩 →"
+  },
+  "capture": {
+    "contested": "双方压点，进度暂停",
+    "capturing": "占领中（{a} vs {b} 船）",
+    "neutral": "中立",
+    "ally": "我方控制",
+    "enemy": "敌方控制"
+  },
+  "killVerb": "击沉了",
+  "playbackSpeed": "播放速度",
   "tier": "等级",
   "damageTaken": "承伤",
   "hpRemaining": "剩余血量",

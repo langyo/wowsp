@@ -228,7 +228,7 @@ const PostBattlePanel = defineComponent({
       globalLoading.value = false;
       if (!p.realm || AI_NAME.test(p.name)) return;
       globalLoading.value = true;
-      const tid = toast.loading(`加载 ${p.name} 全局战绩…`);
+      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name: p.name }));
       try {
         globalStats.value = await api.lookupPlayerStats(p.name, p.realm);
         toast.remove(tid);
@@ -294,11 +294,11 @@ const PostBattlePanel = defineComponent({
         <div class="replay-view__postbattle">
           <div class="replay-view__postbattle-matrix">
             <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">友方</div>
+              <div class="replay-view__postbattle-col-title">{t("replay.roster.allies")}</div>
               {allies.value.map(cell)}
             </div>
             <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">敌方</div>
+              <div class="replay-view__postbattle-col-title">{t("replay.roster.enemies")}</div>
               {enemies.value.map(cell)}
             </div>
           </div>
@@ -306,7 +306,7 @@ const PostBattlePanel = defineComponent({
             class="replay-view__postbattle-rawbtn"
             onClick={() => (rawOpen.value = true)}
           >
-            原始数据
+            {t("replay.postbattle.rawData")}
           </button>
 
           {/* Level-2 modal: raw payload */}
@@ -317,7 +317,7 @@ const PostBattlePanel = defineComponent({
                 onClick={(e) => e.stopPropagation()}
               >
                 <div class="replay-view__postbattle-modal-head">
-                  <span>原始数据</span>
+                  <span>{t("replay.postbattle.rawData")}</span>
                   <button onClick={() => (rawOpen.value = false)}>✕</button>
                 </div>
                 <pre class="replay-view__postbattle-modal-raw">{props.raw}</pre>
@@ -355,8 +355,12 @@ const PostBattlePanel = defineComponent({
                 </div>
                 {!sel.alive && sel.killerName ? (
                   <div class="replay-view__postbattle-killed">
-                    被 {sel.killerName} 摧毁
-                    {sel.killerDamage ? `（${sel.killerDamage.toLocaleString()} 伤害）` : ""}
+                    {t("replay.postbattle.destroyedBy", { name: sel.killerName })}
+                    {sel.killerDamage
+                      ? t("replay.postbattle.killerDamage", {
+                          n: sel.killerDamage.toLocaleString(),
+                        })
+                      : ""}
                   </div>
                 ) : null}
                 <div class="replay-view__postbattle-detail-body">
@@ -366,7 +370,7 @@ const PostBattlePanel = defineComponent({
                       {sel.accountId !== pb.selfId ? (
                         <em
                           class="replay-view__postbattle-damage-unknown"
-                          title="录像不包含完整的对局信息，部分伤害来源不可见"
+                          title={t("replay.postbattle.damageUnknownNote")}
                         >
                           *
                         </em>
@@ -389,7 +393,7 @@ const PostBattlePanel = defineComponent({
                         <span
                           key={x.index}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={`${name} ×${x.value}${verified ? "" : "（推测）"}`}
+                          title={`${name} ×${x.value}${verified ? "" : t("replay.postbattle.estimated")}`}
                         >
                           <img src={bundledRibbonUrl(key) ?? ""} width={40} height={15} alt="" />
                           <em>{x.value}</em>
@@ -402,8 +406,8 @@ const PostBattlePanel = defineComponent({
                     recorder's private results. */}
                 {sel.accountId === pb.selfId && (pb.selfExp != null || pb.selfCredits != null) ? (
                   <div class="replay-view__postbattle-settlement">
-                    <span>经验 <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
-                    <span>银币 <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
+                    <span>{t("replay.postbattle.xp")} <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
+                    <span>{t("replay.postbattle.credits")} <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
                   </div>
                 ) : null}
                 {/* On-demand global stats (toast while loading) */}
@@ -416,11 +420,12 @@ const PostBattlePanel = defineComponent({
                     <StatsCard stats={globalStats.value} />
                   ) : globalError.value ? (
                     <span class="replay-view__postbattle-global-note">
-                      无法获取全局战绩（可能为 AI 玩家）
+                      {t("replay.postbattle.globalFailedAi")}
                     </span>
                   ) : (
                     <span class="replay-view__postbattle-global-note">
-                      全局战绩不可用{sel.realm ? "" : "（无服务器信息）"}
+                      {t("replay.postbattle.globalUnavailable")}
+                      {sel.realm ? "" : t("replay.postbattle.noRealm")}
                     </span>
                   )}
                 </div>
@@ -428,12 +433,14 @@ const PostBattlePanel = defineComponent({
                     low-tier farmers / CV-SS specialists. */}
                 {shipDistList.value.length > 0 ? (
                   <div class="replay-view__postbattle-dist">
-                    <div class="replay-view__postbattle-dist-title">常玩等级分布</div>
+                    <div class="replay-view__postbattle-dist-title">
+                      {t("replay.postbattle.tierDist")}
+                    </div>
                     <ShipDistCharts ships={shipDistList.value} />
                   </div>
                 ) : null}
                 <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
-                  查看完整战绩 →
+                  {t("replay.postbattle.fullStats")}
                 </button>
               </div>
             </div>
@@ -554,7 +561,7 @@ const PostBattleFallbackPanel = defineComponent({
       globalLoading.value = false;
       globalError.value = false;
       globalLoading.value = true;
-      const tid = toast.loading("加载 " + name + " 全局战绩…");
+      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name }));
       try {
         globalStats.value = await api.lookupPlayerStats(name, realm.value);
         toast.remove(tid);
@@ -699,7 +706,7 @@ const PostBattleFallbackPanel = defineComponent({
                         <span
                           key={x.index}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={name + " ×" + x.value + (verified ? "" : "（推测）")}
+                          title={name + " ×" + x.value + (verified ? "" : t("replay.postbattle.estimated"))}
                         >
                           <img
                             src={bundledRibbonUrl(key) ?? ""}
@@ -734,14 +741,14 @@ const PostBattleFallbackPanel = defineComponent({
                       <StatsCard stats={globalStats.value} />
                     ) : globalError.value ? (
                       <span class="replay-view__postbattle-global-note">
-                        无法获取全局战绩
+                        {t("replay.postbattle.globalFailed")}
                       </span>
                     ) : null}
                   </div>
                 )}
                 {!isBot(sel) ? (
                   <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
-                    查看完整战绩 →
+                    {t("replay.postbattle.fullStats")}
                   </button>
                 ) : null}
               </div>
