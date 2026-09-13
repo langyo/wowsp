@@ -1,0 +1,12 @@
+{
+  "title": "Tendances",
+  "winrateOverTime": "Taux de victoire par version",
+  "damageOverTime": "Dégâts moyens par version",
+  "battleDelta": "Batailles jouées",
+  "snapshotCount": "Instantanés",
+  "version": "Version",
+  "noSnapshots": "Pas encore d'historique. Consultez ce joueur plusieurs fois pour établir une tendance.",
+  "patchNote": "Patch",
+  "patchAnnotation": "Superposition des patches",
+  "community": "Communauté"
+}

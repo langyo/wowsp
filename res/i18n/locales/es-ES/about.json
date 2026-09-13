@@ -1,0 +1,12 @@
+{
+  "title": "Acerca de WoWSP",
+  "subtitle": "World of WarShip Panel",
+  "description": "Un panel de escritorio para World of Warships: revisión independiente de repeticiones con un mapa holográfico en 3D, además de una superposición transparente dentro del juego para consultar estadísticas en tiempo real.",
+  "checkUpdate": "Buscar actualizaciones",
+  "updateAvailable": "Actualización disponible →",
+  "upToDate": "Ya está actualizado ✓",
+  "checking": "Comprobando...",
+  "downloading": "Descargando...",
+  "issues": "Informar de un problema",
+  "license": "Licencia · © {author}"
+}

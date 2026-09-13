@@ -1,0 +1,12 @@
+{
+  "title": "推移",
+  "winrateOverTime": "バージョン別の勝率",
+  "damageOverTime": "バージョン別の平均ダメージ",
+  "battleDelta": "対戦数",
+  "snapshotCount": "スナップショット数",
+  "version": "バージョン",
+  "noSnapshots": "履歴はまだありません。このプレイヤーを何度か照会すると推移が蓄積されます。",
+  "patchNote": "パッチ",
+  "patchAnnotation": "パッチオーバーレイ",
+  "community": "コミュニティ"
+}

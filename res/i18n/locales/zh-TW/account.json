@@ -1,0 +1,16 @@
+{
+  "notBound": "未綁定帳號",
+  "bind": "綁定帳號",
+  "switch": "切換帳號",
+  "switcherTitle": "帳號管理",
+  "add": "新增帳號",
+  "remove": "移除",
+  "nickname": "暱稱",
+  "realm": "伺服器",
+  "search": "搜尋",
+  "searching": "搜尋中...",
+  "notFound": "找不到帳號",
+  "bound": "已綁定",
+  "selectRealm": "選擇伺服器",
+  "noAccounts": "尚未綁定帳號。在上方搜尋暱稱即可綁定。"
+}

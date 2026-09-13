@@ -1,0 +1,32 @@
+{
+  "player": "Jugador",
+  "clan": "Clan",
+  "searchPlayerTitle": "Buscar jugadores",
+  "searchPlayerPlaceholder": "Apodo o UID",
+  "searchClanTitle": "Buscar clanes",
+  "searchClanPlaceholder": "Nombre del clan o ID",
+  "searchHint": "Escribe al menos 3 caracteres (el UID está exento)",
+  "searching": "Buscando…",
+  "noResults": "Sin coincidencias",
+  "history": "Historial",
+  "historyEmpty": "Aún no hay búsquedas",
+  "distTitle": "Distribución de buques",
+  "clanMembers": "Miembros",
+  "membersCount": "Miembros",
+  "createdAt": "Fundación",
+  "memberName": "Miembro",
+  "roleLabel": "Rol",
+  "jumpClan": "Ver clan",
+  "role": {
+    "commander": "Comandante",
+    "executive_officer": "Oficial ejecutivo",
+    "recruitment_officer": "Oficial de reclutamiento",
+    "commissioned_officer": "Oficial",
+    "officer": "Oficial",
+    "personnel_officer": "Oficial de personal",
+    "intelligence_officer": "Oficial de inteligencia",
+    "quartermaster": "Intendente",
+    "junior_officer": "Oficial subalterno",
+    "private": "Miembro"
+  }
+}

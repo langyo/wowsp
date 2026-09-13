@@ -1,0 +1,143 @@
+{
+  "list": {
+    "title": "リプレイ一覧",
+    "empty": "選択したクライアントのフォルダにリプレイが見つかりません。",
+    "count": "{n} 件のリプレイ",
+    "noClient": "ゲームクライアントが検出されていません。ホームでスキャンを実行するか、手動でパスを設定してください。"
+  },
+  "client": "クライアント",
+  "refresh": "更新",
+  "loading": "リプレイを解析中…",
+  "select": "一覧からリプレイを選択して読み込んでください。",
+  "players": "{n} 人",
+  "mode": {
+    "pvp": "ランダム戦",
+    "ranked": "ランク戦",
+    "clan": "クラン戦",
+    "event": "イベント",
+    "cooperative": "共同作戦",
+    "pve": "共同作戦",
+    "training": "練習室",
+    "brawl": "ブロール",
+    "squad": "分隊戦",
+    "ranked_solo": "ランク戦（ソロ）",
+    "ranked_sprint": "ランクスプリント戦",
+    "pve_event": "作戦",
+    "convoy": "護衛戦",
+    "asymmetric": "非対称戦",
+    "armsrace": "アームズレース",
+    "operation": "作戦",
+    "halloween": "ハロウィン",
+    "sandbox": "サンドボックス",
+    "_fallback": "対戦"
+  },
+  "map": {
+    "unknown": "不明なマップ",
+    "contour": "等高線地形",
+    "contourHint": "等高線地形：陸地は標高ごとに色分けし、海域は海底の起伏（海溝を含む）を表示します。"
+  },
+  "ownShip": "自艦",
+  "noShipModel": "この艦艇のホログラムモデルはまだありません。",
+  "duration": "再生時間",
+  "matchTime": "戦闘時間",
+  "mapLabel": "マップ",
+  "legend": {
+    "self": "自艦",
+    "ally": "味方",
+    "enemy": "敵",
+    "dead": "撃沈済み",
+    "gone": "残り {n} 秒"
+  },
+  "tip": {
+    "loading": "読み込み中…",
+    "failed": "失敗",
+    "hidden": "戦績非公開",
+    "winrate": "勝率",
+    "avgDamage": "平均ダメージ",
+    "battles": "対戦数",
+    "survival": "生存率",
+    "hitRate": "命中率"
+  },
+  "roster": {
+    "allies": "味方",
+    "enemies": "敵",
+    "shipType": "艦種",
+    "battles": "対戦数",
+    "winrate": "勝率",
+    "avgDamage": "平均ダメージ"
+  },
+  "minimap": {
+    "zoom": "拡大マップ",
+    "trails": "艦艇の航跡"
+  },
+  "labels": {
+    "hide": "ラベルを非表示",
+    "show": "ラベルを表示"
+  },
+  "results": "戦闘結果",
+  "resultsIncomplete": "リプレイが結果の記録前に終了したため、最後に記録された時点の状態を表示しています。最終結果ではありません。",
+  "bot": "ボット",
+  "botNote": "AI プレイヤー — 戦績履歴なし",
+  "live": {
+    "title": "進行中の戦闘",
+    "notStarted": "新しい戦闘はまだ開始されていません",
+    "settling": "集計中",
+    "hiddenProfile": "このプレイヤーは戦績を非公開にしています",
+    "viewProfile": "このプレイヤーの戦績を見る"
+  },
+  "postbattle": {
+    "rawData": "生データ",
+    "loadingGlobal": "{name} の全体戦績を読み込み中…",
+    "destroyedBy": "{name} により撃沈",
+    "killerDamage": "（{n} ダメージ）",
+    "damageUnknownNote": "リプレイには完全な戦闘情報が含まれていないため、一部のダメージソースは特定できません",
+    "estimated": "（推定）",
+    "xp": "経験値",
+    "credits": "クレジット",
+    "globalFailed": "全体戦績を取得できません",
+    "globalFailedAi": "全体戦績を取得できません（AI プレイヤーの可能性）",
+    "globalUnavailable": "全体戦績は利用できません",
+    "noRealm": "（サーバー情報なし）",
+    "tierDist": "使用ティア分布",
+    "fullStats": "詳細な戦績 →"
+  },
+  "capture": {
+    "contested": "双方が占拠中のため進行が停止しています",
+    "capturing": "占拠中（{a} vs {b} 隻）",
+    "neutral": "中立",
+    "ally": "味方の支配下",
+    "enemy": "敵の支配下"
+  },
+  "killVerb": "が撃沈",
+  "playbackSpeed": "再生速度",
+  "tier": "ティア",
+  "damageTaken": "被ダメージ",
+  "hpRemaining": "残り耐久",
+  "noDamageData": "与ダメージや勲章の表示には完全な戦闘結果が必要です。このリプレイからは自艦のダメージと撃沈数のみ推定できます。",
+  "origview": {
+    "on": "元の視点",
+    "off": "自由視点"
+  },
+  "camera": {
+    "title": "カメラ",
+    "free": "自由カメラ",
+    "original": "元の視点",
+    "me": "自分",
+    "allies": "味方",
+    "enemies": "敵",
+    "battles": "戦"
+  },
+  "classes": {
+    "battleship": "戦艦",
+    "cruiser": "巡洋艦",
+    "destroyer": "駆逐艦",
+    "aircarrier": "航空母艦",
+    "submarine": "潜水艦",
+    "auxiliary": "補助艦"
+  },
+  "selfStats": "自艦",
+  "selfHits": "命中",
+  "selfFrags": "撃沈",
+  "selfDamage": "与ダメージ",
+  "selfTaken": "被ダメージ"
+}

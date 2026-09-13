@@ -1,0 +1,32 @@
+{
+  "player": "플레이어",
+  "clan": "클랜",
+  "searchPlayerTitle": "플레이어 검색",
+  "searchPlayerPlaceholder": "닉네임 또는 UID",
+  "searchClanTitle": "클랜 검색",
+  "searchClanPlaceholder": "클랜 이름 또는 ID",
+  "searchHint": "3자 이상 입력하세요 (UID는 제외)",
+  "searching": "검색 중…",
+  "noResults": "일치하는 결과 없음",
+  "history": "검색 기록",
+  "historyEmpty": "기록 없음",
+  "distTitle": "함종 분포",
+  "clanMembers": "멤버 목록",
+  "membersCount": "멤버 수",
+  "createdAt": "생성일",
+  "memberName": "멤버",
+  "roleLabel": "역할",
+  "jumpClan": "클랜 보기",
+  "role": {
+    "commander": "클랜장",
+    "executive_officer": "부클랜장",
+    "recruitment_officer": "모집 장교",
+    "commissioned_officer": "장교",
+    "officer": "장교",
+    "personnel_officer": "인사 장교",
+    "intelligence_officer": "정보 장교",
+    "quartermaster": "군수 장교",
+    "junior_officer": "하급 장교",
+    "private": "멤버"
+  }
+}

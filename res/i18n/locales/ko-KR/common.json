@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "WoWSP",
+    "tagline": "World of Warship Panel — 리플레이 복기 및 인게임 오버레이"
+  },
+  "copied": "클립보드에 복사되었습니다",
+  "clickToCopy": "클릭하여 복사",
+  "reload": "새로고침",
+  "copyFailed": "복사하지 못했습니다",
+  "detect": {
+    "title": "게임 설치",
+    "scanning": "레지스트리와 Steam 라이브러리를 검사하는 중…",
+    "found": "감지됨",
+    "none": "World of Warships 설치를 감지하지 못했습니다 — 경로를 직접 지정하세요.",
+    "rescan": "다시 검사"
+  },
+  "game": {
+    "online": "게임 실행 중",
+    "offline": "게임 꺼짐",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "Wargaming 센터",
+      "lesta": "Lesta",
+      "cn360": "중국 서버(360)",
+      "manual": "직접 지정"
+    }
+  },
+  "search": {
+    "fuzzy": "퍼지 검색",
+    "hint": "함선 이름, 병음 또는 영어 이름을 입력하세요"
+  }
+}

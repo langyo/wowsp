@@ -3,7 +3,8 @@
  *
  *   uiLocale      — the SOFTWARE INTERFACE language (menus, labels, the app's
  *                   own copy). Drives `i18n.global.locale` and `t()`.
- *                   Standardized BCP 47 lang-loc: "en-US" / "zh-CN".
+ *                   Standardized BCP 47 lang-loc — the same nine codes the
+ *                   data language offers (see UI_LOCALE_OPTIONS).
  *   dataLanguage  — the GAME-ASSET language used to fetch localized names
  *                   (ships, maps, ...). Also standardized BCP 47 lang-loc:
  *                   "zh-CN" (国服简体), "zh-SG" (亚服简体), "zh-TW" (亚服繁体),
@@ -92,19 +93,31 @@ export function isLangLoc(code: string): boolean {
 /** Data-language dropdown options (the game-asset languages). */
 export const WG_LANGUAGES = LANG_LOCS.map(({ code, label }) => ({ value: code, label }));
 
-/** UI-language dropdown options (the app's own supported locales). */
+/** UI-language dropdown options — the same nine lang-locs the data language
+ *  offers, labeled in their own language. The zh-CN / zh-SG pair shares one
+ *  simplified-Chinese UI copy; the choice only seeds the FIRST-STARTUP data
+ *  language (国服 vs 亚服 game-asset names), which stays independently
+ *  switchable. */
 export const UI_LOCALE_OPTIONS: { value: Locale; label: string }[] = [
   { value: "en-US", label: "English" },
-  { value: "zh-CN", label: "简体中文" },
+  { value: "zh-CN", label: "简体中文（大陆）" },
+  { value: "zh-SG", label: "简体中文（新加坡）" },
+  { value: "zh-TW", label: "繁體中文（台灣）" },
+  { value: "ja-JP", label: "日本語" },
+  { value: "ko-KR", label: "한국어" },
+  { value: "ru-RU", label: "Русский" },
+  { value: "fr-FR", label: "Français" },
+  { value: "es-ES", label: "Español" },
 ];
 
 /** Determine the best-fit data language from UI locale + realm.
- *  Called once on first startup when no data-language preference is saved. */
+ *  Called once on first startup when no data-language preference is saved.
+ *  Every UI locale is itself a valid data lang-loc — except 简体中文, where
+ *  the realm decides 国服 vs 亚服 game-asset naming. */
 export function determineDataLanguage(ui: Locale, realm: string): string {
   if (ui === "zh-CN") {
     return realm === "cn" ? "zh-CN" : "zh-SG";
   }
-  // en-US, ja-JP, etc. — the region suffix is implied by the UI choice
   return ui;
 }
 

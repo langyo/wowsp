@@ -1,0 +1,143 @@
+{
+  "list": {
+    "title": "Replays",
+    "empty": "Aucun replay trouvé dans le dossier du client sélectionné.",
+    "count": "{n} replays",
+    "noClient": "Aucun client de jeu détecté. Lancez une analyse sur le tableau de bord, ou définissez un chemin manuellement."
+  },
+  "client": "Client",
+  "refresh": "Actualiser",
+  "loading": "Analyse du replay…",
+  "select": "Sélectionnez un replay dans la liste pour le charger.",
+  "players": "{n} joueurs",
+  "mode": {
+    "pvp": "Aléatoire",
+    "ranked": "Classée",
+    "clan": "Clan",
+    "event": "Événement",
+    "cooperative": "Coopératif",
+    "pve": "Coopératif",
+    "training": "Entraînement",
+    "brawl": "Brawl",
+    "squad": "Escouade",
+    "ranked_solo": "Classée (solo)",
+    "ranked_sprint": "Classée Sprint",
+    "pve_event": "Opération",
+    "convoy": "Convoi",
+    "asymmetric": "Asymétrique",
+    "armsrace": "Course aux armements",
+    "operation": "Opération",
+    "halloween": "Halloween",
+    "sandbox": "Bac à sable",
+    "_fallback": "Bataille"
+  },
+  "map": {
+    "unknown": "Carte inconnue",
+    "contour": "Relief en courbes de niveau",
+    "contourHint": "Relief en courbes de niveau : les terres sont bandées par altitude, la mer affiche la bathymétrie (fosses comprises)."
+  },
+  "ownShip": "Votre navire",
+  "noShipModel": "Aucun modèle holographique pour ce navire.",
+  "duration": "Durée",
+  "matchTime": "Temps de match",
+  "mapLabel": "Carte",
+  "legend": {
+    "self": "Vous",
+    "ally": "Alliés",
+    "enemy": "Ennemis",
+    "dead": "Coulé",
+    "gone": "Disparu depuis {n} s"
+  },
+  "tip": {
+    "loading": "Chargement…",
+    "failed": "Échec",
+    "hidden": "Statistiques masquées",
+    "winrate": "Taux de victoire",
+    "avgDamage": "Dégâts moy.",
+    "battles": "Batailles",
+    "survival": "Survie",
+    "hitRate": "Précision"
+  },
+  "roster": {
+    "allies": "Alliés",
+    "enemies": "Ennemis",
+    "shipType": "Type",
+    "battles": "Batailles",
+    "winrate": "TV",
+    "avgDamage": "Dégâts moy."
+  },
+  "minimap": {
+    "zoom": "Carte agrandie",
+    "trails": "Trajectoires des navires"
+  },
+  "labels": {
+    "hide": "Masquer les étiquettes",
+    "show": "Afficher les étiquettes"
+  },
+  "results": "Résultats de la bataille",
+  "resultsIncomplete": "Le replay s'est terminé avant l'enregistrement des résultats de la bataille — affichage du dernier état enregistré, pas du résultat final.",
+  "bot": "Bot",
+  "botNote": "Joueur IA — aucun historique de bataille",
+  "live": {
+    "title": "Bataille en direct",
+    "notStarted": "Aucune nouvelle bataille n'a encore commencé",
+    "settling": "Résolution",
+    "hiddenProfile": "Ce joueur a masqué ses statistiques",
+    "viewProfile": "Voir les statistiques de ce joueur"
+  },
+  "postbattle": {
+    "rawData": "Données brutes",
+    "loadingGlobal": "Chargement des statistiques globales de {name}…",
+    "destroyedBy": "Détruit par {name}",
+    "killerDamage": " ({n} dégâts)",
+    "damageUnknownNote": "Les replays n'incluent pas les informations complètes de la bataille — certaines sources de dégâts ne peuvent être attribuées",
+    "estimated": " (estimé)",
+    "xp": "XP",
+    "credits": "Crédits",
+    "globalFailed": "Statistiques globales indisponibles",
+    "globalFailedAi": "Statistiques globales indisponibles (probablement un joueur IA)",
+    "globalUnavailable": "Statistiques globales indisponibles",
+    "noRealm": " (aucune info de serveur)",
+    "tierDist": "Répartition des paliers",
+    "fullStats": "Statistiques complètes →"
+  },
+  "capture": {
+    "contested": "Les deux camps capturent — progression en pause",
+    "capturing": "Capture en cours ({a} vs {b} navires)",
+    "neutral": "Neutre",
+    "ally": "Contrôle allié",
+    "enemy": "Contrôle ennemi"
+  },
+  "killVerb": "a coulé",
+  "playbackSpeed": "Vitesse de lecture",
+  "tier": "Palier",
+  "damageTaken": "Dégâts subis",
+  "hpRemaining": "PV restants",
+  "noDamageData": "Les dégâts infligés et les rubans nécessitent les résultats complets de la bataille ; seuls les dégâts et destructions de votre navire peuvent être déduits de ce replay.",
+  "origview": {
+    "on": "Vue originale",
+    "off": "Vue libre"
+  },
+  "camera": {
+    "title": "Caméra",
+    "free": "Caméra libre",
+    "original": "Vue originale",
+    "me": "Moi",
+    "allies": "Alliés",
+    "enemies": "Ennemis",
+    "battles": "batailles"
+  },
+  "classes": {
+    "battleship": "Cuirassé",
+    "cruiser": "Croiseur",
+    "destroyer": "Destroyer",
+    "aircarrier": "Porte-avions",
+    "submarine": "Sous-marin",
+    "auxiliary": "Navire auxiliaire"
+  },
+  "selfStats": "Votre navire",
+  "selfHits": "Touches",
+  "selfFrags": "Destructions",
+  "selfDamage": "Dégâts",
+  "selfTaken": "Subis"
+}

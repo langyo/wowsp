@@ -1,0 +1,32 @@
+{
+  "player": "Joueur",
+  "clan": "Clan",
+  "searchPlayerTitle": "Rechercher des joueurs",
+  "searchPlayerPlaceholder": "Pseudo ou UID",
+  "searchClanTitle": "Rechercher des clans",
+  "searchClanPlaceholder": "Nom de clan ou ID",
+  "searchHint": "Saisissez au moins 3 caractères (UID exempté)",
+  "searching": "Recherche…",
+  "noResults": "Aucun résultat",
+  "history": "Historique",
+  "historyEmpty": "Aucune recherche pour l'instant",
+  "distTitle": "Répartition des navires",
+  "clanMembers": "Membres",
+  "membersCount": "Membres",
+  "createdAt": "Date de création",
+  "memberName": "Membre",
+  "roleLabel": "Rôle",
+  "jumpClan": "Voir le clan",
+  "role": {
+    "commander": "Commandant",
+    "executive_officer": "Officier exécutif",
+    "recruitment_officer": "Officier de recrutement",
+    "commissioned_officer": "Officier",
+    "officer": "Officier",
+    "personnel_officer": "Officier du personnel",
+    "intelligence_officer": "Officier du renseignement",
+    "quartermaster": "Intendant",
+    "junior_officer": "Officier subalterne",
+    "private": "Membre"
+  }
+}

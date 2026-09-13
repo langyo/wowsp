@@ -1,0 +1,12 @@
+{
+  "title": "추이",
+  "winrateOverTime": "버전별 승률",
+  "damageOverTime": "버전별 평균 데미지",
+  "battleDelta": "플레이한 전투 수",
+  "snapshotCount": "스냅샷 수",
+  "version": "버전",
+  "noSnapshots": "아직 기록이 없습니다. 이 플레이어를 여러 번 조회하면 추이가 쌓입니다.",
+  "patchNote": "패치",
+  "patchAnnotation": "패치 오버레이",
+  "community": "서버 전체"
+}

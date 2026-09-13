@@ -1,0 +1,143 @@
+{
+  "list": {
+    "title": "錄影列表",
+    "empty": "所選用戶端目錄下找不到錄影檔案。",
+    "count": "{n} 個錄影",
+    "noClient": "未偵測到遊戲用戶端，請先在首頁掃描或手動指定路徑。"
+  },
+  "client": "遊戲用戶端",
+  "refresh": "重新整理",
+  "loading": "正在解析錄影…",
+  "select": "從列表中選擇一個錄影以載入。",
+  "players": "{n} 人",
+  "mode": {
+    "pvp": "隨機戰",
+    "ranked": "排位戰",
+    "clan": "軍團戰",
+    "event": "活動",
+    "cooperative": "聯合作戰",
+    "pve": "聯合作戰",
+    "training": "訓練房",
+    "brawl": "對決",
+    "squad": "小隊戰",
+    "ranked_solo": "排位戰（單野）",
+    "ranked_sprint": "排位衝刺戰",
+    "pve_event": "行動",
+    "convoy": "護航戰",
+    "asymmetric": "非對稱戰鬥",
+    "armsrace": "軍備競賽",
+    "operation": "行動",
+    "halloween": "萬聖節",
+    "sandbox": "沙盒",
+    "_fallback": "對戰"
+  },
+  "map": {
+    "unknown": "未知地圖",
+    "contour": "等高線地形圖",
+    "contourHint": "等高線地形：陸地按高度分層，海域含海床等深線（含海溝）。"
+  },
+  "ownShip": "主艦",
+  "noShipModel": "尚無該艦艇的全像白模。",
+  "duration": "時長",
+  "matchTime": "對戰時間",
+  "mapLabel": "地圖",
+  "legend": {
+    "self": "我方艦",
+    "ally": "隊友",
+    "enemy": "敵方",
+    "dead": "已擊毀",
+    "gone": "已消失 {n} 秒"
+  },
+  "tip": {
+    "loading": "查詢中…",
+    "failed": "查詢失敗",
+    "hidden": "隱藏戰績",
+    "winrate": "勝率",
+    "avgDamage": "場均",
+    "battles": "場次",
+    "survival": "存活",
+    "hitRate": "命中"
+  },
+  "roster": {
+    "allies": "我方",
+    "enemies": "敵方",
+    "shipType": "艦種",
+    "battles": "場次",
+    "winrate": "勝率",
+    "avgDamage": "場均"
+  },
+  "minimap": {
+    "zoom": "放大地圖",
+    "trails": "船隻軌跡"
+  },
+  "labels": {
+    "hide": "隱藏標籤",
+    "show": "顯示標籤"
+  },
+  "results": "戰後統計",
+  "resultsIncomplete": "錄影在結算前中斷，以下為最後一次錄影記錄的狀態，非最終結果。",
+  "bot": "機器人",
+  "botNote": "AI 玩家，無歷史戰績",
+  "live": {
+    "title": "即時對局",
+    "notStarted": "尚未開始新的對局",
+    "settling": "結算中",
+    "hiddenProfile": "該玩家隱藏了水表",
+    "viewProfile": "查看該玩家的水表"
+  },
+  "postbattle": {
+    "rawData": "原始資料",
+    "loadingGlobal": "載入 {name} 的全域戰績…",
+    "destroyedBy": "被 {name} 摧毀",
+    "killerDamage": "（{n} 傷害）",
+    "damageUnknownNote": "錄影不包含完整的對局資訊，部分傷害來源不可見",
+    "estimated": "（推測）",
+    "xp": "經驗",
+    "credits": "銀幣",
+    "globalFailed": "無法取得全域戰績",
+    "globalFailedAi": "無法取得全域戰績（可能為 AI 玩家）",
+    "globalUnavailable": "全域戰績不可用",
+    "noRealm": "（無伺服器資訊）",
+    "tierDist": "常玩階級分布",
+    "fullStats": "查看完整戰績 →"
+  },
+  "capture": {
+    "contested": "雙方壓點，進度暫停",
+    "capturing": "佔領中（{a} vs {b} 船）",
+    "neutral": "中立",
+    "ally": "我方控制",
+    "enemy": "敵方控制"
+  },
+  "killVerb": "擊沉了",
+  "playbackSpeed": "播放速度",
+  "tier": "階級",
+  "damageTaken": "承受傷害",
+  "hpRemaining": "剩餘血量",
+  "noDamageData": "造成傷害與勳章需完整結算資料，此錄影僅能推斷本艦的傷害與擊沉。",
+  "origview": {
+    "on": "原視角",
+    "off": "自由視角"
+  },
+  "camera": {
+    "title": "視角",
+    "free": "自由視角",
+    "original": "原視角",
+    "me": "我",
+    "allies": "友方",
+    "enemies": "敵方",
+    "battles": "場"
+  },
+  "classes": {
+    "battleship": "戰列艦",
+    "cruiser": "巡洋艦",
+    "destroyer": "驅逐艦",
+    "aircarrier": "航空母艦",
+    "submarine": "潛艦",
+    "auxiliary": "輔助艦"
+  },
+  "selfStats": "本艦",
+  "selfHits": "命中",
+  "selfFrags": "擊沉",
+  "selfDamage": "傷害",
+  "selfTaken": "承受傷害"
+}

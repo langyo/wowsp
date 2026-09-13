@@ -1,0 +1,32 @@
+{
+  "player": "Игрок",
+  "clan": "Клан",
+  "searchPlayerTitle": "Поиск игроков",
+  "searchPlayerPlaceholder": "Никнейм или UID",
+  "searchClanTitle": "Поиск кланов",
+  "searchClanPlaceholder": "Название клана или ID",
+  "searchHint": "Введите минимум 3 символа (для UID — без ограничений)",
+  "searching": "Поиск…",
+  "noResults": "Совпадений нет",
+  "history": "История",
+  "historyEmpty": "История пуста",
+  "distTitle": "Распределение кораблей",
+  "clanMembers": "Состав клана",
+  "membersCount": "Участники",
+  "createdAt": "Дата основания",
+  "memberName": "Участник",
+  "roleLabel": "Должность",
+  "jumpClan": "Открыть клан",
+  "role": {
+    "commander": "Командир",
+    "executive_officer": "Заместитель командира",
+    "recruitment_officer": "Офицер вербовки",
+    "commissioned_officer": "Офицер",
+    "officer": "Офицер",
+    "personnel_officer": "Офицер кадров",
+    "intelligence_officer": "Офицер разведки",
+    "quartermaster": "Квартирмейстер",
+    "junior_officer": "Младший офицер",
+    "private": "Рядовой"
+  }
+}

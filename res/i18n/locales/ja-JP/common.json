@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "WoWSP",
+    "tagline": "World of Warship Panel — リプレイ分析とゲーム内オーバーレイ"
+  },
+  "copied": "クリップボードにコピーしました",
+  "clickToCopy": "クリックでコピー",
+  "reload": "再読み込み",
+  "copyFailed": "コピーに失敗しました",
+  "detect": {
+    "title": "ゲームのインストール",
+    "scanning": "レジストリと Steam ライブラリをスキャン中…",
+    "found": "検出済み",
+    "none": "World of Warships のインストールが検出されませんでした。手動でパスを設定してください。",
+    "rescan": "再スキャン"
+  },
+  "game": {
+    "online": "ゲーム起動中",
+    "offline": "ゲーム未起動",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "公式サーバー（WG センター）",
+      "lesta": "Lesta（ロシアサーバー）",
+      "cn360": "中国サーバー（360）",
+      "manual": "手動設定"
+    }
+  },
+  "search": {
+    "fuzzy": "あいまい検索",
+    "hint": "艦名、よみがな、または英語名を入力してください"
+  }
+}
