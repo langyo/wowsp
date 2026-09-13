@@ -2,24 +2,35 @@ import { computed, defineComponent, onMounted, ref, Transition } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
+import ClanCard from "@/components/stats/ClanCard";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
-import { HButton, HInput, HSelect, HTabs, useToast } from "@celestia-island/hikari";
+import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
+import { HTabs, useToast } from "@celestia-island/hikari";
+import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
+import { useClanStatsStore } from "@/stores/clanStats";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
 import { winrateColor } from "@/utils/winrate";
 import { filterByDateRange, type DateRange } from "@/utils/shipAggregation";
-import type { PlayerStats, PlayerShipStats } from "@/api";
+import { api, type ClanInfo, type ClanSuggestion, type PlayerShipStats, type PlayerSuggestion, type PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import "./LookupView.scss";
 
+/** Lookup target — the second sidebar row's segmented group. */
+type LookupKind = "player" | "clan";
+
 interface HistoryEntry {
+  kind: LookupKind;
+  /** Display name (player nickname or clan tag). */
   name: string;
   realm: string;
+  /** accountId (player) or clanId (clan) — the replay key. */
+  id?: number;
   time: number;
 }
 
@@ -30,14 +41,30 @@ const HISTORY_MAX = 20;
  *  lose the result view: LookupView unmounts on navigation (no KeepAlive),
  *  but on remount the overview card + ship table re-seed from the stats
  *  stores' in-memory caches — no WG API re-hit. */
-const lastLookup = ref<{ name: string; realm: string; accountId: number } | null>(null);
+const lastLookup = ref<{
+  kind: LookupKind;
+  name: string;
+  realm: string;
+  id: number;
+} | null>(null);
 
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
-    const arr = JSON.parse(raw) as HistoryEntry[];
-    return Array.isArray(arr) ? arr : [];
+    const arr = JSON.parse(raw) as (HistoryEntry & { kind?: LookupKind })[];
+    if (!Array.isArray(arr)) return [];
+    // Entries written before clan lookup existed carry no kind — they are
+    // player lookups by definition.
+    return arr
+      .filter((e) => e && typeof e.name === "string")
+      .map((e) => ({
+        kind: e.kind === "clan" ? "clan" : "player",
+        name: e.name,
+        realm: e.realm,
+        id: e.id,
+        time: e.time,
+      }));
   } catch {
     return [];
   }
@@ -68,15 +95,21 @@ export default defineComponent({
   name: "LookupView",
   setup() {
     const stats = useStatsStore();
+    const clanStats = useClanStatsStore();
     const shipStats = useShipStatsStore();
     const toast = useToast();
     const route = useRoute();
-    const nickname = ref(lastLookup.value?.name ?? "");
+    const mode = ref<LookupKind>(lastLookup.value?.kind ?? "player");
     const realm = ref(lastLookup.value?.realm ?? "asia");
     const realms = ["ru", "eu", "na", "asia"];
     const result = ref<PlayerStats | null>(
-      lastLookup.value
-        ? (stats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.accountId}`) ?? null)
+      lastLookup.value?.kind === "player"
+        ? (stats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.id}`) ?? null)
+        : null,
+    );
+    const clanResult = ref<ClanInfo | null>(
+      lastLookup.value?.kind === "clan"
+        ? (clanStats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.id}`) ?? null)
         : null,
     );
     const history = ref<HistoryEntry[]>(loadHistory());
@@ -147,27 +180,30 @@ export default defineComponent({
       });
     });
 
-    function pushHistory(name: string, r: string) {
-      const h = history.value.filter((e) => !(e.name === name && e.realm === r));
-      h.unshift({ name, realm: r, time: Date.now() });
+    function pushHistory(e: Omit<HistoryEntry, "time">) {
+      const h = history.value.filter(
+        (x) => !(x.kind === e.kind && x.name === e.name && x.realm === e.realm),
+      );
+      h.unshift({ ...e, time: Date.now() });
       history.value = h;
       saveHistory(h);
     }
 
-    async function doSearch(name?: string, r?: string) {
-      const nm = (name ?? nickname.value).trim();
+    async function doSearch(name: string, r?: string) {
+      const nm = name.trim();
       const rl = r ?? realm.value;
       if (!nm) return;
-      nickname.value = nm;
+      mode.value = "player";
       realm.value = rl;
       result.value = null;
       const toastId = toast.loading(t("account.searching"));
       try {
-        // Explicit user query — always re-pull from the WG API.
+        // Explicit user query — always re-pull from the WG API. `nm` may be
+        // a nickname or a numeric account id (both resolve server-side).
         const acc = await stats.lookup(nm, rl, { force: true });
         result.value = acc;
-        lastLookup.value = { name: nm, realm: rl, accountId: acc.accountId };
-        pushHistory(nm, rl);
+        lastLookup.value = { kind: "player", name: acc.name, realm: rl, id: acc.accountId };
+        pushHistory({ kind: "player", name: acc.name, realm: rl, id: acc.accountId });
         // Per-ship stats load in the background (toast stays until done).
         await shipStats.load(acc.accountId, rl).catch(() => {});
       } catch {
@@ -177,9 +213,74 @@ export default defineComponent({
       }
     }
 
-    async function search() {
-      await doSearch();
+    async function doClanLookup(clanId: number, r?: string) {
+      const rl = r ?? realm.value;
+      mode.value = "clan";
+      realm.value = rl;
+      clanResult.value = null;
+      const toastId = toast.loading(t("account.searching"));
+      try {
+        const clan = await clanStats.lookup(clanId, rl, { force: true });
+        clanResult.value = clan;
+        lastLookup.value = { kind: "clan", name: clan.tag, realm: rl, id: clan.clanId };
+        pushHistory({ kind: "clan", name: clan.tag, realm: rl, id: clan.clanId });
+      } catch {
+        // error surfaced via clanStats.error
+      } finally {
+        toast.remove(toastId);
+      }
     }
+
+    function replayHistory(h: HistoryEntry) {
+      if (h.kind === "clan") {
+        if (h.id != null) void doClanLookup(h.id, h.realm);
+      } else {
+        void doSearch(h.id != null ? String(h.id) : h.name, h.realm);
+      }
+    }
+
+    // ── Live search combo (player / clan autocomplete) ──────────────────
+    const comboSearch = (q: string) =>
+      mode.value === "clan"
+        ? api.suggestClans(q, realm.value).then((r) => r as unknown[])
+        : api.suggestPlayers(q, realm.value).then((r) => r as unknown[]);
+
+    const comboSelect = (item: unknown) => {
+      if (mode.value === "clan") {
+        const c = item as ClanSuggestion;
+        if (c.clanId != null) void doClanLookup(c.clanId, realm.value);
+      } else {
+        const p = item as PlayerSuggestion;
+        void doSearch(String(p.accountId), realm.value);
+      }
+    };
+
+    const comboItemKey = (item: unknown) =>
+      mode.value === "clan"
+        ? (item as ClanSuggestion).clanId
+        : (item as PlayerSuggestion).accountId;
+
+    const comboRenderItem = (item: unknown) => {
+      if (mode.value === "clan") {
+        const c = item as ClanSuggestion;
+        return (
+          <span class="lookup-view__combo-row">
+            <em class="lookup-view__combo-tag">[{c.tag}]</em>
+            <span class="lookup-view__combo-name">{c.name}</span>
+            {c.membersCount != null ? (
+              <span class="lookup-view__combo-meta">{c.membersCount}</span>
+            ) : null}
+          </span>
+        );
+      }
+      const p = item as PlayerSuggestion;
+      return (
+        <span class="lookup-view__combo-row">
+          <span class="lookup-view__combo-name">{p.nickname}</span>
+          <span class="lookup-view__combo-meta">{p.accountId}</span>
+        </span>
+      );
+    };
 
     // Jump-in support: /lookup?name=..&realm=.. (from the replay post-battle
     // player detail) starts a search immediately.
@@ -196,20 +297,46 @@ export default defineComponent({
         {/* Level-2 sidebar: search on top, query history below */}
         <aside class="lookup-view__sidebar">
           <div class="lookup-view__search">
-            <HSelect
+            {/* Row 1 — realm picker as a segmented button group */}
+            <HTabs
+              variant="segmented"
+              block
               modelValue={realm.value}
               onUpdate:modelValue={(v: string) => (realm.value = v)}
-              options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+              tabs={realms.map((r) => ({ key: r, label: r.toUpperCase() }))}
             />
-            <HInput
-              modelValue={nickname.value}
-              onUpdate:modelValue={(v: string) => (nickname.value = v)}
-              placeholder={t("account.nickname")}
-              submitOnEnter={() => void search()}
-            />
-            <HButton onClick={() => void search()} loading={stats.loading}>
-              {t("account.search")}
-            </HButton>
+            {/* Row 2 — player/clan target picker + live search trigger */}
+            <div class="lookup-view__row2">
+              <HTabs
+                variant="segmented"
+                block
+                modelValue={mode.value}
+                onUpdate:modelValue={(v: string) => (mode.value = v as LookupKind)}
+                tabs={[
+                  { key: "player", label: t("lookup.player") },
+                  { key: "clan", label: t("lookup.clan") },
+                ]}
+              />
+              {/* key=mode+realm: remount on target/realm switch so stale
+                  candidates from another scope (ids are realm-scoped) can
+                  never be picked */}
+              <AsyncSearchCombo
+                key={`${mode.value}_${realm.value}`}
+                search={comboSearch}
+                itemKey={comboItemKey}
+                renderItem={comboRenderItem}
+                onSelect={comboSelect}
+                title={mode.value === "clan" ? t("lookup.searchClanTitle") : t("lookup.searchPlayerTitle")}
+                placeholder={
+                  mode.value === "clan"
+                    ? t("lookup.searchClanPlaceholder")
+                    : t("lookup.searchPlayerPlaceholder")
+                }
+                minCharsHint={t("lookup.searchHint")}
+                noResultsText={t("lookup.noResults")}
+                searchingText={t("lookup.searching")}
+              />
+            </div>
           </div>
           <div class="lookup-view__history">
             <div class="lookup-view__history-title">{t("lookup.history")}</div>
@@ -218,15 +345,26 @@ export default defineComponent({
             ) : (
               history.value.map((h) => (
                 <button
-                  key={`${h.realm}_${h.name}`}
+                  key={`${h.realm}_${h.kind}_${h.name}`}
                   class={[
                     "lookup-view__history-item",
-                    h.name === result.value?.name && h.realm === realm.value
+                    mode.value === h.kind &&
+                      h.realm === realm.value &&
+                      ((h.kind === "player" && h.name === result.value?.name) ||
+                        (h.kind === "clan" && h.name === clanResult.value?.tag))
                       ? "lookup-view__history-item--active"
                       : "",
                   ]}
-                  onClick={() => void doSearch(h.name, h.realm)}
+                  onClick={() => replayHistory(h)}
                 >
+                  <span
+                    class={[
+                      "lookup-view__history-kind",
+                      h.kind === "clan" ? "lookup-view__history-kind--clan" : "",
+                    ]}
+                  >
+                    {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
+                  </span>
                   <span class="lookup-view__history-name">{h.name}</span>
                   <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
                 </button>
@@ -235,14 +373,33 @@ export default defineComponent({
           </div>
         </aside>
 
-        {/* Main content: overview card + per-ship list */}
+        {/* Main content: overview card + per-ship list (player) or clan card */}
         <div class="lookup-view__main">
           <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
-          {stats.error ? <div class="lookup-view__error">{stats.error}</div> : null}
+          {mode.value === "player" && stats.error ? (
+            <div class="lookup-view__error">{stats.error}</div>
+          ) : null}
+          {mode.value === "clan" && clanStats.error ? (
+            <div class="lookup-view__error">{clanStats.error}</div>
+          ) : null}
           <Transition name="s-fade-slide" mode="out-in">
-            {result.value ? (
+            {mode.value === "clan" && clanResult.value ? (
+              <div class="lookup-view__result" key="clan">
+                <ClanCard
+                  clan={clanResult.value}
+                  onMemberClick={(m) => void doSearch(String(m.accountId), realm.value)}
+                />
+              </div>
+            ) : mode.value === "player" && result.value ? (
               <div class="lookup-view__result" key="result">
-                <StatsCard stats={result.value} />
+                <StatsCard
+                  stats={result.value}
+                  onClanClick={
+                    result.value.clanId != null
+                      ? () => void doClanLookup(result.value!.clanId!, realm.value)
+                      : undefined
+                  }
+                />
                 {/* Ship distribution charts */}
                 {shipRows.value.length > 0 ? (
                   <div class="lookup-view__dist">

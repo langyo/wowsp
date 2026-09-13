@@ -9,6 +9,8 @@
 //!   list    GET https://api.worldofwarships.<realm>/wows/account/list/?application_id=..&search=<name>
 //!   stats   GET https://api.worldofwarships.<realm>/wows/account/info/?application_id=..&account_id=<id>
 //!   clan    GET https://api.worldofwarships.<realm>/wows/clans/accountinfo/?application_id=..&account_id=<id>
+//!   clans   GET https://api.worldofwarships.<realm>/wows/clans/list/?application_id=..&search=<tag|name>
+//!   claninfo GET https://api.worldofwarships.<realm>/wows/clans/info/?application_id=..&clan_id=<id>&extra=members
 //!
 //! Realm → host suffix: ru→ru, eu→eu, na→com, asia→asia, cn→cn (the cn realm
 //! uses a different host; treated as unsupported here with a clear error).
@@ -18,7 +20,9 @@ use std::time::Duration;
 
 use futures::stream::{self, StreamExt};
 use serde::Deserialize;
-use wowsp_tauri_shared::PlayerStats;
+use wowsp_tauri_shared::{
+    ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
+};
 
 /// Public WG application id (from ApeRadar's open source — rate-limited per IP,
 /// not secret). Override with the `WOWSP_WG_APPLICATION_ID` env var.
@@ -28,6 +32,10 @@ const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
 /// rate-limits ~20 req/s per IP; 4 in-flight keeps a full 24-player roster
 /// inside a couple of waves without tripping it.
 const BATCH_CONCURRENCY: usize = 4;
+
+/// Minimum length for a substring autocomplete query (WG rejects shorter
+/// searches). Numeric UID queries bypass this gate.
+const MIN_SEARCH_CHARS: usize = 3;
 
 /// Look up one player's stats by name on the given realm.
 #[tauri::command]
@@ -41,28 +49,21 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
         .build()
         .map_err(|e| format!("http client: {e}"))?;
 
-    // 1. Resolve name → account_id via account/list.
-    let list_url = format!(
-        "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
-    );
-    let list: WgResponse<Vec<AccountListEntry>> = client
-        .get(&list_url)
-        .send()
-        .await
-        .map_err(|e| format!("account/list request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("account/list parse: {e}"))?;
-    if list.status != "ok" {
-        return Err(format!(
-            "account/list: {}",
-            list.error.message.unwrap_or_default()
-        ));
+    // 1. Resolve the query to an account. A purely numeric query is a UID
+    //    ("nickname or UID" search): hit account/info directly and only fall
+    //    back to the name search when the id doesn't resolve (numeric-looking
+    //    nicknames are rare but exist).
+    let entry = match name.trim().parse::<i64>() {
+        Ok(uid) if uid > 0 => match account_nickname_by_id(&client, &app_id, host, uid).await? {
+            Some(nickname) => Some(AccountListEntry {
+                account_id: uid,
+                nickname,
+            }),
+            None => account_list_one(&client, &app_id, host, &name).await?,
+        },
+        _ => account_list_one(&client, &app_id, host, &name).await?,
     }
-    let entry = list
-        .data
-        .and_then(|mut d| d.pop())
-        .ok_or_else(|| format!("no account found for '{name}' on {realm}"))?;
+    .ok_or_else(|| format!("no account found for '{name}' on {realm}"))?;
 
     // 2-4. account/info, clan tag and Vortex dog tag only need the account
     //    id — run the three requests concurrently instead of serially.
@@ -80,7 +81,8 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
             .await
             .map_err(|e| format!("account/info parse: {e}"))
     };
-    let clan_fut = async { fetch_clan_tags(&client, &app_id, host, &[entry.account_id]).await };
+    let clan_fut =
+        async { fetch_clan_info_for_accounts(&client, &app_id, host, &[entry.account_id]).await };
     let dog_tag_fut = async {
         let resp = client
             .get(format!(
@@ -211,7 +213,7 @@ pub async fn lookup_players_stats_batch(
         }
         Ok(parsed)
     };
-    let clan_fut = async { fetch_clan_tags(&client, &app_id, host, &ids).await };
+    let clan_fut = async { fetch_clan_info_for_accounts(&client, &app_id, host, &ids).await };
     let (info, clan_map) = tokio::join!(info_fut, clan_fut);
     let info: WgResponse<serde_json::Value> = info?;
 
@@ -232,13 +234,14 @@ fn player_stats_from_info(
     entry: AccountListEntry,
     realm: String,
     info_data: Option<&serde_json::Value>,
-    clan_map: &HashMap<i64, String>,
+    clan_map: &HashMap<i64, ClanTagInfo>,
 ) -> PlayerStats {
     let player_node = info_data.and_then(|d| d.get(entry.account_id.to_string()));
     let stats_node = player_node.and_then(|v| v.get("statistics"));
     let p = PvpStats::extract(stats_node);
     let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p2| p2.is_null()));
     let (leveling_tier, leveling_points) = leveling_of(player_node);
+    let clan = clan_map.get(&entry.account_id);
     PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
@@ -246,7 +249,8 @@ fn player_stats_from_info(
         battles: p.battles,
         winrate: p.winrate,
         hidden,
-        clan_tag: clan_map.get(&entry.account_id).cloned(),
+        clan_tag: clan.map(|c| c.tag.clone()),
+        clan_id: clan.and_then(|c| c.clan_id),
         avg_damage: p.avg_damage,
         avg_xp: p.avg_xp,
         kd_ratio: p.kd_ratio,
@@ -275,14 +279,21 @@ fn leveling_of(player_node: Option<&serde_json::Value>) -> (Option<i32>, Option<
     (tier, points)
 }
 
-/// Clan tags for a list of account ids in one request. Best-effort: any
-/// failure yields an empty map (clan tag is display sugar, never fatal).
-async fn fetch_clan_tags(
+/// Clan affiliation for one account from the clans/accountinfo map.
+struct ClanTagInfo {
+    tag: String,
+    clan_id: Option<i64>,
+}
+
+/// Clan tags (+ clan ids) for a list of account ids in one request.
+/// Best-effort: any failure yields an empty map (clan tag is display sugar,
+/// never fatal).
+async fn fetch_clan_info_for_accounts(
     client: &reqwest::Client,
     app_id: &str,
     host: &str,
     ids: &[i64],
-) -> HashMap<i64, String> {
+) -> HashMap<i64, ClanTagInfo> {
     let id_list = ids
         .iter()
         .map(|i| i.to_string())
@@ -304,17 +315,493 @@ async fn fetch_clan_tags(
     if let Some(obj) = parsed.data.as_ref().and_then(|d| d.as_object()) {
         for (k, v) in obj {
             if let Ok(id) = k.parse::<i64>() {
-                if let Some(tag) = v
-                    .get("clan")
-                    .and_then(|c| c.get("tag"))
-                    .and_then(|t| t.as_str())
-                {
-                    map.insert(id, tag.to_owned());
+                if let Some(clan) = v.get("clan") {
+                    let tag = clan.get("tag").and_then(|t| t.as_str());
+                    let clan_id = clan.get("clan_id").and_then(|i| i.as_i64());
+                    if let Some(tag) = tag {
+                        map.insert(
+                            id,
+                            ClanTagInfo {
+                                tag: tag.to_owned(),
+                                clan_id,
+                            },
+                        );
+                    }
                 }
             }
         }
     }
     map
+}
+
+/// Percent-encode one query component. The `format!`-built request URLs
+/// inline user input; Url encodes spaces/unicode but leaves query-structural
+/// characters (`&`, `#`, `+`) alone, which would silently truncate or
+/// rewrite searches (clan names freely contain `&`).
+fn encode_query(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char);
+            },
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// account/list with limit=1 — one nickname → account entry. Ok(None) when
+/// the name matches no account.
+async fn account_list_one(
+    client: &reqwest::Client,
+    app_id: &str,
+    host: &str,
+    name: &str,
+) -> Result<Option<AccountListEntry>, String> {
+    let list: WgResponse<Vec<AccountListEntry>> = client
+        .get(format!(
+            "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("account/list request: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("account/list parse: {e}"))?;
+    if list.status != "ok" {
+        return Err(format!(
+            "account/list: {}",
+            list.error.message.unwrap_or_default()
+        ));
+    }
+    Ok(list.data.and_then(|mut d| d.pop()))
+}
+
+/// account/info for one id → the nickname. Ok(None) when the id doesn't
+/// exist (WG returns an empty data object for unknown ids).
+async fn account_nickname_by_id(
+    client: &reqwest::Client,
+    app_id: &str,
+    host: &str,
+    account_id: i64,
+) -> Result<Option<String>, String> {
+    let resp = client
+        .get(format!(
+            "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={account_id}"
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("account/info request: {e}"))?;
+    let parsed: WgResponse<serde_json::Value> = resp
+        .json()
+        .await
+        .map_err(|e| format!("account/info parse: {e}"))?;
+    if parsed.status != "ok" {
+        return Err(format!(
+            "account/info: {}",
+            parsed.error.message.unwrap_or_default()
+        ));
+    }
+    Ok(parsed
+        .data
+        .as_ref()
+        .and_then(|d| d.get(account_id.to_string()))
+        .and_then(|v| v.get("nickname"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_owned()))
+}
+
+/// Live player-name autocomplete for the lookup sidebar: WG account/list
+/// matches by substring as you type. A purely numeric query is treated as an
+/// account id and resolved directly via account/info, so both nickname and
+/// UID search work. Empty/short queries return an empty vec — the popup
+/// renders a hint, not an error.
+#[tauri::command]
+pub async fn suggest_players(
+    search: String,
+    realm: String,
+) -> Result<Vec<PlayerSuggestion>, String> {
+    let q = search.trim().to_string();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
+    let host = realm_host(&realm)?;
+    let client = crate::commands::network::http_client_builder()?
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+
+    // UID fast path: resolve the id directly; a numeric string that is NOT a
+    // valid id falls back to the substring search below. Non-positive ids
+    // are rejected here — WG would answer a raw 407 error otherwise.
+    if let Ok(uid) = q.parse::<i64>() {
+        if uid > 0 {
+            if let Some(nickname) = account_nickname_by_id(&client, &app_id, host, uid).await? {
+                return Ok(vec![PlayerSuggestion {
+                    account_id: uid,
+                    nickname,
+                }]);
+            }
+        }
+    }
+    if q.chars().count() < MIN_SEARCH_CHARS {
+        return Ok(Vec::new());
+    }
+    let resp = client
+        .get(format!(
+            "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
+            encode_query(&q)
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("account/list request: {e}"))?
+        .json::<WgResponse<Vec<AccountListEntry>>>()
+        .await
+        .map_err(|e| format!("account/list parse: {e}"))?;
+    if resp.status != "ok" {
+        return Err(format!(
+            "account/list: {}",
+            resp.error.message.unwrap_or_default()
+        ));
+    }
+    Ok(resp
+        .data
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| PlayerSuggestion {
+            account_id: e.account_id,
+            nickname: e.nickname,
+        })
+        .collect())
+}
+
+/// Live clan autocomplete: WG clans/list matches by tag/name substring. A
+/// purely numeric query is a clan id resolved directly via clans/info.
+#[tauri::command]
+pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSuggestion>, String> {
+    let q = search.trim().to_string();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
+    let host = realm_host(&realm)?;
+    let client = crate::commands::network::http_client_builder()?
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+
+    // Numeric query = clan id (non-positive ids skip the fast path — WG
+    // would answer a raw 407 error otherwise).
+    if let Ok(clan_id) = q.parse::<i64>() {
+        if clan_id > 0 {
+            if let Some(node) = fetch_clan_node(&client, &app_id, host, clan_id).await? {
+                return Ok(vec![clan_suggestion_of(clan_id, &node)]);
+            }
+        }
+    }
+    if q.chars().count() < MIN_SEARCH_CHARS {
+        return Ok(Vec::new());
+    }
+    let resp = client
+        .get(format!(
+            "https://api.worldofwarships.{host}/wows/clans/list/?application_id={app_id}&search={}&limit=10",
+            encode_query(&q)
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("clans/list request: {e}"))?
+        .json::<WgResponse<Vec<ClanListEntry>>>()
+        .await
+        .map_err(|e| format!("clans/list parse: {e}"))?;
+    if resp.status != "ok" {
+        return Err(format!(
+            "clans/list: {}",
+            resp.error.message.unwrap_or_default()
+        ));
+    }
+    Ok(resp
+        .data
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| ClanSuggestion {
+            clan_id: c.clan_id,
+            tag: c.tag,
+            name: c.name,
+            members_count: c.members_count,
+        })
+        .collect())
+}
+
+/// clans/info for one clan id (with the members extra). Ok(None) when the
+/// clan id doesn't exist (WG returns null data for unknown ids).
+async fn fetch_clan_node(
+    client: &reqwest::Client,
+    app_id: &str,
+    host: &str,
+    clan_id: i64,
+) -> Result<Option<serde_json::Value>, String> {
+    let cid = clan_id.to_string();
+    let resp = client
+        .get(format!(
+            "https://api.worldofwarships.{host}/wows/clans/info/?application_id={app_id}&clan_id={cid}&extra=members"
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("clans/info request: {e}"))?;
+    let parsed: WgResponse<serde_json::Value> = resp
+        .json()
+        .await
+        .map_err(|e| format!("clans/info parse: {e}"))?;
+    if parsed.status != "ok" {
+        return Err(format!(
+            "clans/info: {}",
+            parsed.error.message.unwrap_or_default()
+        ));
+    }
+    Ok(parsed
+        .data
+        .as_ref()
+        .and_then(|d| d.get(&cid))
+        .filter(|v| !v.is_null())
+        .cloned())
+}
+
+fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> ClanSuggestion {
+    ClanSuggestion {
+        clan_id,
+        tag: node
+            .get("tag")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        name: node
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        members_count: node.get("members_count").and_then(|v| v.as_i64()),
+    }
+}
+
+/// Clan overview: clans/info (metadata + roster roles) plus ONE batched
+/// account/info sweep over all member ids (the endpoint accepts up to 100
+/// ids per call; WoWS clans cap at ~50 members) resolving nicknames and PvP
+/// stats. Aggregate fields are computed across visible members — WG has no
+/// clan-wide aggregate endpoint.
+#[tauri::command]
+pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, String> {
+    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
+    let host = realm_host(&realm)?;
+    let client = crate::commands::network::http_client_builder()?
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+
+    let node = fetch_clan_node(&client, &app_id, host, clan_id)
+        .await?
+        .ok_or_else(|| format!("no clan found for id {clan_id} on {realm}"))?;
+
+    // Roster stats in ≤ ceil(n/100) batched account/info calls.
+    let member_ids: Vec<i64> = node
+        .get("members_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_i64()).collect())
+        .unwrap_or_default();
+    let mut roster = serde_json::Map::new();
+    for chunk in member_ids.chunks(100) {
+        let id_list = chunk
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let resp = client
+            .get(format!(
+                "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
+            ))
+            .send()
+            .await
+            .map_err(|e| format!("account/info request: {e}"))?;
+        let parsed: WgResponse<serde_json::Value> = resp
+            .json()
+            .await
+            .map_err(|e| format!("account/info parse: {e}"))?;
+        if parsed.status != "ok" {
+            return Err(format!(
+                "account/info: {}",
+                parsed.error.message.unwrap_or_default()
+            ));
+        }
+        if let Some(data) = parsed.data.and_then(|d| d.as_object().cloned()) {
+            for (k, v) in data {
+                roster.insert(k, v);
+            }
+        }
+    }
+
+    Ok(clan_info_from_response(
+        clan_id,
+        &realm,
+        &node,
+        &serde_json::Value::Object(roster),
+    ))
+}
+
+/// Per-member PvP extraction result: the display stats plus the raw damage
+/// total used for the clan-wide average.
+struct MemberPvp {
+    stats: ClanMemberStats,
+    damage_dealt: i64,
+}
+
+/// Extract one member's stats from their account/info player node.
+/// Missing/null statistics (hidden profile) → hidden=true with no stats.
+fn member_pvp_of(player_node: Option<&serde_json::Value>) -> MemberPvp {
+    let empty = MemberPvp {
+        stats: ClanMemberStats {
+            hidden: true,
+            ..Default::default()
+        },
+        damage_dealt: 0,
+    };
+    let Some(pvp) = player_node
+        .filter(|v| !v.is_null())
+        .and_then(|v| v.get("statistics"))
+        .filter(|v| !v.is_null())
+        .and_then(|s| s.get("pvp"))
+        .filter(|v| !v.is_null())
+    else {
+        return empty;
+    };
+    let battles = get_i64(pvp, "battles");
+    let wins = get_i64(pvp, "wins");
+    let winrate = match (wins, battles) {
+        (Some(w), Some(b)) if b > 0 => Some(100.0 * w as f32 / b as f32),
+        _ => None,
+    };
+    let damage = get_i64(pvp, "damage_dealt").or_else(|| get_i64(pvp, "damage_caused"));
+    let avg_damage = match (damage, battles) {
+        (Some(d), Some(b)) if b > 0 => Some(d as f32 / b as f32),
+        _ => None,
+    };
+    MemberPvp {
+        stats: ClanMemberStats {
+            battles,
+            wins,
+            winrate,
+            avg_damage,
+            hidden: false,
+        },
+        damage_dealt: damage.unwrap_or(0),
+    }
+}
+
+/// Assemble a `ClanInfo` from the clans/info node and the batched
+/// account/info roster (id → player node). Pure — unit-tested. Members come
+/// from the `members` extra (roles + join dates) with `members_ids` as the
+/// fallback when the extra was not requested.
+fn clan_info_from_response(
+    clan_id: i64,
+    realm: &str,
+    clan_node: &serde_json::Value,
+    roster: &serde_json::Value,
+) -> ClanInfo {
+    let members_map = clan_node
+        .get("members")
+        .filter(|v| !v.is_null())
+        .and_then(|m| m.as_object());
+    let ids: Vec<i64> = members_map
+        .map(|m| {
+            m.keys()
+                .filter_map(|k| k.parse::<i64>().ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|parsed| !parsed.is_empty())
+        .unwrap_or_else(|| {
+            clan_node
+                .get("members_ids")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_i64()).collect())
+                .unwrap_or_default()
+        });
+
+    let mut members = Vec::with_capacity(ids.len());
+    let (mut total_battles, mut total_wins, mut total_damage) = (0i64, 0i64, 0i64);
+    let mut hidden_count = 0i64;
+    for &id in &ids {
+        let key = id.to_string();
+        let member_node = members_map.and_then(|m| m.get(key.as_str()));
+        let role = member_node
+            .and_then(|m| m.get("role"))
+            .and_then(|r| r.as_str())
+            .unwrap_or("private")
+            .to_owned();
+        let joined_at = member_node
+            .and_then(|m| m.get("joined_at"))
+            .and_then(|j| j.as_i64());
+        let player = roster.get(&key).filter(|v| !v.is_null());
+        let name = player
+            .and_then(|p| p.get("nickname"))
+            .and_then(|n| n.as_str())
+            .map(|s| s.to_owned())
+            .unwrap_or_else(|| format!("#{id}"));
+        let pvp = member_pvp_of(player);
+        if pvp.stats.hidden {
+            hidden_count += 1;
+        }
+        total_battles += pvp.stats.battles.unwrap_or(0);
+        total_wins += pvp.stats.wins.unwrap_or(0);
+        total_damage += pvp.damage_dealt;
+        members.push(ClanMember {
+            account_id: id,
+            name,
+            role,
+            joined_at,
+            stats: pvp.stats,
+        });
+    }
+
+    let members_count = clan_node
+        .get("members_count")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(ids.len() as i64);
+    let winrate = if total_battles > 0 {
+        100.0 * total_wins as f32 / total_battles as f32
+    } else {
+        0.0
+    };
+    let avg_damage = if total_battles > 0 {
+        total_damage as f32 / total_battles as f32
+    } else {
+        0.0
+    };
+    ClanInfo {
+        clan_id,
+        tag: clan_node
+            .get("tag")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        name: clan_node
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        realm: realm.to_owned(),
+        description: clan_node
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
+        members_count,
+        created_at: clan_node.get("created_at").and_then(|v| v.as_i64()),
+        members,
+        total_battles,
+        total_wins,
+        winrate,
+        avg_damage,
+        hidden_count,
+    }
 }
 
 /// Parse a dog_tag JSON object from the Vortex API into a DogTag struct.
@@ -530,6 +1017,16 @@ struct AccountListEntry {
     nickname: String,
 }
 
+/// One entry of the clans/list autocomplete response.
+#[derive(Deserialize)]
+struct ClanListEntry {
+    clan_id: i64,
+    tag: String,
+    name: String,
+    #[serde(default)]
+    members_count: Option<i64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,7 +1110,13 @@ mod tests {
                 "leveling_points": 3400
             }
         });
-        let clan_map = HashMap::from([(2024711808i64, "FOO".to_string())]);
+        let clan_map = HashMap::from([(
+            2024711808i64,
+            ClanTagInfo {
+                tag: "FOO".to_string(),
+                clan_id: Some(500123),
+            },
+        )]);
         let entry = AccountListEntry {
             account_id: 2024711808,
             nickname: "langyo".to_string(),
@@ -623,6 +1126,7 @@ mod tests {
         assert_eq!(s.winrate, Some(55.0));
         assert!(!s.hidden);
         assert_eq!(s.clan_tag.as_deref(), Some("FOO"));
+        assert_eq!(s.clan_id, Some(500123));
         assert_eq!(s.leveling_tier, Some(12));
         assert_eq!(s.avg_damage, Some(1500.0));
         assert!(s.pr.is_some());
@@ -642,5 +1146,104 @@ mod tests {
         assert!(s.hidden);
         assert_eq!(s.winrate, None);
         assert_eq!(s.clan_tag, None);
+        assert_eq!(s.clan_id, None);
+    }
+
+    #[test]
+    fn encode_query_leaves_unreserved_alone_and_encodes_structural_chars() {
+        assert_eq!(encode_query("Black&White"), "Black%26White");
+        assert_eq!(encode_query("a#b"), "a%23b");
+        assert_eq!(encode_query("a+b"), "a%2Bb");
+        assert_eq!(encode_query("a b"), "a%20b");
+        assert_eq!(encode_query("Az-09_.~"), "Az-09_.~");
+        // Percent-encoding is byte-based: multi-byte UTF-8 encodes per byte.
+        assert_eq!(encode_query("公会"), "%E5%85%AC%E4%BC%9A");
+    }
+
+    #[test]
+    fn clan_list_entry_parses_wg_shape() {
+        let raw = serde_json::json!([{
+            "clan_id": 500123,
+            "tag": "HOOD",
+            "name": "Honored Order Of Death",
+            "members_count": 42
+        }]);
+        let list: Vec<ClanListEntry> = serde_json::from_value(raw).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].clan_id, 500123);
+        assert_eq!(list[0].members_count, Some(42));
+    }
+
+    #[test]
+    fn clan_list_entry_tolerates_missing_members_count() {
+        let raw = serde_json::json!([{ "clan_id": 1, "tag": "A", "name": "Alpha" }]);
+        let list: Vec<ClanListEntry> = serde_json::from_value(raw).unwrap();
+        assert_eq!(list[0].members_count, None);
+    }
+
+    #[test]
+    fn clan_info_from_response_assembles_roster_and_aggregates() {
+        // Mirrors the real clans/info (extra=members) + batched account/info
+        // shapes: members carries role/joined_at keyed by id; the roster
+        // carries nickname + statistics.pvp per id.
+        let clan_node = serde_json::json!({
+            "tag": "HOOD",
+            "name": "Honored Order Of Death",
+            "members_count": 2,
+            "created_at": 1_600_000_000,
+            "description": "test clan",
+            "members_ids": [11, 22],
+            "members": {
+                "11": { "role": "commander", "joined_at": 1_600_000_001 },
+                "22": { "role": "private", "joined_at": 1_600_000_002 }
+            }
+        });
+        let roster = serde_json::json!({
+            "11": {
+                "nickname": "alpha",
+                "statistics": { "pvp": { "battles": 100, "wins": 60, "damage_dealt": 150_000 } }
+            },
+            "22": { "nickname": "ghost", "statistics": { "pvp": null } }
+        });
+        let info = clan_info_from_response(500123, "asia", &clan_node, &roster);
+        assert_eq!(info.tag, "HOOD");
+        assert_eq!(info.realm, "asia");
+        assert_eq!(info.members_count, 2);
+        assert_eq!(info.created_at, Some(1_600_000_000));
+        assert_eq!(info.description.as_deref(), Some("test clan"));
+        assert_eq!(info.members.len(), 2);
+        // Aggregates only count the visible member.
+        assert_eq!(info.total_battles, 100);
+        assert_eq!(info.total_wins, 60);
+        assert!((info.winrate - 60.0).abs() < 0.01);
+        assert!((info.avg_damage - 1500.0).abs() < 0.01);
+        assert_eq!(info.hidden_count, 1);
+        let commander = info.members.iter().find(|m| m.account_id == 11).unwrap();
+        assert_eq!(commander.name, "alpha");
+        assert_eq!(commander.role, "commander");
+        assert_eq!(commander.joined_at, Some(1_600_000_001));
+        assert_eq!(commander.stats.winrate, Some(60.0));
+        let ghost = info.members.iter().find(|m| m.account_id == 22).unwrap();
+        assert!(ghost.stats.hidden);
+        assert_eq!(ghost.stats.battles, None);
+    }
+
+    #[test]
+    fn clan_info_falls_back_to_members_ids_without_extra() {
+        // Without extra=members the roles default to private and missing
+        // roster entries fall back to "#id" names instead of failing.
+        let clan_node = serde_json::json!({
+            "tag": "B",
+            "name": "Beta",
+            "members_count": 1,
+            "members_ids": [33]
+        });
+        let info = clan_info_from_response(7, "eu", &clan_node, &serde_json::json!({}));
+        assert_eq!(info.members.len(), 1);
+        assert_eq!(info.members[0].name, "#33");
+        assert_eq!(info.members[0].role, "private");
+        assert!(info.members[0].stats.hidden);
+        assert_eq!(info.winrate, 0.0);
+        assert_eq!(info.avg_damage, 0.0);
     }
 }

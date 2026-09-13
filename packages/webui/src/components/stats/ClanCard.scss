@@ -1,0 +1,169 @@
+/* ClanCard — mirrors StatsCard's layout rhythm (head / hero / KPI grid) and
+   adds the roster table. Uses hikari CSS variables like StatsCard.scss. */
+
+.clan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgb(var(--color-surface) / 85%);
+  border: 1px solid rgb(var(--color-border) / 18%);
+}
+
+.clan-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.clan-card__name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.clan-card__tag {
+  font-weight: 700;
+  color: rgb(var(--color-primary));
+  white-space: nowrap;
+}
+
+.clan-card__name {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clan-card__desc {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  word-break: break-word;
+}
+
+.clan-card__hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgb(var(--color-primary) / 6%);
+}
+
+.clan-card__hero-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.clan-card__wr {
+  font-size: 2rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.clan-card__wr-label {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.clan-card__battles-total {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  margin-left: 8px;
+}
+
+.clan-card__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.clan-card__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgb(var(--color-surface) / 60%);
+  border: 1px solid rgb(var(--color-border) / 12%);
+}
+
+.clan-card__kpi-label {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+}
+
+.clan-card__kpi-value {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.clan-card__roster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.clan-card__roster-title {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.clan-card__roster-head,
+.clan-card__member {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px 72px 64px 76px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: var(--text-2xs);
+}
+
+.clan-card__roster-head {
+  color: var(--color-muted);
+  border-bottom: 1px solid rgb(var(--color-border) / 14%);
+  padding-bottom: 6px;
+}
+
+.clan-card__member {
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-2xs);
+
+  &:hover {
+    background: rgb(var(--color-primary) / 8%);
+  }
+
+  &--hidden {
+    color: var(--color-muted);
+  }
+}
+
+.clan-card__col--name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clan-card__col--role {
+  color: var(--color-muted);
+}
+
+.clan-card__col--num {
+  text-align: right;
+  font-family: var(--font-mono);
+}

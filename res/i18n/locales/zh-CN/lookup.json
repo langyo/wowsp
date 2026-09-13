@@ -1,5 +1,32 @@
 {
+  "player": "玩家",
+  "clan": "公会",
+  "searchPlayerTitle": "搜索玩家",
+  "searchPlayerPlaceholder": "输入昵称或 UID",
+  "searchClanTitle": "搜索公会",
+  "searchClanPlaceholder": "输入公会名或 ID",
+  "searchHint": "输入至少 3 个字符（UID 不限）",
+  "searching": "搜索中…",
+  "noResults": "没有匹配结果",
   "history": "查询记录",
   "historyEmpty": "暂无记录",
-  "distTitle": "舰船分布"
+  "distTitle": "舰船分布",
+  "clanMembers": "成员列表",
+  "membersCount": "成员数",
+  "createdAt": "创建时间",
+  "memberName": "成员",
+  "roleLabel": "角色",
+  "jumpClan": "查看公会",
+  "role": {
+    "commander": "指挥官",
+    "executive_officer": "副指挥官",
+    "recruitment_officer": "招募官",
+    "commissioned_officer": "军官",
+    "officer": "军官",
+    "personnel_officer": "人事官",
+    "intelligence_officer": "情报官",
+    "quartermaster": "军需官",
+    "junior_officer": "初级军官",
+    "private": "成员"
+  }
 }
