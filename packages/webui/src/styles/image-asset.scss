@@ -1,0 +1,25 @@
+/**
+ * State classes for images loaded through the useImage() hook
+ * (@wowsp/holo). Host components own sizing and background; these rules
+ * only fade the element in once loaded and position the fallback glyph.
+ * --duration-normal collapses to 0s under prefers-reduced-motion in
+ * theme.scss, which disables the fade automatically.
+ */
+img.image-asset__img {
+  opacity: 0;
+  transition: opacity var(--duration-normal, 160ms) ease;
+}
+
+img.image-asset__img.is-loaded {
+  opacity: 1;
+}
+
+.image-asset__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-text) / 32%);
+  pointer-events: none;
+}

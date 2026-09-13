@@ -8,6 +8,7 @@ import { i18n } from "@/i18n";
 import { bootstrap } from "./bootstrap";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
+import "@/styles/image-asset.scss";
 import "virtual:uno.css";
 
 /**

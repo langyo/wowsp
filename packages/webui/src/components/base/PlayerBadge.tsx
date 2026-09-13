@@ -2,6 +2,7 @@ import { computed, defineComponent } from "vue";
 import type { DogTag } from "@/api";
 import dogtagsMapRaw from "@/data/dogtags_map.json";
 
+import { AssetImage } from "@/components/base/AssetImage";
 import "./PlayerBadge.scss";
 
 /** dogtags_map.json: vortex dogTag id -> [index, species, colorHEX?]. */
@@ -124,26 +125,21 @@ export default defineComponent({
           {l ? (
             <span class="player-badge__dt">
               <span class="player-badge__clip" style={clipStyle}>
-                {l.plateUrl ? (
-                  <img class="player-badge__dt-plate" src={l.plateUrl} alt="" />
-                ) : null}
-                {l.textureUrl ? (
-                  <img class="player-badge__dt-texture" src={l.textureUrl} alt="" />
-                ) : null}
-                {l.symbolUrl ? (
-                  <img class="player-badge__dt-symbol" src={l.symbolUrl} alt="" />
-                ) : (
-                  <span class="player-badge__tier">{props.tier || "?"}</span>
-                )}
-              </span>
-              {l.frameUrl ? (
-                <img
-                  class="player-badge__dt-frame"
-                  src={l.frameUrl}
+                <AssetImage class="player-badge__dt-plate" src={l.plateUrl} alt="" />
+                <AssetImage class="player-badge__dt-texture" src={l.textureUrl} alt="" />
+                <AssetImage
+                  class="player-badge__dt-symbol"
+                  src={l.symbolUrl}
                   alt=""
-                  style={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
+                  fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
                 />
-              ) : null}
+              </span>
+              <AssetImage
+                class="player-badge__dt-frame"
+                src={l.frameUrl}
+                alt=""
+                style={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
+              />
             </span>
           ) : (
             <span class="player-badge__tier">{props.tier || "?"}</span>

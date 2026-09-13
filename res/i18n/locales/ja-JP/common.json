@@ -7,6 +7,7 @@
   "clickToCopy": "クリックでコピー",
   "reload": "再読み込み",
   "copyFailed": "コピーに失敗しました",
+  "imageUnavailable": "画像を読み込めません",
   "detect": {
     "title": "ゲームのインストール",
     "scanning": "レジストリと Steam ライブラリをスキャン中…",

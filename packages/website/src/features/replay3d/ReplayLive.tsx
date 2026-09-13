@@ -4,7 +4,7 @@ import * as THREE from "three";
 import {
   HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, drawShipGlyph, registerHoloShipIcons,
   setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
-  makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo,
+  makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo, useImage,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
@@ -62,6 +62,33 @@ for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
 function roleOf(rel: number): keyof typeof ROLE_COLOR {
   return rel === 0 ? "self" : rel === 1 ? "ally" : "enemy";
 }
+
+/** One kill-feed ship icon. A real component (the feed renders in a .map(),
+ *  so the useImage() hook must live per instance): renders nothing without a
+ *  source, hides until loaded, and stays hidden on error — never a broken
+ *  glyph in the feed. */
+const KillFeedIcon = defineComponent({
+  name: "ReplayLiveKillFeedIcon",
+  props: {
+    type: { type: String, required: true },
+    enemy: { type: Boolean, default: false },
+  },
+  setup(props) {
+    const img = useImage(() => holoShipIconUrl(props.type, props.enemy ? "enemy" : "ally"));
+    return () =>
+      img.src.value ? (
+        <img
+          src={img.src.value}
+          alt=""
+          width="13"
+          height="13"
+          style={{ visibility: img.status.value === "loaded" ? "visible" : "hidden" }}
+          onLoad={img.onLoad}
+          onError={img.onError}
+        />
+      ) : null;
+  },
+});
 
 function shipTypeOf(model: string): string {
   return (shipTypes as Record<string, string>)[model] ?? "Battleship";
@@ -880,12 +907,7 @@ export default defineComponent({
                 {killFeed.value.map((k) => (
                   <div key={k.key} class={["replay-live__kill", k.enemy ? "is-enemy" : "is-ally"].join(" ")}>
                     <span class="replay-live__kill-ico">
-                      <img
-                        src={holoShipIconUrl(k.type, k.enemy ? "enemy" : "ally") ?? ""}
-                        alt=""
-                        width="13"
-                        height="13"
-                      />
+                      <KillFeedIcon type={k.type} enemy={k.enemy} />
                     </span>
                     <span class="replay-live__kill-ship">{k.shipName}</span>
                     <span class="replay-live__kill-verb">{t("showcase.replay.live.sunkVerb")}</span>

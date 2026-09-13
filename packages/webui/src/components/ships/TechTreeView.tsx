@@ -6,6 +6,7 @@ import { nationTree, techTreeNode, type TechTreeNode } from "@/utils/techTreeDat
 import { archetypeKey } from "@/utils/archetypeLabels";
 import { tierToRoman } from "@/utils/tierRoman";
 import { GitBranch } from "@lucide/vue";
+import { AssetImage } from "@/components/base/AssetImage";
 import type { ShipInfo } from "@/api";
 import "./TechTreeView.scss";
 
@@ -297,13 +298,16 @@ export default defineComponent({
                                 <GitBranch size={10} />
                               </span>
                             ) : null}
-                            {img ? (
-                              <img class="tech-card-v3__img" src={img} alt={name} loading="lazy" />
-                            ) : (
-                              <div class="tech-card-v3__img--placeholder">
-                                <span class="tech-card-v3__initial">{name.charAt(0)}</span>
-                              </div>
-                            )}
+                            <div class="tech-card-v3__img-wrap">
+                              <AssetImage
+                                class="tech-card-v3__img"
+                                src={img}
+                                alt={name}
+                                loading="lazy"
+                                fallback={<span class="tech-card-v3__initial">{name.charAt(0)}</span>}
+                                fallbackTitle={t("common.imageUnavailable")}
+                              />
+                            </div>
                             <span class="tech-card-v3__tier">{tierToRoman(cell.tier)}</span>
                             <span class="tech-card-v3__name">{name}</span>
                           </button>

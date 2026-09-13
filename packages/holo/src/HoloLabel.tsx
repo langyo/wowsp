@@ -6,6 +6,7 @@
  * any localised strings; this component is pure rendering + styling.
  */
 import { defineComponent, type PropType } from "vue";
+import { useImage } from "./composables/useImage";
 import { tierToRoman } from "./tierRoman";
 import "./HoloLabel.scss";
 
@@ -40,6 +41,9 @@ export default defineComponent({
     deadText: { type: String, default: "SUNK" },
   },
   setup(props) {
+    // Hide-until-loaded (and stay hidden on error): a failed HUD icon must
+    // not surface the browser's broken-image glyph in the label strip.
+    const icon = useImage(() => props.label.iconUrl ?? null);
     return () => {
       const l = props.label;
       const pct =
@@ -61,8 +65,18 @@ export default defineComponent({
           <span class="holo-label__name" title={l.name}>{l.name}</span>
           {l.shipName ? (
             <span class="holo-label__ship">
-              {l.iconUrl ? (
-                <img class="holo-label__icon" src={l.iconUrl} width={11} height={11} alt="" draggable={false} />
+              {icon.src.value ? (
+                <img
+                  class="holo-label__icon"
+                  src={icon.src.value}
+                  width={11}
+                  height={11}
+                  alt=""
+                  draggable={false}
+                  style={{ visibility: icon.status.value === "loaded" ? "visible" : "hidden" }}
+                  onLoad={icon.onLoad}
+                  onError={icon.onError}
+                />
               ) : null}
               {l.tier != null ? <span class="holo-label__tier">{tierToRoman(l.tier)}</span> : null}
               {l.shipName}

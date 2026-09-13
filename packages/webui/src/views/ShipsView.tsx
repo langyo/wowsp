@@ -1,9 +1,10 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
-import { AlertTriangle, RotateCcw } from "@lucide/vue";
+import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
 
 import { HButton, HInput, HSelect, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
+import { AssetImage } from "@/components/base/AssetImage";
 import TechTreeView from "@/components/ships/TechTreeView";
 import { resolveShipImage } from "@/utils/shipImages";
 import { useAccountStore } from "@/stores/account";
@@ -405,11 +406,17 @@ export default defineComponent({
                   >
                     {(() => {
                       const imgUrl = resolveShipImage(ship.shipId, ship.images?.medium);
-                      return imgUrl ? (
+                      return (
                         <div class="ship-card__image">
-                          <img src={imgUrl} alt={ship.name} loading="lazy" />
+                          <AssetImage
+                            src={imgUrl}
+                            alt={ship.name}
+                            loading="lazy"
+                            fallback={<Ship size={32} />}
+                            fallbackTitle={t("common.imageUnavailable")}
+                          />
                         </div>
-                      ) : null;
+                      );
                     })()}
                     <div class="ship-card__head">
                       <span class="ship-card__tier">T{ship.tier}</span>

@@ -7,6 +7,7 @@
   "clickToCopy": "點擊以複製",
   "reload": "重新載入",
   "copyFailed": "複製失敗",
+  "imageUnavailable": "圖片無法載入",
   "detect": {
     "title": "遊戲安裝",
     "scanning": "正在掃描登錄檔與 Steam 遊戲庫…",

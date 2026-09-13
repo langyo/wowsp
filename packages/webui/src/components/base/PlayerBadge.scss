@@ -75,8 +75,14 @@
 
     .player-badge__dt-texture {
       z-index: 2;
-      opacity: 0.4;
       mix-blend-mode: multiply;
+    }
+
+    /* Order-independent specificity: the shared image-asset fade rules are
+       (0,2,1) and may land before or after this chunk depending on code
+       splitting, so out-rank them in every state (0,3,1). */
+    img.player-badge__dt-texture.image-asset__img {
+      opacity: 0.4;
     }
 
     .player-badge__dt-symbol {

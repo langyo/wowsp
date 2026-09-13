@@ -19,3 +19,5 @@ export { default as HoloLabel } from "./HoloLabel";
 export { default as HoloShipCard } from "./HoloShipCard";
 export type { HoloShipCardData } from "./HoloShipCard";
 export type { HoloLabelData } from "./HoloLabel";
+export { useImage } from "./composables/useImage";
+export type { ImageStatus, UseImageReturn } from "./composables/useImage";

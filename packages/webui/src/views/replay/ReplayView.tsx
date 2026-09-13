@@ -48,6 +48,7 @@ import { HButton, HSelect, HSpinner, useToast } from "@celestia-island/hikari";
 type SelectOption = { value: string; label: string; disabled?: boolean };
 
 import BattleIcon from "@/components/base/BattleIcon";
+import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -395,7 +396,7 @@ const PostBattlePanel = defineComponent({
                           class="replay-view__postbattle-detail-ribbon"
                           title={`${name} ×${x.value}${verified ? "" : t("replay.postbattle.estimated")}`}
                         >
-                          <img src={bundledRibbonUrl(key) ?? ""} width={40} height={15} alt="" />
+                          <AssetImage src={bundledRibbonUrl(key)} width={40} height={15} alt="" />
                           <em>{x.value}</em>
                         </span>
                       );
@@ -708,8 +709,8 @@ const PostBattleFallbackPanel = defineComponent({
                           class="replay-view__postbattle-detail-ribbon"
                           title={name + " ×" + x.value + (verified ? "" : t("replay.postbattle.estimated"))}
                         >
-                          <img
-                            src={bundledRibbonUrl(key) ?? ""}
+                          <AssetImage
+                            src={bundledRibbonUrl(key)}
                             width={40}
                             height={15}
                             alt=""

@@ -364,6 +364,7 @@
   }
 
   &__image {
+    position: relative;
     width: 100%;
     height: 96px;
     border-radius: var(--radius-sm);
