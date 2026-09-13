@@ -99,10 +99,14 @@ export default defineComponent({
     const zh = navigator.language.toLowerCase().startsWith("zh");
     const logLines = ref<LogLine[]>([]);
     const logOrder = ref<"newest" | "oldest">("newest");
+    // The log pane folds into a one-line drawer by default; error records
+    // force it open so the cause is visible without a manual click.
+    const logExpanded = ref(false);
     const stamp = () => new Date().toTimeString().slice(0, 8);
     const pushLog = (kind: LogLine["kind"], text: string) => {
       logLines.value.push({ time: stamp(), kind, text });
       if (logLines.value.length > 500) logLines.value.shift();
+      if (kind === "error") logExpanded.value = true;
     };
     // The flow's progress labels are composed English verbs; render the
     // ones we know in the UI language and pass the rest through.
@@ -369,8 +373,12 @@ export default defineComponent({
               <LogPane
                 lines={logLines.value}
                 order={logOrder.value}
+                expanded={logExpanded.value}
                 onToggleOrder={() => {
                   logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
+                }}
+                onToggleExpanded={() => {
+                  logExpanded.value = !logExpanded.value;
                 }}
               />
             </div>

@@ -172,8 +172,7 @@ body {
 .wizard-install__logs {
   flex: none;
   border-top: 1px solid rgb(var(--color-border));
-  padding-top: 12px;
-  max-height: 180px;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
 }
