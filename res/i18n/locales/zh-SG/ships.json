@@ -257,6 +257,10 @@
     "special": "特种",
     "empty": "该阵营暂无科技树。"
   },
+  "banner": {
+    "imageFailed": "部分舰艇图片加载失败",
+    "action": "前往资源配置"
+  },
   "archetype": {
     "BB_Far": "远距离战列舰",
     "BB_Mid": "中距离战列舰",

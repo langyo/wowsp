@@ -257,6 +257,10 @@
     "special": "Special",
     "empty": "No tech tree for this nation."
   },
+  "banner": {
+    "imageFailed": "Some ship portraits failed to load.",
+    "action": "Open resource settings"
+  },
   "archetype": {
     "BB_Far": "Long-range battleships",
     "BB_Mid": "Mid-range battleships",

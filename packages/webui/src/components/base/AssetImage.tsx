@@ -24,9 +24,17 @@ export const AssetImage = defineComponent({
     fallback: { type: Object as PropType<VNode | null>, default: null },
     /** Title for the fallback area (e.g. a localized "image unavailable"). */
     fallbackTitle: { type: String, default: "" },
+    /** Invoked once when the current source transitions loading → error (not for stale events). */
+    onError: { type: Function as PropType<() => void>, default: undefined },
   },
   setup(props, { attrs }) {
     const img = useImage(() => props.src);
+    function handleImgError(): void {
+      const statusBefore = img.status.value;
+      img.onError();
+      // Only a fresh loading → error transition counts; stale events are dropped.
+      if (statusBefore === "loading" && img.status.value === "error") props.onError?.();
+    }
     return () => {
       const loaded = img.status.value === "loaded";
       const showFallback =
@@ -45,7 +53,7 @@ export const AssetImage = defineComponent({
               draggable: false,
               class: [hostClass, "image-asset__img", loaded ? "is-loaded" : null],
               onLoad: img.onLoad,
-              onError: img.onError,
+              onError: handleImgError,
             })
           : null,
         showFallback

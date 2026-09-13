@@ -257,6 +257,10 @@
     "special": "特種",
     "empty": "該陣營暫無科技樹。"
   },
+  "banner": {
+    "imageFailed": "部分艦艇圖片載入失敗",
+    "action": "前往資源配置"
+  },
   "archetype": {
     "BB_Far": "遠距離戰列艦",
     "BB_Mid": "中距離戰列艦",

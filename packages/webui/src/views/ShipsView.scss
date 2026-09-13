@@ -95,6 +95,30 @@
     }
   }
 
+  // ── image banner (HAlert; above content when portraits fail en masse) ─
+  &__image-banner {
+    flex-shrink: 0;
+    margin: 0 1.5rem 0.5rem;
+
+    &-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: inherit;
+    }
+
+    &-link {
+      color: rgb(var(--color-primary));
+      text-decoration: none;
+      font-weight: 600;
+      white-space: nowrap;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
   // ── scrollable content body ──────────────────────────────────────────
   &__body {
     flex: 1 1 0%;

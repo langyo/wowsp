@@ -7,6 +7,7 @@ import { archetypeKey } from "@/utils/archetypeLabels";
 import { tierToRoman } from "@/utils/tierRoman";
 import { GitBranch } from "@lucide/vue";
 import { AssetImage } from "@/components/base/AssetImage";
+import { recordShipImageFailure } from "@/utils/shipImageFailures";
 import type { ShipInfo } from "@/api";
 import "./TechTreeView.scss";
 
@@ -306,6 +307,7 @@ export default defineComponent({
                                 loading="lazy"
                                 fallback={<span class="tech-card-v3__initial">{name.charAt(0)}</span>}
                                 fallbackTitle={t("common.imageUnavailable")}
+                                onError={() => recordShipImageFailure(cell.shipId)}
                               />
                             </div>
                             <span class="tech-card-v3__tier">{tierToRoman(cell.tier)}</span>
