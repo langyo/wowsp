@@ -65,7 +65,7 @@ export default defineComponent({
     };
 
     return () => (
-      <section class="log-pane">
+      <section class={`log-pane${props.expanded ? " is-expanded" : ""}`}>
         <header class="log-pane__bar" onClick={() => props.onToggleExpanded?.()}>
           <span class="log-pane__title">
             {props.title} · {props.lines.length}

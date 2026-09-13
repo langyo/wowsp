@@ -5,11 +5,13 @@
 //! directory, packed at build time — see build.rs) is embedded in this
 //! single binary, and `shun::targets::install` performs the delivery.
 //! Local mode registers the ARP entry and the self-copying uninstaller;
-//! no shortcut is created during the flow — the done page creates the
-//! Start-menu/desktop shortcuts on confirmation via `set_shortcuts`
-//! (the headless `--silent` run still creates them in-flow). USB and
-//! green modes drop the app's `.portable` marker with no registration
-//! at all (config `portable-marker`).
+//! no shortcut is created during the flow — the manifest pins both
+//! launcher policies to "never", making that structural regardless of
+//! wizard answers. The done page applies the Start-menu/desktop
+//! shortcuts on confirmation via `set_shortcuts`, and the headless
+//! `--silent` run applies them itself after the flow (it never sees the
+//! done page). USB and green modes drop the app's `.portable` marker
+//! with no registration at all (config `portable-marker`).
 //!
 //! The shell is itself a Tauri app, so the WebView2 runtime is a hard
 //! prerequisite for its own UI: before any window is created we check the
@@ -300,17 +302,39 @@ fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
 
 /// Applies the done-page confirmation in one shot: creates or removes
 /// the install's shortcuts per the checkboxes. The wizard flow itself
-/// creates nothing, so this is the only place the user's shortcut
-/// choices take effect; it is called once when the done page's finish
-/// button runs. Every changed `.lnk` path gets a shell-change
-/// notification so Explorer reflects it immediately.
+/// creates nothing (the manifest pins both launcher policies to
+/// "never"), so this is the only place the user's shortcut choices take
+/// effect; it is called once when the done page's finish button runs.
+/// The `.lnk` writes go through COM and can stall under antivirus
+/// scanners, so the work runs on a blocking thread — the UI must not
+/// freeze while the confirmation applies.
 #[tauri::command]
-fn set_shortcuts(
+async fn set_shortcuts(
     state: tauri::State<'_, AppState>,
     desktop: Option<bool>,
     menu: Option<bool>,
     dir: String,
     mode: String,
+) -> Result<(), String> {
+    let aumid = shortcut_aumid_for(&state.config);
+    let portable = mode != "local";
+    tauri::async_runtime::spawn_blocking(move || {
+        apply_shortcut_choices(&aumid, desktop, menu, &dir, portable)
+    })
+    .await
+    .map_err(|e| format!("快捷方式任务异常退出: {e}"))?
+}
+
+/// Applies one set of shortcut choices: creates or removes the requested
+/// `.lnk`s and shell-notifies the changed surfaces. Both operations run
+/// even when one fails — the combined error is returned, and a shortcut
+/// failure never invalidates the completed install.
+fn apply_shortcut_choices(
+    aumid: &str,
+    desktop: Option<bool>,
+    menu: Option<bool>,
+    dir: &str,
+    portable: bool,
 ) -> Result<(), String> {
     let dir = dir.trim().trim_end_matches('\\').to_string();
     if dir.is_empty() {
@@ -320,39 +344,40 @@ fn set_shortcuts(
     if !exe.is_file() {
         return Err("安装目录中未找到 wowsp.exe".into());
     }
-    let portable = mode != "local";
-    let aumid = shortcut_aumid(&state);
 
     let mut changed = Vec::new();
+    let mut failures = Vec::new();
     if let Some(want) = menu {
         let link = start_menu_link(&dir, portable);
-        apply_shortcut(&link, &exe, want, &aumid, &mut changed)?;
+        if let Err(e) = apply_shortcut(&link, &exe, want, aumid, &mut changed) {
+            failures.push(format!("开始菜单快捷方式：{e}"));
+        }
     }
     if let Some(want) = desktop {
         if portable {
-            return Err("便携模式不创建桌面快捷方式".into());
+            failures.push("便携模式不创建桌面快捷方式".into());
+        } else if let Err(e) = apply_shortcut(&desktop_link(), &exe, want, aumid, &mut changed) {
+            failures.push(format!("桌面快捷方式：{e}"));
         }
-        let link = desktop_link();
-        apply_shortcut(&link, &exe, want, &aumid, &mut changed)?;
     }
     notify_shell_change(&changed);
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("；"))
+    }
 }
 
 /// The shortcut grouping identity for the configured install target: the
 /// manifest's `aumid` when declared, else shun's `{publisher}.{product}`
 /// default — the same rule `InstallContext::apply_config` applies.
-fn shortcut_aumid(state: &AppState) -> String {
-    let configured = state
-        .install_target()
-        .ok()
-        .and_then(|install| install.aumid);
-    configured.unwrap_or_else(|| {
-        default_aumid(
-            state.config.product.publisher.as_deref(),
-            &state.config.product.name,
-        )
-    })
+fn shortcut_aumid_for(config: &ShunConfig) -> String {
+    let configured = config.targets.iter().find_map(|t| match t {
+        TargetConfig::Install(install) => install.aumid.clone(),
+        _ => None,
+    });
+    configured
+        .unwrap_or_else(|| default_aumid(config.product.publisher.as_deref(), &config.product.name))
 }
 
 fn start_menu_link(install_dir: &str, portable: bool) -> PathBuf {
@@ -514,11 +539,14 @@ fn get_license(locale: String) -> String {
 }
 
 /// Runs the install flow for the wizard UI. Both launchers are deferred
-/// to the done step: the wizard answers `false` to both shortcut
-/// policies so nothing is created in-flow, and the done page's
-/// confirmation applies the user's choices via `set_shortcuts`.
+/// to the done step: the manifest's "never" shortcut knobs make the
+/// no-creation guarantee structural (the wizard also answers `false` to
+/// both policies), and the done page's confirmation applies the user's
+/// choices via `set_shortcuts`. The flow runs on a blocking thread — a
+/// sync command would execute on the main thread and stall the whole
+/// event loop (renderer IPC, window events, painting) for the extract.
 #[tauri::command]
-fn start_install(
+async fn start_install(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     mode: String,
@@ -538,16 +566,21 @@ fn start_install(
     let payload = state.payload.clone();
     let install_dir = ctx.install_dir.clone();
     let portable = ctx.portable;
-    let flow = InstallFlow {
-        payload: &payload,
-        registration: &WindowsRegistration,
-        ctx,
-    };
-    flow.run(&mut |event| emit_progress(&app, &event))
-        .map_err(|e| e.to_string())?;
-    cleanup_bootstrap_payload(&install_dir);
-    relocate_model_pack(&install_dir, portable);
-    Ok(())
+    let flow_ctx = ctx;
+    tauri::async_runtime::spawn_blocking(move || {
+        let flow = InstallFlow {
+            payload: &payload,
+            registration: &WindowsRegistration,
+            ctx: flow_ctx,
+        };
+        flow.run(&mut |event| emit_progress(&app, &event))
+            .map_err(|e| e.to_string())?;
+        cleanup_bootstrap_payload(&install_dir);
+        relocate_model_pack(&install_dir, portable);
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("安装任务异常退出: {e}"))?
 }
 
 /// The -webview2 build carries the Evergreen offline installer inside the
@@ -611,9 +644,11 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
 /// and runs the flow headlessly with `--mode=local|usb|green`,
 /// `--dir=<path>`, `--desktop`/`--no-desktop`, and an optional
 /// `--uninstall`. The ARP `UninstallString` invokes the copied shell with
-/// `/uninstall` during removal. The start-menu shortcut is always
-/// created (headless runs never see the done page); the desktop one
-/// follows `--desktop`/`--no-desktop` (default on).
+/// `/uninstall` during removal. The flow itself creates no shortcuts
+/// (the manifest pins both launcher policies to "never"); because
+/// headless runs never see the done page, the shell applies the choices
+/// itself after the flow — the start-menu shortcut always, the desktop
+/// one following `--desktop`/`--no-desktop` (default on).
 fn run_headless(
     args: &[String],
     config: &ShunConfig,
@@ -681,6 +716,18 @@ fn run_headless(
     .map_err(|e| e.to_string())?;
     cleanup_bootstrap_payload(&install_dir);
     relocate_model_pack(&install_dir, portable);
+    // The flow created nothing (manifest "never" knobs) and a silent run
+    // never sees the done page, so the shell applies the choices itself.
+    let aumid = shortcut_aumid_for(config);
+    if let Err(e) = apply_shortcut_choices(
+        &aumid,
+        Some(desktop.unwrap_or(true)),
+        Some(true),
+        &install_dir.to_string_lossy(),
+        mode != "local",
+    ) {
+        eprintln!("shun: shortcuts: {e}");
+    }
     Ok(())
 }
 
