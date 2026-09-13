@@ -665,32 +665,32 @@ fn member_pvp_of(player_node: Option<&serde_json::Value>) -> MemberPvp {
         },
         damage_dealt: 0,
     };
-    let Some(pvp) = player_node
+    let statistics = player_node
         .filter(|v| !v.is_null())
         .and_then(|v| v.get("statistics"))
-        .filter(|v| !v.is_null())
+        .filter(|v| !v.is_null());
+    let Some(pvp) = statistics
         .and_then(|s| s.get("pvp"))
         .filter(|v| !v.is_null())
     else {
         return empty;
     };
-    let battles = get_i64(pvp, "battles");
+    // Full deep-stat extraction (incl. the community PR proxy) shares the
+    // player-card code path; `wins` and the raw damage total are only needed
+    // for the roster display and the clan-wide aggregate.
+    let p = PvpStats::extract(statistics);
     let wins = get_i64(pvp, "wins");
-    let winrate = match (wins, battles) {
-        (Some(w), Some(b)) if b > 0 => Some(100.0 * w as f32 / b as f32),
-        _ => None,
-    };
     let damage = get_i64(pvp, "damage_dealt").or_else(|| get_i64(pvp, "damage_caused"));
-    let avg_damage = match (damage, battles) {
-        (Some(d), Some(b)) if b > 0 => Some(d as f32 / b as f32),
-        _ => None,
-    };
     MemberPvp {
         stats: ClanMemberStats {
-            battles,
+            battles: p.battles,
             wins,
-            winrate,
-            avg_damage,
+            winrate: p.winrate,
+            avg_damage: p.avg_damage,
+            pr: p.pr,
+            avg_xp: p.avg_xp,
+            kd_ratio: p.kd_ratio,
+            survival_rate: p.survival_rate,
             hidden: false,
         },
         damage_dealt: damage.unwrap_or(0),
@@ -729,6 +729,7 @@ fn clan_info_from_response(
     let mut members = Vec::with_capacity(ids.len());
     let (mut total_battles, mut total_wins, mut total_damage) = (0i64, 0i64, 0i64);
     let mut hidden_count = 0i64;
+    let mut member_prs: Vec<i64> = Vec::new();
     for &id in &ids {
         let key = id.to_string();
         let member_node = members_map.and_then(|m| m.get(key.as_str()));
@@ -749,6 +750,8 @@ fn clan_info_from_response(
         let pvp = member_pvp_of(player);
         if pvp.stats.hidden {
             hidden_count += 1;
+        } else if let Some(pr) = pvp.stats.pr {
+            member_prs.push(pr);
         }
         total_battles += pvp.stats.battles.unwrap_or(0);
         total_wins += pvp.stats.wins.unwrap_or(0);
@@ -776,6 +779,8 @@ fn clan_info_from_response(
     } else {
         0.0
     };
+    let avg_pr = (!member_prs.is_empty())
+        .then(|| (member_prs.iter().sum::<i64>() as f64 / member_prs.len() as f64).round() as i64);
     ClanInfo {
         clan_id,
         tag: clan_node
@@ -800,6 +805,7 @@ fn clan_info_from_response(
         total_wins,
         winrate,
         avg_damage,
+        avg_pr,
         hidden_count,
     }
 }
@@ -1218,11 +1224,18 @@ mod tests {
         assert!((info.winrate - 60.0).abs() < 0.01);
         assert!((info.avg_damage - 1500.0).abs() < 0.01);
         assert_eq!(info.hidden_count, 1);
+        // Deep stats: the fixture's 60% WR + 1500 avg damage → PR proxy
+        // (200 + 15*35 + 5*30 = 875); xp/frags/survival absent → None.
+        assert_eq!(info.avg_pr, Some(875));
         let commander = info.members.iter().find(|m| m.account_id == 11).unwrap();
         assert_eq!(commander.name, "alpha");
         assert_eq!(commander.role, "commander");
         assert_eq!(commander.joined_at, Some(1_600_000_001));
         assert_eq!(commander.stats.winrate, Some(60.0));
+        assert_eq!(commander.stats.pr, Some(875));
+        assert_eq!(commander.stats.avg_xp, None);
+        assert_eq!(commander.stats.kd_ratio, None);
+        assert_eq!(commander.stats.survival_rate, None);
         let ghost = info.members.iter().find(|m| m.account_id == 22).unwrap();
         assert!(ghost.stats.hidden);
         assert_eq!(ghost.stats.battles, None);
@@ -1245,5 +1258,6 @@ mod tests {
         assert!(info.members[0].stats.hidden);
         assert_eq!(info.winrate, 0.0);
         assert_eq!(info.avg_damage, 0.0);
+        assert_eq!(info.avg_pr, None);
     }
 }

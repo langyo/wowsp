@@ -448,6 +448,11 @@ export interface ClanMemberStats {
   wins?: number | null;
   winrate?: number | null;
   avgDamage?: number | null;
+  /** Community PR proxy (same formula as the player card). */
+  pr?: number | null;
+  avgXp?: number | null;
+  kdRatio?: number | null;
+  survivalRate?: number | null;
   hidden: boolean;
 }
 
@@ -475,6 +480,8 @@ export interface ClanInfo {
   totalWins: number;
   winrate: number;
   avgDamage: number;
+  /** Mean PR proxy across visible members that have one. */
+  avgPr?: number | null;
   hiddenCount: number;
 }
 
