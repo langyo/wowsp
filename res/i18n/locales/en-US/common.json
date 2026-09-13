@@ -7,6 +7,7 @@
   "clickToCopy": "Click to copy",
   "reload": "Reload",
   "copyFailed": "Failed to copy",
+  "imageUnavailable": "Image unavailable",
   "detect": {
     "title": "Game installation",
     "scanning": "Scanning registry and Steam libraries…",

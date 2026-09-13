@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
-import { createCycleTimer } from "@wowsp/holo";
+import { createCycleTimer, useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
@@ -87,6 +87,12 @@ export default defineComponent({
     const showArmor = ref(false);
     let gridRef: THREE.GridHelper | null = null;
     const _waterlinePlane: THREE.Mesh | null = null;
+
+    // 2D fallback portrait: tracked via the shared useImage hook so a failed
+    // CDN image lands in the same graceful noimg block as a missing one.
+    const img2d = useImage(() =>
+      props.ship ? resolveShipImage(props.ship.shipId, props.ship.images?.large) : null,
+    );
 
     // Auto holo ↔ armor cycle on the shared timer (same period as the site
     // stage); hovering the 3D view pauses it, the button group jumps.
@@ -954,15 +960,17 @@ export default defineComponent({
             class={["ship-stage__canvas", viewMode.value === "2d" ? "ship-stage__canvas--2d" : ""]}
             ref={containerRef}
           >
-            {viewMode.value === "2d" ? (
-              (() => {
-                const img = ship ? resolveShipImage(ship.shipId, ship.images?.large) : null;
-                return img ? (
-                  <img class="ship-stage__2d-img" src={img} alt={ship?.name ?? ""} />
-                ) : (
-                  <div class="ship-stage__noimg">{t("ships.detail.noImage")}</div>
-                );
-              })()
+            {viewMode.value === "2d" && img2d.src.value && img2d.status.value !== "error" ? (
+              <img
+                class={["ship-stage__2d-img", "image-asset__img", img2d.status.value === "loaded" ? "is-loaded" : ""].join(" ")}
+                key={img2d.key.value}
+                src={img2d.src.value}
+                alt={ship?.name ?? ""}
+                onLoad={img2d.onLoad}
+                onError={img2d.onError}
+              />
+            ) : viewMode.value === "2d" ? (
+              <div class="ship-stage__noimg">{t("ships.detail.noImage")}</div>
             ) : null}
             {loading.value ? (
               <div class="ship-stage__overlay">

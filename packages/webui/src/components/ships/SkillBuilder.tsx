@@ -3,6 +3,7 @@ import { RotateCcw, Lock } from "@lucide/vue";
 
 import { HButton } from "@celestia-island/hikari";
 import { t } from "@/i18n";
+import { AssetImage } from "@/components/base/AssetImage";
 import { resolveSkillIcon } from "@/utils/skillIcons";
 import {
   SKILL_TREES,
@@ -162,11 +163,12 @@ export default defineComponent({
                               title={displayName}
                             >
                               <span class="skill-tile-v__icon">
-                                {iconUrl ? (
-                                  <img class="skill-tile-v__icon-img" src={iconUrl} alt={displayName} draggable={false} />
-                                ) : (
-                                  displayName.charAt(0)
-                                )}
+                                <AssetImage
+                                  class="skill-tile-v__icon-img"
+                                  src={iconUrl}
+                                  alt={displayName}
+                                  fallback={<span>{displayName.charAt(0)}</span>}
+                                />
                               </span>
                             </button>
                             <span class="skill-tile-v__name">{displayName}</span>

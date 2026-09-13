@@ -112,6 +112,15 @@
     background: rgb(255 140 40 / 6%);
   }
 
+  /* Portrait strip box. Owns the 38px flow height so the card keeps its
+     geometry even when AssetImage renders only the absolute fallback
+     (no local portrait and no CDN url). */
+  &__img-wrap {
+    width: 100%;
+    height: 38px;
+    position: relative;
+  }
+
   &__img {
     width: 100%;
     height: 38px;
@@ -119,21 +128,19 @@
     filter: drop-shadow(0 1px 2px rgb(0 0 0 / 25%));
   }
 
-  &__img--placeholder {
-    width: 100%;
-    height: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgb(var(--color-bg));
-    border-radius: var(--radius-xs);
-  }
-
   &__initial {
     font-size: var(--text-lg);
     font-weight: 800;
     color: rgb(var(--color-primary) / 30%);
     text-transform: uppercase;
+  }
+
+  /* The AssetImage fallback overlay spans the whole card by default;
+     confine it to the portrait strip wrapper. */
+  .image-asset__fallback {
+    inset: 0;
+    background: rgb(var(--color-bg));
+    border-radius: var(--radius-xs);
   }
 
   &__tier {

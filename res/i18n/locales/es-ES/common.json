@@ -7,6 +7,7 @@
   "clickToCopy": "Haz clic para copiar",
   "reload": "Recargar",
   "copyFailed": "No se pudo copiar",
+  "imageUnavailable": "No se pudo cargar la imagen",
   "detect": {
     "title": "Instalación del juego",
     "scanning": "Escaneando el registro y las bibliotecas de Steam…",

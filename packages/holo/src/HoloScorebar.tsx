@@ -1,6 +1,7 @@
 import { defineComponent, type PropType } from "vue";
 import type { HoloCapZone, HoloHudState, HoloShip } from "./types";
 import { holoShipIconUrl } from "./icons";
+import { useImage } from "./composables/useImage";
 import "./HoloScorebar.scss";
 
 /**
@@ -98,7 +99,8 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
   );
 }
 
-function ShipIcon({ ship }: { ship: HoloShip }) {
+/** URL selection for one ship slot (variant + sunk-auxiliary fallback chain). */
+function shipIconUrlFor(ship: HoloShip): string | null {
   // Direction contract of the game's own HUD art: ally icons face LEFT,
   // enemy icons face RIGHT, and the sunk bitmap faces LEFT — so each side
   // has its OWN sunk variant ("sunk" for the ally row, the mirrored
@@ -115,17 +117,37 @@ function ShipIcon({ ship }: { ship: HoloShip }) {
   let url = holoShipIconUrl(ship.shipType, variant);
   if (!url && variant === "sunk") url = holoShipIconUrl("cruiser", "sunk");
   if (!url && variant === "sunk-enemy") url = holoShipIconUrl("cruiser", "sunk-enemy");
-  if (!url) return null;
-  return (
-    <img
-      class={["holo-scorebar__ship", ship.dead ? "is-sunk" : ""].join(" ")}
-      src={url}
-      alt={ship.shipType ?? ""}
-      width="15"
-      height="15"
-    />
-  );
+  return url;
 }
+
+/** One ship-icon slot. A real component (not a render-loop helper) so the
+ *  useImage() hook is called per instance and tracks each slot's load state;
+ *  a failed icon stays hidden instead of surfacing a broken-image glyph. */
+const ShipIcon = defineComponent({
+  name: "HoloScorebarShipIcon",
+  props: {
+    ship: { type: Object as PropType<HoloShip>, required: true },
+  },
+  setup(props) {
+    const img = useImage(() => shipIconUrlFor(props.ship));
+    return () => {
+      const ship = props.ship;
+      if (!img.src.value) return null;
+      return (
+        <img
+          class={["holo-scorebar__ship", ship.dead ? "is-sunk" : ""].join(" ")}
+          src={img.src.value}
+          alt={ship.shipType ?? ""}
+          width="15"
+          height="15"
+          style={{ visibility: img.status.value === "loaded" ? "visible" : "hidden" }}
+          onLoad={img.onLoad}
+          onError={img.onError}
+        />
+      );
+    };
+  },
+});
 
 export default defineComponent({
   name: "HoloScorebar",

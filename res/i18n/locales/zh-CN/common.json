@@ -7,6 +7,7 @@
   "clickToCopy": "点击以复制",
   "reload": "重新加载",
   "copyFailed": "复制失败",
+  "imageUnavailable": "图片不可用",
   "detect": {
     "title": "游戏安装",
     "scanning": "正在扫描注册表与 Steam 游戏库…",
