@@ -40,8 +40,12 @@ interface FlowEventPayload {
   percent?: number | null;
   message?: string;
   record?: {
-    type: string;
+    // shun tags FlowLog records with a `log` discriminator (serde tag),
+    // not `type` — kebab-case values: file-write / file-reuse / warning /
+    // script-begin / script-line / command-done.
+    log?: string;
     path?: string;
+    name?: string;
     line?: string;
     command?: string;
     code?: string;
@@ -175,15 +179,19 @@ export default defineComponent({
         // Structured log records compose into localized pane lines.
         if (event.record) {
           const r = event.record;
-          if (r.type === "file-write" && r.path) {
+          const kind = r.log;
+          if (kind === "file-write" && r.path) {
             pushLog("echo", zh ? `写入 ${r.path}` : `Writing ${r.path}`);
-          } else if (r.type === "file-reuse" && r.path) {
+          } else if (kind === "file-reuse" && r.path) {
             pushLog("echo", zh ? `复用 ${r.path}` : `Reusing ${r.path}`);
-          } else if (r.type === "warning") {
-            pushLog("error", r.detail ?? r.code ?? "");
-          } else if (r.type === "script-line" && r.line) {
+          } else if (kind === "warning") {
+            const text = [r.code, r.detail].filter(Boolean).join(": ");
+            if (text) pushLog("error", text);
+          } else if (kind === "script-begin" && r.name) {
+            pushLog("step", zh ? `运行脚本 ${r.name}` : `Running ${r.name}`);
+          } else if (kind === "script-line" && r.line) {
             pushLog("echo", r.line);
-          } else if (r.type === "command-done" && r.command) {
+          } else if (kind === "command-done" && r.command) {
             pushLog("ok", `✓ ${r.command}`);
           }
         }
