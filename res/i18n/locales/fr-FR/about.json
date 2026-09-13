@@ -1,0 +1,12 @@
+{
+  "title": "À propos de WoWSP",
+  "subtitle": "World of WarShip Panel",
+  "description": "Un tableau de bord de bureau pour World of Warships : revue de replays autonome avec carte 3D holographique, ainsi qu'une superposition transparente en jeu pour la consultation des statistiques en temps réel.",
+  "checkUpdate": "Vérifier les mises à jour",
+  "updateAvailable": "Mise à jour disponible →",
+  "upToDate": "À jour ✓",
+  "checking": "Vérification...",
+  "downloading": "Téléchargement...",
+  "issues": "Signaler un problème",
+  "license": "Licence · © {author}"
+}

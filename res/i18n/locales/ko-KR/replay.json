@@ -1,0 +1,143 @@
+{
+  "list": {
+    "title": "리플레이 목록",
+    "empty": "선택한 클라이언트 폴더에서 리플레이를 찾을 수 없습니다.",
+    "count": "리플레이 {n}개",
+    "noClient": "게임 클라이언트가 감지되지 않았습니다. 홈에서 검사를 실행하거나 경로를 직접 지정하세요."
+  },
+  "client": "클라이언트",
+  "refresh": "새로고침",
+  "loading": "리플레이 분석 중…",
+  "select": "목록에서 리플레이를 선택하여 불러오세요.",
+  "players": "{n}명",
+  "mode": {
+    "pvp": "랜덤전",
+    "ranked": "랭크전",
+    "clan": "클랜전",
+    "event": "이벤트",
+    "cooperative": "협동전",
+    "pve": "협동전",
+    "training": "훈련전",
+    "brawl": "브롤",
+    "squad": "분대전",
+    "ranked_solo": "랭크전(솔로)",
+    "ranked_sprint": "랭크 스프린트",
+    "pve_event": "작전",
+    "convoy": "호위전",
+    "asymmetric": "비대칭전",
+    "armsrace": "군비 경쟁",
+    "operation": "작전",
+    "halloween": "할로윈",
+    "sandbox": "샌드박스",
+    "_fallback": "전투"
+  },
+  "map": {
+    "unknown": "알 수 없는 맵",
+    "contour": "등고선 지형도",
+    "contourHint": "등고선 지형: 육지는 고도별로 구분되고, 해역에는 수심(해구 포함)이 표시됩니다."
+  },
+  "ownShip": "내 함선",
+  "noShipModel": "이 함선에는 홀로그램 모델이 없습니다.",
+  "duration": "지속 시간",
+  "matchTime": "전투 시간",
+  "mapLabel": "맵",
+  "legend": {
+    "self": "내 함선",
+    "ally": "아군",
+    "enemy": "적군",
+    "dead": "격침됨",
+    "gone": "사라진 지 {n}초"
+  },
+  "tip": {
+    "loading": "조회 중…",
+    "failed": "조회 실패",
+    "hidden": "전적 숨김",
+    "winrate": "승률",
+    "avgDamage": "평균 데미지",
+    "battles": "전투 수",
+    "survival": "생존",
+    "hitRate": "명중"
+  },
+  "roster": {
+    "allies": "아군",
+    "enemies": "적군",
+    "shipType": "함종",
+    "battles": "전투 수",
+    "winrate": "승률",
+    "avgDamage": "평균 데미지"
+  },
+  "minimap": {
+    "zoom": "확대 맵",
+    "trails": "함선 궤적"
+  },
+  "labels": {
+    "hide": "라벨 숨기기",
+    "show": "라벨 표시"
+  },
+  "results": "전투 결과",
+  "resultsIncomplete": "리플레이가 전투 결과가 기록되기 전에 종료되었습니다 — 최종 결과가 아닌 마지막 기록 상태를 표시합니다.",
+  "bot": "봇",
+  "botNote": "AI 플레이어 — 전적 기록 없음",
+  "live": {
+    "title": "실시간 전투",
+    "notStarted": "아직 새 전투가 시작되지 않았습니다",
+    "settling": "정산 중",
+    "hiddenProfile": "이 플레이어는 전적을 숨겼습니다",
+    "viewProfile": "이 플레이어의 전적 보기"
+  },
+  "postbattle": {
+    "rawData": "원본 데이터",
+    "loadingGlobal": "{name}의 전체 전적을 불러오는 중…",
+    "destroyedBy": "{name}에게 격침됨",
+    "killerDamage": " ({n} 데미지)",
+    "damageUnknownNote": "리플레이에는 전투 전체 정보가 포함되지 않아 일부 데미지 출처를 확인할 수 없습니다",
+    "estimated": " (추정)",
+    "xp": "경험치",
+    "credits": "크레딧",
+    "globalFailed": "전체 전적을 가져올 수 없습니다",
+    "globalFailedAi": "전체 전적을 가져올 수 없습니다 (AI 플레이어일 수 있음)",
+    "globalUnavailable": "전체 전적을 사용할 수 없습니다",
+    "noRealm": " (서버 정보 없음)",
+    "tierDist": "주력 티어 분포",
+    "fullStats": "전체 전적 보기 →"
+  },
+  "capture": {
+    "contested": "양측 모두 점령 중 — 진행 일시 정지",
+    "capturing": "점령 중 ({a} vs {b}척)",
+    "neutral": "중립",
+    "ally": "아군 점령",
+    "enemy": "적군 점령"
+  },
+  "killVerb": "격침",
+  "playbackSpeed": "재생 속도",
+  "tier": "티어",
+  "damageTaken": "받은 피해",
+  "hpRemaining": "잔여 HP",
+  "noDamageData": "가한 피해와 리본은 전체 전투 결과가 필요합니다. 이 리플레이로는 자신 함선의 피해량과 격침 수만 추정할 수 있습니다.",
+  "origview": {
+    "on": "원래 시점",
+    "off": "자유 시점"
+  },
+  "camera": {
+    "title": "카메라",
+    "free": "자유 카메라",
+    "original": "원래 시점",
+    "me": "나",
+    "allies": "아군",
+    "enemies": "적군",
+    "battles": "전"
+  },
+  "classes": {
+    "battleship": "전함",
+    "cruiser": "순양함",
+    "destroyer": "구축함",
+    "aircarrier": "항공모함",
+    "submarine": "잠수함",
+    "auxiliary": "지원함"
+  },
+  "selfStats": "자함",
+  "selfHits": "명중",
+  "selfFrags": "격침",
+  "selfDamage": "가한 피해",
+  "selfTaken": "받은 피해"
+}

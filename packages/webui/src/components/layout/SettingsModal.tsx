@@ -4,7 +4,7 @@ import { Check, Monitor, Moon, Sun } from "@lucide/vue";
 import { HButton, HInput, HModal, HSelect, HTabs, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
-import { t } from "@/i18n";
+import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type NetworkConfig } from "@/api";
 import AboutModal from "@/components/layout/AboutModal";
@@ -122,7 +122,7 @@ export default defineComponent({
                 <span class="settings-modal__lang-label">{t("settings.uiLanguage")}</span>
                 <HSelect
                   modelValue={lang.uiLocale.value}
-                  onUpdate:modelValue={(v: string) => lang.setUiLocale(v as "en-US" | "zh-CN")}
+                  onUpdate:modelValue={(v: string) => lang.setUiLocale(v as Locale)}
                   options={lang.uiLocaleOptions.map((o) => ({ value: o.value, label: o.label }))}
                 />
               </div>

@@ -1,0 +1,16 @@
+{
+  "notBound": "Sin cuenta vinculada",
+  "bind": "Vincular cuenta",
+  "switch": "Cambiar de cuenta",
+  "switcherTitle": "Gestor de cuentas",
+  "add": "Añadir cuenta",
+  "remove": "Quitar",
+  "nickname": "Apodo",
+  "realm": "Servidor",
+  "search": "Buscar",
+  "searching": "Buscando...",
+  "notFound": "No se encontró ninguna cuenta",
+  "bound": "Vinculada",
+  "selectRealm": "Selecciona un servidor",
+  "noAccounts": "Aún no hay cuentas vinculadas. Busca un apodo arriba para vincular una."
+}

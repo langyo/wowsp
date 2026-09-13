@@ -1,0 +1,12 @@
+{
+  "title": "趨勢",
+  "winrateOverTime": "各版本勝率",
+  "damageOverTime": "各版本場均傷害",
+  "battleDelta": "對戰場次",
+  "snapshotCount": "快照數",
+  "version": "版本",
+  "noSnapshots": "尚無歷史。多次查詢該玩家即可累積趨勢。",
+  "patchNote": "補丁",
+  "patchAnnotation": "補丁疊加",
+  "community": "全服"
+}

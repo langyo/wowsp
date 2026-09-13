@@ -1,0 +1,33 @@
+{
+  "title": "Mes statistiques",
+  "noAccount": "Aucun compte lié pour l'instant",
+  "noAccountHint": "Liez votre compte Wargaming pour voir vos statistiques de combat ici.",
+  "loading": "Chargement des statistiques...",
+  "overview": "Vue d'ensemble",
+  "byType": "Par type de navire",
+  "byNation": "Par nation",
+  "byTier": "Par palier",
+  "ranked": "Batailles classées",
+  "season": "Saison",
+  "rank": "Rang",
+  "bestRank": "Meilleur rang",
+  "shipList": "Navires",
+  "range1d": "1 j",
+  "range7d": "7 j",
+  "range30d": "30 j",
+  "rangeAll": "Tout",
+  "battles": "Batailles",
+  "winrate": "Taux de victoire",
+  "avgDamage": "Dégâts moyens",
+  "avgFrags": "Destructions moyennes",
+  "lastBattle": "Dernière bataille",
+  "noShipsInRange": "Aucune bataille sur cette période.",
+  "shipType": {
+    "Battleship": "Cuirassé",
+    "Cruiser": "Croiseur",
+    "Destroyer": "Destroyer",
+    "AirCarrier": "Porte-avions",
+    "Submarine": "Sous-marin",
+    "Unknown": "Autre"
+  }
+}

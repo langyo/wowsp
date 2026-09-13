@@ -1,0 +1,32 @@
+{
+  "player": "プレイヤー",
+  "clan": "クラン",
+  "searchPlayerTitle": "プレイヤーを検索",
+  "searchPlayerPlaceholder": "ニックネームまたは UID",
+  "searchClanTitle": "クランを検索",
+  "searchClanPlaceholder": "クラン名または ID",
+  "searchHint": "3 文字以上入力してください（UID は除く）",
+  "searching": "検索中…",
+  "noResults": "一致する結果がありません",
+  "history": "履歴",
+  "historyEmpty": "履歴はまだありません",
+  "distTitle": "艦艇分布",
+  "clanMembers": "メンバー一覧",
+  "membersCount": "メンバー数",
+  "createdAt": "設立日時",
+  "memberName": "メンバー",
+  "roleLabel": "役職",
+  "jumpClan": "クランを見る",
+  "role": {
+    "commander": "司令官",
+    "executive_officer": "副司令官",
+    "recruitment_officer": "募集将校",
+    "commissioned_officer": "士官",
+    "officer": "士官",
+    "personnel_officer": "人事将校",
+    "intelligence_officer": "情報将校",
+    "quartermaster": "需品将校",
+    "junior_officer": "下級士官",
+    "private": "メンバー"
+  }
+}

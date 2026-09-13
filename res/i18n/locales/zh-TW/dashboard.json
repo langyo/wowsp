@@ -1,0 +1,33 @@
+{
+  "title": "我的戰績",
+  "noAccount": "尚未綁定帳號",
+  "noAccountHint": "綁定你的戰艦世界帳號以查看戰績資料。",
+  "loading": "載入戰績中...",
+  "overview": "總覽",
+  "byType": "依艦種",
+  "byNation": "依陣營",
+  "byTier": "依階級",
+  "ranked": "排位戰",
+  "season": "賽季",
+  "rank": "段位",
+  "bestRank": "最高段位",
+  "shipList": "艦艇列表",
+  "range1d": "1天",
+  "range7d": "7天",
+  "range30d": "30天",
+  "rangeAll": "全部",
+  "battles": "場次",
+  "winrate": "勝率",
+  "avgDamage": "場均傷害",
+  "avgFrags": "場均擊沉",
+  "lastBattle": "最後戰鬥",
+  "noShipsInRange": "該時段內沒有對局。",
+  "shipType": {
+    "Battleship": "戰列艦",
+    "Cruiser": "巡洋艦",
+    "Destroyer": "驅逐艦",
+    "AirCarrier": "航空母艦",
+    "Submarine": "潛艦",
+    "Unknown": "其他"
+  }
+}

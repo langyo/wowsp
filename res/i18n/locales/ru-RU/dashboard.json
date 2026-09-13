@@ -1,0 +1,33 @@
+{
+  "title": "Моя статистика",
+  "noAccount": "Аккаунт ещё не привязан",
+  "noAccountHint": "Привяжите аккаунт Wargaming, чтобы видеть здесь свою статистику боёв.",
+  "loading": "Загрузка статистики...",
+  "overview": "Обзор",
+  "byType": "По классам",
+  "byNation": "По нациям",
+  "byTier": "По уровням",
+  "ranked": "Ранговые бои",
+  "season": "Сезон",
+  "rank": "Ранг",
+  "bestRank": "Лучший ранг",
+  "shipList": "Корабли",
+  "range1d": "1 день",
+  "range7d": "7 дней",
+  "range30d": "30 дней",
+  "rangeAll": "Всё",
+  "battles": "Бои",
+  "winrate": "Процент побед",
+  "avgDamage": "Средний урон",
+  "avgFrags": "Среднее число фрагов",
+  "lastBattle": "Последний бой",
+  "noShipsInRange": "За этот период боёв нет.",
+  "shipType": {
+    "Battleship": "Линкор",
+    "Cruiser": "Крейсер",
+    "Destroyer": "Эсминец",
+    "AirCarrier": "Авианосец",
+    "Submarine": "Подводная лодка",
+    "Unknown": "Другое"
+  }
+}

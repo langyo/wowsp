@@ -1,0 +1,16 @@
+{
+  "notBound": "Aucun compte lié",
+  "bind": "Lier un compte",
+  "switch": "Changer de compte",
+  "switcherTitle": "Gestion des comptes",
+  "add": "Ajouter un compte",
+  "remove": "Retirer",
+  "nickname": "Pseudo",
+  "realm": "Serveur",
+  "search": "Rechercher",
+  "searching": "Recherche...",
+  "notFound": "Aucun compte trouvé",
+  "bound": "Lié",
+  "selectRealm": "Sélectionner un serveur",
+  "noAccounts": "Aucun compte lié pour l'instant. Recherchez un pseudo ci-dessus pour en lier un."
+}

@@ -1,0 +1,143 @@
+{
+  "list": {
+    "title": "Repeticiones",
+    "empty": "No se encontraron repeticiones en la carpeta del cliente seleccionado.",
+    "count": "{n} repeticiones",
+    "noClient": "No se detectó ningún cliente del juego. Ejecuta un escaneo en el panel de inicio o define una ruta manualmente."
+  },
+  "client": "Cliente",
+  "refresh": "Actualizar",
+  "loading": "Analizando repetición…",
+  "select": "Selecciona una repetición de la lista para cargarla.",
+  "players": "{n} jugadores",
+  "mode": {
+    "pvp": "Aleatoria",
+    "ranked": "Clasificatoria",
+    "clan": "Clan",
+    "event": "Evento",
+    "cooperative": "Cooperativa",
+    "pve": "Cooperativa",
+    "training": "Entrenamiento",
+    "brawl": "Brawl",
+    "squad": "Escuadrón",
+    "ranked_solo": "Clasificatoria (en solitario)",
+    "ranked_sprint": "Clasificatoria relámpago",
+    "pve_event": "Operación",
+    "convoy": "Convoy",
+    "asymmetric": "Asimétrica",
+    "armsrace": "Carrera armamentística",
+    "operation": "Operación",
+    "halloween": "Halloween",
+    "sandbox": "Sandbox",
+    "_fallback": "Batalla"
+  },
+  "map": {
+    "unknown": "Mapa desconocido",
+    "contour": "Terreno de contornos",
+    "contourHint": "Terreno de contornos: la tierra aparece en bandas por elevación y el mar muestra la batimetría (incluidas las fosas)."
+  },
+  "ownShip": "Tu buque",
+  "noShipModel": "No hay modelo holográfico para este buque.",
+  "duration": "Duración",
+  "matchTime": "Tiempo de combate",
+  "mapLabel": "Mapa",
+  "legend": {
+    "self": "Tú",
+    "ally": "Aliados",
+    "enemy": "Enemigos",
+    "dead": "Hundido",
+    "gone": "Desaparecido hace {n} s"
+  },
+  "tip": {
+    "loading": "Cargando…",
+    "failed": "Error",
+    "hidden": "Estadísticas ocultas",
+    "winrate": "Tasa de victorias",
+    "avgDamage": "Daño medio",
+    "battles": "Batallas",
+    "survival": "Supervivencia",
+    "hitRate": "Precisión"
+  },
+  "roster": {
+    "allies": "Aliados",
+    "enemies": "Enemigos",
+    "shipType": "Tipo",
+    "battles": "Batallas",
+    "winrate": "WR",
+    "avgDamage": "Daño medio"
+  },
+  "minimap": {
+    "zoom": "Mapa ampliado",
+    "trails": "Estelas de los buques"
+  },
+  "labels": {
+    "hide": "Ocultar etiquetas",
+    "show": "Mostrar etiquetas"
+  },
+  "results": "Resultados de la batalla",
+  "resultsIncomplete": "La repetición terminó antes de que se registraran los resultados de la batalla — se muestra el último estado registrado, no el resultado final.",
+  "bot": "Bot",
+  "botNote": "Jugador de IA — sin historial de batallas",
+  "live": {
+    "title": "Batalla en vivo",
+    "notStarted": "Aún no ha comenzado una nueva batalla",
+    "settling": "Calculando",
+    "hiddenProfile": "Este jugador ha ocultado sus estadísticas",
+    "viewProfile": "Ver las estadísticas de este jugador"
+  },
+  "postbattle": {
+    "rawData": "Datos en bruto",
+    "loadingGlobal": "Cargando las estadísticas globales de {name}…",
+    "destroyedBy": "Destruído por {name}",
+    "killerDamage": " ({n} de daño)",
+    "damageUnknownNote": "Las repeticiones no incluyen la información completa de la batalla — algunas fuentes de daño no se pueden atribuir",
+    "estimated": " (estimado)",
+    "xp": "EXP",
+    "credits": "Créditos",
+    "globalFailed": "Estadísticas globales no disponibles",
+    "globalFailedAi": "Estadísticas globales no disponibles (posiblemente un jugador de IA)",
+    "globalUnavailable": "Estadísticas globales no disponibles",
+    "noRealm": " (sin información del servidor)",
+    "tierDist": "Distribución de niveles",
+    "fullStats": "Estadísticas completas →"
+  },
+  "capture": {
+    "contested": "Ambos bandos capturando — progreso en pausa",
+    "capturing": "Capturando ({a} vs {b} buques)",
+    "neutral": "Neutral",
+    "ally": "Control aliado",
+    "enemy": "Control enemigo"
+  },
+  "killVerb": "hundió",
+  "playbackSpeed": "Velocidad de reproducción",
+  "tier": "Nivel",
+  "damageTaken": "Daño recibido",
+  "hpRemaining": "PS restantes",
+  "noDamageData": "El daño infligido y las cintas requieren los resultados completos de la batalla; de esta repetición solo se pueden inferir el daño y los hundimientos de tu propio buque.",
+  "origview": {
+    "on": "Vista original",
+    "off": "Vista libre"
+  },
+  "camera": {
+    "title": "Cámara",
+    "free": "Cámara libre",
+    "original": "Vista original",
+    "me": "Yo",
+    "allies": "Aliados",
+    "enemies": "Enemigos",
+    "battles": "batallas"
+  },
+  "classes": {
+    "battleship": "Acorazado",
+    "cruiser": "Crucero",
+    "destroyer": "Destructor",
+    "aircarrier": "Portaaviones",
+    "submarine": "Submarino",
+    "auxiliary": "Auxiliar"
+  },
+  "selfStats": "Tu buque",
+  "selfHits": "Aciertos",
+  "selfFrags": "Hundimientos",
+  "selfDamage": "Daño",
+  "selfTaken": "Recibido"
+}

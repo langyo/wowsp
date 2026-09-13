@@ -36,6 +36,19 @@ describe("determineDataLanguage", () => {
     expect(determineDataLanguage("zh-CN", "cn")).toBe("zh-CN");
     expect(determineDataLanguage("zh-CN", "asia")).toBe("zh-SG");
   });
+
+  it("maps every other UI locale straight through", () => {
+    // zh-SG UI stays 亚服简体 regardless of realm; the remaining UI locales
+    // are themselves valid data lang-locs.
+    expect(determineDataLanguage("zh-SG", "cn")).toBe("zh-SG");
+    expect(determineDataLanguage("zh-TW", "asia")).toBe("zh-TW");
+    expect(determineDataLanguage("ja-JP", "na")).toBe("ja-JP");
+    expect(determineDataLanguage("ko-KR", "eu")).toBe("ko-KR");
+    expect(determineDataLanguage("ru-RU", "ru")).toBe("ru-RU");
+    expect(determineDataLanguage("fr-FR", "asia")).toBe("fr-FR");
+    expect(determineDataLanguage("es-ES", "asia")).toBe("es-ES");
+    expect(determineDataLanguage("en-US", "asia")).toBe("en-US");
+  });
 });
 
 describe("nationNameFromDb", () => {

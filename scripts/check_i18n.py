@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """i18n key parity validator for WoWSP.
 
-Adapted from shittim-chest's `scripts/check_i18n.py` (trimmed). Checks that the
-two supported locales (en-US, zh-CN) have the same key set across every namespace
-JSON under `res/i18n/locales/<lang>/`.
+Adapted from shittim-chest's `scripts/check_i18n.py`. Checks that EVERY locale
+directory under `res/i18n/locales/<lang>/` carries the same key set as the
+en-US baseline across every namespace JSON, and that `{placeholder}` sets
+match per key (a translation that drops `{name}` breaks vue-i18n params at
+runtime, not at build time).
 
-Exit codes: 0 = parity, 1 = missing keys (unless --no-fail).
+Exit codes: 0 = parity, 1 = missing keys / placeholder drift (unless --no-fail).
 
 Usage:
     python scripts/check_i18n.py             # full report
@@ -17,12 +19,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCALES_DIR = REPO_ROOT / "res" / "i18n" / "locales"
-BASELINE_LANGS = ("en-US", "zh-CN")
+BASELINE_LANG = "en-US"
+PLACEHOLDER_RE = re.compile(r"\{\w+\}")
 
 
 def flatten(obj, prefix="") -> dict:
@@ -37,11 +41,12 @@ def flatten(obj, prefix="") -> dict:
     return out
 
 
-def load_keys(lang: str) -> set[str]:
-    keys: set[str] = set()
+def load_namespace_values(lang: str) -> dict[str, object]:
+    """Flattened key → raw message value for one locale."""
+    values: dict[str, object] = {}
     lang_dir = LOCALES_DIR / lang
     if not lang_dir.is_dir():
-        return keys
+        return values
     for p in sorted(lang_dir.glob("*.json")):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
@@ -49,9 +54,15 @@ def load_keys(lang: str) -> set[str]:
             print(f"WARN: failed to parse {p}: {e}", file=sys.stderr)
             continue
         ns = p.stem
-        for k in flatten(data):
-            keys.add(f"{ns}.{k}")
-    return keys
+        for k, v in flatten(data).items():
+            values[f"{ns}.{k}"] = v
+    return values
+
+
+def discover_langs() -> list[str]:
+    if not LOCALES_DIR.is_dir():
+        return []
+    return sorted(d.name for d in LOCALES_DIR.iterdir() if d.is_dir())
 
 
 def main() -> int:
@@ -61,27 +72,47 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    keys = {lang: load_keys(lang) for lang in BASELINE_LANGS}
-    baseline = keys["en-US"]
+    langs = discover_langs()
+    if BASELINE_LANG not in langs:
+        print(f"FATAL: baseline locale dir {BASELINE_LANG} missing", file=sys.stderr)
+        return 1
+
+    values = {lang: load_namespace_values(lang) for lang in langs}
+    baseline = values[BASELINE_LANG]
+    baseline_keys = set(baseline)
 
     problems: dict[str, list[str]] = {}
-    for lang in BASELINE_LANGS:
-        if lang == "en-US":
+    for lang in langs:
+        if lang == BASELINE_LANG:
             continue
-        missing = sorted(baseline - keys[lang])
-        extra = sorted(keys[lang] - baseline)
-        if missing or extra:
-            problems[lang] = missing + [f"+{e}" for e in extra]
+        lang_keys = set(values[lang])
+        items = sorted(baseline_keys - lang_keys) + sorted(
+            f"+{k}" for k in lang_keys - baseline_keys
+        )
+        # Placeholder drift: the translation must interpolate the same names.
+        for key in sorted(baseline_keys & lang_keys):
+            want = sorted(PLACEHOLDER_RE.findall(str(baseline[key])))
+            got = sorted(PLACEHOLDER_RE.findall(str(values[lang][key])))
+            if want != got:
+                items.append(f"~{key}: placeholders {got} != {want}")
+        if items:
+            problems[lang] = items
 
     if args.json:
-        print(json.dumps({"parity": not problems, "problems": problems}, indent=2))
+        print(
+            json.dumps(
+                {"langs": langs, "parity": not problems, "problems": problems},
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
     elif problems:
         for lang, items in problems.items():
             print(f"[{lang}] {len(items)} key differences:")
             for it in items:
                 print(f"  {it}")
     elif not args.quiet:
-        print(f"i18n OK: {len(baseline)} keys across {BASELINE_LANGS}")
+        print(f"i18n OK: {len(baseline_keys)} keys across {tuple(langs)}")
 
     return 0 if (not problems or args.no_fail) else 1
 

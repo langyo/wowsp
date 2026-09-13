@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "WoWSP",
+    "tagline": "戰艦世界戰況分析儀表板 — 錄影復盤與遊戲內覆蓋層"
+  },
+  "copied": "已複製到剪貼簿",
+  "clickToCopy": "點擊以複製",
+  "reload": "重新載入",
+  "copyFailed": "複製失敗",
+  "detect": {
+    "title": "遊戲安裝",
+    "scanning": "正在掃描登錄檔與 Steam 遊戲庫…",
+    "found": "已偵測到",
+    "none": "未偵測到戰艦世界安裝，請手動指定路徑。",
+    "rescan": "重新掃描"
+  },
+  "game": {
+    "online": "遊戲執行中",
+    "offline": "遊戲未啟動",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "官服（WG中心）",
+      "lesta": "Lesta（俄服）",
+      "cn360": "國服（空中網）",
+      "manual": "手動指定"
+    }
+  },
+  "search": {
+    "fuzzy": "模糊搜尋",
+    "hint": "輸入船名、拼音或英文搜尋"
+  }
+}

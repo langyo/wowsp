@@ -1,0 +1,33 @@
+{
+  "title": "내 전적",
+  "noAccount": "아직 연동된 계정이 없습니다",
+  "noAccountHint": "Wargaming 계정을 연동하면 여기서 전적을 확인할 수 있습니다.",
+  "loading": "전적을 불러오는 중...",
+  "overview": "개요",
+  "byType": "함종별",
+  "byNation": "국가별",
+  "byTier": "티어별",
+  "ranked": "랭크전",
+  "season": "시즌",
+  "rank": "랭크",
+  "bestRank": "최고 랭크",
+  "shipList": "함선 목록",
+  "range1d": "1일",
+  "range7d": "7일",
+  "range30d": "30일",
+  "rangeAll": "전체",
+  "battles": "전투 수",
+  "winrate": "승률",
+  "avgDamage": "평균 데미지",
+  "avgFrags": "평균 격침",
+  "lastBattle": "마지막 전투",
+  "noShipsInRange": "해당 기간에는 전투 기록이 없습니다.",
+  "shipType": {
+    "Battleship": "전함",
+    "Cruiser": "순양함",
+    "Destroyer": "구축함",
+    "AirCarrier": "항공모함",
+    "Submarine": "잠수함",
+    "Unknown": "기타"
+  }
+}

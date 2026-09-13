@@ -19,7 +19,9 @@ import {
 import { registerBrandThemes } from "./theme/brandThemes";
 import { i18n } from "./i18n";
 
-/** Canonical wowsp locale ("en-US" / "zh-CN") → hikari i18n dir. */
+/** Canonical wowsp locale → hikari i18n dir. Hikari ships simplified-
+ *  Chinese and English component copy only; every other UI locale falls
+ *  back to English for those shared components. */
 function hikariLocaleOf(locale: string): string {
   return locale.startsWith("zh") ? "zh-Hans" : "en";
 }

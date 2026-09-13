@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "WoWSP",
+    "tagline": "World of Warship Panel — revisión de repeticiones y superposición en el juego"
+  },
+  "copied": "Copiado al portapapeles",
+  "clickToCopy": "Haz clic para copiar",
+  "reload": "Recargar",
+  "copyFailed": "No se pudo copiar",
+  "detect": {
+    "title": "Instalación del juego",
+    "scanning": "Escaneando el registro y las bibliotecas de Steam…",
+    "found": "Encontrado",
+    "none": "No se detectó ninguna instalación de World of Warships — define una ruta manualmente.",
+    "rescan": "Volver a escanear"
+  },
+  "game": {
+    "online": "Juego en ejecución",
+    "offline": "Juego no iniciado",
+    "pid": "PID",
+    "kind": {
+      "steam": "Steam",
+      "wargaming": "Wargaming Center",
+      "lesta": "Lesta",
+      "cn360": "CN (360)",
+      "manual": "Manual"
+    }
+  },
+  "search": {
+    "fuzzy": "Búsqueda difusa",
+    "hint": "Escribe un nombre de buque, pinyin o nombre en inglés"
+  }
+}
