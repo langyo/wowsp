@@ -370,9 +370,6 @@ export default defineComponent({
                 lines={logLines.value}
                 order={logOrder.value}
                 expanded={logExpanded.value}
-                onToggleOrder={() => {
-                  logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
-                }}
                 onToggleExpanded={() => {
                   logExpanded.value = !logExpanded.value;
                 }}
@@ -393,9 +390,6 @@ export default defineComponent({
                 lines={logLines.value}
                 order={logOrder.value}
                 expanded={logExpanded.value}
-                onToggleOrder={() => {
-                  logOrder.value = logOrder.value === "newest" ? "oldest" : "newest";
-                }}
                 onToggleExpanded={() => {
                   logExpanded.value = !logExpanded.value;
                 }}
@@ -463,11 +457,6 @@ export default defineComponent({
             )}
 
             <footer class="installer__footer">
-              <div>
-                {running.value && flowStep.value && (
-                  <span class="wizard-live">{flowStep.value}</span>
-                )}
-              </div>
               <div class="installer__nav">
                 {running.value ? null : step.value === "mode" && (
                   <HButton variant="primary" size="lg" onClick={() => go("license")}>

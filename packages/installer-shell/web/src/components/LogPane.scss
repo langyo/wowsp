@@ -1,20 +1,13 @@
 /* Install log pane — right column of the install step. Monospace lines
-   with HH:MM:SS stamps; colors read the token layer only. */
+   with HH:MM:SS stamps; colors read the token layer only. Deliberately
+   frameless and scrollbar-less: an activity strip whose lines fade with
+   distance from the fresh end (see the per-direction masks below). */
 
 .log-pane {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-}
-
-/* Expanded drawer: a visible frame enclosing bar + body so the open log
-   reads as one bounded box (collapsed stays a bare bar, no border). */
-.log-pane.is-expanded {
-  border: 1px solid rgb(var(--color-border));
-  border-radius: var(--radius-md);
-  background: rgb(var(--color-surface) / 55%);
-  padding: 6px 10px 10px;
 }
 
 .log-pane__bar {
@@ -43,25 +36,19 @@
   color: rgb(var(--color-muted));
 }
 
-.log-pane__order {
-  border: none;
-  background: rgb(var(--color-primary) / 10%);
-  color: rgb(var(--color-primary));
-  font-size: var(--text-2xs);
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  cursor: pointer;
-
-  &:hover {
-    background: rgb(var(--color-primary) / 18%);
-  }
-}
-
 .log-pane__toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 6px;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+
+  &:hover {
+    color: rgb(var(--color-primary));
+  }
 }
 
 // Drawer fold: the collapse wrapper rides grid-template-rows so the body
@@ -85,11 +72,41 @@
   flex: 1;
   min-height: 0;
   height: 240px;
-  overflow: auto;
+  // No scrollbar, ever: overflow is clipped and the fresh end is pinned
+  // programmatically, so older lines simply slide out of view. The mask
+  // fades lines by distance from that end — newest-first keeps its fresh
+  // end at the top, oldest-first at the bottom.
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  scrollbar-width: thin;
+  mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 100%) 0%,
+    rgb(0 0 0 / 72%) 55%,
+    rgb(0 0 0 / 26%) 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 100%) 0%,
+    rgb(0 0 0 / 72%) 55%,
+    rgb(0 0 0 / 26%) 100%
+  );
+}
+
+.log-pane--oldest .log-pane__body {
+  mask-image: linear-gradient(
+    to top,
+    rgb(0 0 0 / 100%) 0%,
+    rgb(0 0 0 / 72%) 55%,
+    rgb(0 0 0 / 26%) 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgb(0 0 0 / 100%) 0%,
+    rgb(0 0 0 / 72%) 55%,
+    rgb(0 0 0 / 26%) 100%
+  );
 }
 
 .log-pane__line {
