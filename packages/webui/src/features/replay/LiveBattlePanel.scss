@@ -157,8 +157,8 @@
     font-size: var(--text-2xs);
     color: rgb(var(--color-text) / 0.7);
 
+    /* WR / PR values carry their tier color inline (winrateColor / prTier). */
     b {
-      color: #ffd93d;
       font-weight: 600;
     }
   }
