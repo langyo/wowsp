@@ -47,7 +47,16 @@ fn main() {
     let flavor = std::env::var("SHUN_FLAVOR").unwrap_or_else(|_| "dev".into());
     std::fs::write(out_dir.join("shun-flavor.txt"), flavor).expect("write flavor");
 
-    // 3. License: the SySL text plus official translations. The zh texts
+    // 4. Model-pack version stamp: the res-latest asset updated_at the
+    //    staged models were packed from. The installer writes it next to
+    //    the relocated models so the app treats the shipped pack as
+    //    current instead of re-downloading it on first launch.
+    let model_version = std::env::var("SHUN_MODEL_VERSION").unwrap_or_default();
+    std::fs::write(out_dir.join("shun-model-version.txt"), model_version)
+        .expect("write model version");
+    println!("cargo:rerun-if-env-changed=SHUN_MODEL_VERSION");
+
+    // 5. License: the SySL text plus official translations. The zh texts
     //    are vendored from celestia-island/sysl (licenses/); en comes from
     //    the repo-root LICENSE. When the network is reachable the fetch
     //    refreshes each file from upstream first; otherwise the vendored

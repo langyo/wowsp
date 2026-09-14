@@ -54,6 +54,10 @@ const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-conf
 const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
 /// Build flavor (lite/full + WebView2 bundling), stamped by build.rs.
 const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.txt"));
+/// res-latest asset updated_at the staged models were packed from
+/// ("" when unknown — e.g. plain `cargo build`); written as the
+/// app's model-cache version stamp after relocation.
+const SHUN_MODEL_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-model-version.txt"));
 /// License texts per wizard locale (SySL + official translations).
 const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"));
 const LICENSE_ZH_HANS: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hans.txt"));
@@ -595,7 +599,11 @@ fn cleanup_bootstrap_payload(install_dir: &Path) {
 /// application's model-pack cache resolves to (the paths.rs conventions:
 /// portable → `<dir>/data/cache`, local → `%LOCALAPPDATA%\WoWSP`). The
 /// extraction lands at `<dir>/models`; a rename usually suffices, falling
-/// back to a recursive copy across volumes.
+/// back to a recursive copy across volumes. After a successful relocation
+/// the pack is stamped with the res-latest `updated_at` it was packed
+/// from (`<cache>/.version`) so the app treats it as current instead of
+/// re-downloading on first launch; no stamp when the version is unknown
+/// or the pack is absent (lite flavor).
 fn relocate_model_pack(install_dir: &Path, portable: bool) {
     let from = install_dir.join("models");
     if !from.is_dir() {
@@ -608,14 +616,35 @@ fn relocate_model_pack(install_dir: &Path, portable: bool) {
     };
     let _ = std::fs::create_dir_all(&to);
     to.push("models");
-    if to == from {
+
+    // The pack ends up in place when it was already at its final home
+    // (nothing to move), when the rename fast path succeeds, or when the
+    // recursive-copy fallback lands it across volumes.
+    let moved = if to == from {
+        true
+    } else if std::fs::rename(&from, &to).is_ok() {
+        true
+    } else {
+        let copied = copy_dir_recursive(&from, &to);
+        if copied {
+            let _ = std::fs::remove_dir_all(&from);
+        }
+        copied
+    };
+    if !moved {
         return;
     }
-    if std::fs::rename(&from, &to).is_ok() {
-        return;
-    }
-    if copy_dir_recursive(&from, &to) {
-        let _ = std::fs::remove_dir_all(&from);
+
+    // Stamp the relocated pack as the res-latest version it was packed
+    // from, so the app's update check sees it as current instead of
+    // re-downloading ~1.2 GB on first launch. No stamp when the version
+    // is unknown; the app then falls back to its normal fetch-or-serve
+    // behavior. (Same file the app's write_cached_version uses.)
+    let version = SHUN_MODEL_VERSION.trim();
+    if !version.is_empty() {
+        if let Some(cache) = to.parent() {
+            let _ = std::fs::write(cache.join(".version"), version);
+        }
     }
 }
 

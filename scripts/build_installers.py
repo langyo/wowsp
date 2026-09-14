@@ -62,6 +62,23 @@ def run(cmd: list[str], **kwargs) -> None:
     subprocess.run([str(c) for c in cmd], check=True, **kwargs)
 
 
+def model_pack_version() -> str:
+    """The res-latest asset's updated_at — the version stamp the app
+    compares its model cache against. Fetched from the release the staged
+    models were published in; empty (no stamp) when unreachable."""
+    try:
+        out = subprocess.run(
+            ["gh", "api",
+             "repos/langyo/wowsp/releases/tags/res-latest",
+             "--jq", '[.assets[] | select(.name == "wowsp-models.tar.gz") | .updated_at] | first // ""'],
+            capture_output=True, text=True, check=True, timeout=60,
+        )
+        return out.stdout.strip()
+    except Exception as exc:
+        print(f"[warn] model pack version fetch failed: {exc}")
+        return ""
+
+
 def build_app() -> Path:
     print("[app] building webui + wowsp_tauri (release) …")
     # pnpm ships as a .cmd shim on Windows — subprocess needs the resolved
@@ -120,12 +137,16 @@ def stage_models(stage: Path) -> None:
     print(f"[stage] model pack: {dest}")
 
 
-def build_installer(stage: Path, flavor: str = "lite") -> Path:
+def build_installer(stage: Path, flavor: str = "lite", model_version: str = "") -> Path:
     print(f"[installer:{flavor}] cargo build -p wowsp_installer_shell --release …")
     env = {
         **os.environ,
         "SHUN_PAYLOAD": str(stage),
         "SHUN_FLAVOR": flavor,
+        # Baked into the shell so it can stamp the relocated model pack
+        # with the res-latest version it was packed from (empty → no
+        # stamp, the app falls back to its normal update check).
+        "SHUN_MODEL_VERSION": model_version,
         # The multi-hundred-MB embedded payload defeats LTO (the link step
         # fail-fasts with STATUS_STACK_BUFFER_OVERRUN under thin LTO) and
         # gains nothing from it; skip LTO and any rustc wrapper cache.
@@ -216,6 +237,11 @@ def main() -> int:
     build_shell_web()
     reset_shell_codegen()
 
+    # The res-latest stamp baked into the shell so relocated model packs
+    # count as current on first launch (empty when GitHub is unreachable —
+    # the app then re-downloads as usual).
+    model_version = model_pack_version()
+
     # One shared staging directory, re-staged just-in-time before each
     # flavor pair: lite (application only) vs full (application + model
     # pack). Staging everything up front would let the full payload bleed
@@ -229,10 +255,10 @@ def main() -> int:
         "full-webview2": "-full-webview2",
     }
 
-    def build_variant(flavor: str, stage: Path, with_wv2: bool) -> None:
+    def build_variant(flavor: str, stage: Path, with_wv2: bool, model_version: str) -> None:
         if with_wv2:
             stage = stage_webview2(stage, wv2)
-        exe = build_installer(stage, flavor)
+        exe = build_installer(stage, flavor, model_version)
         # Copy right after the build: the next variant overwrites the
         # shared output binary.
         emit(version, exe, suffixes[flavor])
@@ -243,13 +269,13 @@ def main() -> int:
     if lite_flavors:
         lite_stage = stage_payload(app_exe)
         for flavor in lite_flavors:
-            build_variant(flavor, lite_stage, flavor.endswith("webview2"))
+            build_variant(flavor, lite_stage, flavor.endswith("webview2"), model_version)
 
     if full_flavors:
         full_stage = stage_payload(app_exe)
         stage_models(full_stage)
         for flavor in full_flavors:
-            build_variant(flavor, full_stage, flavor.endswith("webview2"))
+            build_variant(flavor, full_stage, flavor.endswith("webview2"), model_version)
     return 0
 
 
