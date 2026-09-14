@@ -39,7 +39,7 @@
   cursor: grab;
   touch-action: none;
   /* One-button echo of the hk-tabs track chrome. */
-  border: 1px solid var(--border-faint);
+  border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface) / 60%);
   transition:
@@ -168,7 +168,7 @@
   gap: 0;
   padding: 2px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-faint);
+  border: 1px solid rgb(var(--color-border) / 25%);
   background: rgb(var(--color-surface) / 60%);
 }
 
@@ -218,6 +218,8 @@
 /* ── Search: one compact button, roomy leftward popup panel ── */
 .ship-filter-bar__search-anchor {
   position: relative;
+  /* Breathing room from the match-count text to its left. */
+  margin-left: 0.75rem;
 }
 
 .ship-filter-bar__search-btn {
@@ -225,7 +227,7 @@
   align-items: center;
   gap: 5px;
   padding: var(--space-4) var(--space-12);
-  border: 1px solid var(--border-faint);
+  border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface) / 60%);
   color: rgb(var(--color-muted));
