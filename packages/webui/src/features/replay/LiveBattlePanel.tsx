@@ -24,6 +24,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { modeColor, modeKey } from "@/utils/modeColors";
+import { prTier, winrateColor } from "@/utils/winrate";
 import { useBattleClock } from "./useBattleClock";
 import { HSpinner } from "@celestia-island/hikari";
 import mapNamesRaw from "@/data/map_names.json";
@@ -297,7 +298,11 @@ export default defineComponent({
         if (st.winrate != null) {
           return (
             <span>
-              <b>{st.winrate.toFixed(1)}%</b> WR · <b>{st.pr ?? "—"}</b> PR
+              <b style={{ color: winrateColor(st.winrate) }}>
+                {st.winrate.toFixed(1)}%
+              </b>{" "}
+              WR ·{" "}
+              <b style={{ color: prTier(st.pr).color }}>{st.pr ?? "—"}</b> PR
             </span>
           );
         }
