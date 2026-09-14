@@ -25,6 +25,10 @@ pub struct NetworkConfig {
     pub mode: String,
     /// Manual proxy URL, only consulted when mode == "manual".
     pub proxy: Option<String>,
+    /// Mirror base for remote resources (ship portraits etc.). Empty →
+    /// the official Wargaming CDN. See commands/media.rs.
+    #[serde(default)]
+    pub resource_cdn: Option<String>,
 }
 
 impl Default for NetworkConfig {
@@ -32,6 +36,7 @@ impl Default for NetworkConfig {
         Self {
             mode: "system".to_string(),
             proxy: None,
+            resource_cdn: None,
         }
     }
 }
@@ -54,6 +59,7 @@ pub fn load_config() -> NetworkConfig {
 pub struct NetworkConfigResponse {
     pub mode: String,
     pub proxy: Option<String>,
+    pub resource_cdn: Option<String>,
     pub effective_proxy: Option<String>,
 }
 
@@ -64,6 +70,7 @@ pub fn get_network_config() -> Result<NetworkConfigResponse, String> {
     Ok(NetworkConfigResponse {
         mode: cfg.mode,
         proxy: cfg.proxy,
+        resource_cdn: cfg.resource_cdn,
         effective_proxy,
     })
 }

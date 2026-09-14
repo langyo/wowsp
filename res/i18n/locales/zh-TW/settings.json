@@ -28,5 +28,8 @@
   "networkManual": "手動代理",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
   "networkSave": "儲存",
-  "networkSaved": "已儲存"
+  "networkSaved": "已儲存",
+  "resourceCdn": "資源 CDN",
+  "resourceCdnPlaceholder": "留空使用官方 Wargaming CDN",
+  "resourceCdnHint": "頭像等遠端資源的鏡像源，保留原 URL 路徑；請求仍經由應用程式代理設定轉發。"
 }

@@ -28,5 +28,8 @@
   "networkManual": "Proxy manuel",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
   "networkSave": "Enregistrer",
-  "networkSaved": "Enregistré"
+  "networkSaved": "Enregistré",
+  "resourceCdn": "CDN de ressources",
+  "resourceCdnPlaceholder": "Laisser vide pour utiliser le CDN Wargaming officiel",
+  "resourceCdnHint": "Miroir des portraits de navires et autres ressources — le chemin de l'URL est conservé et les requêtes passent par le proxy de l'application."
 }
