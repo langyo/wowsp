@@ -12,6 +12,11 @@
    - ``*-webview2`` — each flavor with the Evergreen offline runtime
      embedded for machines without the WebView2 runtime.
 
+The shell's own frontend (``@wowsp/installer-web`` → ``web/dist``) is
+rebuilt before the shell compiles, and the shell's codegen cache is
+purged so the embedded UI is never stale — plain ``cargo build`` would
+happily re-link with a previously expanded asset set.
+
 Artifacts land in ``target/release/bundle/installer/`` as
 ``WoWSP_<version>_x64-installer[-full][-webview2].exe``.
 
@@ -36,12 +41,15 @@ REPO = Path(__file__).resolve().parent.parent
 TAURI = REPO / "packages" / "app" / "tauri"
 SHELL = REPO / "packages" / "installer-shell"
 MODELS = REPO / "packages" / "webui" / "src" / "res" / "models"
+SHELL_WEB = REPO / "packages" / "installer-shell" / "web"
+SHELL_ENTRY = REPO / "packages" / "installer-shell" / "src" / "main.rs"
 VENDOR = SHELL / "vendor"
 WV2_URL = "https://go.microsoft.com/fwlink/?linkid=2099617"
 WV2_NAME = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 WV2_PAYLOAD_PREFIX = "webview2"
 TARGET = REPO / "target" / "release"
 OUT = TARGET / "bundle" / "installer"
+SHELL_BUILD_DIR = TARGET / "build"
 
 
 def app_version() -> str:
@@ -65,6 +73,32 @@ def build_app() -> Path:
     if not exe.is_file():
         sys.exit(f"application binary missing: {exe}")
     return exe
+
+
+def build_shell_web() -> None:
+    """Builds the installer shell's own frontend into web/dist.
+
+    The shell embeds that directory at compile time (tauri's
+    frontendDist), and plain `cargo build` runs no beforeBuildCommand —
+    without this step the binary would carry whatever stale bundle last
+    landed in web/dist."""
+    print("[shell-web] building installer shell frontend …")
+    pnpm = shutil.which("pnpm") or "pnpm"
+    run([pnpm, "--filter", "@wowsp/installer-web", "build"])
+
+
+def reset_shell_codegen() -> None:
+    """Forces the shell's embedded-frontend codegen to re-expand.
+
+    cargo's fingerprint cannot see inside the `generate_context!` proc
+    macro: when only `web/dist` changed, the shell may re-link with a
+    fresh payload while quietly keeping the previously expanded assets.
+    Purging the build-script outputs and touching the entry source makes
+    the re-expansion unconditional (verified by decompressing the emitted
+    tauri-codegen-assets bundle)."""
+    for path in SHELL_BUILD_DIR.glob("wowsp_installer_shell-*"):
+        shutil.rmtree(path, ignore_errors=True)
+    SHELL_ENTRY.touch()
 
 
 def stage_payload(app_exe: Path) -> Path:
@@ -176,6 +210,11 @@ def main() -> int:
         print("[app] skipped cargo build (--skip-app-build)")
     else:
         app_exe = build_app()
+
+    # The shell's embedded UI must be rebuilt from current sources and
+    # re-expanded unconditionally — see the two functions above.
+    build_shell_web()
+    reset_shell_codegen()
 
     # One shared staging directory, re-staged just-in-time before each
     # flavor pair: lite (application only) vs full (application + model
