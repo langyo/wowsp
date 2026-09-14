@@ -71,6 +71,10 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Remote ship portraits ride the proxy-aware, disk-cached `media`
+        // scheme instead of the webview hitting the WG CDN directly (see
+        // commands::media + webui utils/media.ts).
+        .register_asynchronous_uri_scheme_protocol("media", commands::media::handler)
         .manage(drain)
         .on_window_event(move |window, event| {
             // Close button → minimize to tray (the tray's "Quit" is the real
