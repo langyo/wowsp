@@ -28,5 +28,8 @@
   "networkManual": "手動プロキシ",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
   "networkSave": "保存",
-  "networkSaved": "保存しました"
+  "networkSaved": "保存しました",
+  "resourceCdn": "リソース CDN",
+  "resourceCdnPlaceholder": "空欄で公式 Wargaming CDN を使用",
+  "resourceCdnHint": "艦船画像などのリソースのミラー基点。URL パスはそのまま維持され、リクエストはアプリのプロキシ設定経由で転送されます。"
 }

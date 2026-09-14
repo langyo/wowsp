@@ -28,5 +28,8 @@
   "networkManual": "Ручной прокси",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
   "networkSave": "Сохранить",
-  "networkSaved": "Сохранено"
+  "networkSaved": "Сохранено",
+  "resourceCdn": "Ресурсный CDN",
+  "resourceCdnPlaceholder": "Оставьте пустым для официального CDN Wargaming",
+  "resourceCdnHint": "Зеркало для портретов кораблей и других ресурсов — путь URL сохраняется, запросы идут через настройки прокси приложения."
 }

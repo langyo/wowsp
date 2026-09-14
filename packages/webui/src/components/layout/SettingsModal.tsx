@@ -55,19 +55,23 @@ export default defineComponent({
     }
 
     // ── Network proxy (global for all outbound requests) ──────────────────
-    // Mode changes apply immediately; the URL row commits via 保存 / Enter.
-    // `netLastSaved` mirrors what the backend holds so the save button only
-    // lights up on a real change, and the saved URL stays visible (greyed
-    // out) even while system/none mode is active.
-    const netCfg = ref<NetworkConfig>({ mode: "system", proxy: null });
-    const netLastSaved = ref<NetworkConfig>({ mode: "system", proxy: null });
+    // Mode changes apply immediately; the URL / resource CDN rows commit via
+    // 保存 / Enter. `netLastSaved` mirrors what the backend holds so the save
+    // button only lights up on a real change, and the saved URL stays visible
+    // (greyed out) even while system/none mode is active.
+    const netCfg = ref<NetworkConfig>({ mode: "system", proxy: null, resourceCdn: null });
+    const netLastSaved = ref<NetworkConfig>({ mode: "system", proxy: null, resourceCdn: null });
     const netSavedFlash = ref(false);
     let netFlashTimer: number | undefined;
 
     const netDirty = computed(() => {
       const cur = netCfg.value;
       const last = netLastSaved.value;
-      return cur.mode !== last.mode || (cur.proxy?.trim() || null) !== last.proxy;
+      return (
+        cur.mode !== last.mode ||
+        (cur.proxy?.trim() || null) !== last.proxy ||
+        (cur.resourceCdn?.trim() || null) !== last.resourceCdn
+      );
     });
 
     onMounted(async () => {
@@ -90,6 +94,7 @@ export default defineComponent({
       const payload: NetworkConfig = {
         mode: netCfg.value.mode,
         proxy: netCfg.value.proxy?.trim() || null,
+        resourceCdn: netCfg.value.resourceCdn?.trim() || null,
       };
       try {
         await api.setNetworkConfig(payload);
@@ -238,7 +243,8 @@ export default defineComponent({
           </section>
 
           {/* network proxy — applies to every outbound request (stats, model
-              pack, updates) */}
+              pack, updates); resource CDN mirrors remote resources
+              independently of the proxy mode */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.network")}</h2>
             <p class="settings-modal__hint">{t("settings.networkHint")}</p>
@@ -267,6 +273,17 @@ export default defineComponent({
                 {netSavedFlash.value ? t("settings.networkSaved") : t("settings.networkSave")}
               </HButton>
             </div>
+            {/* Resource CDN — an independent setting, not gated on the proxy
+                mode; commits via 保存 / Enter like the proxy URL. */}
+            <div class="settings-modal__netinput">
+              <HInput
+                modelValue={netCfg.value.resourceCdn ?? ""}
+                onUpdate:modelValue={(v: string) => (netCfg.value.resourceCdn = v)}
+                placeholder={t("settings.resourceCdnPlaceholder")}
+                submitOnEnter={() => void saveNet()}
+              />
+            </div>
+            <p class="settings-modal__hint">{t("settings.resourceCdnHint")}</p>
           </section>
 
           {/* about */}

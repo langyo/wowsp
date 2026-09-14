@@ -28,5 +28,8 @@
   "networkManual": "수동 프록시",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
   "networkSave": "저장",
-  "networkSaved": "저장됨"
+  "networkSaved": "저장됨",
+  "resourceCdn": "리소스 CDN",
+  "resourceCdnPlaceholder": "비워 두면 공식 Wargaming CDN을 사용합니다",
+  "resourceCdnHint": "함선 이미지 등 원격 리소스의 미러 기준 URL입니다. URL 경로는 유지되며 요청은 앱 프록시 설정을 통해 전달됩니다."
 }

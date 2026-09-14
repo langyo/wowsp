@@ -28,5 +28,8 @@
   "networkManual": "Manual proxy",
   "networkProxyPlaceholder": "http://127.0.0.1:7890",
   "networkSave": "Save",
-  "networkSaved": "Saved"
+  "networkSaved": "Saved",
+  "resourceCdn": "Resource CDN",
+  "resourceCdnPlaceholder": "Leave empty to use the official Wargaming CDN",
+  "resourceCdnHint": "Mirror base for portraits and other remote resources — the URL path is preserved, and requests still flow through the app's proxy settings."
 }

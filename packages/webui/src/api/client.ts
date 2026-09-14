@@ -602,6 +602,9 @@ export interface NetworkConfig {
   mode: "system" | "none" | "manual";
   /** Manual proxy URL, e.g. "http://127.0.0.1:7890" (only for "manual"). */
   proxy?: string | null;
+  /** Mirror base for remote resources (ship portraits etc.); empty → the
+   *  official Wargaming CDN. See commands/media.rs. */
+  resourceCdn?: string | null;
   /** OS proxy pre-resolved by the shell (read-only, for proxy-URL consumers). */
   effectiveProxy?: string | null;
 }
