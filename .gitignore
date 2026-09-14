@@ -85,3 +85,8 @@ packages/webui/src/res/models/maps/*.glb
 # (~180 MB, never tracked) for the -webview2.zip delivery artifact.
 packages/installer-shell/vendor/
 installer-shell/vendor/
+
+# Baked ship portraits (scripts/extract/download_ship_images.py) — derived
+# from the WG CDN like the model pack; regenerated at packaging time.
+packages/webui/src/res/images/ships/[0-9]*.png
+packages/webui/src/res/images/ships/_index.json

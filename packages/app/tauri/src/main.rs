@@ -159,17 +159,13 @@ fn main() {
             // Windows tray icons are tiny: 16×16 at 100% DPI, 20×20 at
             // 125%, 24×24 at 150%, 32×32 at 200%. Using the default window
             // icon (256×256) forces a brutal downscale → blur. Provide a
-            // purpose-sized small source so the shell's scaling is minimal.
-            // In dev: reads from the repo icons/ dir so changes are live.
-            // In release: uses the embedded 32×32 PNG compiled into the binary.
-            let tray_icon = tauri::image::Image::from_path("icons/32x32.png")
-                .unwrap_or_else(|_| {
-                    tauri::image::Image::new_owned(
-                        include_bytes!("../icons/32x32.png").to_vec(),
-                        32,
-                        32,
-                    )
-                });
+            // purpose-sized tray source, compiled in and PNG-decoded up
+            // front — never read from CWD-relative paths that don't exist
+            // when installed.
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/32x32.png"
+            ))
+            .expect("embedded tray icon decodes");
 
             let _tray = tauri::tray::TrayIconBuilder::new()
                 .icon(tray_icon)
