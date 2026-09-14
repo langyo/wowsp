@@ -23,6 +23,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::iter::once;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -732,6 +733,22 @@ fn run_headless(
     }
     let install_dir = ctx.install_dir.clone();
     let portable = ctx.portable;
+
+    // Update semantics: a wowsp.exe already sitting in the install dir
+    // means this silent run is an in-place update. The running
+    // application locks its own executable, so it must be terminated
+    // before the payload lands — and the freshly installed build is
+    // relaunched at the end so an update restarts the app by itself.
+    let updating = install_dir.join("wowsp.exe").is_file();
+    if updating {
+        println!("shun: existing install detected — stopping the running application");
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "wowsp.exe"])
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(800));
+    }
+
     let flow = InstallFlow {
         payload,
         registration: &WindowsRegistration,
@@ -756,6 +773,14 @@ fn run_headless(
         mode != "local",
     ) {
         eprintln!("shun: shortcuts: {e}");
+    }
+    if updating {
+        // Bring the updated application back: detached, so this installer
+        // process can exit cleanly right after.
+        println!("shun: relaunching the updated application");
+        if let Err(e) = std::process::Command::new(install_dir.join("wowsp.exe")).spawn() {
+            eprintln!("shun: relaunch failed: {e}");
+        }
     }
     Ok(())
 }

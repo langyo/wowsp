@@ -24,6 +24,7 @@ pub mod res_mods;
 pub mod screenshot;
 pub mod ship_stats;
 pub mod trends;
+pub mod update;
 pub mod wg_api;
 
 use crate::os_prefs::OsPreferences;

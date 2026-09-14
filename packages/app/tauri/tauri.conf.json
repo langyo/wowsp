@@ -48,19 +48,5 @@
     "security": {
       "csp": "default-src 'self' http://asset.localhost https://asset.localhost; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* http://asset.localhost https://asset.localhost https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://api.ipapi.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://asset.localhost https://asset.localhost http://media.localhost media:; font-src 'self'"
     }
-  },
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/langyo/wowsp/releases/latest/download/latest.json",
-        "https://ghp.ci/https://github.com/langyo/wowsp/releases/latest/download/latest.json",
-        "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/latest/download/latest.json",
-        "https://ghfast.top/https://github.com/langyo/wowsp/releases/latest/download/latest.json",
-        "https://ghproxy.net/https://github.com/langyo/wowsp/releases/latest/download/latest.json"
-      ],
-      "dialog": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1RUU1Q0M1NzY4NEE3RkQKUldUOXA0UjJ4Vnp1MVpWanBZbXZJTG4xZ2x1KzNWcUJtU20vZXJ4YkR1MWlYbmNCa3VjRHU0NUIK"
-    }
   }
 }

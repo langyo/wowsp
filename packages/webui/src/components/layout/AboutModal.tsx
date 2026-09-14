@@ -55,7 +55,7 @@ export default defineComponent({
               <span class="about-modal__portable">Portable</span>
             ) : updater.available ? (
               <HButton variant="secondary" size="sm" onClick={() => void updater.downloadAndInstall()}>
-                <Download size={12} /> {t("about.updateAvailable")}
+                <Download size={12} /> {t("about.updateAvailable", { version: updater.version ?? "" })}
               </HButton>
             ) : updater.checked ? (
               <span class="about-modal__up-to-date">

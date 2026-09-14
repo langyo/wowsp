@@ -51,3 +51,25 @@
   color: rgb(var(--color-muted));
   line-height: 1.5;
 }
+
+/* ── Auto-update banner ────────────────────────────────────────────────
+   Slim fixed bar right under the title bar (32 px), spanning the window
+   and floating above every page but below modals/toasts (--z-floating).
+   Pure status: pointer-events stay off so the chrome beneath remains
+   clickable — the flow is fully automatic, no banner actions exist.
+   Failures never render here (they surface in AboutModal). */
+.update-banner {
+  position: fixed;
+  top: 32px;
+  left: 0;
+  right: 0;
+  z-index: var(--z-floating);
+  pointer-events: none;
+  padding: 0.375rem 1rem;
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  background: rgb(var(--color-primary) / 12%);
+  color: rgb(var(--color-primary));
+  backdrop-filter: blur(var(--blur-sm));
+}

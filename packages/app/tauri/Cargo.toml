@@ -68,13 +68,21 @@ base64.workspace = true
 
 # Tauri desktop shell
 tauri.workspace = true
-tauri-plugin-updater.workspace = true
+
+# Update watch: resolves the configured mirror sources, fetches the `latest`
+# version marker and (via the `online` feature) probes mirrors — the app-side
+# half of the shun delivery pipeline (the installer shell is the other half).
+shun = { version = "0.2.11", default-features = false, features = ["online"] }
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
 
 [build-dependencies]
 tauri-build.workspace = true
+serde_json.workspace = true
+# Parses `[package.metadata.shun.update]` out of this manifest at build time
+# (same pattern as the installer shell's build.rs).
+shun = { version = "0.2.11", default-features = false, features = ["online"] }
 
 [features]
 # This feature is required by `cargo tauri build` and is injected by default.
@@ -86,3 +94,18 @@ custom-protocol = ["tauri/custom-protocol"]
 # `cargo tauri build` does not pass this feature, so the control server is
 # never compiled into shipped binaries.
 test-harness = []
+
+# Update-watch metadata: the mirror sources the app resolves at startup and
+# the files fetched under the first reachable one (`latest` version marker,
+# then the lite installer artifact). Mirrors the old tauri-plugin-updater
+# endpoints for continuity; `build.rs` embeds this table into the binary and
+# `src/commands/update.rs` consumes it.
+[package.metadata.shun.update]
+sources = [
+  "https://github.com/langyo/wowsp/releases/latest/download",
+  "https://ghp.ci/https://github.com/langyo/wowsp/releases/latest/download",
+  "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/latest/download",
+  "https://ghfast.top/https://github.com/langyo/wowsp/releases/latest/download",
+  "https://ghproxy.net/https://github.com/langyo/wowsp/releases/latest/download",
+]
+files = ["latest"]

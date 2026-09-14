@@ -70,7 +70,6 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
         // Remote ship portraits ride the proxy-aware, disk-cached `media`
         // scheme instead of the webview hitting the WG CDN directly (see
         // commands::media + webui utils/media.ts).
@@ -264,6 +263,8 @@ fn main() {
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
             commands::ranked::get_ranked_stats,
+            commands::update::update_check,
+            commands::update::update_download,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())
