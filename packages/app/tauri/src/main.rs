@@ -236,6 +236,7 @@ fn main() {
             commands::overlay::destroy_overlay_window,
             commands::overlay::set_overlay_visible,
             commands::network::get_network_config,
+            commands::open_external::open_external,
             commands::network::set_network_config,
             commands::wg_api::lookup_player_stats,
             commands::wg_api::lookup_players_stats_batch,

@@ -16,6 +16,7 @@ pub mod mod_hub;
 pub mod mod_install;
 pub mod model_pack;
 pub mod network;
+pub mod open_external;
 pub mod overlay;
 pub mod packets;
 pub mod ranked;

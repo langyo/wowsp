@@ -54,8 +54,15 @@
   }
 
   &__up-to-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-success) / 12%);
     color: rgb(var(--color-success));
     font-size: var(--text-2xs);
+    font-weight: 600;
   }
 
   &__portable {
@@ -103,6 +110,13 @@
     border-radius: var(--radius-xs);
     background: rgb(var(--color-primary) / 10%);
     color: rgb(var(--color-primary));
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+
+    &:hover {
+      background: rgb(var(--color-primary) / 22%);
+    }
   }
 
   &__links {
@@ -110,10 +124,13 @@
     gap: 1rem;
     margin-top: 0.75rem;
 
-    a {
+    .about-modal__link {
+      border: none;
+      background: transparent;
+      padding: 0;
       font-size: var(--text-xs);
       color: rgb(var(--color-primary));
-      text-decoration: none;
+      cursor: pointer;
 
       &:hover {
         text-decoration: underline;
@@ -133,10 +150,15 @@
     color: rgb(var(--color-muted));
     width: 100%;
 
-    /* The license name links to the official SySL page. */
-    a.about-modal__license {
+    /* The license name links to the official SySL page; the author name
+       to the maintainer's GitHub. Both open through the backend. */
+    .about-modal__license {
+      border: none;
+      background: transparent;
+      padding: 0;
       color: rgb(var(--color-muted));
-      text-decoration: none;
+      cursor: pointer;
+      font-size: inherit;
       transition: color var(--duration-short) ease;
 
       &:hover {

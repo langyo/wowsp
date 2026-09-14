@@ -6,9 +6,9 @@
   "updateAvailable": "Найдена версия {version} — обновляем автоматически…",
   "updateDownloading": "Найдена версия {version} · загрузка {progress}%",
   "updateInstalling": "Устанавливаем новую версию — приложение перезапустится автоматически…",
-  "upToDate": "Актуальная версия ✓",
+  "upToDate": "Актуальная версия",
   "checking": "Проверка...",
   "downloading": "Загрузка...",
   "issues": "Сообщить о проблеме",
-  "license": "Лицензия · © {author}"
+  "license": "Лицензия"
 }

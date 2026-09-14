@@ -82,8 +82,9 @@ export const useUpdaterStore = defineStore("updater", () => {
       version.value = info.version ?? null;
     } catch (e) {
       // Mirror probes fail offline / behind firewalls — never worth a global
-      // nag; AboutModal shows the message on demand.
-      error.value = (e as Error).message;
+      // nag; AboutModal shows the message on demand. Tauri rejects commands
+      // with the raw Err string, not an Error instance.
+      error.value = e instanceof Error ? e.message : String(e);
     } finally {
       checked.value = true;
       checking.value = false;
@@ -102,7 +103,7 @@ export const useUpdaterStore = defineStore("updater", () => {
       await invoke(RPC.update_download);
       installing.value = true;
     } catch (e) {
-      error.value = (e as Error).message;
+      error.value = e instanceof Error ? e.message : String(e);
     } finally {
       downloading.value = false;
     }

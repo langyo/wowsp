@@ -171,8 +171,13 @@ pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
     let mut builder =
         reqwest::Client::builder().user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)");
     if let Some(url) = effective_proxy(&config) {
-        builder = builder
-            .proxy(reqwest::Proxy::all(url.clone()).map_err(|e| format!("proxy {url}: {e}"))?);
+        let mut proxy =
+            reqwest::Proxy::all(url.clone()).map_err(|e| format!("proxy {url}: {e}"))?;
+        // Loopback targets (locally served update artifacts, dev mirrors)
+        // must never ride the proxy — several proxies refuse or mangle
+        // requests back to the very machine they run on.
+        proxy = proxy.no_proxy(reqwest::NoProxy::from_string("localhost,127.0.0.1"));
+        builder = builder.proxy(proxy);
     } else if config.mode == "none" {
         builder = builder.no_proxy();
     }

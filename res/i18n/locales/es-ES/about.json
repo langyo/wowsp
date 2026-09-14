@@ -6,9 +6,9 @@
   "updateAvailable": "Nueva versión {version}: actualizando automáticamente…",
   "updateDownloading": "Nueva versión {version} · descarga automática {progress}%",
   "updateInstalling": "Instalando la nueva versión: la aplicación se reiniciará automáticamente…",
-  "upToDate": "Ya está actualizado ✓",
+  "upToDate": "Ya está actualizado",
   "checking": "Comprobando...",
   "downloading": "Descargando...",
   "issues": "Informar de un problema",
-  "license": "Licencia · © {author}"
+  "license": "Licencia"
 }
