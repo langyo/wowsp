@@ -19,6 +19,13 @@
 //! next to the shell (`MicrosoftEdgeWebView2RuntimeInstallerX64.exe`). If
 //! the runtime still cannot be found we fall back to a native message box
 //! (no WebView needed) and point the user at the releases page.
+//!
+//! Uninstall entry points: `/uninstall` (the ARP `UninstallString`) opens
+//! a dedicated uninstall page in the same Tauri window — confirm →
+//! indeterminate progress → done. Without a WebView2 runtime the same
+//! flow runs in a minimal egui window instead (`uninstall_egui`) — the
+//! zero-cost floor for machines with nothing at all. `--silent`/`/S`
+//! combined with `/uninstall` keeps the fully headless uninstall.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -36,6 +43,8 @@ use shun::targets::install::{
 use tauri::Emitter;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+
+mod uninstall_egui;
 
 /// WebView2 Evergreen runtime product GUID.
 const WEBVIEW2_APP_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
@@ -64,11 +73,13 @@ const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"
 const LICENSE_ZH_HANS: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hans.txt"));
 const LICENSE_ZH_HANT: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hant.txt"));
 
-/// State shared by the commands: the resolved config and the payload
-/// (cloned per install run).
+/// State shared by the commands: the resolved config, the payload
+/// (cloned per install run), and whether this run drives the uninstall
+/// page instead of the install wizard.
 struct AppState {
     config: ShunConfig,
     payload: ArchivePayload,
+    uninstall_mode: bool,
 }
 
 impl AppState {
@@ -543,6 +554,69 @@ fn get_license(locale: String) -> String {
     }
 }
 
+/// The uninstall context shared by both uninstall UIs (Tauri page and
+/// egui fallback): the copied uninstaller (`uninstall.exe`, the ARP
+/// `UninstallString` target) sits INSIDE the install dir, so the running
+/// executable's directory is the install target. Local-install semantics
+/// only — a portable copy has no ARP entry, so the uninstall UI is
+/// unreachable for it.
+pub(crate) fn uninstall_context(config: &ShunConfig) -> Result<InstallContext, String> {
+    let exe_dir = std::env::current_exe()
+        .map_err(|e| format!("无法定位卸载程序: {e}"))?
+        .parent()
+        .ok_or_else(|| "无法定位卸载程序目录".to_string())?
+        .to_path_buf();
+    let install = config
+        .targets
+        .iter()
+        .find_map(|t| match t {
+            TargetConfig::Install(install) => Some(install.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| "此配置未声明安装目标".to_string())?;
+    let mut ctx = InstallContext::new(
+        config.product.name.clone(),
+        config.product.version.clone(),
+        exe_dir,
+        false,
+    );
+    ctx.publisher = config.product.publisher.clone();
+    ctx.main_exe = install.main_exe.clone();
+    ctx.apply_config(
+        &install,
+        WizardAnswers {
+            desktop_shortcut: false,
+            start_menu_shortcut: true,
+            machine: false,
+        },
+    );
+    Ok(ctx)
+}
+
+/// Whether this run drives the uninstall page (`/uninstall` without
+/// `--silent`): the frontend renders it instead of the install wizard.
+#[tauri::command]
+fn is_uninstall_mode(state: tauri::State<'_, AppState>) -> bool {
+    state.uninstall_mode
+}
+
+/// Runs the shun uninstall for the install dir this uninstaller lives
+/// in. shun's uninstall is silent (no event callback), so the UI shows
+/// an indeterminate progress state while this runs. Deleting the
+/// directory the running uninstaller sits in is handled inside shun
+/// (scheduled self-delete + best-effort directory removal). The work
+/// runs on a blocking thread — the UI must not freeze while the
+/// registry and filesystem work proceeds.
+#[tauri::command]
+async fn perform_uninstall(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let ctx = uninstall_context(&state.config)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        shun::targets::install::uninstall(&ctx, &WindowsRegistration).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("卸载任务异常退出: {e}"))?
+}
+
 /// Runs the install flow for the wizard UI. Both launchers are deferred
 /// to the done step: the manifest's "never" shortcut knobs make the
 /// no-creation guarantee structural (the wizard also answers `false` to
@@ -673,12 +747,13 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
 /// Automated-install arguments (headless mode): `--silent` skips the UI
 /// and runs the flow headlessly with `--mode=local|usb|green`,
 /// `--dir=<path>`, `--desktop`/`--no-desktop`, and an optional
-/// `--uninstall`. The ARP `UninstallString` invokes the copied shell with
-/// `/uninstall` during removal. The flow itself creates no shortcuts
-/// (the manifest pins both launcher policies to "never"); because
-/// headless runs never see the done page, the shell applies the choices
-/// itself after the flow — the start-menu shortcut always, the desktop
-/// one following `--desktop`/`--no-desktop` (default on).
+/// `--uninstall`. `/uninstall` alone opens the uninstall UI instead;
+/// only `--silent`/`/S` plus the uninstall switch lands here (the ARP
+/// `UninstallString` is a bare `/uninstall`). The flow itself creates no
+/// shortcuts (the manifest pins both launcher policies to "never");
+/// because headless runs never see the done page, the shell applies the
+/// choices itself after the flow — the start-menu shortcut always, the
+/// desktop one following `--desktop`/`--no-desktop` (default on).
 fn run_headless(
     args: &[String],
     config: &ShunConfig,
@@ -791,12 +866,12 @@ fn main() {
     let payload = ArchivePayload::from_bytes(EMBEDDED_PAYLOAD).expect("embedded payload decodes");
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // Headless entry points: explicit `--silent` runs, and the ARP
-    // `UninstallString` (`...uninstall.exe" /uninstall`) which must
-    // uninstall without opening the wizard.
+    // Headless entry points: explicit `--silent` runs, and `--silent`
+    // combined with the uninstall switch. A bare `/uninstall` (the ARP
+    // `UninstallString`) opens the uninstall UI below instead.
     let silent = args.iter().any(|a| a == "--silent" || a == "/S");
     let uninstalling = args.iter().any(|a| a == "--uninstall" || a == "/uninstall");
-    if silent || uninstalling {
+    if silent {
         if let Err(err) = run_headless(&args, &config, &payload) {
             eprintln!("shun: {err}");
             std::process::exit(1);
@@ -804,18 +879,38 @@ fn main() {
         return;
     }
 
-    if let Some(dir) = exe_dir() {
-        ensure_webview2(&dir, &payload);
+    // Uninstall UI: prefer the Tauri window when WebView2 is present —
+    // which this check just proved, so the `ensure_webview2` gate (whose
+    // job is installing a missing runtime) is skipped entirely. Without
+    // the runtime, run the egui fallback: the same flow in a native
+    // window with no webview dependency at all.
+    if uninstalling && !webview2_installed() {
+        if let Err(err) = uninstall_egui::run(&config) {
+            eprintln!("shun: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if !uninstalling {
+        if let Some(dir) = exe_dir() {
+            ensure_webview2(&dir, &payload);
+        }
     }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState { config, payload })
+        .manage(AppState {
+            config,
+            payload,
+            uninstall_mode: uninstalling,
+        })
         .invoke_handler(tauri::generate_handler![
             default_dir,
             get_identity,
             get_shell_prefs,
             get_license,
+            is_uninstall_mode,
+            perform_uninstall,
             set_shortcuts,
             start_install
         ])

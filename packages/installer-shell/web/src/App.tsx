@@ -24,6 +24,10 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  * returns to earlier steps once the install started. The license text is
  * the repository's LICENSE document, inlined at build time through Vite's
  * ?raw import.
+ *
+ * When the shell runs as the uninstaller (`/uninstall`, probed via
+ * `is_uninstall_mode`), the wizard layout is replaced by a standalone
+ * centered uninstall page: confirm → indeterminate progress → done/fail.
  */
 
 type Mode = "local" | "usb";
@@ -101,6 +105,14 @@ export default defineComponent({
     const failMessage = ref("");
     const note = ref<{ text: string; kind: "ok" | "err" } | null>(null);
 
+    // Uninstall mode (`/uninstall` without --silent): replaces the whole
+    // wizard layout with a standalone confirm → progress → done page.
+    // Null while the probe is in flight — nothing renders until it lands,
+    // so the uninstaller never flashes the wizard it will not run.
+    const uninstallMode = ref<boolean | null>(null);
+    const uninstallPhase = ref<"idle" | "running" | "done" | "failed">("idle");
+    const uninstallError = ref("");
+
     // Install log pane: structured events composed into localized lines
     // with HH:MM:SS stamps; ordering follows the manifest (newest-first
     // default) with a per-run toggle.
@@ -159,6 +171,11 @@ export default defineComponent({
     const identity = ref<{ version: string; flavor: string } | null>(null);
 
     onMounted(() => {
+      invoke<boolean>("is_uninstall_mode")
+        .then((flag) => {
+          uninstallMode.value = flag;
+        })
+        .catch(() => {});
       refreshDefaults().catch((err) => { hint.value = String(err); });
       invoke<{ version: string; flavor: string }>("get_identity")
         .then((id) => { identity.value = id; })
@@ -287,11 +304,104 @@ export default defineComponent({
       startMenuShortcut.value = v;
     }
 
+    // The uninstall page's only action: run the shun uninstall (the
+    // backend deletes the install dir this uninstaller sits in), then
+    // flip to the done / failed view. shun emits no progress events, so
+    // the running view is an indeterminate bar.
+    async function runUninstall() {
+      if (uninstallPhase.value !== "idle") return;
+      uninstallPhase.value = "running";
+      try {
+        await invoke("perform_uninstall");
+        uninstallPhase.value = "done";
+      } catch (err) {
+        uninstallError.value = String(err);
+        uninstallPhase.value = "failed";
+      }
+    }
+
+    function closeWindow() {
+      tauriWindow()?.close();
+    }
+
     function showNote(text: string, kind: "ok" | "err" = "ok") {
       note.value = { text, kind };
     }
 
     return () => {
+      // Uninstall page: a standalone centered pane instead of the wizard
+      // layout — no step rail, no install panes, no footer nav. While the
+      // mode probe is still in flight, render nothing.
+      if (uninstallMode.value === null) {
+        return (
+          <>
+            <AppTitleBar icon="/logo.webp" title="WoWSP 安装器" showMaximize={false} />
+            <main class="installer" />
+          </>
+        );
+      }
+      if (uninstallMode.value) {
+        const uninstallPane =
+          uninstallPhase.value === "idle" ? (
+            <section class="wizard-pane wizard-pane--center wizard-uninstall">
+              <h1>卸载 WoWSP</h1>
+              <p class="wizard-sub">这将移除 WoWSP 及其注册的系统项。模型资源与用户数据将保留。</p>
+              <div class="wizard-uninstall__actions">
+                <HButton variant="ghost" onClick={closeWindow}>
+                  取消
+                </HButton>
+                <HButton variant="danger" onClick={runUninstall}>
+                  卸载
+                </HButton>
+              </div>
+            </section>
+          ) : uninstallPhase.value === "running" ? (
+            <section class="wizard-pane wizard-pane--center wizard-uninstall">
+              <img src="/logo.webp" alt="" class="wizard-logo" />
+              <HProgressBar status="loading" size="md" />
+              <p class="wizard-step">正在卸载…</p>
+            </section>
+          ) : uninstallPhase.value === "done" ? (
+            <section class="wizard-pane wizard-pane--center wizard-uninstall">
+              <CheckCircle2
+                size={56}
+                color="rgb(var(--color-success))"
+                stroke-width={1.5}
+              />
+              <p class="wizard-done__title">已完成卸载。</p>
+              <div class="wizard-uninstall__actions">
+                <HButton variant="primary" onClick={closeWindow}>
+                  关闭
+                </HButton>
+              </div>
+            </section>
+          ) : (
+            <section class="wizard-pane wizard-pane--center wizard-uninstall">
+              <XCircle
+                size={56}
+                color="rgb(var(--color-error))"
+                stroke-width={1.5}
+              />
+              <p class="wizard-done__title wizard-done__title--fail">卸载失败</p>
+              <p class="wizard-uninstall__error">{uninstallError.value}</p>
+              <div class="wizard-uninstall__actions">
+                <HButton variant="primary" onClick={closeWindow}>
+                  关闭
+                </HButton>
+              </div>
+            </section>
+          );
+
+        return (
+          <>
+            <AppTitleBar icon="/logo.webp" title="WoWSP 卸载器" showMaximize={false} />
+            <main class="installer">
+              <div class="wizard-layout__pane">{uninstallPane}</div>
+            </main>
+          </>
+        );
+      }
+
       const timelineSteps = STEPS.map((s) => ({ key: s.key, label: s.label }));
 
       const pane =

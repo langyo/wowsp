@@ -377,6 +377,26 @@ body {
   }
 }
 
+/* ── uninstall pane: standalone centered flow (no step rail) ──────── */
+
+.wizard-uninstall {
+  .wizard-uninstall__actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  // The raw backend error on the failed view — error hue, wrappable.
+  .wizard-uninstall__error {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-error));
+    max-width: 80%;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* ── footer ───────────────────────────────────────────────────────── */
 
 .installer__footer {

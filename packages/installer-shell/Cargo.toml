@@ -33,6 +33,13 @@ tauri-plugin-dialog = { version = "^2" }
 # Done-page confirmation creates the .lnk files on demand (set_shortcuts).
 mslnk = "^0.1.8"
 
+# Uninstall UI fallback for machines without WebView2 (uninstall_egui): a
+# tiny native window on the glow renderer — no wgpu, no webview.
+eframe = { version = "0.33", default-features = false, features = [
+    "glow",
+    "default_fonts",
+] }
+
 # Removable-drive detection for the USB-mode default directory;
 # native message box / shell open for the WebView2 fatal-error path.
 windows-sys = { version = "0.59", features = [
