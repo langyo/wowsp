@@ -48,6 +48,8 @@ export const RPC = {
   ensure_model_pack: "ensure_model_pack",
   get_network_config: "get_network_config",
   set_network_config: "set_network_config",
+  update_check: "update_check",
+  update_download: "update_download",
   mod_hub_scan_installed: "mod_hub_scan_installed",
   mod_hub_classify_path: "mod_hub_classify_path",
   mod_hub_install: "mod_hub_install",

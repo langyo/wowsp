@@ -1,12 +1,14 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { HCheckbox, HErrorBoundary, HModal, HToast } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useUpdaterStore } from "@/stores/updater";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
+import { isTauri } from "@/transport";
 import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -28,6 +30,7 @@ export default defineComponent({
     const config = useConfigStore();
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
+    const updater = useUpdaterStore();
 
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
@@ -63,6 +66,14 @@ export default defineComponent({
       void accounts.load();
       gameStatus.start();
 
+      // Shun auto-update: probe portable mode, then a delayed version check.
+      // The check itself is silent — failures live in the store for
+      // AboutModal only; a newer version triggers the auto-install (below)
+      // and the fixed update banner. Browser dev mode has no updater.
+      if (isTauri()) {
+        void updater.init().then(() => updater.scheduleAutoCheck());
+      }
+
       unlistenClose = await listen("close-requested", () => {
         const saved = localStorage.getItem("wowsp-close-action");
         if (saved === "quit" || saved === "minimize") {
@@ -77,9 +88,35 @@ export default defineComponent({
       unlistenClose?.();
     });
 
+    // Fully automatic flow: as soon as the check finds a newer version
+    // (startup auto-check or a manual probe from AboutModal), kick off the
+    // download+install — no further clicks. Re-fires only when `available`
+    // flips, and `startAutoInstall` guards a pass already in flight.
+    watch(
+      () => updater.available,
+      (avail) => {
+        if (avail && !updater.portable && !updater.error) updater.startAutoInstall();
+      },
+    );
+
     return () => (
       <div class="app-shell">
         <WallpaperRenderer />
+        {/* Auto-update banner — slim fixed bar under the title bar. Passive
+            status only (pointer-events stay off); failures never render
+            here, they surface in AboutModal. */}
+        {updater.available && !updater.portable && !updater.error && (
+          <div class="update-banner" role="status">
+            {updater.installing
+              ? t("about.updateInstalling")
+              : updater.downloading
+                ? t("about.updateDownloading", {
+                    version: updater.version ?? "",
+                    progress: updater.progress ?? 0,
+                  })
+                : t("about.updateAvailable", { version: updater.version ?? "" })}
+          </div>
+        )}
         <Sidebar />
         <main class="app-shell__main">
           <HErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
