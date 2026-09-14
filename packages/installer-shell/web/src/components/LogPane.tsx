@@ -4,14 +4,15 @@ import { ChevronDown, ChevronUp } from "lucide-vue-next";
 import "./LogPane.scss";
 
 /**
- * Right-hand install log pane, folded into a collapsible drawer. The bar
- * stays visible at all times (title + line count + a truncated preview of
- * the newest entry) and clicking it toggles the 240px body below. While
- * collapsed the body content is not rendered; error lines force the drawer
- * open. Ordering follows the manifest's `shell.log-order` (newest-first is
- * the Docker-Desktop-style default) with a per-run toggle that only shows
- * while expanded, and the view snaps to the fresh end — top when
- * newest-first, tail when oldest-first — on arrival and after expanding.
+ * Right-hand install log pane — a borderless activity strip. The bar stays
+ * visible at all times (title + line count + a truncated preview of the
+ * newest entry) and clicking it toggles the 240px body below; error lines
+ * force the drawer open. There is intentionally no scrollbar: the body
+ * clips its overflow while the fresh end stays pinned (top when
+ * newest-first, tail when oldest-first) and lines fade with distance from
+ * that end, so the pane reads as "latest activity" rather than a
+ * scrollback. Ordering follows the manifest's `shell.log-order` and has no
+ * runtime toggle.
  */
 export interface LogLine {
   time: string;
@@ -25,15 +26,15 @@ export default defineComponent({
     lines: { type: Array<LogLine>, required: true },
     title: { type: String, default: "安装日志" },
     order: { type: String as () => "newest" | "oldest", default: "newest" },
-    onToggleOrder: { type: Function, default: undefined },
     expanded: { type: Boolean, default: false },
     onToggleExpanded: { type: Function, default: undefined },
   },
   setup(props) {
     const scroller = ref<HTMLElement | null>(null);
 
-    // Snap to the fresh end on arrival: top when newest-first, tail when
-    // oldest-first.
+    // Pin the fresh end on arrival: top when newest-first, tail when
+    // oldest-first. The body never scrolls interactively (overflow is
+    // clipped, no scrollbar) — programmatic pinning is all it needs.
     const snapToFreshEnd = async () => {
       await nextTick();
       const el = scroller.value;
@@ -44,7 +45,7 @@ export default defineComponent({
     watch(() => props.lines.length, snapToFreshEnd);
 
     // Re-snap right after the drawer opens so the fresh end is in view the
-    // moment the body becomes scrollable.
+    // moment the body appears.
     watch(
       () => props.expanded,
       (open) => {
@@ -65,28 +66,15 @@ export default defineComponent({
     };
 
     return () => (
-      <section class={`log-pane${props.expanded ? " is-expanded" : ""}`}>
+      <section class={`log-pane log-pane--${props.order}`}>
         <header class="log-pane__bar" onClick={() => props.onToggleExpanded?.()}>
           <span class="log-pane__title">
             {props.title} · {props.lines.length}
           </span>
           <span class="log-pane__preview">{previewText()}</span>
-          {props.expanded && (
-            <button
-              type="button"
-              class="log-pane__order"
-              title="切换日志排序"
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onToggleOrder?.();
-              }}
-            >
-              {props.order === "newest" ? "倒序 ↓" : "正序 ↑"}
-            </button>
-          )}
           <button
             type="button"
-            class="log-pane__order log-pane__toggle"
+            class="log-pane__toggle"
             title={props.expanded ? "收起安装日志" : "展开安装日志"}
             onClick={(event) => {
               event.stopPropagation();

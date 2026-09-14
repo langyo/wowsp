@@ -383,13 +383,8 @@ body {
   margin-top: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
-
-  .wizard-live {
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-  }
 }
 
 .installer__nav {
