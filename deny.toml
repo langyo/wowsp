@@ -37,6 +37,8 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
+    # Boost Software License 1.0 — clipboard-win (egui's Windows clipboard).
+    "BSL-1.0",
     # Synthetic Source License 1.0 — malkuth ships it via license-file;
     # LicenseRef- form for the unregistered SPDX term (org convention).
     "LicenseRef-sysl-1.0",
