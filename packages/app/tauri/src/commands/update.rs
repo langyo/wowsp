@@ -16,6 +16,7 @@
 //! design; the only visible failure mode is `Err`.
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
 
 use crate::commands::network::build_http_client;
@@ -35,6 +36,32 @@ const APP_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/app-version.tx
 fn artifact_url(base: &str, version: &str) -> String {
     let base = base.trim().trim_end_matches('/');
     format!("{base}/WoWSP_{version}_x64-installer.exe")
+}
+
+/// Set while an update download is in flight: double triggers (auto banner +
+/// manual button) collapse into the first pass instead of racing the same
+/// temp artifact.
+static UPDATE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// TEMPORARY diagnostics: append a line to the app cache dir so the
+/// packaged flow can be traced without a console. Remove after the
+/// update simulation is validated.
+fn debug_log(msg: &str) {
+    use std::io::Write;
+    let Ok(dir) = crate::paths::ensure_cache_dir() else {
+        return;
+    };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("update-debug.log"))
+    {
+        let _ = writeln!(f, "[{stamp}] {msg}");
+    }
 }
 
 /// An installer is hundreds of MB; anything smaller is a mirror error page.
@@ -117,8 +144,15 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 /// only); the startup auto-check must never nag the user.
 #[tauri::command]
 pub async fn update_check() -> Result<UpdateInfo, String> {
-    let (version, _artifact_url) = resolve_latest().await?;
+    debug_log("update_check: start");
+    let (version, _artifact_url) = resolve_latest().await.map_err(|e| {
+        debug_log(&format!("update_check: resolve failed: {e}"));
+        e
+    })?;
     let available = is_newer(&version, APP_VERSION);
+    debug_log(&format!(
+        "update_check: done version={version} available={available}"
+    ));
     Ok(UpdateInfo {
         current: APP_VERSION.to_string(),
         available,
@@ -134,24 +168,46 @@ pub async fn update_check() -> Result<UpdateInfo, String> {
 /// app exit as success by design.
 #[tauri::command]
 pub async fn update_download(window: tauri::WebviewWindow) -> Result<(), String> {
+    // Collapse double triggers (auto banner + manual button) into one pass.
+    if UPDATE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        debug_log("update_download: already in flight — ignoring");
+        return Ok(());
+    }
+    let result = update_download_inner(&window).await;
+    UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
+    result
+}
+
+async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), String> {
     use tokio::io::AsyncWriteExt;
 
-    let (version, artifact_url) = resolve_latest().await?;
+    debug_log("update_download: start");
+    let (version, artifact_url) = resolve_latest().await.map_err(|e| {
+        debug_log(&format!("update_download: resolve failed: {e}"));
+        e
+    })?;
+    debug_log(&format!(
+        "update_download: resolved {version} -> {artifact_url}"
+    ));
     let client = build_http_client()?;
-    let mut response = client
-        .get(&artifact_url)
-        .send()
-        .await
-        .map_err(|e| format!("fetch {artifact_url}: {e}"))?;
+    let mut response = client.get(&artifact_url).send().await.map_err(|e| {
+        debug_log(&format!("update_download: fetch failed: {e}"));
+        format!("fetch {artifact_url}: {e}")
+    })?;
     if response.status() != reqwest::StatusCode::OK {
-        return Err(format!(
+        let msg = format!(
             "fetch {artifact_url}: unexpected status {}",
             response.status()
-        ));
+        );
+        debug_log(&format!("update_download: {msg}"));
+        return Err(msg);
     }
     let total = response.content_length().unwrap_or(0);
+    debug_log(&format!("update_download: streaming {total} bytes"));
 
-    let installer_path = std::env::temp_dir().join(format!("WoWSP-update-{version}.exe"));
+    // PID-suffixed temp name: two app instances must not race one file.
+    let installer_path =
+        std::env::temp_dir().join(format!("WoWSP-update-{version}-{}.exe", std::process::id()));
     let mut file = tokio::fs::File::create(&installer_path)
         .await
         .map_err(|e| format!("create {}: {e}", installer_path.display()))?;
@@ -184,6 +240,9 @@ pub async fn update_download(window: tauri::WebviewWindow) -> Result<(), String>
     file.flush()
         .await
         .map_err(|e| format!("write {}: {e}", installer_path.display()))?;
+    // Release the handle BEFORE spawning — an open handle makes the child
+    // process creation fail with os error 32 on Windows.
+    drop(file);
     let _ = window.emit(
         "update-progress",
         serde_json::json!({ "phase": "download", "percent": 100.0 }),
@@ -202,10 +261,17 @@ pub async fn update_download(window: tauri::WebviewWindow) -> Result<(), String>
         .parent()
         .ok_or_else(|| "current exe has no parent directory".to_string())?
         .to_path_buf();
+    debug_log(&format!(
+        "update_download: spawning installer for {version} with --dir={}",
+        install_dir.display()
+    ));
     std::process::Command::new(&installer_path)
         .args(["--silent", &format!("--dir={}", install_dir.display())])
         .spawn()
-        .map_err(|e| format!("spawn installer {}: {e}", installer_path.display()))?;
+        .map_err(|e| {
+            debug_log(&format!("update_download: spawn failed: {e}"));
+            format!("spawn installer {}: {e}", installer_path.display())
+        })?;
 
     Ok(())
 }

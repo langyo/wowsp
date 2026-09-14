@@ -6,13 +6,25 @@ import { HButton, HModal } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
+import { openExternal } from "@/utils/openExternal";
 import "./AboutModal.scss";
 
 /**
  * About modal: app name + version (dynamic via Tauri app API), tech stack,
  * links, license. Includes a "check for updates" action when the updater
- * plugin is available.
+ * is available. Every link opens through the Rust backend so the system
+ * default browser is used (the webview itself never navigates remotely).
  */
+
+const TECH_LINKS = [
+  { label: "Rust", url: "https://www.rust-lang.org" },
+  { label: "Vue 3", url: "https://vuejs.org" },
+  { label: "Tauri 2", url: "https://tauri.app" },
+  { label: "Three.js", url: "https://threejs.org" },
+  { label: "Pinia", url: "https://pinia.vuejs.org" },
+  { label: "UnoCSS", url: "https://unocss.dev" },
+];
+
 export default defineComponent({
   name: "AboutModal",
   props: {
@@ -71,32 +83,53 @@ export default defineComponent({
           <p class="about-modal__desc">{t("about.description")}</p>
 
           <div class="about-modal__tech">
-            {["Rust", "Vue 3", "Tauri 2", "Three.js", "Pinia", "UnoCSS"].map((tech) => (
-              <span class="about-modal__tech-tag">{tech}</span>
+            {TECH_LINKS.map((tech) => (
+              <button
+                key={tech.label}
+                type="button"
+                class="about-modal__tech-tag"
+                title={tech.url}
+                onClick={() => void openExternal(tech.url)}
+              >
+                {tech.label}
+              </button>
             ))}
           </div>
 
           <div class="about-modal__links">
-            <a href="https://github.com/langyo/wowsp" target="_blank" rel="noopener">
+            <button
+              type="button"
+              class="about-modal__link"
+              onClick={() => void openExternal("https://github.com/langyo/wowsp")}
+            >
               GitHub
-            </a>
-            <a href="https://github.com/langyo/wowsp/issues" target="_blank" rel="noopener">
+            </button>
+            <button
+              type="button"
+              class="about-modal__link"
+              onClick={() => void openExternal("https://github.com/langyo/wowsp/issues")}
+            >
               {t("about.issues")}
-            </a>
+            </button>
           </div>
 
           <footer class="about-modal__footer">
-            {/* License name links to the official SySL repository (the
-                authoritative text per the LICENSE file). */}
-            <a
+            <button
+              type="button"
               class="about-modal__license"
-              href="https://github.com/celestia-island/sysl"
-              target="_blank"
-              rel="noopener"
+              title="Synthetic Source License 1.0"
+              onClick={() => void openExternal("https://github.com/celestia-island/sysl")}
             >
-              SySL-1.0
-            </a>
-            <span>{t("about.license", { author: "langyo" })}</span>
+              SySL-1.0 {t("about.license")}
+            </button>
+            <span>·</span>
+            <button
+              type="button"
+              class="about-modal__license"
+              onClick={() => void openExternal("https://github.com/langyo")}
+            >
+              © langyo
+            </button>
           </footer>
         </div>
       </HModal>

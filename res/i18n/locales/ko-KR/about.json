@@ -6,9 +6,9 @@
   "updateAvailable": "새 버전 {version}을(를) 자동 업데이트하는 중…",
   "updateDownloading": "새 버전 {version} · 자동 다운로드 중 {progress}%",
   "updateInstalling": "새 버전을 설치하는 중입니다. 완료 후 자동으로 다시 시작됩니다…",
-  "upToDate": "최신 버전입니다 ✓",
+  "upToDate": "최신 버전입니다",
   "checking": "확인 중...",
   "downloading": "다운로드 중...",
   "issues": "문제 보고",
-  "license": "라이선스 · © {author}"
+  "license": "라이선스"
 }

@@ -6,9 +6,9 @@
   "updateAvailable": "发现新版本 {version}，正在自动更新…",
   "updateDownloading": "发现新版本 {version} · 正在自动下载 {progress}%",
   "updateInstalling": "正在安装新版本，完成后将自动重启…",
-  "upToDate": "已是最新 ✓",
+  "upToDate": "已是最新",
   "checking": "检查中...",
   "downloading": "下载中...",
   "issues": "报告问题",
-  "license": "许可证 · © {author}"
+  "license": "许可证"
 }
