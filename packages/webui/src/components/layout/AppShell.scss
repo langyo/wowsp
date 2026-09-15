@@ -52,21 +52,24 @@
   line-height: 1.5;
 }
 
-/* ── Auto-update banner ────────────────────────────────────────────────
+/* ── Update banner ─────────────────────────────────────────────────────
    Slim fixed bar right under the title bar (32 px), spanning the window
    and floating above every page but below modals/toasts (--z-floating).
-   Pure status: pointer-events stay off so the chrome beneath remains
-   clickable — the flow is fully automatic, no banner actions exist.
-   Failures never render here (they surface in AboutModal). */
+   An actionable prompt: text + 立即更新 / 稍后 buttons (flex row, the
+   buttons hide while downloading/installing — the bar then degrades to a
+   plain status line). Failures never render here (they surface in
+   AboutModal). */
 .update-banner {
   position: fixed;
   top: 32px;
   left: 0;
   right: 0;
   z-index: var(--z-floating);
-  pointer-events: none;
-  padding: 0.375rem 1rem;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.25rem 1rem;
   font-size: var(--text-sm);
   line-height: 1.4;
   background: rgb(var(--color-primary) / 12%);

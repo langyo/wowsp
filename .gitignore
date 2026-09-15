@@ -90,3 +90,6 @@ installer-shell/vendor/
 # from the WG CDN like the model pack; regenerated at packaging time.
 packages/webui/src/res/images/ships/[0-9]*.png
 packages/webui/src/res/images/ships/_index.json
+
+# Local release staging (installers are uploaded to GitHub Releases)
+dist-release/

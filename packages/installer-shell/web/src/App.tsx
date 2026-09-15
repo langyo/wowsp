@@ -335,7 +335,12 @@ export default defineComponent({
       if (uninstallMode.value === null) {
         return (
           <>
-            <AppTitleBar icon="/logo.webp" title="WoWSP 安装器" showMaximize={false} />
+            <AppTitleBar
+              icon="/logo.webp"
+              title="WoWSP 安装器"
+              subtitle={identity.value ? `v${identity.value.version}` : ""}
+              showMaximize={false}
+            />
             <main class="installer" />
           </>
         );
@@ -547,7 +552,12 @@ export default defineComponent({
 
       return (
         <>
-          <AppTitleBar icon="/logo.webp" title="WoWSP 安装器" showMaximize={false} />
+          <AppTitleBar
+            icon="/logo.webp"
+            title="WoWSP 安装器"
+            subtitle={identity.value ? `v${identity.value.version}` : ""}
+            showMaximize={false}
+          />
           <main class="installer">
             <div class="wizard-layout wizard-layout--left">
               <HTimeline

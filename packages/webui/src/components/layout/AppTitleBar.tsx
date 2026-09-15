@@ -21,6 +21,7 @@ export default defineComponent({
   props: {
     icon: { type: String, default: "" },
     title: { type: String, default: "WoWSP" },
+    subtitle: { type: String, default: "" },
     showMaximize: { type: Boolean, default: true },
   },
   setup(props) {
@@ -76,6 +77,7 @@ export default defineComponent({
         <HTitleBar
           icon={props.icon}
           title={props.title}
+          subtitle={props.subtitle}
           maximized={maximized.value}
           showMaximize={props.showMaximize}
           onMinimize={() => win?.minimize().catch(() => {})}

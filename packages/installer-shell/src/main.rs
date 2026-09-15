@@ -746,14 +746,23 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
 
 /// Automated-install arguments (headless mode): `--silent` skips the UI
 /// and runs the flow headlessly with `--mode=local|usb|green`,
-/// `--dir=<path>`, `--desktop`/`--no-desktop`, and an optional
+/// `--dir=<path>`, `--desktop`/`--no-desktop`, optional
+/// `--shortcut-menu=<0|1>` / `--shortcut-desktop=<0|1>`, and an optional
 /// `--uninstall`. `/uninstall` alone opens the uninstall UI instead;
 /// only `--silent`/`/S` plus the uninstall switch lands here (the ARP
 /// `UninstallString` is a bare `/uninstall`). The flow itself creates no
 /// shortcuts (the manifest pins both launcher policies to "never");
 /// because headless runs never see the done page, the shell applies the
-/// choices itself after the flow — the start-menu shortcut always, the
-/// desktop one following `--desktop`/`--no-desktop` (default on).
+/// choices itself after the flow. A fresh install applies the explicit
+/// `--shortcut-*` flags, falling back to the legacy defaults (start menu
+/// always, desktop following `--desktop`/`--no-desktop`, default on). An
+/// update NEVER creates new shortcuts: existing `.lnk`s point at a
+/// stable path and stay valid across updates, so explicit flags are
+/// honored (a flip removes the `.lnk`) while absent flags only re-apply
+/// launchers that already exist (a no-op refresh through
+/// `apply_shortcut`). The updated application is NOT relaunched — the
+/// prompted update flow announces the restart via the app closing, and
+/// the user starts the new build from the Start menu.
 fn run_headless(
     args: &[String],
     config: &ShunConfig,
@@ -763,6 +772,8 @@ fn run_headless(
     let mut dir: Option<PathBuf> = None;
     let mut uninstall_mode = false;
     let mut desktop: Option<bool> = None;
+    let mut shortcut_menu: Option<bool> = None;
+    let mut shortcut_desktop: Option<bool> = None;
     for arg in args {
         if let Some(value) = arg.strip_prefix("--mode=") {
             mode = value.to_string();
@@ -774,6 +785,12 @@ fn run_headless(
             desktop = Some(true);
         } else if arg == "--no-desktop" {
             desktop = Some(false);
+        } else if let Some(value) = arg.strip_prefix("--shortcut-menu=") {
+            // "0"/"1" per the caller (the app's update command); anything
+            // unparsable counts as absent.
+            shortcut_menu = value.trim().parse::<u8>().ok().map(|v| v != 0);
+        } else if let Some(value) = arg.strip_prefix("--shortcut-desktop=") {
+            shortcut_desktop = value.trim().parse::<u8>().ok().map(|v| v != 0);
         }
     }
     let product = config.product.name.clone();
@@ -812,8 +829,9 @@ fn run_headless(
     // Update semantics: a wowsp.exe already sitting in the install dir
     // means this silent run is an in-place update. The running
     // application locks its own executable, so it must be terminated
-    // before the payload lands — and the freshly installed build is
-    // relaunched at the end so an update restarts the app by itself.
+    // before the payload lands. Nothing is relaunched here: the prompted
+    // update flow announces the restart via the app closing, and the
+    // user starts the new build from the Start menu.
     let updating = install_dir.join("wowsp.exe").is_file();
     if updating {
         println!("shun: existing install detected — stopping the running application");
@@ -839,23 +857,39 @@ fn run_headless(
     relocate_model_pack(&install_dir, portable);
     // The flow created nothing (manifest "never" knobs) and a silent run
     // never sees the done page, so the shell applies the choices itself.
+    // Fresh install: the explicit `--shortcut-*` flags when present, else
+    // the legacy defaults. Update: never create new shortcuts — explicit
+    // flags are honored (a flip removes the `.lnk`), absent flags only
+    // re-apply launchers that already exist (apply_shortcut short-circuits
+    // on an existing link, so this is a no-op refresh).
     let aumid = shortcut_aumid_for(config);
+    let (menu_want, desktop_want) = if updating {
+        let menu_link = start_menu_link(&install_dir.to_string_lossy(), portable);
+        let desktop_want = match shortcut_desktop {
+            Some(want) => Some(want),
+            None if desktop_link().is_file() => Some(true),
+            None => None,
+        };
+        let menu_want = match shortcut_menu {
+            Some(want) => Some(want),
+            None if menu_link.is_file() => Some(true),
+            None => None,
+        };
+        (menu_want, desktop_want)
+    } else {
+        (
+            Some(shortcut_menu.unwrap_or(true)),
+            Some(shortcut_desktop.or(desktop).unwrap_or(true)),
+        )
+    };
     if let Err(e) = apply_shortcut_choices(
         &aumid,
-        Some(desktop.unwrap_or(true)),
-        Some(true),
+        desktop_want,
+        menu_want,
         &install_dir.to_string_lossy(),
-        mode != "local",
+        portable,
     ) {
         eprintln!("shun: shortcuts: {e}");
-    }
-    if updating {
-        // Bring the updated application back: detached, so this installer
-        // process can exit cleanly right after.
-        println!("shun: relaunching the updated application");
-        if let Err(e) = std::process::Command::new(install_dir.join("wowsp.exe")).spawn() {
-            eprintln!("shun: relaunch failed: {e}");
-        }
     }
     Ok(())
 }
