@@ -1,7 +1,16 @@
 //! OS preference detection (locale + color scheme), seeded into the webview
 //! before first paint. Adapted from shittim-chest's `os_prefs.rs`.
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use serde::Serialize;
+
+/// CREATE_NO_WINDOW — `reg` is a console-subsystem tool: without this
+/// flag every query flashes a console window in front of the app (the
+/// startup probe runs twice).
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OsPreferences {
@@ -61,6 +70,7 @@ fn windows_locale() -> Option<String> {
             "/v",
             "LocaleName",
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -89,6 +99,7 @@ fn windows_color_scheme() -> Option<String> {
             "/v",
             "AppsUseLightTheme",
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     let stdout = String::from_utf8_lossy(&out.stdout);

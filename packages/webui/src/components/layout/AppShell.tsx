@@ -97,7 +97,13 @@ export default defineComponent({
             update). The buttons hide once the pass starts — no cancel.
             Failures never render here, they surface in AboutModal. */}
         {updater.available && !updater.dismissed && !updater.portable && (
-          <div class="update-banner" role="status">
+          <div
+            class={[
+              "update-banner",
+              updater.installing ? "update-banner--installing" : "",
+            ]}
+            role="status"
+          >
             {updater.installing ? (
               <span>{t("about.updateInstalling")}</span>
             ) : updater.downloading ? (
@@ -122,6 +128,19 @@ export default defineComponent({
                 </HButton>
               </>
             )}
+            {/* The strip doubles as the pass's progress bar: a 2px line
+                filled along its bottom edge while downloading, a sweeping
+                indeterminate band while the installer runs. */}
+            {updater.downloading || updater.installing ? (
+              <span
+                class="update-banner__progress"
+                style={
+                  updater.downloading
+                    ? { width: `${Math.min(Math.max(updater.progress ?? 0, 0), 100)}%` }
+                    : undefined
+                }
+              />
+            ) : null}
           </div>
         )}
         <Sidebar />

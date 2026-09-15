@@ -53,12 +53,13 @@
 }
 
 /* ── Update banner ─────────────────────────────────────────────────────
-   Slim fixed bar right under the title bar (32 px), spanning the window
+   A slim strip right under the title bar (32 px), spanning the window
    and floating above every page but below modals/toasts (--z-floating).
-   An actionable prompt: text + 立即更新 / 稍后 buttons (flex row, the
-   buttons hide while downloading/installing — the bar then degrades to a
-   plain status line). Failures never render here (they surface in
-   AboutModal). */
+   It doubles as the pass's progress bar: a 2 px line filled along its
+   bottom edge while downloading, a sweeping indeterminate band while the
+   installer runs. An actionable prompt (text + 立即更新 / 稍后) in idle
+   state; the buttons hide once the pass starts — no cancel. Failures
+   never render here (they surface in AboutModal). */
 .update-banner {
   position: fixed;
   top: 32px;
@@ -68,11 +69,35 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 0.25rem 1rem;
-  font-size: var(--text-sm);
+  gap: 0.6rem;
+  padding: 0.1rem 1rem;
+  font-size: var(--text-xs);
   line-height: 1.4;
   background: rgb(var(--color-primary) / 12%);
   color: rgb(var(--color-primary));
   backdrop-filter: blur(var(--blur-sm));
+  overflow: hidden;
+}
+
+.update-banner__progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgb(var(--color-primary));
+  transition: width 200ms linear;
+}
+
+.update-banner--installing .update-banner__progress {
+  width: 40%;
+  animation: update-banner-sweep 1.2s ease-in-out infinite;
+}
+
+@keyframes update-banner-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
 }
