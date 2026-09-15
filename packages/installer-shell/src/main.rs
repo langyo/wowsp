@@ -347,18 +347,23 @@ async fn set_shortcuts(
     .map_err(|e| format!("快捷方式任务异常退出: {e}"))?
 }
 
-/// Launches the freshly installed/copied application (done-page option).
+/// Launches the freshly installed/copied application (done-page option)
+/// through shun's launch helper.
 #[tauri::command]
-fn launch_app(dir: String) -> Result<(), String> {
-    let dir = dir.trim().trim_end_matches('\\').to_string();
-    let exe = Path::new(&dir).join("wowsp.exe");
-    if !exe.is_file() {
-        return Err("安装目录中未找到 wowsp.exe".into());
-    }
-    std::process::Command::new(&exe)
-        .spawn()
-        .map_err(|e| format!("启动应用失败: {e}"))?;
-    Ok(())
+fn launch_app(state: tauri::State<'_, AppState>, dir: String) -> Result<(), String> {
+    let dir = dir.trim().trim_end_matches('\\');
+    let install = state.install_target()?;
+    let mut ctx = InstallContext::new(
+        state.config.product.name.clone(),
+        state.config.product.version.clone(),
+        PathBuf::from(dir),
+        false,
+    );
+    ctx.main_exe = install.main_exe.clone();
+    // The done-page checkbox is the answer: reaching this command means
+    // the user asked for a launch.
+    ctx.launch_after_install = true;
+    shun::targets::install::launch(&ctx).map_err(|e| e.to_string())
 }
 
 /// Applies one set of shortcut choices: creates or removes the requested
@@ -615,6 +620,7 @@ pub(crate) fn uninstall_context(config: &ShunConfig) -> Result<InstallContext, S
         WizardAnswers {
             desktop_shortcut: false,
             start_menu_shortcut: true,
+            launch_after_install: false,
             machine: false,
         },
     );
@@ -673,6 +679,9 @@ async fn start_install(
     let answers = WizardAnswers {
         desktop_shortcut: false,
         start_menu_shortcut: false,
+        // The done page owns the launch decision (its checkbox drives the
+        // launch_app command); the flow itself never launches.
+        launch_after_install: false,
         machine: false,
     };
     let ctx = state.install_context(&mode, &dir, answers)?;
@@ -844,6 +853,9 @@ fn run_headless(
     let answers = WizardAnswers {
         desktop_shortcut: desktop.unwrap_or(true),
         start_menu_shortcut: true,
+        // Silent installs never launch the app; the manifest knob can pin
+        // `launch-after-install` for other products.
+        launch_after_install: false,
         machine: false,
     };
     if let Some(install) = config.targets.iter().find_map(|t| match t {
