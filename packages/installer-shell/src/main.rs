@@ -195,9 +195,18 @@ fn webview2_installed() -> bool {
 
 /// Runs `exe` with `args`, waiting for exit. Handles executables whose
 /// manifest requires elevation (os error 740) by relaunching through UAC
-/// (PowerShell Start-Process -RunAs -Wait).
+/// (PowerShell Start-Process -RunAs -Wait). Every child is started with
+/// CREATE_NO_WINDOW — console-subsystem tools (the PowerShell fallback)
+/// must never flash a console window in front of the wizard.
 fn run_waiting(exe: &Path, args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
-    match std::process::Command::new(exe).args(args).status() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    match std::process::Command::new(exe)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+    {
         Ok(status) => Ok(status),
         Err(e) if e.raw_os_error() == Some(740) => {
             let script = format!(
@@ -207,6 +216,7 @@ fn run_waiting(exe: &Path, args: &[&str]) -> std::io::Result<std::process::ExitS
             );
             std::process::Command::new("powershell")
                 .args(["-NoProfile", "-Command", &script])
+                .creation_flags(CREATE_NO_WINDOW)
                 .status()
         },
         Err(e) => Err(e),
@@ -902,41 +912,49 @@ fn run_headless(
     .map_err(|e| e.to_string())?;
     cleanup_bootstrap_payload(&install_dir);
     relocate_model_pack(&install_dir, portable);
-    // The flow created nothing (manifest "never" knobs) and a silent run
-    // never sees the done page, so the shell applies the choices itself.
-    // Fresh install: the explicit `--shortcut-*` flags when present, else
-    // the legacy defaults. Update: never create new shortcuts — explicit
-    // flags are honored (a flip removes the `.lnk`), absent flags only
-    // re-apply launchers that already exist (apply_shortcut short-circuits
-    // on an existing link, so this is a no-op refresh).
-    let aumid = shortcut_aumid_for(config);
-    let (menu_want, desktop_want) = if updating {
-        let menu_link = start_menu_link(&install_dir.to_string_lossy(), portable);
-        let desktop_want = match shortcut_desktop {
-            Some(want) => Some(want),
-            None if desktop_link().is_file() => Some(true),
-            None => None,
-        };
-        let menu_want = match shortcut_menu {
-            Some(want) => Some(want),
-            None if menu_link.is_file() => Some(true),
-            None => None,
-        };
-        (menu_want, desktop_want)
+    // Shortcut policy on the silent path:
+    //
+    // - Update (`wowsp.exe` already sat in the install dir): **nothing to
+    //   do** — every launcher points at the same executable at the same
+    //   path, so an update must not touch them (explicit `--shortcut-*`
+    //   flags are ignored here by design).
+    // - Fresh install: the flow created nothing (manifest "never" knobs)
+    //   and a silent run never sees the done page, so the shell applies
+    //   the choices itself — the explicit flags when present, else the
+    //   legacy defaults.
+    if updating {
+        println!("shun: update complete — shortcuts left untouched");
     } else {
-        (
-            Some(shortcut_menu.unwrap_or(true)),
+        let aumid = shortcut_aumid_for(config);
+        if let Err(e) = apply_shortcut_choices(
+            &aumid,
             Some(shortcut_desktop.or(desktop).unwrap_or(true)),
-        )
-    };
-    if let Err(e) = apply_shortcut_choices(
-        &aumid,
-        desktop_want,
-        menu_want,
-        &install_dir.to_string_lossy(),
-        portable,
-    ) {
-        eprintln!("shun: shortcuts: {e}");
+            Some(shortcut_menu.unwrap_or(true)),
+            &install_dir.to_string_lossy(),
+            portable,
+        ) {
+            eprintln!("shun: shortcuts: {e}");
+        }
+    }
+    // An update must put the app back where the user left it: the shell
+    // killed the running build before extracting, so relaunch the freshly
+    // installed one (detached; this installer process exits right after).
+    if updating {
+        let mut launch_ctx = InstallContext::new(
+            config.product.name.clone(),
+            config.product.version.clone(),
+            install_dir.clone(),
+            portable,
+        );
+        launch_ctx.main_exe = config.targets.iter().find_map(|t| match t {
+            TargetConfig::Install(install) => install.main_exe.clone(),
+            _ => None,
+        });
+        launch_ctx.launch_after_install = true;
+        println!("shun: relaunching the updated application");
+        if let Err(e) = shun::targets::install::launch(&launch_ctx) {
+            eprintln!("shun: relaunch failed: {e}");
+        }
     }
     Ok(())
 }

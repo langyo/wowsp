@@ -140,29 +140,21 @@ pub async fn update_check() -> Result<UpdateInfo, String> {
 /// `update-progress` events (`{ phase: "download", percent: 0-100 }`)
 /// while streaming and one final `{ phase: "install", percent: 100 }`
 /// right before the installer is spawned; returns after that spawn — the
-/// hardened installer then kills this app and installs over its
-/// directory (no relaunch), so the webui treats the unresolved promise /
-/// app exit as success by design.
+/// hardened installer then kills this app, installs over its directory
+/// and relaunches the new build, so the webui treats the unresolved
+/// promise / app exit as success by design.
 #[tauri::command]
-pub async fn update_download(
-    window: tauri::WebviewWindow,
-    menu: Option<bool>,
-    desktop: Option<bool>,
-) -> Result<(), String> {
+pub async fn update_download(window: tauri::WebviewWindow) -> Result<(), String> {
     // Collapse double triggers (banner + About button) into one pass.
     if UPDATE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
-    let result = update_download_inner(&window, menu, desktop).await;
+    let result = update_download_inner(&window).await;
     UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
     result
 }
 
-async fn update_download_inner(
-    window: &tauri::WebviewWindow,
-    menu: Option<bool>,
-    desktop: Option<bool>,
-) -> Result<(), String> {
+async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), String> {
     use tokio::io::AsyncWriteExt;
 
     let (version, artifact_url) = resolve_latest().await?;
@@ -231,18 +223,15 @@ async fn update_download_inner(
     }
 
     // Install over the directory the running exe lives in; the hardened
-    // installer takes it from here (kills this app → installs; no
-    // relaunch — the user restarts from the Start menu). The prompt's
-    // shortcut answers ride along as `--shortcut-menu=` /
-    // `--shortcut-desktop=` (1/0; defaults mirror the installer's own
-    // fresh-install defaults: both on).
+    // installer takes it from here — it kills this app, extracts, leaves
+    // every launcher untouched (they point at the same exe) and relaunches
+    // the new build. No shortcut flags ride along: updates never touch
+    // shortcuts.
     let install_dir = std::env::current_exe()
         .map_err(|e| format!("resolve current exe: {e}"))?
         .parent()
         .ok_or_else(|| "current exe has no parent directory".to_string())?
         .to_path_buf();
-    let menu_i = i32::from(menu.unwrap_or(true));
-    let desktop_i = i32::from(desktop.unwrap_or(true));
     // Tell the webui the install phase started even though the spawned
     // installer may kill this app before the command's promise settles.
     let _ = window.emit(
@@ -250,12 +239,7 @@ async fn update_download_inner(
         serde_json::json!({ "phase": "install", "percent": 100 }),
     );
     std::process::Command::new(&installer_path)
-        .args([
-            "--silent",
-            &format!("--dir={}", install_dir.display()),
-            &format!("--shortcut-menu={menu_i}"),
-            &format!("--shortcut-desktop={desktop_i}"),
-        ])
+        .args(["--silent", &format!("--dir={}", install_dir.display())])
         .spawn()
         .map_err(|e| format!("spawn installer {}: {e}", installer_path.display()))?;
 

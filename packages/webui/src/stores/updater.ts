@@ -20,11 +20,6 @@ interface UpdateProgress {
 
 /** Shortcut answers captured from the update prompt, forwarded to the
  *  silent installer via `update_download`. */
-interface UpdateOptions {
-  menu?: boolean;
-  desktop?: boolean;
-}
-
 /**
  * Updater store, backed by the shun-based update commands in the Rust
  * shell (`commands/update.rs`): `update_check` resolves the configured
@@ -60,8 +55,7 @@ export const useUpdaterStore = defineStore("updater", () => {
   const error = ref<string | null>(null);
   const portable = ref(false);
   // Shortcut answers from the last prompt click; both default on.
-  const updateMenu = ref(true);
-  const updateDesktop = ref(true);
+
   // True once the user pressed 稍后 — the banner hides for the session
   // (AboutModal keeps offering the update). Never reset: a fresh launch
   // starts a fresh store.
@@ -124,8 +118,6 @@ export const useUpdaterStore = defineStore("updater", () => {
       // often never settles — both outcomes are success by design. The
       // prompt's shortcut answers ride along to the silent installer.
       await invoke(RPC.update_download, {
-        menu: updateMenu.value,
-        desktop: updateDesktop.value,
       });
       installing.value = true;
     } catch (e) {
@@ -145,10 +137,8 @@ export const useUpdaterStore = defineStore("updater", () => {
   /** Kick off the download+install from an explicit user action (the
    *  banner's 立即更新). Captures the prompt's shortcut answers for the
    *  silent installer; no-op while a pass is already running. */
-  function startAutoInstall(options?: UpdateOptions) {
+  function startAutoInstall() {
     if (!available.value || downloading.value || installing.value) return;
-    updateMenu.value = options?.menu ?? true;
-    updateDesktop.value = options?.desktop ?? true;
     void downloadAndInstall();
   }
 
