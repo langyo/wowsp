@@ -399,7 +399,7 @@ export default defineComponent({
 
         return (
           <>
-            <AppTitleBar icon="/logo.webp" title="WoWSP 卸载器" showMaximize={false} />
+            <AppTitleBar icon="/logo.webp" title="WoWSP 卸载" showMaximize={false} />
             <main class="installer">
               <div class="wizard-layout__pane">{uninstallPane}</div>
             </main>

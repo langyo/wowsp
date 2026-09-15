@@ -134,7 +134,7 @@ pub fn run(config: &ShunConfig) -> Result<(), String> {
     let uninstall_ctx = crate::uninstall_context(config)?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("卸载 WoWSP")
+            .with_title("WoWSP 卸载")
             .with_inner_size([420.0, 240.0])
             .with_resizable(false),
         ..Default::default()
