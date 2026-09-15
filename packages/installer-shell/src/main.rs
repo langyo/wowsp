@@ -938,6 +938,21 @@ fn main() {
             payload,
             uninstall_mode: uninstalling,
         })
+        .setup(move |app| {
+            use tauri::Manager;
+
+            // The uninstall page is a compact dialog — the wizard-sized
+            // window from tauri.conf would dwarf it.
+            if uninstalling {
+                if let Some(w) = app.get_webview_window("installer") {
+                    use tauri::LogicalSize;
+                    let _ = w.set_size(LogicalSize::new(520.0, 400.0));
+                    let _ = w.center();
+                    let _ = w.set_title("WoWSP 卸载");
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             default_dir,
             get_identity,
