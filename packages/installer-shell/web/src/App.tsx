@@ -18,16 +18,18 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  * Installer shell UI — a step-driven delivery wizard rendered with hikari
  * components: a left step rail (mode → license → install → done), centered
  * panes, the bundled SySL 1.0 license agreement, and done-page shortcut
- * toggles that are applied only when the final confirmation runs (nothing
- * is created during the install itself). An install failure lands on the
- * done step as a failure variant with retry/close actions — nothing
- * returns to earlier steps once the install started. The license text is
- * the repository's LICENSE document, inlined at build time through Vite's
- * ?raw import.
+ * toggles plus an optional immediate launch, all applied only when the
+ * final confirmation runs (nothing is created during the install itself).
+ * An install failure lands on the done step as a failure variant with
+ * retry/close actions — nothing returns to earlier steps once the install
+ * started. The license text is the repository's LICENSE document, inlined
+ * at build time through Vite's ?raw import.
  *
  * When the shell runs as the uninstaller (`/uninstall`, probed via
  * `is_uninstall_mode`), the wizard layout is replaced by a standalone
- * centered uninstall page: confirm → indeterminate progress → done/fail.
+ * centered uninstall page: confirm (卸载, or 修复安装 which re-runs the
+ * local delivery over the existing install dir) → indeterminate progress
+ * → done/fail.
  */
 
 type Mode = "local" | "usb";
@@ -99,6 +101,9 @@ export default defineComponent({
     const agreed = ref(false);
     const desktopShortcut = ref(true);
     const startMenuShortcut = ref(true);
+    // Done-page option: start the installed app (portable copies launch
+    // the portable copy) right when the confirmation closes the wizard.
+    const launchAfterInstall = ref(true);
     const overall = ref<number | null>(null);
     const flowStep = ref("");
     const installFailed = ref(false);
@@ -110,7 +115,11 @@ export default defineComponent({
     // Null while the probe is in flight — nothing renders until it lands,
     // so the uninstaller never flashes the wizard it will not run.
     const uninstallMode = ref<boolean | null>(null);
-    const uninstallPhase = ref<"idle" | "running" | "done" | "failed">("idle");
+    // 卸载 drives running → done/failed; 修复安装 drives the parallel
+    // repairing → repaired/repair_failed triple (same running view).
+    const uninstallPhase = ref<
+      "idle" | "running" | "done" | "failed" | "repairing" | "repaired" | "repair_failed"
+    >("idle");
     const uninstallError = ref("");
 
     // Install log pane: structured events composed into localized lines
@@ -272,22 +281,24 @@ export default defineComponent({
     }
 
     // The done-page confirmation: applies the shortcut choices in one
-    // shot for local installs (closing the window only on success) and
-    // closes directly for the portable copy, which has no shortcuts.
+    // shot for local installs (portable copies have none), optionally
+    // starts the freshly installed app per the 立即启动 checkbox (for
+    // portable it launches the portable copy), then closes the window.
     async function finish() {
       if (finishing.value) return;
-      if (mode.value !== "local") {
-        tauriWindow()?.close();
-        return;
-      }
       finishing.value = true;
       try {
-        await invoke("set_shortcuts", {
-          desktop: desktopShortcut.value,
-          menu: startMenuShortcut.value,
-          dir: dir.value.trim(),
-          mode: mode.value,
-        });
+        if (mode.value === "local") {
+          await invoke("set_shortcuts", {
+            desktop: desktopShortcut.value,
+            menu: startMenuShortcut.value,
+            dir: dir.value.trim(),
+            mode: mode.value,
+          });
+        }
+        if (launchAfterInstall.value) {
+          await invoke("launch_app", { dir: dir.value.trim() });
+        }
         tauriWindow()?.close();
       } catch (err) {
         showNote(String(err), "err");
@@ -317,6 +328,24 @@ export default defineComponent({
       } catch (err) {
         uninstallError.value = String(err);
         uninstallPhase.value = "failed";
+      }
+    }
+
+    // The uninstall page's repair action: re-runs the local delivery flow
+    // over the install dir this uninstaller sits in (repairs damaged or
+    // missing files; user data is preserved). The running view is the
+    // same indeterminate bar as the uninstall itself — shun emits no
+    // progress events the page surfaces here.
+    async function runRepair() {
+      if (uninstallPhase.value !== "idle") return;
+      uninstallPhase.value = "repairing";
+      try {
+        const installDir = await invoke<string>("current_install_dir");
+        await invoke("start_install", { mode: "local", dir: installDir });
+        uninstallPhase.value = "repaired";
+      } catch (err) {
+        uninstallError.value = String(err);
+        uninstallPhase.value = "repair_failed";
       }
     }
 
@@ -355,25 +384,32 @@ export default defineComponent({
                 <HButton variant="ghost" onClick={closeWindow}>
                   取消
                 </HButton>
+                <HButton variant="ghost" onClick={runRepair}>
+                  修复安装
+                </HButton>
                 <HButton variant="danger" onClick={runUninstall}>
                   卸载
                 </HButton>
               </div>
             </section>
-          ) : uninstallPhase.value === "running" ? (
+          ) : uninstallPhase.value === "running" || uninstallPhase.value === "repairing" ? (
             <section class="wizard-pane wizard-pane--center wizard-uninstall">
               <img src="/logo.webp" alt="" class="wizard-logo" />
               <HProgressBar status="loading" size="md" />
-              <p class="wizard-step">正在卸载…</p>
+              <p class="wizard-step">
+                {uninstallPhase.value === "repairing" ? "正在修复…" : "正在卸载…"}
+              </p>
             </section>
-          ) : uninstallPhase.value === "done" ? (
+          ) : uninstallPhase.value === "done" || uninstallPhase.value === "repaired" ? (
             <section class="wizard-pane wizard-pane--center wizard-uninstall">
               <CheckCircle2
                 size={56}
                 color="rgb(var(--color-success))"
                 stroke-width={1.5}
               />
-              <p class="wizard-done__title">已完成卸载。</p>
+              <p class="wizard-done__title">
+                {uninstallPhase.value === "repaired" ? "已完成修复。" : "已完成卸载。"}
+              </p>
               <div class="wizard-uninstall__actions">
                 <HButton variant="primary" onClick={closeWindow}>
                   关闭
@@ -387,7 +423,9 @@ export default defineComponent({
                 color="rgb(var(--color-error))"
                 stroke-width={1.5}
               />
-              <p class="wizard-done__title wizard-done__title--fail">卸载失败</p>
+              <p class="wizard-done__title wizard-done__title--fail">
+                {uninstallPhase.value === "repair_failed" ? "修复失败" : "卸载失败"}
+              </p>
               <p class="wizard-uninstall__error">{uninstallError.value}</p>
               <div class="wizard-uninstall__actions">
                 <HButton variant="primary" onClick={closeWindow}>
@@ -529,24 +567,31 @@ export default defineComponent({
             <p class="wizard-done__title">✔ 安装完成</p>
             <p class="wizard-done__path">{dir.value.trim()}</p>
             <p class="wizard-done__hint">
-              {mode.value === "local"
-                ? "WoWSP 已登记到系统「应用」列表；勾选的快捷方式会在点击「完成安装」时创建。"
-                : "便携副本已就绪：数据全部留在可移动磁盘内。"}
+            {mode.value === "local"
+              ? "WoWSP 已登记到系统「应用」列表；勾选的快捷方式会在点击「完成安装」时创建。"
+              : "便携副本已就绪：数据全部留在可移动磁盘内。"}
             </p>
-            {mode.value === "local" && (
-              <div class="wizard-done__shortcuts">
-                <HCheckbox
-                  modelValue={startMenuShortcut.value}
-                  label="创建开始菜单快捷方式"
-                  onUpdate:modelValue={(v: boolean) => toggleMenu(v)}
-                />
-                <HCheckbox
-                  modelValue={desktopShortcut.value}
-                  label="创建桌面快捷方式"
-                  onUpdate:modelValue={(v: boolean) => toggleDesktop(v)}
-                />
-              </div>
-            )}
+            <div class="wizard-done__shortcuts">
+              {mode.value === "local" && (
+                <>
+                  <HCheckbox
+                    modelValue={startMenuShortcut.value}
+                    label="创建开始菜单快捷方式"
+                    onUpdate:modelValue={(v: boolean) => toggleMenu(v)}
+                  />
+                  <HCheckbox
+                    modelValue={desktopShortcut.value}
+                    label="创建桌面快捷方式"
+                    onUpdate:modelValue={(v: boolean) => toggleDesktop(v)}
+                  />
+                </>
+              )}
+              <HCheckbox
+                modelValue={launchAfterInstall.value}
+                label="安装完成后立即启动 WoWSP"
+                onUpdate:modelValue={(v: boolean) => (launchAfterInstall.value = v)}
+              />
+            </div>
           </section>
         );
 

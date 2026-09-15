@@ -120,19 +120,27 @@ body {
     color: rgb(var(--color-muted));
   }
 
+  // Align the pane's first heading with the rail's first node: the rail
+  // spends its top gap plus half a node before the indicator center.
+  // Rail-only — the standalone uninstall pane has no rail and must
+  // center without the offset.
+  .wizard-layout__pane {
+    padding-top: var(--rail-gap, 16px);
+  }
+
   .hk-timeline[data-orientation="vertical"] .hk-timeline-links {
     display: none;
   }
 }
 
 .wizard-layout__pane {
+  // Fill the parent's content area: this is what lets a `--center` pane
+  // (the uninstall page, whose pane hangs directly off `.installer`)
+  // center its content vertically in the window.
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-
-  // Align the pane's first heading with the rail's first node: the rail
-  // spends its top gap plus half a node before the indicator center.
-  padding-top: var(--rail-gap, 16px);
 }
 
 .wizard-pane {
