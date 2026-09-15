@@ -14,22 +14,32 @@ interface UpdateInfo {
 
 /** Payload of the Rust `update-progress` event. */
 interface UpdateProgress {
-  phase: "download";
+  phase: "download" | "install";
   percent: number;
 }
 
+/** Shortcut answers captured from the update prompt, forwarded to the
+ *  silent installer via `update_download`. */
+interface UpdateOptions {
+  menu?: boolean;
+  desktop?: boolean;
+}
+
 /**
- * Auto-updater store, backed by the shun-based update commands in the Rust
+ * Updater store, backed by the shun-based update commands in the Rust
  * shell (`commands/update.rs`): `update_check` resolves the configured
  * mirror sources and compares the `latest` marker against the running
  * version; `update_download` streams the lite installer artifact with
- * `update-progress` events, then launches it silently — the hardened
- * installer kills this app and relaunches the new build.
+ * `update-progress` events, then launches it silently with the prompt's
+ * shortcut answers — the hardened installer kills this app and installs
+ * the new build over its directory (no auto-relaunch).
  *
- * The flow is fully automatic: the app shell schedules `scheduleAutoCheck()`
- * on mount, and the update banner calls `startAutoInstall()` as soon as a
- * newer version shows up. Failures are only surfaced in AboutModal
- * (`checked` / `error`), never as a global nag.
+ * The flow is prompted: the app shell schedules `scheduleAutoCheck()` on
+ * mount, the update banner offers 立即更新 / 稍后 once a newer version
+ * shows up, and only an explicit 立即更新 click starts the install
+ * (`startAutoInstall()`). `dismissUpdate()` hides the banner for the
+ * session — the update stays available from AboutModal. Failures are only
+ * surfaced in AboutModal (`checked` / `error`), never as a global nag.
  *
  * In browser-only dev mode the commands throw (no Tauri runtime); calls are
  * caught and surfaced via `error` so the UI degrades gracefully.
@@ -49,6 +59,13 @@ export const useUpdaterStore = defineStore("updater", () => {
   const checked = ref(false);
   const error = ref<string | null>(null);
   const portable = ref(false);
+  // Shortcut answers from the last prompt click; both default on.
+  const updateMenu = ref(true);
+  const updateDesktop = ref(true);
+  // True once the user pressed 稍后 — the banner hides for the session
+  // (AboutModal keeps offering the update). Never reset: a fresh launch
+  // starts a fresh store.
+  const dismissed = ref(false);
   let unlistenProgress: UnlistenFn | null = null;
 
   async function init() {
@@ -63,6 +80,11 @@ export const useUpdaterStore = defineStore("updater", () => {
         unlistenProgress = await listen<UpdateProgress>("update-progress", (event) => {
           if (event.payload?.phase === "download") {
             progress.value = Math.round(event.payload.percent);
+          } else if (event.payload?.phase === "install") {
+            // The installer was spawned — reflect it even when the
+            // command's promise never settles (the new build kills this
+            // app right after the spawn).
+            installing.value = true;
           }
         });
       } catch {
@@ -99,8 +121,12 @@ export const useUpdaterStore = defineStore("updater", () => {
     try {
       // Resolves once the installer process has been spawned; on the success
       // path the hardened installer kills this app first, so this promise
-      // often never settles — both outcomes are success by design.
-      await invoke(RPC.update_download);
+      // often never settles — both outcomes are success by design. The
+      // prompt's shortcut answers ride along to the silent installer.
+      await invoke(RPC.update_download, {
+        menu: updateMenu.value,
+        desktop: updateDesktop.value,
+      });
       installing.value = true;
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
@@ -116,11 +142,20 @@ export const useUpdaterStore = defineStore("updater", () => {
     setTimeout(() => void check(), delayMs);
   }
 
-  /** Kick off the automatic download+install once a newer version is
-   *  known; no-op while a pass is already running. */
-  function startAutoInstall() {
+  /** Kick off the download+install from an explicit user action (the
+   *  banner's 立即更新). Captures the prompt's shortcut answers for the
+   *  silent installer; no-op while a pass is already running. */
+  function startAutoInstall(options?: UpdateOptions) {
     if (!available.value || downloading.value || installing.value) return;
+    updateMenu.value = options?.menu ?? true;
+    updateDesktop.value = options?.desktop ?? true;
     void downloadAndInstall();
+  }
+
+  /** The banner's 稍后 answer: hide the prompt for this session; the
+   *  update stays available from AboutModal. */
+  function dismissUpdate() {
+    dismissed.value = true;
   }
 
   return {
@@ -134,10 +169,12 @@ export const useUpdaterStore = defineStore("updater", () => {
     checked,
     error,
     portable,
+    dismissed,
     init,
     check,
     downloadAndInstall,
     scheduleAutoCheck,
     startAutoInstall,
+    dismissUpdate,
   };
 });
