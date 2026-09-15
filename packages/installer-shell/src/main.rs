@@ -8,10 +8,12 @@
 //! no shortcut is created during the flow — the manifest pins both
 //! launcher policies to "never", making that structural regardless of
 //! wizard answers. The done page applies the Start-menu/desktop
-//! shortcuts on confirmation via `set_shortcuts`, and the headless
-//! `--silent` run applies them itself after the flow (it never sees the
-//! done page). USB and green modes drop the app's `.portable` marker
-//! with no registration at all (config `portable-marker`).
+//! shortcuts on confirmation via `set_shortcuts` and — when the 立即启动
+//! box stays checked — starts the freshly installed app (`launch_app`)
+//! before closing; the headless `--silent` run applies the shortcuts
+//! itself after the flow (it never sees the done page). USB and green
+//! modes drop the app's `.portable` marker with no registration at all
+//! (config `portable-marker`).
 //!
 //! The shell is itself a Tauri app, so the WebView2 runtime is a hard
 //! prerequisite for its own UI: before any window is created we check the
@@ -22,10 +24,14 @@
 //!
 //! Uninstall entry points: `/uninstall` (the ARP `UninstallString`) opens
 //! a dedicated uninstall page in the same Tauri window — confirm →
-//! indeterminate progress → done. Without a WebView2 runtime the same
-//! flow runs in a minimal egui window instead (`uninstall_egui`) — the
-//! zero-cost floor for machines with nothing at all. `--silent`/`/S`
-//! combined with `/uninstall` keeps the fully headless uninstall.
+//! indeterminate progress → done, plus a 修复安装 (repair) action that
+//! re-runs the local delivery flow over the install dir the uninstaller
+//! sits in (`current_install_dir` + `start_install`: the payload is
+//! re-extracted and the registration refreshed, user data preserved).
+//! Without a WebView2 runtime the uninstall flow runs in a minimal egui
+//! window instead (`uninstall_egui`) — the zero-cost floor for machines
+//! with nothing at all. `--silent`/`/S` combined with `/uninstall` keeps
+//! the fully headless uninstall.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -341,6 +347,20 @@ async fn set_shortcuts(
     .map_err(|e| format!("快捷方式任务异常退出: {e}"))?
 }
 
+/// Launches the freshly installed/copied application (done-page option).
+#[tauri::command]
+fn launch_app(dir: String) -> Result<(), String> {
+    let dir = dir.trim().trim_end_matches('\\').to_string();
+    let exe = Path::new(&dir).join("wowsp.exe");
+    if !exe.is_file() {
+        return Err("安装目录中未找到 wowsp.exe".into());
+    }
+    std::process::Command::new(&exe)
+        .spawn()
+        .map_err(|e| format!("启动应用失败: {e}"))?;
+    Ok(())
+}
+
 /// Applies one set of shortcut choices: creates or removes the requested
 /// `.lnk`s and shell-notifies the changed surfaces. Both operations run
 /// even when one fails — the combined error is returned, and a shortcut
@@ -554,6 +574,18 @@ fn get_license(locale: String) -> String {
     }
 }
 
+/// The directory holding the running executable — the install dir for
+/// the copied uninstaller, which sits INSIDE the install target (see
+/// `uninstall_context`). Shared by the uninstall flow and the uninstall
+/// page's repair action (`current_install_dir`).
+fn current_exe_dir() -> Result<PathBuf, String> {
+    std::env::current_exe()
+        .map_err(|e| format!("无法定位卸载程序: {e}"))?
+        .parent()
+        .ok_or_else(|| "无法定位卸载程序目录".to_string())
+        .map(Path::to_path_buf)
+}
+
 /// The uninstall context shared by both uninstall UIs (Tauri page and
 /// egui fallback): the copied uninstaller (`uninstall.exe`, the ARP
 /// `UninstallString` target) sits INSIDE the install dir, so the running
@@ -561,11 +593,7 @@ fn get_license(locale: String) -> String {
 /// only — a portable copy has no ARP entry, so the uninstall UI is
 /// unreachable for it.
 pub(crate) fn uninstall_context(config: &ShunConfig) -> Result<InstallContext, String> {
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("无法定位卸载程序: {e}"))?
-        .parent()
-        .ok_or_else(|| "无法定位卸载程序目录".to_string())?
-        .to_path_buf();
+    let exe_dir = current_exe_dir()?;
     let install = config
         .targets
         .iter()
@@ -598,6 +626,13 @@ pub(crate) fn uninstall_context(config: &ShunConfig) -> Result<InstallContext, S
 #[tauri::command]
 fn is_uninstall_mode(state: tauri::State<'_, AppState>) -> bool {
     state.uninstall_mode
+}
+
+/// The install dir this uninstaller lives in — the target the uninstall
+/// page's 修复安装 (repair) action re-installs over via `start_install`.
+#[tauri::command]
+fn current_install_dir() -> Result<String, String> {
+    current_exe_dir().map(|d| d.to_string_lossy().into_owned())
 }
 
 /// Runs the shun uninstall for the install dir this uninstaller lives
@@ -958,7 +993,9 @@ fn main() {
             get_identity,
             get_shell_prefs,
             get_license,
+            current_install_dir,
             is_uninstall_mode,
+            launch_app,
             perform_uninstall,
             set_shortcuts,
             start_install
