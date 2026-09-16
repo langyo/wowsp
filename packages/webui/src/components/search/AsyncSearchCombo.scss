@@ -26,6 +26,8 @@
   svg {
     width: 14px;
     height: 14px;
+    /* Without this the flex algorithm may collapse the svg to zero width. */
+    flex: none;
   }
 
   &:hover {
