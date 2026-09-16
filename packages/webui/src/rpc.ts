@@ -50,6 +50,7 @@ export const RPC = {
   set_network_config: "set_network_config",
   update_check: "update_check",
   update_download: "update_download",
+  update_cancel: "update_cancel",
   mod_hub_scan_installed: "mod_hub_scan_installed",
   mod_hub_classify_path: "mod_hub_classify_path",
   mod_hub_install: "mod_hub_install",
