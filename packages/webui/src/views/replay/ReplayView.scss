@@ -90,7 +90,11 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
-    padding: 1.25rem 1.5rem;
+    /* No right padding at the column level: the live roster is the column's
+       scroller and its scrollbar must hug the window's right edge across
+       the full height (same pattern as LookupView/ShipsView). Breathing
+       room rides on the non-scrolling children instead. */
+    padding: 1.25rem 0 1.25rem 1.5rem;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -567,6 +571,13 @@
     }
   }
 
+  /* Keep the column's right gutter on the non-scrolling top-level states.
+     Scoped to direct children: error placeholders nested inside __content
+     must not stack the gutter twice. */
+  &__main > &__placeholder {
+    padding-right: 1.5rem;
+  }
+
   &__content {
     flex: 1;
     display: flex;
@@ -574,6 +585,9 @@
     gap: 1rem;
     min-height: 0;
     position: relative;
+    /* This state never scrolls, so it carries the column's right gutter
+       here (the live roster scroller owns the window edge instead). */
+    padding-right: 1.5rem;
   }
 
   &__loading-overlay {
