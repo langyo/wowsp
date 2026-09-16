@@ -308,6 +308,8 @@
     "hintSortPop": "Multi-select · click a selection again to flip asc ↑ / desc ↓ · click \"All…\" to reset, or sort by this column",
     "hintTypeChip": "Click to filter (multi-select) · drag left/right to change sort priority",
     "hintSortChip": "Click to filter (multi-select) · click a selection again to flip asc/desc · drag left/right to change sort priority",
+    "hintSinglePop": "Single-select · click a selection again to flip asc ↑ / desc ↓ · click \"All…\" to reset, or sort by this column",
+    "hintSingleChip": "Click to filter (single-select) · click a selection again to flip asc/desc · drag left/right to change sort priority",
     "summary": "{ships} ships · {battles} battles"
   },
   "model3d": {

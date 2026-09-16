@@ -308,6 +308,8 @@
     "hintSortPop": "Sélection multiple · cliquez à nouveau sur une sélection pour inverser croissant ↑ / décroissant ↓ · cliquez sur « Tous… » pour réinitialiser, ou triez par cette colonne",
     "hintTypeChip": "Cliquez pour filtrer (sélection multiple) · glissez à gauche/droite pour changer la priorité de tri",
     "hintSortChip": "Cliquez pour filtrer (sélection multiple) · cliquez à nouveau sur une sélection pour inverser croissant/décroissant · glissez à gauche/droite pour changer la priorité de tri",
+    "hintSinglePop": "Sélection unique · cliquez à nouveau sur une sélection pour inverser croissant ↑ / décroissant ↓ · cliquez sur « Tous… » pour réinitialiser, ou triez par cette colonne",
+    "hintSingleChip": "Cliquez pour filtrer (sélection unique) · cliquez à nouveau sur une sélection pour inverser croissant/décroissant · glissez à gauche/droite pour changer la priorité de tri",
     "summary": "{ships} navires · {battles} batailles"
   },
   "model3d": {

@@ -1,12 +1,14 @@
 /**
- * Tests for the chip-based ShipFilterBar interaction model (multi-select):
+ * Tests for the chip-based ShipFilterBar interaction model (mixed
+ * multi/single select):
  *  - four collapsed chips default to the inert grayed 全部… state; with
  *    nothing engaged the view keeps the historical battles-desc order;
- *  - the popup hosts the category's multi-select option group: picking
- *    options ORs them within the category, re-clicking a picked option
- *    flips the category's SHARED 正序/倒序 flag (every arrow in the
- *    category follows), and 全部… resets the category when a selection
- *    exists;
+ *  - the popup hosts the category's option group: type/tier are
+ *    multi-select (picks OR within the category — the tier test covers the
+ *    shared-direction flip), winrate/battles hold a SINGLE pick (a new
+ *    bracket replaces the old one). Re-clicking the picked option flips
+ *    the category's SHARED 正序/倒序 flag (every arrow in the category
+ *    follows), and 全部… resets the category when a selection exists;
  *  - 全部… itself always shows the direction arrow: without a selection it
  *    engages the sort-in-全部-state mode (first click sorts in the shown
  *    direction, further clicks flip it) — the chip wears the --sort style;
@@ -14,6 +16,8 @@
  *    a type deselects it, and only 全部舰种 can make the category sort;
  *  - the chip drag order (persisted, hence seedable via localStorage) is
  *    the multi-key sort priority: leftmost sorting chip is the primary key;
+ *  - stale multi-select storage of the now-single categories is clamped
+ *    to one pick on load;
  *  - selections survive an unmount/remount cycle.
  *
  * The drag gesture itself is pointer-driven and exercised by hand; the
@@ -106,7 +110,7 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
   });
 
-  it("multi-selects filters, flips the shared direction on re-pick, resets on 全部", async () => {
+  it("single-selects winrate brackets, flips direction on re-pick, resets on 全部", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
@@ -120,22 +124,19 @@ describe("ShipFilterBar chips", () => {
     expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--on");
     expect(order(wrapper)).toEqual([3, 1, 2]);
 
-    // Add the ≥60% bracket — multi-select ORs within the category.
-    await popOpts(wrapper)[4]!.trigger("click");
-    await flushPromises();
-    expect(order(wrapper)).toEqual([5, 3, 1, 2]);
-
-    // Both picked options are active and each carries the SAME down arrow.
-    const active = () => wrapper.findAll(".ship-filter-bar__opt[data-active]");
-    expect(active().length).toBe(2);
-    expect(active().filter((o) => o.find(".lucide-arrow-down").exists()).length).toBe(2);
-
-    // Re-click the 50–60% option → the SHARED flag flips to ascending and
-    // every arrow in the category follows.
+    // Re-click the 50–60% option → the SHARED flag flips to ascending.
     await popOpts(wrapper)[3]!.trigger("click");
     await flushPromises();
-    expect(order(wrapper)).toEqual([2, 1, 3, 5]);
-    expect(active().filter((o) => o.find(".lucide-arrow-up").exists()).length).toBe(2);
+    expect(order(wrapper)).toEqual([2, 1, 3]);
+
+    // Picking ≥60% REPLACES the bracket instead of OR-ing with it.
+    await popOpts(wrapper)[4]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([5]);
+    const active = () => wrapper.findAll(".ship-filter-bar__opt[data-active]");
+    expect(active().length).toBe(1);
+    // The single pick keeps the category's (flipped) ascending arrow.
+    expect(active()[0]!.find(".lucide-arrow-up").exists()).toBe(true);
 
     // 全部胜率 (option 0) resets the chip to the gray state.
     await popOpts(wrapper)[0]!.trigger("click");
@@ -263,6 +264,29 @@ describe("ShipFilterBar chips", () => {
     await popOpts(wrapper)[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([3, 1, 2]);
+  });
+
+  it("clamps stale multi-select storage of the now-single categories to one pick", async () => {
+    // Storage written by the all-multi-select model: two winrate brackets
+    // and two battle thresholds picked at once.
+    localStorage.setItem(
+      PERSIST_KEY,
+      JSON.stringify({
+        order: ["battles", "winrate", "tier", "type"],
+        sel: {
+          winrate: { values: ["gte60", "50-60"], dir: "desc", allSort: false },
+          battles: { values: ["100", "30"], dir: "desc", allSort: false },
+        },
+      }),
+    );
+    const wrapper = mountBar();
+    await flushPromises();
+
+    // Winrate keeps the canonical-first bracket, battles its lowest
+    // threshold — the latter is exactly what the old OR filtered by.
+    expect(chip(wrapper, "winrate").text()).toContain("50–60%");
+    expect(chip(wrapper, "battles").text()).toContain("≥30");
+    expect(order(wrapper)).toEqual([1, 2, 3]);
   });
 
   it("keeps selections across an unmount/remount cycle", async () => {
