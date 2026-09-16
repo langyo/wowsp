@@ -15,6 +15,7 @@ import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import { HTag } from "@celestia-island/hikari";
 import { ArrowDown, ArrowUp } from "@lucide/vue";
 
+import IdentityHead from "@/components/stats/IdentityHead";
 import type { ClanInfo, ClanMember } from "@/api";
 import { t } from "@/i18n";
 import { prTier, winrateColor } from "@/utils/winrate";
@@ -175,15 +176,16 @@ export default defineComponent({
 
     return () => (
       <div class="clan-card">
-        <header class="clan-card__head">
-          <div class="clan-card__name-line">
-            <span class="clan-card__tag">[{props.clan.tag}]</span>
-            <h3 class="clan-card__name">{props.clan.name}</h3>
-          </div>
-          <div class="clan-card__badges">
-            <HTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HTag>
-          </div>
-        </header>
+        {/* identity header — same shared strip as the player card */}
+        <IdentityHead
+          name={props.clan.name}
+          tag={props.clan.tag}
+          v-slots={{
+            badges: () => (
+              <HTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HTag>
+            ),
+          }}
+        />
         {props.clan.description ? (
           <p class="clan-card__desc">{props.clan.description}</p>
         ) : null}
