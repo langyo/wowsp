@@ -29,3 +29,14 @@ export function prTier(pr: number | null | undefined): { label: string; color: s
   if (pr >= 600) return { label: "Below Avg", color: "rgb(230 170 50)" };
   return { label: "Needs Work", color: "rgb(220 80 80)" };
 }
+
+/** Average-damage color tiers — rough absolute buckets for overall account
+ *  avg damage, tuned for tier VIII–X randoms (ship-agnostic, so treat as a
+ *  skill hint rather than a ship-grade verdict). */
+export function damageColor(avg: number | null | undefined): string {
+  if (avg == null) return "rgb(150 160 175)";
+  if (avg >= 85000) return "rgb(168 85 247)";
+  if (avg >= 50000) return "rgb(71 227 165)";
+  if (avg >= 25000) return "rgb(230 170 50)";
+  return "rgb(220 80 80)";
+}

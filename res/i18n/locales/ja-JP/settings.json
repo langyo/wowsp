@@ -31,5 +31,9 @@
   "networkSaved": "保存しました",
   "resourceCdn": "リソース CDN",
   "resourceCdnPlaceholder": "空欄で公式 Wargaming CDN を使用",
-  "resourceCdnHint": "艦船画像などのリソースのミラー基点。URL パスはそのまま維持され、リクエストはアプリのプロキシ設定経由で転送されます。"
+  "resourceCdnHint": "艦船画像などのリソースのミラー基点。URL パスはそのまま維持され、リクエストはアプリのプロキシ設定経由で転送されます。",
+  "overlay": "ゲーム内オーバーレイ",
+  "overlayHint": "ゲームウィンドウが前面にある状態で対局中に Tab キーを押し続けると、チーム表の横に各プレイヤーの勝率と平均ダメージを表示します。ゲームはボーダーレスまたはウィンドウモードで実行してください。",
+  "overlayOn": "オン",
+  "overlayOff": "オフ"
 }

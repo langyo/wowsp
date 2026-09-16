@@ -235,6 +235,8 @@ fn main() {
             commands::overlay::create_overlay_window,
             commands::overlay::destroy_overlay_window,
             commands::overlay::set_overlay_visible,
+            commands::overlay::start_overlay_tab_watch,
+            commands::overlay::stop_overlay_tab_watch,
             commands::network::get_network_config,
             commands::open_external::open_external,
             commands::network::set_network_config,

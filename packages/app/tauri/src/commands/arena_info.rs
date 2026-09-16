@@ -20,6 +20,23 @@ use crate::commands::replay;
 /// Tauri event name emitted whenever a fresh battle's roster appears.
 pub const ARENA_INFO_EVENT: &str = "wowsp://arena-info";
 
+/// Team size (largest side) of the most recently seen battle roster. The
+/// overlay Tab watcher reads it to cross-check the detected row count and to
+/// build the fallback anchor; 0 = no battle seen yet this session.
+static LAST_TEAM_SIZE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Record the roster's largest team size (allies = relation ≤ 1).
+fn note_team_size(vehicles: &[wowsp_tauri_shared::VehicleEntry]) {
+    let allies = vehicles.iter().filter(|v| v.relation <= 1).count();
+    let enemies = vehicles.len() - allies;
+    LAST_TEAM_SIZE.store(allies.max(enemies), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Latest known per-team player count (0 before any battle was seen).
+pub(crate) fn last_known_team_size() -> usize {
+    LAST_TEAM_SIZE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// One-shot read of the most recent `tempArenaInfo.json` under the configured
 /// replay dir. Reuses the replay descriptor parser since the JSON shape is
 /// identical (the file even shares the 8-byte-prefixed variant sometimes).
@@ -29,7 +46,9 @@ pub fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, St
     let Some(path) = find_latest_arena_info(&dir) else {
         return Ok(None);
     };
-    read_arena_file(&path).map(Some)
+    let info = read_arena_file(&path)?;
+    note_team_size(&info.vehicles);
+    Ok(Some(info))
 }
 
 /// Start a background file watcher that emits [`ARENA_INFO_EVENT`] whenever a
@@ -146,6 +165,7 @@ fn handle_watch_event(
                 players = info.vehicles.len(),
                 "fresh tempArenaInfo.json — emitting arena-info event"
             );
+            note_team_size(&info.vehicles);
             if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
                 tracing::warn!(error = %e, "emit arena-info event failed");
             }

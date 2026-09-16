@@ -502,11 +502,35 @@ async def cmd_capture_game_window() -> dict:
             0xAE, 0x42, 0x60, 0x82,
         ]
     )
-    return {"imageBase64": base64.b64encode(png).decode(), "rosterRect": None}
+    return {"imageBase64": base64.b64encode(png).decode(), "rosterRect": None, "anchor": None}
 
 
 @app.post("/api/set_overlay_visible")
 async def cmd_set_overlay_visible() -> None:
+    return None
+
+
+@app.post("/api/create_overlay_window")
+async def cmd_create_overlay_window(request: Request) -> None:
+    body = await request.json()
+    _ = body.get("realm")  # unused — the mock has no window to create
+    return None
+
+
+@app.post("/api/destroy_overlay_window")
+async def cmd_destroy_overlay_window() -> None:
+    return None
+
+
+@app.post("/api/start_overlay_tab_watch")
+async def cmd_start_overlay_tab_watch() -> None:
+    # The mock runs in a browser — there is no global Tab watcher; the
+    # overlay window can be toggled via set_overlay_visible instead.
+    return None
+
+
+@app.post("/api/stop_overlay_tab_watch")
+async def cmd_stop_overlay_tab_watch() -> None:
     return None
 
 

@@ -31,5 +31,9 @@
   "networkSaved": "已儲存",
   "resourceCdn": "資源 CDN",
   "resourceCdnPlaceholder": "留空使用官方 Wargaming CDN",
-  "resourceCdnHint": "頭像等遠端資源的鏡像源，保留原 URL 路徑；請求仍經由應用程式代理設定轉發。"
+  "resourceCdnHint": "頭像等遠端資源的鏡像源，保留原 URL 路徑；請求仍經由應用程式代理設定轉發。",
+  "overlay": "遊戲內水表",
+  "overlayHint": "對局中按住 Tab 鍵（遊戲視窗在前台時）在雙方隊伍列表旁顯示每位玩家的勝率與場均傷害。需要遊戲以無邊框或視窗化模式執行。",
+  "overlayOn": "開啟",
+  "overlayOff": "關閉"
 }

@@ -1,0 +1,651 @@
+//! Team-list (roster) region detector for the in-game overlay (Mode 2 / M8).
+//!
+//! Pure image analysis over an RGBA screenshot of the game window — no Win32
+//! types in here, so the whole pipeline is unit-testable against synthetic
+//! frames (see the tests at the bottom).
+//!
+//! The WoWS team list (the Tab view) is a wide, dark, translucent panel drawn
+//! over the 3D scene, with evenly pitched horizontal separators between player
+//! rows. The detector exploits exactly those two cues:
+//!
+//!   1. row / column dark-fraction projections → the panel rectangle, plus a
+//!      "darker than its surroundings" guard against dark night maps;
+//!   2. row-wise vertical-gradient energy → separator peaks → row pitch by
+//!      autocorrelation → phase-aligned row centers;
+//!   3. a smoothed column-luminance minimum near the middle → the
+//!      allies / enemies column split.
+//!
+//! Every tunable is a named constant. They were calibrated against synthetic
+//! frames; real captures can be dumped with `WOWSP_DEBUG_CAPTURE` (see
+//! overlay.rs) to refine them.
+
+use wowsp_tauri_shared::Rect;
+
+/// Downscaled working width — caps the analysis cost on QHD/4K captures.
+const MAX_WORK_WIDTH: u32 = 800;
+/// Luminance below which a pixel counts as "dark" (the panel background).
+const DARK_LUMA: u8 = 96;
+/// Fraction of dark pixels a row needs (over the scanned columns) to count as
+/// a panel row. The panel spans most of its own width in near-uniform dark.
+const ROW_DARK_FRAC: f32 = 0.45;
+/// Same for columns, measured over the scanned rows.
+const COL_DARK_FRAC: f32 = 0.60;
+/// Row gap (fraction of capture height) tolerated while growing the panel
+/// band — the header row can be lighter than the body.
+const ROW_GAP_FRAC: f32 = 0.03;
+/// The panel must be at most this fraction of the mean luminance of the scene
+/// strips directly above and below it (night-map guard).
+const PANEL_CONTRAST_RATIO: f32 = 0.80;
+/// Row-pitch search range at working (downscaled) resolution.
+const MIN_PITCH: usize = 8;
+const MAX_PITCH: usize = 64;
+/// Minimum plausible panel share of the capture.
+const MIN_WIDTH_FRAC: f32 = 0.25;
+const MIN_HEIGHT_FRAC: f32 = 0.15;
+/// Maximum plausible panel share (a band covering ~everything is a dark
+/// scene, not a table).
+const MAX_WIDTH_FRAC: f32 = 0.98;
+const MAX_HEIGHT_FRAC: f32 = 0.95;
+
+/// Detector output: everything needed to anchor the overlay chips, in
+/// physical pixels relative to the capture (game window) origin.
+#[derive(Debug, Clone)]
+pub(crate) struct DetectedRoster {
+    /// The team-list panel rectangle.
+    pub rect: Rect,
+    /// Vertical center of each mapped player row, top to bottom. Header rows
+    /// detected above the first player row are trimmed away (see
+    /// [`TRIM_TO_EXPECTED`]); length ≤ `expected_players` when that hint is
+    /// available.
+    pub row_centers: Vec<i32>,
+    /// Allies/enemies column split as a fraction (0–1) of the rect width.
+    pub team_split: f32,
+}
+
+/// Detect the team-list panel and its row grid in an RGBA frame.
+///
+/// `expected_players` is the per-team player count from `tempArenaInfo.json`
+/// (0 = unknown). It is used to trim detected header rows off the top and to
+/// sanity-check the row count; passing 0 keeps the detector permissive.
+pub(crate) fn detect_roster(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    expected_players: usize,
+) -> Option<DetectedRoster> {
+    let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
+    let (lum, w, h) = downscale_luma(rgba, width, height, scale);
+    if w < 32 || h < 32 {
+        return None;
+    }
+
+    // ── Pass 1: row band over the full width ─────────────────────────────
+    let row_dark = dark_fractions_rows(&lum, w, h, 0, w);
+    let (mut y0, mut y1) =
+        longest_band(&row_dark, ROW_DARK_FRAC, (h as f32 * ROW_GAP_FRAC) as usize)?;
+    if !band_is_plausible(y1 - y0, h, MIN_HEIGHT_FRAC, MAX_HEIGHT_FRAC) {
+        return None;
+    }
+
+    // ── Pass 2: column band within the row band (prefer one covering the
+    //    horizontal center — HUD panels hug the screen edges) ─────────────
+    let col_dark = dark_fractions_cols(&lum, w, y0, y1);
+    let (x0, x1) = best_column_band(&col_dark)?;
+    if !band_is_plausible(x1 - x0, w, MIN_WIDTH_FRAC, MAX_WIDTH_FRAC) {
+        return None;
+    }
+
+    // ── Pass 3: tighten the row band over the column band only ───────────
+    let row_dark2 = dark_fractions_rows(&lum, w, h, x0, x1);
+    let (ty0, ty1) = longest_band(
+        &row_dark2,
+        ROW_DARK_FRAC,
+        (h as f32 * ROW_GAP_FRAC) as usize,
+    )?;
+    if band_is_plausible(ty1 - ty0, h, MIN_HEIGHT_FRAC, MAX_HEIGHT_FRAC) {
+        y0 = ty0;
+        y1 = ty1;
+    }
+
+    // Night-map guard: the panel must be clearly darker than the scene right
+    // above and below it (same columns). Skipped when the band touches the
+    // capture edge (no reference strip available).
+    if !panel_is_contrasted(&lum, w, x0, x1, y0, y1) {
+        return None;
+    }
+
+    // ── Row separators → pitch → phase-aligned row centers ────────────────
+    let centers_work = detect_row_centers(&lum, w, x0, x1, y0, y1, expected_players)?;
+    if centers_work.len() < 2 {
+        return None;
+    }
+
+    // ── Team split: smoothed column-luminance minimum near the middle ─────
+    let team_split = detect_team_split(&lum, w, x0, x1, y0, y1);
+
+    let to_phys = |v: usize| (v as f32 * scale as f32).round() as i32;
+    Some(DetectedRoster {
+        rect: Rect {
+            x: to_phys(x0),
+            y: to_phys(y0),
+            width: to_phys(x1 - x0),
+            height: to_phys(y1 - y0),
+        },
+        row_centers: centers_work
+            .iter()
+            .map(|&c| (c * scale as f32).round() as i32)
+            .collect(),
+        team_split,
+    })
+}
+
+/// Box-filter downscale to a grayscale luminance image.
+fn downscale_luma(rgba: &[u8], width: u32, height: u32, scale: u32) -> (Vec<u8>, usize, usize) {
+    let w = width / scale;
+    let h = height / scale;
+    let mut lum = vec![0u8; (w * h) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = 0u32;
+            let mut n = 0u32;
+            for dy in 0..scale {
+                for dx in 0..scale {
+                    let px = ((y * scale + dy) * width + x * scale + dx) as usize * 4;
+                    if px + 2 < rgba.len() {
+                        let r = rgba[px] as u32;
+                        let g = rgba[px + 1] as u32;
+                        let b = rgba[px + 2] as u32;
+                        sum += (r * 299 + g * 587 + b * 114) / 1000;
+                        n += 1;
+                    }
+                }
+            }
+            lum[(y * w + x) as usize] = (sum / n.max(1)).min(255) as u8;
+        }
+    }
+    (lum, w as usize, h as usize)
+}
+
+/// Per-row dark-pixel fraction, over columns `[x0, x1)`.
+fn dark_fractions_rows(lum: &[u8], w: usize, h: usize, x0: usize, x1: usize) -> Vec<f32> {
+    let cols = (x1 - x0).max(1) as f32;
+    (0..h)
+        .map(|y| {
+            let mut dark = 0u32;
+            for x in x0..x1 {
+                if lum[y * w + x] < DARK_LUMA {
+                    dark += 1;
+                }
+            }
+            dark as f32 / cols
+        })
+        .collect()
+}
+
+/// Per-column dark-pixel fraction, over rows `[y0, y1)`.
+fn dark_fractions_cols(lum: &[u8], w: usize, y0: usize, y1: usize) -> Vec<f32> {
+    let rows = (y1 - y0).max(1) as f32;
+    (0..w)
+        .map(|x| {
+            let mut dark = 0u32;
+            for y in y0..y1 {
+                if lum[y * w + x] < DARK_LUMA {
+                    dark += 1;
+                }
+            }
+            dark as f32 / rows
+        })
+        .collect()
+}
+
+/// Longest run of values ≥ `threshold`, bridging gaps up to `max_gap`.
+/// Returns `(start, end)` with end exclusive.
+fn longest_band(vals: &[f32], threshold: f32, max_gap: usize) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    let mut run_start: Option<usize> = None;
+    let mut gap = 0usize;
+    for (i, &v) in vals.iter().enumerate() {
+        if v >= threshold {
+            if run_start.is_none() {
+                run_start = Some(i);
+            }
+            gap = 0;
+        } else if run_start.is_some() {
+            gap += 1;
+            if gap > max_gap {
+                let s = run_start.unwrap();
+                if best.is_none_or(|(_, e)| e - s < i - gap + 1 - s) {
+                    best = Some((s, i - gap + 1));
+                }
+                run_start = None;
+            }
+        }
+    }
+    if let Some(s) = run_start {
+        if best.is_none_or(|(_, e)| e - s < vals.len() - s) {
+            best = Some((s, vals.len()));
+        }
+    }
+    best
+}
+
+/// Among the column bands, prefer one covering the horizontal center whose
+/// length is within 80% of the absolute longest — the team list is centered,
+/// while HUD widgets (minimap, chat) hug the edges.
+fn best_column_band(col_dark: &[f32]) -> Option<(usize, usize)> {
+    fn flush(best: &mut Option<(usize, usize)>, s: usize, e: usize) {
+        if best.is_none_or(|(bs, be)| e - s > be - bs) {
+            *best = Some((s, e));
+        }
+    }
+    let longest = longest_band(col_dark, COL_DARK_FRAC, 2)?;
+    let center = col_dark.len() / 2;
+    if longest.0 <= center && center < longest.1 {
+        return Some(longest);
+    }
+    // Scan bands again, keeping the best centered one.
+    let mut best: Option<(usize, usize)> = None;
+    let mut run_start: Option<usize> = None;
+    let mut gap = 0usize;
+    for (i, &v) in col_dark.iter().enumerate() {
+        if v >= COL_DARK_FRAC {
+            if run_start.is_none() {
+                run_start = Some(i);
+            }
+            gap = 0;
+        } else if run_start.is_some() {
+            gap += 1;
+            if gap > 2 {
+                let s = run_start.unwrap();
+                flush(&mut best, s, i - gap + 1);
+                run_start = None;
+            }
+        }
+    }
+    if let Some(s) = run_start {
+        flush(&mut best, s, col_dark.len());
+    }
+    // Centered preference: keep a centered band at ≥80% of the longest.
+    if let Some((s, e)) = best {
+        if s <= center && center < e && e - s >= (longest.1 - longest.0) * 4 / 5 {
+            return Some((s, e));
+        }
+    }
+    Some(longest)
+}
+
+fn band_is_plausible(len: usize, total: usize, min_frac: f32, max_frac: f32) -> bool {
+    let frac = len as f32 / total as f32;
+    frac >= min_frac && frac <= max_frac
+}
+
+/// The panel must be clearly darker than the scene strips immediately above
+/// and below it (same columns). Fails → this is a dark scene, not a table.
+fn panel_is_contrasted(lum: &[u8], w: usize, x0: usize, x1: usize, y0: usize, y1: usize) -> bool {
+    let strip = ((y1 - y0) / 6).clamp(4, 32);
+    let mean = |ya: usize, yb: usize| -> Option<f32> {
+        if ya >= yb {
+            return None;
+        }
+        let mut sum = 0u64;
+        let mut n = 0u64;
+        for y in ya..yb {
+            for x in x0..x1 {
+                sum += lum[y * w + x] as u64;
+                n += 1;
+            }
+        }
+        if n == 0 {
+            None
+        } else {
+            Some(sum as f32 / n as f32)
+        }
+    };
+    let Some(inside) = mean(y0, y1) else {
+        return false;
+    };
+    let above = mean(y0.saturating_sub(strip), y0);
+    let below = mean(y1, (y1 + strip).min(lum.len() / w));
+    let outside = match (above, below) {
+        (Some(a), Some(b)) => (a + b) / 2.0,
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => return true, // band touches both edges — no reference
+    };
+    inside < outside * PANEL_CONTRAST_RATIO
+}
+
+/// Separator-line analysis: vertical-gradient energy per row → pitch via
+/// autocorrelation → best phase → row centers (working resolution).
+fn detect_row_centers(
+    lum: &[u8],
+    w: usize,
+    x0: usize,
+    x1: usize,
+    y0: usize,
+    y1: usize,
+    expected_players: usize,
+) -> Option<Vec<f32>> {
+    let band_h = y1 - y0;
+    if band_h < MIN_PITCH * 2 {
+        return None;
+    }
+    // E[y] = Σ |L[y+1] − L[y]| over the panel columns (y relative to y0).
+    // Scans through the band's LAST row too, so the panel's bottom border —
+    // itself a separator — is not cut off at the band edge.
+    let mut energy = vec![0f32; band_h];
+    let h = lum.len() / w;
+    for (yi, slot) in energy.iter_mut().enumerate() {
+        let y = y0 + yi;
+        if y + 1 >= h {
+            break;
+        }
+        let mut e = 0u32;
+        for x in x0..x1 {
+            e += lum[y * w + x].abs_diff(lum[(y + 1) * w + x]) as u32;
+        }
+        *slot = e as f32;
+    }
+
+    // Pitch by autocorrelation, with harmonic resolution. With a fractional
+    // true pitch (e.g. 18.46 px), integer-lag autocorrelation drifts out of
+    // phase after a few rows, so the 2× harmonic can OUTSCORE the fundamental
+    // (it drifts only half as fast). Resolve downwards: whenever half the
+    // current lag still scores a substantial share, the true pitch is the
+    // half and the current lag is a harmonic.
+    let max_lag = MAX_PITCH.min(band_h / 2);
+    if max_lag <= MIN_PITCH {
+        return None;
+    }
+    let mut scores = vec![0f32; max_lag + 1];
+    let mut best_score = 0f32;
+    for lag in MIN_PITCH..=max_lag {
+        let mut s = 0f32;
+        for yi in 0..band_h - lag {
+            s += energy[yi] * energy[yi + lag];
+        }
+        s /= (band_h - lag) as f32;
+        scores[lag] = s;
+        best_score = best_score.max(s);
+    }
+    let best_lag = (MIN_PITCH..=max_lag).max_by(|&a, &b| {
+        scores[a]
+            .partial_cmp(&scores[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    let mut pitch = best_lag;
+    while pitch / 2 >= MIN_PITCH && scores[pitch / 2] >= scores[pitch] * 0.55 {
+        pitch /= 2;
+    }
+
+    // Baseline-subtract (moving average over half a pitch) so the phase score
+    // is driven by the separator peaks, not by broad luminance drift.
+    let half = (pitch / 2).max(1);
+    let base: Vec<f32> = (0..band_h)
+        .map(|yi| {
+            let lo = yi.saturating_sub(half);
+            let hi = (yi + half).min(band_h);
+            energy[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
+        })
+        .collect();
+    let norm: Vec<f32> = energy.iter().zip(&base).map(|(e, b)| e - b).collect();
+
+    // Best phase: the offset in [0, pitch) whose ideal grid hits the most
+    // energy. Then collect actual local-max peaks near each grid line.
+    let mut best_phase = 0usize;
+    let mut best_phase_score = f32::MIN;
+    for phase in 0..pitch {
+        let mut s = 0f32;
+        let mut yi = phase;
+        while yi < band_h {
+            s += norm[yi];
+            yi += pitch;
+        }
+        if s > best_phase_score {
+            best_phase_score = s;
+            best_phase = phase;
+        }
+    }
+
+    // Peak-pick around each grid line so centers track the real separators
+    // rather than the ideal grid. The window is ±2·pitch/5 — wide enough to
+    // absorb the drift when the true pitch is fractional (autocorrelation
+    // only tests integer lags), narrower than half a pitch so adjacent lines
+    // never share a window.
+    let win = (pitch * 2 / 5).max(1);
+    let mut seps: Vec<usize> = Vec::new();
+    let mut yi = best_phase;
+    while yi < band_h {
+        let lo = yi.saturating_sub(win);
+        let hi = (yi + win).min(band_h);
+        let (mut mi, mut mv) = (yi, norm[yi]);
+        for (k, &v) in norm[lo..hi].iter().enumerate() {
+            if v > mv {
+                mv = v;
+                mi = lo + k;
+            }
+        }
+        if mv > 0.0 {
+            seps.push(mi);
+        }
+        yi += pitch;
+    }
+    seps.sort_unstable();
+    seps.dedup();
+
+    // Rows = gaps between consecutive separators.
+    let mut centers: Vec<f32> = seps
+        .windows(2)
+        .map(|pair| (pair[0] as f32 + pair[1] as f32) / 2.0)
+        .collect();
+
+    // Trim header rows off the top when the arena hint says there are fewer
+    // players than detected rows (the table leads with a column-title row).
+    if expected_players > 0 {
+        while centers.len() > expected_players {
+            centers.remove(0);
+        }
+        // Far fewer rows than players → misdetection; caller falls back.
+        if centers.len() + 2 < expected_players {
+            return None;
+        }
+    } else if centers.len() < 3 {
+        return None;
+    }
+
+    // Back to capture-origin coordinates.
+    Some(centers.into_iter().map(|c| c + y0 as f32).collect())
+}
+
+/// Allies/enemies split: the vertical seam between the two team sub-tables.
+/// A seam (divider line / gap) is a column with unusually high vertical-edge
+/// energy relative to the flat panel background, so we take the smoothed
+/// column-gradient maximum in the middle ±10% of the panel. Falls back to
+/// 0.5 when the middle is featureless (or the seam is off-center).
+fn detect_team_split(lum: &[u8], w: usize, x0: usize, x1: usize, y0: usize, y1: usize) -> f32 {
+    let cols = x1 - x0;
+    if cols < 16 {
+        return 0.5;
+    }
+    // Column-wise mean horizontal gradient over the body rows.
+    let ya = y0 + 2;
+    let yb = y1.saturating_sub(2);
+    if yb <= ya {
+        return 0.5;
+    }
+    let rows = (yb - ya) as f32;
+    let mut grad = vec![0f32; cols - 1];
+    for i in 0..cols - 1 {
+        let mut sum = 0u32;
+        for y in ya..yb {
+            sum += lum[y * w + x0 + i].abs_diff(lum[y * w + x0 + i + 1]) as u32;
+        }
+        grad[i] = sum as f32 / rows;
+    }
+    // Smooth with a ~3%-width box filter.
+    let radius = (cols / 33).max(2);
+    let smooth: Vec<f32> = (0..grad.len())
+        .map(|i| {
+            let lo = i.saturating_sub(radius);
+            let hi = (i + radius).min(grad.len());
+            grad[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
+        })
+        .collect();
+    // Search the middle ±10% for the strongest seam.
+    let lo = (cols as f32 * 0.40) as usize;
+    let hi = ((cols as f32 * 0.60) as usize + 1).min(smooth.len());
+    let (mut bi, mut bv) = (cols / 2, f32::MIN);
+    for (i, &v) in smooth[lo..hi].iter().enumerate() {
+        if v > bv {
+            bv = v;
+            bi = lo + i;
+        }
+    }
+    // Featureless middle (flat gradient everywhere) → default split.
+    let median = {
+        let mut sorted = smooth.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted[sorted.len() / 2]
+    };
+    if bv < median * 1.5 {
+        return 0.5;
+    }
+    bi as f32 / cols as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Deterministic pseudo-noise (xorshift-ish) so tests are reproducible.
+    struct Noise(u32);
+    impl Noise {
+        fn next_f32(&mut self, lo: f32, hi: f32) -> f32 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 17;
+            self.0 ^= self.0 << 5;
+            lo + (self.0 as f32 / u32::MAX as f32) * (hi - lo)
+        }
+    }
+
+    /// Paint an RGBA frame: bright noisy scene, optional dark panel with a
+    /// header row + `rows` player rows separated by bright lines.
+    fn synth(w: u32, h: u32, panel: Option<(u32, u32, u32, u32)>, player_rows: usize) -> Vec<u8> {
+        let mut img = vec![0u8; (w * h * 4) as usize];
+        let mut noise = Noise(0x1234_5678);
+        let put = |img: &mut [u8], x: u32, y: u32, luma: u8| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = luma.saturating_add(4);
+            img[i + 1] = luma;
+            img[i + 2] = luma.saturating_sub(4);
+            img[i + 3] = 255;
+        };
+        for y in 0..h {
+            for x in 0..w {
+                let l = noise.next_f32(125.0, 175.0) as u8;
+                put(&mut img, x, y, l);
+            }
+        }
+        if let Some((px, py, pw, ph)) = panel {
+            for y in py..py + ph {
+                for x in px..px + pw {
+                    put(&mut img, x, y, 42);
+                }
+            }
+            // Header + player rows: separators between them, bright lines.
+            let n = player_rows + 1;
+            for k in 0..=n {
+                let sy = py + (ph as usize * k / n) as u32;
+                for x in px..px + pw {
+                    for d in 0..2 {
+                        if sy + d < py + ph {
+                            put(&mut img, x, sy + d, 95);
+                        }
+                    }
+                }
+            }
+            // Team seam: brighter vertical divider at the panel center.
+            let seam = px + pw / 2;
+            for y in py..py + ph {
+                for d in 0..2 {
+                    if seam + d < px + pw {
+                        put(&mut img, seam + d, y, 90);
+                    }
+                }
+            }
+        }
+        img
+    }
+
+    #[test]
+    fn detects_centered_panel_12v12() {
+        // 1920×1080, panel 960×720 at (480,150): header + 12 player rows.
+        let img = synth(1920, 1080, Some((480, 150, 960, 720)), 12);
+        let det = detect_roster(&img, 1920, 1080, 12).expect("panel must be detected");
+        let r = det.rect;
+        assert!((r.x - 480).abs() <= 9, "x: {r:?}");
+        assert!((r.y - 150).abs() <= 9, "y: {r:?}");
+        assert!((r.width - 960).abs() <= 18, "w: {r:?}");
+        assert!((r.height - 720).abs() <= 18, "h: {r:?}");
+        assert_eq!(det.row_centers.len(), 12, "header trimmed, 12 players");
+        // True row k (0-based, after header): center = 150 + 720*(k+1.5)/13.
+        for (k, &c) in det.row_centers.iter().enumerate() {
+            let truth = 150.0 + 720.0 * (k as f32 + 1.5) / 13.0;
+            assert!(
+                (c as f32 - truth).abs() <= 8.0,
+                "row {k}: center {c} vs truth {truth}"
+            );
+        }
+        assert!(
+            (det.team_split - 0.5).abs() <= 0.08,
+            "split: {}",
+            det.team_split
+        );
+    }
+
+    #[test]
+    fn detects_smaller_capture_6v6() {
+        // 1280×720, panel 768×432 at (256,80): header + 6 player rows.
+        let img = synth(1280, 720, Some((256, 80, 768, 432)), 6);
+        let det = detect_roster(&img, 1280, 720, 6).expect("panel must be detected");
+        assert_eq!(det.row_centers.len(), 6);
+        let r = det.rect;
+        assert!((r.x - 256).abs() <= 6, "x: {r:?}");
+        assert!((r.width - 768).abs() <= 12, "w: {r:?}");
+    }
+
+    #[test]
+    fn returns_none_without_panel() {
+        let img = synth(1280, 720, None, 0);
+        assert!(detect_roster(&img, 1280, 720, 12).is_none());
+    }
+
+    #[test]
+    fn returns_none_on_uniformly_dark_scene() {
+        // Same geometry but the whole frame is dark → contrast guard must
+        // reject it (this is a night map, not a table).
+        let mut img = synth(1280, 720, None, 0);
+        for chunk in img.chunks_exact_mut(4) {
+            chunk[0] = 38;
+            chunk[1] = 40;
+            chunk[2] = 42;
+            chunk[3] = 255;
+        }
+        assert!(detect_roster(&img, 1280, 720, 12).is_none());
+    }
+
+    #[test]
+    fn works_without_arena_hint() {
+        let img = synth(1920, 1080, Some((480, 150, 960, 720)), 12);
+        let det = detect_roster(&img, 1920, 1080, 0).expect("detect without hint");
+        // No trim → header + 12 rows = 13 centers.
+        assert_eq!(det.row_centers.len(), 13);
+    }
+
+    #[test]
+    fn rejects_row_count_mismatch() {
+        // Panel drawn with 6 rows but the arena says 12 → far fewer rows than
+        // players → None (caller falls back to the default anchor).
+        let img = synth(1280, 720, Some((256, 80, 768, 432)), 6);
+        assert!(detect_roster(&img, 1280, 720, 12).is_none());
+    }
+}

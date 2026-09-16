@@ -7,6 +7,7 @@ import { useWallpaper } from "@/theme/useWallpaper";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type NetworkConfig } from "@/api";
+import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import AboutModal from "@/components/layout/AboutModal";
 import "./SettingsModal.scss";
 
@@ -36,7 +37,12 @@ export default defineComponent({
     const theme = useTheme();
     const wallpaper = useWallpaper();
     const lang = useLanguage();
+    const overlayCfg = useOverlayConfigStore();
     const showAbout = ref(false);
+
+    onMounted(() => {
+      void overlayCfg.load();
+    });
 
     // Brand default first, then hikari's built-ins (incl. the shared
     // nord/gruvbox/tokyonight presets and any user custom themes).
@@ -284,6 +290,24 @@ export default defineComponent({
               />
             </div>
             <p class="settings-modal__hint">{t("settings.resourceCdnHint")}</p>
+          </section>
+
+          {/* in-game overlay (Mode 2) — pre-creates the transparent window
+              + Tab watcher while the game runs; hold Tab in battle to see
+              per-player WR / avg damage over the team list */}
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.overlay")}</h2>
+            <p class="settings-modal__hint">{t("settings.overlayHint")}</p>
+            <HTabs
+              block
+              variant="segmented"
+              modelValue={overlayCfg.enabled ? "on" : "off"}
+              onUpdate:modelValue={(v: string) => void overlayCfg.setEnabled(v === "on")}
+              tabs={[
+                { key: "on", label: t("settings.overlayOn") },
+                { key: "off", label: t("settings.overlayOff") },
+              ]}
+            />
           </section>
 
           {/* about */}

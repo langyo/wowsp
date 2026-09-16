@@ -31,5 +31,9 @@
   "networkSaved": "저장됨",
   "resourceCdn": "리소스 CDN",
   "resourceCdnPlaceholder": "비워 두면 공식 Wargaming CDN을 사용합니다",
-  "resourceCdnHint": "함선 이미지 등 원격 리소스의 미러 기준 URL입니다. URL 경로는 유지되며 요청은 앱 프록시 설정을 통해 전달됩니다."
+  "resourceCdnHint": "함선 이미지 등 원격 리소스의 미러 기준 URL입니다. URL 경로는 유지되며 요청은 앱 프록시 설정을 통해 전달됩니다.",
+  "overlay": "게임 내 오버레이",
+  "overlayHint": "게임 창이 포그라운드일 때 전투에서 Tab 키를 길게 누르면 팀 목록 옆에 각 플레이어의 승률과 평균 피해량을 표시합니다. 게임은 테두리 없음 또는 창 모드로 실행해야 합니다.",
+  "overlayOn": "켜기",
+  "overlayOff": "끄기"
 }

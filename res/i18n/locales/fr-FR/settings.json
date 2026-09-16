@@ -31,5 +31,9 @@
   "networkSaved": "Enregistré",
   "resourceCdn": "CDN de ressources",
   "resourceCdnPlaceholder": "Laisser vide pour utiliser le CDN Wargaming officiel",
-  "resourceCdnHint": "Miroir des portraits de navires et autres ressources — le chemin de l'URL est conservé et les requêtes passent par le proxy de l'application."
+  "resourceCdnHint": "Miroir des portraits de navires et autres ressources — le chemin de l'URL est conservé et les requêtes passent par le proxy de l'application.",
+  "overlay": "Superposition en jeu",
+  "overlayHint": "Lorsque la fenêtre du jeu est au premier plan, maintenez Tab en bataille pour afficher le taux de victoires et les dégâts moyens de chaque joueur à côté de la liste des équipes. Lancez le jeu en mode fenêtré ou sans bordure.",
+  "overlayOn": "Activé",
+  "overlayOff": "Désactivé"
 }
