@@ -33,8 +33,9 @@ const STEAM_APPID: &str = "552990";
 /// `WG_PUBLISHERS`, validate `WorldOfWarships.exe`) and the Steam
 /// `libraryfolders.vdf` + `appmanifest_<appid>.acf` parse. For now returns
 /// whatever is pinned in `WOWSP_GAME_PATH`, or an empty list.
-#[tauri::command]
-pub fn detect_game_install() -> Vec<GameInstall> {
+/// Sync scan core — also used by internal callers (replay/arena dir
+/// resolution) that cannot await.
+pub(crate) fn scan_game_installs() -> Vec<GameInstall> {
     let mut found = Vec::new();
 
     // 1. Env override (developer convenience + manual pin).
@@ -57,10 +58,17 @@ pub fn detect_game_install() -> Vec<GameInstall> {
     found
 }
 
+// Async so the registry + Steam scan runs on the Tauri async runtime — a
+// sync command would execute it inline on the main/UI thread.
+#[tauri::command]
+pub async fn detect_game_install() -> Vec<GameInstall> {
+    scan_game_installs()
+}
+
 /// Pin a user-chosen path as the active install (no validation beyond the
 /// exe existing).
 #[tauri::command]
-pub fn set_game_path(path: String) -> Result<GameInstall, String> {
+pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
     if !is_game_dir(&path) {
         return Err(format!(
             "{path} does not look like a World of Warships install (missing WorldOfWarships.exe)"

@@ -61,8 +61,12 @@ pub(crate) fn arena_seen_within(max_age_secs: u64) -> bool {
 /// One-shot read of the most recent `tempArenaInfo.json` under the configured
 /// replay dir. Reuses the replay descriptor parser since the JSON shape is
 /// identical (the file even shares the 8-byte-prefixed variant sometimes).
+// All commands here are async so they run on the Tauri async runtime
+// instead of the main/UI thread: `read_temp_arena_info` walks the replay
+// tree and is polled every 3 s, and a sync command would inline that walk
+// on the webview IPC (main) thread, stalling every queued request.
 #[tauri::command]
-pub fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, String> {
+pub async fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, String> {
     let dir = resolve_arena_dir(dir)?;
     let Some(path) = find_latest_arena_info(&dir) else {
         return Ok(None);
@@ -80,7 +84,7 @@ pub fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, St
 /// thread; the watcher is killed when the app shuts down (malkuth drain). Safe
 /// to call repeatedly — a second call stops the previous watcher first.
 #[tauri::command]
-pub fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<(), String> {
+pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<(), String> {
     // Replace any existing watcher handle.
     let target = resolve_arena_dir(dir)?;
     let watcher = spawn_watcher(app.clone(), target)?;
@@ -93,7 +97,7 @@ pub fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<(), St
 
 /// Stop the background arena watcher.
 #[tauri::command]
-pub fn stop_arena_watcher() -> Result<(), String> {
+pub async fn stop_arena_watcher() -> Result<(), String> {
     if let Some(w) = ACTIVE_WATCHER
         .lock()
         .map_err(|e| format!("watcher lock: {e}"))?
@@ -258,7 +262,7 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
             return Ok(replays);
         }
     }
-    if let Some(detected) = super::game_detect::detect_game_install().into_iter().next() {
+    if let Some(detected) = super::game_detect::scan_game_installs().into_iter().next() {
         let root = PathBuf::from(&detected.path);
         let replays = root.join("replays");
         if let Ok(mut cache) = DETECTED_DIR_CACHE.lock() {
@@ -270,6 +274,13 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
 }
 
 fn find_latest_arena_info(dir: &PathBuf) -> Option<PathBuf> {
+    // Fast path: the game writes the file directly into <replays>/ — only
+    // fall back to the recursive walk (versioned subfolders) when it is not
+    // there. The walk stats every file in the tree and runs on a 3 s poll.
+    let direct = dir.join("tempArenaInfo.json");
+    if direct.is_file() {
+        return Some(direct);
+    }
     let mut best: Option<(PathBuf, SystemTime)> = None;
     walk_for_arena(dir, &mut best);
     best.map(|(p, _)| p)

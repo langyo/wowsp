@@ -655,7 +655,7 @@ fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf, String> {
     // `replays/` folder. This is the common path when the frontend doesn't pass
     // an explicit dir (e.g. CLI use, or a caller that didn't wire up the
     // config store). The frontend normally passes the active install's path.
-    if let Some(detected) = super::game_detect::detect_game_install().into_iter().next() {
+    if let Some(detected) = super::game_detect::scan_game_installs().into_iter().next() {
         return Ok(PathBuf::from(&detected.path).join("replays"));
     }
     Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into())

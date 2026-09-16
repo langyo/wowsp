@@ -55,13 +55,13 @@ pub fn appdata_delete(file: String) -> Result<(), String> {
 /// Check if the World of Warships game process is currently running.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn is_game_running() -> bool {
+pub async fn is_game_running() -> bool {
     find_game_pid().is_some()
 }
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn is_game_running() -> bool {
+pub async fn is_game_running() -> bool {
     false
 }
 
@@ -76,7 +76,7 @@ pub fn is_game_running() -> bool {
 /// `is_game_running` is the boolean projection of this.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn get_game_process(
+pub async fn get_game_process(
     installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
     use wowsp_tauri_shared::{GameInstallKind, GameProcessInfo};
@@ -134,7 +134,7 @@ pub fn get_game_process(
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn get_game_process(
+pub async fn get_game_process(
     _installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
     wowsp_tauri_shared::GameProcessInfo {

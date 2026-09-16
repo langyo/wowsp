@@ -23,6 +23,13 @@
 //! once when overlay mode starts, hidden) and destroyed by
 //! `destroy_overlay_window` (when the game exits or overlay mode is turned
 //! off). The main shell window keeps running underneath.
+//!
+//! Threading: every command here is `async` so it runs on the Tauri async
+//! runtime, NOT the main/UI thread — sync commands execute inline on the
+//! webview IPC (main) thread, and `create_overlay_window` builds an entire
+//! WebView2 window, which would stall every queued request during startup.
+//! The Tab watcher is a detached `std::thread` that only talks to the shell
+//! via thread-safe dispatches (`emit`, `set_position`, …).
 
 use base64::Engine;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -65,7 +72,7 @@ const HWND_REFRESH: Duration = Duration::from_secs(2);
 /// the overlay webview can batch WG lookups without re-detecting the install.
 /// Also starts the Tab watcher thread.
 #[tauri::command]
-pub fn create_overlay_window(app: AppHandle, realm: Option<String>) -> Result<(), String> {
+pub async fn create_overlay_window(app: AppHandle, realm: Option<String>) -> Result<(), String> {
     if app.get_webview_window(OVERLAY_LABEL).is_none() {
         let mut url = "/?window=overlay".to_string();
         if let Some(r) = realm.as_deref().filter(|r| !r.is_empty()) {
@@ -85,16 +92,16 @@ pub fn create_overlay_window(app: AppHandle, realm: Option<String>) -> Result<()
             .map_err(|e| format!("create overlay window: {e}"))?;
         post_create_window_setup(&win);
     }
-    start_overlay_tab_watch(app)
+    start_overlay_tab_watch(app).await
 }
 
 /// Destroy the overlay window (when overlay mode ends) and stop the watcher.
 /// Also stops the arena file watcher — it is owned by the overlay window's
 /// store, and closing the webview skips Vue teardown.
 #[tauri::command]
-pub fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
-    stop_overlay_tab_watch()?;
-    let _ = super::arena_info::stop_arena_watcher();
+pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
+    stop_overlay_tab_watch().await?;
+    let _ = super::arena_info::stop_arena_watcher().await;
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
         win.close().map_err(|e| format!("close overlay: {e}"))?;
     }
@@ -105,7 +112,7 @@ pub fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
 /// Tab watcher is the authoritative visibility driver in normal operation.
 /// NEVER focuses the overlay — focus must stay on the game while playing.
 #[tauri::command]
-pub fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
         return Err("overlay window not created — call create_overlay_window first".into());
     };
@@ -168,7 +175,9 @@ static TAB_WATCHER: Mutex<Option<TabWatcher>> = Mutex::new(None);
 
 struct TabWatcher {
     stop: Arc<AtomicBool>,
-    handle: Option<std::thread::JoinHandle<()>>,
+    /// Detached thread handle — never joined (see `start_overlay_tab_watch`).
+    #[allow(dead_code)]
+    handle: std::thread::JoinHandle<()>,
 }
 
 /// Start the global Tab watcher (idempotent). It polls `GetAsyncKeyState`
@@ -176,7 +185,7 @@ struct TabWatcher {
 /// foreground window, anchors + shows the overlay on Tab down and hides it on
 /// Tab up / focus loss.
 #[tauri::command]
-pub fn start_overlay_tab_watch(app: AppHandle) -> Result<(), String> {
+pub async fn start_overlay_tab_watch(app: AppHandle) -> Result<(), String> {
     let mut guard = TAB_WATCHER
         .lock()
         .map_err(|e| format!("watcher lock: {e}"))?;
@@ -186,29 +195,25 @@ pub fn start_overlay_tab_watch(app: AppHandle) -> Result<(), String> {
     {
         return Ok(()); // already running
     }
-    // Reap any finished previous watcher.
-    if let Some(old) = guard.take() {
-        if let Some(h) = old.handle {
-            let _ = h.join();
-        }
-    }
+    // Drop any stale watcher WITHOUT joining it: joining under the lock
+    // deadlocks if the old thread is itself waiting on a main-thread window
+    // dispatch. The stop flag makes it exit within one poll interval; the
+    // detached handle is simply dropped.
+    *guard = None;
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = Arc::clone(&stop);
     let handle = std::thread::Builder::new()
         .name("overlay-tab-watch".into())
         .spawn(move || watch_tab_loop(app, thread_stop))
         .map_err(|e| format!("spawn tab watcher: {e}"))?;
-    *guard = Some(TabWatcher {
-        stop,
-        handle: Some(handle),
-    });
+    *guard = Some(TabWatcher { stop, handle });
     tracing::info!("overlay tab watcher started");
     Ok(())
 }
 
 /// Stop the Tab watcher.
 #[tauri::command]
-pub fn stop_overlay_tab_watch() -> Result<(), String> {
+pub async fn stop_overlay_tab_watch() -> Result<(), String> {
     let mut guard = TAB_WATCHER
         .lock()
         .map_err(|e| format!("watcher lock: {e}"))?;
@@ -411,7 +416,7 @@ fn fallback_anchor(game: &GameWindow, expected: usize) -> Option<OverlayAnchor> 
 /// set — normal operation needs nothing but the anchor, and shipping a
 /// full-screen PNG on every Tab press would be wasteful.
 #[tauri::command]
-pub fn capture_game_window() -> Result<CaptureResult, String> {
+pub async fn capture_game_window() -> Result<CaptureResult, String> {
     #[cfg(target_os = "windows")]
     {
         let Some(game) = find_game_window() else {
