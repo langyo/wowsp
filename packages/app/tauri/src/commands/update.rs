@@ -437,7 +437,7 @@ async fn run_racer(
     if let Ok(mut s) = state.lock() {
         // All sources must agree on the size; the first report wins.
         if let Some(len) = response.content_length() {
-            if s.total.map_or(true, |t| t == 0) {
+            if s.total.is_none_or(|t| t == 0) {
                 s.total = Some(len);
             }
         }
@@ -795,11 +795,10 @@ async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), Stri
         // (no Range support → restart from byte 0 on that source).
         let mut recovered: Option<usize> = None;
         let mut cancelled = false;
-        for slot in 0..slot_count {
+        for (slot, racer) in racers.iter().enumerate().take(slot_count) {
             if slot == leader_slot {
                 continue;
             }
-            let racer = racers[slot];
             match resume_or_download(
                 &client,
                 &artifact_url(&racer.base, &version),
