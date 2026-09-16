@@ -99,47 +99,54 @@ export default defineComponent({
     return () => (
       <div class="app-shell">
         <WallpaperRenderer />
-        {/* Update banner — slim fixed bar under the title bar. A prompted
-            offer, not an auto-run: 立即更新 starts the mirror-race download
-            (a racing strip while the mirrors are measured, then percent +
-            speed), 取消 stops the pass, 稍后 dismisses it for the session
-            (AboutModal still offers the update). Failures never render
-            here, they surface in AboutModal. */}
+        {/* Update toast — compact panel pinned to the top-right corner.
+            A prompted offer, not an auto-run: 立即更新 starts the mirror-race
+            download (a racing strip while the mirrors are measured, then
+            percent + speed), 取消 stops the pass, 稍后 dismisses it for the
+            session (AboutModal still offers the update). Failures never
+            render here, they surface in AboutModal. */}
         {updater.available && !updater.dismissed && !updater.portable && (
-          <div
-            class={[
-              "update-banner",
-              updater.installing ? "update-banner--installing" : "",
-            ]}
-            role="status"
-          >
-            {updater.installing ? (
-              <span class="update-banner__text">{t("about.updateInstalling")}</span>
-            ) : updater.phase === "race" ? (
-              <span class="update-banner__text">{t("about.updateRacing")}</span>
-            ) : updater.downloading ? (
-              <>
-                <span class="update-banner__text">
-                  {t("about.updatePrompt", { version: updater.version ?? "" })}
+          <div class="update-toast" role="status">
+            <div class="update-toast__head">
+              <span class="update-toast__title">
+                {updater.installing
+                  ? t("about.updateInstalling")
+                  : updater.phase === "race"
+                    ? t("about.updateRacing")
+                    : updater.downloading
+                      ? t("about.updateDownloading")
+                      : t("about.updatePrompt", { version: updater.version ?? "" })}
+              </span>
+              {/* Idle: ✕ means 稍后 (dismiss for the session). Mid-pass it
+                  means 取消 — the Rust side tears the pass down and the
+                  toast falls back to the idle prompt. */}
+              <button
+                type="button"
+                class="update-toast__close"
+                title={
+                  updater.downloading
+                    ? t("about.updateCancel")
+                    : t("about.updateLater")
+                }
+                onClick={() =>
+                  updater.downloading
+                    ? void updater.cancelUpdate()
+                    : updater.dismissUpdate()
+                }
+              >
+                ✕
+              </button>
+            </div>
+            {updater.downloading && (
+              <div class="update-toast__stats">
+                <span class="update-toast__stat">{updater.progress ?? 0}%</span>
+                <span class="update-toast__stat">
+                  {formatSpeed(updater.speedBps)}
                 </span>
-                <span>{t("about.updateDownloading")}</span>
-                <span class="update-banner__spacer" />
-                <span class="update-banner__stat">{updater.progress ?? 0}%</span>
-                <span class="update-banner__stat">{formatSpeed(updater.speedBps)}</span>
-                <HButton
-                  variant="ghost"
-                  size="sm"
-                  class="update-banner__cancel"
-                  onClick={() => void updater.cancelUpdate()}
-                >
-                  {t("about.updateCancel")}
-                </HButton>
-              </>
-            ) : (
-              <>
-                <span class="update-banner__text">
-                  {t("about.updatePrompt", { version: updater.version ?? "" })}
-                </span>
+              </div>
+            )}
+            {!updater.installing && !updater.downloading && (
+              <div class="update-toast__actions">
                 <HButton
                   variant="primary"
                   size="sm"
@@ -147,30 +154,32 @@ export default defineComponent({
                 >
                   {t("about.updateNow")}
                 </HButton>
-                <HButton variant="ghost" size="sm" onClick={() => updater.dismissUpdate()}>
+                <HButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => updater.dismissUpdate()}
+                >
                   {t("about.updateLater")}
                 </HButton>
-              </>
+              </div>
             )}
-            {/* The strip doubles as the pass's progress bar: a 2px line
-                filled along its bottom edge while downloading, a striped
-                sweeping band while the mirrors race and while the installer
-                runs. */}
-            {updater.downloading || updater.installing ? (
-              <span
-                class={[
-                  "update-banner__progress",
-                  updater.phase === "race" && !updater.installing
-                    ? "update-banner__progress--race"
-                    : "",
-                ]}
+            <div
+              class={[
+                "update-toast__bar",
+                updater.installing || updater.phase === "race"
+                  ? "update-toast__bar--indeterminate"
+                  : "",
+              ]}
+            >
+              <div
+                class="update-toast__bar-fill"
                 style={
-                  updater.downloading && updater.phase !== "race"
+                  updater.downloading && updater.phase === "download"
                     ? { width: `${Math.min(Math.max(updater.progress ?? 0, 0), 100)}%` }
                     : undefined
                 }
               />
-            ) : null}
+            </div>
           </div>
         )}
         <Sidebar />
