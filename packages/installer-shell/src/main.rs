@@ -306,15 +306,21 @@ fn run_offline_installer(installer: &Path) -> bool {
 }
 
 fn install_dir_for(mode: &str) -> PathBuf {
+    // The LOCAL install must not land on `%LOCALAPPDATA%\WoWSP` — that path
+    // is ALSO the application's model-pack cache root (paths.rs), and the
+    // two sharing one directory means every reinstall churns the cache and
+    // a stray uninstall can take the models with it. Per-user installs
+    // belong under `...\Programs\`; the cache stays alone.
+    let local_install = || local_appdata().join("Programs").join("WoWSP");
     match mode {
         "usb" => match first_removable_drive() {
             Some(drive) => PathBuf::from(format!("{drive}:\\WoWSP")),
-            None => local_appdata().join("WoWSP"),
+            None => local_install(),
         },
         "green" => exe_dir()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
             .join("WoWSP"),
-        _ => local_appdata().join("WoWSP"),
+        _ => local_install(),
     }
 }
 
@@ -749,9 +755,7 @@ fn relocate_model_pack(install_dir: &Path, portable: bool) {
     // The pack ends up in place when it was already at its final home
     // (nothing to move), when the rename fast path succeeds, or when the
     // recursive-copy fallback lands it across volumes.
-    let moved = if to == from {
-        true
-    } else if std::fs::rename(&from, &to).is_ok() {
+    let moved = if to == from || std::fs::rename(&from, &to).is_ok() {
         true
     } else {
         let copied = copy_dir_recursive(&from, &to);
