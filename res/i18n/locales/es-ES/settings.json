@@ -33,7 +33,9 @@
   "resourceCdnPlaceholder": "Dejar vacío para usar el CDN oficial de Wargaming",
   "resourceCdnHint": "Espejo para retratos de barcos y otros recursos: se conserva la ruta de la URL y las solicitudes pasan por el proxy de la aplicación.",
   "overlay": "Superposición en juego",
-  "overlayHint": "Con la ventana del juego en primer plano, mantén Tab en batalla para mostrar la tasa de victorias y el daño medio de cada jugador junto a la lista de equipos. Ejecuta el juego en modo ventana o sin bordes.",
   "overlayOn": "Activado",
-  "overlayOff": "Desactivado"
+  "overlayOff": "Desactivado",
+  "overlayDesc": "Las estadísticas de ambos equipos se obtienen automáticamente al comenzar la batalla; mantén Tab con la ventana del juego en primer plano para ver la tasa de victorias y el daño medio de cada jugador junto a su apodo.",
+  "overlayTabToggle": "Mantener Tab para ver estadísticas",
+  "overlayFullscreenNote": "※ No disponible en pantalla completa exclusiva: en ese modo la captura de pantalla GDI solo devuelve fotogramas negros y la ventana de superposición no puede situarse sobre una cadena de intercambio a pantalla completa. Configura el modo de visualización del juego en sin bordes o en ventana."
 }

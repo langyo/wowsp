@@ -294,20 +294,25 @@ export default defineComponent({
 
           {/* in-game overlay (Mode 2) — pre-creates the transparent window
               + Tab watcher while the game runs; hold Tab in battle to see
-              per-player WR / avg damage over the team list */}
+              per-player WR / avg damage over the team list. The note under
+              the toggle explains why exclusive fullscreen can't work. */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.overlay")}</h2>
-            <p class="settings-modal__hint">{t("settings.overlayHint")}</p>
-            <HTabs
-              block
-              variant="segmented"
-              modelValue={overlayCfg.enabled ? "on" : "off"}
-              onUpdate:modelValue={(v: string) => void overlayCfg.setEnabled(v === "on")}
-              tabs={[
-                { key: "on", label: t("settings.overlayOn") },
-                { key: "off", label: t("settings.overlayOff") },
-              ]}
-            />
+            <p class="settings-modal__hint">{t("settings.overlayDesc")}</p>
+            <div class="settings-modal__sub">
+              <h3 class="settings-modal__sub-title">{t("settings.overlayTabToggle")}</h3>
+              <HTabs
+                block
+                variant="segmented"
+                modelValue={overlayCfg.enabled ? "on" : "off"}
+                onUpdate:modelValue={(v: string) => void overlayCfg.setEnabled(v === "on")}
+                tabs={[
+                  { key: "on", label: t("settings.overlayOn") },
+                  { key: "off", label: t("settings.overlayOff") },
+                ]}
+              />
+              <p class="settings-modal__hint">{t("settings.overlayFullscreenNote")}</p>
+            </div>
           </section>
 
           {/* about */}
