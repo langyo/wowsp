@@ -408,7 +408,7 @@ export default defineComponent({
                 stroke-width={1.5}
               />
               <p class="wizard-done__title">
-                {uninstallPhase.value === "repaired" ? "已完成修复。" : "已完成卸载。"}
+                {uninstallPhase.value === "repaired" ? "已完成修复" : "已完成卸载"}
               </p>
               <div class="wizard-uninstall__actions">
                 <HButton variant="primary" onClick={closeWindow}>
