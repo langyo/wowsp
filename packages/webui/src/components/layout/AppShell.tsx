@@ -64,6 +64,18 @@ export default defineComponent({
     }
 
     onMounted(async () => {
+      // Production builds feel like a desktop app: no WebView2 context menu
+      // on right-click. Editable elements keep the native menu (paste etc.),
+      // and dev mode keeps everything for debugging.
+      if (!import.meta.env.DEV) {
+        document.addEventListener("contextmenu", (event) => {
+          const target = event.target as HTMLElement | null;
+          const editable = target?.closest(
+            "input, textarea, select, [contenteditable]",
+          );
+          if (!editable) event.preventDefault();
+        });
+      }
       // Download model pack on first launch (production only; dev uses publicDir).
       if (!import.meta.env.DEV) {
         void initModelPack(() => api.ensureModelPack()).catch(() => {});
