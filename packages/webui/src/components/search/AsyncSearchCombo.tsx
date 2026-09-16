@@ -20,6 +20,7 @@ import {
 } from "vue";
 
 import { HSearchInput } from "@celestia-island/hikari";
+import { Search } from "@lucide/vue";
 
 import "./AsyncSearchCombo.scss";
 
@@ -128,17 +129,9 @@ export default defineComponent({
             open.value = !open.value;
           }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+          {/* Lucide icon: intrinsic width/height attrs keep flex from
+              crushing a CSS-sized-only svg down to zero width. */}
+          <Search size={14} />
         </button>
         {open.value ? (
           <div class={["async-search-combo__panel", `async-search-combo__panel--${props.align}`]}>
