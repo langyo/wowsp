@@ -43,9 +43,15 @@ pub const OVERLAY_ANCHOR_EVENT: &str = "wowsp://overlay-anchor";
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
 const POLL_INTERVAL: Duration = Duration::from_millis(30);
-/// A Tab press within this window of the previous one reuses the last anchor
-/// instead of re-capturing (the table does not move mid-battle).
-const ANCHOR_REUSE: Duration = Duration::from_millis(1500);
+/// Rate limit for capture attempts (GDI `BitBlt(CAPTUREBLT)` + detector
+/// work is expensive): a fresh Tab press reuses the cached anchor inside
+/// this window and is refused a new capture until it elapses — so frantic
+/// tapping or a focus flicker while holding Tab caps at ~0.67 captures/s.
+const CAPTURE_MIN_INTERVAL: Duration = Duration::from_millis(1500);
+/// A capture is only attempted while the most recent battle roster
+/// (tempArenaInfo.json mtime) is younger than this — Tab in port or long
+/// after a battle stays a no-op.
+const ARENA_FRESHNESS_SECS: u64 = 30 * 60;
 /// How often the cached game HWND is re-resolved.
 const HWND_REFRESH: Duration = Duration::from_secs(2);
 
@@ -222,19 +228,30 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     let mut overlay_shown = false;
     let mut cached_anchor: Option<(Instant, OverlayAnchor)> = None;
     let mut cached_game: Option<(GameWindow, Instant)> = None;
+    // When the last game-window SCAN ran — bounds find_game_window() even
+    // when it keeps failing (each call takes a full Toolhelp process
+    // snapshot; a failing lookup retried every poll tick would peg a core).
+    let mut last_scan: Option<Instant> = None;
+    // When the last capture ATTEMPT ran (success or failure) — bounds the
+    // expensive BitBlt(CAPTUREBLT) + detector work even under frantic Tab
+    // tapping or a focus-flicker loop while the key is held.
+    let mut last_capture_attempt: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        // Resolve the game window (cached, refreshed periodically).
+        // Resolve the game window: cached while valid, rescanned at most
+        // once per HWND_REFRESH — including the not-found case.
         let game = match &cached_game {
             Some((g, at)) if at.elapsed() < HWND_REFRESH && g.is_alive() => Some(*g),
-            _ => {
+            _ if last_scan.is_none_or(|t| t.elapsed() >= HWND_REFRESH) => {
+                last_scan = Some(Instant::now());
                 let found = find_game_window();
                 cached_game = found.map(|g| (g, Instant::now()));
                 found
             },
+            _ => cached_game.filter(|(g, _)| g.is_alive()).map(|(g, _)| g),
         };
 
         let focused_on_game = game.is_some_and(|g| g.is_foreground());
@@ -242,16 +259,30 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
 
         if focused_on_game && tab_down {
             if !tab_down_prev {
-                // Fresh Tab press — anchor + show.
-                let anchor = match (&cached_anchor, &game) {
-                    (Some((at, a)), _) if at.elapsed() < ANCHOR_REUSE => Some(a.clone()),
-                    (_, Some(g)) => {
-                        let computed = compute_anchor(g);
-                        cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
-                        computed
-                    },
+                // Fresh Tab press — anchor + show. Reuse a recent anchor
+                // first; otherwise a capture attempt must pass BOTH gates:
+                //   1. a battle roster was seen recently (arena freshness —
+                //      Tab in port or long after a battle is a no-op);
+                //   2. the last attempt is older than CAPTURE_MIN_INTERVAL
+                //      (rate limit; the anchor cache lives exactly as long,
+                //      so no press ever falls into a "neither" gap).
+                let anchor = match &cached_anchor {
+                    Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
                     _ => None,
-                };
+                }
+                .or_else(|| {
+                    let allowed = last_capture_attempt
+                        .is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
+                        && super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+                    if !allowed {
+                        return None;
+                    }
+                    let g = game?;
+                    last_capture_attempt = Some(Instant::now());
+                    let computed = compute_anchor(&g);
+                    cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
+                    computed
+                });
                 if let Some(anchor) = anchor {
                     place_and_show(&app, &anchor);
                     overlay_shown = true;

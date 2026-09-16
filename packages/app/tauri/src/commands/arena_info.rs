@@ -25,16 +25,37 @@ pub const ARENA_INFO_EVENT: &str = "wowsp://arena-info";
 /// build the fallback anchor; 0 = no battle seen yet this session.
 static LAST_TEAM_SIZE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// Record the roster's largest team size (allies = relation ≤ 1).
-fn note_team_size(vehicles: &[wowsp_tauri_shared::VehicleEntry]) {
+/// mtime (unix seconds) of the most recently seen tempArenaInfo.json — NOT
+/// the read time: the file is re-read every few seconds by polling, so only
+/// its modification stamp says when the battle actually started.
+static LAST_ARENA_MTIME: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+fn unix_secs(t: SystemTime) -> i64 {
+    t.duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Record the roster's largest team size (allies = relation ≤ 1) and the
+/// battle's start stamp (the arena file's mtime).
+fn note_arena_seen(vehicles: &[wowsp_tauri_shared::VehicleEntry], file_mtime: SystemTime) {
     let allies = vehicles.iter().filter(|v| v.relation <= 1).count();
     let enemies = vehicles.len() - allies;
     LAST_TEAM_SIZE.store(allies.max(enemies), std::sync::atomic::Ordering::Relaxed);
+    LAST_ARENA_MTIME.store(unix_secs(file_mtime), std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Latest known per-team player count (0 before any battle was seen).
 pub(crate) fn last_known_team_size() -> usize {
     LAST_TEAM_SIZE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// True when the most recent battle roster is no older than `max_age_secs`.
+/// The overlay Tab watcher refuses to capture outside this window — Tab in
+/// port or long after a battle must stay a no-op.
+pub(crate) fn arena_seen_within(max_age_secs: u64) -> bool {
+    let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+    at > 0 && unix_secs(SystemTime::now()) - at <= max_age_secs as i64
 }
 
 /// One-shot read of the most recent `tempArenaInfo.json` under the configured
@@ -46,8 +67,11 @@ pub fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, St
     let Some(path) = find_latest_arena_info(&dir) else {
         return Ok(None);
     };
+    let mtime = path.metadata().and_then(|m| m.modified()).ok();
     let info = read_arena_file(&path)?;
-    note_team_size(&info.vehicles);
+    if let Some(mtime) = mtime {
+        note_arena_seen(&info.vehicles, mtime);
+    }
     Ok(Some(info))
 }
 
@@ -111,7 +135,10 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     let last_mtime = find_latest_arena_info(&target_dir)
         .and_then(|p| p.metadata().and_then(|m| m.modified()).ok())
         .unwrap_or(SystemTime::UNIX_EPOCH);
-    let state = Mutex::new(last_mtime);
+    let state = Mutex::new(WatchState {
+        last_mtime,
+        last_scan: std::time::Instant::now(),
+    });
     let app_for_cb = app.clone();
     let watch_root = target_dir.clone();
 
@@ -131,17 +158,50 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     Ok(watcher)
 }
 
+/// Watcher bookkeeping: the last-emitted arena mtime plus a scan debouncer.
+struct WatchState {
+    last_mtime: SystemTime,
+    last_scan: std::time::Instant,
+}
+
+/// Minimum spacing between directory scans in the notify callback. During a
+/// battle the game continuously rewrites the ongoing `.wowsreplay` in the
+/// same watched tree — those events must not each trigger a full recursive
+/// walk of the replays folder.
+const ARENA_SCAN_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// notify callback: on a create/modify of tempArenaInfo.json, read its mtime;
 /// if newer than the last-emitted one, re-parse + emit.
 fn handle_watch_event(
     app: &AppHandle,
     target_dir: &PathBuf,
-    state: &Mutex<SystemTime>,
+    state: &Mutex<WatchState>,
     res: Result<notify::Event, notify::Error>,
 ) {
     let Ok(ev) = res else { return };
     if !matches!(ev.kind, EventKind::Create(_) | EventKind::Modify(_)) {
         return;
+    }
+    // Only events touching the arena file itself justify a scan — anything
+    // else (replay writes, subfolder churn) is filtered out before the walk.
+    let touches_arena = ev.paths.iter().any(|p| {
+        p.file_name()
+            .is_some_and(|n| n == std::ffi::OsStr::new("tempArenaInfo.json"))
+    });
+    if !touches_arena {
+        return;
+    }
+    // Debounce: a write typically arrives as a create+modify pair; one scan
+    // per window is plenty and the mtime compare keeps the semantics exact.
+    {
+        let mut guard = match state.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if guard.last_scan.elapsed() < ARENA_SCAN_DEBOUNCE {
+            return;
+        }
+        guard.last_scan = std::time::Instant::now();
     }
     let Some(path) = find_latest_arena_info(target_dir) else {
         return;
@@ -153,10 +213,10 @@ fn handle_watch_event(
         Ok(g) => g,
         Err(_) => return,
     };
-    if mtime <= *guard {
+    if mtime <= guard.last_mtime {
         return; // not newer — skip (requireFileToBeNewer)
     }
-    *guard = mtime;
+    guard.last_mtime = mtime;
     drop(guard);
 
     match read_arena_file(&path) {
@@ -165,7 +225,7 @@ fn handle_watch_event(
                 players = info.vehicles.len(),
                 "fresh tempArenaInfo.json — emitting arena-info event"
             );
-            note_team_size(&info.vehicles);
+            note_arena_seen(&info.vehicles, mtime);
             if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
                 tracing::warn!(error = %e, "emit arena-info event failed");
             }
@@ -173,6 +233,12 @@ fn handle_watch_event(
         Err(e) => tracing::warn!(error = %e, "re-read tempArenaInfo.json after change failed"),
     }
 }
+
+/// Cached auto-detected install (game root + its replays dir). The detection
+/// scans the registry and Steam libraries; `read_temp_arena_info` is polled
+/// every 3 s WITHOUT an explicit dir, so an uncached miss would re-scan all
+/// of that per poll. Invalidated when the game root disappears.
+static DETECTED_DIR_CACHE: Mutex<Option<(PathBuf, PathBuf)>> = Mutex::new(None);
 
 fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Some(d) = dir {
@@ -187,8 +253,18 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     // Last resort: auto-detect the install (registry + Steam) and use its
     // `replays/` folder. Mirrors `replay::resolve_replay_dir`. The frontend
     // normally passes the active install's path explicitly.
+    if let Some((root, replays)) = DETECTED_DIR_CACHE.lock().ok().and_then(|g| g.clone()) {
+        if root.is_dir() {
+            return Ok(replays);
+        }
+    }
     if let Some(detected) = super::game_detect::detect_game_install().into_iter().next() {
-        return Ok(PathBuf::from(&detected.path).join("replays"));
+        let root = PathBuf::from(&detected.path);
+        let replays = root.join("replays");
+        if let Ok(mut cache) = DETECTED_DIR_CACHE.lock() {
+            *cache = Some((root.clone(), replays.clone()));
+        }
+        return Ok(replays);
     }
     Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into())
 }
