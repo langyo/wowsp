@@ -1,0 +1,6 @@
+# The installer shell embeds a multi-GB payload via include_bytes!; the
+# MSVC link.exe link step on such a binary dominates the flavor builds.
+# rust-lld links the same image several times faster (and ships with the
+# default toolchain, so CI needs nothing extra).
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
