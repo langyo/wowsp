@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import AppTitleBar from "@/components/layout/AppTitleBar";
 import AppShell from "@/components/layout/AppShell";
+import { useOverlayLifecycle } from "@/features/overlay/useOverlayLifecycle";
 
 /**
  * Root component for the MAIN window — mounts AppTitleBar (our shell around
@@ -12,12 +13,15 @@ import AppShell from "@/components/layout/AppShell";
  * outside Tauri the caption buttons are inert and the subtitle stays empty
  * (browser dev mode has no app version).
  *
- * The overlay window uses OverlayApp instead (no title bar).
+ * The overlay window uses OverlayApp instead (no title bar). While the game
+ * runs and the in-game overlay setting is on, the overlay lifecycle keeps the
+ * transparent overlay window + Tab watcher alive (see useOverlayLifecycle).
  */
 export default defineComponent({
   name: "App",
   setup() {
     const version = ref("");
+    useOverlayLifecycle();
 
     onMounted(async () => {
       try {

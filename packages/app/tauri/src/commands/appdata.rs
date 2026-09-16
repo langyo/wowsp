@@ -152,7 +152,7 @@ pub fn get_game_process(
 /// running two clients simultaneously is rare and would share a replay dir
 /// only if they're the same install anyway).
 #[cfg(target_os = "windows")]
-fn find_game_pid() -> Option<u32> {
+pub(crate) fn find_game_pid() -> Option<u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,

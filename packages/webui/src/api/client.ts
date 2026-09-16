@@ -92,10 +92,35 @@ export interface ArenaInfo {
   raw: unknown;
 }
 
+/** Mirrors `wowsp_tauri_shared::Rect` — an axis-aligned rect in physical px. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Mirrors `wowsp_tauri_shared::OverlayAnchor`. All coordinates are PHYSICAL
+ *  pixels relative to the overlay window's top-left corner (which Rust places
+ *  exactly over the game window); divide by `devicePixelRatio` for CSS px. */
+export interface OverlayAnchor {
+  /** Game-window rect in physical screen px (diagnostics; mirrored by the
+   *  overlay window placement). */
+  gameRect: Rect;
+  /** Detected team-list rect, physical px relative to the game window. */
+  rosterRect: Rect;
+  /** Vertical center of each mapped player row (top to bottom, header rows
+   *  trimmed), physical px relative to the game window. */
+  rowCenters: number[];
+  /** Allies/enemies column split as a fraction (0–1) of the roster width. */
+  teamSplit: number;
+}
+
 /** Mirrors `wowsp_tauri_shared::CaptureResult`. */
 export interface CaptureResult {
   imageBase64: string;
-  rosterRect?: { x: number; y: number; width: number; height: number } | null;
+  rosterRect?: Rect | null;
+  anchor?: OverlayAnchor | null;
 }
 
 /** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
@@ -767,8 +792,17 @@ export const api = {
   captureGameWindow: () => transport.invoke<CaptureResult>(RPC.capture_game_window),
   setOverlayVisible: (visible: boolean) =>
     transport.invoke<null>(RPC.set_overlay_visible, { visible }),
-  createOverlayWindow: () => transport.invoke<null>(RPC.create_overlay_window),
+  /** Create (once) the hidden transparent overlay window + start the Rust
+   *  Tab watcher. `realm` is forwarded to the overlay webview via the URL so
+   *  its batch lookups don't need a separate install detection. */
+  createOverlayWindow: (realm?: string) =>
+    transport.invoke<null>(RPC.create_overlay_window, { realm: realm ?? null }),
   destroyOverlayWindow: () => transport.invoke<null>(RPC.destroy_overlay_window),
+  startOverlayTabWatch: () => transport.invoke<null>(RPC.start_overlay_tab_watch),
+  stopOverlayTabWatch: () => transport.invoke<null>(RPC.stop_overlay_tab_watch),
+  /** Anchor push from the Rust Tab watcher (capture + detector result). */
+  listenOverlayAnchor: (handler: (anchor: OverlayAnchor) => void) =>
+    transport.listen?.<OverlayAnchor>("wowsp://overlay-anchor", handler),
   lookupPlayerStats: (name: string, realm: string) =>
     transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
   /** Batch roster lookup: one entry per input name, in order; null = not

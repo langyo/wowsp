@@ -31,5 +31,11 @@
   "networkSaved": "Enregistré",
   "resourceCdn": "CDN de ressources",
   "resourceCdnPlaceholder": "Laisser vide pour utiliser le CDN Wargaming officiel",
-  "resourceCdnHint": "Miroir des portraits de navires et autres ressources — le chemin de l'URL est conservé et les requêtes passent par le proxy de l'application."
+  "resourceCdnHint": "Miroir des portraits de navires et autres ressources — le chemin de l'URL est conservé et les requêtes passent par le proxy de l'application.",
+  "overlay": "Superposition en jeu",
+  "overlayOn": "Activé",
+  "overlayOff": "Désactivé",
+  "overlayDesc": "Les statistiques des deux équipes sont récupérées automatiquement au début de la bataille ; maintenez Tab lorsque la fenêtre du jeu est au premier plan pour voir le taux de victoires et les dégâts moyens de chaque joueur à côté de son pseudo.",
+  "overlayTabToggle": "Maintenir Tab pour voir les statistiques",
+  "overlayFullscreenNote": "※ Indisponible en plein écran exclusif : dans ce mode, la capture d'écran GDI ne renvoie que des images noires et la fenêtre de superposition ne peut pas s'afficher au-dessus d'une chaîne d'échange plein écran. Réglez le mode d'affichage du jeu sur sans bordure ou fenêtré."
 }

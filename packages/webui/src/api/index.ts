@@ -23,6 +23,8 @@ export type {
   ReplayMetaLite,
   ArenaInfo,
   CaptureResult,
+  Rect,
+  OverlayAnchor,
   PositionSample,
   EntityKind,
   EntityTrajectory,

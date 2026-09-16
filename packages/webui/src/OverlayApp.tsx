@@ -1,7 +1,7 @@
-import { defineComponent, onMounted, onBeforeUnmount } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted } from "vue";
 
-import OverlayRoster from "@/features/overlay/OverlayRoster";
-import { useOverlay } from "@/features/overlay/useOverlay";
+import OverlayStatsLayer from "@/features/overlay/OverlayStatsLayer";
+import { useOverlayStore } from "@/stores/overlay";
 import { t } from "@/i18n";
 import "./OverlayApp.scss";
 
@@ -13,25 +13,35 @@ import "./OverlayApp.scss";
  * window loading the same index.html with `?window=overlay`. main.ts detects
  * that query param and mounts this component instead of the router-driven App.
  *
- * The overlay window has no title bar, no router, transparent background. It
- * renders the live roster (pushed by the Rust arena-info watcher) and shows a
- * hint to hold Tab. Visibility is controlled by the Rust side (show/hide the
- * window), not by CSS — so when hidden the window truly stops rendering.
+ * The window has no title bar, no router, transparent background. It renders
+ * the per-row stat chips anchored to the game's team list. Visibility is
+ * controlled by the Rust Tab watcher (show/hide the window without stealing
+ * focus), not by CSS — so when hidden the window truly stops rendering. The
+ * hint pill shows while no battle roster is known yet.
+ *
+ * (Deliberately no `useOverlay` composable here — distinct from the unrelated
+ * modal helper in `composables/useOverlay.ts`, wiring the store inline keeps
+ * reactive refs flowing into the render function.)
  */
 export default defineComponent({
   name: "OverlayApp",
   setup() {
-    const overlay = useOverlay();
+    const store = useOverlayStore();
+
     onMounted(() => {
-      void overlay.refresh();
-      void overlay.startWatching();
+      void store.initRealm();
+      void store.refreshArenaInfo();
+      void store.startWatching();
     });
-    onBeforeUnmount(() => void overlay.stopWatching());
+    onBeforeUnmount(() => void store.stopWatching());
 
     return () => (
       <div class="overlay-shell">
-        <div class="overlay-shell__hint">{t("overlay.hint")}</div>
-        <OverlayRoster />
+        {store.arenaInfo ? (
+          <OverlayStatsLayer />
+        ) : (
+          <div class="overlay-shell__hint">{t("overlay.hint")}</div>
+        )}
       </div>
     );
   },

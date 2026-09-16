@@ -1,18 +1,29 @@
+/** Overlay window root. Fully transparent — the window itself is created with
+ *  transparent: true on the Rust side; only the stat chips / transient hint
+ *  pill paint anything. */
+
+/* theme.scss paints an opaque body background for the main shell (wallpaper
+   solid color); the overlay window must undo it so the game shows through.
+   main.ts adds this class on the <html> of the overlay window only. */
+html.wowsp-overlay,
+html.wowsp-overlay body {
+  background: transparent;
+}
+
 .overlay-shell {
+  position: relative;
   width: 100vw;
   height: 100vh;
-  /* Transparent so the game shows through; the window itself is created with
-     transparent: true on the Rust side. */
   background: transparent;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
+  pointer-events: none;
   font-family: var(--font-sans);
-  pointer-events: none; /* click-through by default; roster re-enables if needed */
+  overflow: hidden;
 
   &__hint {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
     padding: 0.3rem 0.9rem;
     background: rgb(0 120 200 / 12%);
     border-radius: var(--radius-full);

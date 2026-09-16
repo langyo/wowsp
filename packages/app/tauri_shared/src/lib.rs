@@ -155,14 +155,48 @@ pub struct ArenaInfo {
 }
 
 /// Result of a Tab-triggered screen capture + roster-region detection in
-/// overlay mode. The frontend uses `rosterRect` to anchor the rendered roster.
+/// overlay mode. The frontend uses `anchor` to place the per-row stat chips.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureResult {
     /// PNG bytes of the captured game window, base64-encoded for IPC.
+    /// Empty in normal operation — the anchor carries everything the frontend
+    /// needs, and shipping a full-screen PNG per Tab press would be wasteful.
+    /// Populated only by the debug capture path.
     pub image_base64: String,
     /// Detected team-list region in screen pixels, or `None` if not found.
     pub roster_rect: Option<Rect>,
+    /// Full anchoring info (rows + team split); `None` when detection failed.
+    #[serde(default)]
+    pub anchor: Option<OverlayAnchor>,
+}
+
+/// Everything the overlay window needs to align its stat chips with the
+/// in-game team list, produced by the roster detector on each Tab press.
+///
+/// All coordinates are PHYSICAL pixels relative to the top-left corner of the
+/// game window (which is also the top-left corner of the overlay window —
+/// Rust places the overlay exactly over the game rect). The frontend divides
+/// by `devicePixelRatio` to get CSS pixels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayAnchor {
+    /// Game-window rect in PHYSICAL screen coordinates (where the overlay
+    /// window was placed). Sent for diagnostics; the overlay window already
+    /// mirrors it.
+    pub game_rect: Rect,
+    /// Detected team-list rect, physical px relative to the game window's
+    /// top-left corner.
+    pub roster_rect: Rect,
+    /// Vertical center of each player row, physical px relative to the game
+    /// window's top-left corner, top to bottom. Header rows are trimmed and
+    /// the count capped at the roster's team size (when the arena hint is
+    /// known), so the frontend can map players by index directly.
+    pub row_centers: Vec<i32>,
+    /// Horizontal position of the allies/enemies column split as a fraction
+    /// (0.0–1.0) of the roster rect width. Allies occupy [0, split), enemies
+    /// [split, 1].
+    pub team_split: f32,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.

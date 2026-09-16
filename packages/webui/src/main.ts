@@ -26,10 +26,18 @@ const isOverlay = new URLSearchParams(window.location.search).get("window") === 
 
 if (isOverlay) {
   bootstrap();
+  // Marks this document as the overlay window: OverlayApp.scss uses it to
+  // undo theme.scss's opaque body background so the game shows through.
+  document.documentElement.classList.add("wowsp-overlay");
   const app = createApp(OverlayApp);
   app.use(createPinia());
   app.use(i18n);
   app.mount("#app");
+  // The pre-mount loading screen is opaque — dismiss it or it would cover
+  // the game even though the window itself is transparent.
+  if (typeof window.__loaderDismiss === "function") {
+    window.__loaderDismiss();
+  }
 } else {
   bootstrap();
   const app = createApp(App);

@@ -27,6 +27,8 @@ export const RPC = {
   create_overlay_window: "create_overlay_window",
   destroy_overlay_window: "destroy_overlay_window",
   set_overlay_visible: "set_overlay_visible",
+  start_overlay_tab_watch: "start_overlay_tab_watch",
+  stop_overlay_tab_watch: "stop_overlay_tab_watch",
   lookup_player_stats: "lookup_player_stats",
   lookup_players_stats_batch: "lookup_players_stats_batch",
   suggest_players: "suggest_players",
