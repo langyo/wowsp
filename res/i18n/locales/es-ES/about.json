@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "Un panel de escritorio para World of Warships: revisión independiente de repeticiones con un mapa holográfico en 3D, además de una superposición transparente dentro del juego para consultar estadísticas en tiempo real.",
   "checkUpdate": "Buscar actualizaciones",
-  "updateAvailable": "Nueva versión {version}: actualizando automáticamente…",
+  "updateAvailable": "Nueva versión {version} encontrada",
   "updatePrompt": "Nueva versión {version} disponible",
   "updateDownloading": "Descargando la actualización",
   "updateRacing": "Comprobando fuentes espejo…",

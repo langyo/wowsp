@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "World of Warships 用デスクトップダッシュボード：ホログラフィック 3D マップによるスタンドアロンのリプレイ分析に加え、ゲーム内透過オーバーレイでリアルタイムの戦績照会ができます。",
   "checkUpdate": "更新を確認",
-  "updateAvailable": "新しいバージョン {version} を自動更新しています…",
+  "updateAvailable": "新しいバージョン {version} があります",
   "updatePrompt": "新しいバージョン {version} があります",
   "updateDownloading": "更新をダウンロード中",
   "updateRacing": "ミラーソースを確認中…",

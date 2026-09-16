@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "戰艦世界桌面儀表板：獨立錄影復盤（全像 3D 地圖）+ 遊戲內透明覆蓋層（即時水表查詢）。",
   "checkUpdate": "檢查更新",
-  "updateAvailable": "發現新版本 {version}，正在自動更新…",
+  "updateAvailable": "發現新版本 {version}",
   "updatePrompt": "發現新版本 {version}",
   "updateDownloading": "正在下載更新",
   "updateRacing": "正在測試鏡像源…",

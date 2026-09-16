@@ -17,6 +17,7 @@ import { initModelPack } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
 import Sidebar from "./Sidebar";
+import UpdateToast from "./UpdateToast";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -98,9 +99,10 @@ export default defineComponent({
     return () => (
       <div class="app-shell">
         <WallpaperRenderer />
-        {/* Update prompting lives entirely in hikari toast surfaces — the
-            updater store raises a blocking toast card (立即更新 / 稍后,
-            then a live pass card with 取消); nothing renders inline here. */}
+        {/* Update prompting lives entirely in top-right toast surfaces —
+            the updater store raises a blocking toast prompt (立即更新 /
+            稍后), then the dedicated UpdateToast pass card (spinner,
+            progress bar, 取消); nothing renders inline here. */}
         <Sidebar />
         <main class="app-shell__main">
           {/* Shared page scroll region: the hikari scroll container owns the
@@ -125,6 +127,10 @@ export default defineComponent({
             the update prompt card paints above it (hikari's shell
             convention — the two share one top-right column). */}
         <HBlockingToast />
+        {/* Updater pass card (download / install progress): renders nothing
+            while the store is idle, so it mounts unconditionally next to
+            the blocking host in the same top-right column. */}
+        <UpdateToast />
 
         {/* Close confirm dialog — footer carries the action button group. */}
         <HModal

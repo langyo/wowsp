@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "A desktop dashboard for World of Warships: standalone replay review with a holographic 3D map, plus an in-game transparent overlay for live stats lookup.",
   "checkUpdate": "Check for updates",
-  "updateAvailable": "New version {version} found — updating automatically…",
+  "updateAvailable": "New version {version} found",
   "updatePrompt": "New version {version} available",
   "updateDownloading": "Downloading update",
   "updateRacing": "Testing mirror sources…",

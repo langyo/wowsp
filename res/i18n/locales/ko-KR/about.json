@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "World of Warships용 데스크톱 대시보드: 홀로그램 3D 맵을 갖춘 독립 리플레이 복기와 인게임 투명 오버레이 실시간 전적 조회를 제공합니다.",
   "checkUpdate": "업데이트 확인",
-  "updateAvailable": "새 버전 {version}을(를) 자동 업데이트하는 중…",
+  "updateAvailable": "새 버전 {version}이(가) 발견되었습니다",
   "updatePrompt": "새 버전 {version} 사용 가능",
   "updateDownloading": "업데이트 다운로드 중",
   "updateRacing": "미러 소스 확인 중…",

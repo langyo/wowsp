@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "Un tableau de bord de bureau pour World of Warships : revue de replays autonome avec carte 3D holographique, ainsi qu'une superposition transparente en jeu pour la consultation des statistiques en temps réel.",
   "checkUpdate": "Vérifier les mises à jour",
-  "updateAvailable": "Nouvelle version {version} — mise à jour automatique…",
+  "updateAvailable": "Nouvelle version {version} trouvée",
   "updatePrompt": "Nouvelle version {version} disponible",
   "updateDownloading": "Téléchargement de la mise à jour",
   "updateRacing": "Test des sources miroir…",
