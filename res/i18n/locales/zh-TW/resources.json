@@ -5,7 +5,7 @@
   "scanning": "掃描中…",
   "noGame": "尚未偵測到遊戲安裝——請先在設定中指定遊戲路徑。",
   "installed": "已安裝模組",
-  "empty": "res_mods 下還沒有可識別的模組，可以在下方安裝一個。",
+  "empty": "res_mods 下還沒有可識別的模組，可以在「線上目錄」中安裝一個。",
   "filterAll": "全部",
   "installSection": "從資料夾安裝",
   "installHint": "指向解壓後的模組資料夾（語音包 / PnF 塗裝 / 勳帶圖示 / ime_config 補丁）。.zip/.7z 目前需先手動解壓。",
@@ -60,5 +60,10 @@
     "port": "港口",
     "text": "文字與聊天",
     "patch": "官方補丁"
+  },
+  "tab": {
+    "catalog": "線上目錄",
+    "installed": "已安裝",
+    "local": "本機安裝"
   }
 }

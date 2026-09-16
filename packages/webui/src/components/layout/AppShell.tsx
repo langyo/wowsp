@@ -1,6 +1,13 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { HButton, HCheckbox, HErrorBoundary, HModal, HToast } from "@celestia-island/hikari";
+import {
+  HButton,
+  HCheckbox,
+  HErrorBoundary,
+  HModal,
+  HScrollContainer,
+  HToast,
+} from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
@@ -168,17 +175,22 @@ export default defineComponent({
         )}
         <Sidebar />
         <main class="app-shell__main">
-          <HErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
-            <router-view
-              v-slots={{
-                default: ({ Component, route }: { Component: unknown; route: { path: string } }) => (
-                  <div class="app-shell__page" key={route.path}>
-                    {Component as JSX.Element}
-                  </div>
-                ),
-              }}
-            />
-          </HErrorBoundary>
+          {/* Shared page scroll region: the hikari scroll container owns the
+              scrollbar (auto-hiding overlay track on the window's right edge)
+              and every routed page scrolls inside its viewport. */}
+          <HScrollContainer class="app-shell__scroll">
+            <HErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
+              <router-view
+                v-slots={{
+                  default: ({ Component, route }: { Component: unknown; route: { path: string } }) => (
+                    <div class="app-shell__page" key={route.path}>
+                      {Component as JSX.Element}
+                    </div>
+                  ),
+                }}
+              />
+            </HErrorBoundary>
+          </HScrollContainer>
         </main>
         <HToast />
 

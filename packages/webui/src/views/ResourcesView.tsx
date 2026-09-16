@@ -19,6 +19,7 @@ import {
   HButton,
   HConfirmDialog,
   HSearchInput,
+  HTabs,
   useToast,
 } from "@celestia-island/hikari";
 
@@ -50,11 +51,16 @@ const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> = {
 type CatalogCat = "battle" | "minimap" | "port" | "text" | "patch";
 const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text", "patch"];
 
+/** Top-level tabs (VSCode-marketplace style): the three former stacked
+ *  sections become switchable views, the online catalog first. */
+type HubTab = "catalog" | "installed" | "local";
+
 const REPO = "langyo/wowsp";
 
 /**
  * Mod Hub (Resources page).
  *
+ * Top-level tabs pick the surface first, VSCode-marketplace style:
  * - Online catalog: curated tool-type plugins from `mod-index.json` (built
  *   from GitHub Discussions by scripts/mod_hub_publish.py). Install downloads
  *   the release asset, verifies SHA-256 and unpacks through the same pipeline
@@ -69,6 +75,7 @@ export default defineComponent({
     const toast = useToast();
     const { uiLocale, dataLanguage } = useLanguage();
 
+    const activeTab = ref<HubTab>("catalog");
     const installed = ref<InstalledMod[]>([]);
     const scanning = ref(false);
     const filter = ref<"all" | ModKind>("all");
@@ -294,14 +301,6 @@ export default defineComponent({
       <div class="resources-view">
         <div class="resources-view__head">
           <h1 class="resources-view__title">{t("resources.title")}</h1>
-          <button
-            class="resources-view__rescan"
-            disabled={!gameRoot.value || scanning.value}
-            onClick={scan}
-          >
-            <RefreshCw size={14} class={scanning.value ? "spin" : undefined} />
-            {scanning.value ? t("resources.scanning") : t("resources.scan")}
-          </button>
         </div>
         <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
 
@@ -312,181 +311,345 @@ export default defineComponent({
           </div>
         )}
 
-        {/* ── Online catalog: curated tool plugins from the mod-hub release ── */}
-        <section class="resources-section">
-          <div class="resources-section__head">
-            <Globe size={18} />
-            <h2>{t("resources.catalogTitle")}</h2>
-            <button
-              class="resources-view__rescan"
-              disabled={catalogLoading.value}
-              onClick={() => loadCatalog(true)}
-            >
-              <RefreshCw size={14} class={catalogLoading.value ? "spin" : undefined} />
-              {catalogLoading.value ? t("resources.refreshing") : t("resources.refresh")}
-            </button>
-          </div>
-          <p class="resources-section__desc">{t("resources.catalogHint")}</p>
+        {/* ── Tab strip: pick the surface first, then work inside it ── */}
+        <HTabs
+          class="resources-view__tabs"
+          modelValue={activeTab.value}
+          onUpdate:modelValue={(v: string) => (activeTab.value = v as HubTab)}
+          tabs={[
+            { key: "catalog", label: t("resources.tab.catalog"), icon: <Globe size={14} /> },
+            { key: "installed", label: t("resources.tab.installed"), icon: <Puzzle size={14} /> },
+            { key: "local", label: t("resources.tab.local"), icon: <FolderSearch size={14} /> },
+          ]}
+          variant="pill"
+          scrollable={false}
+          renderPanels={false}
+        />
 
-          {catalogError.value && (
-            <div class="resources-banner resources-banner--error">
-              {t("resources.catalogError", { error: catalogError.value })}
-            </div>
-          )}
-
-          {catalog.value.length > 0 && (
-            <>
-              <div class="resources-toolbar">
-                <HSearchInput
-                  modelValue={catalogSearch.value}
-                  onUpdate:modelValue={(v: string) => (catalogSearch.value = v)}
-                  placeholder={t("resources.catalogSearch")}
-                />
-                <span class="resources-toolbar__meta">
-                  {t("resources.catalogSource", {
-                    count: catalog.value.length,
-                    source: catalogSource.value,
-                    time: catalogFetched.value.slice(0, 10),
-                  })}
-                </span>
-              </div>
-
-              <div class="resources-chips">
-                <button
-                  class={["chip", catalogFilter.value === "all" && "chip--on"]}
-                  onClick={() => (catalogFilter.value = "all")}
-                >
-                  {t("resources.cat.all")} · {catalog.value.length}
-                </button>
-                {CATALOG_CATS.filter((c) => (catCounts.value.get(c) ?? 0) > 0).map((c) => (
+        {/* Panels swap instantly (VSCode-style); the tab strip's sliding
+            indicator already carries the motion feedback. */}
+        <div key={activeTab.value}>
+            {/* ── Online catalog: curated tool plugins from the mod-hub release ── */}
+            {activeTab.value === "catalog" && (
+              <section class="resources-section">
+                <div class="resources-section__head">
+                  <Globe size={18} />
+                  <h2>{t("resources.catalogTitle")}</h2>
                   <button
-                    key={c}
-                    class={["chip", catalogFilter.value === c && "chip--on"]}
-                    onClick={() => (catalogFilter.value = c)}
+                    class="resources-view__rescan resources-section__action"
+                    disabled={catalogLoading.value}
+                    onClick={() => loadCatalog(true)}
                   >
-                    {t(`resources.cat.${c}`)} · {catCounts.value.get(c)}
+                    <RefreshCw size={14} class={catalogLoading.value ? "spin" : undefined} />
+                    {catalogLoading.value ? t("resources.refreshing") : t("resources.refresh")}
                   </button>
-                ))}
-              </div>
-
-              {catalogShown.value.length === 0 ? (
-                <div class="resources-section__placeholder">{t("resources.empty")}</div>
-              ) : (
-                <div class="catalog-grid">
-                  {catalogShown.value.map((entry) => {
-                    const text = localized(entry);
-                    const record = recordOf(entry.id);
-                    const upToDate = record && record.version === entry.version;
-                    const busyInstall =
-                      busyId.value === entry.id && busyKind.value === "install";
-                    const busyUninstall =
-                      busyId.value === entry.id && busyKind.value === "uninstall";
-                    const url = discussionUrl(entry.discussion);
-                    const kb = catalogKb(entry);
-                    return (
-                      <div key={entry.id} class="catalog-card">
-                        <div class="catalog-card__head">
-                          <span class="catalog-card__name">
-                            {text.name || entry.title || entry.nameEn}
-                          </span>
-                          {upToDate && (
-                            <span class="catalog-card__badge catalog-card__badge--ok">
-                              {t("resources.installedBadge")}
-                            </span>
-                          )}
-                        </div>
-                        {text.name && text.name !== entry.nameEn && (
-                          <div class="catalog-card__sub">{entry.nameEn}</div>
-                        )}
-                        {text.desc && (
-                          <div class="catalog-card__desc" title={text.desc}>
-                            {text.desc}
-                          </div>
-                        )}
-                        <div class="catalog-card__meta">
-                          <span class="catalog-card__ver">
-                            <Hash size={11} />
-                            {record && !upToDate
-                              ? `${record.version} → ${entry.version}`
-                              : entry.version}
-                          </span>
-                          {kb > 0 && (
-                            <span>
-                              {t("resources.pkgCount", {
-                                count: entry.packages.length,
-                                kb,
-                              })}
-                            </span>
-                          )}
-                          <span>{t("resources.gameRange", { game: entry.game })}</span>
-                        </div>
-                        <div class="catalog-card__actions">
-                          {!upToDate && (
-                            <HButton
-                              size="sm"
-                              variant="primary"
-                              disabled={!!busyId.value || !gameRoot.value}
-                              loading={busyInstall}
-                              onClick={() => installMod(entry)}
-                            >
-                              {busyInstall
-                                ? t("resources.installingMod")
-                                : record
-                                  ? t("resources.update")
-                                  : t("resources.install")}
-                            </HButton>
-                          )}
-                          {record && (
-                            <button
-                              class="catalog-card__uninstall"
-                              title={t("resources.uninstall")}
-                              disabled={!!busyId.value}
-                              onClick={() => (confirmTarget.value = entry)}
-                            >
-                              <Trash2 size={13} />
-                              {busyUninstall ? t("resources.uninstalling") : ""}
-                            </button>
-                          )}
-                          {url && (
-                            <a
-                              class="catalog-card__thread"
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              title={t("resources.openDiscussion")}
-                            >
-                              <ExternalLink size={13} />
-                              {t("resources.discuss")}
-                            </a>
-                          )}
-                        </div>
-                        {busyInstall && progress.value && (
-                          <div class="catalog-card__progress">
-                            <div
-                              class="catalog-card__progress-bar"
-                              style={{
-                                width: `${Math.min(
-                                  100,
-                                  progress.value.total > 0
-                                    ? (progress.value.received / progress.value.total) * 100
-                                    : 12,
-                                )}%`,
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
                 </div>
-              )}
-            </>
-          )}
+                <p class="resources-section__desc">{t("resources.catalogHint")}</p>
 
-          {!catalogLoading.value && catalog.value.length === 0 && !catalogError.value && (
-            <div class="resources-section__placeholder">{t("resources.catalogEmpty")}</div>
-          )}
-        </section>
+                {catalogError.value && (
+                  <div class="resources-banner resources-banner--error">
+                    {t("resources.catalogError", { error: catalogError.value })}
+                  </div>
+                )}
+
+                {catalog.value.length > 0 && (
+                  <>
+                    <div class="resources-toolbar">
+                      <HSearchInput
+                        modelValue={catalogSearch.value}
+                        onUpdate:modelValue={(v: string) => (catalogSearch.value = v)}
+                        placeholder={t("resources.catalogSearch")}
+                      />
+                      <span class="resources-toolbar__meta">
+                        {t("resources.catalogSource", {
+                          count: catalog.value.length,
+                          source: catalogSource.value,
+                          time: catalogFetched.value.slice(0, 10),
+                        })}
+                      </span>
+                    </div>
+
+                    <div class="resources-chips">
+                      <button
+                        class={["chip", catalogFilter.value === "all" && "chip--on"]}
+                        onClick={() => (catalogFilter.value = "all")}
+                      >
+                        {t("resources.cat.all")} · {catalog.value.length}
+                      </button>
+                      {CATALOG_CATS.filter((c) => (catCounts.value.get(c) ?? 0) > 0).map((c) => (
+                        <button
+                          key={c}
+                          class={["chip", catalogFilter.value === c && "chip--on"]}
+                          onClick={() => (catalogFilter.value = c)}
+                        >
+                          {t(`resources.cat.${c}`)} · {catCounts.value.get(c)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {catalogShown.value.length === 0 ? (
+                      <div class="resources-section__placeholder">{t("resources.empty")}</div>
+                    ) : (
+                      <div class="catalog-grid">
+                        {catalogShown.value.map((entry) => {
+                          const text = localized(entry);
+                          const record = recordOf(entry.id);
+                          const upToDate = record && record.version === entry.version;
+                          const busyInstall =
+                            busyId.value === entry.id && busyKind.value === "install";
+                          const busyUninstall =
+                            busyId.value === entry.id && busyKind.value === "uninstall";
+                          const url = discussionUrl(entry.discussion);
+                          const kb = catalogKb(entry);
+                          return (
+                            <div key={entry.id} class="catalog-card">
+                              <div class="catalog-card__head">
+                                <span class="catalog-card__name">
+                                  {text.name || entry.title || entry.nameEn}
+                                </span>
+                                {upToDate && (
+                                  <span class="catalog-card__badge catalog-card__badge--ok">
+                                    {t("resources.installedBadge")}
+                                  </span>
+                                )}
+                              </div>
+                              {text.name && text.name !== entry.nameEn && (
+                                <div class="catalog-card__sub">{entry.nameEn}</div>
+                              )}
+                              {text.desc && (
+                                <div class="catalog-card__desc" title={text.desc}>
+                                  {text.desc}
+                                </div>
+                              )}
+                              <div class="catalog-card__meta">
+                                <span class="catalog-card__ver">
+                                  <Hash size={11} />
+                                  {record && !upToDate
+                                    ? `${record.version} → ${entry.version}`
+                                    : entry.version}
+                                </span>
+                                {kb > 0 && (
+                                  <span>
+                                    {t("resources.pkgCount", {
+                                      count: entry.packages.length,
+                                      kb,
+                                    })}
+                                  </span>
+                                )}
+                                <span>{t("resources.gameRange", { game: entry.game })}</span>
+                              </div>
+                              <div class="catalog-card__actions">
+                                {!upToDate && (
+                                  <HButton
+                                    size="sm"
+                                    variant="primary"
+                                    disabled={!!busyId.value || !gameRoot.value}
+                                    loading={busyInstall}
+                                    onClick={() => installMod(entry)}
+                                  >
+                                    {busyInstall
+                                      ? t("resources.installingMod")
+                                      : record
+                                        ? t("resources.update")
+                                        : t("resources.install")}
+                                  </HButton>
+                                )}
+                                {record && (
+                                  <button
+                                    class="catalog-card__uninstall"
+                                    title={t("resources.uninstall")}
+                                    disabled={!!busyId.value}
+                                    onClick={() => (confirmTarget.value = entry)}
+                                  >
+                                    <Trash2 size={13} />
+                                    {busyUninstall ? t("resources.uninstalling") : ""}
+                                  </button>
+                                )}
+                                {url && (
+                                  <a
+                                    class="catalog-card__thread"
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={t("resources.openDiscussion")}
+                                  >
+                                    <ExternalLink size={13} />
+                                    {t("resources.discuss")}
+                                  </a>
+                                )}
+                              </div>
+                              {busyInstall && progress.value && (
+                                <div class="catalog-card__progress">
+                                  <div
+                                    class="catalog-card__progress-bar"
+                                    style={{
+                                      width: `${Math.min(
+                                        100,
+                                        progress.value.total > 0
+                                          ? (progress.value.received / progress.value.total) * 100
+                                          : 12,
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {!catalogLoading.value && catalog.value.length === 0 && !catalogError.value && (
+                  <div class="resources-section__placeholder">{t("resources.catalogEmpty")}</div>
+                )}
+              </section>
+            )}
+
+            {/* ── Installed plugins, browsable by category ─────────────────── */}
+            {activeTab.value === "installed" && (
+              <section class="resources-section">
+                <div class="resources-section__head">
+                  <Puzzle size={18} />
+                  <h2>{t("resources.installed")}</h2>
+                  <button
+                    class="resources-view__rescan resources-section__action"
+                    disabled={!gameRoot.value || scanning.value}
+                    onClick={scan}
+                  >
+                    <RefreshCw size={14} class={scanning.value ? "spin" : undefined} />
+                    {scanning.value ? t("resources.scanning") : t("resources.scan")}
+                  </button>
+                </div>
+
+                <div class="resources-chips">
+                  <button
+                    class={["chip", filter.value === "all" && "chip--on"]}
+                    onClick={() => (filter.value = "all")}
+                  >
+                    {t("resources.filterAll")} · {installed.value.length}
+                  </button>
+                  {KIND_ORDER.filter((k) => (byKind.value.get(k) ?? 0) > 0).map((k) => (
+                    <button
+                      key={k}
+                      class={["chip", filter.value === k && "chip--on"]}
+                      onClick={() => (filter.value = k)}
+                    >
+                      {kindLabel(k)} · {byKind.value.get(k)}
+                    </button>
+                  ))}
+                </div>
+
+                {shown.value.length === 0 ? (
+                  <div class="resources-section__placeholder">{t("resources.empty")}</div>
+                ) : (
+                  <div class="mod-grid">
+                    {shown.value.map((m) => {
+                      const meta = KIND_META[m.kind];
+                      const Icon = meta.icon;
+                      return (
+                        <div key={m.relPath + m.name} class={`mod-card mod-card--${meta.class}`}>
+                          <Icon size={20} />
+                          <div class="mod-card__body">
+                            <div class="mod-card__name">{m.name}</div>
+                            <div class="mod-card__kind">{kindLabel(m.kind)}</div>
+                            {m.detail && <div class="mod-card__detail">{m.detail}</div>}
+                            <div class="mod-card__path">{m.relPath}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* ── Install from an unpacked folder via the classifier ───────── */}
+            {activeTab.value === "local" && (
+              <section class="resources-section">
+                <div class="resources-section__head">
+                  <FolderSearch size={18} />
+                  <h2>{t("resources.installSection")}</h2>
+                </div>
+                <p class="resources-section__desc">{t("resources.installHint")}</p>
+
+                <div class="resources-installrow">
+                  <input
+                    type="text"
+                    v-model={sourcePath.value}
+                    placeholder={t("resources.pathPlaceholder")}
+                    spellcheck={false}
+                  />
+                  <button
+                    disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
+                    onClick={analyze}
+                  >
+                    {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
+                  </button>
+                </div>
+
+                {planError.value && (
+                  <div class="resources-banner resources-banner--error">{planError.value}</div>
+                )}
+                {report.value && (
+                  <div class="resources-banner resources-banner--ok">
+                    {t("resources.installedOk", {
+                      name: report.value.name,
+                      count: report.value.count,
+                      version: report.value.version,
+                    })}
+                  </div>
+                )}
+
+                {plan.value && (
+                  <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
+                    <div class="plan-card__head">
+                      {(() => {
+                        const Icon = KIND_META[plan.value!.kind].icon;
+                        return <Icon size={18} />;
+                      })()}
+                      <strong>{plan.value.name}</strong>
+                      <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
+                      {plan.value.detail && (
+                        <span class="plan-card__detail">{plan.value.detail}</span>
+                      )}
+                    </div>
+                    {plan.value.entries.length > 0 && (
+                      <table class="plan-card__files">
+                        <caption>{t("resources.planFiles")}</caption>
+                        <tbody>
+                          {plan.value.entries.map((e) => (
+                            <tr key={e.fromRel + e.toRel}>
+                              <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
+                              <td>→</td>
+                              <td>{e.toRel}/</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {plan.value.warnings.length > 0 && (
+                      <ul class="plan-card__warnings">
+                        {plan.value.warnings.map((w) => (
+                          <li key={w}>
+                            <AlertTriangle size={12} /> {w}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      class="plan-card__go"
+                      disabled={installing.value}
+                      onClick={confirmInstall}
+                    >
+                      {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
 
         <HConfirmDialog
           open={!!confirmTarget.value}
@@ -498,137 +661,6 @@ export default defineComponent({
             if (!v) confirmTarget.value = null;
           }}
         />
-
-        {/* ── Installed plugins, browsable by category ─────────────────── */}
-        <section class="resources-section">
-          <div class="resources-section__head">
-            <Puzzle size={18} />
-            <h2>{t("resources.installed")}</h2>
-          </div>
-
-          <div class="resources-chips">
-            <button
-              class={["chip", filter.value === "all" && "chip--on"]}
-              onClick={() => (filter.value = "all")}
-            >
-              {t("resources.filterAll")} · {installed.value.length}
-            </button>
-            {KIND_ORDER.filter((k) => (byKind.value.get(k) ?? 0) > 0).map((k) => (
-              <button
-                key={k}
-                class={["chip", filter.value === k && "chip--on"]}
-                onClick={() => (filter.value = k)}
-              >
-                {kindLabel(k)} · {byKind.value.get(k)}
-              </button>
-            ))}
-          </div>
-
-          {shown.value.length === 0 ? (
-            <div class="resources-section__placeholder">{t("resources.empty")}</div>
-          ) : (
-            <div class="mod-grid">
-              {shown.value.map((m) => {
-                const meta = KIND_META[m.kind];
-                const Icon = meta.icon;
-                return (
-                  <div key={m.relPath + m.name} class={`mod-card mod-card--${meta.class}`}>
-                    <Icon size={20} />
-                    <div class="mod-card__body">
-                      <div class="mod-card__name">{m.name}</div>
-                      <div class="mod-card__kind">{kindLabel(m.kind)}</div>
-                      {m.detail && <div class="mod-card__detail">{m.detail}</div>}
-                      <div class="mod-card__path">{m.relPath}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* ── Install from an unpacked folder via the classifier ───────── */}
-        <section class="resources-section">
-          <div class="resources-section__head">
-            <FolderSearch size={18} />
-            <h2>{t("resources.installSection")}</h2>
-          </div>
-          <p class="resources-section__desc">{t("resources.installHint")}</p>
-
-          <div class="resources-installrow">
-            <input
-              type="text"
-              v-model={sourcePath.value}
-              placeholder={t("resources.pathPlaceholder")}
-              spellcheck={false}
-            />
-            <button
-              disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
-              onClick={analyze}
-            >
-              {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
-            </button>
-          </div>
-
-          {planError.value && (
-            <div class="resources-banner resources-banner--error">{planError.value}</div>
-          )}
-          {report.value && (
-            <div class="resources-banner resources-banner--ok">
-              {t("resources.installedOk", {
-                name: report.value.name,
-                count: report.value.count,
-                version: report.value.version,
-              })}
-            </div>
-          )}
-
-          {plan.value && (
-            <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
-              <div class="plan-card__head">
-                {(() => {
-                  const Icon = KIND_META[plan.value!.kind].icon;
-                  return <Icon size={18} />;
-                })()}
-                <strong>{plan.value.name}</strong>
-                <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
-                {plan.value.detail && (
-                  <span class="plan-card__detail">{plan.value.detail}</span>
-                )}
-              </div>
-              {plan.value.entries.length > 0 && (
-                <table class="plan-card__files">
-                  <caption>{t("resources.planFiles")}</caption>
-                  <tbody>
-                    {plan.value.entries.map((e) => (
-                      <tr key={e.fromRel + e.toRel}>
-                        <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
-                        <td>→</td>
-                        <td>{e.toRel}/</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {plan.value.warnings.length > 0 && (
-                <ul class="plan-card__warnings">
-                  {plan.value.warnings.map((w) => (
-                    <li key={w}>
-                      <AlertTriangle size={12} /> {w}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <button
-                class="plan-card__go"
-                disabled={installing.value}
-                onClick={confirmInstall}
-              >
-                {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
-              </button>
-            </div>
-          )}
-        </section>
       </div>
     );
   },

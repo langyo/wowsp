@@ -15,8 +15,8 @@ export default defineComponent({
   name: "SScrollTop",
   props: {
     /** CSS selector for the scroll container to monitor + scroll. Defaults to
-     *  the app shell's main content area (.app-shell__main). */
-    container: { type: String, default: ".app-shell__main" },
+     *  the app shell's hikari scroll viewport (the main content area). */
+    container: { type: String, default: ".app-shell__scroll .hk-scroll-container-viewport" },
     /** Scroll threshold (px) past which the button appears. */
     threshold: { type: Number, default: 400 },
   },

@@ -5,7 +5,7 @@
   "scanning": "扫描中…",
   "noGame": "尚未检测到游戏安装——请先在设置中指定游戏路径。",
   "installed": "已安装插件",
-  "empty": "res_mods 下还没有可识别的插件，可以在下方安装一个。",
+  "empty": "res_mods 下还没有可识别的插件，可以在「在线目录」中安装一个。",
   "filterAll": "全部",
   "installSection": "从文件夹安装",
   "installHint": "指向解压后的插件文件夹（语音包 / PnF 涂装 / 勋带图标 / ime_config 补丁）。.zip/.7z 目前需先手动解压。",
@@ -60,5 +60,10 @@
     "port": "港口",
     "text": "文本与聊天",
     "patch": "官方补丁"
+  },
+  "tab": {
+    "catalog": "在线目录",
+    "installed": "已安装",
+    "local": "本地安装"
   }
 }
