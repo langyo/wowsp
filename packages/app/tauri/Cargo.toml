@@ -66,8 +66,10 @@ image.workspace = true
 # Encoding
 base64.workspace = true
 
-# Tauri desktop shell
-tauri.workspace = true
+# Tauri desktop shell. protocol-asset backs the asset-protocol scope the
+# model pack loads through (tauri.conf.json assetProtocol — required once
+# that section exists, tauri-build validates the pair).
+tauri = { workspace = true, features = ["protocol-asset"] }
 
 # Update watch: resolves the configured mirror sources, fetches the `latest`
 # version marker and (via the `online` feature) probes mirrors — the app-side

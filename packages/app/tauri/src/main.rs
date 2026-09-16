@@ -88,6 +88,21 @@ fn main() {
             }
         })
         .setup(|app| {
+            // The frontend loads 3D models through the asset protocol from
+            // the model-pack cache (paths.rs conventions: %LOCALAPPDATA%\WoWSP
+            // for local installs, <exe_dir>/data/cache for portable). The
+            // static scope in tauri.conf.json only covers the local layout,
+            // so allow the resolved cache dir here too — otherwise portable
+            // installs render every convertFileSrc URL as a scope denial
+            // and the holographic map silently loses all its models.
+            match paths::cache_dir() {
+                Ok(dir) => {
+                    if let Err(e) = app.asset_protocol_scope().allow_directory(&dir, true) {
+                        tracing::warn!(error = %e, ?dir, "asset scope: allow cache dir failed");
+                    }
+                },
+                Err(e) => tracing::warn!(error = %e, "asset scope: cache dir unresolved"),
+            }
             // Seed OS preferences (locale + color scheme) into the webview
             // BEFORE any page JS runs, so the first paint matches the OS theme.
             let prefs = os_prefs::detect();
