@@ -1,7 +1,7 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 
 import {
-  HButton,
+  HBlockingToast,
   HCheckbox,
   HErrorBoundary,
   HModal,
@@ -16,7 +16,6 @@ import { useUpdaterStore } from "@/stores/updater";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
-import { formatSpeed } from "@/utils/format";
 import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -76,8 +75,8 @@ export default defineComponent({
 
       // Shun auto-update: probe portable mode, then a delayed version check.
       // The check itself is silent — failures live in the store for
-      // AboutModal only; a newer version turns the fixed banner into an
-      // actionable prompt (below). Browser dev mode has no updater.
+      // AboutModal only; a newer version raises the hikari blocking-toast
+      // prompt from the store. Browser dev mode has no updater.
       if (isTauri()) {
         void updater.init().then(() => updater.scheduleAutoCheck());
       }
@@ -99,89 +98,9 @@ export default defineComponent({
     return () => (
       <div class="app-shell">
         <WallpaperRenderer />
-        {/* Update toast — compact panel pinned to the top-right corner.
-            A prompted offer, not an auto-run: 立即更新 starts the mirror-race
-            download (a racing strip while the mirrors are measured, then
-            percent + speed), 取消 stops the pass, 稍后 dismisses it for the
-            session (AboutModal still offers the update). Failures never
-            render here, they surface in AboutModal. */}
-        {updater.available && !updater.dismissed && !updater.portable && (
-          <div class="update-toast" role="status">
-            <div class="update-toast__head">
-              <span class="update-toast__title">
-                {updater.installing
-                  ? t("about.updateInstalling")
-                  : updater.phase === "race"
-                    ? t("about.updateRacing")
-                    : updater.downloading
-                      ? t("about.updateDownloading")
-                      : t("about.updatePrompt", { version: updater.version ?? "" })}
-              </span>
-              {/* Idle: ✕ means 稍后 (dismiss for the session). Mid-pass it
-                  means 取消 — the Rust side tears the pass down and the
-                  toast falls back to the idle prompt. */}
-              <button
-                type="button"
-                class="update-toast__close"
-                title={
-                  updater.downloading
-                    ? t("about.updateCancel")
-                    : t("about.updateLater")
-                }
-                onClick={() =>
-                  updater.downloading
-                    ? void updater.cancelUpdate()
-                    : updater.dismissUpdate()
-                }
-              >
-                ✕
-              </button>
-            </div>
-            {updater.downloading && (
-              <div class="update-toast__stats">
-                <span class="update-toast__stat">{updater.progress ?? 0}%</span>
-                <span class="update-toast__stat">
-                  {formatSpeed(updater.speedBps)}
-                </span>
-              </div>
-            )}
-            {!updater.installing && !updater.downloading && (
-              <div class="update-toast__actions">
-                <HButton
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void updater.startAutoInstall()}
-                >
-                  {t("about.updateNow")}
-                </HButton>
-                <HButton
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => updater.dismissUpdate()}
-                >
-                  {t("about.updateLater")}
-                </HButton>
-              </div>
-            )}
-            <div
-              class={[
-                "update-toast__bar",
-                updater.installing || updater.phase === "race"
-                  ? "update-toast__bar--indeterminate"
-                  : "",
-              ]}
-            >
-              <div
-                class="update-toast__bar-fill"
-                style={
-                  updater.downloading && updater.phase === "download"
-                    ? { width: `${Math.min(Math.max(updater.progress ?? 0, 0), 100)}%` }
-                    : undefined
-                }
-              />
-            </div>
-          </div>
-        )}
+        {/* Update prompting lives entirely in hikari toast surfaces — the
+            updater store raises a blocking toast card (立即更新 / 稍后,
+            then a live pass card with 取消); nothing renders inline here. */}
         <Sidebar />
         <main class="app-shell__main">
           {/* Shared page scroll region: the hikari scroll container owns the
@@ -202,6 +121,10 @@ export default defineComponent({
           </HScrollContainer>
         </main>
         <HToast />
+        {/* Blocking-toast host: mounts right after the transient stack so
+            the update prompt card paints above it (hikari's shell
+            convention — the two share one top-right column). */}
+        <HBlockingToast />
 
         {/* Close confirm dialog — footer carries the action button group. */}
         <HModal
