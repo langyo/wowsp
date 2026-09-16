@@ -9,6 +9,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
+import { formatSpeed } from "@/utils/format";
 import Sidebar from "./Sidebar";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -92,10 +93,11 @@ export default defineComponent({
       <div class="app-shell">
         <WallpaperRenderer />
         {/* Update banner — slim fixed bar under the title bar. A prompted
-            offer, not an auto-run: 立即更新 starts the silent install,
-            稍后 dismisses it for the session (AboutModal still offers the
-            update). The buttons hide once the pass starts — no cancel.
-            Failures never render here, they surface in AboutModal. */}
+            offer, not an auto-run: 立即更新 starts the mirror-race download
+            (a racing strip while the mirrors are measured, then percent +
+            speed), 取消 stops the pass, 稍后 dismisses it for the session
+            (AboutModal still offers the update). Failures never render
+            here, they surface in AboutModal. */}
         {updater.available && !updater.dismissed && !updater.portable && (
           <div
             class={[
@@ -105,17 +107,32 @@ export default defineComponent({
             role="status"
           >
             {updater.installing ? (
-              <span>{t("about.updateInstalling")}</span>
+              <span class="update-banner__text">{t("about.updateInstalling")}</span>
+            ) : updater.phase === "race" ? (
+              <span class="update-banner__text">{t("about.updateRacing")}</span>
             ) : updater.downloading ? (
-              <span>
-                {t("about.updateDownloading", {
-                  version: updater.version ?? "",
-                  progress: updater.progress ?? 0,
-                })}
-              </span>
+              <>
+                <span class="update-banner__text">
+                  {t("about.updatePrompt", { version: updater.version ?? "" })}
+                </span>
+                <span>{t("about.updateDownloading")}</span>
+                <span class="update-banner__spacer" />
+                <span class="update-banner__stat">{updater.progress ?? 0}%</span>
+                <span class="update-banner__stat">{formatSpeed(updater.speedBps)}</span>
+                <HButton
+                  variant="ghost"
+                  size="sm"
+                  class="update-banner__cancel"
+                  onClick={() => void updater.cancelUpdate()}
+                >
+                  {t("about.updateCancel")}
+                </HButton>
+              </>
             ) : (
               <>
-                <span>{t("about.updatePrompt", { version: updater.version ?? "" })}</span>
+                <span class="update-banner__text">
+                  {t("about.updatePrompt", { version: updater.version ?? "" })}
+                </span>
                 <HButton
                   variant="primary"
                   size="sm"
@@ -129,13 +146,19 @@ export default defineComponent({
               </>
             )}
             {/* The strip doubles as the pass's progress bar: a 2px line
-                filled along its bottom edge while downloading, a sweeping
-                indeterminate band while the installer runs. */}
+                filled along its bottom edge while downloading, a striped
+                sweeping band while the mirrors race and while the installer
+                runs. */}
             {updater.downloading || updater.installing ? (
               <span
-                class="update-banner__progress"
+                class={[
+                  "update-banner__progress",
+                  updater.phase === "race" && !updater.installing
+                    ? "update-banner__progress--race"
+                    : "",
+                ]}
                 style={
-                  updater.downloading
+                  updater.downloading && updater.phase !== "race"
                     ? { width: `${Math.min(Math.max(updater.progress ?? 0, 0), 100)}%` }
                     : undefined
                 }

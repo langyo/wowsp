@@ -266,6 +266,7 @@ fn main() {
             commands::ranked::get_ranked_stats,
             commands::update::update_check,
             commands::update::update_download,
+            commands::update::update_cancel,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())

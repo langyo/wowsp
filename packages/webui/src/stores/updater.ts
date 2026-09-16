@@ -12,10 +12,15 @@ interface UpdateInfo {
   version: string | null;
 }
 
-/** Payload of the Rust `update-progress` event. */
+/** Payload of the Rust `update-progress` event. `race` covers the parallel
+ *  mirror probing and the 10 s artifact race (the strip shows an
+ *  indeterminate racing state); `download` is the winner streaming the
+ *  rest; `install` means the installer was spawned. */
 interface UpdateProgress {
-  phase: "download" | "install";
-  percent: number;
+  phase: "race" | "download" | "install";
+  percent?: number;
+  speed_bps?: number;
+  sources_alive?: number;
 }
 
 /** Shortcut answers captured from the update prompt, forwarded to the
@@ -51,6 +56,10 @@ export const useUpdaterStore = defineStore("updater", () => {
   const downloading = ref(false);
   const progress = ref<number | null>(null);
   const installing = ref(false);
+  // "race" while mirrors are probed / raced, "download" while the winner
+  // streams, "install" once the installer is spawned.
+  const phase = ref<"race" | "download" | "install" | null>(null);
+  const speedBps = ref<number | null>(null);
   const checked = ref(false);
   const error = ref<string | null>(null);
   const portable = ref(false);
@@ -72,12 +81,21 @@ export const useUpdaterStore = defineStore("updater", () => {
     if (!unlistenProgress) {
       try {
         unlistenProgress = await listen<UpdateProgress>("update-progress", (event) => {
-          if (event.payload?.phase === "download") {
-            progress.value = Math.round(event.payload.percent);
-          } else if (event.payload?.phase === "install") {
+          const payload = event.payload;
+          if (payload?.phase === "race") {
+            // Mirrors are being probed / raced — indeterminate strip state.
+            phase.value = "race";
+          } else if (payload?.phase === "download") {
+            phase.value = "download";
+            if (typeof payload.percent === "number") {
+              progress.value = Math.round(Math.min(Math.max(payload.percent, 0), 100));
+            }
+            speedBps.value = typeof payload.speed_bps === "number" ? payload.speed_bps : null;
+          } else if (payload?.phase === "install") {
             // The installer was spawned — reflect it even when the
             // command's promise never settles (the new build kills this
             // app right after the spawn).
+            phase.value = "install";
             installing.value = true;
           }
         });
@@ -110,21 +128,46 @@ export const useUpdaterStore = defineStore("updater", () => {
   async function downloadAndInstall() {
     if (portable.value || !available.value) return;
     downloading.value = true;
+    phase.value = "race";
     progress.value = 0;
+    speedBps.value = null;
     error.value = null;
     try {
       // Resolves once the installer process has been spawned; on the success
       // path the hardened installer kills this app first, so this promise
       // often never settles — both outcomes are success by design. The
       // prompt's shortcut answers ride along to the silent installer.
-      await invoke(RPC.update_download, {
-      });
+      await invoke(RPC.update_download, {});
       installing.value = true;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      // A user cancel (取消) is not a failure: the Rust side already
+      // deleted the part files — just fall back to the idle prompt state.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("update cancelled")) {
+        error.value = msg;
+      }
     } finally {
       downloading.value = false;
+      if (!installing.value) {
+        phase.value = null;
+        speedBps.value = null;
+      }
     }
+  }
+
+  /** The banner's 取消 answer: stop the in-flight pass. `available` stays
+   *  true, so the banner returns to the idle prompt and 立即更新 can
+   *  restart the pass from scratch. */
+  async function cancelUpdate() {
+    try {
+      await invoke(RPC.update_cancel);
+    } catch {
+      // The pass may have already settled — resetting below is still right.
+    }
+    downloading.value = false;
+    progress.value = null;
+    speedBps.value = null;
+    phase.value = null;
   }
 
   /** One-shot delayed check the app shell calls on mount (startup
@@ -156,6 +199,8 @@ export const useUpdaterStore = defineStore("updater", () => {
     downloading,
     progress,
     installing,
+    phase,
+    speedBps,
     checked,
     error,
     portable,
@@ -163,6 +208,7 @@ export const useUpdaterStore = defineStore("updater", () => {
     init,
     check,
     downloadAndInstall,
+    cancelUpdate,
     scheduleAutoCheck,
     startAutoInstall,
     dismissUpdate,
