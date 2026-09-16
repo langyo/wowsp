@@ -83,7 +83,7 @@ const SPEED_EWMA_ALPHA: f64 = 0.3;
 /// idle prompt, update still available).
 const CANCEL_MSG: &str = "update cancelled";
 
-/// The lite installer artifact URL under a mirror base — the exact name
+/// The installer artifact URL under a mirror base — the exact name
 /// `scripts/build_installers.py::emit` produces for the suffix-less flavor
 /// (`WoWSP_<version>_x64-installer.exe`; updates never use the -full /
 /// -webview2 variants).
@@ -232,7 +232,7 @@ async fn race_markers(
 }
 
 /// Resolves the fastest mirror (first `latest` marker to arrive), returning
-/// the marker version plus the lite-installer artifact URL under the
+/// the marker version plus the installer artifact URL under the
 /// winning source.
 async fn resolve_latest() -> Result<(String, String), String> {
     let watch = watch_config()?;

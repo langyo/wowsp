@@ -68,7 +68,7 @@ const RELEASES_URL: &str = "https://github.com/langyo/wowsp/releases/latest";
 const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-config.json"));
 /// The payload archive packed by build.rs from `metadata.shun.payload`.
 const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
-/// Build flavor (lite/full + WebView2 bundling), stamped by build.rs.
+/// Build flavor identity (model-pack + WebView2 bundling), stamped by build.rs.
 const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.txt"));
 /// res-latest asset updated_at the staged models were packed from
 /// ("" when unknown — e.g. plain `cargo build`); written as the
@@ -732,7 +732,7 @@ fn cleanup_bootstrap_payload(install_dir: &Path) {
 /// the pack is stamped with the res-latest `updated_at` it was packed
 /// from (`<cache>/.version`) so the app treats it as current instead of
 /// re-downloading on first launch; no stamp when the version is unknown
-/// or the pack is absent (lite flavor).
+/// or the pack is absent (plain `cargo build` payload).
 fn relocate_model_pack(install_dir: &Path, portable: bool) {
     let from = install_dir.join("models");
     if !from.is_dir() {

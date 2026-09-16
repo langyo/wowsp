@@ -2,14 +2,15 @@
 """Build the WoWSP shun installer artifacts.
 
 1. Build the application and stage its executable as the installer payload.
-2. Build the installer shell once per flavor with ``SHUN_PAYLOAD`` pointing
+2. Build the installer shell once per variant with ``SHUN_PAYLOAD`` pointing
    at the staged directory (the payload is packed into the shell binary —
-   the single-file installer pattern; see packages/installer-shell/build.rs):
+   the single-file installer pattern; see packages/installer-shell/build.rs).
+   Every installer carries the FULL payload: the application plus the
+   current 2D/3D model pack, so an install never touches the network for
+   resources. The only variant split is WebView2:
 
-   - ``lite``     — application only (the done pane offers the model-pack
-     attachment download instead),
-   - ``full``     — application + the 2D/3D model pack, and
-   - ``*-webview2`` — each flavor with the Evergreen offline runtime
+   - (default)     — application + full model pack, and
+   - ``webview2``  — the same payload with the Evergreen offline runtime
      embedded for machines without the WebView2 runtime.
 
 The shell's own frontend (``@wowsp/installer-web`` → ``web/dist``) is
@@ -18,12 +19,12 @@ purged so the embedded UI is never stale — plain ``cargo build`` would
 happily re-link with a previously expanded asset set.
 
 Artifacts land in ``target/release/bundle/installer/`` as
-``WoWSP_<version>_x64-installer[-full][-webview2].exe``.
+``WoWSP_<version>_x64-installer[-webview2].exe``.
 
 The Evergreen offline runtime (~180 MB) is cached under
 ``packages/installer-shell/vendor/`` (gitignored).
 
-    python scripts/build_installers.py [--skip-app-build] [--skip-models] [--flavors ...]
+    python scripts/build_installers.py [--skip-app-build] [--flavors ...]
 """
 
 from __future__ import annotations
@@ -210,17 +211,22 @@ def emit(version: str, installer: Path, suffix: str) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe")
-    ap.add_argument("--skip-models", action="store_true", help="omit the 2D/3D model pack (~1.2 GB) from the payload (lite artifacts only)")
     ap.add_argument(
         "--flavors",
-        default="lite,lite-webview2,full,full-webview2",
-        help="comma list of artifacts to build: lite, lite-webview2, full, full-webview2",
+        default="full,full-webview2",
+        help="comma list of artifacts to build: full, full-webview2 "
+        "(every installer carries the full model pack; the split is "
+        "WebView2 runtime bundling only)",
     )
     args = ap.parse_args()
 
     flavors = [f.strip() for f in args.flavors.split(",") if f.strip()]
-    if args.skip_models and any("full" in f for f in flavors):
-        sys.exit("--skip-models is incompatible with the full flavors")
+    unknown = [f for f in flavors if f not in ("full", "full-webview2")]
+    if unknown:
+        sys.exit(
+            f"unknown flavor(s): {', '.join(unknown)} — the lite split is "
+            "retired; installers always carry the full model pack"
+        )
 
     version = app_version()
 
@@ -242,40 +248,25 @@ def main() -> int:
     # the app then re-downloads as usual).
     model_version = model_pack_version()
 
-    # One shared staging directory, re-staged just-in-time before each
-    # flavor pair: lite (application only) vs full (application + model
-    # pack). Staging everything up front would let the full payload bleed
-    # into the lite builds — both flavors pack the same path.
+    # One shared staging directory: application + full model pack; the
+    # webview2 variant just adds the offline runtime subdirectory.
     wv2 = ensure_payload()
 
     suffixes = {
-        "lite": "",
-        "lite-webview2": "-webview2",
-        "full": "-full",
-        "full-webview2": "-full-webview2",
+        "full": "",
+        "full-webview2": "-webview2",
     }
 
-    def build_variant(flavor: str, stage: Path, with_wv2: bool, model_version: str) -> None:
-        if with_wv2:
-            stage = stage_webview2(stage, wv2)
-        exe = build_installer(stage, flavor, model_version)
+    stage = stage_payload(app_exe)
+    stage_models(stage)
+    for flavor in flavors:
+        flavor_stage = stage
+        if flavor.endswith("webview2"):
+            flavor_stage = stage_webview2(stage, wv2)
+        exe = build_installer(flavor_stage, flavor, model_version)
         # Copy right after the build: the next variant overwrites the
         # shared output binary.
         emit(version, exe, suffixes[flavor])
-
-    lite_flavors = [f for f in flavors if f.startswith("lite")]
-    full_flavors = [f for f in flavors if f.startswith("full")]
-
-    if lite_flavors:
-        lite_stage = stage_payload(app_exe)
-        for flavor in lite_flavors:
-            build_variant(flavor, lite_stage, flavor.endswith("webview2"), model_version)
-
-    if full_flavors:
-        full_stage = stage_payload(app_exe)
-        stage_models(full_stage)
-        for flavor in full_flavors:
-            build_variant(flavor, full_stage, flavor.endswith("webview2"), model_version)
     return 0
 
 

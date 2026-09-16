@@ -70,8 +70,6 @@ const HINTS: Record<Mode, string> = {
 };
 
 const FLAVOR_LABELS: Record<string, string> = {
-  lite: "精简版（不含模型资源包，可联网获取）",
-  "lite-webview2": "精简版 · 含 WebView2 运行时（不含模型资源包）",
   full: "完整版 · 含 2D/3D 模型资源包",
   "full-webview2": "完整版 · 含 2D/3D 模型资源包与 WebView2 运行时",
 };
