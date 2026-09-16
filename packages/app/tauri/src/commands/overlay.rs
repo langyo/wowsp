@@ -264,30 +264,50 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
 
         if focused_on_game && tab_down {
             if !tab_down_prev {
-                // Fresh Tab press — anchor + show. Reuse a recent anchor
-                // first; otherwise a capture attempt must pass BOTH gates:
+                // Fresh Tab press — anchor + show. First make sure the
+                // battle state is current: one cheap stat/read of
+                // tempArenaInfo.json keeps the overlay self-sufficient even
+                // when the arena watcher hasn't fired yet or the replay
+                // view is closed. This is what lets the overlay show on the
+                // pre-battle spawn screen, where the game's own Tab table
+                // is not rendered yet but the roster file already exists.
+                if !super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS) {
+                    let fresh = super::arena_info::refresh_battle_state();
+                    tracing::debug!(fresh, "tab press: refreshed battle state");
+                }
+                let battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+                if !battle_known {
+                    tracing::info!(
+                        "tab press ignored: no battle roster within the freshness window"
+                    );
+                }
+                // Reuse a recent anchor first; otherwise a capture attempt
+                // must pass BOTH gates:
                 //   1. a battle roster was seen recently (arena freshness —
                 //      Tab in port or long after a battle is a no-op);
                 //   2. the last attempt is older than CAPTURE_MIN_INTERVAL
                 //      (rate limit; the anchor cache lives exactly as long,
                 //      so no press ever falls into a "neither" gap).
-                let anchor = match &cached_anchor {
-                    Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
-                    _ => None,
-                }
-                .or_else(|| {
-                    let allowed = last_capture_attempt
-                        .is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
-                        && super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
-                    if !allowed {
-                        return None;
+                let anchor = if !battle_known {
+                    None
+                } else {
+                    match &cached_anchor {
+                        Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
+                        _ => None,
                     }
-                    let g = game?;
-                    last_capture_attempt = Some(Instant::now());
-                    let computed = compute_anchor(&g);
-                    cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
-                    computed
-                });
+                    .or_else(|| {
+                        if !last_capture_attempt.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
+                        {
+                            tracing::debug!("tab press: capture rate-limited, reusing anchor");
+                            return None;
+                        }
+                        let g = game?;
+                        last_capture_attempt = Some(Instant::now());
+                        let computed = compute_anchor(&g);
+                        cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
+                        computed
+                    })
+                };
                 if let Some(anchor) = anchor {
                     place_and_show(&app, &anchor);
                     overlay_shown = true;
@@ -323,6 +343,7 @@ fn tab_key_down() -> bool {
 #[cfg(target_os = "windows")]
 fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
+        tracing::warn!("overlay window missing — cannot show (was it destroyed?)");
         return;
     };
     // Resize/reposition BEFORE emitting so the webview has already settled
@@ -338,6 +359,7 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
     show_no_activate(&win);
+    tracing::info!("overlay shown (tab held)");
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -346,6 +368,7 @@ fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor) {}
 fn hide_overlay(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
         let _ = win.hide();
+        tracing::info!("overlay hidden (tab released / focus lost)");
     }
 }
 
@@ -370,13 +393,26 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
         dump_capture(&rgba, w, h);
     }
     match overlay_detect::detect_roster(&rgba, w, h, expected) {
-        Some(det) => Some(OverlayAnchor {
-            game_rect: rect_from_win32(game.rect),
-            roster_rect: det.rect,
-            row_centers: det.row_centers,
-            team_split: det.team_split,
-        }),
-        None => fallback_anchor(game, expected),
+        Some(det) => {
+            tracing::info!(
+                rows = det.row_centers.len(),
+                split = det.team_split,
+                "team list detected — anchoring chips to it"
+            );
+            Some(OverlayAnchor {
+                game_rect: rect_from_win32(game.rect),
+                roster_rect: det.rect,
+                row_centers: det.row_centers,
+                team_split: det.team_split,
+            })
+        },
+        None => {
+            tracing::info!(
+                expected_players = expected,
+                "team list not detected — using fallback anchor"
+            );
+            fallback_anchor(game, expected)
+        },
     }
 }
 

@@ -77,6 +77,9 @@ html.s-theme-transitioning *::after {
   --color-on-primary: 255 255 255;
   --color-success: 60 180 120;
   --color-error: 220 80 80;
+  /* Legacy alias — several components style "live/danger" UI against
+     --color-danger; without it those declarations compute to invalid. */
+  --color-danger: var(--color-error);
   --color-warning: 230 170 50;
   --color-info: 90 160 220;
 
