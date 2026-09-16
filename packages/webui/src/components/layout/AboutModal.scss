@@ -73,6 +73,20 @@
     border-radius: var(--radius-sm);
   }
 
+  /* Live pass status while the updater downloads / installs — mirrors the
+     top-right UpdateToast card instead of offering an action. */
+  &__updating {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-primary) / 12%);
+    color: rgb(var(--color-primary));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+  }
+
   &__check {
     background: transparent;
     border: 1px solid rgb(var(--color-border) / 30%);

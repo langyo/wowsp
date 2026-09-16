@@ -3,7 +3,7 @@
   "subtitle": "World of WarShip Panel",
   "description": "Настольная панель для World of Warships: самостоятельный разбор реплеев с голографической 3D-картой, а также прозрачный внутриигровой оверлей для проверки статистики в реальном времени.",
   "checkUpdate": "Проверить обновления",
-  "updateAvailable": "Найдена версия {version} — обновляем автоматически…",
+  "updateAvailable": "Найдена версия {version}",
   "updatePrompt": "Доступна новая версия {version}",
   "updateDownloading": "Скачиваем обновление",
   "updateRacing": "Проверяем зеркала источников…",
