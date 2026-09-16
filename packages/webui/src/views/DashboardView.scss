@@ -77,60 +77,6 @@
   }
 }
 
-/* ── Identity header (centered avatar + name + tags) ─────────────────── */
-.dash-identity {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  justify-content: center;
-  padding: 0.5rem 0;
-
-  &__avatar {
-    width: 56px;
-    height: 56px;
-    border-radius: var(--radius-full);
-    overflow: hidden;
-    flex-shrink: 0;
-    background: rgb(var(--color-primary) / 12%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-  }
-
-  &__info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  &__name {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: 700;
-    color: rgb(var(--color-text));
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-  }
-
-  &__clan {
-    font-size: var(--text-sm);
-    color: rgb(var(--color-primary));
-  }
-
-  &__tags {
-    display: flex;
-    gap: 0.35rem;
-    align-items: center;
-  }
-}
-
 /* ── Section wrapper (head with title + control, then content) ───────── */
 .dash-section {
   display: flex;

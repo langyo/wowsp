@@ -1,6 +1,7 @@
 import { computed, defineComponent, type PropType } from "vue";
 
 import { HTag } from "@celestia-island/hikari";
+import IdentityHead from "@/components/stats/IdentityHead";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
@@ -70,36 +71,32 @@ export default defineComponent({
     return () => (
       <div class={["stats-card", `stats-card--${wrTier.value}`]}>
         {/* identity header */}
-        <header class="stats-card__head">
-          <div class="stats-card__name-line">
-            <PlayerBadge
-              tier={props.stats.levelingTier ?? 0}
-              dogTag={props.stats.dogTag ?? null}
-              size={36}
-            />
-            {props.stats.clanTag ? (
-              props.onClanClick && props.stats.clanId != null ? (
-                <button
-                  type="button"
-                  class="stats-card__clan stats-card__clan--link"
-                  onClick={() => props.onClanClick?.()}
-                  title={t("lookup.jumpClan")}
-                >
-                  [{props.stats.clanTag}]
-                </button>
-              ) : (
-                <span class="stats-card__clan">[{props.stats.clanTag}]</span>
-              )
-            ) : null}
-            <h3 class="stats-card__name">{props.stats.name}</h3>
-          </div>
-          <div class="stats-card__badges">
-            <HTag variant="default" size="sm">{props.stats.realm.toUpperCase()}</HTag>
-            {props.stats.hidden ? (
-              <HTag variant="danger" size="sm">{t("stats.hidden")}</HTag>
-            ) : null}
-          </div>
-        </header>
+        <IdentityHead
+          name={props.stats.name}
+          tag={props.stats.clanTag}
+          onTagClick={
+            props.onClanClick && props.stats.clanId != null
+              ? () => props.onClanClick?.()
+              : undefined
+          }
+          v-slots={{
+            avatar: () => (
+              <PlayerBadge
+                tier={props.stats.levelingTier ?? 0}
+                dogTag={props.stats.dogTag ?? null}
+                size={36}
+              />
+            ),
+            badges: () => (
+              <>
+                <HTag variant="default" size="sm">{props.stats.realm.toUpperCase()}</HTag>
+                {props.stats.hidden ? (
+                  <HTag variant="danger" size="sm">{t("stats.hidden")}</HTag>
+                ) : null}
+              </>
+            ),
+          }}
+        />
 
         {/* ── Main winrate + PR bar ──
             Big winrate on the left, PR on the right (same row).

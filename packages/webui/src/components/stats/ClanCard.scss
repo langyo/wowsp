@@ -11,34 +11,7 @@
   border: 1px solid rgb(var(--color-border) / 18%);
 }
 
-.clan-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.clan-card__name-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.clan-card__tag {
-  font-weight: 700;
-  color: rgb(var(--color-primary));
-  white-space: nowrap;
-}
-
-.clan-card__name {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Identity head lives in the shared IdentityHead component. */
 
 .clan-card__desc {
   margin: 0;

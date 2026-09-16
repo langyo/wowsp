@@ -7,55 +7,7 @@
   flex-direction: column;
   gap: 0.85rem;
 
-  &__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  &__name-line {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    min-width: 0;
-  }
-
-  &__clan {
-    font-size: var(--text-xs);
-    font-weight: 700;
-    color: rgb(var(--color-primary));
-
-    &--link {
-      /* button reset — keeps the span styling, adds a jump affordance */
-      border: none;
-      padding: 0;
-      background: none;
-      cursor: pointer;
-      font: inherit;
-
-      &:hover {
-        text-decoration: underline;
-      }
-    }
-  }
-
-  &__name {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: 700;
-    color: rgb(var(--color-text));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__badges {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-shrink: 0;
-  }
+  /* Identity head lives in the shared IdentityHead component. */
 
   /* ── Hero bar: winrate + PR on the same row ──
      Left: big winrate number + "win rate" label + total battles small text.

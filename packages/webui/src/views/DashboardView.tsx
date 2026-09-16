@@ -1,4 +1,5 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { useRouter } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
@@ -51,6 +52,7 @@ export default defineComponent({
     const trends = useTrendsStore();
     const ranked = useRankedStore();
     const toast = useToast();
+    const router = useRouter();
 
     const showModal = ref(false);
     const dateRange = ref<DateRange>("all");
@@ -160,8 +162,22 @@ export default defineComponent({
             </div>
           ) : currentStats.value ? (
             <div class="dashboard-view__content" key="content">
-              {/* ── KPI summary ── */}
-              <StatsCard stats={currentStats.value} />
+              {/* ── KPI summary (clan tag jumps to the lookup's clan mode) ── */}
+              <StatsCard
+                stats={currentStats.value}
+                onClanClick={
+                  currentStats.value.clanId != null
+                    ? () =>
+                        router.push({
+                          path: "/lookup",
+                          query: {
+                            clan: String(currentStats.value!.clanId!),
+                            realm: activeAccount.value?.realm ?? "",
+                          },
+                        })
+                    : undefined
+                }
+              />
 
               {/* ── Ranked history ── */}
               {ranked.seasons.length > 0 ? (

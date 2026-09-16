@@ -283,12 +283,19 @@ export default defineComponent({
     };
 
     // Jump-in support: /lookup?name=..&realm=.. (from the replay post-battle
-    // player detail) starts a search immediately.
+    // player detail) starts a player search, and /lookup?clan=..&realm=..
+    // (from the dashboard's clan tag) lands in clan mode — either starts
+    // immediately on mount.
     onMounted(() => {
       const q = route.query;
+      const r = typeof q.realm === "string" && realms.includes(q.realm) ? q.realm : "asia";
+      const clan = typeof q.clan === "string" ? Number(q.clan) : NaN;
+      if (Number.isFinite(clan) && clan > 0) {
+        void doClanLookup(clan, r);
+        return;
+      }
       const name = typeof q.name === "string" ? q.name : "";
       if (!name) return;
-      const r = typeof q.realm === "string" && realms.includes(q.realm) ? q.realm : "asia";
       void doSearch(name, r);
     });
 
