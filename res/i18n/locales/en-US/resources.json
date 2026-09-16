@@ -5,7 +5,7 @@
   "scanning": "Scanning…",
   "noGame": "No game install detected — set the game path in Settings first.",
   "installed": "Installed plugins",
-  "empty": "No recognizable plugins under res_mods yet. Install one below.",
+  "empty": "No recognizable plugins under res_mods yet. Install one from the Online catalog.",
   "filterAll": "All",
   "installSection": "Install from folder",
   "installHint": "Point at an unpacked plugin folder (voice pack, PnF skin, ribbon icons, ime_config patch). .zip/.7z need extracting for now.",
@@ -60,5 +60,10 @@
     "port": "Port",
     "text": "Texts & chat",
     "patch": "Patches"
+  },
+  "tab": {
+    "catalog": "Online catalog",
+    "installed": "Installed",
+    "local": "From folder"
   }
 }

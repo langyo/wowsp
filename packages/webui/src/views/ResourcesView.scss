@@ -47,6 +47,11 @@
       animation: resources-spin 0.9s linear infinite;
     }
   }
+
+  /* Top-level tab strip (online catalog / installed / from folder). */
+  &__tabs {
+    margin-bottom: 1rem;
+  }
 }
 
 @keyframes resources-spin {
@@ -72,6 +77,11 @@
       font-weight: 600;
       color: rgb(var(--color-text));
     }
+  }
+
+  /* Head action (refresh / rescan) rides the row's far end. */
+  &__action {
+    margin-left: auto;
   }
 
   &__desc {

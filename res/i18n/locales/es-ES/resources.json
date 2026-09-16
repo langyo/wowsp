@@ -5,7 +5,7 @@
   "scanning": "Escaneando…",
   "noGame": "No se detectó ninguna instalación del juego — configura primero la ruta del juego en Ajustes.",
   "installed": "Plugins instalados",
-  "empty": "Aún no hay plugins reconocibles en res_mods. Instala uno abajo.",
+  "empty": "Aún no hay plugins reconocibles en res_mods. Instala uno desde el catálogo en línea.",
   "filterAll": "Todos",
   "installSection": "Instalar desde carpeta",
   "installHint": "Apunta a una carpeta de plugin descomprimida (paquete de voz, skin PnF, iconos de cintas, parche ime_config). Por ahora, .zip/.7z hay que descomprimirlos antes.",
@@ -60,5 +60,10 @@
     "port": "Puerto",
     "text": "Textos y chat",
     "patch": "Parches"
+  },
+  "tab": {
+    "catalog": "Catálogo en línea",
+    "installed": "Instalados",
+    "local": "Desde carpeta"
   }
 }

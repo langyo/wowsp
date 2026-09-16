@@ -6,8 +6,8 @@
   min-height: 0;
   /* Only left padding at the grid level: __main is the scroll column and
      its scrollbar must hug the window's right edge across the full height
-     (like the other pages that scroll in app-shell__main). Vertical
-     breathing room rides on the two columns instead. */
+     (like the other pages that scroll in the app shell's hikari scroll
+     viewport). Vertical breathing room rides on the two columns instead. */
   padding-left: 16px;
   overflow: hidden;
 }
