@@ -8,11 +8,15 @@
  *   - Four filter categories — type / tier / winrate / battles — render as
  *     collapsed chips styled after the segmented button-group triggers.
  *   - Clicking a chip opens a popup hosting the category's option group.
- *     Options are MULTI-SELECT: the chosen options OR together inside the
- *     category (categories still AND). The 正序/倒序 flag is SHARED by the
- *     whole category — re-clicking any picked option flips every arrow in
- *     it at once. Ship types are the exception: they are pure filters with
- *     no direction at all, so re-clicking a type simply deselects it.
+ *     Type and tier are MULTI-SELECT: the chosen options OR together inside
+ *     the category (categories still AND). Winrate and battles are
+ *     SINGLE-SELECT — their brackets sit on one numeric axis, so OR-ing
+ *     thresholds that subsume each other (≥30 ∪ ≥100 = ≥30) only confuses;
+ *     picking a bracket replaces the previous pick. The 正序/倒序 flag is
+ *     SHARED by the whole category — re-clicking the picked option flips
+ *     every arrow in it at once. Ship types are further special: pure
+ *     filters with no direction at all, so re-clicking a type simply
+ *     deselects it.
  *   - The 全部… option always shows the direction arrow too: with a concrete
  *     selection it resets the category to the gray state; without one it
  *     engages the "sort while unfiltered" mode (first click sorts in the
@@ -133,6 +137,30 @@ const CAT_DEFS: Record<CatKey, CatDef> = {
 const CAT_KEYS: CatKey[] = ["type", "tier", "winrate", "battles"];
 const DEFAULT_ORDER: CatKey[] = [...CAT_KEYS];
 
+/** Winrate and battles brackets carve up ONE numeric axis, so picking
+ *  several at once ORs thresholds that subsume each other (≥30 ∪ ≥100 is
+ *  just ≥30) — these two categories hold exactly one pick at a time;
+ *  type/tier stay multi-select. */
+const SINGLE_CATS: readonly CatKey[] = ["winrate", "battles"];
+const isSingleSel = (key: CatKey) => SINGLE_CATS.includes(key);
+
+/** Concrete option values of a category in canonical (display) order —
+ *  used to clamp stale multi-select storage down to the single-select
+ *  model (battles keeps its lowest threshold, which is what the old OR
+ *  actually filtered by). */
+function canonicalValues(key: CatKey): string[] {
+  switch (key) {
+    case "type":
+      return TYPE_ORDER.filter((t) => t !== "");
+    case "tier":
+      return TIER_FILTERS.map(([v]) => v);
+    case "winrate":
+      return WINRATE_BRACKETS.map(([v]) => v);
+    case "battles":
+      return BATTLE_STEPS.map(String);
+  }
+}
+
 // ── localStorage persistence (shared by every view hosting the bar) ──
 
 const PERSIST_KEY = "wowsp.shipFilter.v3";
@@ -226,8 +254,14 @@ export default defineComponent({
       for (const k of CAT_KEYS) {
         const s = stored.sel[k];
         if (!s || (s.dir !== "asc" && s.dir !== "desc") || !Array.isArray(s.values)) continue;
+        // Storage written by the all-multi-select model may hold several
+        // picks for a now-single-select category — clamp to one.
+        const valid = s.values.filter((v) => typeof v === "string" && isValidValue(k, v));
+        const values = isSingleSel(k)
+          ? [...valid].sort((a, b) => canonicalValues(k).indexOf(a) - canonicalValues(k).indexOf(b)).slice(0, 1)
+          : valid;
         sel.value[k] = {
-          values: s.values.filter((v) => typeof v === "string" && isValidValue(k, v)),
+          values,
           dir: s.dir,
           allSort: s.allSort === true,
         };
@@ -392,11 +426,12 @@ export default defineComponent({
 
     /** Click one option in a category popup. The 全部… option carries dual
      *  semantics: with a concrete selection it resets the whole category
-     *  (filter AND all-state sort off); without one it toggles/flip the
+     *  (filter AND all-state sort off); without one it toggles/flips the
      *  all-state sort — the first click engages in the displayed direction,
      *  later clicks flip it. Concrete options join the selection when
-     *  unpicked; when picked they flip the category's shared direction —
-     *  except types, which carry no direction and simply drop out. */
+     *  unpicked (replacing it outright in the single-select categories);
+     *  when picked they flip the category's shared direction — except
+     *  types, which carry no direction and simply drop out. */
     function clickOption(key: CatKey, value: string) {
       const s = sel.value[key];
       if (value === "") {
@@ -417,7 +452,7 @@ export default defineComponent({
           s.dir = s.dir === "desc" ? "asc" : "desc";
         }
       } else {
-        s.values = [...s.values, value];
+        s.values = isSingleSel(key) ? [value] : [...s.values, value];
       }
     }
 
@@ -506,18 +541,23 @@ export default defineComponent({
       openPop.value = openPop.value === key ? null : key;
     }
 
-    /** Popup explainer — the type popup differs because its options are
-     *  pure filters (re-click deselects instead of flipping direction). */
+    /** Popup explainer — three shapes: types are pure filters (re-click
+     *  deselects), winrate/battles pick a single bracket, tier is the
+     *  multi-select-with-sort case. */
     const popHint = (key: CatKey) =>
       key === "type"
         ? t("ships.filter.hintTypePop")
-        : t("ships.filter.hintSortPop");
+        : isSingleSel(key)
+          ? t("ships.filter.hintSinglePop")
+          : t("ships.filter.hintSortPop");
 
     /** Chip tooltip — same split as the popup hint. */
     const chipTitle = (key: CatKey) =>
       key === "type"
         ? t("ships.filter.hintTypeChip")
-        : t("ships.filter.hintSortChip");
+        : isSingleSel(key)
+          ? t("ships.filter.hintSingleChip")
+          : t("ships.filter.hintSortChip");
 
     const dirIcon = (dir: SortDir) =>
       dir === "desc" ? <ArrowDown size={11} class="ship-filter-bar__dir" /> : <ArrowUp size={11} class="ship-filter-bar__dir" />;
@@ -581,7 +621,8 @@ export default defineComponent({
                       ✕
                     </button>
                   </div>
-                  {/* Multi-select option group in the segmented track look.
+                  {/* Option group in the segmented track look (multi-select
+                      for type/tier, single for winrate/battles).
                       全部… always shows the direction arrow; concrete types
                       never do (pure filters). */}
                   <div class="ship-filter-bar__opts">
