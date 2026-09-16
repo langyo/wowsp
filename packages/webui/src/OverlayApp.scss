@@ -8,6 +8,10 @@
 html.wowsp-overlay,
 html.wowsp-overlay body {
   background: transparent;
+  /* Belt & braces: the Win32 window already sets WS_EX_TRANSPARENT +
+     WS_EX_NOACTIVATE and ignore-cursor-events, but nothing in this window
+     may ever interact with the pointer. */
+  pointer-events: none;
 }
 
 .overlay-shell {

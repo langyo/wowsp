@@ -58,6 +58,41 @@ pub(crate) fn arena_seen_within(max_age_secs: u64) -> bool {
     at > 0 && unix_secs(SystemTime::now()) - at <= max_age_secs as i64
 }
 
+/// Cheap synchronous re-check of the arena file, used by the overlay Tab
+/// watcher on each fresh press when the cached state is stale: stat (and
+/// parse, when newer) `<replays>/tempArenaInfo.json` directly. Returns
+/// whether a fresh roster is now known. A partially written file fails to
+/// parse and is simply not recorded — the next press retries.
+pub(crate) fn refresh_battle_state() -> bool {
+    let Ok(dir) = resolve_arena_dir(None) else {
+        return false;
+    };
+    let Some(path) = find_latest_arena_info(&dir) else {
+        return false;
+    };
+    let Ok(meta) = path.metadata() else {
+        return false;
+    };
+    let Ok(mtime) = meta.modified() else {
+        return false;
+    };
+    let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+    if at > 0 && unix_secs(mtime) <= at {
+        // Nothing newer than what we already recorded.
+        return arena_seen_within(1);
+    }
+    match read_arena_file(&path) {
+        Ok(info) => {
+            note_arena_seen(&info.vehicles, mtime);
+            true
+        },
+        Err(e) => {
+            tracing::debug!(error = %e, "battle-state refresh: arena file not parseable yet");
+            false
+        },
+    }
+}
+
 /// One-shot read of the most recent `tempArenaInfo.json` under the configured
 /// replay dir. Reuses the replay descriptor parser since the JSON shape is
 /// identical (the file even shares the 8-byte-prefixed variant sometimes).
