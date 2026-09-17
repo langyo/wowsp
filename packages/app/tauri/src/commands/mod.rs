@@ -25,6 +25,7 @@ pub mod replay;
 pub mod res_mods;
 pub mod screenshot;
 pub mod ship_stats;
+pub mod tab_dump;
 pub mod trends;
 pub mod update;
 pub mod wg_api;
