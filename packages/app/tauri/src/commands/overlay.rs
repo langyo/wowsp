@@ -63,6 +63,9 @@ const POLL_INTERVAL: Duration = Duration::from_millis(30);
 /// or lost the overlay used to stay on screen forever (seen in live testing
 /// — "hidden" logged, window still visible). Idempotent and cheap here.
 const HIDE_RETRY: Duration = Duration::from_millis(300);
+/// Battle-state refresh cadence while Tab is held but no battle is known —
+/// bounds the replay-tree walk inside `refresh_battle_state`.
+const STATE_REFRESH: Duration = Duration::from_secs(2);
 /// Rate limit for capture attempts (GDI `BitBlt(CAPTUREBLT)` + detector
 /// work is expensive): a fresh Tab press reuses the cached anchor inside
 /// this window and is refused a new capture until it elapses — so frantic
@@ -274,7 +277,6 @@ pub async fn stop_overlay_tab_watch() -> Result<(), String> {
 /// The watcher loop — see the module docs for the interaction contract.
 #[cfg(target_os = "windows")]
 fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
-    let mut tab_down_prev = false;
     let mut overlay_shown = false;
     let mut cached_anchor: Option<(Instant, OverlayAnchor)> = None;
     let mut cached_game: Option<(GameWindow, Instant)> = None;
@@ -283,11 +285,14 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     // snapshot; a failing lookup retried every poll tick would peg a core).
     let mut last_scan: Option<Instant> = None;
     // When the last capture ATTEMPT ran (success or failure) — bounds the
-    // expensive BitBlt(CAPTUREBLT) + detector work even under frantic Tab
+    // expensive BitBlt + detector work even under frantic Tab
     // tapping or a focus-flicker loop while the key is held.
     let mut last_capture_attempt: Option<Instant> = None;
     // When the last hide was sent — spaces out the hide retries.
     let mut last_hide: Option<Instant> = None;
+    // When the last battle-state refresh ran — bounds the replay-tree walk
+    // inside refresh_battle_state while Tab is held without a known battle.
+    let mut last_state_refresh: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -299,13 +304,13 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
         let tick = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             watch_tab_tick(
                 &app,
-                &mut tab_down_prev,
                 &mut overlay_shown,
                 &mut cached_anchor,
                 &mut cached_game,
                 &mut last_scan,
                 &mut last_capture_attempt,
                 &mut last_hide,
+                &mut last_state_refresh,
             );
         }));
         if tick.is_err() {
@@ -325,13 +330,13 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
 #[allow(clippy::too_many_arguments)]
 fn watch_tab_tick(
     app: &AppHandle,
-    tab_down_prev: &mut bool,
     overlay_shown: &mut bool,
     cached_anchor: &mut Option<(Instant, OverlayAnchor)>,
     cached_game: &mut Option<(GameWindow, Instant)>,
     last_scan: &mut Option<Instant>,
     last_capture_attempt: &mut Option<Instant>,
     last_hide: &mut Option<Instant>,
+    last_state_refresh: &mut Option<Instant>,
 ) {
     {
         // Resolve the game window: cached while valid, rescanned at most
@@ -350,83 +355,80 @@ fn watch_tab_tick(
         let focused_on_game = game.is_some_and(|g| g.is_foreground());
         let tab_down = tab_key_down();
 
-        if focused_on_game && tab_down {
-            if !*tab_down_prev {
-                // Fresh Tab press — anchor + show. First make sure the
-                // battle state is current: one cheap stat/read of
-                // tempArenaInfo.json keeps the overlay self-sufficient even
-                // when the arena watcher hasn't fired yet or the replay
-                // view is closed. This is what lets the overlay show on the
-                // pre-battle spawn screen, where the game's own Tab table
-                // is not rendered yet but the roster file already exists.
-                if !super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS) {
-                    let fresh = super::arena_info::refresh_battle_state();
-                    tracing::debug!(fresh, "tab press: refreshed battle state");
-                }
-                let battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
-                if !battle_known {
-                    tracing::info!(
-                        "tab press ignored: no battle roster within the freshness window"
-                    );
-                }
+        // WANT-VISIBLE state machine instead of press-edge triggering: the
+        // previous edge-only model did all its work exactly once per press,
+        // so a single failed capture (transient scene-probe miss, rate-limit
+        // window) meant the overlay stayed down until Tab was released and
+        // pressed again — rapid tapping then felt permanently dead ("按不出
+        // 来了"). Here, holding Tab with the game focused DURING a battle is
+        // the standing want; each rate-limit window retries acquisition
+        // until it succeeds.
+        let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+        if focused_on_game
+            && tab_down
+            && !battle_known
+            && last_state_refresh.is_none_or(|t| t.elapsed() >= STATE_REFRESH)
+        {
+            *last_state_refresh = Some(Instant::now());
+            battle_known = super::arena_info::refresh_battle_state();
+            tracing::debug!(battle_known, "tab held: refreshed battle state");
+        }
+        let want_visible = focused_on_game && tab_down && battle_known;
+        if want_visible {
+            if !*overlay_shown {
                 // Reuse a recent anchor first; otherwise a capture attempt
-                // must pass BOTH gates:
-                //   1. a battle roster was seen recently (arena freshness —
-                //      Tab in port or long after a battle is a no-op);
-                //   2. the last attempt is older than CAPTURE_MIN_INTERVAL
-                //      (rate limit; the anchor cache lives exactly as long,
-                //      so no press ever falls into a "neither" gap).
-                let anchor = if !battle_known {
-                    None
-                } else {
-                    match &*cached_anchor {
-                        Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
-                        _ => None,
-                    }
-                    .or_else(|| {
-                        if !last_capture_attempt.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
-                        {
-                            tracing::debug!("tab press: capture rate-limited, reusing anchor");
-                            return None;
-                        }
-                        let g = game?;
-                        *last_capture_attempt = Some(Instant::now());
-                        let computed = compute_anchor(&g);
-                        *cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
-                        computed
-                    })
-                };
-                match anchor {
-                    Some(anchor) => {
-                        place_and_show(app, &anchor);
-                        *overlay_shown = true;
-                        *last_hide = None;
-                    },
-                    // A fresh capture that finds no battle HUD (scene probe
-                    // failed) must not leave a stale overlay hanging over a
-                    // no-longer-valid frame.
-                    None if *overlay_shown => {
-                        hide_overlay(app);
-                        *last_hide = Some(Instant::now());
-                    },
-                    None => {},
+                // must be rate-limit-free. A FAILED attempt leaves
+                // overlay_shown false, so the next tick (after the rate
+                // limit) retries — no release-and-press needed.
+                let anchor = match &*cached_anchor {
+                    Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
+                    _ => None,
                 }
+                .or_else(|| {
+                    if !last_capture_attempt.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL) {
+                        tracing::debug!("tab held: capture rate-limited, waiting");
+                        return None;
+                    }
+                    let g = game?;
+                    *last_capture_attempt = Some(Instant::now());
+                    let computed = compute_anchor(&g);
+                    *cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
+                    computed
+                });
+                if let Some(anchor) = anchor {
+                    place_and_show(app, &anchor);
+                    *overlay_shown = true;
+                    *last_hide = None;
+                }
+                // A failed acquisition while ALREADY shown keeps the old
+                // anchor on screen — the previous behavior of hiding here
+                // made a single failed re-capture blink the overlay off.
             }
         } else if *overlay_shown {
             // Keep re-sending the hide while the overlay should be down:
-            // each attempt queues one main-thread task, and a busy main
-            // thread may swallow/delay any single one (seen live: "hidden"
-            // logged, window stayed on screen). `overlay_shown` stays true
-            // until the next show so the retries continue; both the event
-            // and the native call are idempotent.
+            // each attempt posts one async Win32 command + one event, and
+            // any single one can be lost; both are idempotent. Retries stop
+            // once the window reports itself actually hidden.
             if last_hide.is_none_or(|t| t.elapsed() >= HIDE_RETRY) {
                 hide_overlay(app);
                 *last_hide = Some(Instant::now());
+                if !overlay_window_visible(app) {
+                    *overlay_shown = false;
+                }
             }
         }
-
-        *tab_down_prev = tab_down && focused_on_game;
     }
+}
+
+/// Whether the overlay window currently reports as visible (false when it is
+/// missing). Used to stop the hide-retry loop once the hide really landed.
+#[cfg(target_os = "windows")]
+fn overlay_window_visible(app: &AppHandle) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+    app.get_webview_window(OVERLAY_LABEL)
+        .and_then(|win| win.hwnd().ok())
+        .map(|hwnd| unsafe { IsWindowVisible(windows::Win32::Foundation::HWND(hwnd.0)).as_bool() })
+        .unwrap_or(false)
 }
 
 #[cfg(not(target_os = "windows"))]

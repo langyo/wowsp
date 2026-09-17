@@ -56,6 +56,11 @@ const ROW_SCAN_MAX_SPAN_FRAC: f32 = 0.45;
 /// 52/55 ≈ 0.95 (1440p) and 48/54 ≈ 0.89 (1080p) — bars and rows share the
 /// same UI scale, so this single ratio replaces all pixel row-counting.
 const PITCH_PER_HEADER: f32 = 0.92;
+/// Minimum rows of height the overlay window always gets, even when the
+/// current roster is smaller (12v12 is the largest standard battle; extra
+/// window height is invisible — transparent, click-through — but a short
+/// window would clip the chips of a bigger table).
+const MIN_WINDOW_ROWS: f32 = 12.0;
 
 /// Detector output: everything needed to anchor the overlay chips, in
 /// physical pixels relative to the capture (game window) origin.
@@ -217,7 +222,13 @@ pub(crate) fn detect_roster(
     // ── 4. Rectangle + team split, back to physical px ────────────────────
     let pitch = hh as f32 * PITCH_PER_HEADER;
     let last = *centers.last().unwrap_or(&(prof_top as f32));
-    let y1w = ((last + pitch * 0.75).min(h as f32 - 1.0)) as usize;
+    // Window height floor: 12v12 is the largest standard roster, and the
+    // overlay window must never be shorter than that even when the current
+    // battle is smaller — extra height is transparent and click-through, but
+    // a short window CLIPS the chips of a larger table (seen live).
+    let y1w = (last + pitch * 0.75)
+        .max(prof_top as f32 + pitch * MIN_WINDOW_ROWS)
+        .min(h as f32 - 1.0) as usize;
     let split_raw =
         ((gx1 + rx0) as f32 * 0.5 - gx0 as f32) / (rx1.saturating_sub(gx0)).max(1) as f32;
     let team_split = if (0.30..=0.70).contains(&split_raw) {
@@ -810,7 +821,9 @@ mod tests {
         let (rect, rows) = fallback_roster(2560, 1440, 5);
         assert_eq!(rows.len(), 5);
         assert!(rect.width <= 2560 * 55 / 100);
-        assert!(rect.height <= 1440 * 30 / 100);
+        // 12-row height floor (~40% of the frame) but never most of it.
+        assert!(rect.height >= 1440 * 40 / 100);
+        assert!(rect.height <= 1440 * 50 / 100);
         for &c in &rows {
             assert!(c >= rect.y && c <= rect.y + rect.height);
         }
@@ -1067,8 +1080,11 @@ pub(crate) fn build_anchor(
 /// middle of the screen.
 pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (Rect, Vec<i32>) {
     let width = frame_w * 50 / 100;
-    let height =
-        (frame_h * 8 / 100).max((expected as i32 * frame_h * 5 / 100).max(frame_h * 16 / 100));
+    let height = (frame_h * 8 / 100)
+        .max((expected as i32 * frame_h * 5 / 100).max(frame_h * 16 / 100))
+        // 12-row floor, same reasoning as MIN_WINDOW_ROWS: the fallback
+        // window must be able to carry a full 12v12 table's hint box.
+        .max(frame_h * 40 / 100);
     let x = (frame_w - width) / 2;
     let y = frame_h * 24 / 100;
     let top = y + height / 6;
