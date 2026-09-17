@@ -16,6 +16,27 @@
 import { damageColor, winrateColor } from "@/utils/winrate";
 import "./overlay.css";
 
+// Same locale files the Vue app consumes — one source of truth for the hint
+// copy, bundled eagerly into this tiny page (a few KB across 9 locales).
+const MESSAGES = import.meta.glob<{ locateHint: string }>(
+  "../../../../res/i18n/locales/*/overlay.json",
+  { eager: true },
+);
+const hintMessages = new Map<string, string>();
+for (const [path, mod] of Object.entries(MESSAGES)) {
+  const m = path.match(/locales\/([a-zA-Z-]+)\/overlay\.json$/);
+  if (m && mod?.locateHint) hintMessages.set(m[1], mod.locateHint);
+}
+
+function localizedHint(): string {
+  const exact = hintMessages.get(locale);
+  if (exact) return exact;
+  const lang = locale.split("-")[0];
+  const byLang = [...hintMessages.entries()].find(([k]) => k.split("-")[0] === lang);
+  if (byLang) return byLang[1];
+  return hintMessages.get("en-US") ?? [...hintMessages.values()][0] ?? "";
+}
+
 interface OverlayTauriApi {
   core: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
   event: {
@@ -39,6 +60,9 @@ interface OverlayAnchor {
   rosterRect: { x: number; y: number; width: number; height: number };
   rowCenters: number[];
   teamSplit: number;
+  /** False → the anchor used fallback geometry (table not located); the
+   *  page renders a hint box instead of (mis)placed stat chips. */
+  tableDetected?: boolean;
 }
 
 interface Stat {
@@ -53,6 +77,8 @@ const AI_NAME = /^:.*:$/;
 const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
 
 const realm = new URLSearchParams(window.location.search).get("realm") || "asia";
+// App locale forwarded by create_overlay_window — picks the hint copy.
+const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
 
 let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
@@ -84,7 +110,17 @@ function chipContent(name: string): string {
 function render() {
   const root = document.body;
   root.textContent = "";
-  if (!arena || !anchor) return;
+  if (!anchor) return;
+  // Battle is on but the table itself wasn't located — show a centered hint
+  // box instead of chips that would sit on guessed rows.
+  if (!anchor.tableDetected) {
+    const box = document.createElement("div");
+    box.className = "overlay-hint";
+    box.textContent = localizedHint();
+    root.appendChild(box);
+    return;
+  }
+  if (!arena) return;
   const dpr = window.devicePixelRatio || 1;
   const rows = anchor.rowCenters;
   if (rows.length === 0) return;
@@ -181,8 +217,16 @@ async function start() {
     arena = e.payload as ArenaInfo;
     scheduleBatch();
   });
-  await listen("wowsp://overlay-anchor", (e: { payload: unknown }) => {
+  await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
     anchor = e.payload as OverlayAnchor;
+    if (!arena) {
+      try {
+        const info = await invoke("read_temp_arena_info", { dir: null });
+        if (info) arena = info as ArenaInfo;
+      } catch {
+        // nothing to read — chips stay "…" until an arena event arrives
+      }
+    }
     render();
   });
 }

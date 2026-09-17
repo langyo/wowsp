@@ -72,15 +72,27 @@ const HWND_REFRESH: Duration = Duration::from_secs(2);
 /// the overlay webview can batch WG lookups without re-detecting the install.
 /// Also starts the Tab watcher thread.
 #[tauri::command]
-pub async fn create_overlay_window(app: AppHandle, realm: Option<String>) -> Result<(), String> {
+pub async fn create_overlay_window(
+    app: AppHandle,
+    realm: Option<String>,
+    locale: Option<String>,
+) -> Result<(), String> {
     if app.get_webview_window(OVERLAY_LABEL).is_none() {
         // The overlay window loads a PRE-RENDERED static page (bare HTML +
         // CSS + a tiny vanilla listener, built as a second Vite entry) —
         // no Vue app, no loading state, first paint is instant.
         let mut url = "/overlay.html".to_string();
+        let mut sep = "?";
         if let Some(r) = realm.as_deref().filter(|r| !r.is_empty()) {
-            url.push_str("?realm=");
+            url.push_str(sep);
+            url.push_str("realm=");
             url.push_str(r);
+            sep = "&";
+        }
+        if let Some(l) = locale.as_deref().filter(|l| !l.is_empty()) {
+            url.push_str(sep);
+            url.push_str("locale=");
+            url.push_str(l);
         }
         let win = WebviewWindowBuilder::new(&app, OVERLAY_LABEL, WebviewUrl::App(url.into()))
             .title("WoWSP Overlay")
@@ -445,8 +457,14 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     }
     // Scene gate: the battle HUD (bottom-left HP bar + top scoreboard) only
     // renders inside the 3D scene. No HUD → not in battle → never show.
-    if !overlay_detect::detect_battle_scene(&rgba, w, h) {
-        tracing::info!("tab press: battle HUD not found — not in a 3D scene, skipping");
+    let probe = overlay_detect::probe_battle_scene(&rgba, w, h);
+    if !probe.detected() {
+        tracing::info!(
+            hp_bar = probe.hp_bar,
+            dark_strip = probe.dark_strip,
+            colored_bar = probe.colored_bar,
+            "tab press: battle HUD not found — not in a 3D scene, skipping"
+        );
         return None;
     }
     let (roster_rel, rows, split, detected) =
@@ -461,8 +479,13 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
                 (r, rows, 0.5, false)
             },
         };
-    let (overlay, anchor) =
-        overlay_detect::build_anchor(&rect_from_win32(game.rect), &roster_rel, rows, split);
+    let (overlay, anchor) = overlay_detect::build_anchor(
+        &rect_from_win32(game.rect),
+        &roster_rel,
+        rows,
+        split,
+        detected,
+    );
     tracing::info!(
         detected,
         overlay = format!(
@@ -501,6 +524,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                                 &d.rect,
                                 d.row_centers,
                                 d.team_split,
+                                true,
                             )
                             .1,
                         ),
@@ -513,6 +537,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                                     &r,
                                     rows,
                                     0.5,
+                                    false,
                                 )
                                 .1,
                             )

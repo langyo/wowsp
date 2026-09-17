@@ -1,3 +1,4 @@
 {
-  "hint": "Mantén Tab en batalla para mostrar estadísticas."
+  "hint": "Mantén Tab en batalla para mostrar estadísticas.",
+  "locateHint": "La detección está activa, pero aún no se ha localizado la tabla de equipos: entra en una batalla e inténtalo de nuevo."
 }

@@ -795,8 +795,11 @@ export const api = {
   /** Create (once) the hidden transparent overlay window + start the Rust
    *  Tab watcher. `realm` is forwarded to the overlay webview via the URL so
    *  its batch lookups don't need a separate install detection. */
-  createOverlayWindow: (realm?: string) =>
-    transport.invoke<null>(RPC.create_overlay_window, { realm: realm ?? null }),
+  createOverlayWindow: (realm?: string, locale?: string) =>
+    transport.invoke<null>(RPC.create_overlay_window, {
+      realm: realm ?? null,
+      locale: locale ?? null,
+    }),
   destroyOverlayWindow: () => transport.invoke<null>(RPC.destroy_overlay_window),
   startOverlayTabWatch: () => transport.invoke<null>(RPC.start_overlay_tab_watch),
   stopOverlayTabWatch: () => transport.invoke<null>(RPC.stop_overlay_tab_watch),

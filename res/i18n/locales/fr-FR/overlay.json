@@ -1,3 +1,4 @@
 {
-  "hint": "Maintenez Tab en bataille pour afficher les statistiques."
+  "hint": "Maintenez Tab en bataille pour afficher les statistiques.",
+  "locateHint": "La détection est active, mais la liste des équipes n'a pas encore été localisée — entrez en bataille et réessayez."
 }

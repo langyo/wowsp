@@ -12,6 +12,7 @@
 import { watch } from "vue";
 
 import { api } from "@/api";
+import { i18n } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
@@ -44,7 +45,8 @@ export function useOverlayLifecycle() {
     if (want === active) return;
     try {
       if (want) {
-        await api.createOverlayWindow(realm ?? undefined);
+        const locale = (i18n.global.locale as unknown as { value: string }).value;
+        await api.createOverlayWindow(realm ?? undefined, locale);
         active = true;
         createdRealm = realm;
       } else {

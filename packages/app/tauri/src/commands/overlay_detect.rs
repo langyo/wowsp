@@ -879,7 +879,8 @@ mod tests {
             height: 250,
         };
         let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i as i32 + 20).collect();
-        let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5);
+        let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false);
+        assert!(!anchor.table_detected);
         // The overlay window covers ONLY the inflated table area...
         let pad = overlay_padding(&roster);
         assert_eq!(overlay.width, roster.width + 2 * pad);
@@ -918,17 +919,42 @@ mod tests {
 /// Sample stride over the capture (physical px) for the scene probe.
 const SCENE_STEP: u32 = 4;
 /// The HP bar is a long run of saturated green in the bottom-left corner.
+/// Measured on a real 1080p client: it sits at ~78% of the frame height.
 const HP_GREEN_MIN_RUN: u32 = 48;
 /// The scoreboard is a dark translucent strip across the top-center with a
-/// teal (friendly) and an orange/red (enemy) score bar.
-const SCORE_DARK_FRAC: f32 = 0.20;
+/// teal (friendly) and an orange/red (enemy) score bar (score row ~8-13%
+/// of the frame height).
+const SCORE_DARK_FRAC: f32 = 0.10;
 const SCORE_BAR_MIN_RUN: u32 = 24;
 
 /// True when the frame carries the in-battle HUD: the bottom-left health bar
 /// plus the top-center scoreboard strip with its teal/orange score bars.
 /// None of these render outside the 3D scene — port, login and loading
 /// screens all fail this probe — so it gates the whole overlay.
-pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
+/// Components of the battle-HUD probe, logged on failure so real captures
+/// can be tuned from the dev console alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SceneProbe {
+    /// Long green run in the bottom-left corner (health bar).
+    pub hp_bar: bool,
+    /// Dark translucent strip across the top-center (scoreboard backing).
+    pub dark_strip: bool,
+    /// Teal or orange/red score-bar run inside the strip.
+    pub colored_bar: bool,
+}
+
+impl SceneProbe {
+    pub(crate) fn detected(&self) -> bool {
+        self.hp_bar && self.dark_strip && self.colored_bar
+    }
+}
+
+pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneProbe {
+    let none = SceneProbe {
+        hp_bar: false,
+        dark_strip: false,
+        colored_bar: false,
+    };
     let px = |x: u32, y: u32| -> (u8, u8, u8) {
         let i = ((y * width + x) * 4) as usize;
         (rgba[i], rgba[i + 1], rgba[i + 2])
@@ -937,40 +963,44 @@ pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool 
         |c: (u8, u8, u8)| c.1 > 90 && c.1 as u16 > c.0 as u16 + 25 && c.1 as u16 > c.2 as u16 + 25;
 
     // ── HP bar: longest horizontal run of green in the bottom-left region ──
-    let x0 = width * 3 / 100;
-    let x1 = (width * 24 / 100).min(width.saturating_sub(1));
-    let y0 = height * 82 / 100;
-    let y1 = (height * 98 / 100).min(height.saturating_sub(1));
+    let x0 = width * 2 / 100;
+    let x1 = (width * 25 / 100).min(width.saturating_sub(1));
+    let y0 = height * 70 / 100;
+    let y1 = (height * 95 / 100).min(height.saturating_sub(1));
+    if x1 <= x0 || y1 <= y0 {
+        return none;
+    }
     let mut hp_found = false;
-    if x1 > x0 && y1 > y0 {
-        'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
-            let mut run = 0u32;
-            let mut best = 0u32;
-            for x in (x0..x1).step_by(SCENE_STEP as usize) {
-                if is_green(px(x, y)) {
-                    run += SCENE_STEP;
-                    best = best.max(run);
-                } else {
-                    run = 0;
-                }
+    'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
+        let mut run = 0u32;
+        let mut best = 0u32;
+        for x in (x0..x1).step_by(SCENE_STEP as usize) {
+            if is_green(px(x, y)) {
+                run += SCENE_STEP;
+                best = best.max(run);
+            } else {
+                run = 0;
             }
-            if best >= HP_GREEN_MIN_RUN {
-                hp_found = true;
-                break 'outer;
-            }
+        }
+        if best >= HP_GREEN_MIN_RUN {
+            hp_found = true;
+            break 'outer;
         }
     }
     if !hp_found {
-        return false;
+        return none;
     }
 
     // ── Scoreboard: dark strip in the top-center band ──────────────────────
-    let sx0 = width * 30 / 100;
-    let sx1 = (width * 70 / 100).min(width);
+    let sx0 = width * 25 / 100;
+    let sx1 = (width * 75 / 100).min(width);
     let sy0 = height * 2 / 100;
-    let sy1 = (height * 12 / 100).min(height);
+    let sy1 = (height * 15 / 100).min(height);
     if sx1 <= sx0 || sy1 <= sy0 {
-        return false;
+        return SceneProbe {
+            hp_bar: true,
+            ..none
+        };
     }
     let mut total = 0u32;
     let mut dark = 0u32;
@@ -984,28 +1014,39 @@ pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool 
         }
     }
     if total == 0 || (dark as f32 / total as f32) < SCORE_DARK_FRAC {
-        return false;
+        return SceneProbe {
+            hp_bar: true,
+            ..none
+        };
     }
 
     // ── Teal (friendly) and orange/red (enemy) score bars in the strip ────
     let teal_found = colored_run(
         &px,
         sx0,
-        sx0 + (sx1 - sx0) * 45 / 100,
+        sx0 + (sx1 - sx0) * 46 / 100,
         sy0,
         sy1,
         |(r, g, b)| g > 90 && g >= b + 15 && g as u16 > r as u16 + 15,
     );
     let orange_found = colored_run(
         &px,
-        sx0 + (sx1 - sx0) * 55 / 100,
+        sx0 + (sx1 - sx0) * 52 / 100,
         sx1,
         sy0,
         sy1,
         |(r, g, _b)| r > 110 && r as u16 > g as u16 + 40,
     );
-    // Either bar alone is distinctive enough next to the HP bar + dark strip.
-    teal_found || orange_found
+    SceneProbe {
+        hp_bar: true,
+        dark_strip: true,
+        colored_bar: teal_found || orange_found,
+    }
+}
+
+/// Gate helper: the full HUD must be present.
+pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
+    probe_battle_scene(rgba, width, height).detected()
 }
 
 /// Longest horizontal run of pixels passing `pred` in the region; true when
@@ -1058,6 +1099,7 @@ pub(crate) fn build_anchor(
     roster_rel: &Rect,
     mut row_centers: Vec<i32>,
     team_split: f32,
+    table_detected: bool,
 ) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
     let pad = overlay_padding(roster_rel);
     // Overlay rect in screen px: the table area inflated by the padding,
@@ -1089,6 +1131,7 @@ pub(crate) fn build_anchor(
         roster_rect: roster,
         row_centers,
         team_split,
+        table_detected,
     };
     (overlay, anchor)
 }
