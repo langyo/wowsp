@@ -101,7 +101,7 @@ export default defineComponent({
     const route = useRoute();
     const mode = ref<LookupKind>(lastLookup.value?.kind ?? "player");
     const realm = ref(lastLookup.value?.realm ?? "asia");
-    const realms = ["ru", "eu", "na", "asia"];
+    const realms = ["ru", "eu", "na", "asia", "cn"];
     const result = ref<PlayerStats | null>(
       lastLookup.value?.kind === "player"
         ? (stats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.id}`) ?? null)

@@ -88,6 +88,14 @@ pub async fn get_ranked_stats(
     realm: String,
     season_count: Option<i64>,
 ) -> Result<Vec<RankedSeasonStats>, String> {
+    // The CN cluster exposes no seasons API; ranked history is simply not
+    // available there (fail loudly rather than rendering empty seasons).
+    if realm == "cn" {
+        return Err(
+            "ranked season history is unavailable on the CN realm (no seasons API is exposed there)"
+                .to_string(),
+        );
+    }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
     let client = wg_client()?;
