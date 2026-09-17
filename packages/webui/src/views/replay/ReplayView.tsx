@@ -32,12 +32,7 @@ import type {
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
-import {
-  parsePostBattle,
-  ribbonKeyOfIndex,
-  isRibbonIndexVerified,
-  type PostBattleRibbon,
-} from "@/features/replay/postBattle";
+import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBattle";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
@@ -213,9 +208,10 @@ function rosterStatCols(
 }
 
 /** Post-battle modal: two-column team matrix (allies left, enemies right)
- *  sorted by estimated settlement XP. Clicking a player opens a real second-
- *  level modal with the match result + on-demand global stats (toast while
- *  loading) and a jump link into the lookup screen. */
+ *  sorted by settlement XP (real base exp from the results payload, with an
+ *  estimate fallback on legacy short arrays). Clicking a player opens a real
+ *  second-level modal with the match result + on-demand global stats (toast
+ *  while loading) and a jump link into the lookup screen. */
 const PostBattlePanel = defineComponent({
   name: "PostBattlePanel",
   props: { raw: { type: String, required: true } },
@@ -235,9 +231,9 @@ const PostBattlePanel = defineComponent({
           (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??
           "",
         killerName: p.killerId != null ? names.get(p.killerId) ?? null : null,
-        // Estimated settlement XP: damage + kills + survival bonus (the
-        // server doesn't stream per-player XP into replays).
-        estXp: Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
+        // Settlement XP: the real base exp streamed per player (bots carry
+        // 0); falls back to a rough estimate for legacy short arrays only.
+        xp: p.exp ?? Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
       }));
     });
     /** The recorder's own team. `playersPublicInfo[6]` is a 0/1 TEAM number
@@ -253,13 +249,13 @@ const PostBattlePanel = defineComponent({
       const st = selfTeam.value;
       return rows.value
         .filter((p) => (st != null ? p.team === st : p.team !== 1))
-        .sort((a, b) => b.estXp - a.estXp);
+        .sort((a, b) => b.xp - a.xp);
     });
     const enemies = computed(() => {
       const st = selfTeam.value;
       return rows.value
         .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
-        .sort((a, b) => b.estXp - a.estXp);
+        .sort((a, b) => b.xp - a.xp);
     });
     const detailOpen = ref(false);
     const rawOpen = ref(false);
@@ -392,7 +388,7 @@ const PostBattlePanel = defineComponent({
             <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
           </span>
           {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value)}
-          <span class="replay-view__postbattle-cell-xp">{p.estXp.toLocaleString()}</span>
+          <span class="replay-view__postbattle-cell-xp">{p.xp.toLocaleString()}</span>
         </button>
       );
       const sel = selected.value;
@@ -462,11 +458,6 @@ const PostBattlePanel = defineComponent({
                 {!sel.alive && sel.killerName ? (
                   <div class="replay-view__postbattle-killed">
                     {t("replay.postbattle.destroyedBy", { name: sel.killerName })}
-                    {sel.killerDamage
-                      ? t("replay.postbattle.killerDamage", {
-                          n: sel.killerDamage.toLocaleString(),
-                        })
-                      : ""}
                   </div>
                 ) : null}
                 <div class="replay-view__postbattle-detail-body">
@@ -491,17 +482,14 @@ const PostBattlePanel = defineComponent({
                   </div>
                   <div class="replay-view__postbattle-detail-ribbons">
                     {sel.ribbons.map((x) => {
-                      const key = ribbonKeyOfIndex(x.index);
-                      if (!key) return null;
-                      const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
-                      const verified = isRibbonIndexVerified(x.index);
+                      const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
                       return (
                         <span
-                          key={x.index}
+                          key={x.key}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={`${name} ×${x.value}${verified ? "" : t("replay.postbattle.estimated")}`}
+                          title={`${name} ×${x.value}`}
                         >
-                          <AssetImage src={bundledRibbonUrl(key)} width={40} height={15} alt="" />
+                          <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
                           <em>{x.value}</em>
                         </span>
                       );
@@ -635,8 +623,8 @@ const PostBattleFallbackPanel = defineComponent({
         const hits = isSelf ? st.hits : 0;
         const ribbons: PostBattleRibbon[] = [];
         if (isSelf) {
-          if (hits > 0) ribbons.push({ index: 28, value: hits });
-          if (frags > 0) ribbons.push({ index: 32, value: frags });
+          if (hits > 0) ribbons.push({ key: "main_caliber", value: hits });
+          if (frags > 0) ribbons.push({ key: "frag", value: frags });
         }
         return {
           vehicle: v,
@@ -652,7 +640,6 @@ const PostBattleFallbackPanel = defineComponent({
           damageTaken: damageTaken(hp),
           ribbons,
           killerName: null as string | null,
-          killerDamage: null as number | null,
           isSelf,
         };
       }),
@@ -825,18 +812,15 @@ const PostBattleFallbackPanel = defineComponent({
                   </div>
                   <div class="replay-view__postbattle-detail-ribbons">
                     {sel.ribbons.map((x) => {
-                      const key = ribbonKeyOfIndex(x.index);
-                      if (!key) return null;
-                      const name = ribbonNames[key]?.[dataLanguage.value] ?? key;
-                      const verified = isRibbonIndexVerified(x.index);
+                      const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
                       return (
                         <span
-                          key={x.index}
+                          key={x.key}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={name + " ×" + x.value + (verified ? "" : t("replay.postbattle.estimated"))}
+                          title={`${name} ×${x.value}`}
                         >
                           <AssetImage
-                            src={bundledRibbonUrl(key)}
+                            src={bundledRibbonUrl(x.key)}
                             width={40}
                             height={15}
                             alt=""
