@@ -204,6 +204,28 @@ pub struct OverlayAnchor {
     /// a "table not located" hint box instead of stat chips.
     #[serde(default)]
     pub table_detected: bool,
+    /// Per-row player names read off the on-screen table, matched against the
+    /// arena roster (closed set). Same length and order as `row_centers`
+    /// (allies block first, enemies after); element `k` names the player
+    /// sitting in row `k`, or is `None` when that row's name was not
+    /// recognized. The names are the roster's own nickname strings — exactly
+    /// the keys the frontend's stats cache uses.
+    ///
+    /// Semantics:
+    ///   - `None` — recognition unavailable (recognizer disabled or the
+    ///     pipeline bailed): the frontend falls back to mapping rows onto
+    ///     roster entries by index (the historical behavior);
+    ///   - `Some(vec)` — recognition ran. A `None` element marks a row that
+    ///     was not recognized/matched: the frontend renders a silent
+    ///     placeholder and must NOT fall back to the index guess (the
+    ///     in-game panel sorts rows its own way, which is what the matcher
+    ///     exists to fix). When EVERY row fails to match, the vec is
+    ///     deliberately all `None` — the whole overlay goes silent instead
+    ///     of showing index-guessed stats (honest silence over confidently
+    ///     wrong data; a confidence gate downgrading total match failure
+    ///     back to `None` is a planned 3b follow-up).
+    #[serde(default)]
+    pub row_players: Option<Vec<Option<String>>>,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.
