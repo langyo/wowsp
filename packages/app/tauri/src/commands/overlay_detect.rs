@@ -817,15 +817,21 @@ mod tests {
                 put(&mut img, x, y, (50, 220, 110));
             }
         }
-        // Score bars per the real client: teal (friendly) x 27-43% and
-        // orange (enemy) x 54-70%, both at y ≈ 8-11% — floating over the
-        // sky, NO dark backing strip.
-        for y in 58..90 {
-            for x in 350..550 {
-                put(&mut img, x, y, (57, 240, 200));
-            }
-            for x in 700..900 {
-                put(&mut img, x, y, (245, 140, 26));
+        // Ship-icon blobs scattered across the top band (fuzzy: exact
+        // positions differ per mode; these mimic light silhouettes
+        // ~30x10 px at assorted spots).
+        for (bx, by) in [
+            (300u32, 110u32),
+            (520, 150),
+            (760, 95),
+            (980, 170),
+            (1240, 120),
+            (1500, 205),
+        ] {
+            for y in by..by + 10 {
+                for x in bx..bx + 30 {
+                    put(&mut img, x, y, (210, 214, 218));
+                }
             }
         }
         assert!(detect_battle_scene(&img, w, h));
@@ -919,14 +925,24 @@ const SCENE_STEP: u32 = 4;
 /// Measured on a real 1080p client: it sits at ~78% of the frame height
 /// (x ~3-15%), so the band spans well around it.
 const HP_GREEN_MIN_RUN: u32 = 48;
-/// The scoreboard is TWO floating segmented bars over the sky — teal
-/// (friendly, x ~27-44%, y ~8-11%) and orange (enemy, x ~54-70%) — with
-/// white score text between them. No dark backing strip exists, so the
-/// probe matches the bars themselves.
-const SCORE_BAR_MIN_RUN: u32 = 32;
+/// Vanilla rosters render small light ship silhouettes across the top of
+/// the screen. Detection is deliberately FUZZY and position-agnostic —
+/// roster placement differs between PvP / scenarios / co-op — so any icon-
+/// sized compact bright blob in the top band counts, wherever it sits.
+/// The size bounds reject broad sky/cloud expanses (too wide) and thin
+/// text strokes (too short).
+const ICON_MIN_W: u32 = 12;
+const ICON_MAX_W: u32 = 100;
+const ICON_MIN_H: u32 = 4;
+const ICON_MAX_H: u32 = 40;
+/// Bright threshold for icon pixels (silhouettes are near-white).
+const ICON_LUMA: u8 = 170;
+/// A full roster stacks many icons (PvP 5v5 -> 10+; scenarios fewer); a
+/// handful of ship-shaped blobs means a roster is on screen.
+const ICONS_MIN: u32 = 5;
 
 /// True when the frame carries the in-battle HUD: the bottom-left health bar
-/// plus the top-center scoreboard strip with its teal/orange score bars.
+/// plus the vanilla team rosters' ship silhouettes across the top.
 /// None of these render outside the 3D scene — port, login and loading
 /// screens all fail this probe — so it gates the whole overlay.
 /// Components of the battle-HUD probe, logged on failure so real captures
@@ -935,23 +951,21 @@ const SCORE_BAR_MIN_RUN: u32 = 32;
 pub(crate) struct SceneProbe {
     /// Long green run in the bottom-left corner (health bar).
     pub hp_bar: bool,
-    /// Teal segmented bar top-center-left (friendly score/damage).
-    pub teal_bar: bool,
-    /// Orange segmented bar top-center-right (enemy score/damage).
-    pub orange_bar: bool,
+    /// Icon-sized bright blobs counted across the whole top band (ship
+    /// silhouettes of the team rosters, any roster layout).
+    pub icon_blobs: u32,
 }
 
 impl SceneProbe {
     pub(crate) fn detected(&self) -> bool {
-        self.hp_bar && self.teal_bar && self.orange_bar
+        self.hp_bar && self.icon_blobs >= ICONS_MIN
     }
 }
 
 pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneProbe {
     let none = SceneProbe {
         hp_bar: false,
-        teal_bar: false,
-        orange_bar: false,
+        icon_blobs: 0,
     };
     let px = |x: u32, y: u32| -> (u8, u8, u8) {
         let i = ((y * width + x) * 4) as usize;
@@ -988,77 +1002,96 @@ pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneP
         return none;
     }
 
-    // ── Score bars: teal (friendly) left of the score, orange (enemy) right.
-    // Both sit in a narrow band around 8-12% of the frame height; both are
-    // ALWAYS present together in battle, so requiring both keeps false
-    // positives (single-sided teal UI accents) out.
-    let sy0 = height * 4 / 100;
-    let sy1 = (height * 16 / 100).min(height);
-    if sy1 <= sy0 {
-        return SceneProbe {
-            hp_bar: true,
-            ..none
-        };
-    }
-    let teal_found = colored_run(
+    // ── Vanilla rosters: fuzzy ship-icon blobs across the whole top band ──
+    // Position-agnostic on purpose: scenario / co-op modes place their
+    // rosters differently from random battles, and mods may add their own
+    // bars — none of that may break the probe.
+    let icon_blobs = count_icon_blobs(
         &px,
-        width * 25 / 100,
-        width * 48 / 100,
-        sy0,
-        sy1,
-        // Teal/cyan family: green AND blue clearly above red (the real bar
-        // is #39F0C8-like, so g ≈ b — do NOT require g ≥ b + 15).
-        |(r, g, b)| g > 120 && b > 90 && g as u16 > r as u16 + 30 && b as u16 > r as u16 + 20,
-    );
-    let orange_found = colored_run(
-        &px,
-        width * 52 / 100,
-        width * 75 / 100,
-        sy0,
-        sy1,
-        |(r, g, _b)| r > 110 && r as u16 > g as u16 + 40,
+        width * 2 / 100,
+        (width * 98 / 100).min(width.saturating_sub(1)),
+        height * 8 / 100,
+        (height * 35 / 100).min(height.saturating_sub(1)),
     );
     SceneProbe {
         hp_bar: true,
-        teal_bar: teal_found,
-        orange_bar: orange_found,
+        icon_blobs,
     }
 }
 
-/// Gate helper: the full HUD must be present.
-pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
-    probe_battle_scene(rgba, width, height).detected()
-}
-
-/// Longest horizontal run of pixels passing `pred` in the region; true when
-/// it reaches `min_run` physical px.
-fn colored_run(
+/// Count compact bright blobs (ship silhouettes) in a region. A blob is a
+/// set of bright horizontal runs on adjacent scan rows whose x-ranges
+/// overlap; its size must fit the icon bounds, which rejects both broad
+/// sky/cloud areas and thin text strokes.
+fn count_icon_blobs(
     px: &impl Fn(u32, u32) -> (u8, u8, u8),
     x0: u32,
     x1: u32,
     y0: u32,
     y1: u32,
-    pred: impl Fn((u8, u8, u8)) -> bool,
-) -> bool {
+) -> u32 {
     if x1 <= x0 || y1 <= y0 {
-        return false;
+        return 0;
     }
+    // Collect bright runs per scan row: (y, x_start, x_end).
+    let mut runs: Vec<(u32, u32, u32)> = Vec::new();
     for y in (y0..y1).step_by(SCENE_STEP as usize) {
-        let mut run = 0u32;
-        let mut best = 0u32;
+        let mut cur: Option<(u32, u32)> = None;
         for x in (x0..x1).step_by(SCENE_STEP as usize) {
-            if pred(px(x, y)) {
-                run += SCENE_STEP;
-                best = best.max(run);
-            } else {
-                run = 0;
+            let (r, g, b) = px(x, y);
+            let luma = (u16::from(r) + u16::from(g) + u16::from(b)) / 3;
+            if luma >= u16::from(ICON_LUMA) {
+                cur = Some(match cur {
+                    Some((s, _)) => (s, x),
+                    None => (x, x),
+                });
+            } else if let Some((s, e)) = cur.take() {
+                if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
+                    runs.push((y, s, e));
+                }
             }
         }
-        if best >= SCORE_BAR_MIN_RUN {
-            return true;
+        if let Some((s, e)) = cur.take() {
+            if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
+                runs.push((y, s, e));
+            }
         }
     }
-    false
+    runs.sort_by_key(|&(y, xs, _)| (y, xs));
+
+    // Greedy vertical clustering: adjacent rows with overlapping x-ranges
+    // belong to the same blob.
+    let mut blobs = 0u32;
+    let mut open: Option<(u32, u32, u32, u32)> = None; // (y_last, x_min, x_max, y_first)
+    for (y, xs, xe) in runs {
+        open = match open {
+            Some((yl, xmin, xmax, yfirst))
+                if y - yl <= SCENE_STEP * 2 && xs <= xmax && xe >= xmin =>
+            {
+                Some((y, xmin.min(xs), xmax.max(xe), yfirst))
+            },
+            Some((yl, _xmin, _xmax, yfirst)) => {
+                let h = yl - yfirst;
+                if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
+                    blobs += 1;
+                }
+                Some((y, xs, xe, y))
+            },
+            None => Some((y, xs, xe, y)),
+        };
+    }
+    if let Some((yl, _xmin, _xmax, yfirst)) = open {
+        let h = yl - yfirst;
+        if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
+            blobs += 1;
+        }
+    }
+    blobs
+}
+
+/// Gate helper: the full HUD must be present.
+pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
+    probe_battle_scene(rgba, width, height).detected()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
