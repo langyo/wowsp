@@ -53,6 +53,8 @@ import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
+import { damageColor, winrateColor } from "@/utils/winrate";
+import { fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
@@ -146,6 +148,70 @@ function formatDateTime(dt?: string | null): string {
   return `${y}-${mo}-${d}${hhmm}`;
 }
 
+/** The two aligned roster-stat columns for one player name — overall winrate
+ *  and avg damage, tier-colored (the XVM-style level coloring from
+ *  utils/winrate). A tiny spinner rides while the batch lookup runs; bots /
+ *  hidden profiles / lookup misses render a muted "—". Shared by both
+ *  post-battle panels. */
+function rosterStatCols(
+  name: string,
+  stats: Map<string, RosterStat>,
+  loading: boolean,
+) {
+  const ai = isAiName(name);
+  const stat = ai ? undefined : stats.get(name);
+  const col = (
+    mod: string,
+    title: string,
+    pick: (s: RosterStat) => number | null,
+    colorOf: (v: number) => string,
+    fmt: (v: number) => string,
+  ) => {
+    let tip = title;
+    let body;
+    if (ai) {
+      tip = t("replay.botNote");
+      body = <em>—</em>;
+    } else if (!stat || loading) {
+      body = <HSpinner size="xs" tone="current" />;
+    } else {
+      const v = pick(stat);
+      if (v == null) {
+        if (stat.hidden) tip = t("replay.live.hiddenProfile");
+        body = <em>—</em>;
+      } else {
+        body = <b style={{ color: colorOf(v) }}>{fmt(v)}</b>;
+      }
+    }
+    return (
+      <span
+        class={`replay-view__postbattle-cell-stat ${mod}`}
+        title={tip}
+      >
+        {body}
+      </span>
+    );
+  };
+  return (
+    <>
+      {col(
+        "replay-view__postbattle-cell-stat--wr",
+        t("replay.postbattle.winrate"),
+        (s) => s.winrate,
+        winrateColor,
+        (v) => `${v.toFixed(1)}%`,
+      )}
+      {col(
+        "replay-view__postbattle-cell-stat--dmg",
+        t("replay.postbattle.avgDamage"),
+        (s) => s.avgDamage,
+        damageColor,
+        (v) => Math.round(v).toLocaleString(),
+      )}
+    </>
+  );
+}
+
 /** Post-battle modal: two-column team matrix (allies left, enemies right)
  *  sorted by estimated settlement XP. Clicking a player opens a real second-
  *  level modal with the match result + on-demand global stats (toast while
@@ -220,6 +286,44 @@ const PostBattlePanel = defineComponent({
     /** AI/bot players have no WG account — skip the global-stats lookup.
      *  In replays they appear as ":Name:" (colon-wrapped, e.g. ":Millo:"). */
     const AI_NAME = /^:.*:$/;
+
+    /** Roster WR / avg-damage per player name for the matrix columns (one
+     *  batched lookup on mount, warm-served from the shared roster-stats
+     *  cache). Entries without a realm ride the roster's dominant one — a
+     *  battle is single-realm in practice. */
+    const nameStats = ref<Map<string, RosterStat>>(new Map());
+    const nameStatsLoading = ref(false);
+    async function loadNameStats() {
+      const pb = parsed.value;
+      if (!pb) return;
+      const dominant = pb.players.find((p) => p.realm)?.realm ?? null;
+      const byRealm = new Map<string, Set<string>>();
+      for (const p of pb.players) {
+        if (AI_NAME.test(p.name)) continue;
+        const realm = p.realm ?? dominant;
+        if (!realm) continue;
+        const set = byRealm.get(realm) ?? new Set<string>();
+        set.add(p.name);
+        byRealm.set(realm, set);
+      }
+      if (byRealm.size === 0) return;
+      nameStatsLoading.value = true;
+      try {
+        const maps = await Promise.all(
+          [...byRealm].map(([realm, names]) =>
+            fetchRosterStatsByNames([...names], realm),
+          ),
+        );
+        const merged = new Map<string, RosterStat>();
+        for (const m of maps) for (const [k, v] of m) merged.set(k, v);
+        nameStats.value = merged;
+      } finally {
+        nameStatsLoading.value = false;
+      }
+    }
+    onMounted(() => {
+      void loadNameStats();
+    });
     /** Load the selected player's global stats on-demand (toast while
      *  loading; the lookup API resolves by nickname + realm). Failures are
      *  silent — AI names and rate-limited lookups are common, and an error
@@ -287,6 +391,7 @@ const PostBattlePanel = defineComponent({
             <span class="replay-view__postbattle-cell-name">{p.name}</span>
             <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
           </span>
+          {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value)}
           <span class="replay-view__postbattle-cell-xp">{p.estXp.toLocaleString()}</span>
         </button>
       );
@@ -478,6 +583,26 @@ const PostBattleFallbackPanel = defineComponent({
     const AI_NAME = /^:.*:$/;
     const realm = computed(() => props.realm || "asia");
 
+    /** Roster WR / avg-damage columns — same batched lookup as the main
+     *  panel; the whole fallback roster lives on the query realm. */
+    const nameStats = ref<Map<string, RosterStat>>(new Map());
+    const nameStatsLoading = ref(false);
+    async function loadNameStats() {
+      const names = [...new Set(props.vehicles.map((v) => v.name))].filter(
+        (n) => !AI_NAME.test(n),
+      );
+      if (names.length === 0 || !realm.value) return;
+      nameStatsLoading.value = true;
+      try {
+        nameStats.value = await fetchRosterStatsByNames(names, realm.value);
+      } finally {
+        nameStatsLoading.value = false;
+      }
+    }
+    onMounted(() => {
+      void loadNameStats();
+    });
+
     /** Death time per shipId (same join the scorebar strip uses). */
     const deathByShipId = computed(() => {
       const m = new Map<number, number | null>();
@@ -628,6 +753,7 @@ const PostBattleFallbackPanel = defineComponent({
             </span>
             <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
           </span>
+          {rosterStatCols(r.vehicle.name, nameStats.value, nameStatsLoading.value)}
           <span class="replay-view__postbattle-cell-status">
             {!r.alive ? t("replay.legend.dead") : ""}
           </span>

@@ -221,3 +221,48 @@ export function useRosterStats(options: UseRosterStatsOptions) {
 
   return { stats };
 }
+
+/**
+ * One-shot name-keyed roster lookup for the post-battle panels. Serves warm
+ * entries from the same module-scope cache the live pipeline uses (players
+ * just seen in the live roster render instantly) and sends only the misses
+ * as a single batch RPC. Names that fail to resolve (not found / RPC error)
+ * are simply absent from the returned map — callers render "—".
+ */
+export async function fetchRosterStatsByNames(
+  names: string[],
+  realm: string,
+): Promise<Map<string, RosterStat>> {
+  const out = new Map<string, RosterStat>();
+  if (!realm) return out;
+  const misses: string[] = [];
+  for (const name of names) {
+    if (isAiName(name)) continue;
+    const cached = statCache.get(`${realm}:${name}`);
+    if (cached) out.set(name, cached);
+    else misses.push(name);
+  }
+  if (misses.length === 0) return out;
+  try {
+    const results = await api.lookupPlayersStatsBatch(misses, realm);
+    misses.forEach((name, i) => {
+      const r = results[i];
+      const st = r
+        ? {
+            winrate: r.winrate ?? null,
+            pr: r.pr ?? null,
+            avgDamage: r.avgDamage ?? null,
+            battles: r.battles ?? null,
+            hidden: r.hidden,
+            loading: false,
+          }
+        : emptyStat(false);
+      if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
+      statCache.set(`${realm}:${name}`, st);
+      out.set(name, st);
+    });
+  } catch {
+    /* transient lookup failure — leave the misses out; cells show "—" */
+  }
+  return out;
+}

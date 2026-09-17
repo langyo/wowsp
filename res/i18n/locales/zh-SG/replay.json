@@ -94,6 +94,8 @@
     "estimated": "（推测）",
     "xp": "经验",
     "credits": "银币",
+    "winrate": "总体胜率",
+    "avgDamage": "场均伤害",
     "globalFailed": "无法获取全局战绩",
     "globalFailedAi": "无法获取全局战绩（可能为 AI 玩家）",
     "globalUnavailable": "全局战绩不可用",

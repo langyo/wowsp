@@ -94,6 +94,8 @@
     "estimated": "（推定）",
     "xp": "経験値",
     "credits": "クレジット",
+    "winrate": "勝率",
+    "avgDamage": "平均ダメージ",
     "globalFailed": "全体戦績を取得できません",
     "globalFailedAi": "全体戦績を取得できません（AI プレイヤーの可能性）",
     "globalUnavailable": "全体戦績は利用できません",

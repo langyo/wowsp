@@ -94,6 +94,8 @@
     "estimated": " (estimado)",
     "xp": "EXP",
     "credits": "Créditos",
+    "winrate": "Tasa de victorias",
+    "avgDamage": "Daño medio",
     "globalFailed": "Estadísticas globales no disponibles",
     "globalFailedAi": "Estadísticas globales no disponibles (posiblemente un jugador de IA)",
     "globalUnavailable": "Estadísticas globales no disponibles",
