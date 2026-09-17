@@ -78,9 +78,17 @@ jobs:
           ref="${{ github.ref_name }}"
           case "$ref" in
             v*)
-              gh release create "$ref" --draft --title "WoWSP $ref" \
-                --notes "See the GitHub Releases page for details." || true
+              gh release create "$ref" --draft --title "WoWSP $ref" || true
               gh release upload "$ref" target/release/bundle/installer/* --clobber
               ;;
             *) echo "not a tag push ($ref) — skipping release upload" ;;
           esac
+
+  release-notes:
+    # Writes the standard categorized release body (all merged PRs since the
+    # previous tag, grouped by the leading gitmoji) onto the draft release.
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    uses: celestia-island/celestia-devtools/.github/workflows/release-notes.yml@master
