@@ -486,21 +486,25 @@ function getLoader(): GLTFLoader {
  * Either way the embedded copy has the same file, so retry against it.
  */
 export async function fetchModelResource(url: string): Promise<Response> {
+  // The asset URL is percent-encoded (backslashes and slashes alike), so
+  // the cache-relative tail must be recovered from the DECODED form.
   const isAsset = url.startsWith("http://asset.localhost/");
-  const embedded = "/models/" + (url.split("/models/")[1] ?? "");
-  let resp: Response;
-  try {
-    resp = await fetch(url);
-  } catch (e) {
-    if (!isAsset) throw e;
-    console.warn(`[modelLoader] asset fetch failed (${e}), retrying embedded copy: ${embedded}`);
-    return fetch(embedded);
+  const embedded = isAsset
+    ? "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "")
+    : url;
+  // The embedded copy (frontendDist, served from the app origin) is the
+  // primary source: same-origin, untouched by system proxies/PACs that
+  // route `*.localhost` pseudo-hosts through the proxy. The cache copy is
+  // the fallback for packs published after this binary was built (files
+  // the origin 404s on).
+  if (isAsset) {
+    const fromOrigin = await fetch(embedded);
+    if (fromOrigin.ok) return fromOrigin;
+    console.warn(
+      `[modelLoader] embedded fetch ${fromOrigin.status}, trying pack cache: ${url}`,
+    );
   }
-  if (!resp.ok && isAsset) {
-    console.warn(`[modelLoader] asset fetch ${resp.status}, retrying embedded copy: ${embedded}`);
-    return fetch(embedded);
-  }
-  return resp;
+  return fetch(url);
 }
 
 function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
