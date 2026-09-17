@@ -38,6 +38,10 @@ const HEADER_SCAN_BOTTOM_FRAC: f32 = 0.55;
 const HEADER_MIN_RUN_FRAC: f32 = 0.06;
 /// Absolute floor (working px) for the same run, so tiny captures stay sane.
 const HEADER_MIN_RUN_PX: usize = 8;
+/// The header band must be at least this many consecutive hit rows thick
+/// (the real bars are ~14 working px tall; stray same-colored bands —
+/// water horizons, mod UI — don't stack that thick).
+const HEADER_MIN_ROWS: usize = 3;
 /// Header-bar height bounds in working px (the real bar is ~14 px at 800-wide).
 const HEADER_MIN_H: usize = 4;
 /// White-text density bands below 22% of the row peak are noise (e.g. our
@@ -93,34 +97,57 @@ pub(crate) fn detect_roster(
         (px[i] as i16, px[i + 1] as i16, px[i + 2] as i16)
     };
 
-    // ── 1. Header row: green AND red bar on the same scan row ────────────
+    // ── 1. Header: a THICK band of consecutive scan rows each carrying the
+    //    green AND red bar ─────────────────────────────────────────────────
+    // Single-row anchoring was fragile: any stray water horizon or mod UI
+    // with one matching row outscored the real header. The real bars are
+    // ~55 physical px tall (≈14 working px), so require HEADER_MIN_ROWS
+    // consecutive hit rows and pick the best total area among candidates.
     let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
     let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
     let min_run = ((w as f32 * HEADER_MIN_RUN_FRAC) as usize).max(HEADER_MIN_RUN_PX);
-    let mut best_score = 0usize;
     /// One scan-row hit: (bar y, green span, red span), spans end-exclusive.
     type HeaderHit = (usize, (usize, usize), (usize, usize));
-    let mut header: Option<HeaderHit> = None;
+    let mut run: Vec<HeaderHit> = Vec::new();
+    // Best thick run so far, owned (NOT borrowed from `run` — the borrow
+    // would fight the `run = Vec::new()` reset below).
+    let mut best: Option<Vec<HeaderHit>> = None;
+    let mut best_area = 0usize;
+    let flush =
+        |run: &mut Vec<HeaderHit>, best: &mut Option<Vec<HeaderHit>>, best_area: &mut usize| {
+            if run.len() >= HEADER_MIN_ROWS {
+                let area: usize = run.iter().map(|(_, g, r)| (g.1 - g.0) + (r.1 - r.0)).sum();
+                if area > *best_area {
+                    *best_area = area;
+                    *best = Some(std::mem::take(run));
+                }
+            }
+            run.clear();
+        };
     for y in y_lo..y_hi {
-        let Some(g) = longest_run_span(&px, w, y, is_header_green) else {
-            continue;
-        };
-        if g.1 - g.0 < min_run {
-            continue;
-        }
-        let Some(r) = longest_run_span(&px, w, y, is_header_red) else {
-            continue;
-        };
-        if r.1 - r.0 < min_run {
-            continue;
-        }
-        let score = (g.1 - g.0) + (r.1 - r.0);
-        if score > best_score {
-            best_score = score;
-            header = Some((y, g, r));
+        let hit = longest_run_span(&px, w, y, is_header_green)
+            .filter(|g| g.1 - g.0 >= min_run)
+            .and_then(|g| {
+                longest_run_span(&px, w, y, is_header_red)
+                    .filter(|r| r.1 - r.0 >= min_run)
+                    .map(|r| (y, g, r))
+            });
+        match hit {
+            Some(h) => run.push(h),
+            None => flush(&mut run, &mut best, &mut best_area),
         }
     }
-    let (hy, (gx0, gx1), (rx0, rx1)) = header?;
+    flush(&mut run, &mut best, &mut best_area);
+    // Anchor row = the run's first row; spans = widest green/red extents
+    // across the run (caption text punches holes into individual rows).
+    let run = best?;
+    let hy = run[0].0;
+    let (gx0, gx1) = run.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
+        (s.min(g.0), e.max(g.1))
+    });
+    let (rx0, rx1) = run.iter().fold((usize::MAX, 0), |(s, e), (_, _, r)| {
+        (s.min(r.0), e.max(r.1))
+    });
 
     // ── 2. Header height: scan down from the bar top; a row stays "header"
     //    while ≥2 of 6 sample points across both bars read bar color or the
