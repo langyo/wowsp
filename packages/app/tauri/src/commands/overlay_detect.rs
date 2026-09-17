@@ -49,17 +49,13 @@ const HEADER_MIN_H: usize = 4;
 const ROW_TEXT_FRACTION: f32 = 0.22;
 /// A text band shorter than this (working px) is anti-aliasing, not a row.
 const ROW_BAND_MIN_H: usize = 2;
-/// Vertical range below the header scanned for player-row text: bands are
-/// first extracted from the conservative window (covers ~5v5–8v8 rosters),
-/// then grown to the generous cap when the arena hint asks for more rows.
-const ROW_SCAN_WINDOW_FRAC: f32 = 0.30;
+/// Vertical range below the header scanned for the white-text profile used
+/// by the phase refinement.
 const ROW_SCAN_MAX_SPAN_FRAC: f32 = 0.45;
-/// Row-pitch bounds in working px (real pitch ≈ 13 at 800-wide).
-const MIN_PITCH: f32 = 6.0;
-const MAX_PITCH: f32 = 80.0;
-/// Player rows found vs the arena hint: more than ±2 off means the bands
-/// are not the roster (caller falls back to the centered default).
-const ROW_COUNT_TOLERANCE: usize = 2;
+/// Row pitch = header-bar height × this factor. Measured on real captures:
+/// 52/55 ≈ 0.95 (1440p) and 48/54 ≈ 0.89 (1080p) — bars and rows share the
+/// same UI scale, so this single ratio replaces all pixel row-counting.
+const PITCH_PER_HEADER: f32 = 0.92;
 
 /// Detector output: everything needed to anchor the overlay chips, in
 /// physical pixels relative to the capture (game window) origin.
@@ -182,12 +178,19 @@ pub(crate) fn detect_roster(
     }
     let hh = hh.clamp(HEADER_MIN_H, (h / 10).max(HEADER_MIN_H));
 
-    // ── 3. Player rows: white-name density bands below the header ────────
-    // The density profile is computed over a generous window, but bands are
-    // first extracted from the conservative one — only when the arena hint
-    // asks for more rows than were found does the window grow (by the
-    // observed pitch) and the extraction run again.
+    // ── 3. Player rows by pure GEOMETRY (no pixel row-counting) ───────────
+    // The roster size is already known from tempArenaInfo.json, so once the
+    // header pins the table's top corners the rows follow arithmetically:
+    // the real row pitch ≈ the header-bar height (measured 52/55 ≈ 0.95 and
+    // 48/54 ≈ 0.89 on real captures — bars and rows share the same UI
+    // scale), rows start right under the header, and the expected count is
+    // divided out. White-text bands only fine-tune the PHASE (± pitch/3) of
+    // the uniform grid when they agree with it — they never gate the result.
     let prof_top = (hy + hh).min(h);
+    let pitch = hh as f32 * PITCH_PER_HEADER;
+    let first = prof_top as f32 + pitch * 0.5;
+    // White-text density profile over the generous window below the header —
+    // used ONLY for the phase refinement below.
     let prof_cap = (prof_top + (h as f32 * ROW_SCAN_MAX_SPAN_FRAC) as usize).min(h);
     let mut profile = vec![0u32; prof_cap.saturating_sub(prof_top)];
     for (dy, slot) in profile.iter_mut().enumerate() {
@@ -207,80 +210,57 @@ pub(crate) fn detect_roster(
         }
         *slot = n;
     }
-    let prof_max = *profile.iter().max().unwrap_or(&0);
-    if prof_max == 0 {
-        return None;
-    }
-    let thr = prof_max as f32 * ROW_TEXT_FRACTION;
-    let extract_bands = |bot: usize| -> Vec<f32> {
-        let end = bot.saturating_sub(prof_top).min(profile.len());
-        let mut out: Vec<f32> = Vec::new();
+    // Row count: the arena hint is authoritative; without it fall back to a
+    // conservative 5-row grid (real flows always pass the hint).
+    let rows_wanted = if expected_players > 0 {
+        expected_players
+    } else {
+        5
+    };
+    let mut centers: Vec<f32> = (0..rows_wanted).map(|i| first + pitch * i as f32).collect();
+    // Phase refinement: keep only the bands consistent with the uniform grid
+    // (within a third of a pitch), then use their median offset. Occluded or
+    // spurious bands (hint box, HUD) simply don't vote.
+    let prof_max = profile.iter().copied().max().unwrap_or(0);
+    if prof_max > 0 {
+        let thr = prof_max as f32 * ROW_TEXT_FRACTION;
+        let mut bands: Vec<f32> = Vec::new();
         let mut band_start: Option<usize> = None;
-        for (dy, &v) in profile[..end].iter().enumerate() {
+        for (dy, &v) in profile.iter().enumerate() {
             if v as f32 > thr {
                 if band_start.is_none() {
                     band_start = Some(dy);
                 }
             } else if let Some(s) = band_start.take() {
                 if dy - s >= ROW_BAND_MIN_H {
-                    out.push(prof_top as f32 + (s + dy - 1) as f32 / 2.0);
+                    bands.push(prof_top as f32 + (s + dy - 1) as f32 / 2.0);
                 }
             }
         }
         if let Some(s) = band_start {
             if profile.len() - s >= ROW_BAND_MIN_H {
-                out.push(prof_top as f32 + (s + profile.len() - 1) as f32 / 2.0);
+                bands.push(prof_top as f32 + (s + profile.len() - 1) as f32 / 2.0);
             }
         }
-        out
-    };
-    let win1 = (prof_top + (h as f32 * ROW_SCAN_WINDOW_FRAC) as usize).min(prof_cap);
-    let mut centers = extract_bands(win1);
-    if expected_players > centers.len() && centers.len() >= 2 {
-        let mut diffs: Vec<f32> = centers.windows(2).map(|p| p[1] - p[0]).collect();
-        diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let pitch0 = diffs[diffs.len() / 2];
-        let need_bot = (*centers.last().unwrap()
-            + (expected_players - centers.len() + 1) as f32 * pitch0 * 1.25)
-            as usize;
-        centers = extract_bands(need_bot.min(prof_cap));
-    }
-    if centers.len() < 2 {
-        return None;
+        let offsets: Vec<f32> = bands
+            .iter()
+            .filter_map(|b| {
+                let k = ((b - first) / pitch).round(); // grid index of nearest row
+                let center = first + pitch * k;
+                ((b - center).abs() <= pitch / 3.0).then(|| b - center)
+            })
+            .collect();
+        if offsets.len() >= 2 {
+            let mut sorted = offsets;
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let shift = sorted[sorted.len() / 2];
+            centers.iter_mut().for_each(|c| *c += shift);
+        }
     }
 
-    // Median pitch from the observed bands (robust against an occluded row).
-    let mut diffs: Vec<f32> = centers.windows(2).map(|p| p[1] - p[0]).collect();
-    diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let pitch = diffs[diffs.len() / 2];
-    if !(MIN_PITCH..=MAX_PITCH).contains(&pitch) {
-        return None;
-    }
-
-    // ── 4. Cross-check against the arena hint, extend/trim to it ─────────
-    if expected_players > 0 {
-        if centers.len() + ROW_COUNT_TOLERANCE < expected_players
-            || centers.len() > expected_players + ROW_COUNT_TOLERANCE
-        {
-            return None;
-        }
-        // Spurious extra bands (our own hint box, HUD text) accumulate toward
-        // the bottom — drop from there; occluded real rows are extended
-        // downward with the median pitch.
-        while centers.len() > expected_players {
-            centers.pop();
-        }
-        let mut last = *centers.last().unwrap();
-        while centers.len() < expected_players {
-            last += pitch;
-            centers.push(last);
-        }
-    } else if centers.len() < 3 {
-        return None;
-    }
-
-    // ── 5. Rectangle + team split, back to physical px ────────────────────
-    let last = *centers.last().unwrap();
+    // ── 4. Rectangle + team split, back to physical px ────────────────────
+    let pitch = hh as f32 * PITCH_PER_HEADER;
+    let last = *centers.last().unwrap_or(&(prof_top as f32));
     let y1w = ((last + pitch * 0.75).min(h as f32 - 1.0)) as usize;
     let split_raw =
         ((gx1 + rx0) as f32 * 0.5 - gx0 as f32) / (rx1.saturating_sub(gx0)).max(1) as f32;
@@ -424,7 +404,9 @@ mod tests {
         let ty = (h as f32 * 0.22) as u32;
         let seam = tx + tw / 2;
         let bar_h = (h as f32 * 0.028) as u32; // ≈ header bar height
-        let pitch = ((h as f32 * 0.35) as u32 / rows.max(1) as u32).max(16);
+        // Real-client row pitch ≈ bar height × 0.92 (see PITCH_PER_HEADER) —
+        // the synthetic table must obey the same geometry.
+        let pitch = ((bar_h as f32 * 0.92) as u32).max(12);
         let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
             let i = ((y * w + x) * 4) as usize;
             img[i] = c.0;
@@ -623,26 +605,31 @@ mod tests {
     }
 
     #[test]
-    fn rejects_row_count_mismatch() {
-        // 6 drawn rows but the arena says 12 → far fewer text bands than
-        // players → None (caller falls back to the default anchor).
+    fn rows_follow_the_arena_hint_regardless_of_visible_text() {
+        // Pure-geometry semantics: with the header located, the row count is
+        // the ARENA hint (12), even when the drawn table only shows 6 text
+        // rows — rows are computed, not counted from pixels.
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 6);
-        assert!(detect_roster(&img, w, h, 12).is_none());
+        let det = detect_roster(&img, w, h, 12).expect("header alone must anchor");
+        assert_eq!(det.row_centers.len(), 12);
+        // The 6 drawn rows must coincide with grid rows 0..6.
+        let pitch = (h as f32 * 0.028 * 0.92);
+        let first = (h as f32 * 0.22 + h as f32 * 0.028) + pitch * 0.5;
+        for (k, &c) in det.row_centers.iter().enumerate().take(6) {
+            let truth = first + pitch * k as f32;
+            assert!((c as f32 - truth).abs() <= 9.0, "row {k}: {c} vs {truth}");
+        }
     }
 
     #[test]
     fn works_without_arena_hint() {
-        // Without the arena hint the detector keeps its conservative scan
-        // window: a tall 12-row table yields the rows that fit it (always
-        // ≥3, the TOP rows, in order) — real flows always pass the hint.
+        // No hint → the detector returns a conservative 5-row grid anchored
+        // on the header (real flows always pass the hint).
         let (w, h) = (1280u32, 720u32);
-        let (img, _, centers) = synth_header_table(w, h, 12);
+        let (img, _, _) = synth_header_table(w, h, 12);
         let det = detect_roster(&img, w, h, 0).expect("detect without hint");
-        assert!(det.row_centers.len() >= 3, "rows: {det:?}");
-        for (k, &c) in det.row_centers.iter().enumerate() {
-            assert!((c as f32 - centers[k]).abs() <= 8.0, "row {k}: {c}");
-        }
+        assert_eq!(det.row_centers.len(), 5, "rows: {det:?}");
     }
 
     #[test]
