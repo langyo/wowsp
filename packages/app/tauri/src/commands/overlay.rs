@@ -274,11 +274,21 @@ pub async fn stop_overlay_tab_watch() -> Result<(), String> {
     Ok(())
 }
 
+/// A table anchor pinned to ONE battle (arena stamp) and one game-window
+/// geometry: while both hold, every Tab press reuses this anchor verbatim —
+/// per-press re-detection drifted frame to frame and the chips wandered.
+#[cfg(target_os = "windows")]
+struct PinnedAnchor {
+    battle: i64,
+    game_rect: Rect,
+    anchor: OverlayAnchor,
+}
+
 /// The watcher loop — see the module docs for the interaction contract.
 #[cfg(target_os = "windows")]
 fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     let mut overlay_shown = false;
-    let mut cached_anchor: Option<(Instant, OverlayAnchor)> = None;
+    let mut pinned_anchor: Option<PinnedAnchor> = None;
     let mut cached_game: Option<(GameWindow, Instant)> = None;
     // When the last game-window SCAN ran — bounds find_game_window() even
     // when it keeps failing (each call takes a full Toolhelp process
@@ -305,7 +315,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
             watch_tab_tick(
                 &app,
                 &mut overlay_shown,
-                &mut cached_anchor,
+                &mut pinned_anchor,
                 &mut cached_game,
                 &mut last_scan,
                 &mut last_capture_attempt,
@@ -331,7 +341,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
 fn watch_tab_tick(
     app: &AppHandle,
     overlay_shown: &mut bool,
-    cached_anchor: &mut Option<(Instant, OverlayAnchor)>,
+    pinned_anchor: &mut Option<PinnedAnchor>,
     cached_game: &mut Option<(GameWindow, Instant)>,
     last_scan: &mut Option<Instant>,
     last_capture_attempt: &mut Option<Instant>,
@@ -376,25 +386,48 @@ fn watch_tab_tick(
         let want_visible = focused_on_game && tab_down && battle_known;
         if want_visible {
             if !*overlay_shown {
-                // Reuse a recent anchor first; otherwise a capture attempt
-                // must be rate-limit-free. A FAILED attempt leaves
-                // overlay_shown false, so the next tick (after the rate
-                // limit) retries — no release-and-press needed.
-                let anchor = match &*cached_anchor {
-                    Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
-                    _ => None,
-                }
-                .or_else(|| {
-                    if !last_capture_attempt.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL) {
-                        tracing::debug!("tab held: capture rate-limited, waiting");
-                        return None;
-                    }
-                    let g = game?;
-                    *last_capture_attempt = Some(Instant::now());
-                    let computed = compute_anchor(&g);
-                    *cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
-                    computed
+                // BATTLE-PINNED anchor first: once a table was located for
+                // THIS battle and this game-window geometry, every later
+                // press reuses it verbatim — per-press re-detection measured
+                // slightly different header bands frame to frame and the
+                // chips visibly wandered ("飘"). The pin lives for the whole
+                // battle (arena stamp) or until the window moves/resizes.
+                let battle = super::arena_info::last_arena_stamp();
+                let game_rect = game.map(|g| rect_from_win32(g.rect));
+                let pinned = pinned_anchor.as_ref().filter(|p| {
+                    p.battle == battle
+                        && game_rect.is_some_and(|r| r == p.game_rect)
+                        && p.anchor.table_detected
                 });
+                let anchor = match pinned {
+                    Some(p) => Some(p.anchor.clone()),
+                    None => {
+                        // Rate-limited acquisition attempt. A FAILED attempt
+                        // leaves overlay_shown false, so the next tick (after
+                        // the rate limit) retries — no release-and-press
+                        // needed. Only a CONFIRMED table detection pins;
+                        // fallback anchors (hint box) stay unpinned so the
+                        // next attempt keeps trying for the real table.
+                        let Some(g) = game else {
+                            return;
+                        };
+                        if !last_capture_attempt.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
+                        {
+                            tracing::debug!("tab held: capture rate-limited, waiting");
+                            return;
+                        }
+                        *last_capture_attempt = Some(Instant::now());
+                        let computed = compute_anchor(&g);
+                        if computed.as_ref().is_some_and(|a| a.table_detected) {
+                            *pinned_anchor = Some(PinnedAnchor {
+                                battle,
+                                game_rect: rect_from_win32(g.rect),
+                                anchor: computed.clone().unwrap(),
+                            });
+                        }
+                        computed
+                    },
+                };
                 if let Some(anchor) = anchor {
                     place_and_show(app, &anchor);
                     *overlay_shown = true;

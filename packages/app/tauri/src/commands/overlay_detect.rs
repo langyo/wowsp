@@ -42,6 +42,10 @@ const HEADER_MIN_RUN_PX: usize = 8;
 /// (the real bars are ~14 working px tall; stray same-colored bands —
 /// water horizons, mod UI — don't stack that thick).
 const HEADER_MIN_ROWS: usize = 3;
+/// Maximum horizontal gap between the green bar's right edge and the red
+/// bar's left edge (fraction of working width). The real bars hug the table
+/// seam (gap ≈ 2 px); the mod scoreboard's corner bars are ~35% apart.
+const HEADER_MAX_BAR_GAP_FRAC: f32 = 0.15;
 /// Header-bar height bounds in working px (the real bar is ~14 px at 800-wide).
 const HEADER_MIN_H: usize = 4;
 /// White-text density bands below 22% of the row peak are noise (e.g. our
@@ -289,6 +293,17 @@ fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
             .and_then(|g| {
                 longest_run_span(px, w, y, is_header_red)
                     .filter(|r| r.1 - r.0 >= min_run)
+                    // ADJACENCY: the real table's two header bars hug the
+                    // central seam (gap ≈ 2 working px). The mod scoreboard's
+                    // teal/brick bars sit in the screen's opposite corners —
+                    // same colors, same heights, HUGE gap — and kept outscoring
+                    // the real header by area, flinging the anchor to the top
+                    // of the screen (the live "drift"). Reject any pair whose
+                    // gap exceeds a fraction of the width.
+                    .filter(|r| {
+                        let gap = r.0.abs_diff(g.1);
+                        gap <= (w as f32 * HEADER_MAX_BAR_GAP_FRAC) as usize
+                    })
                     .map(|r| (y, g, r))
             });
         match hit {
@@ -644,6 +659,45 @@ mod tests {
         assert!(detect_roster(&img, w, h, (5, 5)).is_none());
     }
 
+    /// The MOD scoreboard draws a teal bar in the top-left corner and a
+    /// brick bar in the top-right corner — same colors as the team headers,
+    /// and TOGETHER they outscored the real header by area, flinging the
+    /// anchor to the top of the screen (the live "drift" report). The two
+    /// bars are ~35% of the width apart; the adjacency gate must reject them.
+    #[test]
+    fn mod_scoreboard_corner_bars_are_rejected() {
+        let (w, h) = (1280u32, 720u32);
+        let (mut img, _, centers) = synth_header_table(w, h, 5);
+        let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = c.0;
+            img[i + 1] = c.1;
+            img[i + 2] = c.2;
+            img[i + 3] = 255;
+        };
+        // Decoy bars in opposite corners at the very top, each 20% wide.
+        let bw = w / 5;
+        for y in 40..64 {
+            for x in 20..20 + bw {
+                put(&mut img, x, y, TEAL);
+            }
+            for x in (w - 20 - bw)..(w - 20) {
+                put(&mut img, x, y, BRICK);
+            }
+        }
+        let det = detect_roster(&img, w, h, (5, 5)).expect("real table must win");
+        // The anchor must be on the TABLE (y ≈ 22% of the frame), not the
+        // decoy (y ≈ 6%): check the first row center against the drawn rows.
+        assert!(
+            (det.row_centers[0] as f32 - centers[0]).abs() <= 9.0,
+            "{det:?}"
+        );
+        assert!(
+            (det.rect.y as f32 - h as f32 * 0.22).abs() <= 12.0,
+            "{det:?}"
+        );
+    }
+
     #[test]
     fn rows_follow_the_arena_hint_regardless_of_visible_text() {
         // Pure-geometry semantics: with the header located, the row count is
@@ -797,18 +851,21 @@ mod tests {
         let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i as i32 + 20).collect();
         let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false);
         assert!(!anchor.table_detected);
-        // The overlay window covers ONLY the inflated table area...
+        // The overlay window covers ONLY the inflated table area — wider on
+        // the sides (chips render OUTSIDE the table) than above/below.
         let pad = overlay_padding(&roster);
-        assert_eq!(overlay.width, roster.width + 2 * pad);
+        let padx = overlay_padding_x(&roster);
+        assert!(padx > pad, "side padding must exceed vertical padding");
+        assert_eq!(overlay.width, roster.width + 2 * padx);
         assert_eq!(overlay.height, roster.height + 2 * pad);
-        assert_eq!(overlay.x, roster.x - pad);
+        assert_eq!(overlay.x, roster.x - padx);
         assert_eq!(overlay.y, roster.y - pad);
         // ...and the anchor coordinates are re-based to ITS origin.
         assert_eq!(anchor.overlay_rect.x, overlay.x);
         assert_eq!(anchor.overlay_rect.y, overlay.y);
         assert_eq!(anchor.overlay_rect.width, overlay.width);
         assert_eq!(anchor.overlay_rect.height, overlay.height);
-        assert_eq!(anchor.roster_rect.x, pad);
+        assert_eq!(anchor.roster_rect.x, padx);
         assert_eq!(anchor.roster_rect.y, pad);
         for (got, want) in anchor.row_centers.iter().zip(&rows) {
             // Re-based by dy = roster.y − pad (no clamping in this geometry).
@@ -1021,10 +1078,17 @@ pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool 
 // Anchor construction (pure — unit-testable without Win32)
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Padding (physical px) added around the detected table when sizing the
-/// overlay window; chips never render outside it.
+/// Vertical padding (physical px) added above/below the detected table when
+/// sizing the overlay window.
 pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
     (roster.height / 8).clamp(24, 96)
+}
+
+/// Horizontal padding (physical px): WIDER than vertical because the stat
+/// chips render OUTSIDE the table's left/right edges (inside they cover the
+/// ship names) — the window must reserve a full chip width per side.
+pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
+    (roster.width / 5).clamp(150, 280)
 }
 
 /// Build the overlay-window anchor from a detection relative to the game
@@ -1039,12 +1103,13 @@ pub(crate) fn build_anchor(
     table_detected: bool,
 ) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
     let pad = overlay_padding(roster_rel);
+    let padx = overlay_padding_x(roster_rel);
     // Overlay rect in screen px: the table area inflated by the padding,
     // clamped to stay inside the game window (multi-monitor safe — the game
     // rect is already monitor-clamped).
-    let ox = (game_screen.x + roster_rel.x - pad).max(game_screen.x);
+    let ox = (game_screen.x + roster_rel.x - padx).max(game_screen.x);
     let oy = (game_screen.y + roster_rel.y - pad).max(game_screen.y);
-    let orx = game_screen.x + roster_rel.x + roster_rel.width + pad;
+    let orx = game_screen.x + roster_rel.x + roster_rel.width + padx;
     let ory = game_screen.y + roster_rel.y + roster_rel.height + pad;
     let overlay = Rect {
         x: ox,
