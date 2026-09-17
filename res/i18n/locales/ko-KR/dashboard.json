@@ -16,6 +16,8 @@
   "range7d": "7일",
   "range30d": "30일",
   "rangeAll": "전체",
+  "rangeSince": "집계 구간: {date} 이후(로컬 전적 스냅샷 기준).",
+  "rangeNoHistory": "아직 충분히 오래된 로컬 스냅샷이 없어 최근 플레이한 함선의 통산 데이터를 표시합니다. 사용을 계속하면 기록이 자동으로 쌓입니다.",
   "battles": "전투 수",
   "winrate": "승률",
   "avgDamage": "평균 데미지",

@@ -198,6 +198,14 @@
   flex-wrap: wrap;
 }
 
+/* Range coverage note under the 1D/7D/30D tabs: the real window the deltas
+   cover, or the no-baseline-yet fallback disclaimer. */
+.lookup-view__range-note {
+  margin: 6px 0 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+}
+
 .lookup-view__controlrow {
   display: flex;
   gap: 6px;

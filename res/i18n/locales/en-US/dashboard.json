@@ -16,6 +16,8 @@
   "range7d": "7D",
   "range30d": "30D",
   "rangeAll": "All",
+  "rangeSince": "Covers since {date} (from local stat snapshots).",
+  "rangeNoHistory": "No old-enough local snapshot yet, so career totals for recently played ships are shown; history builds up automatically as the app is used.",
   "battles": "Battles",
   "winrate": "Win rate",
   "avgDamage": "Avg damage",

@@ -57,6 +57,8 @@ export type {
   GameVersionInfo,
   ShipInfo,
   PlayerShipStats,
+  ShipCareerTotals,
+  ShipStatsHistoryPoint,
   StatsSnapshot,
   TrendBucket,
   TrendResult,

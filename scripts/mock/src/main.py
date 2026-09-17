@@ -445,6 +445,13 @@ async def cmd_get_ranked_stats(request: Request) -> list[dict]:
     ]
 
 
+@app.post("/api/read_ship_stats_history")
+async def cmd_read_ship_stats_history(request: Request) -> list:
+    """Stateless mock: no recorded history, so range views always take the
+    labeled career fallback under the mock backend."""
+    return []
+
+
 @app.get("/api/list_replays")
 async def cmd_list_replays() -> list[str]:
     return [str(p) for p in sorted(FIXTURES.glob("*.wowsreplay"))] or [

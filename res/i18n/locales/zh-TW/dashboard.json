@@ -16,6 +16,8 @@
   "range7d": "7天",
   "range30d": "30天",
   "rangeAll": "全部",
+  "rangeSince": "統計區間：{date} 起（基於本地戰績快照）。",
+  "rangeNoHistory": "本地尚無足夠早的戰績快照，暫按「最近玩過的艦艇」顯示生涯資料；隨使用會自動累積歷史。",
   "battles": "場次",
   "winrate": "勝率",
   "avgDamage": "場均傷害",

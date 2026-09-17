@@ -1029,6 +1029,36 @@ pub struct PlayerShipStats {
     pub last_battle_time: i64,
 }
 
+/// Per-ship career totals at one moment — the compact subset of
+/// [`PlayerShipStats`] that accumulates monotonically, stored in the
+/// ship-stats history so consecutive points yield true per-ship deltas.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipCareerTotals {
+    pub ship_id: i64,
+    pub battles: i64,
+    pub wins: i64,
+    pub damage_caused: i64,
+    pub frags: i64,
+    pub survived_battles: i64,
+    /// Career last-battle time (Unix seconds) — kept so a delta row can show
+    /// "when this ship was last played" without re-joining the live data.
+    pub last_battle_time: i64,
+}
+
+/// One timestamped point of a player's per-ship career totals. Appended to
+/// `ship-history/<realm>_<accountId>.json` on each successful per-ship fetch,
+/// so a point at or before a date-range cutoff serves as the baseline for
+/// real "recent N days" stats (current totals − baseline totals).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipStatsHistoryPoint {
+    /// Unix epoch seconds.
+    pub timestamp: i64,
+    /// Per-ship career totals at that moment (WG order).
+    pub ships: Vec<ShipCareerTotals>,
+}
+
 /// One point in a player's career-stat time series. Appended (never
 /// overwritten) to `snapshots/<realm>_<accountId>.json` on each lookup, so
 /// consecutive snapshots let us derive per-version deltas and trends.
