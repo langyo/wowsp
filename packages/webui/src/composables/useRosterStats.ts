@@ -1,6 +1,7 @@
 /**
- * Roster batch-stats pipeline, shared by the main window's LiveBattlePanel
- * and the in-game overlay window (OverlayStatsLayer).
+ * Roster batch-stats pipeline for the main window's LiveBattlePanel. (The
+ * in-game overlay window is a static page that runs its own tiny version of
+ * this pipeline — see src/overlay/main.ts — because it does not load Vue.)
  *
  * Names missing from the module-scope cache are collected and sent as ONE
  * debounced `lookup_players_stats_batch` RPC (the backend fans them out with

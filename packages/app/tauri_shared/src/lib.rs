@@ -174,24 +174,26 @@ pub struct CaptureResult {
 /// Everything the overlay window needs to align its stat chips with the
 /// in-game team list, produced by the roster detector on each Tab press.
 ///
-/// All coordinates are PHYSICAL pixels relative to the top-left corner of the
-/// game window (which is also the top-left corner of the overlay window —
-/// Rust places the overlay exactly over the game rect). The frontend divides
-/// by `devicePixelRatio` to get CSS pixels.
+/// The overlay window is NOT the full game rect — it covers only the team
+/// table area (inflated by padding), so all chip coordinates are PHYSICAL
+/// pixels relative to the OVERLAY window's own top-left corner (which Rust
+/// places at `overlayRect`). The frontend divides by `devicePixelRatio` to
+/// get CSS pixels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OverlayAnchor {
-    /// Game-window rect in PHYSICAL screen coordinates (where the overlay
-    /// window was placed). Sent for diagnostics; the overlay window already
-    /// mirrors it.
+    /// Game-window rect in PHYSICAL screen coordinates (diagnostics only).
     pub game_rect: Rect,
-    /// Detected team-list rect, physical px relative to the game window's
+    /// The overlay window's own rect in PHYSICAL screen coordinates — where
+    /// Rust placed it (the table area of the game window, inflated).
+    pub overlay_rect: Rect,
+    /// Detected team-list rect, physical px relative to the OVERLAY window's
     /// top-left corner.
     pub roster_rect: Rect,
-    /// Vertical center of each player row, physical px relative to the game
-    /// window's top-left corner, top to bottom. Header rows are trimmed and
-    /// the count capped at the roster's team size (when the arena hint is
-    /// known), so the frontend can map players by index directly.
+    /// Vertical center of each player row, physical px relative to the
+    /// OVERLAY window's top-left corner, top to bottom. Header rows are
+    /// trimmed and the count capped at the roster's team size (when the
+    /// arena hint is known), so the frontend can map players by index.
     pub row_centers: Vec<i32>,
     /// Horizontal position of the allies/enemies column split as a fraction
     /// (0.0–1.0) of the roster rect width. Allies occupy [0, split), enemies

@@ -2,7 +2,6 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 
 import App from "./App";
-import OverlayApp from "@/OverlayApp";
 import router from "@/router";
 import { i18n } from "@/i18n";
 import { bootstrap } from "./bootstrap";
@@ -12,45 +11,25 @@ import "@/styles/image-asset.scss";
 import "virtual:uno.css";
 
 /**
- * WoWSP entry. The same index.html serves TWO windows:
- *   - the main shell (default) — router-driven, with the custom title bar
- *   - the overlay window — `?window=overlay`, transparent, no router/title bar
+ * WoWSP entry for the MAIN shell window — router-driven, custom title bar.
+ * The in-game overlay window does NOT run this app: it loads a pre-rendered
+ * static page (`overlay.html`, see src/overlay/main.ts) so it paints
+ * instantly with no loading state.
  *
- * The Rust side creates the overlay window on demand (transparent, always on
- * top, skip taskbar) pointing at the same URL with the query param. main.ts
- * branches here so each window gets the right root component + plugins.
  * bootstrap() runs the shared global hooks (viewport policy, brand themes +
  * hikari theme/font init, deep-link theme forcing, hikari i18n seeding).
  */
-const isOverlay = new URLSearchParams(window.location.search).get("window") === "overlay";
-
-if (isOverlay) {
-  bootstrap();
-  // Marks this document as the overlay window: OverlayApp.scss uses it to
-  // undo theme.scss's opaque body background so the game shows through.
-  document.documentElement.classList.add("wowsp-overlay");
-  const app = createApp(OverlayApp);
-  app.use(createPinia());
-  app.use(i18n);
+bootstrap();
+const app = createApp(App);
+app.use(createPinia());
+app.use(router);
+app.use(i18n);
+router.isReady().then(() => {
   app.mount("#app");
-  // The pre-mount loading screen is opaque — dismiss it or it would cover
-  // the game even though the window itself is transparent.
   if (typeof window.__loaderDismiss === "function") {
     window.__loaderDismiss();
   }
-} else {
-  bootstrap();
-  const app = createApp(App);
-  app.use(createPinia());
-  app.use(router);
-  app.use(i18n);
-  router.isReady().then(() => {
-    app.mount("#app");
-    if (typeof window.__loaderDismiss === "function") {
-      window.__loaderDismiss();
-    }
-  });
-}
+});
 
 declare global {
   interface Window {

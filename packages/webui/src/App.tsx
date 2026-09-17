@@ -13,9 +13,10 @@ import { useOverlayLifecycle } from "@/features/overlay/useOverlayLifecycle";
  * outside Tauri the caption buttons are inert and the subtitle stays empty
  * (browser dev mode has no app version).
  *
- * The overlay window uses OverlayApp instead (no title bar). While the game
- * runs and the in-game overlay setting is on, the overlay lifecycle keeps the
- * transparent overlay window + Tab watcher alive (see useOverlayLifecycle).
+ * The in-game overlay window is a separate pre-rendered page (overlay.html),
+ * not a Vue view. While the game runs and the in-game overlay setting is on,
+ * the overlay lifecycle keeps that transparent window + Tab watcher alive
+ * (see useOverlayLifecycle).
  */
 export default defineComponent({
   name: "App",

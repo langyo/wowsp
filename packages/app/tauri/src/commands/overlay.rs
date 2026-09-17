@@ -74,9 +74,12 @@ const HWND_REFRESH: Duration = Duration::from_secs(2);
 #[tauri::command]
 pub async fn create_overlay_window(app: AppHandle, realm: Option<String>) -> Result<(), String> {
     if app.get_webview_window(OVERLAY_LABEL).is_none() {
-        let mut url = "/?window=overlay".to_string();
+        // The overlay window loads a PRE-RENDERED static page (bare HTML +
+        // CSS + a tiny vanilla listener, built as a second Vite entry) —
+        // no Vue app, no loading state, first paint is instant.
+        let mut url = "/overlay.html".to_string();
         if let Some(r) = realm.as_deref().filter(|r| !r.is_empty()) {
-            url.push_str("&realm=");
+            url.push_str("?realm=");
             url.push_str(r);
         }
         let win = WebviewWindowBuilder::new(&app, OVERLAY_LABEL, WebviewUrl::App(url.into()))
@@ -391,7 +394,7 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, anchor) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
-    let r = anchor.game_rect;
+    let r = anchor.overlay_rect;
     let queued = app.run_on_main_thread(move || {
         let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
         let _ = win.set_size(tauri::PhysicalSize::new(
@@ -435,67 +438,41 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     let expected = super::arena_info::last_known_team_size();
     let Some((rgba, w, h)) = capture_game_rgba(&game.rect) else {
         tracing::warn!("game window capture returned no pixels");
-        // Capture itself can fail (e.g. exclusive-fullscreen black BitBlt) —
-        // the game table is still visibly there, so the default anchor keeps
-        // the chips useful.
-        return fallback_anchor(game, expected);
+        return None;
     };
     if std::env::var_os("WOWSP_DEBUG_CAPTURE").is_some() {
         dump_capture(&rgba, w, h);
     }
-    match overlay_detect::detect_roster(&rgba, w, h, expected) {
-        Some(det) => {
-            tracing::info!(
-                rows = det.row_centers.len(),
-                split = det.team_split,
-                "team list detected — anchoring chips to it"
-            );
-            Some(OverlayAnchor {
-                game_rect: rect_from_win32(game.rect),
-                roster_rect: det.rect,
-                row_centers: det.row_centers,
-                team_split: det.team_split,
-            })
-        },
-        None => {
-            tracing::info!(
-                expected_players = expected,
-                "team list not detected — using fallback anchor"
-            );
-            fallback_anchor(game, expected)
-        },
+    // Scene gate: the battle HUD (bottom-left HP bar + top scoreboard) only
+    // renders inside the 3D scene. No HUD → not in battle → never show.
+    if !overlay_detect::detect_battle_scene(&rgba, w, h) {
+        tracing::info!("tab press: battle HUD not found — not in a 3D scene, skipping");
+        return None;
     }
-}
-
-/// Conservative default anchor: centered 60% × 72% table with evenly spread
-/// rows. Used when detection fails on a real capture (dark map, unusual UI
-/// scale) so the overlay still shows stats in a sane position.
-#[cfg(target_os = "windows")]
-fn fallback_anchor(game: &GameWindow, expected: usize) -> Option<OverlayAnchor> {
-    if expected == 0 {
-        return None; // no battle roster → nothing meaningful to anchor to
-    }
-    let r = &game.rect;
-    let width = (r.right - r.left).max(1);
-    let height = (r.bottom - r.top).max(1);
-    let roster = Rect {
-        x: (width as f32 * 0.20) as i32,
-        y: (height as f32 * 0.12) as i32,
-        width: (width as f32 * 0.60) as i32,
-        height: (height as f32 * 0.72) as i32,
-    };
-    let top = roster.y as f32 + roster.height as f32 * 0.06;
-    let bottom = roster.y as f32 + roster.height as f32 * 0.96;
-    let step = (bottom - top) / expected as f32;
-    let row_centers = (0..expected)
-        .map(|i| (top + step * (i as f32 + 0.5)).round() as i32)
-        .collect();
-    Some(OverlayAnchor {
-        game_rect: rect_from_win32(game.rect),
-        roster_rect: roster,
-        row_centers,
-        team_split: 0.5,
-    })
+    let (roster_rel, rows, split, detected) =
+        match overlay_detect::detect_roster(&rgba, w, h, expected) {
+            Some(det) => (det.rect, det.row_centers, det.team_split, true),
+            None => {
+                tracing::info!(
+                    expected_players = expected,
+                    "team list not detected — using centered fallback table"
+                );
+                let (r, rows) = overlay_detect::fallback_roster(w as i32, h as i32, expected);
+                (r, rows, 0.5, false)
+            },
+        };
+    let (overlay, anchor) =
+        overlay_detect::build_anchor(&rect_from_win32(game.rect), &roster_rel, rows, split);
+    tracing::info!(
+        detected,
+        overlay = format!(
+            "{}x{} at ({},{})",
+            overlay.width, overlay.height, overlay.x, overlay.y
+        ),
+        rows = anchor.row_centers.len(),
+        "anchor built"
+    );
+    Some(anchor)
 }
 
 /// Capture the game window region and return it as base64 PNG plus the
@@ -516,14 +493,34 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
         let expected = super::arena_info::last_known_team_size();
         let (anchor, png) = match capture_game_rgba(&game.rect) {
             Some((rgba, w, h)) => {
-                let det = overlay_detect::detect_roster(&rgba, w, h, expected)
-                    .map(|d| OverlayAnchor {
-                        game_rect: rect_from_win32(game.rect),
-                        roster_rect: d.rect,
-                        row_centers: d.row_centers,
-                        team_split: d.team_split,
-                    })
-                    .or_else(|| fallback_anchor(&game, expected));
+                let det = if overlay_detect::detect_battle_scene(&rgba, w, h) {
+                    match overlay_detect::detect_roster(&rgba, w, h, expected) {
+                        Some(d) => Some(
+                            overlay_detect::build_anchor(
+                                &rect_from_win32(game.rect),
+                                &d.rect,
+                                d.row_centers,
+                                d.team_split,
+                            )
+                            .1,
+                        ),
+                        None => {
+                            let (r, rows) =
+                                overlay_detect::fallback_roster(w as i32, h as i32, expected);
+                            Some(
+                                overlay_detect::build_anchor(
+                                    &rect_from_win32(game.rect),
+                                    &r,
+                                    rows,
+                                    0.5,
+                                )
+                                .1,
+                            )
+                        },
+                    }
+                } else {
+                    None
+                };
                 let png = if std::env::var_os("WOWSP_DEBUG_CAPTURE").is_some() {
                     encode_png(&rgba, w, h)
                 } else {
@@ -531,7 +528,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                 };
                 (det, png)
             },
-            None => (fallback_anchor(&game, expected), Vec::new()),
+            None => (None, Vec::new()),
         };
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         Ok(CaptureResult {

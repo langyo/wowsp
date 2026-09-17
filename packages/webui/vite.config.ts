@@ -107,6 +107,12 @@ export default defineConfig({
     emptyOutDir: false,
     target: 'es2020',
     rollupOptions: {
+      // Two entries: the main shell (Vue app) and the pre-rendered overlay
+      // page (bare DOM) the Rust Tab watcher loads — see src/overlay/main.ts.
+      input: {
+        main: resolve(pkgDir, "index.html"),
+        overlay: resolve(pkgDir, "overlay.html"),
+      },
       output: {
         manualChunks: vendorChunks,
       },
