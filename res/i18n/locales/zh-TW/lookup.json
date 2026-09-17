@@ -16,8 +16,6 @@
   "createdAt": "建立時間",
   "memberName": "成員",
   "roleLabel": "角色",
-  "descExpand": "展開簡介",
-  "descCollapse": "收起簡介",
   "jumpClan": "查看軍團",
   "role": {
     "commander": "指揮官",

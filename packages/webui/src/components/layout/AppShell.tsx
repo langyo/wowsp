@@ -16,6 +16,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
+import AnnouncementDialog from "./AnnouncementDialog";
 import Sidebar from "./Sidebar";
 import UpdateToast from "./UpdateToast";
 import WallpaperRenderer from "./WallpaperRenderer";
@@ -29,8 +30,10 @@ import "./AppShell.scss";
  * Root layout shell: sidebar (left) + main content (right). Loads accounts +
  * starts the game-status poller on mount. Listens for the Rust close-requested
  * event to show a quit-vs-minimize confirm dialog (HModal with a footer
- * action group). Mounts the shared hikari service containers: the toast host
- * and an error boundary around the routed content.
+ * action group). On first launch (until acknowledged) it also forces the
+ * free & open-source notice dialog. Mounts the shared hikari service
+ * containers: the toast host and an error boundary around the routed
+ * content.
  */
 export default defineComponent({
   name: "AppShell",
@@ -43,6 +46,9 @@ export default defineComponent({
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
     const closing = ref<"quit" | "minimize" | null>(null);
+    // Mandatory free & open-source notice: pops until the user acknowledges
+    // it through the dialog's own (countdown-gated) button.
+    const showNotice = ref(false);
     let unlistenClose: UnlistenFn | null = null;
 
     async function handleCloseChoice(action: "quit" | "minimize") {
@@ -85,6 +91,9 @@ export default defineComponent({
       void config.load().then(() => config.detect());
       void accounts.load();
       gameStatus.start();
+
+      // Forced notice on first launch (or any launch without a prior ack).
+      showNotice.value = localStorage.getItem("wowsp-oss-notice-acked") === null;
 
       // Shun auto-update: probe portable mode, then a delayed version check.
       // The check itself is silent — failures live in the store for
@@ -178,6 +187,13 @@ export default defineComponent({
             ),
           }}
         </HModal>
+
+        {/* Free & open-source notice — the only dismissal is its own ack
+            button (closable={false}: no X, no Escape, no backdrop click). */}
+        <AnnouncementDialog
+          modelValue={showNotice.value}
+          onUpdate:modelValue={(v: boolean) => (showNotice.value = v)}
+        />
       </div>
     );
   },

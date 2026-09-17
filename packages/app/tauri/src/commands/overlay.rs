@@ -50,10 +50,6 @@ pub const OVERLAY_ANCHOR_EVENT: &str = "wowsp://overlay-anchor";
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
 const POLL_INTERVAL: Duration = Duration::from_millis(30);
-/// Hard cap on one overlay showing. A release missed because some mod hooks
-/// the keyboard must still converge: after this long the watcher hides the
-/// overlay and warns, even if `GetAsyncKeyState` claims Tab is still down.
-const MAX_HOLD: Duration = Duration::from_secs(10);
 /// Rate limit for capture attempts (GDI `BitBlt(CAPTUREBLT)` + detector
 /// work is expensive): a fresh Tab press reuses the cached anchor inside
 /// this window and is refused a new capture until it elapses — so frantic
@@ -264,7 +260,6 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     // expensive BitBlt(CAPTUREBLT) + detector work even under frantic Tab
     // tapping or a focus-flicker loop while the key is held.
     let mut last_capture_attempt: Option<Instant> = None;
-    let mut shown_at: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -278,7 +273,6 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 &app,
                 &mut tab_down_prev,
                 &mut overlay_shown,
-                &mut shown_at,
                 &mut cached_anchor,
                 &mut cached_game,
                 &mut last_scan,
@@ -304,7 +298,6 @@ fn watch_tab_tick(
     app: &AppHandle,
     tab_down_prev: &mut bool,
     overlay_shown: &mut bool,
-    shown_at: &mut Option<Instant>,
     cached_anchor: &mut Option<(Instant, OverlayAnchor)>,
     cached_game: &mut Option<(GameWindow, Instant)>,
     last_scan: &mut Option<Instant>,
@@ -326,17 +319,6 @@ fn watch_tab_tick(
 
         let focused_on_game = game.is_some_and(|g| g.is_foreground());
         let tab_down = tab_key_down();
-
-        // Watchdog: if the overlay is up but no Tab press has been observed
-        // for MAX_HOLD, force-hide. Covers a release event swallowed by a
-        // keyboard hook (mods) — without this the overlay would stay frozen
-        // on screen until the game exits.
-        if *overlay_shown && tab_down_prev_false_long_enough(shown_at, tab_down) {
-            tracing::warn!("overlay held past MAX_HOLD without Tab — force hiding");
-            hide_overlay(app);
-            *overlay_shown = false;
-            *shown_at = None;
-        }
 
         if focused_on_game && tab_down {
             if !*tab_down_prev {
@@ -387,13 +369,11 @@ fn watch_tab_tick(
                 if let Some(anchor) = anchor {
                     place_and_show(app, &anchor);
                     *overlay_shown = true;
-                    *shown_at = Some(Instant::now());
                 }
             }
         } else if *overlay_shown {
             hide_overlay(app);
             *overlay_shown = false;
-            *shown_at = None;
         }
 
         *tab_down_prev = tab_down && focused_on_game;
@@ -402,16 +382,6 @@ fn watch_tab_tick(
 
 #[cfg(not(target_os = "windows"))]
 fn watch_tab_loop(_app: AppHandle, _stop: Arc<AtomicBool>) {}
-
-/// Watchdog condition: the overlay is up, Tab is (reported) not down, and a
-/// full grace window passed since the show — i.e. the release was missed.
-/// The grace avoids fighting a legit release that is still being processed.
-fn tab_down_prev_false_long_enough(shown_at: &Option<Instant>, tab_down: bool) -> bool {
-    match *shown_at {
-        Some(at) => !tab_down && at.elapsed() >= MAX_HOLD,
-        None => false,
-    }
-}
 
 /// Physical state of the Tab key (true = down), regardless of focus.
 #[cfg(target_os = "windows")]

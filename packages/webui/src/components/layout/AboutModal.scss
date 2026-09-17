@@ -152,6 +152,20 @@
     }
   }
 
+  /* Mandatory free & open-source notice card: always visible (no ack
+     button here), accent-bordered, and scrolls internally when the four
+     language blocks overflow. */
+  &__notice {
+    width: 100%;
+    max-height: 14rem;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 0.15rem 0.75rem;
+    border: 1px solid rgb(var(--color-primary) / 35%);
+    border-radius: var(--radius-md);
+    background: rgb(var(--color-primary) / 6%);
+  }
+
   &__footer {
     display: flex;
     align-items: center;
