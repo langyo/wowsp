@@ -973,7 +973,17 @@ fn main() {
     // combined with the uninstall switch. A bare `/uninstall` (the ARP
     // `UninstallString`) opens the uninstall UI below instead.
     let silent = args.iter().any(|a| a == "--silent" || a == "/S");
-    let uninstalling = args.iter().any(|a| a == "--uninstall" || a == "/uninstall");
+    let uninstalling = args.iter().any(|a| a == "--uninstall" || a == "/uninstall")
+        // The ARP maintenance entries (修改/修复) that older shun
+        // releases registered launch the copied uninstaller with no
+        // switch — and so does double-clicking it — so a bare run of
+        // that copy must land in the uninstall UI, never the install
+        // wizard.
+        || (args.is_empty()
+            && std::env::current_exe().is_ok_and(|exe| {
+                exe.file_stem()
+                    .is_some_and(|stem| stem.eq_ignore_ascii_case("uninstall"))
+            }));
     if silent {
         if let Err(err) = run_headless(&args, &config, &payload) {
             eprintln!("shun: {err}");
