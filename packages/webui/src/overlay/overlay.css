@@ -15,6 +15,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* HTML-level visibility: the Rust watcher toggles this class through the
+   wowsp://overlay-visibility event. visibility (not display) keeps layout
+   so the next reveal paints instantly. This is the load-bearing hide —
+   the event channel never crosses the main-thread queue that can delay
+   the native window hide. */
+html.overlay-hidden body {
+  visibility: hidden;
+}
+
 .overlay-chip {
   position: absolute;
   display: inline-flex;

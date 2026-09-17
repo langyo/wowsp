@@ -197,6 +197,34 @@ async function start() {
   const invoke = core.invoke;
   const listen = event.listen;
 
+  // Attach ALL listeners before any awaited call — the window may be shown
+  // within milliseconds of creation, and an event missed during the await
+  // gap would leave the page stuck hidden.
+  await listen("wowsp://overlay-visibility", (e: { payload: unknown }) => {
+    // The load-bearing hide: the Rust watcher flips the page itself, so
+    // content vanishes even when the native window hide is delayed.
+    document.documentElement.classList.toggle("overlay-hidden", e.payload !== true);
+  });
+  await listen("wowsp://arena-info", (e: { payload: unknown }) => {
+    arena = e.payload as ArenaInfo;
+    scheduleBatch();
+  });
+  await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
+    anchor = e.payload as OverlayAnchor;
+    // An anchor always precedes a show — reveal even if the visibility
+    // event raced the listener registration above.
+    document.documentElement.classList.remove("overlay-hidden");
+    if (!arena) {
+      try {
+        const info = await invoke("read_temp_arena_info", { dir: null });
+        if (info) arena = info as ArenaInfo;
+      } catch {
+        // nothing to read — chips stay "…" until an arena event arrives
+      }
+    }
+    render();
+  });
+
   // One-shot read + live watcher for the roster (same commands the Vue
   // store used; the static page just drives them directly).
   try {
@@ -213,22 +241,9 @@ async function start() {
   } catch {
     // already running
   }
-  await listen("wowsp://arena-info", (e: { payload: unknown }) => {
-    arena = e.payload as ArenaInfo;
-    scheduleBatch();
-  });
-  await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
-    anchor = e.payload as OverlayAnchor;
-    if (!arena) {
-      try {
-        const info = await invoke("read_temp_arena_info", { dir: null });
-        if (info) arena = info as ArenaInfo;
-      } catch {
-        // nothing to read — chips stay "…" until an arena event arrives
-      }
-    }
-    render();
-  });
 }
 
+// Start hidden: the native window is created invisible, but a dev reload or
+// a late event could otherwise leave stale content painted over the game.
+document.documentElement.classList.add("overlay-hidden");
 void start();

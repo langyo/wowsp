@@ -2,69 +2,71 @@
 //!
 //! Pure image analysis over an RGBA screenshot of the game window — no Win32
 //! types in here, so the whole pipeline is unit-testable against synthetic
-//! frames (see the tests at the bottom).
+//! frames and a real captured frame (see the tests at the bottom).
 //!
-//! The WoWS team list (the Tab view) is a wide, dark, translucent panel drawn
-//! over the 3D scene, with evenly pitched horizontal separators between player
-//! rows. The detector exploits exactly those two cues:
+//! The detector is HEADER-ANCHORED: the vanilla Tab table always opens with
+//! two solid team-header bars — teal-green "我的团队" on the left, brick-red
+//! "敌军" on the right — and each player row below carries near-white name
+//! text. Those cues survive every scene: the table itself is translucent, so
+//! on bright maps its rows read LIGHT (luma ≈ 125) and any dark-projection
+//! approach misfires, while the saturated header bars stay recognisable in
+//! both the normal and the Tab-dimmed frame. Measured on a real 1440p
+//! client (see `testdata/tab_table_768x480.png`):
 //!
-//!   1. row / column dark-fraction projections → the panel rectangle, plus a
-//!      "darker than its surroundings" guard against dark night maps;
-//!   2. row-wise vertical-gradient energy → separator peaks → row pitch by
-//!      autocorrelation → phase-aligned row centers;
-//!   3. a smoothed column-luminance minimum near the middle → the
-//!      allies / enemies column split.
+//!   header green ≈ rgb(81, 148, 140)   — TEAL: blue ≈ green, not far under
+//!   header red   ≈ rgb(167, 121, 114)  — muted brick, r−g ≈ 46
+//!   bar width    ≈ 24% of the frame each, seam exactly between them
+//!   row text     ≈ pure white, row pitch ≈ 0.95× the bar height
 //!
-//! Every tunable is a named constant. They were calibrated against synthetic
-//! frames; real captures can be dumped with `WOWSP_DEBUG_CAPTURE` (see
-//! overlay.rs) to refine them.
+//! Pipeline: find the row carrying both bars → bar spans give the table
+//! rectangle and the team split → white-text density bands below the header
+//! give the player rows (extended with the median pitch when the arena hint
+//! asks for more rows than were visible). Position-agnostic on purpose, so
+//! scenario / co-op layouts anchor just as well as random battles.
 
 use wowsp_tauri_shared::Rect;
 
 /// Downscaled working width — caps the analysis cost on QHD/4K captures.
 const MAX_WORK_WIDTH: u32 = 800;
-/// Luminance below which a pixel counts as "dark" (the panel background).
-const DARK_LUMA: u8 = 96;
-/// Fraction of dark pixels a row needs (over the full capture width) to count
-/// as a panel row. The real Tab table spans only ~47% of the screen width and
-/// its ship-silhouette column is bright, so player rows measure ~0.35 — the
-/// threshold must stay well below that (the night-map guard rejects dark
-/// scenes, so low here is safe).
-const ROW_DARK_FRAC: f32 = 0.30;
-/// Same for columns, measured over the scanned rows.
-const COL_DARK_FRAC: f32 = 0.60;
-/// Row gap (fraction of capture height) tolerated while growing the panel
-/// band — the bright green/red team-header bars are ~2.5% of the height.
-const ROW_GAP_FRAC: f32 = 0.04;
-/// Column gap (fraction of capture width) bridged while growing the column
-/// band — the bright ship-silhouette column (~8% of the frame width) and the
-/// thin central seam punch holes into an otherwise contiguous table band.
-const COL_GAP_FRAC: f32 = 0.09;
-/// The panel must be at most this fraction of the mean luminance of the scene
-/// strips directly above and below it (night-map guard).
-const PANEL_CONTRAST_RATIO: f32 = 0.80;
-/// Row-pitch search range at working (downscaled) resolution.
-const MIN_PITCH: usize = 8;
-const MAX_PITCH: usize = 64;
-/// Minimum plausible panel share of the capture (the real table is ~47% of
-/// the width and ~16% of the height on a 1080p client; 5v5 can dip lower).
-const MIN_WIDTH_FRAC: f32 = 0.20;
-const MIN_HEIGHT_FRAC: f32 = 0.10;
-/// Maximum plausible panel share (a band covering ~everything is a dark
-/// scene, not a table).
-const MAX_WIDTH_FRAC: f32 = 0.98;
-const MAX_HEIGHT_FRAC: f32 = 0.95;
+/// Vertical band (fractions of the capture height) scanned for the header
+/// row. The real table's bars sit at ~23%; pre-battle screens never render
+/// them at all.
+const HEADER_SCAN_TOP_FRAC: f32 = 0.06;
+const HEADER_SCAN_BOTTOM_FRAC: f32 = 0.55;
+/// Each header bar must span at least this fraction of the working width —
+/// the real bars are ~24% each, water horizons and stray UI stay far below.
+const HEADER_MIN_RUN_FRAC: f32 = 0.06;
+/// Absolute floor (working px) for the same run, so tiny captures stay sane.
+const HEADER_MIN_RUN_PX: usize = 8;
+/// Header-bar height bounds in working px (the real bar is ~14 px at 800-wide).
+const HEADER_MIN_H: usize = 4;
+/// White-text density bands below 22% of the row peak are noise (e.g. our
+/// own hint box, which GDI captures include as a layered window).
+const ROW_TEXT_FRACTION: f32 = 0.22;
+/// A text band shorter than this (working px) is anti-aliasing, not a row.
+const ROW_BAND_MIN_H: usize = 2;
+/// Vertical range below the header scanned for player-row text: bands are
+/// first extracted from the conservative window (covers ~5v5–8v8 rosters),
+/// then grown to the generous cap when the arena hint asks for more rows.
+const ROW_SCAN_WINDOW_FRAC: f32 = 0.30;
+const ROW_SCAN_MAX_SPAN_FRAC: f32 = 0.45;
+/// Row-pitch bounds in working px (real pitch ≈ 13 at 800-wide).
+const MIN_PITCH: f32 = 6.0;
+const MAX_PITCH: f32 = 80.0;
+/// Player rows found vs the arena hint: more than ±2 off means the bands
+/// are not the roster (caller falls back to the centered default).
+const ROW_COUNT_TOLERANCE: usize = 2;
 
 /// Detector output: everything needed to anchor the overlay chips, in
 /// physical pixels relative to the capture (game window) origin.
 #[derive(Debug, Clone)]
 pub(crate) struct DetectedRoster {
-    /// The team-list panel rectangle.
+    /// The team-list rectangle (header bar top → last row bottom,
+    /// green bar left → red bar right).
     pub rect: Rect,
-    /// Vertical center of each mapped player row, top to bottom. Header rows
-    /// detected above the first player row are trimmed away (see
-    /// [`TRIM_TO_EXPECTED`]); length ≤ `expected_players` when that hint is
-    /// available.
+    /// Vertical center of each player row, top to bottom. Length equals
+    /// `expected_players` when the arena hint was available (short counts
+    /// are extended with the median pitch).
     pub row_centers: Vec<i32>,
     /// Allies/enemies column split as a fraction (0–1) of the rect width.
     pub team_split: f32,
@@ -73,8 +75,8 @@ pub(crate) struct DetectedRoster {
 /// Detect the team-list panel and its row grid in an RGBA frame.
 ///
 /// `expected_players` is the per-team player count from `tempArenaInfo.json`
-/// (0 = unknown). It is used to trim detected header rows off the top and to
-/// sanity-check the row count; passing 0 keeps the detector permissive.
+/// (0 = unknown). It cross-checks the detected text rows and drives the
+/// uniform extension of partially occluded rosters.
 pub(crate) fn detect_roster(
     rgba: &[u8],
     width: u32,
@@ -82,65 +84,193 @@ pub(crate) fn detect_roster(
     expected_players: usize,
 ) -> Option<DetectedRoster> {
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
-    let (lum, w, h) = downscale_luma(rgba, width, height, scale);
-    if w < 32 || h < 32 {
+    let (px, w, h) = downscale_rgba(rgba, width, height, scale);
+    if w < 64 || h < 64 {
+        return None;
+    }
+    let rgb = |x: usize, y: usize| -> (i16, i16, i16) {
+        let i = (y * w + x) * 3;
+        (px[i] as i16, px[i + 1] as i16, px[i + 2] as i16)
+    };
+
+    // ── 1. Header row: green AND red bar on the same scan row ────────────
+    let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
+    let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
+    let min_run = ((w as f32 * HEADER_MIN_RUN_FRAC) as usize).max(HEADER_MIN_RUN_PX);
+    let mut best_score = 0usize;
+    /// One scan-row hit: (bar y, green span, red span), spans end-exclusive.
+    type HeaderHit = (usize, (usize, usize), (usize, usize));
+    let mut header: Option<HeaderHit> = None;
+    for y in y_lo..y_hi {
+        let Some(g) = longest_run_span(&px, w, y, is_header_green) else {
+            continue;
+        };
+        if g.1 - g.0 < min_run {
+            continue;
+        }
+        let Some(r) = longest_run_span(&px, w, y, is_header_red) else {
+            continue;
+        };
+        if r.1 - r.0 < min_run {
+            continue;
+        }
+        let score = (g.1 - g.0) + (r.1 - r.0);
+        if score > best_score {
+            best_score = score;
+            header = Some((y, g, r));
+        }
+    }
+    let (hy, (gx0, gx1), (rx0, rx1)) = header?;
+
+    // ── 2. Header height: scan down from the bar top; a row stays "header"
+    //    while ≥2 of 6 sample points across both bars read bar color or the
+    //    white bar captions punched into them ─────────────────────────────
+    let samples = [
+        gx0 + (gx1 - gx0) / 4,
+        gx0 + (gx1 - gx0) / 2,
+        gx0 + (gx1 - gx0) * 3 / 4,
+        rx0 + (rx1 - rx0) / 4,
+        rx0 + (rx1 - rx0) / 2,
+        rx0 + (rx1 - rx0) * 3 / 4,
+    ];
+    // Continuation checks the BAR colors only — counting white here would
+    // let the scan bleed into the first player-name row sitting right
+    // under the bar whenever a sample lands inside the name text.
+    let is_bar_color = |x: usize, y: usize| -> bool {
+        let (r, g, b) = rgb(x, y);
+        is_header_green(r, g, b) || is_header_red(r, g, b)
+    };
+    let mut hh = 0usize;
+    let mut miss = 0usize;
+    for y in hy..((hy + h / 6).min(h)) {
+        if samples.iter().filter(|&&x| is_bar_color(x, y)).count() >= 2 {
+            hh = y - hy + 1;
+            miss = 0;
+        } else {
+            miss += 1;
+            if miss >= 2 {
+                break;
+            }
+        }
+    }
+    let hh = hh.clamp(HEADER_MIN_H, (h / 10).max(HEADER_MIN_H));
+
+    // ── 3. Player rows: white-name density bands below the header ────────
+    // The density profile is computed over a generous window, but bands are
+    // first extracted from the conservative one — only when the arena hint
+    // asks for more rows than were found does the window grow (by the
+    // observed pitch) and the extraction run again.
+    let prof_top = (hy + hh).min(h);
+    let prof_cap = (prof_top + (h as f32 * ROW_SCAN_MAX_SPAN_FRAC) as usize).min(h);
+    let mut profile = vec![0u32; prof_cap.saturating_sub(prof_top)];
+    for (dy, slot) in profile.iter_mut().enumerate() {
+        let y = prof_top + dy;
+        let mut n = 0u32;
+        for x in gx0..gx1 {
+            let (r, g, b) = rgb(x, y);
+            if is_text_white(r, g, b) {
+                n += 1;
+            }
+        }
+        for x in rx0..rx1 {
+            let (r, g, b) = rgb(x, y);
+            if is_text_white(r, g, b) {
+                n += 1;
+            }
+        }
+        *slot = n;
+    }
+    let prof_max = *profile.iter().max().unwrap_or(&0);
+    if prof_max == 0 {
+        return None;
+    }
+    let thr = prof_max as f32 * ROW_TEXT_FRACTION;
+    let extract_bands = |bot: usize| -> Vec<f32> {
+        let end = bot.saturating_sub(prof_top).min(profile.len());
+        let mut out: Vec<f32> = Vec::new();
+        let mut band_start: Option<usize> = None;
+        for (dy, &v) in profile[..end].iter().enumerate() {
+            if v as f32 > thr {
+                if band_start.is_none() {
+                    band_start = Some(dy);
+                }
+            } else if let Some(s) = band_start.take() {
+                if dy - s >= ROW_BAND_MIN_H {
+                    out.push(prof_top as f32 + (s + dy - 1) as f32 / 2.0);
+                }
+            }
+        }
+        if let Some(s) = band_start {
+            if profile.len() - s >= ROW_BAND_MIN_H {
+                out.push(prof_top as f32 + (s + profile.len() - 1) as f32 / 2.0);
+            }
+        }
+        out
+    };
+    let win1 = (prof_top + (h as f32 * ROW_SCAN_WINDOW_FRAC) as usize).min(prof_cap);
+    let mut centers = extract_bands(win1);
+    if expected_players > centers.len() && centers.len() >= 2 {
+        let mut diffs: Vec<f32> = centers.windows(2).map(|p| p[1] - p[0]).collect();
+        diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let pitch0 = diffs[diffs.len() / 2];
+        let need_bot = (*centers.last().unwrap()
+            + (expected_players - centers.len() + 1) as f32 * pitch0 * 1.25)
+            as usize;
+        centers = extract_bands(need_bot.min(prof_cap));
+    }
+    if centers.len() < 2 {
         return None;
     }
 
-    // ── Pass 1: row band over the full width ─────────────────────────────
-    let row_dark = dark_fractions_rows(&lum, w, h, 0, w);
-    let (mut y0, mut y1) =
-        longest_band(&row_dark, ROW_DARK_FRAC, (h as f32 * ROW_GAP_FRAC) as usize)?;
-    if !band_is_plausible(y1 - y0, h, MIN_HEIGHT_FRAC, MAX_HEIGHT_FRAC) {
+    // Median pitch from the observed bands (robust against an occluded row).
+    let mut diffs: Vec<f32> = centers.windows(2).map(|p| p[1] - p[0]).collect();
+    diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let pitch = diffs[diffs.len() / 2];
+    if !(MIN_PITCH..=MAX_PITCH).contains(&pitch) {
         return None;
     }
 
-    // ── Pass 2: column band within the row band (prefer one covering the
-    //    horizontal center — HUD panels hug the screen edges) ─────────────
-    let col_dark = dark_fractions_cols(&lum, w, y0, y1);
-    let (x0, x1) = best_column_band(&col_dark)?;
-    if !band_is_plausible(x1 - x0, w, MIN_WIDTH_FRAC, MAX_WIDTH_FRAC) {
+    // ── 4. Cross-check against the arena hint, extend/trim to it ─────────
+    if expected_players > 0 {
+        if centers.len() + ROW_COUNT_TOLERANCE < expected_players
+            || centers.len() > expected_players + ROW_COUNT_TOLERANCE
+        {
+            return None;
+        }
+        // Spurious extra bands (our own hint box, HUD text) accumulate toward
+        // the bottom — drop from there; occluded real rows are extended
+        // downward with the median pitch.
+        while centers.len() > expected_players {
+            centers.pop();
+        }
+        let mut last = *centers.last().unwrap();
+        while centers.len() < expected_players {
+            last += pitch;
+            centers.push(last);
+        }
+    } else if centers.len() < 3 {
         return None;
     }
 
-    // ── Pass 3: tighten the row band over the column band only ───────────
-    let row_dark2 = dark_fractions_rows(&lum, w, h, x0, x1);
-    let (ty0, ty1) = longest_band(
-        &row_dark2,
-        ROW_DARK_FRAC,
-        (h as f32 * ROW_GAP_FRAC) as usize,
-    )?;
-    if band_is_plausible(ty1 - ty0, h, MIN_HEIGHT_FRAC, MAX_HEIGHT_FRAC) {
-        y0 = ty0;
-        y1 = ty1;
-    }
-
-    // Night-map guard: the panel must be clearly darker than the scene right
-    // above and below it (same columns). Skipped when the band touches the
-    // capture edge (no reference strip available).
-    if !panel_is_contrasted(&lum, w, x0, x1, y0, y1) {
-        return None;
-    }
-
-    // ── Row separators → pitch → phase-aligned row centers ────────────────
-    let centers_work = detect_row_centers(&lum, w, x0, x1, y0, y1, expected_players);
-    let centers_work = centers_work?;
-    if centers_work.len() < 2 {
-        return None;
-    }
-
-    // ── Team split: smoothed column-luminance minimum near the middle ─────
-    let team_split = detect_team_split(&lum, w, x0, x1, y0, y1);
-
+    // ── 5. Rectangle + team split, back to physical px ────────────────────
+    let last = *centers.last().unwrap();
+    let y1w = ((last + pitch * 0.75).min(h as f32 - 1.0)) as usize;
+    let split_raw =
+        ((gx1 + rx0) as f32 * 0.5 - gx0 as f32) / (rx1.saturating_sub(gx0)).max(1) as f32;
+    let team_split = if (0.30..=0.70).contains(&split_raw) {
+        split_raw
+    } else {
+        0.5
+    };
     let to_phys = |v: usize| (v as f32 * scale as f32).round() as i32;
     Some(DetectedRoster {
         rect: Rect {
-            x: to_phys(x0),
-            y: to_phys(y0),
-            width: to_phys(x1 - x0),
-            height: to_phys(y1 - y0),
+            x: to_phys(gx0),
+            y: to_phys(hy),
+            width: to_phys(rx1.saturating_sub(gx0)),
+            height: to_phys(y1w.saturating_sub(hy)),
         },
-        row_centers: centers_work
+        row_centers: centers
             .iter()
             .map(|&c| (c * scale as f32).round() as i32)
             .collect(),
@@ -148,405 +278,83 @@ pub(crate) fn detect_roster(
     })
 }
 
-/// Box-filter downscale to a grayscale luminance image.
-fn downscale_luma(rgba: &[u8], width: u32, height: u32, scale: u32) -> (Vec<u8>, usize, usize) {
-    let w = width / scale;
-    let h = height / scale;
-    let mut lum = vec![0u8; (w * h) as usize];
+/// Box-filter downscale to an RGB working image (alpha dropped, opaque).
+fn downscale_rgba(rgba: &[u8], width: u32, height: u32, scale: u32) -> (Vec<u8>, usize, usize) {
+    let w = (width / scale) as usize;
+    let h = (height / scale) as usize;
+    let mut out = vec![0u8; w * h * 3];
+    let n = scale * scale;
+    let sw = scale as usize;
+    let fw = width as usize;
     for y in 0..h {
         for x in 0..w {
-            let mut sum = 0u32;
-            let mut n = 0u32;
-            for dy in 0..scale {
-                for dx in 0..scale {
-                    let px = ((y * scale + dy) * width + x * scale + dx) as usize * 4;
-                    if px + 2 < rgba.len() {
-                        let r = rgba[px] as u32;
-                        let g = rgba[px + 1] as u32;
-                        let b = rgba[px + 2] as u32;
-                        sum += (r * 299 + g * 587 + b * 114) / 1000;
-                        n += 1;
+            let (mut sr, mut sg, mut sb) = (0u32, 0u32, 0u32);
+            for dy in 0..sw {
+                for dx in 0..sw {
+                    let i = ((y * sw + dy) * fw + x * sw + dx) * 4;
+                    if i + 2 < rgba.len() {
+                        sr += rgba[i] as u32;
+                        sg += rgba[i + 1] as u32;
+                        sb += rgba[i + 2] as u32;
                     }
                 }
             }
-            lum[(y * w + x) as usize] = (sum / n.max(1)).min(255) as u8;
+            let o = (y * w + x) * 3;
+            out[o] = (sr / n).min(255) as u8;
+            out[o + 1] = (sg / n).min(255) as u8;
+            out[o + 2] = (sb / n).min(255) as u8;
         }
     }
-    (lum, w as usize, h as usize)
+    (out, w, h)
 }
 
-/// Per-row dark-pixel fraction, over columns `[x0, x1)`.
-fn dark_fractions_rows(lum: &[u8], w: usize, h: usize, x0: usize, x1: usize) -> Vec<f32> {
-    let cols = (x1 - x0).max(1) as f32;
-    (0..h)
-        .map(|y| {
-            let mut dark = 0u32;
-            for x in x0..x1 {
-                if lum[y * w + x] < DARK_LUMA {
-                    dark += 1;
-                }
-            }
-            dark as f32 / cols
-        })
-        .collect()
-}
-
-/// Per-column dark-pixel fraction, over rows `[y0, y1)`.
-fn dark_fractions_cols(lum: &[u8], w: usize, y0: usize, y1: usize) -> Vec<f32> {
-    let rows = (y1 - y0).max(1) as f32;
-    (0..w)
-        .map(|x| {
-            let mut dark = 0u32;
-            for y in y0..y1 {
-                if lum[y * w + x] < DARK_LUMA {
-                    dark += 1;
-                }
-            }
-            dark as f32 / rows
-        })
-        .collect()
-}
-
-/// Longest run of values ≥ `threshold`, bridging gaps up to `max_gap`.
-/// Returns `(start, end)` with end exclusive.
-fn longest_band(vals: &[f32], threshold: f32, max_gap: usize) -> Option<(usize, usize)> {
+/// Longest contiguous run of pixels matching `matches` on scan row `y` →
+/// `(start, end)` with end exclusive, or None when nothing matches.
+fn longest_run_span(
+    px: &[u8],
+    w: usize,
+    y: usize,
+    matches: impl Fn(i16, i16, i16) -> bool,
+) -> Option<(usize, usize)> {
     let mut best: Option<(usize, usize)> = None;
-    let mut run_start: Option<usize> = None;
-    let mut gap = 0usize;
-    for (i, &v) in vals.iter().enumerate() {
-        if v >= threshold {
-            if run_start.is_none() {
-                run_start = Some(i);
+    let mut start: Option<usize> = None;
+    for x in 0..w {
+        let i = (y * w + x) * 3;
+        let hit = i + 2 < px.len() && matches(px[i] as i16, px[i + 1] as i16, px[i + 2] as i16);
+        if hit {
+            if start.is_none() {
+                start = Some(x);
             }
-            gap = 0;
-        } else if run_start.is_some() {
-            gap += 1;
-            if gap > max_gap {
-                let s = run_start.unwrap();
-                // Compare band LENGTHS (end - start), never raw endpoints —
-                // the previous band can end before this run starts.
-                if best.is_none_or(|(bs, be)| i - gap + 1 - s > be - bs) {
-                    best = Some((s, i - gap + 1));
-                }
-                run_start = None;
+        } else if let Some(s) = start.take() {
+            if best.is_none_or(|(bs, be)| x - s > be - bs) {
+                best = Some((s, x));
             }
         }
     }
-    if let Some(s) = run_start {
-        if best.is_none_or(|(bs, be)| vals.len() - s > be - bs) {
-            best = Some((s, vals.len()));
+    if let Some(s) = start {
+        if best.is_none_or(|(bs, be)| w - s > be - bs) {
+            best = Some((s, w));
         }
     }
     best
 }
 
-/// Among the column bands, prefer one covering the horizontal center whose
-/// length is within 80% of the absolute longest — the team list is centered,
-/// while HUD widgets (minimap, chat) hug the edges.
-fn best_column_band(col_dark: &[f32]) -> Option<(usize, usize)> {
-    fn flush(best: &mut Option<(usize, usize)>, s: usize, e: usize) {
-        if best.is_none_or(|(bs, be)| e - s > be - bs) {
-            *best = Some((s, e));
-        }
-    }
-    // Bridge gaps up to ~5% of the width: the ship-silhouette column and the
-    // thin seam between the two team sub-tables both punch bright holes into
-    // an otherwise contiguous band.
-    let max_gap = ((col_dark.len() as f32 * COL_GAP_FRAC) as usize).max(2);
-    let longest = longest_band(col_dark, COL_DARK_FRAC, max_gap)?;
-    let center = col_dark.len() / 2;
-    if longest.0 <= center && center < longest.1 {
-        return Some(longest);
-    }
-    // Scan bands again, keeping the best centered one.
-    let mut best: Option<(usize, usize)> = None;
-    let mut run_start: Option<usize> = None;
-    let mut gap = 0usize;
-    for (i, &v) in col_dark.iter().enumerate() {
-        if v >= COL_DARK_FRAC {
-            if run_start.is_none() {
-                run_start = Some(i);
-            }
-            gap = 0;
-        } else if run_start.is_some() {
-            gap += 1;
-            if gap > max_gap {
-                let s = run_start.unwrap();
-                flush(&mut best, s, i - gap + 1);
-                run_start = None;
-            }
-        }
-    }
-    if let Some(s) = run_start {
-        flush(&mut best, s, col_dark.len());
-    }
-    // Centered preference: keep a centered band at ≥80% of the longest.
-    if let Some((s, e)) = best {
-        if s <= center && center < e && e - s >= (longest.1 - longest.0) * 4 / 5 {
-            return Some((s, e));
-        }
-    }
-    Some(longest)
+/// Vanilla team-header green: TEAL (blue sits at/near green) and clearly
+/// green-dominant over red. Measured rgb(81,148,140); also survives the
+/// Tab-dim. Water is blue-dominant (b > g) and stays excluded.
+fn is_header_green(r: i16, g: i16, b: i16) -> bool {
+    g >= r + 25 && g >= 75 && b >= g - 45 && b <= g + 25
 }
 
-fn band_is_plausible(len: usize, total: usize, min_frac: f32, max_frac: f32) -> bool {
-    let frac = len as f32 / total as f32;
-    frac >= min_frac && frac <= max_frac
+/// Vanilla team-header red: muted brick rgb(167,121,114) — red-dominant but
+/// nowhere near a pure red.
+fn is_header_red(r: i16, g: i16, b: i16) -> bool {
+    r >= g + 25 && r >= 110 && r >= b + 20
 }
 
-/// The panel must be clearly darker than the scene strips immediately above
-/// and below it (same columns). Fails → this is a dark scene, not a table.
-fn panel_is_contrasted(lum: &[u8], w: usize, x0: usize, x1: usize, y0: usize, y1: usize) -> bool {
-    let strip = ((y1 - y0) / 6).clamp(4, 32);
-    let mean = |ya: usize, yb: usize| -> Option<f32> {
-        if ya >= yb {
-            return None;
-        }
-        let mut sum = 0u64;
-        let mut n = 0u64;
-        for y in ya..yb {
-            for x in x0..x1 {
-                sum += lum[y * w + x] as u64;
-                n += 1;
-            }
-        }
-        if n == 0 {
-            None
-        } else {
-            Some(sum as f32 / n as f32)
-        }
-    };
-    let Some(inside) = mean(y0, y1) else {
-        return false;
-    };
-    let above = mean(y0.saturating_sub(strip), y0);
-    let below = mean(y1, (y1 + strip).min(lum.len() / w));
-    let outside = match (above, below) {
-        (Some(a), Some(b)) => (a + b) / 2.0,
-        (Some(a), None) | (None, Some(a)) => a,
-        (None, None) => return true, // band touches both edges — no reference
-    };
-    inside < outside * PANEL_CONTRAST_RATIO
-}
-
-/// Separator-line analysis: vertical-gradient energy per row → pitch via
-/// autocorrelation → best phase → row centers (working resolution).
-fn detect_row_centers(
-    lum: &[u8],
-    w: usize,
-    x0: usize,
-    x1: usize,
-    y0: usize,
-    y1: usize,
-    expected_players: usize,
-) -> Option<Vec<f32>> {
-    let band_h = y1 - y0;
-    if band_h < MIN_PITCH * 2 {
-        return None;
-    }
-    // E[y] = Σ |L[y+1] − L[y]| over the panel columns (y relative to y0).
-    // Scans through the band's LAST row too, so the panel's bottom border —
-    // itself a separator — is not cut off at the band edge.
-    let mut energy = vec![0f32; band_h];
-    let h = lum.len() / w;
-    for (yi, slot) in energy.iter_mut().enumerate() {
-        let y = y0 + yi;
-        if y + 1 >= h {
-            break;
-        }
-        let mut e = 0u32;
-        for x in x0..x1 {
-            e += lum[y * w + x].abs_diff(lum[(y + 1) * w + x]) as u32;
-        }
-        *slot = e as f32;
-    }
-
-    // Pitch by autocorrelation, with harmonic resolution. With a fractional
-    // true pitch (e.g. 18.46 px), integer-lag autocorrelation drifts out of
-    // phase after a few rows, so the 2× harmonic can OUTSCORE the fundamental
-    // (it drifts only half as fast). Resolve downwards: whenever half the
-    // current lag still scores a substantial share, the true pitch is the
-    // half and the current lag is a harmonic.
-    let max_lag = MAX_PITCH.min(band_h / 2);
-    if max_lag <= MIN_PITCH {
-        return None;
-    }
-    let mut scores = vec![0f32; max_lag + 1];
-    let mut best_score = 0f32;
-    for lag in MIN_PITCH..=max_lag {
-        let mut s = 0f32;
-        for yi in 0..band_h - lag {
-            s += energy[yi] * energy[yi + lag];
-        }
-        s /= (band_h - lag) as f32;
-        scores[lag] = s;
-        best_score = best_score.max(s);
-    }
-    let best_lag = (MIN_PITCH..=max_lag).max_by(|&a, &b| {
-        scores[a]
-            .partial_cmp(&scores[b])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    })?;
-    let mut auto_pitch = best_lag;
-    while auto_pitch / 2 >= MIN_PITCH && scores[auto_pitch / 2] >= scores[auto_pitch] * 0.55 {
-        auto_pitch /= 2;
-    }
-
-    // Candidate pitches. Plain autocorrelation is unreliable on SHORT bands:
-    // a 5v5 roster yields a ~60-row band whose table-edge spikes can outscore
-    // the ~12-row fundamental. When the arena hint gives the expected row
-    // count, band/expected enters as a peer candidate and the better-scoring
-    // one wins.
-    let mut candidates = vec![auto_pitch];
-    if expected_players >= 3 {
-        let p = (band_h as f32 / expected_players as f32).round() as usize;
-        if (MIN_PITCH..=max_lag).contains(&p) && p != auto_pitch {
-            candidates.push(p);
-        }
-    }
-
-    // Baseline-subtract (moving average over half the largest candidate) so
-    // the phase score is driven by the separator peaks, not by luminance
-    // drift.
-    let half = candidates.iter().map(|&c| c / 2).max().unwrap_or(1).max(1);
-    let base: Vec<f32> = (0..band_h)
-        .map(|yi| {
-            let lo = yi.saturating_sub(half);
-            let hi = (yi + half).min(band_h);
-            energy[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
-        })
-        .collect();
-    let norm: Vec<f32> = energy.iter().zip(&base).map(|(e, b)| e - b).collect();
-
-    // Evaluate every candidate pitch at its best phase; keep the winner. A
-    // period must repeat at least three times across the band — a two-line
-    // grid is degenerate (it just pairs the band's truncation spikes).
-    let mut pitch = candidates[0];
-    let mut best_phase = 0usize;
-    let mut best_phase_score = f32::MIN;
-    for &cand in &candidates {
-        for phase in 0..cand {
-            let mut s = 0f32;
-            let mut n = 0usize;
-            let mut yi = phase;
-            while yi < band_h {
-                s += norm[yi];
-                n += 1;
-                yi += cand;
-            }
-            if n < 3 || s <= best_phase_score {
-                continue;
-            }
-            best_phase_score = s;
-            best_phase = phase;
-            pitch = cand;
-        }
-    }
-
-    // Peak-pick around each grid line so centers track the real separators
-    // rather than the ideal grid. The window is ±2·pitch/5 — wide enough to
-    // absorb the drift when the true pitch is fractional (autocorrelation
-    // only tests integer lags), narrower than half a pitch so adjacent lines
-    // never share a window.
-    let win = (pitch * 2 / 5).max(1);
-    let mut seps: Vec<usize> = Vec::new();
-    let mut yi = best_phase;
-    while yi < band_h {
-        let lo = yi.saturating_sub(win);
-        let hi = (yi + win).min(band_h);
-        let (mut mi, mut mv) = (yi, norm[yi]);
-        for (k, &v) in norm[lo..hi].iter().enumerate() {
-            if v > mv {
-                mv = v;
-                mi = lo + k;
-            }
-        }
-        if mv > 0.0 {
-            seps.push(mi);
-        }
-        yi += pitch;
-    }
-    seps.sort_unstable();
-    seps.dedup();
-
-    // Rows = gaps between consecutive separators.
-    let mut centers: Vec<f32> = seps
-        .windows(2)
-        .map(|pair| (pair[0] as f32 + pair[1] as f32) / 2.0)
-        .collect();
-
-    // Trim header rows off the top when the arena hint says there are fewer
-    // players than detected rows (the table leads with a column-title row).
-    if expected_players > 0 {
-        while centers.len() > expected_players {
-            centers.remove(0);
-        }
-        // Far fewer rows than players → misdetection; caller falls back.
-        if centers.len() + 2 < expected_players {
-            return None;
-        }
-    } else if centers.len() < 3 {
-        return None;
-    }
-
-    // Back to capture-origin coordinates.
-    Some(centers.into_iter().map(|c| c + y0 as f32).collect())
-}
-
-/// Allies/enemies split: the vertical seam between the two team sub-tables.
-/// A seam (divider line / gap) is a column with unusually high vertical-edge
-/// energy relative to the flat panel background, so we take the smoothed
-/// column-gradient maximum in the middle ±10% of the panel. Falls back to
-/// 0.5 when the middle is featureless (or the seam is off-center).
-fn detect_team_split(lum: &[u8], w: usize, x0: usize, x1: usize, y0: usize, y1: usize) -> f32 {
-    let cols = x1 - x0;
-    if cols < 16 {
-        return 0.5;
-    }
-    // Column-wise mean horizontal gradient over the body rows.
-    let ya = y0 + 2;
-    let yb = y1.saturating_sub(2);
-    if yb <= ya {
-        return 0.5;
-    }
-    let rows = (yb - ya) as f32;
-    let mut grad = vec![0f32; cols - 1];
-    for i in 0..cols - 1 {
-        let mut sum = 0u32;
-        for y in ya..yb {
-            sum += lum[y * w + x0 + i].abs_diff(lum[y * w + x0 + i + 1]) as u32;
-        }
-        grad[i] = sum as f32 / rows;
-    }
-    // Smooth with a ~3%-width box filter.
-    let radius = (cols / 33).max(2);
-    let smooth: Vec<f32> = (0..grad.len())
-        .map(|i| {
-            let lo = i.saturating_sub(radius);
-            let hi = (i + radius).min(grad.len());
-            grad[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
-        })
-        .collect();
-    // Search the middle ±10% for the strongest seam.
-    let lo = (cols as f32 * 0.40) as usize;
-    let hi = ((cols as f32 * 0.60) as usize + 1).min(smooth.len());
-    let (mut bi, mut bv) = (cols / 2, f32::MIN);
-    for (i, &v) in smooth[lo..hi].iter().enumerate() {
-        if v > bv {
-            bv = v;
-            bi = lo + i;
-        }
-    }
-    // Featureless middle (flat gradient everywhere) → default split.
-    let median = {
-        let mut sorted = smooth.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        sorted[sorted.len() / 2]
-    };
-    if bv < median * 1.5 {
-        return 0.5;
-    }
-    bi as f32 / cols as f32
+/// Near-white, low-saturation pixel (player names, bar captions).
+fn is_text_white(r: i16, g: i16, b: i16) -> bool {
+    r.min(g).min(b) >= 170 && r.max(g).max(b) - r.min(g).min(b) <= 60
 }
 
 #[cfg(test)]
@@ -564,229 +372,250 @@ mod tests {
         }
     }
 
-    /// Paint an RGBA frame: bright noisy scene, optional dark panel with a
-    /// header row + `rows` player rows separated by bright lines.
-    fn synth(w: u32, h: u32, panel: Option<(u32, u32, u32, u32)>, player_rows: usize) -> Vec<u8> {
+    const TEAL: (u8, u8, u8) = (81, 148, 140);
+    const BRICK: (u8, u8, u8) = (167, 121, 114);
+
+    /// Bright noisy scene with a vanilla-style Tab table: teal/brick header
+    /// bars over each half and white name text on every player row.
+    /// Geometry mirrors the real client (~47% × table around 22% from top).
+    /// Returns the frame plus the table rect in physical px.
+    fn synth_header_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
         let mut img = vec![0u8; (w * h * 4) as usize];
         let mut noise = Noise(0x1234_5678);
-        let put = |img: &mut [u8], x: u32, y: u32, luma: u8| {
-            let i = ((y * w + x) * 4) as usize;
-            img[i] = luma.saturating_add(4);
-            img[i + 1] = luma;
-            img[i + 2] = luma.saturating_sub(4);
-            img[i + 3] = 255;
-        };
         for y in 0..h {
             for x in 0..w {
                 let l = noise.next_f32(125.0, 175.0) as u8;
-                put(&mut img, x, y, l);
+                let i = ((y * w + x) * 4) as usize;
+                img[i] = l;
+                img[i + 1] = l;
+                img[i + 2] = l;
+                img[i + 3] = 255;
             }
         }
-        if let Some((px, py, pw, ph)) = panel {
-            for y in py..py + ph {
-                for x in px..px + pw {
-                    put(&mut img, x, y, 42);
+        let tx = (w as f32 * 0.26) as u32;
+        let tw = (w as f32 * 0.47) as u32;
+        let ty = (h as f32 * 0.22) as u32;
+        let seam = tx + tw / 2;
+        let bar_h = (h as f32 * 0.028) as u32; // ≈ header bar height
+        let pitch = ((h as f32 * 0.35) as u32 / rows.max(1) as u32).max(16);
+        let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = c.0;
+            img[i + 1] = c.1;
+            img[i + 2] = c.2;
+            img[i + 3] = 255;
+        };
+        let text_w = tw * 28 / 100;
+        // Header bars (white caption text punched into the middle). Skipped
+        // for the rows==0 frame so that test exercises a bar-less scene.
+        if rows > 0 {
+            for y in ty..ty + bar_h {
+                for x in tx..seam - 3 {
+                    put(&mut img, x, y, TEAL);
+                }
+                for x in seam + 3..tx + tw {
+                    put(&mut img, x, y, BRICK);
                 }
             }
-            // Header + player rows: separators between them, bright lines.
-            let n = player_rows + 1;
-            for k in 0..=n {
-                let sy = py + (ph as usize * k / n) as u32;
-                for x in px..px + pw {
-                    for d in 0..2 {
-                        if sy + d < py + ph {
-                            put(&mut img, x, sy + d, 95);
-                        }
-                    }
+            for y in ty + 2..ty + bar_h - 2 {
+                for x in tx + tw / 6..tx + tw / 6 + text_w / 3 {
+                    put(&mut img, x, y, (245, 245, 245));
                 }
-            }
-            // Team seam: brighter vertical divider at the panel center.
-            let seam = px + pw / 2;
-            for y in py..py + ph {
-                for d in 0..2 {
-                    if seam + d < px + pw {
-                        put(&mut img, seam + d, y, 90);
-                    }
+                for x in seam + tw / 6..seam + tw / 6 + text_w / 3 {
+                    put(&mut img, x, y, (245, 245, 245));
                 }
             }
         }
-        img
+        // Player rows: white name text per row on both halves.
+        let mut centers = Vec::new();
+        for k in 0..rows {
+            let yc = ty as f32 + bar_h as f32 + pitch as f32 * (k as f32 + 0.5);
+            centers.push(yc);
+            let y0 = yc as u32;
+            for y in y0..(y0 + 8).min(ty + bar_h + pitch * (k as u32 + 1)) {
+                for x in tx + 8..tx + 8 + text_w {
+                    put(&mut img, x, y, (240, 240, 240));
+                }
+                for x in seam + 8..seam + 8 + text_w {
+                    put(&mut img, x, y, (240, 240, 240));
+                }
+            }
+        }
+        let rect = Rect {
+            x: tx as i32,
+            y: ty as i32,
+            width: tw as i32,
+            height: (ty + bar_h + pitch * rows as u32 - ty) as i32,
+        };
+        (img, rect, centers)
     }
 
     #[test]
-    fn detects_centered_panel_12v12() {
-        // 1920×1080, panel 960×720 at (480,150): header + 12 player rows.
-        let img = synth(1920, 1080, Some((480, 150, 960, 720)), 12);
-        let det = detect_roster(&img, 1920, 1080, 12).expect("panel must be detected");
-        let r = det.rect;
-        assert!((r.x - 480).abs() <= 9, "x: {r:?}");
-        assert!((r.y - 150).abs() <= 9, "y: {r:?}");
-        assert!((r.width - 960).abs() <= 18, "w: {r:?}");
-        assert!((r.height - 720).abs() <= 18, "h: {r:?}");
-        assert_eq!(det.row_centers.len(), 12, "header trimmed, 12 players");
-        // True row k (0-based, after header): center = 150 + 720*(k+1.5)/13.
+    fn detects_header_anchored_table_12v12() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, rect, centers) = synth_header_table(w, h, 12);
+        let det = detect_roster(&img, w, h, 12).expect("table must be detected");
+        assert_eq!(det.row_centers.len(), 12, "one center per row");
+        assert!((det.rect.x - rect.x).abs() <= 12, "x: {rect:?} vs {det:?}");
+        assert!((det.rect.y - rect.y).abs() <= 12, "y: {rect:?} vs {det:?}");
+        assert!(
+            (det.rect.width - rect.width).abs() <= 24,
+            "w: {rect:?} vs {det:?}"
+        );
         for (k, &c) in det.row_centers.iter().enumerate() {
-            let truth = 150.0 + 720.0 * (k as f32 + 1.5) / 13.0;
+            let truth = centers[k];
             assert!(
                 (c as f32 - truth).abs() <= 8.0,
                 "row {k}: center {c} vs truth {truth}"
             );
         }
         assert!(
-            (det.team_split - 0.5).abs() <= 0.08,
+            (det.team_split - 0.5).abs() <= 0.06,
             "split: {}",
             det.team_split
         );
     }
 
     #[test]
-    fn detects_smaller_capture_6v6() {
-        // 1280×720, panel 768×432 at (256,80): header + 6 player rows.
-        let img = synth(1280, 720, Some((256, 80, 768, 432)), 6);
-        let det = detect_roster(&img, 1280, 720, 6).expect("panel must be detected");
-        assert_eq!(det.row_centers.len(), 6);
-        let r = det.rect;
-        assert!((r.x - 256).abs() <= 6, "x: {r:?}");
-        assert!((r.width - 768).abs() <= 12, "w: {r:?}");
-    }
-
-    #[test]
-    fn returns_none_without_panel() {
-        let img = synth(1280, 720, None, 0);
-        assert!(detect_roster(&img, 1280, 720, 12).is_none());
-    }
-
-    #[test]
-    fn returns_none_on_uniformly_dark_scene() {
-        // Same geometry but the whole frame is dark → contrast guard must
-        // reject it (this is a night map, not a table).
-        let mut img = synth(1280, 720, None, 0);
-        for chunk in img.chunks_exact_mut(4) {
-            chunk[0] = 38;
-            chunk[1] = 40;
-            chunk[2] = 42;
-            chunk[3] = 255;
-        }
-        assert!(detect_roster(&img, 1280, 720, 12).is_none());
-    }
-
-    #[test]
-    fn works_without_arena_hint() {
-        let img = synth(1920, 1080, Some((480, 150, 960, 720)), 12);
-        let det = detect_roster(&img, 1920, 1080, 0).expect("detect without hint");
-        // No trim → header + 12 rows = 13 centers.
-        assert_eq!(det.row_centers.len(), 13);
-    }
-
-    /// A frame mimicking the REAL WoWS Tab table: two sub-tables with a thin
-    /// bright seam, bright green/red team-header bars, a bright ship-silhouette
-    /// column in each sub-table, and bright separator lines — over a bright
-    /// scene. The very shape that made the first calibration miss (row dark
-    /// fraction ~0.35, table height ~16%) and fell back to the scattered
-    /// default anchor.
-    #[test]
-    fn detects_realistic_wows_table() {
+    fn detects_header_anchored_table_6v6() {
         let (w, h) = (1280u32, 720u32);
-        let mut img = vec![0u8; (w * h * 4) as usize];
-        let mut noise = Noise(0xfeed_beef);
-        let put = |img: &mut [u8], x: u32, y: u32, luma: u8| {
-            let i = ((y * w + x) * 4) as usize;
-            img[i] = luma.saturating_add(4);
-            img[i + 1] = luma;
-            img[i + 2] = luma.saturating_sub(4);
-            img[i + 3] = 255;
-        };
-        for y in 0..h {
-            for x in 0..w {
-                let l = noise.next_f32(125.0, 175.0) as u8;
-                put(&mut img, x, y, l);
-            }
+        let (img, _rect, centers) = synth_header_table(w, h, 6);
+        let det = detect_roster(&img, w, h, 6).expect("table must be detected");
+        assert_eq!(det.row_centers.len(), 6);
+        for (k, &c) in det.row_centers.iter().enumerate() {
+            assert!((c as f32 - centers[k]).abs() <= 8.0, "row {k}: {c}");
         }
-        // Table geometry (fractions of the frame, matching the real client):
-        let tx = (w as f32 * 0.26) as u32; // 333
-        let tw = (w as f32 * 0.47) as u32; // 602
-        let ty = (h as f32 * 0.22) as u32; // 158
-        let th = (h as f32 * 0.17) as u32; // 122
-        let seam = tx + tw / 2;
-        let rows = 5usize;
-        // Sub-table body (both halves), alternating slight shading.
-        for y in ty..ty + th {
-            for x in tx..tx + tw {
-                let shade = if ((y - ty) / 12) % 2 == 0 { 46 } else { 58 };
-                if x.abs_diff(seam) < 4 {
-                    continue; // bright scene shows through the seam
-                }
-                put(&mut img, x, y, shade);
-            }
-        }
-        // Bright green/red team-header bars on top of each half.
-        for y in ty..ty + 10 {
-            for x in tx..seam - 3 {
-                put(&mut img, x, y, 150);
-            }
-            for x in seam + 3..tx + tw {
-                put(&mut img, x, y, 150);
-            }
-        }
-        // Bright ship-silhouette column in the middle of each sub-table.
-        for y in ty + 12..ty + th {
-            for x in (tx + tw / 8)..(tx + tw / 8 + tw / 6) {
-                put(&mut img, x, y, 130);
-            }
-            for x in (seam + 4 + tw / 8)..(seam + 4 + tw / 8 + tw / 6) {
-                if x < tx + tw {
-                    put(&mut img, x, y, 130);
-                }
-            }
-        }
-        // 2px bright separators between rows (rows+1 lines incl. bottom).
-        for k in 1..=rows {
-            let sy = ty + 10 + ((th - 10) as usize * k / (rows + 1)) as u32;
-            for x in tx..tx + tw {
-                if x.abs_diff(seam) < 4 {
-                    continue;
-                }
-                for d in 0..2 {
-                    if sy + d < ty + th {
-                        put(&mut img, x, sy + d, 110);
-                    }
-                }
-            }
-        }
+    }
 
-        let det = detect_roster(&img, w, h, 5).expect("realistic table must be detected");
-        let r = det.rect;
-        assert!(
-            (r.x as f32 - tx as f32).abs() <= w as f32 * 0.02,
-            "x off: {r:?}"
-        );
-        assert!(
-            (r.y as f32 - ty as f32).abs() <= h as f32 * 0.03,
-            "y off: {r:?}"
-        );
-        assert_eq!(det.row_centers.len(), 5, "rows: {:?}", det.row_centers);
-        // Row centers must sit INSIDE the table band (the fallback spread
-        // would put them across 70% of the frame height).
-        for &c in &det.row_centers {
+    #[test]
+    fn extends_occluded_rows_to_expected() {
+        // Draw 5 rows, hide the text of the bottom two (in-battle an HUD /
+        // our own hint box can cover them): the missing rows must be
+        // extended with the median pitch, keeping chip mapping complete.
+        let (w, h) = (1280u32, 720u32);
+        let (mut img, _rect, centers) = synth_header_table(w, h, 5);
+        // Paint scene noise over the bottom-two rows' text (both halves).
+        let mut noise = Noise(0xfeed_beef);
+        for yc in &centers[3..] {
+            for y in (*yc as u32).saturating_sub(6)..*yc as u32 + 8 {
+                for x in (w * 26 / 100)..(w * 26 / 100 + w * 47 / 100) {
+                    let l = noise.next_f32(125.0, 175.0) as u8;
+                    let i = ((y * w + x) * 4) as usize;
+                    img[i] = l;
+                    img[i + 1] = l;
+                    img[i + 2] = l;
+                }
+            }
+        }
+        let det = detect_roster(&img, w, h, 5).expect("partial table must still anchor");
+        assert_eq!(det.row_centers.len(), 5, "extended to the arena hint");
+        for (k, &c) in det.row_centers.iter().enumerate() {
             assert!(
-                c >= ty as i32 && c <= (ty + th) as i32,
-                "center {c} outside table {ty}..{}",
-                ty + th
+                (c as f32 - centers[k]).abs() <= 10.0,
+                "row {k}: {c} vs {}",
+                centers[k]
+            );
+        }
+    }
+
+    /// The REAL captured frame behind the original bug report (bright map,
+    /// Tab-dimmed, translucent light table, teal/brick headers). Downscaled
+    /// to the detector's 800-wide working size from a 3072×1920 capture.
+    #[test]
+    fn detects_real_captured_frame() {
+        let png = include_bytes!("testdata/tab_table_768x480.png");
+        let img = image::load_from_memory(png)
+            .expect("fixture decodes")
+            .to_rgba8();
+        let (w, h) = img.dimensions();
+        assert_eq!((w, h), (768, 480));
+        let rgba = img.into_raw();
+        let det = detect_roster(&rgba, w, h, 5).expect("real table must be detected");
+        assert_eq!(det.row_centers.len(), 5, "occluded rows extended");
+        // Truth (physical px of the source capture ÷ 4): header top 444→111,
+        // bars 796..2274 → 199..568.5, row centers ≈ 531/583/635/687/739 ÷ 4.
+        let truth: [f32; 5] = [132.75, 145.75, 158.75, 171.75, 184.75];
+        for (k, &c) in det.row_centers.iter().enumerate() {
+            assert!(
+                (c as f32 - truth[k]).abs() <= 8.0,
+                "row {k}: {c} vs {}",
+                truth[k]
             );
         }
         assert!(
-            (det.team_split - 0.5).abs() <= 0.08,
-            "split {}",
+            (det.rect.x as f32 - 199.0).abs() <= 8.0,
+            "x: {:?}",
+            det.rect
+        );
+        assert!(
+            (det.rect.y as f32 - 111.0).abs() <= 8.0,
+            "y: {:?}",
+            det.rect
+        );
+        assert!(
+            (det.team_split - 0.5).abs() <= 0.04,
+            "split: {}",
             det.team_split
         );
     }
 
     #[test]
+    fn returns_none_without_header_bars() {
+        // Bright scene, no table → no teal+brick pair anywhere.
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 0);
+        assert!(detect_roster(&img, w, h, 12).is_none());
+    }
+
+    #[test]
+    fn returns_none_when_only_one_bar_matches() {
+        // Green bar without its red twin (e.g. a green horizon band) must
+        // not anchor anything.
+        let (w, h) = (1280u32, 720u32);
+        let mut img = vec![0u8; (w * h * 4) as usize];
+        let mut noise = Noise(0x0b1e_5eed);
+        for y in 0..h {
+            for x in 0..w {
+                let l = noise.next_f32(125.0, 175.0) as u8;
+                let i = ((y * w + x) * 4) as usize;
+                img[i] = l;
+                img[i + 1] = l;
+                img[i + 2] = l;
+                img[i + 3] = 255;
+            }
+        }
+        for y in (h * 22 / 100)..(h * 22 / 100 + 14) {
+            for x in (w * 26 / 100)..(w * 50 / 100) {
+                let i = ((y * w + x) * 4) as usize;
+                img[i] = TEAL.0;
+                img[i + 1] = TEAL.1;
+                img[i + 2] = TEAL.2;
+            }
+        }
+        assert!(detect_roster(&img, w, h, 5).is_none());
+    }
+
+    #[test]
     fn rejects_row_count_mismatch() {
-        // Panel drawn with 6 rows but the arena says 12 → far fewer rows than
+        // 6 drawn rows but the arena says 12 → far fewer text bands than
         // players → None (caller falls back to the default anchor).
-        let img = synth(1280, 720, Some((256, 80, 768, 432)), 6);
-        assert!(detect_roster(&img, 1280, 720, 12).is_none());
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 6);
+        assert!(detect_roster(&img, w, h, 12).is_none());
+    }
+
+    #[test]
+    fn works_without_arena_hint() {
+        // Without the arena hint the detector keeps its conservative scan
+        // window: a tall 12-row table yields the rows that fit it (always
+        // ≥3, the TOP rows, in order) — real flows always pass the hint.
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, centers) = synth_header_table(w, h, 12);
+        let det = detect_roster(&img, w, h, 0).expect("detect without hint");
+        assert!(det.row_centers.len() >= 3, "rows: {det:?}");
+        for (k, &c) in det.row_centers.iter().enumerate() {
+            assert!((c as f32 - centers[k]).abs() <= 8.0, "row {k}: {c}");
+        }
     }
 
     #[test]
@@ -835,6 +664,18 @@ mod tests {
             }
         }
         assert!(detect_battle_scene(&img, w, h));
+    }
+
+    /// The Tab DIM matters: while the table is open the whole scene (HP bar
+    /// included) is darkened to ≈ rgb(28,68,56) — the probe must still see
+    /// it, and bluish water must not.
+    #[test]
+    fn hp_bar_probe_survives_the_tab_dim() {
+        let dimmed = (28u8, 68u8, 56u8);
+        let (r, g, b) = (dimmed.0 as i16, dimmed.1 as i16, dimmed.2 as i16);
+        assert!(is_probe_green(r, g, b), "dimmed HP bar must match");
+        let water = (40i16, 80i16, 110i16);
+        assert!(!is_probe_green(water.0, water.1, water.2), "water must not");
     }
 
     #[test]
@@ -941,6 +782,15 @@ const ICON_LUMA: u8 = 170;
 /// handful of ship-shaped blobs means a roster is on screen.
 const ICONS_MIN: u32 = 5;
 
+/// Green-dominance test for the HP bar, tolerant of the Tab dim: holding
+/// Tab darkens the bar from ≈ rgb(50,220,110) to ≈ rgb(28,68,56), and its
+/// vanilla hue is TEAL-ish (blue only slightly under green), so the old
+/// `g > b + 25` test matched only the pre-dim frame. Bluish water (blue
+/// over green) stays excluded.
+fn is_probe_green(r: i16, g: i16, b: i16) -> bool {
+    g > 55 && g >= r + 20 && g >= b - 10
+}
+
 /// True when the frame carries the in-battle HUD: the bottom-left health bar
 /// plus the vanilla team rosters' ship silhouettes across the top.
 /// None of these render outside the 3D scene — port, login and loading
@@ -971,8 +821,6 @@ pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneP
         let i = ((y * width + x) * 4) as usize;
         (rgba[i], rgba[i + 1], rgba[i + 2])
     };
-    let is_green =
-        |c: (u8, u8, u8)| c.1 > 90 && c.1 as u16 > c.0 as u16 + 25 && c.1 as u16 > c.2 as u16 + 25;
 
     // ── HP bar: longest horizontal run of green in the bottom-left region ──
     let x0 = width * 2 / 100;
@@ -985,7 +833,8 @@ pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneP
             let mut run = 0u32;
             let mut best = 0u32;
             for x in (x0..x1).step_by(SCENE_STEP as usize) {
-                if is_green(px(x, y)) {
+                let (r, g, b) = px(x, y);
+                if is_probe_green(r as i16, g as i16, b as i16) {
                     run += SCENE_STEP;
                     best = best.max(run);
                 } else {

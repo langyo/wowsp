@@ -47,9 +47,22 @@ const OVERLAY_LABEL: &str = "overlay";
 /// Tauri event carrying the latest anchor to the overlay webview.
 pub const OVERLAY_ANCHOR_EVENT: &str = "wowsp://overlay-anchor";
 
+/// Tauri event toggling the overlay page's OWN visibility (HTML-level hide).
+/// Emitted straight from the watcher thread — no main-thread queue involved —
+/// so the page content vanishes even when the native window hide below is
+/// delayed by a busy main thread. This is the load-bearing hide; the native
+/// one only stops the (already invisible) webview from painting.
+pub const OVERLAY_VISIBILITY_EVENT: &str = "wowsp://overlay-visibility";
+
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
 const POLL_INTERVAL: Duration = Duration::from_millis(30);
+/// While the overlay is logically shown but Tab is up / the game lost the
+/// foreground, the hide is RE-SENT at this period: a single edge-triggered
+/// hide queues exactly one main-thread task, and when that task is delayed
+/// or lost the overlay used to stay on screen forever (seen in live testing
+/// — "hidden" logged, window still visible). Idempotent and cheap here.
+const HIDE_RETRY: Duration = Duration::from_millis(300);
 /// Rate limit for capture attempts (GDI `BitBlt(CAPTUREBLT)` + detector
 /// work is expensive): a fresh Tab press reuses the cached anchor inside
 /// this window and is refused a new capture until it elapses — so frantic
@@ -136,8 +149,14 @@ pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), St
         return Err("overlay window not created — call create_overlay_window first".into());
     };
     if visible {
+        if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, true) {
+            tracing::warn!(error = %e, "emit overlay-visibility failed");
+        }
         show_no_activate(&win);
     } else {
+        if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, false) {
+            tracing::warn!(error = %e, "emit overlay-visibility failed");
+        }
         win.hide().map_err(|e| format!("hide overlay: {e}"))?;
     }
     Ok(())
@@ -260,6 +279,8 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     // expensive BitBlt(CAPTUREBLT) + detector work even under frantic Tab
     // tapping or a focus-flicker loop while the key is held.
     let mut last_capture_attempt: Option<Instant> = None;
+    // When the last hide was sent — spaces out the hide retries.
+    let mut last_hide: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -277,6 +298,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 &mut cached_game,
                 &mut last_scan,
                 &mut last_capture_attempt,
+                &mut last_hide,
             );
         }));
         if tick.is_err() {
@@ -302,6 +324,7 @@ fn watch_tab_tick(
     cached_game: &mut Option<(GameWindow, Instant)>,
     last_scan: &mut Option<Instant>,
     last_capture_attempt: &mut Option<Instant>,
+    last_hide: &mut Option<Instant>,
 ) {
     {
         // Resolve the game window: cached while valid, rescanned at most
@@ -366,14 +389,33 @@ fn watch_tab_tick(
                         computed
                     })
                 };
-                if let Some(anchor) = anchor {
-                    place_and_show(app, &anchor);
-                    *overlay_shown = true;
+                match anchor {
+                    Some(anchor) => {
+                        place_and_show(app, &anchor);
+                        *overlay_shown = true;
+                        *last_hide = None;
+                    },
+                    // A fresh capture that finds no battle HUD (scene probe
+                    // failed) must not leave a stale overlay hanging over a
+                    // no-longer-valid frame.
+                    None if *overlay_shown => {
+                        hide_overlay(app);
+                        *last_hide = Some(Instant::now());
+                    },
+                    None => {},
                 }
             }
         } else if *overlay_shown {
-            hide_overlay(app);
-            *overlay_shown = false;
+            // Keep re-sending the hide while the overlay should be down:
+            // each attempt queues one main-thread task, and a busy main
+            // thread may swallow/delay any single one (seen live: "hidden"
+            // logged, window stayed on screen). `overlay_shown` stays true
+            // until the next show so the retries continue; both the event
+            // and the native call are idempotent.
+            if last_hide.is_none_or(|t| t.elapsed() >= HIDE_RETRY) {
+                hide_overlay(app);
+                *last_hide = Some(Instant::now());
+            }
         }
 
         *tab_down_prev = tab_down && focused_on_game;
@@ -410,6 +452,11 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, anchor) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
+    // Reveal the page content AFTER the anchor is in (the page repaints
+    // while still invisible, then flips visible in one step).
+    if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, true) {
+        tracing::warn!(error = %e, "emit overlay-visibility failed");
+    }
     let r = anchor.overlay_rect;
     let queued = app.run_on_main_thread(move || {
         let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
@@ -429,16 +476,24 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
 fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor) {}
 
 fn hide_overlay(app: &AppHandle) {
+    // HTML-level hide FIRST: `emit` reaches the overlay page directly from
+    // this thread — no main-thread queue in the path — so the content
+    // disappears at once even when the queued native hide below is delayed
+    // (the load-bearing fix for the stuck-overlay bug).
+    if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, false) {
+        tracing::warn!(error = %e, "emit overlay-visibility failed");
+    }
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
         // Queued like `place_and_show` — see the note there: a blocking
         // window call on this thread must never be able to stall the loop.
         let queued = app.run_on_main_thread(move || {
-            let _ = win.hide();
+            if let Err(e) = win.hide() {
+                tracing::warn!(error = %e, "native overlay hide failed");
+            }
         });
         if let Err(e) = queued {
             tracing::warn!(error = %e, "queue overlay hide failed");
         }
-        tracing::info!("overlay hide queued (tab released / focus lost)");
     }
 }
 
