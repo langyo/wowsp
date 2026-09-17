@@ -35,7 +35,7 @@ mslnk = "^0.1.8"
 
 # Uninstall UI fallback for machines without WebView2 (uninstall_egui): a
 # tiny native window on the glow renderer — no wgpu, no webview.
-eframe = { version = "0.33", default-features = false, features = [
+eframe = { version = "0.36", default-features = false, features = [
     "glow",
     "default_fonts",
 ] }

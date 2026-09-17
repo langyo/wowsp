@@ -42,7 +42,7 @@ wt-translations = { version = "0.14.0", path = "crates/wt-translations" }
 egui = "0.34.1"
 egui-phosphor = "0.12"
 egui_dock = "0.19.1"
-eframe = { version = "0.34.1", default-features = false }
+eframe = { version = "0.36.2", default-features = false }
 # Pin to match eframe's wgpu version so backend features unify correctly.
 # This dependency with `default-features = true` is also needed to ensure
 # that targets are properly initialized.
