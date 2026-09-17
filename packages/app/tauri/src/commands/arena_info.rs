@@ -64,6 +64,13 @@ pub(crate) fn arena_seen_within(max_age_secs: u64) -> bool {
     at > 0 && unix_secs(SystemTime::now()) - at <= max_age_secs as i64
 }
 
+/// Battle identity stamp (the arena file's mtime, unix seconds; 0 = never).
+/// The overlay pins its detected anchor to this stamp: same battle → same
+/// anchor, no per-press re-detection drift.
+pub(crate) fn last_arena_stamp() -> i64 {
+    LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Cheap synchronous re-check of the arena file, used by the overlay Tab
 /// watcher on each fresh press when the cached state is stale: stat (and
 /// parse, when newer) `<replays>/tempArenaInfo.json` directly. Returns
