@@ -16,6 +16,8 @@
   "createdAt": "생성일",
   "memberName": "멤버",
   "roleLabel": "역할",
+  "descExpand": "더 보기",
+  "descCollapse": "접기",
   "jumpClan": "클랜 보기",
   "role": {
     "commander": "클랜장",
