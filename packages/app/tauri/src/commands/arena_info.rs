@@ -162,19 +162,39 @@ static ACTIVE_WATCHER: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
 
 /// Read + parse one `tempArenaInfo.json` file into [`ArenaInfo`].
 fn read_arena_file(path: &PathBuf) -> Result<ArenaInfo, String> {
+    read_arena_file_with_raw(path).map(|(info, _)| info)
+}
+
+/// Read + parse one `tempArenaInfo.json`, returning the parsed [`ArenaInfo`]
+/// AND the raw descriptor JSON text exactly as extracted from the file (NOT
+/// re-serialized, so consumers keep the game's own bytes).
+fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let json = replay::extract_descriptor_json_pub(&bytes)
         .ok_or_else(|| "tempArenaInfo.json: malformed".to_string())?;
     let raw: serde_json::Value =
         serde_json::from_str(&json).map_err(|e| format!("parse arena JSON: {e}"))?;
     let meta = replay::meta_from_raw_pub(path.to_string_lossy().into_owned(), raw.clone());
-    Ok(ArenaInfo {
-        match_group: meta.match_group,
-        date_time: meta.date_time,
-        map_name: meta.map_name,
-        vehicles: meta.vehicles,
-        raw,
-    })
+    Ok((
+        ArenaInfo {
+            match_group: meta.match_group,
+            date_time: meta.date_time,
+            map_name: meta.map_name,
+            vehicles: meta.vehicles,
+            raw,
+        },
+        json,
+    ))
+}
+
+/// Latest `tempArenaInfo.json` parsed plus its raw descriptor JSON text, from
+/// ONE read — used by the opt-in tab dump (the parsed roster feeds the battle
+/// signature, the raw text is the dump artifact). `None` when no arena file
+/// is readable or parseable right now; the caller just skips that dump.
+pub(crate) fn read_arena_snapshot() -> Option<(ArenaInfo, String)> {
+    let dir = resolve_arena_dir(None).ok()?;
+    let path = find_latest_arena_info(&dir)?;
+    read_arena_file_with_raw(&path).ok()
 }
 
 /// Build + spawn the notify watcher. The watcher runs on its own thread (notify

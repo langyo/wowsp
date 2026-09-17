@@ -636,6 +636,13 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
         rows = anchor.row_centers.len(),
         "anchor built"
     );
+    if detected {
+        // Ground-truth dump for the Tab row-order analysis (opt-in via
+        // WOWSP_TAB_DUMP_DIR, a no-op by default): the frame the detector
+        // just ran on, the arena roster and the anchor, captured at the same
+        // instant and written at most once per battle.
+        super::tab_dump::maybe_dump_tab_frame(&rgba, w, h, &anchor);
+    }
     Some(anchor)
 }
 
