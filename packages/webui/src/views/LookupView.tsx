@@ -12,6 +12,7 @@ import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useClanStatsStore } from "@/stores/clanStats";
+import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
@@ -97,6 +98,7 @@ export default defineComponent({
     const stats = useStatsStore();
     const clanStats = useClanStatsStore();
     const shipStats = useShipStatsStore();
+    const ranked = useRankedStore();
     const toast = useToast();
     const route = useRoute();
     const mode = ref<LookupKind>(lastLookup.value?.kind ?? "player");
@@ -196,6 +198,7 @@ export default defineComponent({
       mode.value = "player";
       realm.value = rl;
       result.value = null;
+      ranked.reset();
       const toastId = toast.loading(t("account.searching"));
       try {
         // Explicit user query — always re-pull from the WG API. `nm` may be
@@ -204,7 +207,10 @@ export default defineComponent({
         result.value = acc;
         lastLookup.value = { kind: "player", name: acc.name, realm: rl, id: acc.accountId };
         pushHistory({ kind: "player", name: acc.name, realm: rl, id: acc.accountId });
-        // Per-ship stats load in the background (toast stays until done).
+        // Ranked seasons load in parallel (last 5, feeds the card's ranked
+        // split); per-ship stats load in the background (toast stays until
+        // done).
+        void ranked.load(acc.accountId, rl, 5);
         await shipStats.load(acc.accountId, rl).catch(() => {});
       } catch {
         // error surfaced via stats.error
@@ -401,6 +407,7 @@ export default defineComponent({
               <div class="lookup-view__result" key="result">
                 <StatsCard
                   stats={result.value}
+                  rankedWr={ranked.winrate}
                   onClanClick={
                     result.value.clanId != null
                       ? () => void doClanLookup(result.value!.clanId!, realm.value)

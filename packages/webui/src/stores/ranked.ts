@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 import { api, type RankedSeasonStats } from "@/api";
+import { aggregateRankedWinrate } from "@/utils/ranked";
 
 /** Ranked battle stats store. Wraps `get_ranked_stats` with an in-memory cache. */
 export const useRankedStore = defineStore("ranked", () => {
@@ -9,18 +10,37 @@ export const useRankedStore = defineStore("ranked", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
+  /** Combined winrate across the loaded seasons (null = no ranked battles). */
+  const winrate = computed(() => aggregateRankedWinrate(seasons.value));
+
+  /** Supersedence token: the store is a single slot (not keyed per player),
+   *  so only the newest load (or a reset) may write state — a slow response
+   *  for a previous player must never clobber the current one's data. */
+  let token = 0;
+
   async function load(accountId: number, realm: string, seasonCount = 5) {
+    const current = ++token;
     loading.value = true;
     error.value = null;
     try {
-      seasons.value = await api.getRankedStats(accountId, realm, seasonCount);
+      const data = await api.getRankedStats(accountId, realm, seasonCount);
+      if (current !== token) return;
+      seasons.value = data;
     } catch (e) {
+      if (current !== token) return;
       error.value = (e as Error).message;
       seasons.value = [];
     } finally {
-      loading.value = false;
+      if (current === token) loading.value = false;
     }
   }
 
-  return { seasons, loading, error, load };
+  /** Drop cached seasons (and the derived winrate) before a new lookup. */
+  function reset() {
+    token++;
+    seasons.value = [];
+    error.value = null;
+  }
+
+  return { seasons, loading, error, winrate, load, reset };
 });

@@ -12,6 +12,8 @@
   "solo": "Solo",
   "div2": "Div2",
   "div3": "Div3",
+  "ranked": "Classé",
+  "rankedHint": "Cumul sur les 5 dernières saisons",
   "weighted": "TV pondérée",
   "ships": "Navires",
   "rank": "Palier",

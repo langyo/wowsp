@@ -165,6 +165,7 @@ export default defineComponent({
               {/* ── KPI summary (clan tag jumps to the lookup's clan mode) ── */}
               <StatsCard
                 stats={currentStats.value}
+                rankedWr={ranked.winrate}
                 onClanClick={
                   currentStats.value.clanId != null
                     ? () =>

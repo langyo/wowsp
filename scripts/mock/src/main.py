@@ -316,6 +316,9 @@ async def cmd_lookup_player_stats(request: Request) -> dict:
         "shipsPlayed": 87,
         "levelingTier": 12,
         "levelingPoints": 3400,
+        "soloWr": 52.1,
+        "div2Wr": 55.8,
+        "div3Wr": 57.3,
     }
 
 
@@ -378,6 +381,29 @@ async def cmd_lookup_player_ship_stats(request: Request) -> list:
         {"shipId": 4267685872, "name": "Shinano", "battles": 40, "wins": 18,
          "damageCaused": 0, "frags": 0, "survivedBattles": 10,
          "winrate": 45.0, "avgDamage": 0, "lastBattleTime": 0},
+    ]
+
+
+@app.post("/api/get_ranked_stats")
+async def cmd_get_ranked_stats(request: Request) -> list[dict]:
+    """Three fake ranked seasons (mirrors RankedSeasonStats) so the stats
+    card's ranked split and the dashboard's season list have data in a
+    browser. The seasonCount arg is accepted but ignored."""
+    body = await request.json()
+    _ = body.get("accountId")
+    return [
+        {"seasonId": 511, "seasonName": "Ranked Sprint 5", "battles": 180, "wins": 101,
+         "losses": 79, "damageDealt": 15840000, "frags": 212, "maxDamage": 214500,
+         "maxXp": 2870, "survivedBattles": 74, "planesKilled": 88,
+         "currentRank": 10, "bestRank": 8, "bestRankDisplay": "8"},
+        {"seasonId": 505, "seasonName": "Ranked Sprint 4", "battles": 142, "wins": 68,
+         "losses": 74, "damageDealt": 11560000, "frags": 151, "maxDamage": 187300,
+         "maxXp": 2415, "survivedBattles": 52, "planesKilled": 63,
+         "currentRank": None, "bestRank": 12, "bestRankDisplay": "12"},
+        {"seasonId": 498, "seasonName": "Ranked Sprint 3", "battles": 95, "wins": 44,
+         "losses": 51, "damageDealt": 7410000, "frags": 97, "maxDamage": 162800,
+         "maxXp": 2120, "survivedBattles": 31, "planesKilled": 40,
+         "currentRank": None, "bestRank": 15, "bestRankDisplay": "15"},
     ]
 
 
