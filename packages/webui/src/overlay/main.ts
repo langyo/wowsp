@@ -125,7 +125,16 @@ function render() {
   const rows = anchor.rowCenters;
   if (rows.length === 0) return;
 
-  const pitch = rows.length >= 2 ? Math.abs(rows[1] - rows[0]) / dpr : 24;
+  // The anchor carries TWO grid blocks concatenated: allies first, then
+  // enemies (asymmetrical battles 12v6 render sub-tables of different
+  // heights). Each side maps onto its OWN block — the enemy block starts
+  // where the ally block ends.
+  const allies = arena.vehicles.filter((v) => v.relation <= 1);
+  const enemies = arena.vehicles.filter((v) => v.relation > 1);
+  const allyBlock = rows.slice(0, allies.length);
+  const enemyBlock = rows.slice(allies.length);
+
+  const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
   const fontSize = Math.min(15, Math.max(9, pitch * 0.42));
   const inset = Math.max(6, Math.round(pitch * 0.12 * dpr)) / dpr;
   const splitX = anchor.rosterRect.x + anchor.rosterRect.width * anchor.teamSplit;
@@ -133,16 +142,16 @@ function render() {
   const enemiesLeft = (splitX + inset) / 1;
   const overlayW = anchor.overlayRect.width / dpr;
 
-  const sides: Array<[Vehicle[], "ally" | "enemy"]> = [
-    [arena.vehicles.filter((v) => v.relation <= 1), "ally"],
-    [arena.vehicles.filter((v) => v.relation > 1), "enemy"],
+  const sides: Array<[Vehicle[], "ally" | "enemy", number[]]> = [
+    [allies, "ally", allyBlock],
+    [enemies, "enemy", enemyBlock],
   ];
-  for (const [list, side] of sides) {
+  for (const [list, side, block] of sides) {
     list.forEach((v, i) => {
-      if (rows[i] == null) return;
+      if (block[i] == null) return;
       const el = document.createElement("div");
       el.className = `overlay-chip overlay-chip--${side}`;
-      el.style.top = `${rows[i] / dpr}px`;
+      el.style.top = `${block[i] / dpr}px`;
       el.style.fontSize = `${fontSize.toFixed(1)}px`;
       if (side === "ally") {
         el.style.right = `${Math.max(0, overlayW - alliesRight)}px`;

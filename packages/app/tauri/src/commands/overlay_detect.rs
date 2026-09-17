@@ -81,8 +81,9 @@ pub(crate) fn detect_roster(
     rgba: &[u8],
     width: u32,
     height: u32,
-    expected_players: usize,
+    team_sizes: (usize, usize),
 ) -> Option<DetectedRoster> {
+    let (expected_allies, expected_enemies) = team_sizes;
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let (px, w, h) = downscale_rgba(rgba, width, height, scale);
     if w < 64 || h < 64 {
@@ -94,56 +95,8 @@ pub(crate) fn detect_roster(
     };
 
     // ── 1. Header: a THICK band of consecutive scan rows each carrying the
-    //    green AND red bar ─────────────────────────────────────────────────
-    // Single-row anchoring was fragile: any stray water horizon or mod UI
-    // with one matching row outscored the real header. The real bars are
-    // ~55 physical px tall (≈14 working px), so require HEADER_MIN_ROWS
-    // consecutive hit rows and pick the best total area among candidates.
-    let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
-    let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
-    let min_run = ((w as f32 * HEADER_MIN_RUN_FRAC) as usize).max(HEADER_MIN_RUN_PX);
-    /// One scan-row hit: (bar y, green span, red span), spans end-exclusive.
-    type HeaderHit = (usize, (usize, usize), (usize, usize));
-    let mut run: Vec<HeaderHit> = Vec::new();
-    // Best thick run so far, owned (NOT borrowed from `run` — the borrow
-    // would fight the `run = Vec::new()` reset below).
-    let mut best: Option<Vec<HeaderHit>> = None;
-    let mut best_area = 0usize;
-    let flush =
-        |run: &mut Vec<HeaderHit>, best: &mut Option<Vec<HeaderHit>>, best_area: &mut usize| {
-            if run.len() >= HEADER_MIN_ROWS {
-                let area: usize = run.iter().map(|(_, g, r)| (g.1 - g.0) + (r.1 - r.0)).sum();
-                if area > *best_area {
-                    *best_area = area;
-                    *best = Some(std::mem::take(run));
-                }
-            }
-            run.clear();
-        };
-    for y in y_lo..y_hi {
-        let hit = longest_run_span(&px, w, y, is_header_green)
-            .filter(|g| g.1 - g.0 >= min_run)
-            .and_then(|g| {
-                longest_run_span(&px, w, y, is_header_red)
-                    .filter(|r| r.1 - r.0 >= min_run)
-                    .map(|r| (y, g, r))
-            });
-        match hit {
-            Some(h) => run.push(h),
-            None => flush(&mut run, &mut best, &mut best_area),
-        }
-    }
-    flush(&mut run, &mut best, &mut best_area);
-    // Anchor row = the run's first row; spans = widest green/red extents
-    // across the run (caption text punches holes into individual rows).
-    let run = best?;
-    let hy = run[0].0;
-    let (gx0, gx1) = run.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
-        (s.min(g.0), e.max(g.1))
-    });
-    let (rx0, rx1) = run.iter().fold((usize::MAX, 0), |(s, e), (_, _, r)| {
-        (s.min(r.0), e.max(r.1))
-    });
+    //    green AND red bar (see `find_header_band`) ─────────────────────────
+    let (hy, (gx0, gx1), (rx0, rx1)) = find_header_band(&px, w, h)?;
 
     // ── 2. Header height: scan down from the bar top; a row stays "header"
     //    while ≥2 of 6 sample points across both bars read bar color or the
@@ -179,21 +132,24 @@ pub(crate) fn detect_roster(
     let hh = hh.clamp(HEADER_MIN_H, (h / 10).max(HEADER_MIN_H));
 
     // ── 3. Player rows by pure GEOMETRY (no pixel row-counting) ───────────
-    // The roster size is already known from tempArenaInfo.json, so once the
-    // header pins the table's top corners the rows follow arithmetically:
-    // the real row pitch ≈ the header-bar height (measured 52/55 ≈ 0.95 and
-    // 48/54 ≈ 0.89 on real captures — bars and rows share the same UI
-    // scale), rows start right under the header, and the expected count is
-    // divided out. White-text bands only fine-tune the PHASE (± pitch/3) of
-    // the uniform grid when they agree with it — they never gate the result.
+    // Seven anchor points pin the table: THREE on top (green-bar top-left,
+    // seam top, red-bar top-right — the header band) and FOUR at the bottom
+    // (each sub-table's own bottom corners, derived from ITS row count —
+    // asymmetrical battles like 12v6 have two sub-tables of different
+    // heights and row pitches). The real row pitch ≈ the header-bar height
+    // (measured 52/55 ≈ 0.95 and 48/54 ≈ 0.89 — bars and rows share the
+    // same UI scale); each side's grid starts half a pitch under the shared
+    // header. White-text bands only fine-tune the PHASE of each side's
+    // grid independently (± pitch/3) — they never gate the result.
     let prof_top = (hy + hh).min(h);
     let pitch = hh as f32 * PITCH_PER_HEADER;
     let first = prof_top as f32 + pitch * 0.5;
-    // White-text density profile over the generous window below the header —
-    // used ONLY for the phase refinement below.
+    // White-text density profiles over the generous window below the header,
+    // one per side — used ONLY for the per-side phase refinement below.
     let prof_cap = (prof_top + (h as f32 * ROW_SCAN_MAX_SPAN_FRAC) as usize).min(h);
-    let mut profile = vec![0u32; prof_cap.saturating_sub(prof_top)];
-    for (dy, slot) in profile.iter_mut().enumerate() {
+    let mut profile_l = vec![0u32; prof_cap.saturating_sub(prof_top)];
+    let mut profile_r = profile_l.clone();
+    for (dy, slot) in profile_l.iter_mut().enumerate() {
         let y = prof_top + dy;
         let mut n = 0u32;
         for x in gx0..gx1 {
@@ -202,6 +158,11 @@ pub(crate) fn detect_roster(
                 n += 1;
             }
         }
+        *slot = n;
+    }
+    for (dy, slot) in profile_r.iter_mut().enumerate() {
+        let y = prof_top + dy;
+        let mut n = 0u32;
         for x in rx0..rx1 {
             let (r, g, b) = rgb(x, y);
             if is_text_white(r, g, b) {
@@ -210,53 +171,48 @@ pub(crate) fn detect_roster(
         }
         *slot = n;
     }
-    // Row count: the arena hint is authoritative; without it fall back to a
-    // conservative 5-row grid (real flows always pass the hint).
-    let rows_wanted = if expected_players > 0 {
-        expected_players
-    } else {
-        5
-    };
-    let mut centers: Vec<f32> = (0..rows_wanted).map(|i| first + pitch * i as f32).collect();
-    // Phase refinement: keep only the bands consistent with the uniform grid
-    // (within a third of a pitch), then use their median offset. Occluded or
-    // spurious bands (hint box, HUD) simply don't vote.
-    let prof_max = profile.iter().copied().max().unwrap_or(0);
-    if prof_max > 0 {
-        let thr = prof_max as f32 * ROW_TEXT_FRACTION;
-        let mut bands: Vec<f32> = Vec::new();
-        let mut band_start: Option<usize> = None;
-        for (dy, &v) in profile.iter().enumerate() {
-            if v as f32 > thr {
-                if band_start.is_none() {
+    // Row counts: each side's arena hint is authoritative; without any hint
+    // fall back to a conservative 5-row grid (real flows always pass it).
+    let rows_wanted = |hint: usize| if hint > 0 { hint } else { 5 };
+    let build_grid = |hint: usize, profile: &[u32]| -> Vec<f32> {
+        let mut grid: Vec<f32> = (0..rows_wanted(hint))
+            .map(|i| first + pitch * i as f32)
+            .collect();
+        // Phase refinement: bands consistent with the uniform grid (within
+        // a third of a pitch) vote on a shared offset; occluded or spurious
+        // bands (hint box, HUD) simply don't vote.
+        let prof_max = profile.iter().copied().max().unwrap_or(0);
+        if prof_max > 0 {
+            let thr = prof_max as f32 * ROW_TEXT_FRACTION;
+            let mut offsets: Vec<f32> = Vec::new();
+            let mut band_start: Option<usize> = None;
+            for (dy, &v) in profile.iter().enumerate() {
+                let in_band = v as f32 > thr;
+                if in_band && band_start.is_none() {
                     band_start = Some(dy);
                 }
-            } else if let Some(s) = band_start.take() {
-                if dy - s >= ROW_BAND_MIN_H {
-                    bands.push(prof_top as f32 + (s + dy - 1) as f32 / 2.0);
+                if !in_band && band_start.is_some() {
+                    let s = band_start.take().unwrap();
+                    if dy - s >= ROW_BAND_MIN_H {
+                        let b = prof_top as f32 + (s + dy - 1) as f32 / 2.0;
+                        let k = ((b - first) / pitch).round();
+                        let center = first + pitch * k;
+                        if (b - center).abs() <= pitch / 3.0 {
+                            offsets.push(b - center);
+                        }
+                    }
                 }
             }
-        }
-        if let Some(s) = band_start {
-            if profile.len() - s >= ROW_BAND_MIN_H {
-                bands.push(prof_top as f32 + (s + profile.len() - 1) as f32 / 2.0);
+            if offsets.len() >= 2 {
+                offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let shift = offsets[offsets.len() / 2];
+                grid.iter_mut().for_each(|c| *c += shift);
             }
         }
-        let offsets: Vec<f32> = bands
-            .iter()
-            .filter_map(|b| {
-                let k = ((b - first) / pitch).round(); // grid index of nearest row
-                let center = first + pitch * k;
-                ((b - center).abs() <= pitch / 3.0).then(|| b - center)
-            })
-            .collect();
-        if offsets.len() >= 2 {
-            let mut sorted = offsets;
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let shift = sorted[sorted.len() / 2];
-            centers.iter_mut().for_each(|c| *c += shift);
-        }
-    }
+        grid
+    };
+    let mut centers = build_grid(expected_allies, &profile_l);
+    centers.extend(build_grid(expected_enemies, &profile_r));
 
     // ── 4. Rectangle + team split, back to physical px ────────────────────
     let pitch = hh as f32 * PITCH_PER_HEADER;
@@ -283,6 +239,78 @@ pub(crate) fn detect_roster(
             .collect(),
         team_split,
     })
+}
+
+/// One located header band: (band top y, green span, red span), all in
+/// working px, spans end-exclusive.
+type HeaderBand = (usize, (usize, usize), (usize, usize));
+
+/// Locate the team-header band: a thick run of consecutive scan rows each
+/// carrying BOTH the teal and the brick bar. Single-row anchoring was
+/// fragile (a stray water horizon could outscore the real header), so the
+/// band must be [`HEADER_MIN_ROWS`] rows thick and the best total bar area
+/// wins. Returns [`HeaderBand`].
+fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
+    let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
+    let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
+    let min_run = ((w as f32 * HEADER_MIN_RUN_FRAC) as usize).max(HEADER_MIN_RUN_PX);
+    /// One scan-row hit: (bar y, green span, red span), spans end-exclusive.
+    type HeaderHit = (usize, (usize, usize), (usize, usize));
+    let mut run: Vec<HeaderHit> = Vec::new();
+    // Best thick run so far, owned (NOT borrowed from `run` — the borrow
+    // would fight the `run.clear()` reset below).
+    let mut best: Option<Vec<HeaderHit>> = None;
+    let mut best_area = 0usize;
+    let flush =
+        |run: &mut Vec<HeaderHit>, best: &mut Option<Vec<HeaderHit>>, best_area: &mut usize| {
+            if run.len() >= HEADER_MIN_ROWS {
+                let area: usize = run.iter().map(|(_, g, r)| (g.1 - g.0) + (r.1 - r.0)).sum();
+                if area > *best_area {
+                    *best_area = area;
+                    *best = Some(std::mem::take(run));
+                }
+            }
+            run.clear();
+        };
+    for y in y_lo..y_hi {
+        let hit = longest_run_span(px, w, y, is_header_green)
+            .filter(|g| g.1 - g.0 >= min_run)
+            .and_then(|g| {
+                longest_run_span(px, w, y, is_header_red)
+                    .filter(|r| r.1 - r.0 >= min_run)
+                    .map(|r| (y, g, r))
+            });
+        match hit {
+            Some(h) => run.push(h),
+            None => flush(&mut run, &mut best, &mut best_area),
+        }
+    }
+    flush(&mut run, &mut best, &mut best_area);
+    // Anchor row = the band's first row; spans = widest green/red extents
+    // across the band (caption text punches holes into individual rows).
+    let band = best?;
+    let top = band[0].0;
+    let (gx0, gx1) = band.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
+        (s.min(g.0), e.max(g.1))
+    });
+    let (rx0, rx1) = band.iter().fold((usize::MAX, 0), |(s, e), (_, _, r)| {
+        (s.min(r.0), e.max(r.1))
+    });
+    Some((top, (gx0, gx1), (rx0, rx1)))
+}
+
+/// Full-frame header presence check — the strongest "inside a battle" proof
+/// (the teal/brick team-header bars exist ONLY on the in-battle Tab table).
+/// The HUD probe dims badly (holding Tab darkens the frame and real dimmed
+/// captures measure 2 icon clusters / a 12px HP run against thresholds of
+/// 5 / 48), so the scene gate accepts EITHER evidence.
+pub(crate) fn header_bars_present(rgba: &[u8], width: u32, height: u32) -> bool {
+    let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
+    let (px, w, h) = downscale_rgba(rgba, width, height, scale);
+    if w < 64 || h < 64 {
+        return false;
+    }
+    find_header_band(&px, w, h).is_some()
 }
 
 /// Box-filter downscale to an RGB working image (alpha dropped, opaque).
@@ -463,15 +491,15 @@ mod tests {
     fn detects_header_anchored_table_12v12() {
         let (w, h) = (1280u32, 720u32);
         let (img, rect, centers) = synth_header_table(w, h, 12);
-        let det = detect_roster(&img, w, h, 12).expect("table must be detected");
-        assert_eq!(det.row_centers.len(), 12, "one center per row");
+        let det = detect_roster(&img, w, h, (12, 12)).expect("table must be detected");
+        assert_eq!(det.row_centers.len(), 24, "12 allies + 12 enemies");
         assert!((det.rect.x - rect.x).abs() <= 12, "x: {rect:?} vs {det:?}");
         assert!((det.rect.y - rect.y).abs() <= 12, "y: {rect:?} vs {det:?}");
         assert!(
             (det.rect.width - rect.width).abs() <= 24,
             "w: {rect:?} vs {det:?}"
         );
-        for (k, &c) in det.row_centers.iter().enumerate() {
+        for (k, &c) in det.row_centers.iter().take(12).enumerate() {
             let truth = centers[k];
             assert!(
                 (c as f32 - truth).abs() <= 8.0,
@@ -489,9 +517,9 @@ mod tests {
     fn detects_header_anchored_table_6v6() {
         let (w, h) = (1280u32, 720u32);
         let (img, _rect, centers) = synth_header_table(w, h, 6);
-        let det = detect_roster(&img, w, h, 6).expect("table must be detected");
-        assert_eq!(det.row_centers.len(), 6);
-        for (k, &c) in det.row_centers.iter().enumerate() {
+        let det = detect_roster(&img, w, h, (6, 6)).expect("table must be detected");
+        assert_eq!(det.row_centers.len(), 12, "6 allies + 6 enemies");
+        for (k, &c) in det.row_centers.iter().take(6).enumerate() {
             assert!((c as f32 - centers[k]).abs() <= 8.0, "row {k}: {c}");
         }
     }
@@ -516,9 +544,10 @@ mod tests {
                 }
             }
         }
-        let det = detect_roster(&img, w, h, 5).expect("partial table must still anchor");
-        assert_eq!(det.row_centers.len(), 5, "extended to the arena hint");
-        for (k, &c) in det.row_centers.iter().enumerate() {
+        let det = detect_roster(&img, w, h, (5, 5)).expect("partial table must still anchor");
+        // Two blocks: allies + enemies, each the arena hint's count.
+        assert_eq!(det.row_centers.len(), 10, "5 + 5 centers");
+        for (k, &c) in det.row_centers.iter().take(5).enumerate() {
             assert!(
                 (c as f32 - centers[k]).abs() <= 10.0,
                 "row {k}: {c} vs {}",
@@ -539,12 +568,12 @@ mod tests {
         let (w, h) = img.dimensions();
         assert_eq!((w, h), (768, 480));
         let rgba = img.into_raw();
-        let det = detect_roster(&rgba, w, h, 5).expect("real table must be detected");
-        assert_eq!(det.row_centers.len(), 5, "occluded rows extended");
+        let det = detect_roster(&rgba, w, h, (5, 5)).expect("real table must be detected");
+        assert_eq!(det.row_centers.len(), 10, "5 allies + 5 enemies");
         // Truth (physical px of the source capture ÷ 4): header top 444→111,
         // bars 796..2274 → 199..568.5, row centers ≈ 531/583/635/687/739 ÷ 4.
         let truth: [f32; 5] = [132.75, 145.75, 158.75, 171.75, 184.75];
-        for (k, &c) in det.row_centers.iter().enumerate() {
+        for (k, &c) in det.row_centers.iter().take(5).enumerate() {
             assert!(
                 (c as f32 - truth[k]).abs() <= 8.0,
                 "row {k}: {c} vs {}",
@@ -573,7 +602,7 @@ mod tests {
         // Bright scene, no table → no teal+brick pair anywhere.
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 0);
-        assert!(detect_roster(&img, w, h, 12).is_none());
+        assert!(detect_roster(&img, w, h, (12, 12)).is_none());
     }
 
     #[test]
@@ -601,7 +630,7 @@ mod tests {
                 img[i + 2] = TEAL.2;
             }
         }
-        assert!(detect_roster(&img, w, h, 5).is_none());
+        assert!(detect_roster(&img, w, h, (5, 5)).is_none());
     }
 
     #[test]
@@ -611,8 +640,8 @@ mod tests {
         // rows — rows are computed, not counted from pixels.
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 6);
-        let det = detect_roster(&img, w, h, 12).expect("header alone must anchor");
-        assert_eq!(det.row_centers.len(), 12);
+        let det = detect_roster(&img, w, h, (12, 12)).expect("header alone must anchor");
+        assert_eq!(det.row_centers.len(), 24, "12 + 12 centers");
         // The 6 drawn rows must coincide with grid rows 0..6.
         let pitch = (h as f32 * 0.028 * 0.92);
         let first = (h as f32 * 0.22 + h as f32 * 0.028) + pitch * 0.5;
@@ -623,13 +652,31 @@ mod tests {
     }
 
     #[test]
+    fn asymmetrical_battle_gets_two_grids() {
+        // 12v6: both sub-tables share the header band, but each side's row
+        // count is its OWN — allies get 12 grid rows, enemies 6. The chips
+        // mapping relies on centers being allies-block first, then enemies.
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 12);
+        let det = detect_roster(&img, w, h, (12, 6)).expect("asym table must anchor");
+        assert_eq!(det.row_centers.len(), 18, "12 + 6 centers");
+        // Both blocks start at the same first row (shared header).
+        let pitch = h as f32 * 0.028 * 0.92;
+        let first = (h as f32 * 0.22 + h as f32 * 0.028) + pitch * 0.5;
+        assert!((det.row_centers[0] as f32 - first).abs() <= 9.0);
+        // Enemy block restarts at the SAME top (the real client stacks both
+        // sub-tables from the shared header downward on each side).
+        assert!((det.row_centers[12] as f32 - first).abs() <= 9.0);
+    }
+
+    #[test]
     fn works_without_arena_hint() {
         // No hint → the detector returns a conservative 5-row grid anchored
         // on the header (real flows always pass the hint).
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 12);
-        let det = detect_roster(&img, w, h, 0).expect("detect without hint");
-        assert_eq!(det.row_centers.len(), 5, "rows: {det:?}");
+        let det = detect_roster(&img, w, h, (0, 0)).expect("detect without hint");
+        assert_eq!(det.row_centers.len(), 10, "5 + 5 fallback rows: {det:?}");
     }
 
     #[test]
