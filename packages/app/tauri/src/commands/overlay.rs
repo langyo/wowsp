@@ -479,8 +479,15 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
 /// Raw Win32 placement: async `SetWindowPos` + `ShowWindowAsync(SW_SHOWNOACTIVATE)`.
 #[cfg(target_os = "windows")]
 fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
-    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
+    };
     unsafe {
+        // ASYNCWINDOWPOS is load-bearing: without it a cross-thread
+        // SetWindowPos SYNCHRONOUSLY posts to the owning thread and waits;
+        // a main thread busy with WebView2 resize work then stalls THIS
+        // watcher thread — Tab polling stops, and rapid pressing feels
+        // permanently dead.
         let _ = SetWindowPos(
             hwnd,
             None,
@@ -488,7 +495,7 @@ fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
             r.y,
             r.width.max(1),
             r.height.max(1),
-            SWP_NOACTIVATE | SWP_NOZORDER,
+            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER,
         );
         show_async(hwnd);
     }
@@ -538,7 +545,7 @@ fn hide_overlay(_app: &AppHandle) {}
 /// fails but a battle roster is known — stats must still be readable.
 #[cfg(target_os = "windows")]
 fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
-    let expected = super::arena_info::last_known_team_size();
+    let team_sizes = super::arena_info::last_known_team_sizes();
     let Some((rgba, w, h)) = capture_game_rgba(&game.rect) else {
         tracing::warn!("game window capture returned no pixels");
         return None;
@@ -546,25 +553,34 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     if std::env::var_os("WOWSP_DEBUG_CAPTURE").is_some() {
         dump_capture(&rgba, w, h);
     }
-    // Scene gate: the battle HUD (bottom-left HP bar + top scoreboard) only
-    // renders inside the 3D scene. No HUD → not in battle → never show.
+    // Scene gate. The HUD probe (HP bar + ship icons) only renders inside
+    // the 3D scene, but holding Tab DIMS the whole frame and real captures
+    // show it then finds as few as 2 icon clusters (threshold 5) or a 12px
+    // HP run (threshold 48) — it kept rejecting real battles. So the probe
+    // is only the SECOND opinion: the header detection itself is the
+    // strongest possible in-scene proof (the teal/brick team-header bars
+    // exist ONLY on the in-battle Tab table), and either one passes.
     let probe = overlay_detect::probe_battle_scene(&rgba, w, h);
-    if !probe.detected() {
+    let header_found = overlay_detect::header_bars_present(&rgba, w, h);
+    if !probe.detected() && !header_found {
         tracing::info!(
             hp_bar = probe.hp_bar,
             icon_blobs = probe.icon_blobs,
-            "tab press: battle HUD not found — not in a 3D scene, skipping"
+            header_found,
+            "tab press: no battle HUD and no team header — not in a 3D scene, skipping"
         );
         return None;
     }
     let (roster_rel, rows, split, detected) =
-        match overlay_detect::detect_roster(&rgba, w, h, expected) {
+        match overlay_detect::detect_roster(&rgba, w, h, team_sizes) {
             Some(det) => (det.rect, det.row_centers, det.team_split, true),
             None => {
                 tracing::info!(
-                    expected_players = expected,
+                    allies = team_sizes.0,
+                    enemies = team_sizes.1,
                     "team list not detected — using centered fallback table"
                 );
+                let expected = team_sizes.0.max(team_sizes.1);
                 let (r, rows) = overlay_detect::fallback_roster(w as i32, h as i32, expected);
                 (r, rows, 0.5, false)
             },
@@ -603,11 +619,16 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                 anchor: None,
             });
         };
-        let expected = super::arena_info::last_known_team_size();
+        let team_sizes = super::arena_info::last_known_team_sizes();
         let (anchor, png) = match capture_game_rgba(&game.rect) {
             Some((rgba, w, h)) => {
-                let det = if overlay_detect::detect_battle_scene(&rgba, w, h) {
-                    match overlay_detect::detect_roster(&rgba, w, h, expected) {
+                // Same dual-channel scene gate as `compute_anchor`: the HUD
+                // probe dims badly while Tab is held; the header bars are
+                // the primary evidence.
+                let in_scene = overlay_detect::detect_battle_scene(&rgba, w, h)
+                    || overlay_detect::header_bars_present(&rgba, w, h);
+                let det = if in_scene {
+                    match overlay_detect::detect_roster(&rgba, w, h, team_sizes) {
                         Some(d) => Some(
                             overlay_detect::build_anchor(
                                 &rect_from_win32(game.rect),
@@ -619,8 +640,11 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                             .1,
                         ),
                         None => {
-                            let (r, rows) =
-                                overlay_detect::fallback_roster(w as i32, h as i32, expected);
+                            let (r, rows) = overlay_detect::fallback_roster(
+                                w as i32,
+                                h as i32,
+                                team_sizes.0.max(team_sizes.1),
+                            );
                             Some(
                                 overlay_detect::build_anchor(
                                     &rect_from_win32(game.rect),
