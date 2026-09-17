@@ -20,10 +20,11 @@ use crate::commands::replay;
 /// Tauri event name emitted whenever a fresh battle's roster appears.
 pub const ARENA_INFO_EVENT: &str = "wowsp://arena-info";
 
-/// Team size (largest side) of the most recently seen battle roster. The
-/// overlay Tab watcher reads it to cross-check the detected row count and to
-/// build the fallback anchor; 0 = no battle seen yet this session.
-static LAST_TEAM_SIZE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Team sizes (allies, enemies) of the most recently seen battle roster.
+/// Kept SEPARATE: asymmetrical modes (e.g. 12 vs 6) render two sub-tables
+/// with different row counts, and the overlay grid must match each side's
+/// own count. Packed as (allies << 16) | enemies; 0 = no battle seen yet.
+static LAST_TEAM_SIZES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// mtime (unix seconds) of the most recently seen tempArenaInfo.json — NOT
 /// the read time: the file is re-read every few seconds by polling, so only
@@ -36,18 +37,23 @@ fn unix_secs(t: SystemTime) -> i64 {
         .unwrap_or(0)
 }
 
-/// Record the roster's largest team size (allies = relation ≤ 1) and the
-/// battle's start stamp (the arena file's mtime).
+/// Record both team sizes (allies = relation ≤ 1) and the battle's start
+/// stamp (the arena file's mtime).
 fn note_arena_seen(vehicles: &[wowsp_tauri_shared::VehicleEntry], file_mtime: SystemTime) {
     let allies = vehicles.iter().filter(|v| v.relation <= 1).count();
     let enemies = vehicles.len() - allies;
-    LAST_TEAM_SIZE.store(allies.max(enemies), std::sync::atomic::Ordering::Relaxed);
+    LAST_TEAM_SIZES.store(
+        (allies << 16) | enemies,
+        std::sync::atomic::Ordering::Relaxed,
+    );
     LAST_ARENA_MTIME.store(unix_secs(file_mtime), std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Latest known per-team player count (0 before any battle was seen).
-pub(crate) fn last_known_team_size() -> usize {
-    LAST_TEAM_SIZE.load(std::sync::atomic::Ordering::Relaxed)
+/// Latest known per-team player counts (allies, enemies) — (0, 0) before
+/// any battle was seen.
+pub(crate) fn last_known_team_sizes() -> (usize, usize) {
+    let packed = LAST_TEAM_SIZES.load(std::sync::atomic::Ordering::Relaxed);
+    (packed >> 16, packed & 0xFFFF)
 }
 
 /// True when the most recent battle roster is no older than `max_age_secs`.
