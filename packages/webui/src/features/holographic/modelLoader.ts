@@ -344,7 +344,7 @@ export function loadMapBounds(): Promise<Map<string, MapBounds>> {
       !import.meta.env.DEV && _modelCacheRoot && _convertFileSrc
         ? _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps.json`)
         : "/models/maps/minimaps.json";
-    _mapBoundsPromise = fetch(url)
+    _mapBoundsPromise = fetchModelResource(url)
       .then((r) => (r.ok ? r.json() : {}))
       .then((j) => new Map(Object.entries(j) as [string, MapBounds][]))
       .catch(() => new Map<string, MapBounds>());
@@ -362,7 +362,7 @@ export function loadSilhouettes(): Promise<Record<string, { path: string }>> {
       !import.meta.env.DEV && _modelCacheRoot && _convertFileSrc
         ? _convertFileSrc(_modelCacheRoot + "/models/silhouettes.json")
         : "/models/silhouettes.json";
-    _silhouettesPromise = fetch(url)
+    _silhouettesPromise = fetchModelResource(url)
       .then((r) => (r.ok ? r.json() : {}))
       .then((j) => j as Record<string, { path: string }>)
       .catch(() => ({} as Record<string, { path: string }>));
@@ -473,6 +473,36 @@ function getLoader(): GLTFLoader {
   return _loader;
 }
 
+/**
+ * Fetch a model-pack resource with an automatic fallback to the embedded
+ * copy. The pack ships twice: inside the binary (frontendDist, always
+ * complete, served from the app origin at `/models/...`) and in the cache
+ * directory (served via the asset protocol). The cache path is preferred
+ * because it tracks the published pack, but its `asset.localhost` fetch can
+ * die at the transport level on machines whose system proxy/PAC routes
+ * `*.localhost` pseudo-hosts through the proxy (Clash-style PACs only
+ * bypass bare `localhost`) — those failures surface as raw "Failed to
+ * fetch" TypeErrors, and non-404 responses cover an incomplete cache.
+ * Either way the embedded copy has the same file, so retry against it.
+ */
+export async function fetchModelResource(url: string): Promise<Response> {
+  const isAsset = url.startsWith("http://asset.localhost/");
+  const embedded = "/models/" + (url.split("/models/")[1] ?? "");
+  let resp: Response;
+  try {
+    resp = await fetch(url);
+  } catch (e) {
+    if (!isAsset) throw e;
+    console.warn(`[modelLoader] asset fetch failed (${e}), retrying embedded copy: ${embedded}`);
+    return fetch(embedded);
+  }
+  if (!resp.ok && isAsset) {
+    console.warn(`[modelLoader] asset fetch ${resp.status}, retrying embedded copy: ${embedded}`);
+    return fetch(embedded);
+  }
+  return resp;
+}
+
 function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
   const view = new DataView(buffer);
   if (buffer.byteLength < 20) return buffer;
@@ -499,7 +529,7 @@ function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
 
 export function loadGlbModel(url: string): Promise<THREE.Group> {
   console.log("[modelLoader] loading:", url);
-  return fetch(url)
+  return fetchModelResource(url)
     .then((resp) => {
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
       return resp.arrayBuffer();

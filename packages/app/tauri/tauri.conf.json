@@ -46,7 +46,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://asset.localhost https://asset.localhost; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* http://asset.localhost https://asset.localhost https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://api.ipapi.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://asset.localhost https://asset.localhost http://media.localhost media:; font-src 'self'",
+      "csp": "default-src 'self' http://asset.localhost https://asset.localhost; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* http://asset.localhost https://asset.localhost http://ipc.localhost https://ipc.localhost https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://api.ipapi.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://asset.localhost https://asset.localhost http://media.localhost media:; font-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": [
