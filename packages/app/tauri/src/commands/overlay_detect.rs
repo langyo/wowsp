@@ -25,23 +25,31 @@ use wowsp_tauri_shared::Rect;
 const MAX_WORK_WIDTH: u32 = 800;
 /// Luminance below which a pixel counts as "dark" (the panel background).
 const DARK_LUMA: u8 = 96;
-/// Fraction of dark pixels a row needs (over the scanned columns) to count as
-/// a panel row. The panel spans most of its own width in near-uniform dark.
-const ROW_DARK_FRAC: f32 = 0.45;
+/// Fraction of dark pixels a row needs (over the full capture width) to count
+/// as a panel row. The real Tab table spans only ~47% of the screen width and
+/// its ship-silhouette column is bright, so player rows measure ~0.35 — the
+/// threshold must stay well below that (the night-map guard rejects dark
+/// scenes, so low here is safe).
+const ROW_DARK_FRAC: f32 = 0.30;
 /// Same for columns, measured over the scanned rows.
 const COL_DARK_FRAC: f32 = 0.60;
 /// Row gap (fraction of capture height) tolerated while growing the panel
-/// band — the header row can be lighter than the body.
-const ROW_GAP_FRAC: f32 = 0.03;
+/// band — the bright green/red team-header bars are ~2.5% of the height.
+const ROW_GAP_FRAC: f32 = 0.04;
+/// Column gap (fraction of capture width) bridged while growing the column
+/// band — the bright ship-silhouette column (~8% of the frame width) and the
+/// thin central seam punch holes into an otherwise contiguous table band.
+const COL_GAP_FRAC: f32 = 0.09;
 /// The panel must be at most this fraction of the mean luminance of the scene
 /// strips directly above and below it (night-map guard).
 const PANEL_CONTRAST_RATIO: f32 = 0.80;
 /// Row-pitch search range at working (downscaled) resolution.
 const MIN_PITCH: usize = 8;
 const MAX_PITCH: usize = 64;
-/// Minimum plausible panel share of the capture.
-const MIN_WIDTH_FRAC: f32 = 0.25;
-const MIN_HEIGHT_FRAC: f32 = 0.15;
+/// Minimum plausible panel share of the capture (the real table is ~47% of
+/// the width and ~16% of the height on a 1080p client; 5v5 can dip lower).
+const MIN_WIDTH_FRAC: f32 = 0.20;
+const MIN_HEIGHT_FRAC: f32 = 0.10;
 /// Maximum plausible panel share (a band covering ~everything is a dark
 /// scene, not a table).
 const MAX_WIDTH_FRAC: f32 = 0.98;
@@ -115,7 +123,8 @@ pub(crate) fn detect_roster(
     }
 
     // ── Row separators → pitch → phase-aligned row centers ────────────────
-    let centers_work = detect_row_centers(&lum, w, x0, x1, y0, y1, expected_players)?;
+    let centers_work = detect_row_centers(&lum, w, x0, x1, y0, y1, expected_players);
+    let centers_work = centers_work?;
     if centers_work.len() < 2 {
         return None;
     }
@@ -214,7 +223,9 @@ fn longest_band(vals: &[f32], threshold: f32, max_gap: usize) -> Option<(usize, 
             gap += 1;
             if gap > max_gap {
                 let s = run_start.unwrap();
-                if best.is_none_or(|(_, e)| e - s < i - gap + 1 - s) {
+                // Compare band LENGTHS (end - start), never raw endpoints —
+                // the previous band can end before this run starts.
+                if best.is_none_or(|(bs, be)| i - gap + 1 - s > be - bs) {
                     best = Some((s, i - gap + 1));
                 }
                 run_start = None;
@@ -222,7 +233,7 @@ fn longest_band(vals: &[f32], threshold: f32, max_gap: usize) -> Option<(usize, 
         }
     }
     if let Some(s) = run_start {
-        if best.is_none_or(|(_, e)| e - s < vals.len() - s) {
+        if best.is_none_or(|(bs, be)| vals.len() - s > be - bs) {
             best = Some((s, vals.len()));
         }
     }
@@ -238,7 +249,11 @@ fn best_column_band(col_dark: &[f32]) -> Option<(usize, usize)> {
             *best = Some((s, e));
         }
     }
-    let longest = longest_band(col_dark, COL_DARK_FRAC, 2)?;
+    // Bridge gaps up to ~5% of the width: the ship-silhouette column and the
+    // thin seam between the two team sub-tables both punch bright holes into
+    // an otherwise contiguous band.
+    let max_gap = ((col_dark.len() as f32 * COL_GAP_FRAC) as usize).max(2);
+    let longest = longest_band(col_dark, COL_DARK_FRAC, max_gap)?;
     let center = col_dark.len() / 2;
     if longest.0 <= center && center < longest.1 {
         return Some(longest);
@@ -255,7 +270,7 @@ fn best_column_band(col_dark: &[f32]) -> Option<(usize, usize)> {
             gap = 0;
         } else if run_start.is_some() {
             gap += 1;
-            if gap > 2 {
+            if gap > max_gap {
                 let s = run_start.unwrap();
                 flush(&mut best, s, i - gap + 1);
                 run_start = None;
@@ -372,14 +387,28 @@ fn detect_row_centers(
             .partial_cmp(&scores[b])
             .unwrap_or(std::cmp::Ordering::Equal)
     })?;
-    let mut pitch = best_lag;
-    while pitch / 2 >= MIN_PITCH && scores[pitch / 2] >= scores[pitch] * 0.55 {
-        pitch /= 2;
+    let mut auto_pitch = best_lag;
+    while auto_pitch / 2 >= MIN_PITCH && scores[auto_pitch / 2] >= scores[auto_pitch] * 0.55 {
+        auto_pitch /= 2;
     }
 
-    // Baseline-subtract (moving average over half a pitch) so the phase score
-    // is driven by the separator peaks, not by broad luminance drift.
-    let half = (pitch / 2).max(1);
+    // Candidate pitches. Plain autocorrelation is unreliable on SHORT bands:
+    // a 5v5 roster yields a ~60-row band whose table-edge spikes can outscore
+    // the ~12-row fundamental. When the arena hint gives the expected row
+    // count, band/expected enters as a peer candidate and the better-scoring
+    // one wins.
+    let mut candidates = vec![auto_pitch];
+    if expected_players >= 3 {
+        let p = (band_h as f32 / expected_players as f32).round() as usize;
+        if (MIN_PITCH..=max_lag).contains(&p) && p != auto_pitch {
+            candidates.push(p);
+        }
+    }
+
+    // Baseline-subtract (moving average over half the largest candidate) so
+    // the phase score is driven by the separator peaks, not by luminance
+    // drift.
+    let half = candidates.iter().map(|&c| c / 2).max().unwrap_or(1).max(1);
     let base: Vec<f32> = (0..band_h)
         .map(|yi| {
             let lo = yi.saturating_sub(half);
@@ -389,20 +418,28 @@ fn detect_row_centers(
         .collect();
     let norm: Vec<f32> = energy.iter().zip(&base).map(|(e, b)| e - b).collect();
 
-    // Best phase: the offset in [0, pitch) whose ideal grid hits the most
-    // energy. Then collect actual local-max peaks near each grid line.
+    // Evaluate every candidate pitch at its best phase; keep the winner. A
+    // period must repeat at least three times across the band — a two-line
+    // grid is degenerate (it just pairs the band's truncation spikes).
+    let mut pitch = candidates[0];
     let mut best_phase = 0usize;
     let mut best_phase_score = f32::MIN;
-    for phase in 0..pitch {
-        let mut s = 0f32;
-        let mut yi = phase;
-        while yi < band_h {
-            s += norm[yi];
-            yi += pitch;
-        }
-        if s > best_phase_score {
+    for &cand in &candidates {
+        for phase in 0..cand {
+            let mut s = 0f32;
+            let mut n = 0usize;
+            let mut yi = phase;
+            while yi < band_h {
+                s += norm[yi];
+                n += 1;
+                yi += cand;
+            }
+            if n < 3 || s <= best_phase_score {
+                continue;
+            }
             best_phase_score = s;
             best_phase = phase;
+            pitch = cand;
         }
     }
 
@@ -639,6 +676,109 @@ mod tests {
         let det = detect_roster(&img, 1920, 1080, 0).expect("detect without hint");
         // No trim → header + 12 rows = 13 centers.
         assert_eq!(det.row_centers.len(), 13);
+    }
+
+    /// A frame mimicking the REAL WoWS Tab table: two sub-tables with a thin
+    /// bright seam, bright green/red team-header bars, a bright ship-silhouette
+    /// column in each sub-table, and bright separator lines — over a bright
+    /// scene. The very shape that made the first calibration miss (row dark
+    /// fraction ~0.35, table height ~16%) and fell back to the scattered
+    /// default anchor.
+    #[test]
+    fn detects_realistic_wows_table() {
+        let (w, h) = (1280u32, 720u32);
+        let mut img = vec![0u8; (w * h * 4) as usize];
+        let mut noise = Noise(0xfeed_beef);
+        let put = |img: &mut [u8], x: u32, y: u32, luma: u8| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = luma.saturating_add(4);
+            img[i + 1] = luma;
+            img[i + 2] = luma.saturating_sub(4);
+            img[i + 3] = 255;
+        };
+        for y in 0..h {
+            for x in 0..w {
+                let l = noise.next_f32(125.0, 175.0) as u8;
+                put(&mut img, x, y, l);
+            }
+        }
+        // Table geometry (fractions of the frame, matching the real client):
+        let tx = (w as f32 * 0.26) as u32; // 333
+        let tw = (w as f32 * 0.47) as u32; // 602
+        let ty = (h as f32 * 0.22) as u32; // 158
+        let th = (h as f32 * 0.17) as u32; // 122
+        let seam = tx + tw / 2;
+        let rows = 5usize;
+        // Sub-table body (both halves), alternating slight shading.
+        for y in ty..ty + th {
+            for x in tx..tx + tw {
+                let shade = if ((y - ty) / 12) % 2 == 0 { 46 } else { 58 };
+                if x.abs_diff(seam) < 4 {
+                    continue; // bright scene shows through the seam
+                }
+                put(&mut img, x, y, shade);
+            }
+        }
+        // Bright green/red team-header bars on top of each half.
+        for y in ty..ty + 10 {
+            for x in tx..seam - 3 {
+                put(&mut img, x, y, 150);
+            }
+            for x in seam + 3..tx + tw {
+                put(&mut img, x, y, 150);
+            }
+        }
+        // Bright ship-silhouette column in the middle of each sub-table.
+        for y in ty + 12..ty + th {
+            for x in (tx + tw / 8)..(tx + tw / 8 + tw / 6) {
+                put(&mut img, x, y, 130);
+            }
+            for x in (seam + 4 + tw / 8)..(seam + 4 + tw / 8 + tw / 6) {
+                if x < tx + tw {
+                    put(&mut img, x, y, 130);
+                }
+            }
+        }
+        // 2px bright separators between rows (rows+1 lines incl. bottom).
+        for k in 1..=rows {
+            let sy = ty + 10 + ((th - 10) as usize * k / (rows + 1)) as u32;
+            for x in tx..tx + tw {
+                if x.abs_diff(seam) < 4 {
+                    continue;
+                }
+                for d in 0..2 {
+                    if sy + d < ty + th {
+                        put(&mut img, x, sy + d, 110);
+                    }
+                }
+            }
+        }
+
+        let det = detect_roster(&img, w, h, 5).expect("realistic table must be detected");
+        let r = det.rect;
+        assert!(
+            (r.x as f32 - tx as f32).abs() <= w as f32 * 0.02,
+            "x off: {r:?}"
+        );
+        assert!(
+            (r.y as f32 - ty as f32).abs() <= h as f32 * 0.03,
+            "y off: {r:?}"
+        );
+        assert_eq!(det.row_centers.len(), 5, "rows: {:?}", det.row_centers);
+        // Row centers must sit INSIDE the table band (the fallback spread
+        // would put them across 70% of the frame height).
+        for &c in &det.row_centers {
+            assert!(
+                c >= ty as i32 && c <= (ty + th) as i32,
+                "center {c} outside table {ty}..{}",
+                ty + th
+            );
+        }
+        assert!(
+            (det.team_split - 0.5).abs() <= 0.08,
+            "split {}",
+            det.team_split
+        );
     }
 
     #[test]
