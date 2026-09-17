@@ -461,8 +461,8 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     if !probe.detected() {
         tracing::info!(
             hp_bar = probe.hp_bar,
-            dark_strip = probe.dark_strip,
-            colored_bar = probe.colored_bar,
+            teal_bar = probe.teal_bar,
+            orange_bar = probe.orange_bar,
             "tab press: battle HUD not found — not in a 3D scene, skipping"
         );
         return None;

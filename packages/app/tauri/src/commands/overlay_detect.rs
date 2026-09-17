@@ -811,24 +811,21 @@ mod tests {
             img[i + 2] = c.2;
             img[i + 3] = 255;
         };
-        // Bottom-left HP bar: bright green, ~300x12.
+        // Bottom-left HP bar: bright green, ~300x12 (real: y ≈ 78%).
         for y in 655..668 {
             for x in 60..360 {
                 put(&mut img, x, y, (50, 220, 110));
             }
         }
-        // Top scoreboard: dark strip + teal (friendly) and orange (enemy) bars.
-        for y in 18..62 {
-            for x in 390..890 {
-                put(&mut img, x, y, (40, 40, 46));
+        // Score bars per the real client: teal (friendly) x 27-43% and
+        // orange (enemy) x 54-70%, both at y ≈ 8-11% — floating over the
+        // sky, NO dark backing strip.
+        for y in 58..90 {
+            for x in 350..550 {
+                put(&mut img, x, y, (57, 240, 200));
             }
-        }
-        for y in 34..44 {
-            for x in 420..620 {
-                put(&mut img, x, y, (40, 205, 175));
-            }
-            for x in 700..860 {
-                put(&mut img, x, y, (245, 140, 60));
+            for x in 700..900 {
+                put(&mut img, x, y, (245, 140, 26));
             }
         }
         assert!(detect_battle_scene(&img, w, h));
@@ -919,13 +916,14 @@ mod tests {
 /// Sample stride over the capture (physical px) for the scene probe.
 const SCENE_STEP: u32 = 4;
 /// The HP bar is a long run of saturated green in the bottom-left corner.
-/// Measured on a real 1080p client: it sits at ~78% of the frame height.
+/// Measured on a real 1080p client: it sits at ~78% of the frame height
+/// (x ~3-15%), so the band spans well around it.
 const HP_GREEN_MIN_RUN: u32 = 48;
-/// The scoreboard is a dark translucent strip across the top-center with a
-/// teal (friendly) and an orange/red (enemy) score bar (score row ~8-13%
-/// of the frame height).
-const SCORE_DARK_FRAC: f32 = 0.10;
-const SCORE_BAR_MIN_RUN: u32 = 24;
+/// The scoreboard is TWO floating segmented bars over the sky — teal
+/// (friendly, x ~27-44%, y ~8-11%) and orange (enemy, x ~54-70%) — with
+/// white score text between them. No dark backing strip exists, so the
+/// probe matches the bars themselves.
+const SCORE_BAR_MIN_RUN: u32 = 32;
 
 /// True when the frame carries the in-battle HUD: the bottom-left health bar
 /// plus the top-center scoreboard strip with its teal/orange score bars.
@@ -937,23 +935,23 @@ const SCORE_BAR_MIN_RUN: u32 = 24;
 pub(crate) struct SceneProbe {
     /// Long green run in the bottom-left corner (health bar).
     pub hp_bar: bool,
-    /// Dark translucent strip across the top-center (scoreboard backing).
-    pub dark_strip: bool,
-    /// Teal or orange/red score-bar run inside the strip.
-    pub colored_bar: bool,
+    /// Teal segmented bar top-center-left (friendly score/damage).
+    pub teal_bar: bool,
+    /// Orange segmented bar top-center-right (enemy score/damage).
+    pub orange_bar: bool,
 }
 
 impl SceneProbe {
     pub(crate) fn detected(&self) -> bool {
-        self.hp_bar && self.dark_strip && self.colored_bar
+        self.hp_bar && self.teal_bar && self.orange_bar
     }
 }
 
 pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneProbe {
     let none = SceneProbe {
         hp_bar: false,
-        dark_strip: false,
-        colored_bar: false,
+        teal_bar: false,
+        orange_bar: false,
     };
     let px = |x: u32, y: u32| -> (u8, u8, u8) {
         let i = ((y * width + x) * 4) as usize;
@@ -967,80 +965,63 @@ pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneP
     let x1 = (width * 25 / 100).min(width.saturating_sub(1));
     let y0 = height * 70 / 100;
     let y1 = (height * 95 / 100).min(height.saturating_sub(1));
-    if x1 <= x0 || y1 <= y0 {
-        return none;
-    }
     let mut hp_found = false;
-    'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
-        let mut run = 0u32;
-        let mut best = 0u32;
-        for x in (x0..x1).step_by(SCENE_STEP as usize) {
-            if is_green(px(x, y)) {
-                run += SCENE_STEP;
-                best = best.max(run);
-            } else {
-                run = 0;
+    if x1 > x0 && y1 > y0 {
+        'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
+            let mut run = 0u32;
+            let mut best = 0u32;
+            for x in (x0..x1).step_by(SCENE_STEP as usize) {
+                if is_green(px(x, y)) {
+                    run += SCENE_STEP;
+                    best = best.max(run);
+                } else {
+                    run = 0;
+                }
             }
-        }
-        if best >= HP_GREEN_MIN_RUN {
-            hp_found = true;
-            break 'outer;
+            if best >= HP_GREEN_MIN_RUN {
+                hp_found = true;
+                break 'outer;
+            }
         }
     }
     if !hp_found {
         return none;
     }
 
-    // ── Scoreboard: dark strip in the top-center band ──────────────────────
-    let sx0 = width * 25 / 100;
-    let sx1 = (width * 75 / 100).min(width);
-    let sy0 = height * 2 / 100;
-    let sy1 = (height * 15 / 100).min(height);
-    if sx1 <= sx0 || sy1 <= sy0 {
+    // ── Score bars: teal (friendly) left of the score, orange (enemy) right.
+    // Both sit in a narrow band around 8-12% of the frame height; both are
+    // ALWAYS present together in battle, so requiring both keeps false
+    // positives (single-sided teal UI accents) out.
+    let sy0 = height * 4 / 100;
+    let sy1 = (height * 16 / 100).min(height);
+    if sy1 <= sy0 {
         return SceneProbe {
             hp_bar: true,
             ..none
         };
     }
-    let mut total = 0u32;
-    let mut dark = 0u32;
-    for y in (sy0..sy1).step_by(SCENE_STEP as usize) {
-        for x in (sx0..sx1).step_by(SCENE_STEP as usize) {
-            let (r, g, b) = px(x, y);
-            total += 1;
-            if (r as u16 + g as u16 + b as u16) / 3 < 80 {
-                dark += 1;
-            }
-        }
-    }
-    if total == 0 || (dark as f32 / total as f32) < SCORE_DARK_FRAC {
-        return SceneProbe {
-            hp_bar: true,
-            ..none
-        };
-    }
-
-    // ── Teal (friendly) and orange/red (enemy) score bars in the strip ────
     let teal_found = colored_run(
         &px,
-        sx0,
-        sx0 + (sx1 - sx0) * 46 / 100,
+        width * 25 / 100,
+        width * 48 / 100,
         sy0,
         sy1,
-        |(r, g, b)| g > 90 && g >= b + 15 && g as u16 > r as u16 + 15,
+        // Teal/cyan family: green AND blue clearly above red (the real bar
+        // is #39F0C8-like, so g ≈ b — do NOT require g ≥ b + 15).
+        |(r, g, b)| g > 120 && b > 90 && g as u16 > r as u16 + 30 && b as u16 > r as u16 + 20,
     );
     let orange_found = colored_run(
         &px,
-        sx0 + (sx1 - sx0) * 52 / 100,
-        sx1,
+        width * 52 / 100,
+        width * 75 / 100,
         sy0,
         sy1,
         |(r, g, _b)| r > 110 && r as u16 > g as u16 + 40,
     );
     SceneProbe {
         hp_bar: true,
-        dark_strip: true,
-        colored_bar: teal_found || orange_found,
+        teal_bar: teal_found,
+        orange_bar: orange_found,
     }
 }
 
