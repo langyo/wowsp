@@ -89,11 +89,11 @@
     letter-spacing: 0.04em;
   }
 
-  /* ── Division splits: 3 columns centered ──
+  /* ── Division splits: 4 columns centered ──
      Each column: winrate number on top, label below. */
   &__divisions {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.5rem;
   }
 
@@ -163,5 +163,6 @@
 
   @media (max-width: 900px) {
     &__kpis { grid-template-columns: repeat(3, 1fr); }
+    &__divisions { grid-template-columns: repeat(2, 1fr); }
   }
 }
