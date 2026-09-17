@@ -16,6 +16,8 @@
   "createdAt": "创建时间",
   "memberName": "成员",
   "roleLabel": "角色",
+  "descExpand": "展开简介",
+  "descCollapse": "收起简介",
   "jumpClan": "查看公会",
   "role": {
     "commander": "指挥官",

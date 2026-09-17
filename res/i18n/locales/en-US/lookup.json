@@ -16,6 +16,8 @@
   "createdAt": "Created",
   "memberName": "Member",
   "roleLabel": "Role",
+  "descExpand": "Show more",
+  "descCollapse": "Show less",
   "jumpClan": "View clan",
   "role": {
     "commander": "Commander",

@@ -17,10 +17,44 @@
   margin: 0;
   color: rgb(var(--color-muted));
   font-size: var(--text-sm);
+  /* Fixed line-height so the clamp / fade math below stays in sync. */
+  line-height: 1.5;
   word-break: break-word;
   /* Backend normalizes WG descriptions to \n; render them as line breaks
      while collapsing runs of spaces. */
   white-space: pre-line;
+}
+
+/* Collapsed description: 6 lines max, the last 3 fade out via a mask on the
+   paragraph itself (an overlay would need to re-create the translucent card
+   background). (1.5em * 3 lines) = fade start after line 3. */
+.clan-card__desc--clamped {
+  max-height: calc(6 * 1.5em);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - 4.5em),
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 4.5em), transparent 100%);
+}
+
+.clan-card__desc-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+  cursor: pointer;
+
+  &:hover {
+    color: rgb(var(--color-primary));
+  }
 }
 
 .clan-card__hero {
