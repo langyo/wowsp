@@ -94,6 +94,8 @@
     "estimated": " (est.)",
     "xp": "XP",
     "credits": "Credits",
+    "winrate": "Overall winrate",
+    "avgDamage": "Avg damage",
     "globalFailed": "Global stats unavailable",
     "globalFailedAi": "Global stats unavailable (possibly an AI player)",
     "globalUnavailable": "Global stats unavailable",

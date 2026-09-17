@@ -304,10 +304,26 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Roster stat columns (overall WR / avg damage) left of the XP — values
+     are tier-colored inline; fixed ch widths keep each column aligned
+     across rows. */
+  &__postbattle-cell-stat {
+    flex: 0 0 auto;
+    text-align: right;
+    font-family: var(--font-mono);
+    em {
+      font-style: normal;
+      color: rgb(var(--color-text) / 0.35);
+    }
+    b { font-weight: 600; }
+    &--wr { min-width: 6.5ch; }
+    &--dmg { min-width: 7.5ch; }
+  }
   &__postbattle-cell-xp {
     flex: 0 0 auto;
+    min-width: 6ch;
+    text-align: right;
     font-family: var(--font-mono);
-    color: #ffd93d;
   }
   &__postbattle-detail {
     position: relative;

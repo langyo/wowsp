@@ -94,6 +94,8 @@
     "estimated": " (추정)",
     "xp": "경험치",
     "credits": "크레딧",
+    "winrate": "승률",
+    "avgDamage": "평균 데미지",
     "globalFailed": "전체 전적을 가져올 수 없습니다",
     "globalFailedAi": "전체 전적을 가져올 수 없습니다 (AI 플레이어일 수 있음)",
     "globalUnavailable": "전체 전적을 사용할 수 없습니다",
