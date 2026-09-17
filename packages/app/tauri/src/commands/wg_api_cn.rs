@@ -5,7 +5,7 @@
 //! same anonymous vortex endpoints the official profile site calls
 //! (verified against the live service):
 //!
-//!   search  GET https://vortex.wowsgame.cn/api/accounts/search/<name>/?limit=1
+//!   search  GET https://vortex.wowsgame.cn/api/accounts/search/<name>/?limit=10
 //!   suggest GET https://vortex.wowsgame.cn/api/accounts/search/autocomplete/<name>/
 //!   info    GET https://vortex.wowsgame.cn/api/accounts/<id>/
 //!   clan    GET https://vortex.wowsgame.cn/api/accounts/<id>/clans/   (404 = no clan)
@@ -36,7 +36,7 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
-use super::wg_api::{PvpStats, compute_pr, encode_query, parse_dog_tag};
+use super::wg_api::{PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
 /// Concurrency cap for the batch name→account resolution, mirroring the WG
@@ -180,18 +180,19 @@ struct CnAccountRef {
     nickname: String,
 }
 
-/// Search one nickname on the CN vortex. `Ok(None)` covers both "no match"
-/// and "unsearchable query" — the server rejects anything shorter than 3
-/// characters with `Bad Request` (two-character Chinese nicknames cannot be
-/// searched on the official profile site either; they stay reachable by
-/// numeric id through `resolve_entry`).
+/// Search one nickname on the CN vortex (limit=10) and resolve the EXACT
+/// account out of the prefix hits — [`exact_hit`]. `Ok(None)` covers "no
+/// match", "no exact hit" and "unsearchable query" — the server rejects
+/// anything shorter than 3 characters with `Bad Request` (two-character
+/// Chinese nicknames cannot be searched on the official profile site either;
+/// they stay reachable by numeric id through `resolve_entry`).
 async fn account_list_one(
     client: &reqwest::Client,
     name: &str,
 ) -> Result<Option<CnAccountRef>, String> {
     let host = wg_realm::vortex_host("cn")?;
     let url = format!(
-        "https://{host}/api/accounts/search/{}/?limit=1",
+        "https://{host}/api/accounts/search/{}/?limit=10",
         encode_query(name)
     );
     let v = get_json(client, &url).await?;
@@ -202,19 +203,34 @@ async fn account_list_one(
         }
         return Err(format!("CN account search: {err}"));
     }
-    let first = v
+    let hit = v
         .get("data")
         .and_then(|d| d.as_array())
-        .and_then(|a| a.first())
-        .cloned();
-    // Malformed entries (no spa_id / no name) are skipped, not defaulted —
-    // account_id 0 would just probe a nonsense URL downstream.
-    Ok(first.and_then(|e| {
+        .and_then(|a| exact_hit(name, a));
+    // exact_hit already requires a name; entries without a spa_id are still
+    // skipped here, not defaulted — account_id 0 would just probe a nonsense
+    // URL downstream.
+    Ok(hit.and_then(|e| {
         Some(CnAccountRef {
             account_id: get_i64(&e, "spa_id")?,
             nickname: e.get("name")?.as_str()?.to_owned(),
         })
     }))
+}
+
+/// Pick the search hit whose name IS the queried nickname (trimmed,
+/// case-insensitive) — the vortex search is a prefix query whose top hit is
+/// not contractually the exact account, so a same-prefix lookalike must
+/// never be resolved. Pure so the rule is unit-testable without HTTP.
+fn exact_hit(name: &str, entries: &[serde_json::Value]) -> Option<serde_json::Value> {
+    entries
+        .iter()
+        .find(|e| {
+            e.get("name")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| nickname_matches(name, n))
+        })
+        .cloned()
 }
 
 /// Fetch and normalize one account info node. `Ok(None)` = unknown id — the
@@ -717,6 +733,24 @@ fn parse_cn_timestamp(raw: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_hit_picks_queried_nickname_out_of_prefix_hits() {
+        let hits = serde_json::json!([
+            { "spa_id": 1, "name": "川S-大叔其实不是大叔" },
+            { "spa_id": 2, "name": " 川s-大叔 " },
+            { "spa_id": 3 }
+        ]);
+        // Exact nickname wins regardless of hit order, padding or case.
+        let picked = exact_hit("川S-大叔", hits.as_array().unwrap()).expect("exact hit");
+        assert_eq!(picked["spa_id"], 2);
+        // A prefix query that matches several entries exactly-resolves none —
+        // a lookalike must never be resolved as the queried account.
+        assert!(exact_hit("川S", hits.as_array().unwrap()).is_none());
+        // Name-less entries can never be verified, only skipped.
+        let nameless = serde_json::json!([{ "spa_id": 3 }]);
+        assert!(exact_hit("川S-大叔其实不是大叔", nameless.as_array().unwrap()).is_none());
+    }
 
     /// Live-response fixture (player 川S-大叔其实不是大叔, id 7050428536):
     /// full statistics subtree with vortex field names.

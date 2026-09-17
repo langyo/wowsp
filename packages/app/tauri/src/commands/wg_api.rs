@@ -368,11 +368,12 @@ pub(crate) fn encode_query(s: &str) -> String {
     out
 }
 
-/// `account/list` is a prefix search: hits may contain same-prefix
-/// lookalikes, so an entry is trusted only when its nickname IS the queried
-/// name (trimmed, case-insensitive) — anything else counts as "not found",
-/// and another player's stats can never be pinned onto a roster row.
-fn nickname_matches(query: &str, found: &str) -> bool {
+/// A search hit is trusted only when its nickname IS the queried name
+/// (trimmed, case-insensitive) — anything else counts as "not found", and
+/// another player's stats can never be pinned onto a roster row. Shared by
+/// the WG `account/list` path and the CN vortex search, which are both
+/// prefix queries whose exact account is not contractually the top hit.
+pub(crate) fn nickname_matches(query: &str, found: &str) -> bool {
     query.trim().to_lowercase() == found.trim().to_lowercase()
 }
 
