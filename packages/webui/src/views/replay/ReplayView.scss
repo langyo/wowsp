@@ -670,8 +670,8 @@
     text-transform: uppercase;
 
     &--live {
-      background: rgb(var(--color-danger) / 18%);
-      color: rgb(var(--color-danger));
+      background: rgb(var(--color-error) / 18%);
+      color: rgb(var(--color-error));
       letter-spacing: 0.06em;
     }
   }
