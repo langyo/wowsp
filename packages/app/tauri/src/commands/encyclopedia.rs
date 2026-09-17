@@ -13,10 +13,6 @@ use std::fs;
 use serde::Deserialize;
 use wowsp_tauri_shared::{GameVersionInfo, ShipInfo};
 
-/// Public WG app id (same constant as wg_api.rs — kept duplicated to avoid a
-/// cross-module dependency on a private item).
-const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
-
 const INFO_CACHE: &str = "encyclopedia/info.json";
 
 /// Fetch (and cache) the current WG game version + total ship count.
@@ -34,10 +30,10 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
             return Ok(info);
         }
     }
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let client = wg_client()?;
     // encyclopedia/info isn't realm-specific in content, but the API requires a
     // valid realm host. Use asia as the canonical source.
+    let app_id = super::wg_realm::application_id("asia");
+    let client = wg_client()?;
     let url = format!(
         "https://api.worldofwarships.asia/wows/encyclopedia/info/?application_id={app_id}&language=en"
     );
@@ -111,11 +107,11 @@ pub async fn get_ship_encyclopedia(
         }
     }
 
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
     let client = std::sync::Arc::new(wg_client()?);
     let base_url = format!(
-        "https://api.worldofwarships.{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
+        "https://{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
     );
 
     // Fetch page 1 first to get page_total, then fetch remaining pages in parallel.
@@ -281,16 +277,6 @@ fn wg_client() -> Result<reqwest::Client, String> {
     crate::commands::network::build_http_client()
 }
 
-fn realm_host(realm: &str) -> Result<&'static str, String> {
-    Ok(match realm {
-        "ru" => "ru",
-        "eu" => "eu",
-        "na" => "com",
-        "asia" => "asia",
-        other => return Err(format!("unsupported realm '{other}'")),
-    })
-}
-
 fn now_ts() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -396,13 +382,6 @@ mod tests {
         assert_eq!(ship.type_, "");
         assert_eq!(ship.nation, "");
         assert!(ship.default_profile.is_null());
-    }
-
-    #[test]
-    fn realm_host_maps() {
-        assert_eq!(realm_host("na").unwrap(), "com");
-        assert_eq!(realm_host("asia").unwrap(), "asia");
-        assert!(realm_host("cn").is_err());
     }
 
     #[test]
