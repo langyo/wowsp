@@ -1,9 +1,10 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
-import { HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HButton, HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
+import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -66,14 +67,17 @@ export default defineComponent({
     const gpLoading = ref(false);
     const gpError = ref<string | null>(null);
     const gpFetched = ref(false);
+    const showPathSetup = ref(false);
 
     async function loadGameparams() {
       if (gpFetched.value || !props.ship) return;
       gpLoading.value = true;
       gpError.value = null;
       const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
-      // Safety timeout: dismiss loading toast after 15s if still pending.
-      const timer = setTimeout(() => toast.remove(toastId), 15000);
+      // First load per ship unpacks GameParams.data from the install (a few
+      // seconds even on release builds) — keep the loading toast up long
+      // enough to cover it; the finally block dismisses it on completion.
+      const timer = setTimeout(() => toast.remove(toastId), 90_000);
       try {
         gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
       } catch (e) {
@@ -87,6 +91,24 @@ export default defineComponent({
         toast.remove(toastId);
       }
     }
+
+    function retryGameparams() {
+      gpFetched.value = false;
+      gpError.value = null;
+      void loadGameparams();
+    }
+
+    // When the game root changes (user picked a path in the setup modal or
+    // the process watcher synthesized one), automatically re-run a failed
+    // armor load — no extra click needed.
+    watch(
+      () => props.gameRoot,
+      (root, prev) => {
+        if (root && prev !== root && gpError.value && !gpLoading.value) {
+          retryGameparams();
+        }
+      },
+    );
 
     // ── My Stats tab: lazy player ship stats + trend ──────────────────────
     const myStatsLoaded = ref(false);
@@ -277,6 +299,21 @@ export default defineComponent({
               <p class="ship-detail__desc">{props.ship.description}</p>
             ) : null}
 
+            {/* Armor-data failure banner: shows the backend error plus the
+                two recovery paths — re-run the load (retry after a path
+                change or game update) or open the game-path setup modal. */}
+            {gpError.value ? (
+              <div class="ship-detail__gp-error">
+                <span class="ship-detail__gp-error-msg">{gpError.value}</span>
+                <HButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
+                  {t("common.retry")}
+                </HButton>
+                <HButton size="sm" onClick={() => (showPathSetup.value = true)}>
+                  {t("common.gamePath.setAction")}
+                </HButton>
+              </div>
+            ) : null}
+
             {/* tab bar — hikari pill tab strip */}
             <HTabs
               variant="pill"
@@ -357,6 +394,12 @@ export default defineComponent({
             </div>
           </div>
         )}
+
+        {/* Nested game-path setup (opened from the armor-error banner). */}
+        <GamePathSetupModal
+          modelValue={showPathSetup.value}
+          onUpdate:modelValue={(v: boolean) => (showPathSetup.value = v)}
+        />
       </HModal>
     );
   },

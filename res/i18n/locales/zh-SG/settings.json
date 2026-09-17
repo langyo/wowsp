@@ -37,5 +37,6 @@
   "overlayOff": "关闭",
   "overlayDesc": "对局开始后自动获取双方阵容的战绩；游戏窗口在前台时按住 Tab，即可在双方玩家昵称旁看到彩色胜率与场均伤害。",
   "overlayTabToggle": "按住 Tab 查看战绩",
-  "overlayFullscreenNote": "※ 独占全屏下无法显示：该模式下 Windows GDI 截屏只能捕获黑帧，覆盖窗口也无法叠加在全屏交换链之上。请在游戏设置中将显示模式改为“无边框”或“窗口化”。"
+  "overlayFullscreenNote": "※ 独占全屏下无法显示：该模式下 Windows GDI 截屏只能捕获黑帧，覆盖窗口也无法叠加在全屏交换链之上。请在游戏设置中将显示模式改为“无边框”或“窗口化”。",
+  "gamePathChange": "更改…"
 }

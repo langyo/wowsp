@@ -30,5 +30,21 @@
   "search": {
     "fuzzy": "模糊搜索",
     "hint": "输入船名、拼音或英文搜索"
+  },
+  "retry": "重试",
+  "gamePath": {
+    "title": "游戏路径",
+    "desc": "WoWSP 需要定位《战舰世界》安装目录，以读取船只装甲与弹道数据、回放与模组资源。",
+    "current": "当前路径",
+    "unset": "未设置",
+    "detected": "检测到的安装",
+    "browse": "浏览文件夹…",
+    "redetect": "重新检测",
+    "runningHint": "检测到正在运行的游戏：{path}",
+    "useRunning": "使用此路径",
+    "noneFound": "未检测到游戏安装。请手动选择安装目录（应包含 WorldOfWarships.exe 与 bin/ 文件夹）。",
+    "applied": "游戏路径已更新",
+    "invalid": "所选目录无效",
+    "setAction": "指定游戏路径"
   }
 }

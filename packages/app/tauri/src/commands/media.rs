@@ -479,8 +479,7 @@ mod tests {
         assert_eq!(p1, p2);
         assert_eq!(
             p1.parent()
-                .map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
-                .flatten()
+                .and_then(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
                 .as_deref(),
             Some(IMAGE_CACHE_DIR)
         );

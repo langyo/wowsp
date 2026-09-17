@@ -65,19 +65,51 @@ pub async fn detect_game_install() -> Vec<GameInstall> {
     scan_game_installs()
 }
 
+/// Open a native folder picker and validate the choice as a WoWS install.
+/// Returns `None` when the user cancels the dialog (not an error), and an
+/// install (with realm, when clientrunner.log is present) on success.
+///
+/// The manual-location entry: the first-launch prompt and the ship-detail
+/// error state both route here when auto-detection comes up empty.
+#[tauri::command]
+pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
+    // rfd pumps its own message loop — run it on a blocking thread, never
+    // the async runtime workers or the app's UI thread.
+    let picked = tokio::task::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Select the World of Warships install folder")
+            .pick_folder()
+    })
+    .await
+    .map_err(|e| format!("文件夹选择器任务异常退出：{e}"))?;
+
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let path = path.to_string_lossy().into_owned();
+    validate_manual_path(&path).map(Some)
+}
+
 /// Pin a user-chosen path as the active install (no validation beyond the
 /// exe existing).
 #[tauri::command]
 pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
-    if !is_game_dir(&path) {
+    validate_manual_path(&path)
+}
+
+/// Shared validation for the picker + manual-path command: the folder must
+/// contain `WorldOfWarships.exe`; realm is read from clientrunner.log when
+/// available.
+fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
+    if !is_game_dir(path) {
         return Err(format!(
-            "{path} does not look like a World of Warships install (missing WorldOfWarships.exe)"
+            "所选目录不像《战舰世界》安装目录（缺少 WorldOfWarships.exe）：{path}"
         ));
     }
     Ok(GameInstall {
         kind: GameInstallKind::Manual,
-        path,
-        realm: None,
+        realm: detect_realm(&PathBuf::from(path)),
+        path: path.to_string(),
     })
 }
 
@@ -239,7 +271,9 @@ fn resolve_steam_install() -> Option<PathBuf> {
 /// vortex dispatch, encyclopedia cache keys) expects the canonical lowercase
 /// code, and the CN client's log spelling has not been verified against the
 /// international one.
-fn detect_realm(game_root: &std::path::Path) -> Option<String> {
+/// `pub(crate)`: the process watcher also reads realms for synthesized
+/// installs (running exe that no detected install claims).
+pub(crate) fn detect_realm(game_root: &std::path::Path) -> Option<String> {
     let log = game_root.join("profile").join("clientrunner.log");
     let Ok(text) = std::fs::read_to_string(&log) else {
         return None;

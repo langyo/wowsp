@@ -11,6 +11,7 @@ import { resolveShipImage } from "@/utils/shipImages";
 import { recordShipImageFailure, shouldShowImageBanner } from "@/utils/shipImageFailures";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
@@ -41,6 +42,7 @@ export default defineComponent({
     const trends = useTrendsStore();
     const accounts = useAccountStore();
     const config = useConfigStore();
+    const gameStatus = useGameStatusStore();
     const toast = useToast();
 
     // ── realm picker + load ────────────────────────────────────────────
@@ -146,7 +148,13 @@ export default defineComponent({
 
     // ── detail modal ───────────────────────────────────────────────────
     const selectedShip = ref<ShipInfo | null>(null);
-    const gameRoot = computed(() => config.activeInstall?.path ?? "");
+    // Armor/ballistics game root: the configured install, falling back to
+    // the running process's (possibly synthesized) install — the same
+    // unification the setup modal + process watcher provide, so ship data
+    // loads even when folder detection missed but the game is running.
+    const gameRoot = computed(
+      () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+    );
 
     /** Encyclopedia ships keyed by shipId, for the tech-tree resolver. */
     const shipsById = computed(() => {

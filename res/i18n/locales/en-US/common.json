@@ -30,5 +30,21 @@
   "search": {
     "fuzzy": "Fuzzy search",
     "hint": "Type a ship name, pinyin, or English name"
+  },
+  "retry": "Retry",
+  "gamePath": {
+    "title": "Game path",
+    "desc": "WoWSP needs the World of Warships install folder to read ship armor & ballistics data, replays, and mod resources.",
+    "current": "Current path",
+    "unset": "Not set",
+    "detected": "Detected installs",
+    "browse": "Browse folder…",
+    "redetect": "Re-detect",
+    "runningHint": "Running game detected: {path}",
+    "useRunning": "Use this path",
+    "noneFound": "No game install detected. Pick the install folder manually (it should contain WorldOfWarships.exe and a bin/ folder).",
+    "applied": "Game path updated",
+    "invalid": "The selected folder is not a valid install",
+    "setAction": "Set game path"
   }
 }

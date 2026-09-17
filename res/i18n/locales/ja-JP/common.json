@@ -30,5 +30,21 @@
   "search": {
     "fuzzy": "あいまい検索",
     "hint": "艦名、よみがな、または英語名を入力してください"
+  },
+  "retry": "再試行",
+  "gamePath": {
+    "title": "ゲームパス",
+    "desc": "WoWSP が艦の装甲・弾道データ、リプレイ、MOD リソースを読み込むには、World of Warships のインストールフォルダーが必要です。",
+    "current": "現在のパス",
+    "unset": "未設定",
+    "detected": "検出されたインストール",
+    "browse": "フォルダーを選択…",
+    "redetect": "再検出",
+    "runningHint": "実行中のゲームを検出しました：{path}",
+    "useRunning": "このパスを使用",
+    "noneFound": "ゲームのインストールが検出されませんでした。インストールフォルダーを手動で選択してください（WorldOfWarships.exe と bin/ フォルダーを含む必要があります）。",
+    "applied": "ゲームパスを更新しました",
+    "invalid": "選択されたフォルダーは無効です",
+    "setAction": "ゲームパスを設定"
   }
 }

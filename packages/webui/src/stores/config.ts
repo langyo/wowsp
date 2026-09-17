@@ -44,11 +44,23 @@ export const useConfigStore = defineStore("config", () => {
       // otherwise fall back to the first detected install.
       const pickByPath = (path: string | null) =>
         path ? installs.value.find((i) => i.path === path) ?? null : null;
-      const resolved =
+      let resolved: GameInstall | null =
         pickByPath(rememberedPath) ??
         pickByPath(activeInstall.value?.path ?? null) ??
         installs.value[0] ??
         null;
+      // A remembered manual path that auto-detection can't see (custom
+      // folder, unusual Steam library layout) must survive the rescan —
+      // re-validate it through the backend instead of dropping the user's
+      // choice, which would otherwise re-trigger the first-launch prompt
+      // on every start.
+      if (!resolved && rememberedPath) {
+        try {
+          resolved = await api.setGamePath(rememberedPath);
+        } catch {
+          resolved = null; // the folder is truly gone — prompt again
+        }
+      }
       activeInstall.value = resolved;
       rememberedPath = null; // consumed
       await persist();

@@ -17,6 +17,7 @@ import { initModelPack } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
 import AnnouncementDialog from "./AnnouncementDialog";
+import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import Sidebar from "./Sidebar";
 import UpdateToast from "./UpdateToast";
 import WallpaperRenderer from "./WallpaperRenderer";
@@ -49,6 +50,11 @@ export default defineComponent({
     // Mandatory free & open-source notice: pops until the user acknowledges
     // it through the dialog's own (countdown-gated) button.
     const showNotice = ref(false);
+    // Game-path setup: pops on any launch where detection ends without an
+    // active install (first launch, moved/unplugged library) so the user is
+    // asked to locate the game right away instead of discovering it through
+    // a failed armor load later.
+    const showGamePathSetup = ref(false);
     let unlistenClose: UnlistenFn | null = null;
 
     async function handleCloseChoice(action: "quit" | "minimize") {
@@ -88,7 +94,23 @@ export default defineComponent({
       }
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].
-      void config.load().then(() => config.detect());
+      // When detection completes WITHOUT an active install, immediately ask
+      // for a manual location (the armor/ballistics loader needs a game
+      // root). A transient detection failure does not pop the modal — only
+      // a resolved-but-empty scan does.
+      void config
+        .load()
+        .then(async () => {
+          let detected = false;
+          await config.detect().then(
+            () => (detected = true),
+            () => (detected = false),
+          );
+          if (detected && !config.activeInstall) {
+            showGamePathSetup.value = true;
+          }
+        })
+        .catch(() => {});
       void accounts.load();
       gameStatus.start();
 
@@ -193,6 +215,14 @@ export default defineComponent({
         <AnnouncementDialog
           modelValue={showNotice.value}
           onUpdate:modelValue={(v: boolean) => (showNotice.value = v)}
+        />
+
+        {/* Game-path first-launch prompt — fires whenever the detect pass
+            ends without an active install; also reachable from Settings and
+            the ship-detail armor-error banner. */}
+        <GamePathSetupModal
+          modelValue={showGamePathSetup.value}
+          onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
         />
       </div>
     );

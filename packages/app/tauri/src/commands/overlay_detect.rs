@@ -708,7 +708,7 @@ mod tests {
         let det = detect_roster(&img, w, h, (12, 12)).expect("header alone must anchor");
         assert_eq!(det.row_centers.len(), 24, "12 + 12 centers");
         // The 6 drawn rows must coincide with grid rows 0..6.
-        let pitch = (h as f32 * 0.028 * 0.92);
+        let pitch = h as f32 * 0.028 * 0.92;
         let first = (h as f32 * 0.22 + h as f32 * 0.028) + pitch * 0.5;
         for (k, &c) in det.row_centers.iter().enumerate().take(6) {
             let truth = first + pitch * k as f32;
@@ -848,7 +848,7 @@ mod tests {
             width: 1200,
             height: 250,
         };
-        let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i as i32 + 20).collect();
+        let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i + 20).collect();
         let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false);
         assert!(!anchor.table_detected);
         // The overlay window covers ONLY the inflated table area — wider on

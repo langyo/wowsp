@@ -37,5 +37,6 @@
   "overlayOff": "Off",
   "overlayDesc": "Fetches both teams' stats automatically when a battle starts; hold Tab while the game window is focused to see each player's win rate and average damage next to their name.",
   "overlayTabToggle": "Hold Tab to view stats",
-  "overlayFullscreenNote": "※ Unavailable in exclusive fullscreen: in that mode GDI screen capture only returns black frames, and the overlay window cannot sit on top of a fullscreen swap chain. Set the game's display mode to borderless or windowed."
+  "overlayFullscreenNote": "※ Unavailable in exclusive fullscreen: in that mode GDI screen capture only returns black frames, and the overlay window cannot sit on top of a fullscreen swap chain. Set the game's display mode to borderless or windowed.",
+  "gamePathChange": "Change…"
 }
