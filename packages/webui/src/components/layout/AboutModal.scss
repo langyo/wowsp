@@ -181,4 +181,25 @@
       }
     }
   }
+
+  /* QQ feedback group pill — the very last row of the modal. */
+  &__qq {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-primary) / 8%);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+
+    strong {
+      color: rgb(var(--color-primary));
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+  }
 }

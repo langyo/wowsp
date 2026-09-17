@@ -42,3 +42,7 @@ Source: [wowsp](https://github.com/langyo/wowsp).
 ## Status
 
 🎉 **Ready for the initial release** — all 9 feature milestones (M1–M9) are complete: game detection, replay decoding, holographic 3D review, model converters, mod installer, live roster, Tab-triggered re-anchoring, and WG stat lookups. See [`PLAN.md`](./PLAN.md) for the roadmap history and [`docs/`](./docs) for architecture details.
+
+## Feedback
+
+Testing feedback is collected in our QQ group — feel free to join: **1125770228**. Report bugs, share replays, and follow development there.
