@@ -15,5 +15,7 @@
   "checking": "確認中...",
   "downloading": "ダウンロード中...",
   "issues": "問題を報告",
-  "license": "ライセンス"
+  "license": "ライセンス",
+  "qqGroupNotice": "テストのフィードバックは QQ グループまで：",
+  "qqGroupNumber": "1125770228"
 }

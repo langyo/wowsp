@@ -1,6 +1,6 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Check, Download, RefreshCw } from "@lucide/vue";
+import { Check, Download, MessageCircle, RefreshCw } from "@lucide/vue";
 
 import { HButton, HModal } from "@celestia-island/hikari";
 
@@ -11,9 +11,10 @@ import "./AboutModal.scss";
 
 /**
  * About modal: app name + version (dynamic via Tauri app API), tech stack,
- * links, license. Includes a "check for updates" action when the updater
- * is available. Every link opens through the Rust backend so the system
- * default browser is used (the webview itself never navigates remotely).
+ * links, license, and the QQ feedback group notice. Includes a "check for
+ * updates" action when the updater is available. Every link opens through
+ * the Rust backend so the system default browser is used (the webview
+ * itself never navigates remotely).
  */
 
 const TECH_LINKS = [
@@ -133,6 +134,12 @@ export default defineComponent({
               © langyo
             </button>
           </footer>
+
+          <p class="about-modal__qq">
+            <MessageCircle size={12} />
+            <span>{t("about.qqGroupNotice")}</span>
+            <strong>{t("about.qqGroupNumber")}</strong>
+          </p>
         </div>
       </HModal>
     );
