@@ -7,11 +7,14 @@ import { HButton, HModal } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
 import { openExternal } from "@/utils/openExternal";
+import AnnouncementContent from "./AnnouncementContent";
 import "./AboutModal.scss";
 
 /**
  * About modal: app name + version (dynamic via Tauri app API), tech stack,
- * links, license, and the QQ feedback group notice. Includes a "check for
+ * links, license, and the QQ feedback group notice. Carries the mandatory
+ * free & open-source notice as a permanent, always-visible card (no dismiss
+ * — the dismissible twin lives in AnnouncementDialog). Includes a "check for
  * updates" action when the updater is available. Every link opens through
  * the Rust backend so the system default browser is used (the webview
  * itself never navigates remotely).
@@ -114,6 +117,12 @@ export default defineComponent({
             >
               {t("about.issues")}
             </button>
+          </div>
+
+          {/* Mandatory free & open-source notice: permanent content here —
+              no ack button, the card simply always shows. */}
+          <div class="about-modal__notice">
+            <AnnouncementContent />
           </div>
 
           <footer class="about-modal__footer">

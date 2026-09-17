@@ -16,8 +16,6 @@
   "createdAt": "設立日時",
   "memberName": "メンバー",
   "roleLabel": "役職",
-  "descExpand": "続きを表示",
-  "descCollapse": "折りたたむ",
   "jumpClan": "クランを見る",
   "role": {
     "commander": "司令官",

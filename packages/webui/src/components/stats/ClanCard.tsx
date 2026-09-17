@@ -10,18 +10,10 @@
  * backend already makes; no extra requests per member (per-ship tables stay
  * on the player page — they would cost one WG request per member).
  */
-import {
-  computed,
-  defineComponent,
-  nextTick,
-  onBeforeUnmount,
-  ref,
-  watch,
-  type PropType,
-} from "vue";
+import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
 import { HTag } from "@celestia-island/hikari";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp } from "@lucide/vue";
+import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import IdentityHead from "@/components/stats/IdentityHead";
 import type { ClanInfo, ClanMember } from "@/api";
@@ -85,33 +77,6 @@ export default defineComponent({
     const sortKey = ref<SortKey | null>(null);
     const sortDir = ref<"desc" | "asc">("desc");
 
-    // Description collapse: clamped to 6 lines with a fade-out mask by
-    // default; the toggle only renders when the text actually overflows.
-    // Overflow can't be derived from the text (pre-line wrapping depends on
-    // width), so measure the clamped element; the ResizeObserver re-measures
-    // on layout/font changes. Expanded state skips measuring — the guard
-    // keeps the flag from being cleared by the observer while unfolded.
-    const descEl = ref<HTMLParagraphElement | null>(null);
-    const descOverflow = ref(false);
-    const descExpanded = ref(false);
-
-    function measureDesc() {
-      const el = descEl.value;
-      if (!el || descExpanded.value) return;
-      descOverflow.value = el.scrollHeight > el.clientHeight + 1;
-    }
-
-    // The <p> mounts/unmounts as descriptions come and go between clan swaps
-    // on this reused instance — re-point the observer at each new element so
-    // resize-driven re-measurement never watches a detached node. Observing
-    // also delivers an initial callback, which covers the first measurement.
-    const descResizeObserver = new ResizeObserver(measureDesc);
-    watch(descEl, (el, old) => {
-      if (old) descResizeObserver.unobserve(old);
-      if (el) descResizeObserver.observe(el);
-    });
-    onBeforeUnmount(() => descResizeObserver.disconnect());
-
     /** Three-state cycle per column: desc → asc → back to role default. */
     function toggleSort(k: SortKey) {
       if (sortKey.value !== k) {
@@ -160,10 +125,6 @@ export default defineComponent({
       () => {
         sortKey.value = null;
         sortDir.value = "desc";
-        // Same for the description collapse — start collapsed, re-measure
-        // after the new text renders.
-        descExpanded.value = false;
-        nextTick(measureDesc);
       },
     );
 
@@ -226,30 +187,7 @@ export default defineComponent({
           }}
         />
         {props.clan.description ? (
-          <>
-            <p
-              ref={descEl}
-              class={[
-                "clan-card__desc",
-                descExpanded.value ? "" : "clan-card__desc--clamped",
-              ]}
-            >
-              {props.clan.description}
-            </p>
-            {descOverflow.value ? (
-              <button
-                type="button"
-                class="clan-card__desc-toggle"
-                aria-expanded={descExpanded.value}
-                onClick={() => {
-                  descExpanded.value = !descExpanded.value;
-                }}
-              >
-                {descExpanded.value ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                {t(descExpanded.value ? "lookup.descCollapse" : "lookup.descExpand")}
-              </button>
-            ) : null}
-          </>
+          <p class="clan-card__desc">{props.clan.description}</p>
         ) : null}
 
         <div class="clan-card__hero">

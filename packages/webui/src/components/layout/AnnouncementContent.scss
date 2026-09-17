@@ -1,0 +1,41 @@
+/* Free & open-source notice body: one labelled block per language variant,
+   separated by hairline dividers. Shared by the forced first-launch dialog
+   and the About modal card, so this only styles the notice's own internals —
+   each host sizes and scrolls the wrapper around it. */
+
+.announce-content {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+
+  &__block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.6rem 0;
+
+    & + & {
+      border-top: 1px solid rgb(var(--color-border) / 15%);
+    }
+  }
+
+  &__lang {
+    font-size: var(--text-2xs);
+    letter-spacing: 0.02em;
+    color: rgb(var(--color-muted));
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: rgb(var(--color-text));
+  }
+
+  &__body {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: rgb(var(--color-text));
+  }
+}

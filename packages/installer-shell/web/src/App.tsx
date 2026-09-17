@@ -1,4 +1,4 @@
-import { defineComponent, onMounted, ref } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { CheckCircle2, FolderTree, Monitor, Usb, XCircle } from "lucide-vue-next";
 import {
   HAlert,
@@ -10,6 +10,7 @@ import {
   HTimeline,
 } from "@celestia-island/hikari";
 
+import AnnouncementCard from "./components/AnnouncementCard";
 import AppTitleBar from "./components/AppTitleBar";
 import LogPane, { type LogLine } from "./components/LogPane";
 import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
@@ -97,6 +98,10 @@ export default defineComponent({
     const hint = ref("");
     const licenseText = ref("");
     const agreed = ref(false);
+    // License-step notice countdown: holds the agree button for five
+    // seconds on EVERY license-step entry so the free & open-source
+    // announcement card cannot be skipped unseen.
+    const noticeCountdown = ref(5);
     const desktopShortcut = ref(true);
     const startMenuShortcut = ref(true);
     // Done-page option: start the installed app (portable copies launch
@@ -227,10 +232,35 @@ export default defineComponent({
           pushLog("error", event.message);
         }
       });
+      // Preview hook landed directly on the license step: arm the notice
+      // countdown here too, not only on the wizard's go("license").
+      if (step.value === "license") startNoticeCountdown();
     });
+
+    onBeforeUnmount(() => {
+      if (noticeTimer !== null) clearInterval(noticeTimer);
+    });
+
+    let noticeTimer: ReturnType<typeof setInterval> | null = null;
+
+    // (Re)arm the notice countdown: clears any pending interval, resets to
+    // 5, ticks down once a second, and clears itself when it reaches 0.
+    function startNoticeCountdown() {
+      if (noticeTimer !== null) clearInterval(noticeTimer);
+      noticeCountdown.value = 5;
+      noticeTimer = setInterval(() => {
+        noticeCountdown.value -= 1;
+        if (noticeCountdown.value <= 0) {
+          noticeCountdown.value = 0;
+          if (noticeTimer !== null) clearInterval(noticeTimer);
+          noticeTimer = null;
+        }
+      }, 1000);
+    }
 
     function go(next: StepKey) {
       step.value = next;
+      if (next === "license") startNoticeCountdown();
       if (next === "install") {
         running.value = true;
         installFailed.value = false;
@@ -494,6 +524,7 @@ export default defineComponent({
           <section class="wizard-pane">
             <h1>用户协议</h1>
             <p class="wizard-sub">安装前请阅读以下开源许可（Synthetic Source License 1.0）。</p>
+            <AnnouncementCard />
             <HScrollContainer class="license-box" axis="vertical">
               <pre>{licenseText.value}</pre>
             </HScrollContainer>
@@ -634,10 +665,12 @@ export default defineComponent({
                     <HButton
                       variant="primary"
                       size="lg"
-                      disabled={!agreed.value}
+                      disabled={!agreed.value || noticeCountdown.value > 0}
                       onClick={start}
                     >
-                      同意并安装
+                      {noticeCountdown.value > 0
+                        ? `同意并安装（${noticeCountdown.value} 秒）`
+                        : "同意并安装"}
                     </HButton>
                   </>
                 )}

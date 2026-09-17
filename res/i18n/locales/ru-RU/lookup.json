@@ -16,8 +16,6 @@
   "createdAt": "Дата основания",
   "memberName": "Участник",
   "roleLabel": "Должность",
-  "descExpand": "Показать ещё",
-  "descCollapse": "Свернуть",
   "jumpClan": "Открыть клан",
   "role": {
     "commander": "Командир",
