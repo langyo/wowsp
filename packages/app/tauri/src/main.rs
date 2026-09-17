@@ -80,6 +80,15 @@ fn main() {
             // exit). The arena watcher / overlay capture wind down on the real
             // drain triggered by the tray Quit item.
             if let WindowEvent::CloseRequested { api, .. } = event {
+                // Only the main window routes to the quit-confirm dialog.
+                // Tauri raises CloseRequested for programmatic close() too
+                // (same path as a user-initiated close), so without this
+                // label check the overlay teardown that runs a few seconds
+                // after startup (realm resolved → destroy + recreate) would
+                // pop the quit dialog in the main webview.
+                if window.label() != "main" {
+                    return;
+                }
                 // Prevent the default close. Emit an event to the frontend,
                 // which shows a confirm dialog (quit vs. minimize to tray).
                 tracing::info!(window = %window.label(), "window close requested → emitting close-requested event to frontend");
