@@ -18,6 +18,9 @@
   color: rgb(var(--color-muted));
   font-size: var(--text-sm);
   word-break: break-word;
+  /* Backend normalizes WG descriptions to \n; render them as line breaks
+     while collapsing runs of spaces. */
+  white-space: pre-line;
 }
 
 .clan-card__hero {

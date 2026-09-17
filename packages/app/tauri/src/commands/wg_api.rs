@@ -797,7 +797,7 @@ fn clan_info_from_response(
         description: clan_node
             .get("description")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_owned()),
+            .map(decode_wg_text),
         members_count,
         created_at: clan_node.get("created_at").and_then(|v| v.as_i64()),
         members,
@@ -808,6 +808,111 @@ fn clan_info_from_response(
         avg_pr,
         hidden_count,
     }
+}
+
+/// Named HTML entities that show up in WG-escaped clan text (players type
+/// quotes, arrows, dashes); anything outside this table must arrive
+/// numeric-encoded or it passes through visibly.
+const WG_NAMED_ENTITIES: &[(&str, &str)] = &[
+    ("quot", "\""),
+    ("amp", "&"),
+    ("lt", "<"),
+    ("gt", ">"),
+    ("apos", "'"),
+    ("nbsp", "\u{00a0}"),
+    ("hellip", "…"),
+    ("mdash", "—"),
+    ("ndash", "–"),
+    ("lsquo", "‘"),
+    ("rsquo", "’"),
+    ("ldquo", "“"),
+    ("rdquo", "”"),
+    ("laquo", "«"),
+    ("raquo", "»"),
+    ("deg", "°"),
+    ("middot", "·"),
+    ("copy", "©"),
+    ("reg", "®"),
+    ("trade", "™"),
+];
+
+/// Parse one entity at the start of `s` (which must begin with '&').
+/// Returns the decoded text and the consumed byte length; `None` leaves the
+/// '&' literal. Handles named entities plus decimal (`&#39;`) and hex
+/// (`&#x27;`) character references — WG encodes newlines as `&#10;` in some
+/// descriptions, so control characters decode normally.
+fn parse_wg_entity(s: &str) -> Option<(String, usize)> {
+    let body = s.strip_prefix('&')?;
+    if let Some(rest) = body.strip_prefix('#') {
+        let (digits, radix, head) =
+            if let Some(rest) = rest.strip_prefix('x').or_else(|| rest.strip_prefix('X')) {
+                (rest, 16, 3) // '&' '#' 'x'
+            } else {
+                (rest, 10, 2) // '&' '#'
+            };
+        let end = digits.find(';')?;
+        if end == 0 {
+            return None;
+        }
+        let num = u32::from_str_radix(&digits[..end], radix).ok()?;
+        let ch = char::from_u32(num)?;
+        return Some((ch.to_string(), head + end + 1)); // + ';'
+    }
+    let end = body.find(';')?;
+    let name = &body[..end];
+    let text = WG_NAMED_ENTITIES
+        .iter()
+        .find(|(key, _)| *key == name)
+        .map(|(_, text)| *text)?;
+    Some((text.to_owned(), 2 + end)) // '&' + name + ';'
+}
+
+/// Clean a WG-provided rich-text field (clan description) for display:
+/// decode HTML entities in a single left-to-right pass (`&amp;quot;`
+/// correctly yields `&quot;`, not a double decode; unknown or malformed
+/// entities pass through untouched), then normalize whitespace — CRLF/CR to
+/// LF and tabs to spaces — so the UI can render the result verbatim with
+/// `white-space: pre-line`.
+fn decode_wg_text(raw: &str) -> String {
+    // Longest decodable form is `&#x10FFFF;` (10 bytes); anything longer is
+    // not an entity we care about.
+    const MAX_ENTITY: usize = 10;
+
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'&' {
+            let end = bytes[i..]
+                .iter()
+                .position(|&b| b == b'&')
+                .map_or(bytes.len(), |p| i + p);
+            out.push_str(&raw[i..end]);
+            i = end;
+            continue;
+        }
+        // Clamp the window end down to a char boundary — `i + MAX_ENTITY`
+        // can land inside a multi-byte character (e.g. "&公会" after a bare
+        // '&'), which would panic the slice.
+        let mut window_end = raw.len().min(i + MAX_ENTITY);
+        while window_end < raw.len() && !raw.is_char_boundary(window_end) {
+            window_end -= 1;
+        }
+        let window = &raw[i..window_end];
+        match parse_wg_entity(window) {
+            Some((text, consumed)) => {
+                out.push_str(&text);
+                i += consumed;
+            },
+            None => {
+                out.push('&');
+                i += 1;
+            },
+        }
+    }
+    out.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\t', " ")
 }
 
 /// Parse a dog_tag JSON object from the Vortex API into a DogTag struct.
@@ -1259,5 +1364,61 @@ mod tests {
         assert_eq!(info.winrate, 0.0);
         assert_eq!(info.avg_damage, 0.0);
         assert_eq!(info.avg_pr, None);
+    }
+
+    #[test]
+    fn decode_wg_text_decodes_entities_and_normalizes_whitespace() {
+        // The exact artifact from the bug report: WG double-writes quotes
+        // around section names in clan descriptions.
+        assert_eq!(
+            decode_wg_text("&quot; OBJECTIVE&quot;* HAVE FUN"),
+            "\u{22} OBJECTIVE\u{22}* HAVE FUN"
+        );
+        // Named table + decimal + hex numeric references.
+        assert_eq!(
+            decode_wg_text("a&amp;b&lt;c&gt;d&#39;e&#x27;"),
+            "a&b<c>d'e'"
+        );
+        // nbsp keeps its non-breaking character.
+        assert_eq!(decode_wg_text("x&nbsp;y"), "x\u{00a0}y");
+        // Single pass: `&amp;quot;` must stay `&quot;` (no double decode).
+        assert_eq!(decode_wg_text("&amp;quot;"), "&quot;");
+        // Unknown named entity, bare '&', and malformed numeric pass through.
+        assert_eq!(decode_wg_text("&frobnicate;"), "&frobnicate;");
+        assert_eq!(decode_wg_text("100% & more"), "100% & more");
+        assert_eq!(decode_wg_text("&#; &#xZZ;"), "&#; &#xZZ;");
+        // Out-of-range numeric reference stays literal.
+        assert_eq!(decode_wg_text("&#999999999999;"), "&#999999999999;");
+        // Numeric control refs decode (WG uses &#10; for line breaks).
+        assert_eq!(decode_wg_text("a&#10;b"), "a\nb");
+        // CRLF/CR collapse to LF, tabs to spaces.
+        assert_eq!(decode_wg_text("a\r\nb\rc\td"), "a\nb\nc d");
+        // Multi-byte text passes through untouched.
+        assert_eq!(decode_wg_text("公会招人"), "公会招人");
+        // Regression: a bare '&' whose 10-byte entity window would end
+        // inside a multi-byte char must clamp, not panic.
+        assert_eq!(decode_wg_text("R&D部门招聘"), "R&D部门招聘");
+        assert_eq!(decode_wg_text("&éééééé"), "&éééééé");
+        // A real entity followed by multi-byte text still decodes when the
+        // window gets clamped shorter than MAX_ENTITY.
+        assert_eq!(decode_wg_text("&quot;公会"), "\"公会");
+    }
+
+    #[test]
+    fn clan_info_from_response_decodes_description_entities() {
+        // The clans/info description arrives HTML-escaped from WG; the
+        // assembled ClanInfo must carry display-ready text.
+        let clan_node = serde_json::json!({
+            "tag": "HOOD",
+            "name": "Hood Detonation Boom Boom Boom",
+            "members_count": 1,
+            "members_ids": [11],
+            "description": "&quot; OBJECTIVE&quot;* HAVE FUN,\r\nClan QQ:123"
+        });
+        let info = clan_info_from_response(500123, "asia", &clan_node, &serde_json::json!({}));
+        assert_eq!(
+            info.description.as_deref(),
+            Some("\" OBJECTIVE\"* HAVE FUN,\nClan QQ:123")
+        );
     }
 }
