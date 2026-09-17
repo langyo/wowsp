@@ -79,7 +79,7 @@ pub async fn is_game_running() -> bool {
 pub async fn get_game_process(
     installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
-    use wowsp_tauri_shared::{GameInstallKind, GameProcessInfo};
+    use wowsp_tauri_shared::GameProcessInfo;
 
     let Some(pid) = find_game_pid() else {
         return GameProcessInfo {
@@ -93,32 +93,24 @@ pub async fn get_game_process(
     };
 
     // Resolve the exe's full path, then match it against the known installs to
-    // decide which client (Steam / Wargaming / ...) is running.
+    // decide which client (Steam / Wargaming / ...) is running. When detection
+    // came up empty (unusual Steam library layout, moved folder), synthesize
+    // an install from the exe's own path so downstream features (GameParams,
+    // replays, mods) still get a usable game root — the same unification the
+    // setup modal offers as its "use running game's path" action.
     let exe_path = query_process_image_path(pid);
-    let matched = exe_path
+    let owned_matched = exe_path
         .as_deref()
-        .and_then(|exe| match_install(&installs, exe));
+        .and_then(|exe| match_install(&installs, exe))
+        .cloned()
+        .or_else(|| exe_path.as_deref().and_then(infer_install_from_exe));
+    let matched = owned_matched.as_ref();
 
     let (kind, realm) = match &matched {
         Some(m) => (Some(m.kind.clone()), m.realm.clone()),
         None => {
-            // No install list / no match — still try to infer Steam from the path
-            // (the most common case where the install wasn't pre-detected).
-            let is_steam = exe_path
-                .as_deref()
-                .map(|p| {
-                    let lower = p.to_lowercase();
-                    lower.contains("steamapps") && lower.contains("common")
-                })
-                .unwrap_or(false);
-            (
-                Some(if is_steam {
-                    GameInstallKind::Steam
-                } else {
-                    GameInstallKind::Wargaming
-                }),
-                None,
-            )
+            // No exe path at all — nothing to infer from.
+            (None, None)
         },
     };
 
@@ -128,8 +120,40 @@ pub async fn get_game_process(
         kind,
         realm,
         exe_path,
-        matched_install: matched.cloned(),
+        matched_install: owned_matched,
     }
+}
+
+/// Synthesize an install for a running exe that no detected install claims.
+/// The root is the segment above `bin\` (the 64-bit client lives in
+/// `bin/<build>/bin64/`), falling back to the exe's own directory for the
+/// root-level launcher stub.
+#[cfg(target_os = "windows")]
+fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
+    use wowsp_tauri_shared::{GameInstall, GameInstallKind};
+
+    let norm = exe.replace('/', "\\");
+    let root = match norm.rfind("\\bin\\") {
+        Some(i) => norm[..i].to_string(),
+        None => {
+            let i = norm.rfind('\\')?;
+            norm[..i].to_string()
+        },
+    };
+    if root.is_empty() {
+        return None;
+    }
+    let lower = norm.to_lowercase();
+    let kind = if lower.contains("steamapps") {
+        GameInstallKind::Steam
+    } else {
+        GameInstallKind::Wargaming
+    };
+    Some(GameInstall {
+        kind,
+        realm: super::game_detect::detect_realm(std::path::Path::new(&root)),
+        path: root,
+    })
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -37,5 +37,6 @@
   "overlayOff": "Désactivé",
   "overlayDesc": "Les statistiques des deux équipes sont récupérées automatiquement au début de la bataille ; maintenez Tab lorsque la fenêtre du jeu est au premier plan pour voir le taux de victoires et les dégâts moyens de chaque joueur à côté de son pseudo.",
   "overlayTabToggle": "Maintenir Tab pour voir les statistiques",
-  "overlayFullscreenNote": "※ Indisponible en plein écran exclusif : dans ce mode, la capture d'écran GDI ne renvoie que des images noires et la fenêtre de superposition ne peut pas s'afficher au-dessus d'une chaîne d'échange plein écran. Réglez le mode d'affichage du jeu sur sans bordure ou fenêtré."
+  "overlayFullscreenNote": "※ Indisponible en plein écran exclusif : dans ce mode, la capture d'écran GDI ne renvoie que des images noires et la fenêtre de superposition ne peut pas s'afficher au-dessus d'une chaîne d'échange plein écran. Réglez le mode d'affichage du jeu sur sans bordure ou fenêtré.",
+  "gamePathChange": "Modifier…"
 }

@@ -248,3 +248,9 @@
     display: flex;
   }
 }
+
+/* Unset game path — surface it in the warning color so the row reads as
+   action-needed, not as an ordinary value. */
+.settings-modal__hint.is-warning {
+  color: rgb(var(--color-warning, 230 160 40));
+}

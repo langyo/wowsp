@@ -1,0 +1,123 @@
+// Game-path setup modal. Shares the settings-modal card conventions
+// (translucent group cards, muted hints) so the two surfaces feel alike.
+
+.game-path-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+
+  &__desc,
+  &__hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: rgb(var(--color-muted));
+  }
+
+  // ── current path status row ────────────────────────────────────────────
+  &__current {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.6rem 0.85rem;
+    background: rgb(var(--color-surface) / 55%);
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-md);
+  }
+
+  &__current-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__current-path {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+    word-break: break-all;
+
+    &.is-unset {
+      color: rgb(var(--color-muted));
+      font-style: italic;
+    }
+  }
+
+  // ── detected install list ──────────────────────────────────────────────
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__list-title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__install {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    background: rgb(var(--color-surface) / 45%);
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+
+    &:hover {
+      background: rgb(var(--color-surface) / 70%);
+      border-color: rgb(var(--color-border) / 35%);
+    }
+
+    &.is-active {
+      border-color: rgb(var(--color-primary) / 60%);
+      background: rgb(var(--color-primary) / 10%);
+    }
+  }
+
+  &__install-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__install-path {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    word-break: break-all;
+  }
+
+  // ── running-game shortcut ──────────────────────────────────────────────
+  &__running {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.75rem;
+    background: rgb(var(--color-primary) / 8%);
+    border: 1px solid rgb(var(--color-primary) / 25%);
+    border-radius: var(--radius-md);
+
+    svg {
+      flex: none;
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  &__running-text {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-text));
+    word-break: break-all;
+  }
+}

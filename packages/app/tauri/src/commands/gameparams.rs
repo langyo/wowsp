@@ -2,35 +2,43 @@
 //!
 //! The WoWS client ships its full ship database — armor schemes, shell
 //! ballistics, dispersion curves, consumables — as a packed binary
-//! `res_wgs/GameParams.data`. The community tool `wowsunpack` (and its
-//! maintained fork `wowsinfo/wowsunpack`) unpacks it to a single large JSON.
+//! `content/GameParams.data` inside the `bin/<build>/` idx/pkg store. The
+//! community tool `wowsunpack` (vendored under `packages/tools/`) unpacks it.
 //!
-//! This module is the *consumer* of an already-unpacked `GameParams.json`.
-//! Integrating wowsunpack itself (Python tool, or a Rust port) is a separate
-//! milestone — see the project plan. For now we detect a user-provided
-//! `GameParams.json` at the game root (or next to `GameParams.data`) and
-//! extract one ship's subtree on demand, caching per-ship slices under
-//! `gameparams/<shipId>.json` so subsequent loads are instant.
+//! Lookup order for one ship's subtree:
+//!   1. `gameparams/<shipId>.json` AppData cache (instant).
+//!   2. A pre-unpacked `GameParams.json` at the game root (or the extract
+//!      script's LOCALAPPDATA cache) → extract slice → cache → return.
+//!   3. In-app unpack: mount the install's idx/pkg VFS, read
+//!      `content/GameParams.data`, decode the pickle, pick the ship's entry
+//!      → cache → return. This is the path every fresh player install takes
+//!      (nobody runs wowsunpack by hand); it costs a few seconds once per
+//!      ship, then the per-ship cache makes re-opens instant.
 //!
-//! The lazy-load contract: the frontend asks for `<shipId>`; we check the
-//! cache, then the unpacked JSON, then return an error guiding the user to
-//! unpack first if neither is present.
+//! The cache is keyed to the game's current `bin/<build>` number: when the
+//! game updates, stale slices are dropped so armor data never lags the
+//! client.
 
 use std::fs;
+use std::io::Read;
+use std::path::Path;
 
 /// Extract one ship's GameParams subtree. `game_root` is the directory
 /// containing `bin/` (i.e. the WoWS install root, as detected by
 /// `detect_game_install`).
-///
-/// Lookup order:
-///   1. `gameparams/<shipId>.json` cache (instant).
-///   2. `<game_root>/GameParams.json` (unpacked by wowsunpack) → extract
-///      slice → cache → return.
-///   3. If only `GameParams.data` exists → error with a user-actionable hint.
-///   4. Otherwise → error.
 #[tauri::command]
-pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json::Value, String> {
+pub async fn get_ship_gameparams(
+    ship_id: i64,
+    game_root: String,
+) -> Result<serde_json::Value, String> {
     let cache_file = format!("gameparams/{ship_id}.json");
+
+    // 0. Game updated since the cache was filled? Drop stale slices BEFORE
+    //    any cache read (one bin/ readdir — cheap even on the hot path) so
+    //    armor data never lags the client.
+    if let Some(build) = latest_build_with_idx(Path::new(&game_root)) {
+        invalidate_cache_on_build_change(build);
+    }
 
     // 1. Cache hit?
     if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
@@ -39,9 +47,31 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
         }
     }
 
-    // 2. Look for an unpacked GameParams.json at the game root, or in the
-    //    extract script's LOCALAPPDATA cache.
-    let root = std::path::Path::new(&game_root);
+    // 2. In-app unpack from the install's pkg store — the player path, and
+    //    always fresher than any loose pre-unpacked JSON. Heavy (reads +
+    //    decodes the full GameParams pickle) — keep it off the async runtime
+    //    threads. A failure here (no install / game updating) falls through
+    //    to the loose-JSON candidates and only surfaces if those fail too.
+    let game_root2 = game_root.clone();
+    let unpacked =
+        tokio::task::spawn_blocking(move || unpack_ship_from_install(&game_root2, ship_id))
+            .await
+            .map_err(|e| format!("GameParams 解包任务异常退出：{e}"));
+
+    // 3. Fallback: a pre-unpacked GameParams.json (dev flow: wowsunpack CLI
+    //    output at the game root, or the extract script's LOCALAPPDATA cache
+    //    for sessions without a resolvable install).
+    let unpack_err = match unpacked {
+        Ok(Ok(slice)) => {
+            let serialized = serde_json::to_string(&slice).unwrap_or_default();
+            let _ = appdata_write(cache_file, serialized);
+            return Ok(slice);
+        },
+        Ok(Err(e)) => e,
+        Err(e) => e,
+    };
+
+    let root = Path::new(&game_root);
     let local_cache = dirs_next::cache_dir()
         .unwrap_or_default()
         .join("WoWSP-extract")
@@ -51,9 +81,7 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
         root.join("bin").join("GameParams.json"),
         local_cache,
     ];
-    let json_path = json_candidates.iter().find(|p| p.exists());
-
-    if let Some(path) = json_path {
+    if let Some(path) = json_candidates.iter().find(|p| p.exists()) {
         let raw = fs::read_to_string(path).map_err(|e| format!("read GameParams.json: {e}"))?;
         let slice = extract_ship_slice(&raw, ship_id)?;
         let serialized = serde_json::to_string(&slice).unwrap_or_default();
@@ -61,22 +89,208 @@ pub fn get_ship_gameparams(ship_id: i64, game_root: String) -> Result<serde_json
         return Ok(slice);
     }
 
-    // 3. Only the binary .data exists → guide the user.
-    let data_candidates = [
-        root.join("bin").join("GameParams.data"),
-        root.join("res_wgs").join("GameParams.data"),
-    ];
-    if data_candidates.iter().any(|p| p.exists()) {
-        return Err(
-            "GameParams.data 需要 wowsunpack 解包。请先运行 wowsunpack 生成 GameParams.json，\
-             放在游戏根目录下。详见：https://github.com/wowsinfo/wowsunpack"
-                .to_string(),
-        );
+    Err(unpack_err)
+}
+
+// ── in-app unpacking (vendored wowsunpack) ────────────────────────────────
+
+/// Unpack one ship's entry straight from the install's `bin/<build>` pkg
+/// store. Mirrors what the wowsunpack CLI's `game-params --game-dir` mode
+/// does, minus writing a 350MB intermediate JSON: mount the VFS, read
+/// `content/GameParams.data`, decode, pick the ship, serialize just that
+/// entry.
+fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json::Value, String> {
+    let root = Path::new(game_root);
+    if !root.join("bin").is_dir() {
+        return Err(format!(
+            "游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。"
+        ));
     }
 
-    Err(format!(
-        "未找到 GameParams 数据。请确认游戏路径正确：{game_root}（应包含 bin/ 目录）"
-    ))
+    // Resolve the build carrying the idx/ index files.
+    let build = latest_build_with_idx(root).ok_or_else(|| {
+        format!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
+    })?;
+
+    let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
+        .map_err(|e| format!("读取游戏资源索引失败（build {build}）：{e}"))?;
+
+    let mut bytes = Vec::new();
+    vfs.join("content/GameParams.data")
+        .map_err(|e| format!("定位 content/GameParams.data 失败：{e}"))?
+        .open_file()
+        .map_err(|e| format!("打开 GameParams.data 失败（游戏可能正在更新）：{e}"))?
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("读取 GameParams.data 失败：{e}"))?;
+
+    let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
+        .map_err(|e| format!("解析 GameParams.data 失败：{e}"))?;
+
+    ship_slice_from_pickle(&pickle, ship_id)
+        .ok_or_else(|| format!("ship_id {ship_id} not found in GameParams"))
+}
+
+/// The newest `bin/<build>/` that actually ships an `idx/` directory — Steam
+/// installs keep several builds around and only some carry the index files
+/// the VFS needs (same rule as `scripts/extract/_common.py`).
+fn latest_build_with_idx(root: &Path) -> Option<u32> {
+    let bin = root.join("bin");
+    let mut builds: Vec<u32> = fs::read_dir(&bin)
+        .ok()?
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(|e| e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()))
+        .filter(|b| bin.join(b.to_string()).join("idx").is_dir())
+        .collect();
+    builds.sort_unstable();
+    builds.pop()
+}
+
+/// Wipe the per-ship cache when the game's build number changed since it was
+/// filled. Best-effort: a failed wipe only means stale data until the next
+/// build change, never a hard error.
+fn invalidate_cache_on_build_change(build: u32) {
+    let marker = appdata_dir()
+        .map(|d| d.join("gameparams").join("source-build.txt"))
+        .ok();
+    let Some(marker) = marker else { return };
+    let current = fs::read_to_string(&marker).ok();
+    if current.as_deref() == Some(build.to_string().as_str()) {
+        return;
+    }
+    if let Some(parent) = marker.parent() {
+        let _ = fs::remove_dir_all(parent);
+    }
+    let _ = appdata_write("gameparams/source-build.txt".to_string(), build.to_string());
+}
+
+/// Pick the ship's entry out of a decoded GameParams pickle. The raw root
+/// varies across game versions — modern builds wrap everything in a
+/// `{"": {…}}` namespace dict (alongside region keys like ASIA/EU), old
+/// builds use a flat `{name: entry}` dict, and some use a list/tuple whose
+/// first element holds the dict. On top of that, the wrapper and the
+/// individual entries may decode as Python objects (`Value::Object` whose
+/// `__dict__` is the real data) instead of plain dicts — the same dual
+/// shape wowsunpack's `params_from_data` unwraps. We mirror all of it,
+/// then scan entries by their `id` field (the real format is keyed by
+/// internal name like `PJSB018_Yamato_1944`). When several entries share
+/// an id (CV hull + plane squadrons), the one carrying `A_Artillery` wins.
+fn ship_slice_from_pickle(pickle: &pickled::Value, ship_id: i64) -> Option<serde_json::Value> {
+    // Normalize the root across game versions. List/tuple roots carry the
+    // params dict as their first element.
+    let params: pickled::Value = match pickle {
+        pickled::Value::List(items) => items.inner().first().cloned()?,
+        pickled::Value::Tuple(items) => items.inner().first().cloned()?,
+        // Modern format: {"": {param_name: param_data, ...}}. Old format:
+        // flat {param_name: param_data, ...} (no wrapper key).
+        _ => dict_entries(pickle)?
+            .iter()
+            .find(|(k, _)| matches!(k, pickled::HashableValue::String(s) if s.inner().is_empty()))
+            .and_then(|(_, v)| dict_like_is_dict(v).then(|| v.clone()))
+            .unwrap_or_else(|| pickle.clone()),
+    };
+
+    let mut candidates: Vec<pickled::Value> = Vec::new();
+    for (k, v) in dict_entries(&params)? {
+        // Direct id-keyed form first.
+        if let pickled::HashableValue::String(s) = &k {
+            if *s.inner() == ship_id.to_string() {
+                return to_json(&v).ok();
+            }
+        }
+        if pickled_entry_matches(&v, ship_id) {
+            candidates.push(v);
+        }
+    }
+
+    let pick = candidates
+        .iter()
+        .find(|v| pickled_get(v, "A_Artillery").is_some())
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|v| pickled_keys(v).iter().any(|k| k.starts_with("A_")))
+        })
+        .or_else(|| candidates.first())?
+        .clone();
+    to_json(&pick).ok()
+}
+
+fn to_json(v: &pickled::Value) -> Result<serde_json::Value, serde_json::Error> {
+    serde_json::to_value(v)
+}
+
+/// Entries of a dict-like pickled value: a plain `Dict`, or a Python object
+/// whose `__dict__` (a `DictObject` state) is the actual data. Clones the
+/// entry list — Rc-bump cheap, and references cannot outlive the RefCell
+/// guards anyway.
+fn dict_entries(v: &pickled::Value) -> Option<Vec<(pickled::HashableValue, pickled::Value)>> {
+    match v {
+        pickled::Value::Dict(d) => Some(d.inner().as_slice().to_vec()),
+        pickled::Value::Object(o) => {
+            let inner = o.inner();
+            let dict_obj = inner
+                .as_any()
+                .downcast_ref::<pickled::object::DictObject>()?;
+            Some(dict_obj.state().as_slice().to_vec())
+        },
+        _ => None,
+    }
+}
+
+/// Whether the value would yield entries via [`dict_entries`].
+fn dict_like_is_dict(v: &pickled::Value) -> bool {
+    match v {
+        pickled::Value::Dict(_) => true,
+        pickled::Value::Object(o) => {
+            let inner = o.inner();
+            inner
+                .as_any()
+                .downcast_ref::<pickled::object::DictObject>()
+                .is_some()
+        },
+        _ => false,
+    }
+}
+
+fn pickled_entry_matches(entry: &pickled::Value, ship_id: i64) -> bool {
+    pickled_get(entry, "id")
+        .or_else(|| pickled_get(entry, "ShipId"))
+        .and_then(|v| pickled_as_i64(&v))
+        .map(|n| n == ship_id)
+        .unwrap_or(false)
+}
+
+/// Look up a string key in a dict-like pickled value (owned clone out of the
+/// RefCell guard).
+fn pickled_get(v: &pickled::Value, key: &str) -> Option<pickled::Value> {
+    dict_entries(v)?
+        .into_iter()
+        .find(|(k, _)| matches!(k, pickled::HashableValue::String(s) if s.inner() == key))
+        .map(|(_, v)| v)
+}
+
+fn pickled_keys(v: &pickled::Value) -> Vec<String> {
+    dict_entries(v)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(k, _)| match k {
+            pickled::HashableValue::String(s) => Some(s.inner().to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Coerce a pickled number/string to i64. GameParams ids exceed u32, so the
+/// pickle may carry them as I64, unbounded Int, or (rarely) F64.
+fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
+    match v {
+        pickled::Value::I64(n) => Some(*n),
+        pickled::Value::Int(bi) => format!("{bi}").parse::<i64>().ok(),
+        pickled::Value::F64(f) if f.fract() == 0.0 && f.is_finite() => Some(*f as i64),
+        pickled::Value::String(s) => s.inner().parse::<i64>().ok(),
+        _ => None,
+    }
 }
 
 /// Extract one ship's subtree from the unpacked GameParams.json.
@@ -252,6 +466,61 @@ fn appdata_write(file: String, content: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// End-to-end smoke against a real install (dev machine only): mount the
+    /// pkg VFS, read + decode the real GameParams.data, pick a ship, and
+    /// round-trip the public unpack path. Guarded by WOWSP_GAME_PATH so CI
+    /// skips it. The ship is located by its PASB510 index-key prefix because
+    /// WG regenerates ids and reassigns index keys between builds (PASB510 is
+    /// Ohio on current installs) — neither can be hardcoded.
+    #[test]
+    #[ignore = "manual: requires a local game install; set WOWSP_GAME_PATH to run"]
+    fn smoke_unpack_from_real_install() {
+        let root = std::env::var("WOWSP_GAME_PATH").expect("WOWSP_GAME_PATH");
+
+        // Find the PASB510 ship's current id from the decoded params.
+        let install = Path::new(&root);
+        let build = latest_build_with_idx(install).expect("build");
+        let vfs = wowsunpack::game_data::build_game_vfs_for_build(install, build).expect("vfs");
+        let mut bytes = Vec::new();
+        vfs.join("content/GameParams.data")
+            .expect("join")
+            .open_file()
+            .expect("open GameParams.data")
+            .read_to_end(&mut bytes)
+            .expect("read GameParams.data");
+        eprintln!("[smoke] GameParams.data = {} bytes", bytes.len());
+        let pickle =
+            wowsunpack::game_params::convert::game_params_to_pickle(bytes).expect("decode");
+
+        let found: Option<(String, i64)> = (|| {
+            let wrapper = dict_entries(&pickle)?.into_iter().find(
+                |(k, _)| matches!(k, pickled::HashableValue::String(s) if s.inner().is_empty()),
+            )?;
+            for (k, v) in dict_entries(&wrapper.1)?.into_iter() {
+                if matches!(&k, pickled::HashableValue::String(s) if s.inner().starts_with("PASB510"))
+                {
+                    let id = pickled_get(&v, "id").and_then(|x| pickled_as_i64(&x))?;
+                    let name = match pickled_get(&v, "name")? {
+                        pickled::Value::String(s) => s.inner().to_string(),
+                        _ => return None,
+                    };
+                    return Some((name, id));
+                }
+            }
+            None
+        })();
+        eprintln!("[smoke] PASB510 ship = {found:?}");
+        let (want_name, want_id) = found.expect("PASB510 ship");
+
+        let v = unpack_ship_from_install(&root, want_id).expect("unpack ship");
+        let name = v.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+        eprintln!("[smoke] ship name = {name}");
+        assert_eq!(name, want_name);
+        let json = serde_json::to_string_pretty(&v).unwrap();
+        eprintln!("[smoke] slice size = {} bytes", json.len());
+        assert!(json.contains("A_Artillery") || json.contains("A_Hull"));
+    }
+
     #[test]
     fn extracts_ship_from_array_form() {
         // Two ships, array form (wowsunpack default output shape).
@@ -349,5 +618,130 @@ mod tests {
     fn entry_matches_id_accepts_string_id() {
         let entry = serde_json::json!({ "id": "4282948544", "name": "x" });
         assert!(entry_matches_id(&entry, 4282948544));
+    }
+
+    // ── in-app unpack helpers ─────────────────────────────────────────────
+
+    fn pdict(pairs: &[(&str, pickled::Value)]) -> pickled::Value {
+        let mut d = pickled::Dict::new();
+        for (k, v) in pairs {
+            d.insert(
+                pickled::HashableValue::String(k.to_string().into()),
+                v.clone(),
+            );
+        }
+        pickled::Value::Dict(d.into())
+    }
+
+    fn pstr(s: &str) -> pickled::Value {
+        pickled::Value::String(s.to_string().into())
+    }
+
+    /// The decoded pickle is keyed by internal name with the numeric id as a
+    /// field; the hull entry (A_Artillery) must win over a same-id module
+    /// entry (CV planes).
+    #[test]
+    fn picks_armed_entry_from_pickle_dict() {
+        let pickle = pdict(&[
+            (
+                "PASA002_Bogue",
+                pdict(&[
+                    ("id", pickled::Value::I64(4292851696)),
+                    ("name", pstr("PASA002_Bogue")),
+                ]),
+            ),
+            (
+                "PJSB018_Yamato_1944",
+                pdict(&[
+                    ("id", pickled::Value::I64(4276041424)),
+                    ("name", pstr("PJSB018_Yamato_1944")),
+                    (
+                        "A_Artillery",
+                        pdict(&[("maxCaliber", pickled::Value::I64(460))]),
+                    ),
+                ]),
+            ),
+        ]);
+        let ship = ship_slice_from_pickle(&pickle, 4276041424).unwrap();
+        assert_eq!(
+            ship.get("name").and_then(|v| v.as_str()),
+            Some("PJSB018_Yamato_1944")
+        );
+        assert_eq!(
+            ship.get("A_Artillery")
+                .and_then(|a| a.get("maxCaliber"))
+                .and_then(|v| v.as_i64()),
+            Some(460)
+        );
+    }
+
+    /// Unbounded big-int ids (protocol LONG) and F64-encoded ids coerce too.
+    #[test]
+    fn pickled_as_i64_handles_bigint_and_f64() {
+        assert_eq!(
+            pickled_as_i64(&pickled::Value::Int(Box::new(
+                "4282948544".parse::<pickled::num_bigint::BigInt>().unwrap()
+            ))),
+            Some(4282948544)
+        );
+        assert_eq!(
+            pickled_as_i64(&pickled::Value::F64(4282948544.0)),
+            Some(4282948544)
+        );
+        assert_eq!(pickled_as_i64(&pickled::Value::F64(1.5)), None);
+    }
+
+    /// Modern GameParams.data wraps the params dict under an empty-string
+    /// namespace key, alongside region keys (ASIA/EU/...) — the ship scan
+    /// must unwrap it instead of matching the 13 namespace entries.
+    #[test]
+    fn picks_entry_from_modern_wrapper_root() {
+        let inner = pdict(&[
+            (
+                "PASA002_Bogue",
+                pdict(&[
+                    ("id", pickled::Value::I64(4292851696)),
+                    ("name", pstr("PASA002_Bogue")),
+                ]),
+            ),
+            (
+                "PASB510_Montana",
+                pdict(&[
+                    ("id", pickled::Value::I64(4282948544)),
+                    ("name", pstr("PASB510_Montana")),
+                    (
+                        "A_Artillery",
+                        pdict(&[("maxCaliber", pickled::Value::I64(406))]),
+                    ),
+                ]),
+            ),
+        ]);
+        let root = pdict(&[("", inner), ("EU", pdict(&[])), ("ASIA", pdict(&[]))]);
+        let ship = ship_slice_from_pickle(&root, 4282948544).unwrap();
+        assert_eq!(
+            ship.get("name").and_then(|v| v.as_str()),
+            Some("PASB510_Montana")
+        );
+    }
+
+    /// `latest_build_with_idx` picks the highest-numbered bin/<build>/ that
+    /// actually carries idx/, skipping numeric dirs without one.
+    #[test]
+    fn latest_build_with_idx_prefers_idx_carriers() {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp-gp-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let bin = dir.join("bin");
+        for (build, with_idx) in [(100u32, true), (300, false), (200, true)] {
+            let b = bin.join(build.to_string());
+            let target = if with_idx { b.join("idx") } else { b };
+            fs::create_dir_all(&target).unwrap();
+        }
+        assert_eq!(latest_build_with_idx(&dir), Some(200));
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
