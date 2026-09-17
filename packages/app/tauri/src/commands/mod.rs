@@ -23,6 +23,8 @@ pub mod packets;
 pub mod ranked;
 pub mod replay;
 pub mod res_mods;
+pub mod row_match;
+pub mod row_recognize;
 pub mod screenshot;
 pub mod ship_stats;
 pub mod tab_dump;

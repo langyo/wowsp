@@ -885,6 +885,167 @@ mod tests {
             assert!(c >= rect.y && c <= rect.y + rect.height);
         }
     }
+
+    #[test]
+    fn name_strip_rects_split_allies_and_enemies() {
+        let roster = Rect {
+            x: 1000,
+            y: 300,
+            width: 1200,
+            height: 600,
+        };
+        // Uniform 50 px pitch, allies rows 0-2, enemies rows 3-5.
+        let rows: Vec<i32> = (0..6).map(|i| 340 + 50 * i).collect();
+        let ally = row_name_strip_rect(&roster, &rows, 0.5, 3, 0).expect("ally strip");
+        let enemy = row_name_strip_rect(&roster, &rows, 0.5, 3, 3).expect("enemy strip");
+        // Ally names sit in the LEFT half (starting at the roster's left
+        // edge), enemy names in the RIGHT half (starting at the team split).
+        assert_eq!(ally.x, 1000 + (600.0f32 * 0.14).round() as i32);
+        assert_eq!(enemy.x, 1600 + (600.0f32 * 0.14).round() as i32);
+        assert_eq!(ally.width, enemy.width);
+        // Vertical: row center 340 ± 50 × 0.42 → 21 px each way.
+        assert_eq!(ally.y, 340 - 21);
+        assert_eq!(ally.height, 42);
+        // The strip stays inside its own half (does not cross the split).
+        assert!(ally.x + ally.width <= 1600);
+        assert!(enemy.x >= 1600);
+        // Out-of-range rows yield nothing.
+        assert!(row_name_strip_rect(&roster, &rows, 0.5, 3, 6).is_none());
+        assert!(row_name_strip_rect(&roster, &rows, 0.5, 3, 100).is_none());
+        // ally_rows beyond the emitted rows is degenerate but well-defined:
+        // every row stays an ALLY row (the frontend's slice() mapping), so
+        // row 5 must still resolve to a LEFT-half strip.
+        let degenerate = row_name_strip_rect(&roster, &rows, 0.5, 100, 5).expect("ally row");
+        assert!(degenerate.x + degenerate.width <= 1600, "left half only");
+    }
+
+    #[test]
+    fn crop_rgba_extracts_exact_pixels_and_rejects_bad_geometry() {
+        let rgba = vec![
+            10, 20, 30, 255, 40, 50, 60, 255, //
+            70, 80, 90, 255, 100, 110, 120, 255,
+        ];
+        let (crop, w, h) = crop_rgba(
+            &rgba,
+            2,
+            2,
+            &Rect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!((w, h), (1, 2));
+        assert_eq!(crop, vec![40, 50, 60, 255, 100, 110, 120, 255]);
+        // Fully outside → nothing; empty rect → nothing; short buffer →
+        // nothing (never a panic from the watcher thread).
+        let out = Rect {
+            x: 5,
+            y: 5,
+            width: 2,
+            height: 2,
+        };
+        assert!(crop_rgba(&rgba, 2, 2, &out).is_none());
+        let empty = Rect {
+            x: 1,
+            y: 1,
+            width: 0,
+            height: 4,
+        };
+        assert!(crop_rgba(&rgba, 2, 2, &empty).is_none());
+        assert!(
+            crop_rgba(
+                &rgba[..4],
+                2,
+                2,
+                &Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2,
+                    height: 2
+                }
+            )
+            .is_none()
+        );
+        // Partially outside clamps to the intersection.
+        let (crop, w, h) = crop_rgba(
+            &rgba,
+            2,
+            2,
+            &Rect {
+                x: 1,
+                y: 1,
+                width: 4,
+                height: 4,
+            },
+        )
+        .unwrap();
+        assert_eq!((w, h), (1, 1));
+        assert_eq!(crop, vec![100, 110, 120, 255]);
+    }
+
+    #[test]
+    fn name_strips_capture_the_painted_names() {
+        // 1280x720 frame; a table in the classic position with 2 ally rows
+        // and 2 enemy rows. White "name" pixels are painted ONLY inside the
+        // computed strips of rows 0 (ally) and 2 (enemy) — the crops for
+        // those rows must read bright, the untouched rows dark.
+        let (w, h) = (1280u32, 720u32);
+        let mut img = vec![20u8; (w * h * 4) as usize];
+        for i in 0..(w * h) as usize {
+            img[i * 4 + 3] = 255;
+        }
+        let roster = Rect {
+            x: 320,
+            y: 160,
+            width: 600,
+            height: 300,
+        };
+        let rows = vec![220, 270, 220, 270];
+        let paint = |img: &mut [u8], r: &Rect| {
+            for y in r.y..r.y + r.height {
+                for x in r.x..r.x + r.width {
+                    let i = ((y as u32 * w + x as u32) * 4) as usize;
+                    img[i] = 240;
+                    img[i + 1] = 240;
+                    img[i + 2] = 240;
+                }
+            }
+        };
+        paint(
+            &mut img,
+            &row_name_strip_rect(&roster, &rows, 0.5, 2, 0).unwrap(),
+        );
+        paint(
+            &mut img,
+            &row_name_strip_rect(&roster, &rows, 0.5, 2, 2).unwrap(),
+        );
+        let strips = crop_row_name_strips(&img, w, h, &roster, &rows, 0.5, 2);
+        assert_eq!(strips.len(), 4);
+        let mean_luma = |c: &(Vec<u8>, u32, u32)| {
+            let (buf, cw, ch) = c;
+            let sum: u32 = buf.chunks_exact(4).map(|p| u32::from(p[0])).sum();
+            sum / (cw * ch)
+        };
+        assert!(
+            mean_luma(strips[0].as_ref().unwrap()) > 200,
+            "ally row 0 painted"
+        );
+        assert!(
+            mean_luma(strips[2].as_ref().unwrap()) > 200,
+            "enemy row 0 painted"
+        );
+        assert!(
+            mean_luma(strips[1].as_ref().unwrap()) < 40,
+            "ally row 1 untouched"
+        );
+        assert!(
+            mean_luma(strips[3].as_ref().unwrap()) < 40,
+            "enemy row 1 untouched"
+        );
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1134,6 +1295,9 @@ pub(crate) fn build_anchor(
         row_centers,
         team_split,
         table_detected,
+        // Anchors are built without recognition; the row→name pipeline in
+        // `row_recognize` fills `row_players` afterwards when it ran.
+        row_players: None,
     };
     (overlay, anchor)
 }
@@ -1167,4 +1331,152 @@ pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (R
         },
         rows,
     )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Row name-strip cropping (row → name recognition pipeline)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Horizontal bounds of the player-name column INSIDE one sub-table half, as
+/// fractions of that half's width. The vanilla panel lays each half out
+/// left→right as: ship-class/icon column (~0–0.14), player nickname
+/// (~0.14–0.66), ship name, then the numeric stat columns hugging the outer
+/// edge — so the strip starts after the icon column and stops before the
+/// ship column to keep the recognizer's input mostly nickname. The exact
+/// numbers are re-tuned against the #372 tab dumps when a real engine lands
+/// (PR 3b); until then the null recognizer never even sees these crops.
+const NAME_STRIP_X0_FRAC: f32 = 0.14;
+const NAME_STRIP_X1_FRAC: f32 = 0.66;
+
+/// Vertical half-extent of one row's name strip as a fraction of the row
+/// pitch. One row's glyphs sit well inside ±0.5 pitch; staying under it
+/// keeps the neighboring rows' text out of the crop (mis-pitching by half a
+/// row is exactly the wrong-name failure this pipeline fights).
+const NAME_STRIP_HALF_PITCH_FRAC: f32 = 0.42;
+
+/// One row's name-strip crop rectangle, PHYSICAL px relative to the CAPTURE
+/// (game window) origin — the same space `detect_roster` emits. `row` indexes
+/// `row_centers` (allies block first, then enemies — the anchor's order);
+/// `ally_rows` is the ally-block size (the roster's relation ≤ 1 count) and
+/// decides which half the row's strip sits in: allied names render in the
+/// left half, enemy names in the right half of the team split. Returns `None`
+/// for out-of-range rows and degenerate geometry.
+pub(crate) fn row_name_strip_rect(
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    ally_rows: usize,
+    row: usize,
+) -> Option<Rect> {
+    if row >= row_centers.len() {
+        return None;
+    }
+    // Block bounds within row_centers: allies [0, ally_rows), enemies
+    // [ally_rows, len). The split mirrors the frontend mapping (rows sliced
+    // at the roster's ally count) — a grid longer than the roster simply has
+    // an empty second block.
+    let (b0, b1) = if row < ally_rows {
+        (0, ally_rows.min(row_centers.len()))
+    } else {
+        (ally_rows, row_centers.len())
+    };
+    if b1 <= b0 {
+        return None;
+    }
+    let split = team_split.clamp(0.0, 1.0);
+    let (half_x0, half_w) = if row < ally_rows {
+        (roster.x as f32, roster.width as f32 * split)
+    } else {
+        (
+            roster.x as f32 + roster.width as f32 * split,
+            roster.width as f32 * (1.0 - split),
+        )
+    };
+    if half_w <= 0.0 {
+        return None;
+    }
+    let x0 = (half_x0 + half_w * NAME_STRIP_X0_FRAC).round() as i32;
+    let x1 = (half_x0 + half_w * NAME_STRIP_X1_FRAC).round() as i32;
+    // Row pitch from the row's own block neighbors (the two sub-tables can
+    // pitch differently); a single-row block falls back to a coarse
+    // roster-height estimate — rare (1v1), and the crop is frame-clamped
+    // either way.
+    let pitch = if b1 - b0 >= 2 {
+        if row + 1 < b1 {
+            (row_centers[row + 1] - row_centers[row]).abs()
+        } else {
+            (row_centers[row] - row_centers[row - 1]).abs()
+        }
+    } else {
+        (roster.height / (b1 - b0 + 1) as i32).max(1)
+    } as f32;
+    let half_pitch = pitch.max(1.0) * NAME_STRIP_HALF_PITCH_FRAC;
+    let cy = row_centers[row] as f32;
+    let y0 = (cy - half_pitch).round() as i32;
+    let y1 = (cy + half_pitch).round() as i32;
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some(Rect {
+        x: x0,
+        y: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    })
+}
+
+/// Copy a sub-rectangle of an RGBA frame into a fresh, tightly-packed
+/// buffer. Clamps to the frame; returns `None` for empty results, negative
+/// overflow, or a buffer that does not back the given dimensions — the
+/// pipeline treats that as "no crop" rather than guessing or panicking.
+pub(crate) fn crop_rgba(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    rect: &Rect,
+) -> Option<(Vec<u8>, u32, u32)> {
+    if rect.width <= 0 || rect.height <= 0 {
+        return None;
+    }
+    if rgba.len() < (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let fx = width as i64;
+    let fy = height as i64;
+    let x0 = (rect.x as i64).clamp(0, fx);
+    let y0 = (rect.y as i64).clamp(0, fy);
+    let x1 = (rect.x as i64 + rect.width as i64).clamp(0, fx);
+    let y1 = (rect.y as i64 + rect.height as i64).clamp(0, fy);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    let cw = (x1 - x0) as usize;
+    let ch = (y1 - y0) as usize;
+    let mut out = vec![0u8; cw * ch * 4];
+    for row in 0..ch {
+        let src = ((y0 as usize + row) * width as usize + x0 as usize) * 4;
+        let dst = row * cw * 4;
+        out[dst..dst + cw * 4].copy_from_slice(&rgba[src..src + cw * 4]);
+    }
+    Some((out, cw as u32, ch as u32))
+}
+
+/// Name-strip crops for every row of a detected table, in `row_centers`
+/// order. Elements are `None` for rows whose strip leaves the frame — the
+/// recognition pipeline reads those as "unrecognized", never guesses.
+pub(crate) fn crop_row_name_strips(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    ally_rows: usize,
+) -> Vec<Option<(Vec<u8>, u32, u32)>> {
+    (0..row_centers.len())
+        .map(|row| {
+            row_name_strip_rect(roster, row_centers, team_split, ally_rows, row)
+                .and_then(|rect| crop_rgba(rgba, width, height, &rect))
+        })
+        .collect()
 }
