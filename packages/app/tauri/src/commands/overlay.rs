@@ -106,7 +106,11 @@ pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
     stop_overlay_tab_watch().await?;
     let _ = super::arena_info::stop_arena_watcher().await;
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
-        win.close().map_err(|e| format!("close overlay: {e}"))?;
+        // destroy(), not close(): close() raises CloseRequested like a
+        // user-initiated close (and is subject to close interception),
+        // while this is pure programmatic teardown that must always go
+        // through.
+        win.destroy().map_err(|e| format!("destroy overlay: {e}"))?;
     }
     Ok(())
 }
