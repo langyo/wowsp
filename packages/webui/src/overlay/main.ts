@@ -136,10 +136,13 @@ function render() {
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
   const fontSize = Math.min(15, Math.max(9, pitch * 0.42));
-  const inset = Math.max(6, Math.round(pitch * 0.12 * dpr)) / dpr;
-  const splitX = anchor.rosterRect.x + anchor.rosterRect.width * anchor.teamSplit;
-  const alliesRight = (splitX - inset) / 1; // CSS px
-  const enemiesLeft = (splitX + inset) / 1;
+  // Chips sit OUTSIDE the table — inside they cover the ship names (live
+  // report). Ally chips grow LEFT from the table's left edge; enemy chips
+  // grow RIGHT from the right edge. The window reserves a side pad for this
+  // (overlay_padding_x on the Rust side).
+  const gap = Math.max(4, Math.round(pitch * 0.1));
+  const tableLeft = anchor.rosterRect.x / dpr;
+  const tableRight = (anchor.rosterRect.x + anchor.rosterRect.width) / dpr;
   const overlayW = anchor.overlayRect.width / dpr;
 
   const sides: Array<[Vehicle[], "ally" | "enemy", number[]]> = [
@@ -154,9 +157,11 @@ function render() {
       el.style.top = `${block[i] / dpr}px`;
       el.style.fontSize = `${fontSize.toFixed(1)}px`;
       if (side === "ally") {
-        el.style.right = `${Math.max(0, overlayW - alliesRight)}px`;
+        // Right edge of the chip just left of the table's left edge.
+        el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
       } else {
-        el.style.left = `${enemiesLeft}px`;
+        // Left edge of the chip just right of the table's right edge.
+        el.style.left = `${tableRight + gap}px`;
       }
       el.innerHTML = chipContent(v.name);
       root.appendChild(el);

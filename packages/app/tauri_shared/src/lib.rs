@@ -207,7 +207,7 @@ pub struct OverlayAnchor {
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Rect {
     pub x: i32,
