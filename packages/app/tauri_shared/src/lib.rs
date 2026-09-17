@@ -199,6 +199,11 @@ pub struct OverlayAnchor {
     /// (0.0–1.0) of the roster rect width. Allies occupy [0, split), enemies
     /// [split, 1].
     pub team_split: f32,
+    /// False when the anchor comes from the fallback geometry (battle HUD is
+    /// up but the team table itself was not located): the page then renders
+    /// a "table not located" hint box instead of stat chips.
+    #[serde(default)]
+    pub table_detected: bool,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.

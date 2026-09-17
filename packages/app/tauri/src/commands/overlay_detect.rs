@@ -811,24 +811,27 @@ mod tests {
             img[i + 2] = c.2;
             img[i + 3] = 255;
         };
-        // Bottom-left HP bar: bright green, ~300x12.
+        // Bottom-left HP bar: bright green, ~300x12 (real: y ≈ 78%).
         for y in 655..668 {
             for x in 60..360 {
                 put(&mut img, x, y, (50, 220, 110));
             }
         }
-        // Top scoreboard: dark strip + teal (friendly) and orange (enemy) bars.
-        for y in 18..62 {
-            for x in 390..890 {
-                put(&mut img, x, y, (40, 40, 46));
-            }
-        }
-        for y in 34..44 {
-            for x in 420..620 {
-                put(&mut img, x, y, (40, 205, 175));
-            }
-            for x in 700..860 {
-                put(&mut img, x, y, (245, 140, 60));
+        // Ship-icon blobs scattered across the top band (fuzzy: exact
+        // positions differ per mode; these mimic light silhouettes
+        // ~30x10 px at assorted spots).
+        for (bx, by) in [
+            (300u32, 110u32),
+            (520, 150),
+            (760, 95),
+            (980, 170),
+            (1240, 120),
+            (1500, 205),
+        ] {
+            for y in by..by + 10 {
+                for x in bx..bx + 30 {
+                    put(&mut img, x, y, (210, 214, 218));
+                }
             }
         }
         assert!(detect_battle_scene(&img, w, h));
@@ -879,7 +882,8 @@ mod tests {
             height: 250,
         };
         let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i as i32 + 20).collect();
-        let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5);
+        let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false);
+        assert!(!anchor.table_detected);
         // The overlay window covers ONLY the inflated table area...
         let pad = overlay_padding(&roster);
         assert_eq!(overlay.width, roster.width + 2 * pad);
@@ -918,17 +922,51 @@ mod tests {
 /// Sample stride over the capture (physical px) for the scene probe.
 const SCENE_STEP: u32 = 4;
 /// The HP bar is a long run of saturated green in the bottom-left corner.
+/// Measured on a real 1080p client: it sits at ~78% of the frame height
+/// (x ~3-15%), so the band spans well around it.
 const HP_GREEN_MIN_RUN: u32 = 48;
-/// The scoreboard is a dark translucent strip across the top-center with a
-/// teal (friendly) and an orange/red (enemy) score bar.
-const SCORE_DARK_FRAC: f32 = 0.20;
-const SCORE_BAR_MIN_RUN: u32 = 24;
+/// Vanilla rosters render small light ship silhouettes across the top of
+/// the screen. Detection is deliberately FUZZY and position-agnostic —
+/// roster placement differs between PvP / scenarios / co-op — so any icon-
+/// sized compact bright blob in the top band counts, wherever it sits.
+/// The size bounds reject broad sky/cloud expanses (too wide) and thin
+/// text strokes (too short).
+const ICON_MIN_W: u32 = 12;
+const ICON_MAX_W: u32 = 100;
+const ICON_MIN_H: u32 = 4;
+const ICON_MAX_H: u32 = 40;
+/// Bright threshold for icon pixels (silhouettes are near-white).
+const ICON_LUMA: u8 = 170;
+/// A full roster stacks many icons (PvP 5v5 -> 10+; scenarios fewer); a
+/// handful of ship-shaped blobs means a roster is on screen.
+const ICONS_MIN: u32 = 5;
 
 /// True when the frame carries the in-battle HUD: the bottom-left health bar
-/// plus the top-center scoreboard strip with its teal/orange score bars.
+/// plus the vanilla team rosters' ship silhouettes across the top.
 /// None of these render outside the 3D scene — port, login and loading
 /// screens all fail this probe — so it gates the whole overlay.
-pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
+/// Components of the battle-HUD probe, logged on failure so real captures
+/// can be tuned from the dev console alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SceneProbe {
+    /// Long green run in the bottom-left corner (health bar).
+    pub hp_bar: bool,
+    /// Icon-sized bright blobs counted across the whole top band (ship
+    /// silhouettes of the team rosters, any roster layout).
+    pub icon_blobs: u32,
+}
+
+impl SceneProbe {
+    pub(crate) fn detected(&self) -> bool {
+        self.hp_bar && self.icon_blobs >= ICONS_MIN
+    }
+}
+
+pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneProbe {
+    let none = SceneProbe {
+        hp_bar: false,
+        icon_blobs: 0,
+    };
     let px = |x: u32, y: u32| -> (u8, u8, u8) {
         let i = ((y * width + x) * 4) as usize;
         (rgba[i], rgba[i + 1], rgba[i + 2])
@@ -937,10 +975,10 @@ pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool 
         |c: (u8, u8, u8)| c.1 > 90 && c.1 as u16 > c.0 as u16 + 25 && c.1 as u16 > c.2 as u16 + 25;
 
     // ── HP bar: longest horizontal run of green in the bottom-left region ──
-    let x0 = width * 3 / 100;
-    let x1 = (width * 24 / 100).min(width.saturating_sub(1));
-    let y0 = height * 82 / 100;
-    let y1 = (height * 98 / 100).min(height.saturating_sub(1));
+    let x0 = width * 2 / 100;
+    let x1 = (width * 25 / 100).min(width.saturating_sub(1));
+    let y0 = height * 70 / 100;
+    let y1 = (height * 95 / 100).min(height.saturating_sub(1));
     let mut hp_found = false;
     if x1 > x0 && y1 > y0 {
         'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
@@ -961,82 +999,99 @@ pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool 
         }
     }
     if !hp_found {
-        return false;
+        return none;
     }
 
-    // ── Scoreboard: dark strip in the top-center band ──────────────────────
-    let sx0 = width * 30 / 100;
-    let sx1 = (width * 70 / 100).min(width);
-    let sy0 = height * 2 / 100;
-    let sy1 = (height * 12 / 100).min(height);
-    if sx1 <= sx0 || sy1 <= sy0 {
-        return false;
-    }
-    let mut total = 0u32;
-    let mut dark = 0u32;
-    for y in (sy0..sy1).step_by(SCENE_STEP as usize) {
-        for x in (sx0..sx1).step_by(SCENE_STEP as usize) {
-            let (r, g, b) = px(x, y);
-            total += 1;
-            if (r as u16 + g as u16 + b as u16) / 3 < 80 {
-                dark += 1;
-            }
-        }
-    }
-    if total == 0 || (dark as f32 / total as f32) < SCORE_DARK_FRAC {
-        return false;
-    }
-
-    // ── Teal (friendly) and orange/red (enemy) score bars in the strip ────
-    let teal_found = colored_run(
+    // ── Vanilla rosters: fuzzy ship-icon blobs across the whole top band ──
+    // Position-agnostic on purpose: scenario / co-op modes place their
+    // rosters differently from random battles, and mods may add their own
+    // bars — none of that may break the probe.
+    let icon_blobs = count_icon_blobs(
         &px,
-        sx0,
-        sx0 + (sx1 - sx0) * 45 / 100,
-        sy0,
-        sy1,
-        |(r, g, b)| g > 90 && g >= b + 15 && g as u16 > r as u16 + 15,
+        width * 2 / 100,
+        (width * 98 / 100).min(width.saturating_sub(1)),
+        height * 8 / 100,
+        (height * 35 / 100).min(height.saturating_sub(1)),
     );
-    let orange_found = colored_run(
-        &px,
-        sx0 + (sx1 - sx0) * 55 / 100,
-        sx1,
-        sy0,
-        sy1,
-        |(r, g, _b)| r > 110 && r as u16 > g as u16 + 40,
-    );
-    // Either bar alone is distinctive enough next to the HP bar + dark strip.
-    teal_found || orange_found
+    SceneProbe {
+        hp_bar: true,
+        icon_blobs,
+    }
 }
 
-/// Longest horizontal run of pixels passing `pred` in the region; true when
-/// it reaches `min_run` physical px.
-fn colored_run(
+/// Count compact bright blobs (ship silhouettes) in a region. A blob is a
+/// set of bright horizontal runs on adjacent scan rows whose x-ranges
+/// overlap; its size must fit the icon bounds, which rejects both broad
+/// sky/cloud areas and thin text strokes.
+fn count_icon_blobs(
     px: &impl Fn(u32, u32) -> (u8, u8, u8),
     x0: u32,
     x1: u32,
     y0: u32,
     y1: u32,
-    pred: impl Fn((u8, u8, u8)) -> bool,
-) -> bool {
+) -> u32 {
     if x1 <= x0 || y1 <= y0 {
-        return false;
+        return 0;
     }
+    // Collect bright runs per scan row: (y, x_start, x_end).
+    let mut runs: Vec<(u32, u32, u32)> = Vec::new();
     for y in (y0..y1).step_by(SCENE_STEP as usize) {
-        let mut run = 0u32;
-        let mut best = 0u32;
+        let mut cur: Option<(u32, u32)> = None;
         for x in (x0..x1).step_by(SCENE_STEP as usize) {
-            if pred(px(x, y)) {
-                run += SCENE_STEP;
-                best = best.max(run);
-            } else {
-                run = 0;
+            let (r, g, b) = px(x, y);
+            let luma = (u16::from(r) + u16::from(g) + u16::from(b)) / 3;
+            if luma >= u16::from(ICON_LUMA) {
+                cur = Some(match cur {
+                    Some((s, _)) => (s, x),
+                    None => (x, x),
+                });
+            } else if let Some((s, e)) = cur.take() {
+                if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
+                    runs.push((y, s, e));
+                }
             }
         }
-        if best >= SCORE_BAR_MIN_RUN {
-            return true;
+        if let Some((s, e)) = cur.take() {
+            if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
+                runs.push((y, s, e));
+            }
         }
     }
-    false
+    runs.sort_by_key(|&(y, xs, _)| (y, xs));
+
+    // Greedy vertical clustering: adjacent rows with overlapping x-ranges
+    // belong to the same blob.
+    let mut blobs = 0u32;
+    let mut open: Option<(u32, u32, u32, u32)> = None; // (y_last, x_min, x_max, y_first)
+    for (y, xs, xe) in runs {
+        open = match open {
+            Some((yl, xmin, xmax, yfirst))
+                if y - yl <= SCENE_STEP * 2 && xs <= xmax && xe >= xmin =>
+            {
+                Some((y, xmin.min(xs), xmax.max(xe), yfirst))
+            },
+            Some((yl, _xmin, _xmax, yfirst)) => {
+                let h = yl - yfirst;
+                if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
+                    blobs += 1;
+                }
+                Some((y, xs, xe, y))
+            },
+            None => Some((y, xs, xe, y)),
+        };
+    }
+    if let Some((yl, _xmin, _xmax, yfirst)) = open {
+        let h = yl - yfirst;
+        if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
+            blobs += 1;
+        }
+    }
+    blobs
+}
+
+/// Gate helper: the full HUD must be present.
+pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
+    probe_battle_scene(rgba, width, height).detected()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1058,6 +1113,7 @@ pub(crate) fn build_anchor(
     roster_rel: &Rect,
     mut row_centers: Vec<i32>,
     team_split: f32,
+    table_detected: bool,
 ) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
     let pad = overlay_padding(roster_rel);
     // Overlay rect in screen px: the table area inflated by the padding,
@@ -1089,6 +1145,7 @@ pub(crate) fn build_anchor(
         roster_rect: roster,
         row_centers,
         team_split,
+        table_detected,
     };
     (overlay, anchor)
 }
