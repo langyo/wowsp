@@ -1,21 +1,31 @@
 /**
  * Post-battle statistics parsing (BattleResults 0x22 payload).
  *
- * The payload is a JSON object; `playersPublicInfo` maps account id → a
- * fixed-position numeric array (WoWS PostBattle layout). We extract the
- * fields that are stable across builds:
+ * The payload is a JSON object; `playersPublicInfo` maps account id → the
+ * client's fixed-position `CLIENT_PUBLIC_RESULTS` array. Index semantics
+ * follow the authoritative layout vendored in
+ * packages/tools/wowsunpack-vendor/embedded_resources/constants.json
+ * (client 15.2), re-verified against 126 replays / 417 players on client
+ * 15.8: `damage` (426) equals the summed damage_* family, `remained_hp`
+ * (20) is 0 exactly for sunk ships, planes killed (280+281) stays ≤ ~40.
+ * Arrays shorter than 427 entries (older clients) simply lack the late
+ * fields — they surface as null/0 instead of wrong numbers.
  *
- *   [1]  player name
- *   [6]  team number (0 or 1 — the recorder's own team = "allies"; NOT a
- *        per-player relation like 0=self/1=ally/2=enemy)
- *   [7]  ship GameParams id (resolves to a localized ship name)
- *   [20] battle damage (verified magnitude across players)
- *   [21] survived (bool)
- *   [24+] per-ribbon counters (order follows the client's ribbon list)
+ *   [1]  player name          [6]  team number
+ *   [7]  ship GameParams id   [9]  realm code
+ *   [15] max hull health      [20] remained hull health
+ *   [21] survived             [32] ships killed
+ *   [35..37] main-gun shots (AP/CS/HE)   [66..68] main-gun hits
+ *   [69..74] secondary hits   [75] torpedo hits
+ *   [87, 96] depth-charge hits
+ *   [280, 281] planes killed (by ship / by carrier aircraft)
+ *   [404] base exp            [408] killer account id
+ *   [412] scouting damage     [426] battle damage
  *
- * Ribbon counter semantics per-index come from the client's
- * `PostBattlePlayerInfo` handling; the bundled ribbon art (res/images/ribbons)
- * is the fallback skin set for a later damage/ribbon HUD.
+ * History: the first implementation guessed the ribbon counters from a
+ * replay corpus without the layout table and read first-spotting counts
+ * (27), bomb drops (45) and distance (23) as plane kills / plane losses /
+ * remaining-HP — producing impossible values like "290 planes shot down".
  */
 
 export interface PostBattlePlayer {
@@ -26,85 +36,49 @@ export interface PostBattlePlayer {
   shipId: number | null;
   team: 0 | 1 | 2 | null;
   alive: boolean;
+  /** Battle damage dealt — index 426. */
   damage: number;
-  /** Damage taken — max hull HP (index 15) × (1 − hpRatio). */
+  /** Damage taken — max hull HP (15) − remained HP (20). */
   damageTaken: number;
   /** Frags (ships sunk). Index 32 — verified: the sum across players equals
    *  the match's sunk count. */
   frags: number;
-  /** Remaining-HP percent (0..100) — index 23. */
+  /** Remaining-HP percent (0..100) — remained HP (20) / max HP (15). */
   hpRatio: number | null;
-  /** Killer player accountId (index 408) + killer's damage (index 412). */
+  /** Killer player accountId (index 408). */
   killerId: number | null;
-  killerDamage: number | null;
-/** Per-ribbon counters (index 24..n). Semantics per index follow the
- *  client's PostBattle list; only indices with data are kept. */
-ribbons: PostBattleRibbon[];
+  /** Settlement base exp (index 404) — bots report 0; null when the array
+   *  is too short (older client layouts). */
+  exp: number | null;
+  /** Named stat counters (see RIBBON_SOURCES). Only stats with an
+   * authoritative counter are emitted; zero values are dropped. */
+  ribbons: PostBattleRibbon[];
 }
 
 /**
- * Mapping of the PostBattle counter zone (indices 24..45) to ribbon kinds,
- * modelled across 144 full replays / 1876 players cross-referenced against
- * ship classes (sub/dd/ca/bb/cv from GameParams prefixes), and cross-checked
- * against the decompiled client module (scripts/pyc_deob/ — fully
- * deobfuscated BattleResultsUtils.pyc), whose vocabulary confirms:
- * hits_main / shots_main_* / planes_killed / hits_atba (secondary/AA) /
- * damage_tpd / damage_fire / module_crits_* / _killed_by_ship
- *
- *  - 27 = PLANE shot down       — CVs 54/54 nonzero (mean 5); = planes_killed
- *  - 28 = main-weapon hits      — hit rate vs 30 is 27-36% across ALL classes
- *    (dd 1.65/5.71, bb 1.22/4.32, ca 1.15/4.31, sub 12.35/24.51, cv 4.3/13.63)
- *    = hits_main (aggregate of hits_main_ap/cs/he)
- *  - 30 = shots fired (≈3× hits, always ≥ 28) — = shots_main
- *  - 31 = AA/DP hits            — CVs mean 53, dd/sub 0
- *  - 32 = FRAG (verified: sum == sunk count) — = _killed_by_ship
- *  - 29 = torpedo hits          — CVs mean 10.5 (torpedo bombers)
- *  - 36 = secondary battery hits — Napoli 15, Nagato 43, dd 3, cv 0
- *    = hits_atba
- *  - 37 = main-battery shells   — Nagato 96 (16×6), ca 105, bb 15
- *  - 75 = ASW/depth-charge hits — subs/dds + a few BBs; values 1-8
- *  - 45 = CV aircraft stats     — inferred (CVs only)
- *  - 35/40/101/103 = shell aggregates (shots/hits families — NOT damage:
- *    ratio vs player damage ≈ 0) — hidden
- *
- * Known but unmapped (semantics too weak to display):
- *  - 46/47, 88/89, 92/93     CV aircraft pairs (≈equal duplicates)
- *  - 48                     airstrike/mine slot (ZH_1 590, Dutch CAs)
- *  - 87                     DD weapon slot (torpedo/ASW)
- *  - 35/40/101/103          shell aggregates; 85 shell-hit class;
- *    26 unclassified; 84 ≈2 players/battle (capture-like);
- *    113/119 full-team slots (per-battle 9-11 players)
- *  - paired duplicates 49/62, 50/51, 54/55, 58/59, 80/81, 96/97,
- *    115/116, 128/129 (≈100% equal)
+ * Ribbon kind → the CLIENT_PUBLIC_RESULTS indices summed for that counter.
+ * Each entry maps 1:1 onto a bundled ribbon icon (res/images/ribbons via
+ * ribbonIcons.ts). Counters without an authoritative source are not shown
+ * at all: there is no AA-hit counter in the public array, and the old
+ * "plane_losses" position (45) is actually bombs dropped.
  */
-export const RIBBON_INDEX_GUESS: ReadonlyArray<readonly [number, string]> = [
-  [27, "plane"],
-  [28, "main_caliber"],
-  [29, "torpedo"],
-  [30, "main_caliber_shots"],
-  [31, "aa_hits"],
-  [32, "frag"],
-  [36, "secondary_caliber"],
-  [37, "shells"],
-  [45, "plane_losses"],
-  [75, "dbomb"],
+export const RIBBON_SOURCES: ReadonlyArray<readonly [string, readonly number[]]> = [
+  ["frag", [32]],
+  ["main_caliber", [66, 67, 68]],
+  ["main_caliber_shots", [35, 36, 37]],
+  // Ship torpedoes (75) + torpedo-bomber hits (80, the total; the *_avia /
+  // *_alt splits at 81-83 are subsets of it).
+  ["torpedo", [75, 80]],
+  ["secondary_caliber", [69, 70, 71, 72, 73, 74]],
+  // Regular (87) and air-dropped (96) depth charges — mutually exclusive
+  // per weapon fit, so summing is safe.
+  ["dbomb", [87, 96]],
+  ["plane", [280, 281]],
 ];
 
-/** Indices whose semantics are strongly confirmed by the replay corpus. */
-const RIBBON_INDEX_VERIFIED = new Set<number>([27, 28, 32]);
-
-const RIBBON_KEY_BY_INDEX = new Map<number, string>(RIBBON_INDEX_GUESS);
-
-export function ribbonKeyOfIndex(index: number): string | undefined {
-  return RIBBON_KEY_BY_INDEX.get(index);
-}
-
-export function isRibbonIndexVerified(index: number): boolean {
-  return RIBBON_INDEX_VERIFIED.has(index);
-}
-
 export interface PostBattleRibbon {
-  index: number;
+  /** Ribbon kind key (see RIBBON_SOURCES / ribbon_names.json). */
+  key: string;
   value: number;
 }
 
@@ -141,16 +115,24 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         typeof arr[i] === "number" && Number.isFinite(arr[i] as number)
           ? (arr[i] as number)
           : null;
+      const sum = (idx: readonly number[]): number => {
+        let acc = 0;
+        for (const i of idx) {
+          const v = num(i);
+          if (v != null) acc += v;
+        }
+        return acc;
+      };
       const team = num(6);
       const shipId = num(7);
       const maxHp = num(15);
-      const hpRatio = num(23);
-      // Damage taken = hull HP lost = maxHp × (1 − remaining%). No dedicated
-      // damage-taken field exists in playersPublicInfo, so derive it.
+      const remained = num(20);
+      // Damage taken = hull HP lost = max − remained. Damage dealt to planes
+      // is not part of hull HP, so this stays a hull-only figure.
       const damageTaken =
-        maxHp != null && hpRatio != null
-          ? Math.round(maxHp * (1 - hpRatio / 100))
-          : 0;
+        maxHp != null && remained != null ? Math.max(0, Math.round(maxHp - remained)) : 0;
+      const hpRatio =
+        maxHp != null && remained != null && maxHp > 0 ? (remained / maxHp) * 100 : null;
       players.push({
         accountId: Number(pidStr) || 0,
         name: typeof arr[1] === "string" ? (arr[1] as string) : `#${pidStr}`,
@@ -158,20 +140,15 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         shipId: shipId != null && shipId > 0 ? shipId : null,
         team: team === 0 || team === 1 || team === 2 ? team : null,
         alive: arr[21] === true,
-        damage: num(20) ?? 0,
+        damage: num(426) ?? 0,
         damageTaken,
         frags: num(32) ?? 0,
         hpRatio,
-        /** Killer player accountId (index 408) + killer's damage (412). */
         killerId: num(408) ?? null,
-        killerDamage: num(412) ?? null,
-        // Ribbon/counter zone: indices 24..132 hold small per-ribbon counts;
-        // beyond that the array becomes big economy/damage totals. Kept as
-        // {index, value} pairs so the UI can show the raw layout positions.
-        ribbons: arr
-          .slice(24, 133)
-          .map((v, i): PostBattleRibbon => ({ index: 24 + i, value: v as number }))
-          .filter((x) => x.value > 0),
+        exp: num(404),
+        ribbons: RIBBON_SOURCES.map(
+          ([key, idx]): PostBattleRibbon => ({ key, value: sum(idx) }),
+        ).filter((x) => x.value > 0),
       });
     }
   }
