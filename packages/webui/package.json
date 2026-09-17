@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@celestia-island/hikari": "^0.40.18",
-    "@lucide/vue": "^1.38.0",
+    "@lucide/vue": "^1.46.0",
     "@tauri-apps/api": "^2.11.1",
     "@vue/devtools-api": "^8.2.1",
     "@vueuse/core": "^14.4.0",
