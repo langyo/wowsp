@@ -6,6 +6,12 @@
 //! query dropped), which answers `METHOD_NOT_FOUND` for every method. Realm
 //! "ru" must target `api.korabli.su` with a Lesta-registered application id —
 //! WG ids are rejected there with `INVALID_APPLICATION_ID` (407).
+//!
+//! The CN cluster (wowsgame.cn, operated by 360) never joined the WG
+//! developer program: there is no `/wows/**` public API for it. Its stats are
+//! served by the vortex endpoints backing profile.wowsgame.cn, so the WG-API
+//! modules route realm "cn" through `wg_api_cn` instead; only the vortex and
+//! clans hosts exist for it here.
 
 /// Public WG application id (from ApeRadar's open source — rate-limited per
 /// IP, not secret). Override with the `WOWSP_WG_APPLICATION_ID` env var.
@@ -26,27 +32,45 @@ pub fn api_host(realm: &str) -> Result<&'static str, String> {
         "asia" => "api.worldofwarships.asia",
         other => {
             return Err(format!(
-                "unsupported realm '{other}' (cn not supported by WG public API)"
+                "unsupported realm '{other}' (cn has no WG public API and is served by the vortex endpoints; expected one of ru/eu/na/asia/cn)"
             ));
         },
     })
 }
 
-/// Vortex (dog-tag) host for one realm. Lesta runs its own at
+/// Vortex host for one realm. Lesta runs its own at
 /// vortex.korabli.su; it answers a 308 to a trailing-slash path, which
-/// reqwest follows by default.
+/// reqwest follows by default. The CN cluster only exposes vortex (see the
+/// module docs) — its host backs profile.wowsgame.cn and is consumed by
+/// `wg_api_cn`.
 pub fn vortex_host(realm: &str) -> Result<&'static str, String> {
     Ok(match realm {
         "ru" => "vortex.korabli.su",
         "eu" => "vortex.worldofwarships.eu",
         "na" => "vortex.worldofwarships.com",
         "asia" => "vortex.worldofwarships.asia",
+        "cn" => "vortex.wowsgame.cn",
         other => {
             return Err(format!(
-                "unsupported realm '{other}' (cn not supported by WG public API)"
+                "unsupported realm '{other}' (expected one of ru/eu/na/asia/cn)"
             ));
         },
     })
+}
+
+/// Clans host for the CN cluster (the clanbase/members endpoints backing
+/// clans.wowsgame.cn). Only meaningful for realm "cn" — every other realm
+/// resolves clan data through the WG public API instead.
+pub fn cn_clans_host() -> &'static str {
+    "clans.wowsgame.cn"
+}
+
+/// Host serving encyclopedia content for a realm. Ship IDs and encyclopedia
+/// payloads are identical cluster-wide, but the CN cluster has no
+/// `/wows/encyclopedia/**` endpoint, so its queries are served from the ASIA
+/// API (same convention `get_game_version` already hardcodes).
+pub fn encyclopedia_host(realm: &str) -> Result<&'static str, String> {
+    api_host(if realm == "cn" { "asia" } else { realm })
 }
 
 /// Application id for one realm: the env override wins everywhere, otherwise
@@ -72,6 +96,7 @@ mod tests {
         assert_eq!(api_host("eu").unwrap(), "api.worldofwarships.eu");
         assert_eq!(api_host("na").unwrap(), "api.worldofwarships.com");
         assert_eq!(api_host("asia").unwrap(), "api.worldofwarships.asia");
+        // The CN cluster has no /wows/** public API — only vortex serves it.
         assert!(api_host("cn").is_err());
         assert!(api_host("xx").is_err());
     }
@@ -80,7 +105,17 @@ mod tests {
     fn vortex_host_maps_known_realms() {
         assert_eq!(vortex_host("ru").unwrap(), "vortex.korabli.su");
         assert_eq!(vortex_host("na").unwrap(), "vortex.worldofwarships.com");
-        assert!(vortex_host("cn").is_err());
+        assert_eq!(vortex_host("cn").unwrap(), "vortex.wowsgame.cn");
+    }
+
+    #[test]
+    fn encyclopedia_host_serves_cn_from_asia() {
+        assert_eq!(
+            encyclopedia_host("cn").unwrap(),
+            encyclopedia_host("asia").unwrap()
+        );
+        // Non-CN realms keep their own host.
+        assert_eq!(encyclopedia_host("eu").unwrap(), api_host("eu").unwrap());
     }
 
     #[test]
