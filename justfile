@@ -127,15 +127,18 @@ test target *FLAGS='':
 #   just lint i18n      → i18n parity check
 #   just check          → cargo check (fast compile check)
 
+# Both recipes mirror the CI rust gate (ci.yml "Rustfmt"/"Clippy") exactly:
+# app crates only — the vendored wowsunpack/wows-core sources keep upstream
+# formatting and lint style, so repo-wide fmt would fail on dependency code.
 _lint-full:
-    cargo fmt --all -- --check
-    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
+    cargo clippy -p wowsp_tauri --bins --no-deps -- -D warnings
     {{PM}} -r lint
     @python scripts/check_i18n.py --no-fail
 
 _lint-rust:
-    cargo fmt --all -- --check
-    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
+    cargo clippy -p wowsp_tauri --bins --no-deps -- -D warnings
 
 _lint-webui:
     {{PM}} -r lint
