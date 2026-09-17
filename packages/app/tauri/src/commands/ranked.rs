@@ -26,20 +26,6 @@ struct WgError {
     message: Option<String>,
 }
 
-/// Shared WG application ID (same as wg_api.rs).
-const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
-
-/// Resolve a realm key to its WG API host.
-fn realm_host(realm: &str) -> Result<&'static str, String> {
-    match realm {
-        "ru" => Ok("ru"),
-        "eu" => Ok("eu"),
-        "na" => Ok("com"),
-        "asia" => Ok("asia"),
-        _ => Err(format!("unknown realm: {realm}")),
-    }
-}
-
 /// Build a reqwest client for WG API calls (proxy-aware via network.rs).
 fn wg_client() -> Result<reqwest::Client, String> {
     crate::commands::network::http_client_builder()?
@@ -102,14 +88,13 @@ pub async fn get_ranked_stats(
     realm: String,
     season_count: Option<i64>,
 ) -> Result<Vec<RankedSeasonStats>, String> {
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
     let client = wg_client()?;
     let n = season_count.unwrap_or(5).min(30) as usize;
 
     // 1. Get season IDs (sorted descending = most recent first).
-    let seasons_url =
-        format!("https://api.worldofwarships.{host}/wows/seasons/info/?application_id={app_id}");
+    let seasons_url = format!("https://{host}/wows/seasons/info/?application_id={app_id}");
     let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> = client
         .get(&seasons_url)
         .send()
@@ -141,7 +126,7 @@ pub async fn get_ranked_stats(
     // 2. Get the player's ranked stats for those seasons.
     let id_str: Vec<String> = recent_ids.iter().map(|i| i.to_string()).collect();
     let stats_url = format!(
-        "https://api.worldofwarships.{host}/wows/seasons/accountinfo/?application_id={app_id}&account_id={account_id}&season_id={}",
+        "https://{host}/wows/seasons/accountinfo/?application_id={app_id}&account_id={account_id}&season_id={}",
         id_str.join(",")
     );
     let stats_resp: WgResponse<serde_json::Value> = client

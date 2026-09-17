@@ -1,19 +1,23 @@
-//! Wargaming Public API client (milestone M9).
+//! Wargaming / Lesta Public API client (milestone M9).
 //!
 //! Looks up a player by name on a given realm and returns a compact stats
-//! summary (battles, winrate, hidden flag, clan tag). The application_id is the
-//! well-known public WG app id (same one ApeRadar ships — it is meant for
-//! client-side use and rate-limited per IP, not secret).
+//! summary (battles, winrate, hidden flag, clan tag). The application_id is
+//! the well-known public WG app id (same one ApeRadar ships — it is meant for
+//! client-side use and rate-limited per IP, not secret); the Lesta-run RU
+//! cluster needs its own id, both resolved by `wg_realm::application_id`.
 //!
-//! Endpoints (per realm):
-//!   list    GET https://api.worldofwarships.<realm>/wows/account/list/?application_id=..&search=<name>
-//!   stats   GET https://api.worldofwarships.<realm>/wows/account/info/?application_id=..&account_id=<id>
-//!   clan    GET https://api.worldofwarships.<realm>/wows/clans/accountinfo/?application_id=..&account_id=<id>
-//!   clans   GET https://api.worldofwarships.<realm>/wows/clans/list/?application_id=..&search=<tag|name>
-//!   claninfo GET https://api.worldofwarships.<realm>/wows/clans/info/?application_id=..&clan_id=<id>&extra=members
+//! Endpoints (per realm, hosts from `wg_realm::api_host` — realm "ru" targets
+//! the Lesta API on korabli.su since api.worldofwarships.ru 301s to the EU
+//! API root and answers METHOD_NOT_FOUND for every method):
+//!   list    GET https://<api_host>/wows/account/list/?application_id=..&search=<name>
+//!   stats   GET https://<api_host>/wows/account/info/?application_id=..&account_id=<id>
+//!   clan    GET https://<api_host>/wows/clans/accountinfo/?application_id=..&account_id=<id>
+//!   clans   GET https://<api_host>/wows/clans/list/?application_id=..&search=<tag|name>
+//!   claninfo GET https://<api_host>/wows/clans/info/?application_id=..&clan_id=<id>&extra=members
 //!
-//! Realm → host suffix: ru→ru, eu→eu, na→com, asia→asia, cn→cn (the cn realm
-//! uses a different host; treated as unsupported here with a clear error).
+//! Realm → host suffix: ru→korabli.su (Lesta), eu→eu, na→com, asia→asia
+//! (the cn realm uses a different host; treated as unsupported here with a
+//! clear error).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -23,10 +27,6 @@ use serde::Deserialize;
 use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
-
-/// Public WG application id (from ApeRadar's open source — rate-limited per IP,
-/// not secret). Override with the `WOWSP_WG_APPLICATION_ID` env var.
-const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
 
 /// Concurrency cap for the batch name→account resolution. WG public API
 /// rate-limits ~20 req/s per IP; 4 in-flight keeps a full 24-player roster
@@ -40,8 +40,9 @@ const MIN_SEARCH_CHARS: usize = 3;
 /// Look up one player's stats by name on the given realm.
 #[tauri::command]
 pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerStats, String> {
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
+    let vortex_host = super::wg_realm::vortex_host(&realm)?;
     // Per-request timeout — a hung connection must not block a UI lookup
     // indefinitely.
     let client = crate::commands::network::http_client_builder()?
@@ -69,7 +70,7 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
     //    id — run the three requests concurrently instead of serially.
     let info_fut = async {
         let url = format!(
-            "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={}",
+            "https://{host}/wows/account/info/?application_id={app_id}&account_id={}",
             entry.account_id
         );
         let resp = client
@@ -86,7 +87,7 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
     let dog_tag_fut = async {
         let resp = client
             .get(format!(
-                "https://vortex.worldofwarships.{host}/api/accounts/{}",
+                "https://{vortex_host}/api/accounts/{}",
                 entry.account_id
             ))
             .send()
@@ -126,8 +127,8 @@ pub async fn lookup_players_stats_batch(
     if names.is_empty() {
         return Ok(Vec::new());
     }
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
     // Per-request timeout so one hung connection can't stall the roster all
     // battle long.
     let client = crate::commands::network::http_client_builder()?
@@ -145,7 +146,7 @@ pub async fn lookup_players_stats_batch(
         stream::iter(names)
             .map(|name| {
                 let url = format!(
-                    "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
+                    "https://{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
                 );
                 async move {
                     let resp = client_ref
@@ -192,7 +193,7 @@ pub async fn lookup_players_stats_batch(
     let info_fut = async {
         let resp = client
             .get(format!(
-                "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
+                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
             ))
             .send()
             .await
@@ -301,7 +302,7 @@ async fn fetch_clan_info_for_accounts(
         .join(",");
     let Ok(resp) = client
         .get(format!(
-            "https://api.worldofwarships.{host}/wows/clans/accountinfo/?application_id={app_id}&account_id={id_list}&extra=clan"
+            "https://{host}/wows/clans/accountinfo/?application_id={app_id}&account_id={id_list}&extra=clan"
         ))
         .send()
         .await
@@ -361,7 +362,7 @@ async fn account_list_one(
 ) -> Result<Option<AccountListEntry>, String> {
     let list: WgResponse<Vec<AccountListEntry>> = client
         .get(format!(
-            "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
+            "https://{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
         ))
         .send()
         .await
@@ -388,7 +389,7 @@ async fn account_nickname_by_id(
 ) -> Result<Option<String>, String> {
     let resp = client
         .get(format!(
-            "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={account_id}"
+            "https://{host}/wows/account/info/?application_id={app_id}&account_id={account_id}"
         ))
         .send()
         .await
@@ -426,8 +427,8 @@ pub async fn suggest_players(
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
     let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(10))
         .build()
@@ -451,7 +452,7 @@ pub async fn suggest_players(
     }
     let resp = client
         .get(format!(
-            "https://api.worldofwarships.{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
+            "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
             encode_query(&q)
         ))
         .send()
@@ -485,8 +486,8 @@ pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSugg
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
     let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(10))
         .build()
@@ -506,7 +507,7 @@ pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSugg
     }
     let resp = client
         .get(format!(
-            "https://api.worldofwarships.{host}/wows/clans/list/?application_id={app_id}&search={}&limit=10",
+            "https://{host}/wows/clans/list/?application_id={app_id}&search={}&limit=10",
             encode_query(&q)
         ))
         .send()
@@ -545,7 +546,7 @@ async fn fetch_clan_node(
     let cid = clan_id.to_string();
     let resp = client
         .get(format!(
-            "https://api.worldofwarships.{host}/wows/clans/info/?application_id={app_id}&clan_id={cid}&extra=members"
+            "https://{host}/wows/clans/info/?application_id={app_id}&clan_id={cid}&extra=members"
         ))
         .send()
         .await
@@ -592,8 +593,8 @@ fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> ClanSuggestion 
 /// clan-wide aggregate endpoint.
 #[tauri::command]
 pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, String> {
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(&realm)?;
+    let app_id = super::wg_realm::application_id(&realm);
+    let host = super::wg_realm::api_host(&realm)?;
     let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(15))
         .build()
@@ -618,7 +619,7 @@ pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, S
             .join(",");
         let resp = client
             .get(format!(
-                "https://api.worldofwarships.{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
+                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
             ))
             .send()
             .await
@@ -1097,20 +1098,6 @@ fn compute_pr(avg_damage: Option<f32>, winrate: Option<f32>, battles: Option<i64
     Some(pr.round() as i64)
 }
 
-fn realm_host(realm: &str) -> Result<&'static str, String> {
-    Ok(match realm {
-        "ru" => "ru",
-        "eu" => "eu",
-        "na" => "com",
-        "asia" => "asia",
-        other => {
-            return Err(format!(
-                "unsupported realm '{other}' (cn not supported by WG public API)"
-            ));
-        },
-    })
-}
-
 #[derive(Deserialize)]
 struct WgResponse<T> {
     status: String,
@@ -1141,15 +1128,6 @@ struct ClanListEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn realm_host_maps_known_realms() {
-        assert_eq!(realm_host("ru").unwrap(), "ru");
-        assert_eq!(realm_host("na").unwrap(), "com");
-        assert_eq!(realm_host("asia").unwrap(), "asia");
-        assert!(realm_host("cn").is_err());
-        assert!(realm_host("xx").is_err());
-    }
 
     #[test]
     fn pvp_stats_extracts_all_fields() {

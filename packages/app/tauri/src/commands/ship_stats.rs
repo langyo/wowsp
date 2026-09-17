@@ -13,8 +13,6 @@ use std::fs;
 use serde::Deserialize;
 use wowsp_tauri_shared::{GameVersionInfo, PlayerShipStats, StatsSnapshot};
 
-const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
-
 /// Fetch (and cache) a player's per-ship PvP stats. `ship_name_map` is built
 /// from the encyclopedia cache so each entry carries a readable name.
 #[tauri::command]
@@ -115,11 +113,11 @@ pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot>
 // ── WG API fetch ────────────────────────────────────────────────────────
 
 async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipStats>, String> {
-    let app_id = std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| WG_APP_ID.to_string());
-    let host = realm_host(realm)?;
+    let app_id = super::wg_realm::application_id(realm);
+    let host = super::wg_realm::api_host(realm)?;
     let client = wg_client()?;
     let url = format!(
-        "https://api.worldofwarships.{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&fields=ship_id,last_battle_time,pvp"
+        "https://{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&fields=ship_id,last_battle_time,pvp"
     );
     let resp: WgResponse<serde_json::Value> = client
         .get(&url)
@@ -286,16 +284,6 @@ async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
 
 fn wg_client() -> Result<reqwest::Client, String> {
     crate::commands::network::build_http_client()
-}
-
-fn realm_host(realm: &str) -> Result<&'static str, String> {
-    Ok(match realm {
-        "ru" => "ru",
-        "eu" => "eu",
-        "na" => "com",
-        "asia" => "asia",
-        other => return Err(format!("unsupported realm '{other}'")),
-    })
 }
 
 fn now_ts() -> i64 {
