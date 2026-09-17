@@ -60,6 +60,15 @@ windows.workspace = true
 # AppData directory resolution
 dirs-next.workspace = true
 
+# In-app GameParams unpacking (bin/<build> idx/pkg VFS → pickle → per-ship JSON)
+wowsunpack.workspace = true
+# Pickle value type of the decoded GameParams (direct dependency: we pattern
+# match on wowsunpack's return value)
+pickled.workspace = true
+
+# Native folder picker for the manual game-path entry
+rfd.workspace = true
+
 # Image handling for capture analysis
 image.workspace = true
 

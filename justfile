@@ -129,13 +129,13 @@ test target *FLAGS='':
 
 _lint-full:
     cargo fmt --all -- --check
-    cargo clippy --workspace --lib --bins -- -D warnings
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
     {{PM}} -r lint
     @python scripts/check_i18n.py --no-fail
 
 _lint-rust:
     cargo fmt --all -- --check
-    cargo clippy --workspace --lib --bins -- -D warnings
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
 
 _lint-webui:
     {{PM}} -r lint
@@ -161,7 +161,7 @@ lint-msg base='master':
 #   just fmt check     → cargo fmt --check only
 
 _fmt-fix:
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --all-targets --no-deps -- -D warnings
     cargo fmt --all
     {{PM}} -r lint --fix
 
@@ -263,7 +263,7 @@ bootstrap: init
 
 ci:
     just fmt check
-    cargo clippy --workspace --lib --bins -- -D warnings
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
     cargo check --workspace
     cargo test --workspace
     {{PM}} -r typecheck

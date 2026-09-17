@@ -7,8 +7,10 @@ import { useWallpaper } from "@/theme/useWallpaper";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type NetworkConfig } from "@/api";
+import { useConfigStore } from "@/stores/config";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import AboutModal from "@/components/layout/AboutModal";
+import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import "./SettingsModal.scss";
 
 /** Hikari token → CSS rgb() color. */
@@ -38,7 +40,9 @@ export default defineComponent({
     const wallpaper = useWallpaper();
     const lang = useLanguage();
     const overlayCfg = useOverlayConfigStore();
+    const configStore = useConfigStore();
     const showAbout = ref(false);
+    const showGamePath = ref(false);
 
     onMounted(() => {
       void overlayCfg.load();
@@ -248,6 +252,23 @@ export default defineComponent({
             <p class="settings-modal__hint">{t("settings.geolocationHint")}</p>
           </section>
 
+          {/* game path — where the armor/ballistics loader + replay list
+              read from; opens the same setup modal the first-launch prompt
+              uses (detected installs, running-game shortcut, manual pick) */}
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.gamePath")}</h2>
+            <p class={["settings-modal__hint", configStore.activeInstall ? "" : "is-warning"].filter(Boolean).join(" ")}>
+              {configStore.activeInstall
+                ? configStore.activeInstall.path
+                : t("common.gamePath.unset")}
+            </p>
+            <div>
+              <HButton variant="secondary" onClick={() => (showGamePath.value = true)}>
+                {t("settings.gamePathChange")}
+              </HButton>
+            </div>
+          </section>
+
           {/* network proxy — applies to every outbound request (stats, model
               pack, updates); resource CDN mirrors remote resources
               independently of the proxy mode */}
@@ -329,6 +350,11 @@ export default defineComponent({
         <AboutModal
           modelValue={showAbout.value}
           onUpdate:modelValue={(v: boolean) => (showAbout.value = v)}
+        />
+
+        <GamePathSetupModal
+          modelValue={showGamePath.value}
+          onUpdate:modelValue={(v: boolean) => (showGamePath.value = v)}
         />
       </HModal>
     );

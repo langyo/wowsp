@@ -122,6 +122,13 @@ async def cmd_set_game_path(request: Request) -> dict:
     return {"kind": "manual", "path": body.get("path", ""), "realm": "asia"}
 
 
+@app.post("/api/pick_game_folder")
+async def cmd_pick_game_folder() -> dict | None:
+    # No native dialog in the browser mock — behave like a cancelled pick so
+    # the setup modal's browse action is a no-op there.
+    return None
+
+
 @app.post("/api/ribbon_skin_dir")
 async def cmd_ribbon_skin_dir(request: Request):
     body = await request.json()

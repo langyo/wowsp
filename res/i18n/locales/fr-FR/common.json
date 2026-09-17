@@ -30,5 +30,21 @@
   "search": {
     "fuzzy": "Recherche floue",
     "hint": "Saisissez un nom de navire, un pinyin ou un nom anglais"
+  },
+  "retry": "Réessayer",
+  "gamePath": {
+    "title": "Chemin du jeu",
+    "desc": "WoWSP a besoin du dossier d'installation de World of Warships pour lire les données de blindage et de balistique des navires, les replays et les ressources de mods.",
+    "current": "Chemin actuel",
+    "unset": "Non défini",
+    "detected": "Installations détectées",
+    "browse": "Parcourir…",
+    "redetect": "Relancer la détection",
+    "runningHint": "Jeu en cours d'exécution détecté : {path}",
+    "useRunning": "Utiliser ce chemin",
+    "noneFound": "Aucune installation du jeu détectée. Sélectionnez manuellement le dossier d'installation (il doit contenir WorldOfWarships.exe et un dossier bin/).",
+    "applied": "Chemin du jeu mis à jour",
+    "invalid": "Le dossier sélectionné n'est pas valide",
+    "setAction": "Définir le chemin du jeu"
   }
 }

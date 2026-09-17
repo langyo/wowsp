@@ -116,6 +116,13 @@ dirs-next = "^2"
 
 # wowsunpack / wows-core vendor deps (inherited via workspace = true)
 wows-core = { path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
+# In-app GameParams unpacking: vfs-mmap = idx/pkg VFS over the game install
+# (parsing + arc come in transitively). The `bin` CLI feature stays off.
+wowsunpack = { path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
+    "vfs-mmap",
+] }
+# Native folder picker for manual game-path selection (Windows IFileDialog).
+rfd = { version = "0.16", default-features = false }
 clap = { version = "4.6.0", features = ["derive"] }
 rootcause = "0.12"
 glob = "0.3"

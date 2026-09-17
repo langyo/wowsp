@@ -30,5 +30,21 @@
   "search": {
     "fuzzy": "Búsqueda difusa",
     "hint": "Escribe un nombre de buque, pinyin o nombre en inglés"
+  },
+  "retry": "Reintentar",
+  "gamePath": {
+    "title": "Ruta del juego",
+    "desc": "WoWSP necesita la carpeta de instalación de World of Warships para leer los datos de blindaje y balística de los barcos, las repeticiones y los recursos de mods.",
+    "current": "Ruta actual",
+    "unset": "Sin establecer",
+    "detected": "Instalaciones detectadas",
+    "browse": "Examinar carpeta…",
+    "redetect": "Volver a detectar",
+    "runningHint": "Juego en ejecución detectado: {path}",
+    "useRunning": "Usar esta ruta",
+    "noneFound": "No se detectó ninguna instalación del juego. Selecciona manualmente la carpeta de instalación (debe contener WorldOfWarships.exe y una carpeta bin/).",
+    "applied": "Ruta del juego actualizada",
+    "invalid": "La carpeta seleccionada no es válida",
+    "setAction": "Establecer ruta del juego"
   }
 }

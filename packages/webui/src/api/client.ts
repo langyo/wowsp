@@ -771,6 +771,9 @@ export const api = {
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
+  /** Native folder picker for the manual game-location entry. Null = the
+   *  user cancelled the dialog. */
+  pickGameFolder: () => transport.invoke<GameInstall | null>(RPC.pick_game_folder),
   /** res_mods ribbon-skin directory for a game install (None if unmodded). */
   ribbonSkinDir: (gamePath: string) =>
     transport.invoke<string | null>(RPC.ribbon_skin_dir, { gamePath }),
