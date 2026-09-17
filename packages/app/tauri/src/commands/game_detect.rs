@@ -235,6 +235,10 @@ fn resolve_steam_install() -> Option<PathBuf> {
 
 /// Read the last `Selected realm: <x>` line from the game's
 /// `profile/clientrunner.log` (same logic as ApeRadar's `Server.AutoDetectServer`).
+/// Lower-cased defensively: every realm consumer (WG host resolution, the CN
+/// vortex dispatch, encyclopedia cache keys) expects the canonical lowercase
+/// code, and the CN client's log spelling has not been verified against the
+/// international one.
 fn detect_realm(game_root: &std::path::Path) -> Option<String> {
     let log = game_root.join("profile").join("clientrunner.log");
     let Ok(text) = std::fs::read_to_string(&log) else {
@@ -245,7 +249,7 @@ fn detect_realm(game_root: &std::path::Path) -> Option<String> {
         .find_map(|l| {
             l.split("Selected realm:")
                 .nth(1)
-                .map(|s| s.trim().to_owned())
+                .map(|s| s.trim().to_lowercase())
         })
         .filter(|s| !s.is_empty())
 }

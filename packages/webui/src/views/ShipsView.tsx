@@ -45,7 +45,7 @@ export default defineComponent({
 
     // ── realm picker + load ────────────────────────────────────────────
     const realm = ref(accounts.activeRealm || "asia");
-    const realms = ["ru", "eu", "na", "asia"];
+    const realms = ["ru", "eu", "na", "asia", "cn"];
 
     // ── view mode (tech-tree vs list) ─────────────────────────────────
     const viewMode = ref<"tree" | "grid">("tree");

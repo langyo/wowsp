@@ -38,7 +38,7 @@ export default defineComponent({
     const searchName = ref("");
     const searching = ref(false);
     const searchError = ref<string | null>(null);
-    const realms = ["ru", "eu", "na", "asia"];
+    const realms = ["ru", "eu", "na", "asia", "cn"];
     // Per-account stats cache (hydrated on modal open).
     const statsById = ref<Map<string, PlayerStats>>(new Map());
 

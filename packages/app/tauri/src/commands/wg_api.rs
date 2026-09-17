@@ -15,9 +15,10 @@
 //!   clans   GET https://<api_host>/wows/clans/list/?application_id=..&search=<tag|name>
 //!   claninfo GET https://<api_host>/wows/clans/info/?application_id=..&clan_id=<id>&extra=members
 //!
-//! Realm → host suffix: ru→korabli.su (Lesta), eu→eu, na→com, asia→asia
-//! (the cn realm uses a different host; treated as unsupported here with a
-//! clear error).
+//! Realm → host suffix: ru→korabli.su (Lesta), eu→eu, na→com, asia→asia.
+//! The cn realm (wowsgame.cn, 360-operated) has no WG public API — every
+//! command below routes realm "cn" to the vortex-based `wg_api_cn` module
+//! instead of the shared host resolution.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -40,6 +41,9 @@ const MIN_SEARCH_CHARS: usize = 3;
 /// Look up one player's stats by name on the given realm.
 #[tauri::command]
 pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerStats, String> {
+    if realm == "cn" {
+        return super::wg_api_cn::lookup_player_stats(name).await;
+    }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
     let vortex_host = super::wg_realm::vortex_host(&realm)?;
@@ -126,6 +130,9 @@ pub async fn lookup_players_stats_batch(
 ) -> Result<Vec<Option<PlayerStats>>, String> {
     if names.is_empty() {
         return Ok(Vec::new());
+    }
+    if realm == "cn" {
+        return super::wg_api_cn::lookup_players_stats_batch(names).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
@@ -338,8 +345,9 @@ async fn fetch_clan_info_for_accounts(
 /// Percent-encode one query component. The `format!`-built request URLs
 /// inline user input; Url encodes spaces/unicode but leaves query-structural
 /// characters (`&`, `#`, `+`) alone, which would silently truncate or
-/// rewrite searches (clan names freely contain `&`).
-fn encode_query(s: &str) -> String {
+/// rewrite searches (clan names freely contain `&`). Also used for the CN
+/// vortex path segments (it encodes `/` too, which a path segment needs).
+pub(crate) fn encode_query(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
         match b {
@@ -423,6 +431,9 @@ pub async fn suggest_players(
     search: String,
     realm: String,
 ) -> Result<Vec<PlayerSuggestion>, String> {
+    if realm == "cn" {
+        return super::wg_api_cn::suggest_players(search).await;
+    }
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -482,6 +493,9 @@ pub async fn suggest_players(
 /// purely numeric query is a clan id resolved directly via clans/info.
 #[tauri::command]
 pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSuggestion>, String> {
+    if realm == "cn" {
+        return super::wg_api_cn::suggest_clans(search).await;
+    }
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -569,7 +583,7 @@ async fn fetch_clan_node(
         .cloned())
 }
 
-fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> ClanSuggestion {
+pub(crate) fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> ClanSuggestion {
     ClanSuggestion {
         clan_id,
         tag: node
@@ -593,6 +607,9 @@ fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> ClanSuggestion 
 /// clan-wide aggregate endpoint.
 #[tauri::command]
 pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, String> {
+    if realm == "cn" {
+        return super::wg_api_cn::lookup_clan_info(clan_id).await;
+    }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
     let client = crate::commands::network::http_client_builder()?
@@ -873,8 +890,9 @@ fn parse_wg_entity(s: &str) -> Option<(String, usize)> {
 /// correctly yields `&quot;`, not a double decode; unknown or malformed
 /// entities pass through untouched), then normalize whitespace — CRLF/CR to
 /// LF and tabs to spaces — so the UI can render the result verbatim with
-/// `white-space: pre-line`.
-fn decode_wg_text(raw: &str) -> String {
+/// `white-space: pre-line`. Entity-idempotent, so it also serves the CN
+/// clan descriptions (plain text) for the whitespace pass alone.
+pub(crate) fn decode_wg_text(raw: &str) -> String {
     // Longest decodable form is `&#x10FFFF;` (10 bytes); anything longer is
     // not an entity we care about.
     const MAX_ENTITY: usize = 10;
@@ -920,7 +938,7 @@ fn decode_wg_text(raw: &str) -> String {
 /// The Vortex response has fields like `texture_id`, `symbol_id`,
 /// `border_color_id`, `background_color_id`, `background_id`. The color
 /// fields are ARGB-packed u32 values.
-fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared::DogTag> {
+pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared::DogTag> {
     let get_u32 = |key: &str| -> u32 {
         v.get(key)
             .and_then(|x| x.as_u64())
@@ -946,23 +964,24 @@ fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared::DogTag> {
 /// All fields are optional — hidden profiles yield null, and casual accounts
 /// may lack division splits. PR (Personal Rating) uses a community proxy
 /// derived from avg_damage and winrate (not WG's internal hidden score).
-struct PvpStats {
-    battles: Option<i64>,
-    winrate: Option<f32>,
-    avg_damage: Option<f32>,
-    avg_xp: Option<f32>,
-    kd_ratio: Option<f32>,
-    survival_rate: Option<f32>,
-    hit_rate: Option<f32>,
-    pr: Option<i64>,
-    ships_played: Option<i64>,
-    solo_wr: Option<f32>,
-    div2_wr: Option<f32>,
-    div3_wr: Option<f32>,
+/// Also fed with vortex-normalized nodes by `wg_api_cn`.
+pub(crate) struct PvpStats {
+    pub(crate) battles: Option<i64>,
+    pub(crate) winrate: Option<f32>,
+    pub(crate) avg_damage: Option<f32>,
+    pub(crate) avg_xp: Option<f32>,
+    pub(crate) kd_ratio: Option<f32>,
+    pub(crate) survival_rate: Option<f32>,
+    pub(crate) hit_rate: Option<f32>,
+    pub(crate) pr: Option<i64>,
+    pub(crate) ships_played: Option<i64>,
+    pub(crate) solo_wr: Option<f32>,
+    pub(crate) div2_wr: Option<f32>,
+    pub(crate) div3_wr: Option<f32>,
 }
 
 impl PvpStats {
-    fn extract(stats: Option<&serde_json::Value>) -> Self {
+    pub(crate) fn extract(stats: Option<&serde_json::Value>) -> Self {
         let statistics = stats.filter(|v| !v.is_null());
         let statistics = match statistics {
             Some(s) => s,
@@ -1086,7 +1105,11 @@ fn div_wr(pvp: &serde_json::Value, key: &str) -> Option<f32> {
 /// needed inputs are absent. The real PR weights expected-damage by ship tier
 /// — this is a coarse single-number approximation that's good enough for a
 /// tier badge.
-fn compute_pr(avg_damage: Option<f32>, winrate: Option<f32>, battles: Option<i64>) -> Option<i64> {
+pub(crate) fn compute_pr(
+    avg_damage: Option<f32>,
+    winrate: Option<f32>,
+    battles: Option<i64>,
+) -> Option<i64> {
     let dmg = avg_damage?;
     let wr = winrate?;
     let _ = battles?;

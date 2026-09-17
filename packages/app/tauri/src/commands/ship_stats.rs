@@ -113,6 +113,9 @@ pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot>
 // ── WG API fetch ────────────────────────────────────────────────────────
 
 async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipStats>, String> {
+    if realm == "cn" {
+        return fetch_ship_stats_cn(account_id).await;
+    }
     let app_id = super::wg_realm::application_id(realm);
     let host = super::wg_realm::api_host(realm)?;
     let client = wg_client()?;
@@ -147,6 +150,51 @@ async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipSta
     for entry in arr {
         if let Some(raw) = RawShipStats::from_wg(&entry) {
             out.push(raw);
+        }
+    }
+    Ok(out)
+}
+
+/// CN arm: the vortex per-ship endpoint
+/// `GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/`. Its
+/// `data.<id>.statistics` is a ship_id-keyed map of battle-type nodes with
+/// vortex field names (battles_count, survived, …); the ship id lives in the
+/// map key and no last_battle_time is served.
+async fn fetch_ship_stats_cn(account_id: i64) -> Result<Vec<RawShipStats>, String> {
+    let host = super::wg_realm::vortex_host("cn")?;
+    let client = super::wg_api_cn::vortex_client()?;
+    let url = format!("https://{host}/api/accounts/{account_id}/ships/");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("CN ships request: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("CN ships: HTTP {}", resp.status()));
+    }
+    let v: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("CN ships parse: {e}"))?;
+    if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
+        let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
+        return Err(format!("CN ships: {err}"));
+    }
+    // A hidden profile answers ok with an empty statistics map.
+    let stats_map = v
+        .get("data")
+        .and_then(|d| d.get(account_id.to_string()))
+        .and_then(|p| p.get("statistics"))
+        .and_then(|s| s.as_object());
+    let mut out = Vec::new();
+    if let Some(map) = stats_map {
+        for (ship_id, node) in map {
+            let Some(id) = ship_id.parse::<i64>().ok() else {
+                continue;
+            };
+            if let Some(raw) = RawShipStats::from_vortex(id, node.get("pvp")) {
+                out.push(raw);
+            }
         }
     }
     Ok(out)
@@ -193,6 +241,31 @@ impl RawShipStats {
                 .get("last_battle_time")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
+        })
+    }
+
+    /// CN vortex per-ship node: `pvp` carries vortex field names and the ship
+    /// id comes from the enclosing map key. Several counters (damage, frags,
+    /// survival) are served as null on ships the player barely touched — they
+    /// degrade to 0, same tolerance as the WG path. No last_battle_time is
+    /// served at all.
+    fn from_vortex(ship_id: i64, pvp: Option<&serde_json::Value>) -> Option<Self> {
+        let pvp = pvp.filter(|v| !v.is_null())?;
+        let battles = pvp.get("battles_count")?.as_i64()?;
+        if battles == 0 {
+            return None;
+        }
+        Some(Self {
+            ship_id,
+            battles,
+            wins: pvp.get("wins").and_then(|v| v.as_i64()).unwrap_or(0),
+            damage_caused: pvp
+                .get("damage_dealt")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+            frags: pvp.get("frags").and_then(|v| v.as_i64()).unwrap_or(0),
+            survived_battles: pvp.get("survived").and_then(|v| v.as_i64()).unwrap_or(0),
+            last_battle_time: 0,
         })
     }
 }
@@ -377,6 +450,29 @@ mod tests {
     fn raw_ship_stats_skips_null_pvp() {
         let entry = serde_json::json!({ "ship_id": 1, "pvp": null });
         assert!(RawShipStats::from_wg(&entry).is_none());
+    }
+
+    #[test]
+    fn raw_ship_stats_from_vortex_parses_cn_shape() {
+        // Live-response shape: the ship id comes from the map key and pvp
+        // carries vortex names; sparse counters arrive as null.
+        let node = serde_json::json!({
+            "pvp": { "battles_count": 91, "wins": 31, "damage_dealt": null, "frags": null },
+            "pve": { "battles_count": 2, "wins": 1 }
+        });
+        let raw = RawShipStats::from_vortex(4285445840, node.get("pvp")).unwrap();
+        assert_eq!(raw.ship_id, 4285445840);
+        assert_eq!(raw.battles, 91);
+        assert_eq!(raw.wins, 31);
+        assert_eq!(raw.damage_caused, 0);
+        assert_eq!(raw.frags, 0);
+        assert_eq!(raw.survived_battles, 0);
+        assert_eq!(raw.last_battle_time, 0);
+        // Missing / null / zero-battle nodes are skipped like the WG path.
+        assert!(RawShipStats::from_vortex(1, None).is_none());
+        assert!(RawShipStats::from_vortex(1, Some(&serde_json::Value::Null)).is_none());
+        let zero = serde_json::json!({ "battles_count": 0, "wins": 0 });
+        assert!(RawShipStats::from_vortex(1, Some(&zero)).is_none());
     }
 
     /// Snapshot append: write 3 snapshots, read back, expect length 3 in order.

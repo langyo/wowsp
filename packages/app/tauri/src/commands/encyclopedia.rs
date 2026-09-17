@@ -107,8 +107,11 @@ pub async fn get_ship_encyclopedia(
         }
     }
 
+    // The CN cluster has no encyclopedia endpoints; ship IDs and payloads are
+    // cluster-wide identical, so realm "cn" is served from the ASIA API (the
+    // compound cache key still keeps CN-named entries apart).
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm)?;
+    let host = super::wg_realm::encyclopedia_host(&realm)?;
     let client = std::sync::Arc::new(wg_client()?);
     let base_url = format!(
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
