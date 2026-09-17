@@ -152,7 +152,9 @@ pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), St
         if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, true) {
             tracing::warn!(error = %e, "emit overlay-visibility failed");
         }
-        show_no_activate(&win);
+        if let Ok(hwnd) = win.hwnd() {
+            show_async(windows::Win32::Foundation::HWND(hwnd.0));
+        }
     } else {
         if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, false) {
             tracing::warn!(error = %e, "emit overlay-visibility failed");
@@ -163,18 +165,43 @@ pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), St
 }
 
 /// Click-through + no-activate styling applied right after creation, so the
-/// overlay can never eat a click or steal focus from the game.
+/// overlay can never eat a click or steal focus from the game. Also kills
+/// the DWM non-client frame: on Windows 11 every top-level window gets a
+/// 1px DWM border (+ rounded corners), and on a fully transparent window
+/// that border is the ONLY visible thing — the user saw a floating rectangle
+/// outline over the game.
 #[cfg(target_os = "windows")]
 fn post_create_window_setup(win: &tauri::WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::{
+        DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND, DwmSetWindowAttribute,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE,
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
     let _ = win.set_ignore_cursor_events(true);
     if let Ok(hwnd) = win.hwnd() {
         let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
         unsafe {
             let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-            let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE.0 as isize);
+            // TOOLWINDOW also keeps the borderless window out of Alt-Tab.
+            let _ = SetWindowLongPtrW(
+                hwnd,
+                GWL_EXSTYLE,
+                style | WS_EX_NOACTIVATE.0 as isize | WS_EX_TOOLWINDOW.0 as isize,
+            );
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_NCRENDERING_POLICY,
+                &(DWMNCRP_DISABLED.0) as *const _ as *const core::ffi::c_void,
+                4,
+            );
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &(DWMWCP_DONOTROUND.0) as *const _ as *const core::ffi::c_void,
+                4,
+            );
         }
     }
 }
@@ -182,26 +209,6 @@ fn post_create_window_setup(win: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "windows"))]
 fn post_create_window_setup(win: &tauri::WebviewWindow) {
     let _ = win.set_ignore_cursor_events(true);
-}
-
-/// Show the overlay without activating it (`SW_SHOWNOACTIVATE`) — tauri's
-/// `show()` maps to `SW_SHOW`, which WOULD steal focus from the game.
-#[cfg(target_os = "windows")]
-fn show_no_activate(win: &tauri::WebviewWindow) {
-    use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
-    if let Ok(hwnd) = win.hwnd() {
-        let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-        unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        }
-    } else {
-        let _ = win.show();
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn show_no_activate(win: &tauri::WebviewWindow) {
-    let _ = win.show();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -436,13 +443,15 @@ fn tab_key_down() -> bool {
 /// Place the overlay window over the game rect, push the anchor to the
 /// webview, then show without activating.
 ///
-/// The native placement is QUEUED onto the main thread instead of dispatched
-/// blocking: `set_position`/`set_size` from this thread would wait on the
-/// main thread while it chews through the WebView2 resize those very calls
-/// trigger — and a watcher stuck there can no longer observe the Tab
-/// release, leaving the overlay frozen on screen (seen in live testing).
-/// Ordering is preserved by the main-thread queue, so a show queued before a
-/// hide can never overtake it.
+/// All native window work goes through DIRECT async Win32 calls from this
+/// watcher thread (`SetWindowPos` with `SWP_ASYNCWINDOWPOS` +
+/// `ShowWindowAsync`) — never the Tauri main-thread queue. `run_on_main_thread`
+/// was the second-live-test failure: after a few show/hide cycles the queue
+/// backs up behind WebView2 resize work, every queued show/hide sits there,
+/// and the next Tab press appears dead ("nothing happens the second time").
+/// The async calls post to the window's own message queue and return at once;
+/// ordering between a show and a later hide is preserved because both are
+/// posted to the same window thread in watcher-loop order.
 #[cfg(target_os = "windows")]
 fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
@@ -457,45 +466,68 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, true) {
         tracing::warn!(error = %e, "emit overlay-visibility failed");
     }
-    let r = anchor.overlay_rect;
-    let queued = app.run_on_main_thread(move || {
-        let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
-        let _ = win.set_size(tauri::PhysicalSize::new(
-            r.width.max(1) as u32,
-            r.height.max(1) as u32,
-        ));
-        show_no_activate(&win);
-    });
-    if let Err(e) = queued {
-        tracing::warn!(error = %e, "queue overlay show failed");
+    let Ok(hwnd) = win.hwnd() else {
+        return;
+    };
+    place_and_show_async(
+        windows::Win32::Foundation::HWND(hwnd.0),
+        &anchor.overlay_rect,
+    );
+    tracing::info!("overlay show posted (tab held)");
+}
+
+/// Raw Win32 placement: async `SetWindowPos` + `ShowWindowAsync(SW_SHOWNOACTIVATE)`.
+#[cfg(target_os = "windows")]
+fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
+    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            r.x,
+            r.y,
+            r.width.max(1),
+            r.height.max(1),
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+        show_async(hwnd);
     }
-    tracing::info!("overlay show queued (tab held)");
+}
+
+/// Async no-activate show — `ShowWindowAsync` posts to the window's own
+/// thread and returns at once (the sync `ShowWindow` from a foreign thread
+/// can block on that thread's message queue).
+#[cfg(target_os = "windows")]
+fn show_async(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindowAsync};
+    unsafe {
+        let _ = ShowWindowAsync(hwnd, SW_SHOWNOACTIVATE);
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor) {}
 
+/// Hide the overlay: HTML-level hide FIRST (the event reaches the page
+/// directly from this thread), then the async native hide. Both idempotent —
+/// the watcher re-sends the whole thing every [`HIDE_RETRY`] while Tab is up.
+#[cfg(target_os = "windows")]
 fn hide_overlay(app: &AppHandle) {
-    // HTML-level hide FIRST: `emit` reaches the overlay page directly from
-    // this thread — no main-thread queue in the path — so the content
-    // disappears at once even when the queued native hide below is delayed
-    // (the load-bearing fix for the stuck-overlay bug).
     if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, false) {
         tracing::warn!(error = %e, "emit overlay-visibility failed");
     }
-    if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
-        // Queued like `place_and_show` — see the note there: a blocking
-        // window call on this thread must never be able to stall the loop.
-        let queued = app.run_on_main_thread(move || {
-            if let Err(e) = win.hide() {
-                tracing::warn!(error = %e, "native overlay hide failed");
-            }
-        });
-        if let Err(e) = queued {
-            tracing::warn!(error = %e, "queue overlay hide failed");
+    if let Some(win) = app.get_webview_window(OVERLAY_LABEL)
+        && let Ok(hwnd) = win.hwnd()
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindowAsync};
+        unsafe {
+            let _ = ShowWindowAsync(windows::Win32::Foundation::HWND(hwnd.0), SW_HIDE);
         }
     }
 }
+
+#[cfg(not(target_os = "windows"))]
+fn hide_overlay(_app: &AppHandle) {}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Capture + anchor computation
@@ -837,9 +869,12 @@ fn capture_game_rgba(rect: &windows::Win32::Foundation::RECT) -> Option<(Vec<u8>
         }
         let old_bmp = SelectObject(hdc_mem, hbmp.into());
 
-        // CAPTUREBLT pulls in layered windows too; without it regions covered
-        // by other layered apps can come back black.
-        let rop = ROP_CODE(SRCCOPY.0 | CAPTUREBLT.0);
+        // Plain SRCCOPY — deliberately NOT `| CAPTUREBLT`. CAPTUREBLT pulls
+        // LAYERED windows into the frame, and the overlay window itself is
+        // layered: the second Tab press within the capture rate-limit window
+        // then photographs our own (still fading-out) window over the table
+        // and the detector anchors on our own hint box. Without CAPTUREBLT
+        // layered windows are simply absent from the BitBlt result.
         let ok = BitBlt(
             hdc_mem,
             0,
@@ -849,7 +884,7 @@ fn capture_game_rgba(rect: &windows::Win32::Foundation::RECT) -> Option<(Vec<u8>
             Some(hdc_screen),
             rect.left,
             rect.top,
-            rop,
+            SRCCOPY,
         )
         .is_ok();
 
