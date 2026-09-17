@@ -12,6 +12,8 @@
   "solo": "ソロ",
   "div2": "2人分隊",
   "div3": "3人分隊",
+  "ranked": "ランク戦",
+  "rankedHint": "直近5シーズンの合計",
   "weighted": "加重勝率",
   "ships": "艦艇",
   "rank": "ティア",

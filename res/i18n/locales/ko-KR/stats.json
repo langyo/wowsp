@@ -12,6 +12,8 @@
   "solo": "솔로",
   "div2": "2인 분대",
   "div3": "3인 분대",
+  "ranked": "랭크",
+  "rankedHint": "최근 5시즌 합산",
   "weighted": "가중 승률",
   "ships": "함선",
   "rank": "티어",

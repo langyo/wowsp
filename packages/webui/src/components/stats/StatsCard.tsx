@@ -14,7 +14,7 @@ import "./StatsCard.scss";
  *   ┌─ identity: name + clan tag + realm + hidden badge ─
  *   ├─ PR summary bar: big PR number + tier label, color-coded
  *   ├─ KPI grid: winrate / battles / avg damage / avg XP / K-D / survival
- *   └─ division split: solo / div2 / div3 winrates (when present)
+ *   └─ division split: solo / div2 / div3 / ranked winrates (when present)
  *
  * Color coding (mirrors community convention):
  *   red < 47% → yellow 47-50% → green 50-55% → purple > 55%.
@@ -23,6 +23,8 @@ export default defineComponent({
   name: "StatsCard",
   props: {
     stats: { type: Object as () => PlayerStats, required: true },
+    /** Combined ranked winrate across the loaded seasons (null = unknown). */
+    rankedWr: { type: Number as PropType<number | null>, default: null },
     /** Clan tag clicked → jump to the clan view. Rendered as a link only
      *  when the stats carry a clan id. */
     onClanClick: Function as PropType<() => void>,
@@ -60,12 +62,14 @@ export default defineComponent({
       },
     ]);
 
-    /** Division splits: solo / div2 / div3 winrates with their battle counts.
+    /** Division splits: solo / div2 / div3 / ranked winrates. Ranked is fed
+     *  from the ranked store via the `rankedWr` prop (null = no data).
      *  Displayed in a compact row below the main winrate. */
-    const divisions = computed(() => [
-      { label: t("stats.solo"), wr: props.stats.soloWr },
-      { label: t("stats.div2"), wr: props.stats.div2Wr },
-      { label: t("stats.div3"), wr: props.stats.div3Wr },
+    const divisions = computed<{ label: string; wr: number | null; hint?: string }[]>(() => [
+      { label: t("stats.solo"), wr: props.stats.soloWr ?? null },
+      { label: t("stats.div2"), wr: props.stats.div2Wr ?? null },
+      { label: t("stats.div3"), wr: props.stats.div3Wr ?? null },
+      { label: t("stats.ranked"), wr: props.rankedWr, hint: t("stats.rankedHint") },
     ]);
 
     return () => (
@@ -101,7 +105,7 @@ export default defineComponent({
         {/* ── Main winrate + PR bar ──
             Big winrate on the left, PR on the right (same row).
             Below: total battles as small text.
-            Below that: 3 division winrates in a compact centered row. */}
+            Below that: 4 division winrates in a compact centered row. */}
         <div class="stats-card__hero">
           <div class="stats-card__hero-main">
             <span
@@ -134,7 +138,7 @@ export default defineComponent({
           </div>
         </div>
 
-        {/* Division splits: 3 columns centered (solo / div2 / div3) */}
+        {/* Division splits: 4 columns centered (solo / div2 / div3 / ranked) */}
         {divisions.value.some((d) => d.wr != null) ? (
           <div class="stats-card__divisions">
             {divisions.value.map((d) => (
@@ -142,6 +146,7 @@ export default defineComponent({
                 <span
                   class="stats-card__division-wr"
                   style={d.wr != null ? { color: winrateColor(d.wr) } : undefined}
+                  title={d.hint}
                 >
                   {d.wr != null ? `${d.wr.toFixed(1)}%` : "—"}
                 </span>
