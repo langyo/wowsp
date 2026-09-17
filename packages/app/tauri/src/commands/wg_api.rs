@@ -121,8 +121,9 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
 /// Look up many players in one shot (live-roster fast path): N× account/list
 /// resolved with bounded parallelism, then ONE account/info and ONE
 /// clans/accountinfo for all ids combined. Returns one entry per input name,
-/// in order; `None` = account not found (or the lookup failed — roster UIs
-/// render that as "no data" rather than failing the whole panel).
+/// in order; `None` = account not found, no exact-name match, or the lookup
+/// failed — roster UIs render that as "no data" rather than failing the
+/// whole panel.
 #[tauri::command]
 pub async fn lookup_players_stats_batch(
     names: Vec<String>,
@@ -153,7 +154,8 @@ pub async fn lookup_players_stats_batch(
         stream::iter(names)
             .map(|name| {
                 let url = format!(
-                    "https://{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
+                    "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
+                    encode_query(&name)
                 );
                 async move {
                     let resp = client_ref
@@ -171,7 +173,13 @@ pub async fn lookup_players_stats_batch(
                             list.error.message.unwrap_or_default()
                         ));
                     }
-                    Ok(list.data.and_then(|mut d| d.pop()))
+                    // Same exact-match guard as account_list_one: pick the
+                    // queried account out of the prefix hits — a lookalike's
+                    // stats must not leak into the roster batch.
+                    Ok(list.data.and_then(|d| {
+                        d.into_iter()
+                            .find(|found| nickname_matches(&name, &found.nickname))
+                    }))
                 }
             })
             .buffered(BATCH_CONCURRENCY)
@@ -360,8 +368,17 @@ pub(crate) fn encode_query(s: &str) -> String {
     out
 }
 
-/// account/list with limit=1 — one nickname → account entry. Ok(None) when
-/// the name matches no account.
+/// `account/list` is a prefix search: hits may contain same-prefix
+/// lookalikes, so an entry is trusted only when its nickname IS the queried
+/// name (trimmed, case-insensitive) — anything else counts as "not found",
+/// and another player's stats can never be pinned onto a roster row.
+fn nickname_matches(query: &str, found: &str) -> bool {
+    query.trim().to_lowercase() == found.trim().to_lowercase()
+}
+
+/// account/list (limit=10) — one nickname → account entry. The search is a
+/// prefix query, so the exact account is picked out of the hits; Ok(None)
+/// when it isn't among them.
 async fn account_list_one(
     client: &reqwest::Client,
     app_id: &str,
@@ -370,7 +387,8 @@ async fn account_list_one(
 ) -> Result<Option<AccountListEntry>, String> {
     let list: WgResponse<Vec<AccountListEntry>> = client
         .get(format!(
-            "https://{host}/wows/account/list/?application_id={app_id}&search={name}&limit=1"
+            "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
+            encode_query(name)
         ))
         .send()
         .await
@@ -384,7 +402,9 @@ async fn account_list_one(
             list.error.message.unwrap_or_default()
         ));
     }
-    Ok(list.data.and_then(|mut d| d.pop()))
+    Ok(list
+        .data
+        .and_then(|d| d.into_iter().find(|e| nickname_matches(name, &e.nickname))))
 }
 
 /// account/info for one id → the nickname. Ok(None) when the id doesn't
@@ -1151,6 +1171,21 @@ struct ClanListEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nickname_matches_accepts_exact_name_ignoring_case_and_padding() {
+        assert!(nickname_matches("Player_2077", "Player_2077"));
+        assert!(nickname_matches("player_2077", "Player_2077"));
+        assert!(nickname_matches("  猎风  ", "猎风"));
+        assert!(nickname_matches("Иван", "иван"));
+    }
+
+    #[test]
+    fn nickname_matches_rejects_prefix_lookalikes() {
+        assert!(!nickname_matches("Player", "Player_2077"));
+        assert!(!nickname_matches("Player", ""));
+        assert!(!nickname_matches("", "Player"));
+    }
 
     #[test]
     fn pvp_stats_extracts_all_fields() {

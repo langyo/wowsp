@@ -76,7 +76,11 @@ const AI_NAME = /^:.*:$/;
 // narrow it locally instead of redeclaring the global.
 const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
 
-const realm = new URLSearchParams(window.location.search).get("realm") || "asia";
+// Realm is forwarded by create_overlay_window only when it was detected; an
+// empty value DISABLES the batch lookups below instead of falling back to a
+// guess — querying a wrong realm would silently pin lookalike accounts'
+// stats onto the chips.
+const realm = new URLSearchParams(window.location.search).get("realm") ?? "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
 
@@ -171,6 +175,9 @@ function render() {
 
 function scheduleBatch() {
   if (!arena || !tauri) return;
+  // No detected realm → no lookups; chips stay muted ("…") rather than
+  // showing numbers fetched from a guessed realm.
+  if (!realm) return;
   for (const v of arena.vehicles) {
     if (AI_NAME.test(v.name)) continue;
     if (!stats.has(cacheKey(v.name))) pending.add(v.name);
