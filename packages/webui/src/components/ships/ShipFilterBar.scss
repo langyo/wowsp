@@ -97,7 +97,7 @@
 
 .ship-filter-bar__summary {
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -148,7 +148,7 @@
 .ship-filter-bar__pop-close {
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgb(var(--color-muted));
   font-size: 12px;
   cursor: pointer;
   padding: 2px 4px;
@@ -212,7 +212,7 @@
 .ship-filter-bar__pop-hint {
   margin-top: 8px;
   font-size: var(--text-2xs);
-  color: rgba(255, 255, 255, 0.45);
+  color: rgb(var(--color-muted) / 90%);
 }
 
 /* ── Search: one compact button, roomy leftward popup panel ── */
@@ -284,7 +284,7 @@
 .ship-filter-bar__search-close {
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgb(var(--color-muted));
   font-size: 12px;
   cursor: pointer;
   padding: 2px 4px;
@@ -297,5 +297,5 @@
 .ship-filter-bar__search-hint {
   margin-top: 8px;
   font-size: var(--text-2xs);
-  color: rgba(255, 255, 255, 0.45);
+  color: rgb(var(--color-muted) / 90%);
 }

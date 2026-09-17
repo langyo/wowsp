@@ -181,7 +181,7 @@
 
   &__account-name {
     font-size: var(--text-xs);
-    color: var(--color-muted);
+    color: rgb(var(--color-muted));
     /* Two-line clamp with ellipsis — pure CSS, no JS truncation needed. */
     display: -webkit-box;
     -webkit-line-clamp: 2;

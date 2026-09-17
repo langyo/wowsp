@@ -8,6 +8,7 @@ import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as echarts from "echarts";
 import { t } from "@/i18n";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { useTheme } from "@/theme";
 import "./ShipDistCharts.scss";
 
 /** Localized short class label ("stats.dist.<type>"); falls back to the raw
@@ -17,6 +18,24 @@ function typeLabel(typeKey: string): string {
   const i18nKey = `stats.dist.${typeKey}`;
   const lbl = t(i18nKey);
   return lbl === i18nKey ? typeKey : lbl;
+}
+
+/** Theme-aware chart ink. ECharts paints on canvas, so it cannot follow CSS
+ *  variables — resolve the text-channel triplet from the document element and
+ *  derive rgba() strings. Called on every render(); the mode/theme watches
+ *  below re-run render() so charts track light/dark and brand switches. */
+function chartInk(): { label: string; soft: string; axis: string } {
+  const parts = getComputedStyle(document.documentElement)
+    .getPropertyValue("--color-text")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const channels = parts.length === 3 ? parts.join(",") : "128,128,128";
+  return {
+    label: `rgba(${channels},0.75)`,
+    soft: `rgba(${channels},0.6)`,
+    axis: `rgba(${channels},0.15)`,
+  };
 }
 
 export interface DistDatum {
@@ -51,10 +70,12 @@ export default defineComponent({
     const pieEl = ref<HTMLElement | null>(null);
     let barChart: echarts.ECharts | null = null;
     let pieChart: echarts.ECharts | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     function render() {
       const { tiers, types, total } = aggregate(props.ships);
       if (total === 0) return;
+      const ink = chartInk();
       if (barEl.value && barChart) {
         const tierData = tiers
           .slice(1)
@@ -68,8 +89,8 @@ export default defineComponent({
             xAxis: {
               type: "category",
               data: tierData.map((d) => `${d.tier}`),
-              axisLabel: { color: "rgba(255,255,255,0.6)", fontSize: 9 },
-              axisLine: { lineStyle: { color: "rgba(255,255,255,0.15)" } },
+              axisLabel: { color: ink.soft, fontSize: 9 },
+              axisLine: { lineStyle: { color: ink.axis } },
             },
             yAxis: { type: "value", show: false },
             series: [
@@ -83,7 +104,7 @@ export default defineComponent({
                   show: true,
                   position: "top",
                   fontSize: 9,
-                  color: "rgba(255,255,255,0.75)",
+                  color: ink.label,
                 },
               },
             ],
@@ -106,7 +127,7 @@ export default defineComponent({
                 type: "pie",
                 radius: ["38%", "66%"],
                 label: {
-                  color: "rgba(255,255,255,0.75)",
+                  color: ink.label,
                   fontSize: 9,
                   formatter: "{b} {d}%",
                 },
@@ -127,15 +148,22 @@ export default defineComponent({
         pieChart = echarts.init(pieEl.value);
       }
       render();
-      const ro = new ResizeObserver(() => {
+      resizeObserver = new ResizeObserver(() => {
         barChart?.resize();
         pieChart?.resize();
       });
-      if (barEl.value) ro.observe(barEl.value);
-      if (pieEl.value) ro.observe(pieEl.value);
+      if (barEl.value) resizeObserver.observe(barEl.value);
+      if (pieEl.value) resizeObserver.observe(pieEl.value);
     });
     watch(() => props.ships, render, { deep: true });
+    // Light/dark flips and brand-theme switches rewrite the CSS-variable ink
+    // this component samples at render time — re-render so canvas text tracks
+    // them (DOM text needs no help; it follows the vars directly).
+    const theme = useTheme();
+    watch([theme.effectiveMode, theme.currentTheme], render);
     onBeforeUnmount(() => {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       barChart?.dispose();
       pieChart?.dispose();
       barChart = null;

@@ -15,7 +15,7 @@
 
 .clan-card__desc {
   margin: 0;
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   font-size: var(--text-sm);
   word-break: break-word;
 }
@@ -43,12 +43,12 @@
 }
 
 .clan-card__wr-label {
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   font-size: var(--text-sm);
 }
 
 .clan-card__battles-total {
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   font-size: var(--text-sm);
   margin-left: 8px;
 }
@@ -68,7 +68,7 @@
 
 .clan-card__pr-label {
   font-size: var(--text-2xs);
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
 }
 
 .clan-card__kpis {
@@ -88,7 +88,7 @@
 }
 
 .clan-card__kpi-label {
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
 }
 
@@ -105,7 +105,7 @@
 }
 
 .clan-card__roster-title {
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   letter-spacing: 0.08em;
   margin-bottom: 4px;
@@ -122,7 +122,7 @@
 }
 
 .clan-card__roster-head {
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   border-bottom: 1px solid rgb(var(--color-border) / 14%);
   padding-bottom: 6px;
 }
@@ -141,7 +141,7 @@
   cursor: pointer;
 
   &:hover {
-    color: var(--color-text);
+    color: rgb(var(--color-text));
   }
 
   &--on {
@@ -153,7 +153,7 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: var(--color-text);
+  color: rgb(var(--color-text));
   text-align: left;
   cursor: pointer;
   font-size: var(--text-2xs);
@@ -163,7 +163,7 @@
   }
 
   &--hidden {
-    color: var(--color-muted);
+    color: rgb(var(--color-muted));
   }
 }
 
@@ -174,7 +174,7 @@
 }
 
 .clan-card__col--role {
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
 }
 
 .clan-card__col--num {
