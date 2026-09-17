@@ -16,7 +16,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgb(var(--color-text) / 8%);
   padding: 16px 14px 16px 0;
 }
 
@@ -65,7 +65,7 @@
 
 .lookup-view__combo-meta {
   flex: 0 0 auto;
-  color: var(--color-muted);
+  color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
 }
@@ -74,9 +74,9 @@
   width: 100%;
   padding: 7px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  border: 1px solid rgb(var(--color-text) / 14%);
+  background: rgb(var(--color-text) / 5%);
+  color: rgb(var(--color-text));
   font-size: var(--text-sm);
   &:focus {
     outline: none;
@@ -94,14 +94,14 @@
 }
 
 .lookup-view__history-title {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   letter-spacing: 0.08em;
   margin-bottom: 4px;
 }
 
 .lookup-view__history-empty {
-  color: rgba(255, 255, 255, 0.35);
+  color: rgb(var(--color-muted) / 70%);
   font-size: var(--text-2xs);
   padding: 6px 2px;
 }
@@ -114,12 +114,12 @@
   padding: 5px 8px;
   border: none;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgb(var(--color-text) / 4%);
+  color: rgb(var(--color-text) / 80%);
   cursor: pointer;
   font-size: var(--text-2xs);
   text-align: left;
-  &:hover { background: rgba(255, 255, 255, 0.1); }
+  &:hover { background: rgb(var(--color-text) / 10%); }
   &--active {
     background: rgb(var(--color-accent) / 18%);
     color: rgb(var(--color-accent));
@@ -129,7 +129,7 @@
 .lookup-view__history-kind {
   flex: 0 0 auto;
   display: inline-flex;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgb(var(--color-muted));
 
   &--clan {
     color: rgb(var(--color-accent));
@@ -144,7 +144,7 @@
 }
 
 .lookup-view__history-realm {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgb(var(--color-muted) / 80%);
   font-size: 10px;
 }
 
@@ -177,7 +177,7 @@
 }
 
 .lookup-view__dist-title {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   margin-bottom: 6px;
 }
@@ -200,14 +200,14 @@
 
 .lookup-view__sort {
   padding: 3px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgb(var(--color-text) / 12%);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.75);
+  background: rgb(var(--color-text) / 4%);
+  color: rgb(var(--color-text) / 75%);
   font-size: var(--text-2xs);
   cursor: pointer;
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(var(--color-text) / 10%);
   }
   &--on {
     background: rgb(var(--color-accent) / 22%);
@@ -228,16 +228,16 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--color-text) / 4%);
   font-size: var(--text-2xs);
   .lookup-view__typecard-code {
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgb(var(--color-text) / 80%);
   }
   .lookup-view__typecard-battles {
     flex: 1;
     text-align: right;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgb(var(--color-text) / 60%);
     font-family: var(--font-mono);
   }
 }
@@ -261,7 +261,7 @@
   padding: 3px 6px;
   border-radius: 5px;
   font-size: var(--text-2xs);
-  &:hover { background: rgba(255, 255, 255, 0.05); }
+  &:hover { background: rgb(var(--color-text) / 5%); }
 }
 
 .lookup-view__ship-ico {
@@ -285,7 +285,7 @@
 
 .lookup-view__ship-type {
   flex: 0 0 24px;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgb(var(--color-muted));
   font-size: 10px;
   font-weight: 600;
 }
@@ -293,7 +293,7 @@
 .lookup-view__ship-battles {
   flex: 0 0 56px;
   text-align: right;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(var(--color-text) / 70%);
   font-family: var(--font-mono);
 }
 
@@ -306,20 +306,20 @@
 .lookup-view__ship-dmg {
   flex: 0 0 76px;
   text-align: right;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(var(--color-text) / 70%);
   font-family: var(--font-mono);
 }
 
 .lookup-view__ship-kd {
   flex: 0 0 44px;
   text-align: right;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgb(var(--color-text) / 60%);
   font-family: var(--font-mono);
 }
 
 .lookup-view__ship-date {
   flex: 0 0 84px;
   text-align: right;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgb(var(--color-muted) / 80%);
   font-size: 10px;
 }
