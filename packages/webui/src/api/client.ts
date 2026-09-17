@@ -114,6 +114,12 @@ export interface OverlayAnchor {
   rowCenters: number[];
   /** Allies/enemies column split as a fraction (0–1) of the roster width. */
   teamSplit: number;
+  /** Per-row player names matched from the on-screen table text, same
+   *  length/order as `rowCenters` (allies block first). `null`/absent = no
+   *  recognition ran (map rows by index); an element `null` = that row's
+   *  player was not recognized (render a silent placeholder, never guess
+   *  by index). Names are the roster's own nicknames (stats-cache keys). */
+  rowPlayers?: (string | null)[] | null;
 }
 
 /** Mirrors `wowsp_tauri_shared::CaptureResult`. */

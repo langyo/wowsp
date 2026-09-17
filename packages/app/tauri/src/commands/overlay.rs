@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use wowsp_tauri_shared::{CaptureResult, OverlayAnchor, Rect};
 
-use super::overlay_detect;
+use super::{overlay_detect, row_recognize};
 
 /// Label of the dedicated overlay window (distinct from "main").
 const OVERLAY_LABEL: &str = "overlay";
@@ -620,13 +620,35 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
                 (r, rows, 0.5, false)
             },
         };
-    let (overlay, anchor) = overlay_detect::build_anchor(
+    // Row → player-name recognition (PR 3a: architecture only). Runs on the
+    // DETECTED capture-relative geometry, before build_anchor re-bases it to
+    // the overlay origin; off by default (WOWSP_ROW_RECOGNIZER unset) and a
+    // no-op then — the anchor keeps row_players = None, which the frontend
+    // reads as the historical index mapping. Every failure inside degrades
+    // to None and must never disturb the anchor flow. `ally_rows` is the
+    // SAME team_sizes read the detection grid above was built from — the
+    // single source of truth for the pipeline's block split.
+    let row_players = if detected {
+        row_recognize::recognize_row_players(&row_recognize::RowFrame {
+            rgba: &rgba,
+            width: w,
+            height: h,
+            roster: &roster_rel,
+            row_centers: &rows,
+            team_split: split,
+            ally_rows: team_sizes.0,
+        })
+    } else {
+        None
+    };
+    let (overlay, mut anchor) = overlay_detect::build_anchor(
         &rect_from_win32(game.rect),
         &roster_rel,
         rows,
         split,
         detected,
     );
+    anchor.row_players = row_players;
     tracing::info!(
         detected,
         overlay = format!(

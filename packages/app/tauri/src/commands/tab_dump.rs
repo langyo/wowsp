@@ -297,6 +297,7 @@ mod tests {
             row_centers: vec![50, 92, 134],
             team_split: 0.5,
             table_detected: true,
+            row_players: None,
         };
         let arena_text = r#"{"dateTime":"20260917T120000","vehicles":[{"id":11}]}"#;
         write_dump_files(&dir, "20260917-120000", b"png", arena_text, &anchor)

@@ -63,6 +63,14 @@ interface OverlayAnchor {
   /** False → the anchor used fallback geometry (table not located); the
    *  page renders a hint box instead of (mis)placed stat chips. */
   tableDetected?: boolean;
+  /** Per-row player names matched against the arena roster (closed set),
+   *  same length/order as rowCenters (allies block first). null/absent →
+   *  no recognition ran, rows map onto roster entries BY INDEX (legacy).
+   *  An element null → that row's player was not recognized: render a
+   *  silent placeholder and NEVER fall back to the index guess — the
+   *  in-game panel sorts rows its own way, which is what the matcher
+   *  exists to fix. */
+  rowPlayers?: (string | null)[] | null;
 }
 
 interface Stat {
@@ -137,6 +145,9 @@ function render() {
   const enemies = arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
+  // Row → name recognition payload (optional, PR 3a): present when the
+  // recognizer ran; block offsets mirror the row blocks above.
+  const rowPlayers = anchor.rowPlayers ?? null;
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
   const fontSize = Math.min(15, Math.max(9, pitch * 0.42));
@@ -149,11 +160,11 @@ function render() {
   const tableRight = (anchor.rosterRect.x + anchor.rosterRect.width) / dpr;
   const overlayW = anchor.overlayRect.width / dpr;
 
-  const sides: Array<[Vehicle[], "ally" | "enemy", number[]]> = [
-    [allies, "ally", allyBlock],
-    [enemies, "enemy", enemyBlock],
+  const sides: Array<[Vehicle[], "ally" | "enemy", number[], number]> = [
+    [allies, "ally", allyBlock, 0],
+    [enemies, "enemy", enemyBlock, allies.length],
   ];
-  for (const [list, side, block] of sides) {
+  for (const [list, side, block, blockOffset] of sides) {
     list.forEach((v, i) => {
       if (block[i] == null) return;
       const el = document.createElement("div");
@@ -167,7 +178,21 @@ function render() {
         // Left edge of the chip just right of the table's right edge.
         el.style.left = `${tableRight + gap}px`;
       }
-      el.innerHTML = chipContent(v.name);
+      if (rowPlayers) {
+        const mapped = rowPlayers[blockOffset + i] ?? null;
+        if (mapped != null) {
+          // Recognized name — exactly a roster nickname, so the stats
+          // cache lookup works unchanged.
+          el.innerHTML = chipContent(mapped);
+        } else {
+          // This row's player was not recognized: stay silent rather
+          // than pinning stats by index guess.
+          el.innerHTML = `<span class="muted">…</span>`;
+        }
+      } else {
+        // No recognition payload — legacy index mapping.
+        el.innerHTML = chipContent(v.name);
+      }
       root.appendChild(el);
     });
   }
