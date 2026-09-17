@@ -246,24 +246,63 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
         if stop.load(Ordering::Relaxed) {
             break;
         }
+        // A panicked tick must not kill the thread: a dead watcher can no
+        // longer observe the Tab release and the overlay would stay on
+        // screen forever. The next tick re-syncs all state.
+        let tick = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            watch_tab_tick(
+                &app,
+                &mut tab_down_prev,
+                &mut overlay_shown,
+                &mut cached_anchor,
+                &mut cached_game,
+                &mut last_scan,
+                &mut last_capture_attempt,
+            );
+        }));
+        if tick.is_err() {
+            tracing::warn!("tab watcher tick panicked — continuing on the next tick");
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    // Never leave the overlay behind when the watcher dies.
+    if overlay_shown {
+        hide_overlay(&app);
+    }
+}
+
+/// One poll iteration of the Tab watcher (factored out so the loop can wrap
+/// it in `catch_unwind`).
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+fn watch_tab_tick(
+    app: &AppHandle,
+    tab_down_prev: &mut bool,
+    overlay_shown: &mut bool,
+    cached_anchor: &mut Option<(Instant, OverlayAnchor)>,
+    cached_game: &mut Option<(GameWindow, Instant)>,
+    last_scan: &mut Option<Instant>,
+    last_capture_attempt: &mut Option<Instant>,
+) {
+    {
         // Resolve the game window: cached while valid, rescanned at most
         // once per HWND_REFRESH — including the not-found case.
-        let game = match &cached_game {
+        let game = match &*cached_game {
             Some((g, at)) if at.elapsed() < HWND_REFRESH && g.is_alive() => Some(*g),
             _ if last_scan.is_none_or(|t| t.elapsed() >= HWND_REFRESH) => {
-                last_scan = Some(Instant::now());
+                *last_scan = Some(Instant::now());
                 let found = find_game_window();
-                cached_game = found.map(|g| (g, Instant::now()));
+                *cached_game = found.map(|g| (g, Instant::now()));
                 found
             },
-            _ => cached_game.filter(|(g, _)| g.is_alive()).map(|(g, _)| g),
+            _ => (*cached_game).filter(|(g, _)| g.is_alive()).map(|(g, _)| g),
         };
 
         let focused_on_game = game.is_some_and(|g| g.is_foreground());
         let tab_down = tab_key_down();
 
         if focused_on_game && tab_down {
-            if !tab_down_prev {
+            if !*tab_down_prev {
                 // Fresh Tab press — anchor + show. First make sure the
                 // battle state is current: one cheap stat/read of
                 // tempArenaInfo.json keeps the overlay self-sufficient even
@@ -291,7 +330,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 let anchor = if !battle_known {
                     None
                 } else {
-                    match &cached_anchor {
+                    match &*cached_anchor {
                         Some((at, a)) if at.elapsed() < CAPTURE_MIN_INTERVAL => Some(a.clone()),
                         _ => None,
                     }
@@ -302,28 +341,23 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                             return None;
                         }
                         let g = game?;
-                        last_capture_attempt = Some(Instant::now());
+                        *last_capture_attempt = Some(Instant::now());
                         let computed = compute_anchor(&g);
-                        cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
+                        *cached_anchor = computed.as_ref().map(|a| (Instant::now(), a.clone()));
                         computed
                     })
                 };
                 if let Some(anchor) = anchor {
-                    place_and_show(&app, &anchor);
-                    overlay_shown = true;
+                    place_and_show(app, &anchor);
+                    *overlay_shown = true;
                 }
             }
-        } else if overlay_shown {
-            hide_overlay(&app);
-            overlay_shown = false;
+        } else if *overlay_shown {
+            hide_overlay(app);
+            *overlay_shown = false;
         }
 
-        tab_down_prev = tab_down && focused_on_game;
-        std::thread::sleep(POLL_INTERVAL);
-    }
-    // Never leave the overlay behind when the watcher dies.
-    if overlay_shown {
-        hide_overlay(&app);
+        *tab_down_prev = tab_down && focused_on_game;
     }
 }
 
@@ -340,26 +374,36 @@ fn tab_key_down() -> bool {
 
 /// Place the overlay window over the game rect, push the anchor to the
 /// webview, then show without activating.
+///
+/// The native placement is QUEUED onto the main thread instead of dispatched
+/// blocking: `set_position`/`set_size` from this thread would wait on the
+/// main thread while it chews through the WebView2 resize those very calls
+/// trigger — and a watcher stuck there can no longer observe the Tab
+/// release, leaving the overlay frozen on screen (seen in live testing).
+/// Ordering is preserved by the main-thread queue, so a show queued before a
+/// hide can never overtake it.
 #[cfg(target_os = "windows")]
 fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
         tracing::warn!("overlay window missing — cannot show (was it destroyed?)");
         return;
     };
-    // Resize/reposition BEFORE emitting so the webview has already settled
-    // when the anchor handler renders — otherwise chips compute their
-    // offsets against the previous window size for a frame.
-    let r = &anchor.game_rect;
-    let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
-    let _ = win.set_size(tauri::PhysicalSize::new(
-        r.width.max(1) as u32,
-        r.height.max(1) as u32,
-    ));
     if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, anchor) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
-    show_no_activate(&win);
-    tracing::info!("overlay shown (tab held)");
+    let r = anchor.game_rect;
+    let queued = app.run_on_main_thread(move || {
+        let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
+        let _ = win.set_size(tauri::PhysicalSize::new(
+            r.width.max(1) as u32,
+            r.height.max(1) as u32,
+        ));
+        show_no_activate(&win);
+    });
+    if let Err(e) = queued {
+        tracing::warn!(error = %e, "queue overlay show failed");
+    }
+    tracing::info!("overlay show queued (tab held)");
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -367,8 +411,15 @@ fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor) {}
 
 fn hide_overlay(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
-        let _ = win.hide();
-        tracing::info!("overlay hidden (tab released / focus lost)");
+        // Queued like `place_and_show` — see the note there: a blocking
+        // window call on this thread must never be able to stall the loop.
+        let queued = app.run_on_main_thread(move || {
+            let _ = win.hide();
+        });
+        if let Err(e) = queued {
+            tracing::warn!(error = %e, "queue overlay hide failed");
+        }
+        tracing::info!("overlay hide queued (tab released / focus lost)");
     }
 }
 
