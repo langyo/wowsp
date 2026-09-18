@@ -13,12 +13,23 @@
 //! with the variable unset the overlay hot path must stay free of any extra
 //! work (no PNG encode, no arena re-read, no lock contention).
 //!
-//! One battle produces at most one dump: the arena roster is hashed into a
-//! battle signature and repeated detections of the SAME battle are skipped,
-//! so holding Tab (one detection pass per rate-limit window) cannot flood the
-//! dump directory with near-identical frames. Every IO failure is logged and
-//! swallowed — a broken dump directory must never panic the watcher thread
-//! nor disturb the overlay pipeline this hook sits inside.
+//! One (battle, panel layout) produces at most one dump: the arena roster
+//! plus the anchor's first-row position (quantized) are hashed into a battle
+//! signature and every signature already SEEN is skipped — a seen-SET, not a
+//! last-write slot — so holding Tab (one detection pass per rate-limit
+//! window, plus the 5 s anchor revalidation passes while the overlay stays
+//! shown) cannot flood the dump directory with near-identical frames even
+//! when jitter straddling the bucket boundary alternates between two
+//! signatures: each side dumps exactly once, then silence. When the panel
+//! MOVES as a whole within one battle — the countdown "waiting players"
+//! layout sits ~190 px above the combat layout once the in-battle HUD
+//! appears — the first-row bucket changes and the new layout takes its own
+//! dump. Those per-layout frames are exactly the ground truth the
+//! row-recognition engine needs: the same battle captured under different
+//! panel layouts (row-order sampling across survival states is the
+//! recognition PR's own work). Every IO failure is logged and swallowed —
+//! a broken dump directory must never panic the watcher thread nor disturb
+//! the overlay pipeline this hook sits inside.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -30,16 +41,26 @@ use wowsp_tauri_shared::{ArenaInfo, OverlayAnchor};
 /// Environment variable that enables the dumps (set to a directory path).
 const TAB_DUMP_DIR_ENV: &str = "WOWSP_TAB_DUMP_DIR";
 
-/// Signature of the battle whose dump was already written. A plain static
-/// like the other cross-press state (`LAST_TEAM_SIZES` in arena_info) — one
-/// dump per battle, keyed by arena roster content, not by wall clock.
-static LAST_DUMPED_BATTLE: Mutex<Option<u64>> = Mutex::new(None);
+/// Signatures of every (battle, layout) already dumped — a seen-SET, not a
+/// last-write slot: the phase refinement moves the grid by up to ±pitch/3
+/// (well over one 8 px bucket), so jitter can ALTERNATE the quantized first
+/// row between two buckets across passes, and a single-slot comparison
+/// would then re-dump on every flip. A `Vec` because `HashSet::new` is not
+/// const-constructible for a static — with at most a handful of
+/// battle × layout entries per process the linear scan is noise. Lives for
+/// the process lifetime, exactly as long as a dump stays "already
+/// written". A plain static like the other cross-press state
+/// (`LAST_TEAM_SIZES` in arena_info) — keyed by arena roster content plus
+/// the anchor's first-row bucket, not by wall clock.
+static LAST_DUMPED_BATTLE: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
 /// Dump the current Tab frame, the arena roster and the detector anchor into
-/// `WOWSP_TAB_DUMP_DIR`, at most once per battle. Called from the overlay
-/// watcher right after a CONFIRMED table detection (`table_detected == true`)
-/// with the exact RGBA frame the detector ran on. Does nothing when the env
-/// var is unset or empty.
+/// `WOWSP_TAB_DUMP_DIR`, at most once per battle layout. Called from the
+/// overlay watcher right after a CONFIRMED table detection
+/// (`table_detected == true`) with the exact RGBA frame the detector ran on —
+/// both from per-press acquisition passes and from the 5 s revalidation
+/// passes while the overlay stays shown. Does nothing when the env var is
+/// unset or empty.
 pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor: &OverlayAnchor) {
     // Env gate FIRST: with the feature off this is the whole function —
     // zero allocation, zero IO, zero locking on the overlay hot path.
@@ -56,15 +77,15 @@ pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor:
         tracing::debug!("tab dump skipped: no readable tempArenaInfo.json");
         return;
     };
-    let signature = battle_signature(&info);
+    let signature = battle_signature(&info, first_row_bucket(anchor));
     {
-        let mut last = match LAST_DUMPED_BATTLE.lock() {
+        let mut seen = match LAST_DUMPED_BATTLE.lock() {
             Ok(g) => g,
             // Poisoned by a panic elsewhere — stay silent and leave the
             // overlay flow untouched.
             Err(_) => return,
         };
-        if !first_dump_for_battle(&mut last, signature) {
+        if !first_dump_for_battle(&mut seen, signature) {
             return;
         }
     }
@@ -95,29 +116,56 @@ fn dump_dir(raw: Option<std::ffi::OsString>) -> Option<PathBuf> {
     Some(PathBuf::from(raw))
 }
 
-/// Whether `signature` is new for this process: records it and returns true
-/// on the first sighting, false on repeats (same battle re-detected on a
-/// later Tab press). Pure so the once-per-battle rule is unit-testable
-/// without the static.
-fn first_dump_for_battle(last: &mut Option<u64>, signature: u64) -> bool {
-    if *last == Some(signature) {
+/// Whether `signature` has never been dumped in this process: records it and
+/// returns true on the first sighting, false on ANY repeat — including
+/// revisits of an older signature after other ones appeared (the
+/// bucket-boundary jitter alternation the seen-set exists for; a
+/// last-write slot re-dumped on every flip). Pure so the once-per-signature
+/// rule is unit-testable without the static.
+fn first_dump_for_battle(seen: &mut Vec<u64>, signature: u64) -> bool {
+    if seen.contains(&signature) {
         return false;
     }
-    *last = Some(signature);
+    seen.push(signature);
     true
 }
 
-/// Battle identity from the arena roster: date-time + roster size + the first
-/// vehicle's id. `DefaultHasher` is process-local (not stable across compiler
-/// releases) which is fine — the signature only feeds this in-process dedup
-/// and is never persisted. A new battle rewrites the same tempArenaInfo.json
-/// path with a new dateTime/roster, so every real battle hashes differently.
-fn battle_signature(info: &ArenaInfo) -> u64 {
+/// Battle identity from the arena roster PLUS the panel position: date-time +
+/// roster size + the first vehicle's id + the anchor's first-row bucket (see
+/// [`first_row_bucket`]). `DefaultHasher` is process-local (not stable across
+/// compiler releases) which is fine — the signature only feeds this
+/// in-process dedup and is never persisted. A new battle rewrites the same
+/// tempArenaInfo.json path with a new dateTime/roster, so every real battle
+/// hashes differently; the panel moving as a WHOLE inside one battle (the
+/// countdown → combat HUD phase shift) changes the bucket and takes its own
+/// dump — per-layout ground truth for the recognition engine. Row REORDERS
+/// at fixed slot positions (sunk ships) do not move the first row and are
+/// deliberately not part of this signature — sampling those is the
+/// recognition PR's own work.
+fn battle_signature(info: &ArenaInfo, first_row_bucket: i64) -> u64 {
     let mut hasher = DefaultHasher::new();
     info.date_time.hash(&mut hasher);
     info.vehicles.len().hash(&mut hasher);
     info.vehicles.first().map(|v| v.id).hash(&mut hasher);
+    first_row_bucket.hash(&mut hasher);
     hasher.finish()
+}
+
+/// The anchor's first row center quantized to [`FIRST_ROW_BUCKET_PX`] px
+/// buckets — the LAYOUT component of the dump signature. Detector jitter (a
+/// few px between passes) stays inside one bucket and keeps the
+/// once-per-battle dedup intact, while a real panel shift (~190 px between
+/// HUD phases at 3072x1920) crosses dozens of buckets. An anchor without
+/// rows (unreachable on the confirmed-detection path) hashes to a fixed
+/// bucket so it can never match a real layout.
+const FIRST_ROW_BUCKET_PX: i64 = 8;
+
+fn first_row_bucket(anchor: &OverlayAnchor) -> i64 {
+    anchor
+        .row_centers
+        .first()
+        .map(|&r| r as i64 / FIRST_ROW_BUCKET_PX)
+        .unwrap_or(i64::MIN)
 }
 
 /// `YYYYMMDD-HHMMSS` (local time) shared by the three files of one dump so a
@@ -203,38 +251,121 @@ mod tests {
 
     #[test]
     fn battle_signature_is_stable_and_discriminating() {
-        let a = battle_signature(&arena("20260917T120000", &[11, 22, 33]));
-        let b = battle_signature(&arena("20260917T120000", &[11, 22, 33]));
+        let a = battle_signature(&arena("20260917T120000", &[11, 22, 33]), 40);
+        let b = battle_signature(&arena("20260917T120000", &[11, 22, 33]), 40);
         assert_eq!(a, b, "same roster must hash to the same signature");
-        // Any of the three hashed parts moving must change the signature: a
-        // new battle rewrites the same tempArenaInfo.json path, so the
-        // signature diff is the only once-per-battle trigger.
+        // Any of the four hashed parts moving must change the signature: a
+        // new battle rewrites the same tempArenaInfo.json path, and a layout
+        // switch inside one battle moves the first-row bucket — the signature
+        // diff is the only once-per-(battle, layout) trigger.
         assert_ne!(
             a,
-            battle_signature(&arena("20260917T120001", &[11, 22, 33])),
+            battle_signature(&arena("20260917T120001", &[11, 22, 33]), 40),
             "different dateTime"
         );
         assert_ne!(
             a,
-            battle_signature(&arena("20260917T120000", &[11, 22])),
+            battle_signature(&arena("20260917T120000", &[11, 22]), 40),
             "different roster size"
         );
         assert_ne!(
             a,
-            battle_signature(&arena("20260917T120000", &[33, 22, 11])),
+            battle_signature(&arena("20260917T120000", &[33, 22, 11]), 40),
             "different first vehicle id"
+        );
+        assert_ne!(
+            a,
+            battle_signature(&arena("20260917T120000", &[11, 22, 33]), 64),
+            "different panel layout (first-row bucket)"
+        );
+    }
+
+    /// Minimal anchor whose only varied field is the first row center.
+    fn anchor_with_first_row(first: i32) -> OverlayAnchor {
+        OverlayAnchor {
+            game_rect: Rect {
+                x: 0,
+                y: 0,
+                width: 3072,
+                height: 1920,
+            },
+            overlay_rect: Rect {
+                x: 600,
+                y: 300,
+                width: 1200,
+                height: 600,
+            },
+            roster_rect: Rect {
+                x: 150,
+                y: 24,
+                width: 900,
+                height: 520,
+            },
+            row_centers: vec![first, first + 52, first + 104],
+            team_split: 0.5,
+            table_detected: true,
+            row_players: None,
+        }
+    }
+
+    #[test]
+    fn first_row_bucket_absorbs_jitter_and_splits_layouts() {
+        // Sub-bucket jitter (≤3 px between passes) keeps ONE bucket, so the
+        // per-battle dedup survives detector noise; a real HUD-phase panel
+        // shift (~190 px measured at 3072x1920) must change the bucket.
+        assert_eq!(
+            first_row_bucket(&anchor_with_first_row(500)),
+            first_row_bucket(&anchor_with_first_row(503)),
+            "within-bucket jitter → same bucket"
+        );
+        assert_ne!(
+            first_row_bucket(&anchor_with_first_row(500)),
+            first_row_bucket(&anchor_with_first_row(690)),
+            "layout switch → different bucket"
+        );
+        // An anchor without rows hashes to a fixed bucket — it must never
+        // collide with a real layout's bucket.
+        let mut empty = anchor_with_first_row(500);
+        empty.row_centers.clear();
+        assert_ne!(
+            first_row_bucket(&empty),
+            first_row_bucket(&anchor_with_first_row(500)),
+            "empty grid → sentinel bucket"
         );
     }
 
     #[test]
     fn first_dump_for_battle_allows_once_per_signature() {
-        let mut last: Option<u64> = None;
-        assert!(first_dump_for_battle(&mut last, 7), "first sighting dumps");
+        let mut seen: Vec<u64> = Vec::new();
+        assert!(first_dump_for_battle(&mut seen, 7), "first sighting dumps");
         assert!(
-            !first_dump_for_battle(&mut last, 7),
+            !first_dump_for_battle(&mut seen, 7),
             "same battle again → skipped"
         );
-        assert!(first_dump_for_battle(&mut last, 8), "new battle dumps");
+        assert!(first_dump_for_battle(&mut seen, 8), "new battle dumps");
+        // Back to the EARLIER signature (bucket-boundary jitter revisit):
+        // already dumped, must stay silent — the reason the dedup state is a
+        // seen-set rather than a last-write slot.
+        assert!(
+            !first_dump_for_battle(&mut seen, 7),
+            "revisit of an old signature → skipped"
+        );
+    }
+
+    #[test]
+    fn alternating_layout_buckets_dump_exactly_twice() {
+        // One battle whose quantized first row alternates between two buckets
+        // across detection passes (phase-refinement jitter straddling the 8 px
+        // bucket boundary): the seen-set must dump each bucket exactly ONCE —
+        // the A→B→A→B… tail produces nothing further (a last-write slot would
+        // have re-dumped on every flip).
+        let mut seen: Vec<u64> = Vec::new();
+        let flips = [11u64, 12, 11, 12, 11, 12, 11];
+        let dumps: usize = flips
+            .iter()
+            .map(|&s| usize::from(first_dump_for_battle(&mut seen, s)))
+            .sum();
+        assert_eq!(dumps, 2, "A→B→A→B… must leave exactly two artifacts");
     }
 
     #[test]
