@@ -10,6 +10,7 @@ Modules:
   rarity    ship_id → rarity map (GameParams RarityCategory, via wowsinfo bridge)
   techtree  tech-tree topology (nextShips) + archetype
   models    shipId → base model name map (skin→base dedup for the 3D viewer)
+  dogtags   dog-tag id→index/species map + 80x80 part PNGs (player avatars)
   images    ship portrait PNGs from WG CDN (slow; skip with --module to avoid)
 
 Usage:
@@ -37,7 +38,7 @@ from _common import (  # noqa: E402
     run_metadata,
 )
 
-ALL_MODULES = ["assets", "rarity", "techtree", "images", "models"]
+ALL_MODULES = ["assets", "rarity", "techtree", "images", "models", "dogtags"]
 
 # Repo root (scripts/extract/ → repo root).
 REPO = HERE.parent.parent
@@ -87,8 +88,8 @@ def main() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── shared caches (built on demand) ──────────────────────────────────
-    needs_gp = bool(set(modules) & {"rarity", "techtree", "models"})
-    needs_meta = "assets" in modules
+    needs_gp = bool(set(modules) & {"rarity", "techtree", "models", "dogtags"})
+    needs_meta = bool(set(modules) & {"assets", "dogtags"})
     needs_bridge = bool(set(modules) & {"rarity", "techtree", "models"})
 
     if needs_gp:
@@ -107,6 +108,8 @@ def main() -> None:
         _run_techtree()
     if "models" in modules:
         _run_shipmodels()
+    if "dogtags" in modules:
+        _run_dogtags(game)
     if "images" in modules:
         _run_images()
 
@@ -214,6 +217,18 @@ def _run_shipmodels() -> None:
         "--gameparams", str(GAMEPARAMS_JSON),
         "--bridge", str(WOWSINFO_JSON),
         "--out", str(SHIPMODELS_JSON),
+    )
+
+
+def _run_dogtags(game: str) -> None:
+    """Dog-tag id→index/species map + 80x80 part PNGs (player avatars)."""
+    _py(
+        "build_dogtags.py",
+        "--gameparams", str(GAMEPARAMS_JSON),
+        "--meta", str(METADATA_JSON),
+        "--game", game,
+        "--out-map", str(SRC_DATA / "dogtags_map.json"),
+        "--res-dir", str(REPO / "packages" / "webui" / "src" / "res" / "dogtags"),
     )
 
 

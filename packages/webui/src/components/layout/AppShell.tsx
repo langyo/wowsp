@@ -14,6 +14,7 @@ import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useUpdaterStore } from "@/stores/updater";
 import { initModelPack } from "@/features/holographic/modelLoader";
+import { initDogtagPack } from "@/utils/dogtagAssets";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
 import AnnouncementDialog from "./AnnouncementDialog";
@@ -91,6 +92,9 @@ export default defineComponent({
       // Download model pack on first launch (production only; dev uses publicDir).
       if (!import.meta.env.DEV) {
         void initModelPack(() => api.ensureModelPack()).catch(() => {});
+        // Dog-tag pack overlays the bundled medals snapshot (small; its own
+        // release asset so it refreshes without re-downloading the models).
+        void initDogtagPack(() => api.ensureDogtagPack()).catch(() => {});
       }
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].
