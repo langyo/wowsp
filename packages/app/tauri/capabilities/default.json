@@ -1,7 +1,7 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for WoWSP windows (main + overlay)",
-  "windows": ["main", "overlay"],
+  "description": "Default capabilities for WoWSP windows (main + overlay + manual-locate picker)",
+  "windows": ["main", "overlay", "manual-locate"],
   "permissions": [
     "core:default",
     "core:window:default",

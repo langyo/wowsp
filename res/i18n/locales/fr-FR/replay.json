@@ -88,7 +88,12 @@
     "detectedRows": "Localisé · {n} lignes",
     "searching": "Localisation…",
     "manualLocate": "Positionnement manuel",
-    "manualPending": "Bientôt disponible"
+    "manualClear": "Effacer le positionnement",
+    "manualRows": "Positionné manuellement · {n} lignes",
+    "manualDragHint": "Maintenez le clic gauche et tracez un cadre autour du tableau des joueurs dans le jeu",
+    "manualConfirm": "Confirmer",
+    "manualCancel": "Annuler",
+    "manualTooSmall": "Sélection trop petite"
   },
   "postbattle": {
     "rawData": "Données brutes",

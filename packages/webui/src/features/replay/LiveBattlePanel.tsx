@@ -66,7 +66,7 @@ export default defineComponent({
   setup(props) {
     const accounts = useAccountStore();
     const router = useRouter();
-    const { dataLanguage } = useLanguage();
+    const { dataLanguage, uiLocale } = useLanguage();
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -95,15 +95,61 @@ export default defineComponent({
     onBeforeUnmount(() => {
       unlistenStatus?.();
       unlistenStatus = null;
+      if (shakeTimer) {
+        clearTimeout(shakeTimer);
+        shakeTimer = null;
+      }
     });
 
     const statusBadge = computed(() => {
       const s = overlayStatus.value;
-      if (!s || s.state === "idle") return null;
+      if (!s) return null;
+      // A manual anchor stays ARMED across Idle/Searching (Rust marks every
+      // automatic report manual:true while it is stored): the badge — and
+      // with it the clear button — must survive those transitions too, since
+      // the anchor re-anchors on the same battle's next Tab hold.
+      if (s.manual) {
+        return { cls: "manual", text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
+      }
+      if (s.state === "idle") return null;
       return s.state === "detected"
         ? { cls: "detected", text: t("replay.live.detectedRows", { n: s.rows ?? 0 }) }
         : { cls: "searching", text: t("replay.live.searching") };
     });
+
+    /** A manual anchor is in force: the badge turns green and the button
+     *  flips from "manual locate" to "clear locate". */
+    const manualActive = computed(() => overlayStatus.value?.manual === true);
+
+    /** Manual-locate entry point: opens the drag-box picker window over the
+     *  game rect, or (when a manual anchor is already in force) clears it
+     *  back to the automatic detection flow. */
+    const manualBusy = ref(false);
+    /** Short shake when the backend refuses to open the picker (no fresh
+     *  battle roster / no game window) — visible feedback, never silent. */
+    const manualShake = ref(false);
+    let shakeTimer: ReturnType<typeof setTimeout> | null = null;
+    async function onManualButton() {
+      if (manualBusy.value) return;
+      manualBusy.value = true;
+      try {
+        if (manualActive.value) {
+          await api.clearManualRosterRect();
+        } else {
+          await api.startManualLocate(uiLocale.value);
+        }
+      } catch (err) {
+        console.warn("[live-battle] manual locate refused:", err);
+        manualShake.value = true;
+        if (shakeTimer) clearTimeout(shakeTimer);
+        shakeTimer = setTimeout(() => {
+          manualShake.value = false;
+          shakeTimer = null;
+        }, 500);
+      } finally {
+        manualBusy.value = false;
+      }
+    }
 
     const allies = computed(
       () => props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
@@ -228,12 +274,20 @@ export default defineComponent({
                   {statusBadge.value.text}
                 </span>
                 <button
-                  class="live-battle__manual-btn"
+                  class={[
+                    "live-battle__manual-btn",
+                    {
+                      "live-battle__manual-btn--active": manualActive.value,
+                      "live-battle__manual-btn--shake": manualShake.value,
+                    },
+                  ]}
                   type="button"
-                  disabled
-                  title={t("replay.live.manualPending")}
+                  disabled={manualBusy.value}
+                  onClick={() => void onManualButton()}
                 >
-                  {t("replay.live.manualLocate")}
+                  {manualActive.value
+                    ? t("replay.live.manualClear")
+                    : t("replay.live.manualLocate")}
                 </button>
               </>
             ) : null}

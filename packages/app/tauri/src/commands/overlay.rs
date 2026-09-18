@@ -29,13 +29,23 @@
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
 //! variant meaning the centered hint is what's on screen) ↔ detected
-//! (chips anchored) — is additionally broadcast to ALL windows as
+//! (chips anchored) ↔ manual (chips anchored to a user-drawn box) — is
+//! additionally broadcast to ALL windows as
 //! `wowsp://overlay-status` (payload [`OverlayStatus`]). The main window's
 //! live-battle panel badges the detection state from it. Transitions only:
 //! the watcher keeps a loop-local mirror of the last emitted status and
 //! drops no-op reports, so the ~30 Hz poll can never flood the event pipe.
-//! The `manual` field of the payload stays `false` until the manual-locate
-//! flow ships.
+//!
+//! The MANUAL LOCATE flow (`start_manual_locate` → the drag-box picker
+//! window → `set_manual_roster_rect`) lets the player anchor the chips by
+//! hand when auto detection keeps missing: a dedicated, INTERACTIVE
+//! transparent window covers the game rect, the player drags a rectangle
+//! over the team table, and the selection is stored as a [`ManualAnchor`].
+//! While it stays valid (same battle stamp + same game-window rect) the
+//! watcher uses it INSTEAD of running the detector — no capture, no OCR,
+//! no pin, and the 5 s revalidation deliberately never touches it. A new
+//! battle or a moved/resized game window silently expires it back to the
+//! automatic flow; hiding the overlay does NOT.
 //!
 //! The overlay window is created lazily by `create_overlay_window` (called
 //! once when overlay mode starts, hidden) and destroyed by
@@ -61,6 +71,15 @@ use super::{overlay_detect, row_recognize};
 
 /// Label of the dedicated overlay window (distinct from "main").
 const OVERLAY_LABEL: &str = "overlay";
+
+/// Label of the manual-locate picker window (screenshot-style drag box).
+/// A SEPARATE window from [`OVERLAY_LABEL`]: it must RECEIVE mouse + keyboard
+/// input (never click-through) while the overlay chips window must never.
+const MANUAL_LOCATE_LABEL: &str = "manual-locate";
+
+/// Minimum accepted size (physical px) of a manual roster selection, per
+/// axis — anything smaller cannot carry a readable table row.
+const MANUAL_MIN_SIZE: i32 = 32;
 
 /// Tauri event carrying the latest anchor to the overlay webview.
 pub const OVERLAY_ANCHOR_EVENT: &str = "wowsp://overlay-anchor";
@@ -167,6 +186,13 @@ pub async fn create_overlay_window(
 /// store, and closing the webview skips Vue teardown.
 #[tauri::command]
 pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
+    // Manual-locate leftovers must not outlive overlay mode: an open picker
+    // window and a stored anchor are both torn down BEFORE the watcher
+    // stops, so its loop-exit idle report already carries manual: false.
+    destroy_manual_locate_window(&app);
+    if take_manual_anchor().is_some() {
+        tracing::info!("manual anchor dropped with overlay mode");
+    }
     stop_overlay_tab_watch().await?;
     let _ = super::arena_info::stop_arena_watcher().await;
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
@@ -251,6 +277,369 @@ fn post_create_window_setup(win: &tauri::WebviewWindow) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Manual locate (screenshot-style drag box)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// A user-drawn roster box, valid for ONE battle (arena stamp) on ONE
+/// game-window geometry. Stored across Tab presses in [`MANUAL_ANCHOR`]:
+/// while the battle stamp and the game rect both still match, every Tab
+/// hold anchors the chips to this box instead of running the detector.
+#[derive(Debug, Clone)]
+struct ManualAnchor {
+    /// Arena stamp (tempArenaInfo.json mtime) the box was drawn under — a
+    /// new battle invalidates it.
+    battle: i64,
+    /// Game-window rect at draw time (physical screen px) — a moved or
+    /// resized game window invalidates it.
+    game_rect: Rect,
+    /// The selection itself, PHYSICAL px relative to the game window's
+    /// top-left corner (exactly what the picker webview submits).
+    rect: Rect,
+    /// (allies, enemies) of the roster at draw time — drives the row-grid
+    /// derivation. Frozen here so a roster re-read mid-battle cannot
+    /// silently move chips the user just placed.
+    team_sizes: (usize, usize),
+}
+
+/// Cross-press manual anchor store (same static pattern as `TAB_WATCHER`).
+/// `None` = no manual anchor in force.
+static MANUAL_ANCHOR: Mutex<Option<ManualAnchor>> = Mutex::new(None);
+
+/// Outcome of checking the stored manual anchor against the CURRENT battle
+/// stamp + game-window rect.
+#[derive(Debug, Clone)]
+enum ManualAnchorCheck {
+    /// In force — carries a clone plus the matched game rect (which is
+    /// therefore known to be `Some`).
+    Live(ManualAnchor, Rect),
+    /// Stored but expired: the battle changed, or the game window
+    /// moved/resized. The watcher drops it and falls back to the automatic
+    /// flow.
+    Stale,
+    /// Nothing stored — or no game-window rect THIS tick to judge against.
+    /// The second case is deliberately NOT `Stale`: a transient HWND
+    /// resolution miss must not nuke a box the user just drew.
+    Inert,
+}
+
+/// Pure decision: does the stored manual anchor still apply to this battle
+/// on this game-window geometry?
+fn manual_anchor_check(battle: i64, game_rect: Option<Rect>) -> ManualAnchorCheck {
+    let Ok(guard) = MANUAL_ANCHOR.lock() else {
+        return ManualAnchorCheck::Inert;
+    };
+    let Some(m) = guard.as_ref() else {
+        return ManualAnchorCheck::Inert;
+    };
+    if m.battle != battle {
+        return ManualAnchorCheck::Stale;
+    }
+    match game_rect {
+        Some(r) if r == m.game_rect => ManualAnchorCheck::Live(m.clone(), r),
+        Some(_) => ManualAnchorCheck::Stale,
+        None => ManualAnchorCheck::Inert,
+    }
+}
+
+/// Drop the stored manual anchor, whatever the reason (battle/window change,
+/// explicit clear, overlay-mode teardown).
+fn take_manual_anchor() -> Option<ManualAnchor> {
+    let mut guard = MANUAL_ANCHOR.lock().ok()?;
+    guard.take()
+}
+
+/// Total row count of the STORED manual anchor, when one is armed (any
+/// liveness — the watcher only expires it on the focused+Tab path). Drives
+/// the `manual` flag on automatic status reports: while the anchor survives
+/// an Idle/Searching transition, the panel's manual badge + clear button
+/// must survive it with it.
+fn manual_anchor_stored_rows() -> Option<u32> {
+    let guard = MANUAL_ANCHOR.lock().ok()?;
+    guard
+        .as_ref()
+        .map(|m| (m.team_sizes.0 + m.team_sizes.1) as u32)
+}
+
+/// Pure: validate a picker submission (game-relative physical px) against
+/// the game rect.
+fn validate_manual_selection(sel: &Rect, game: &Rect) -> Result<(), String> {
+    if sel.width <= MANUAL_MIN_SIZE || sel.height <= MANUAL_MIN_SIZE {
+        return Err(format!(
+            "selection {}x{} too small (min {}x{} px per axis)",
+            sel.width, sel.height, MANUAL_MIN_SIZE, MANUAL_MIN_SIZE
+        ));
+    }
+    if sel.x < 0 || sel.y < 0 || sel.x + sel.width > game.width || sel.y + sel.height > game.height
+    {
+        return Err(format!(
+            "selection ({},{})+{}x{} escapes the game window {}x{}",
+            sel.x, sel.y, sel.width, sel.height, game.width, game.height
+        ));
+    }
+    Ok(())
+}
+
+/// Pure: derive the chip-row centers from a manual selection. Each team's
+/// rows spread EVENLY over the FULL selection height at the pitch of the
+/// LARGER team (`height / max(allies, enemies)`): the in-game panel renders
+/// two side-by-side columns, the taller one fills the box, and row `i` of a
+/// side sits at `y + pitch * (i + 0.5)`. The two blocks are concatenated
+/// allies-first (the [`OverlayAnchor`] block order); a shorter enemy side
+/// simply ends early.
+fn manual_row_centers(rect: &Rect, team_sizes: (usize, usize)) -> Vec<i32> {
+    let tallest = team_sizes.0.max(team_sizes.1).max(1) as i32;
+    let pitch = rect.height as f64 / tallest as f64;
+    let mut centers = Vec::with_capacity(team_sizes.0 + team_sizes.1);
+    for count in [team_sizes.0, team_sizes.1] {
+        for i in 0..count as i64 {
+            centers.push(rect.y + (pitch * (i as f64 + 0.5)).round() as i32);
+        }
+    }
+    centers
+}
+
+/// Build the chip-layer anchor from a live manual anchor: the selection is
+/// treated exactly like a DETECTED roster rect (padded, re-based to the
+/// overlay window origin by the shared `overlay_detect::build_anchor`), with
+/// a 0.5 team split (two side-by-side columns). `row_players` stays `None`
+/// ON PURPOSE: the OCR pipeline is not run on a hand-drawn box — the per-row
+/// player count comes from the roster and need not match the drawn rows, so
+/// an index guess could pin the wrong stats onto chips. Honest silence (no
+/// chips on an off-count row) beats confidently wrong data.
+fn build_manual_anchor(m: &ManualAnchor, game_screen: Rect) -> OverlayAnchor {
+    let rows = manual_row_centers(&m.rect, m.team_sizes);
+    let (_, anchor) = overlay_detect::build_anchor(&game_screen, &m.rect, rows, 0.5, true);
+    anchor
+}
+
+/// Destroy the picker window if present (any teardown path: confirm,
+/// cancel, overlay-mode end, game exit). Pure programmatic teardown —
+/// `destroy()`, not `close()`, for the same reason as
+/// `destroy_overlay_window`.
+fn destroy_manual_locate_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(MANUAL_LOCATE_LABEL)
+        && let Err(e) = win.destroy()
+    {
+        tracing::warn!(error = %e, "destroy manual-locate window failed");
+    }
+}
+
+/// Kill the DWM 1px border + rounded corners on the borderless transparent
+/// picker (same visual fix as `post_create_window_setup`) — but deliberately
+/// WITHOUT the click-through (`set_ignore_cursor_events`) and the
+/// NOACTIVATE/TOOLWINDOW ex-styles: the picker must receive mouse + keyboard
+/// input and may take focus (Enter/Esc are part of the flow).
+#[cfg(target_os = "windows")]
+fn post_create_manual_window_setup(win: &tauri::WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::{
+        DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND, DwmSetWindowAttribute,
+    };
+    if let Ok(hwnd) = win.hwnd() {
+        let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_NCRENDERING_POLICY,
+                &(DWMNCRP_DISABLED.0) as *const _ as *const core::ffi::c_void,
+                4,
+            );
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &(DWMWCP_DONOTROUND.0) as *const _ as *const core::ffi::c_void,
+                4,
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn post_create_manual_window_setup(_win: &tauri::WebviewWindow) {}
+
+/// Open the manual-locate picker: a transparent, always-on-top, INTERACTIVE
+/// window placed exactly over the game rect (same Win32 geometry source as
+/// the Tab watcher), where the player drag-boxes the team table.
+/// Single-instance — a call while one is open is a no-op. Requires a fresh
+/// battle roster and a resolvable game window.
+#[tauri::command]
+pub async fn start_manual_locate(app: AppHandle, locale: Option<String>) -> Result<(), String> {
+    if app.get_webview_window(MANUAL_LOCATE_LABEL).is_some() {
+        return Ok(()); // already open
+    }
+    // Same battle-known gate as the Tab watcher, with the same cheap
+    // synchronous refresh on a stale cache.
+    let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+    if !battle_known {
+        battle_known = super::arena_info::refresh_battle_state();
+    }
+    if !battle_known {
+        return Err("no fresh battle roster — manual locate unavailable".into());
+    }
+    #[cfg(target_os = "windows")]
+    let game_rect = rect_from_win32(find_game_window().ok_or("game window not found")?.rect);
+    #[cfg(not(target_os = "windows"))]
+    let game_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+    };
+
+    // Same pre-rendered static page pattern as the overlay window (no Vue,
+    // instant first paint); the locale picks the hint/button copy.
+    let mut url = "/manual-locate.html".to_string();
+    if let Some(l) = locale.as_deref().filter(|l| !l.is_empty()) {
+        url.push_str("?locale=");
+        url.push_str(l);
+    }
+    let win = WebviewWindowBuilder::new(&app, MANUAL_LOCATE_LABEL, WebviewUrl::App(url.into()))
+        .title("WoWSP Manual Locate")
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .visible(false) // shown once placed over the game rect
+        .build()
+        .map_err(|e| format!("create manual-locate window: {e}"))?;
+    post_create_manual_window_setup(&win);
+    // Physical-pixel alignment with the game rect — the same rect the
+    // watcher BitBlts and places the overlay at. The one-shot interactive
+    // flow can afford Tauri's main-thread dispatch (unlike the watcher's
+    // hot path, which uses direct async Win32 calls).
+    let _ = win.set_position(tauri::PhysicalPosition::new(game_rect.x, game_rect.y));
+    let _ = win.set_size(tauri::PhysicalSize::new(
+        game_rect.width.max(1) as u32,
+        game_rect.height.max(1) as u32,
+    ));
+    win.show().map_err(|e| format!("show manual-locate: {e}"))?;
+    let _ = win.set_focus();
+    tracing::info!(
+        rect = format!(
+            "{}x{} at ({},{})",
+            game_rect.width, game_rect.height, game_rect.x, game_rect.y
+        ),
+        "manual-locate picker opened"
+    );
+    Ok(())
+}
+
+/// Cancel + destroy the manual-locate picker without storing anything
+/// (the picker page's Cancel button / Esc).
+#[tauri::command]
+pub async fn cancel_manual_locate(app: AppHandle) -> Result<(), String> {
+    destroy_manual_locate_window(&app);
+    Ok(())
+}
+
+/// Submit the picker's selection (physical px relative to the game window
+/// origin): validate it, freeze it as the manual anchor for the CURRENT
+/// battle + game geometry, and close the picker. The anchor takes effect on
+/// the next Tab hold; the status broadcast flips the live-battle panel to
+/// its manual badge immediately.
+#[tauri::command]
+pub async fn set_manual_roster_rect(
+    app: AppHandle,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    let sel = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+    // Battle gate — same freshness rule as the Tab watcher.
+    let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+    if !battle_known {
+        battle_known = super::arena_info::refresh_battle_state();
+    }
+    if !battle_known {
+        return Err("no fresh battle roster — manual locate unavailable".into());
+    }
+    let team_sizes = super::arena_info::last_known_team_sizes();
+    if team_sizes.0.max(team_sizes.1) == 0 {
+        return Err("battle roster team sizes unknown — cannot derive rows".into());
+    }
+    #[cfg(target_os = "windows")]
+    let game_rect = rect_from_win32(find_game_window().ok_or("game window not found")?.rect);
+    #[cfg(not(target_os = "windows"))]
+    let game_rect = Rect {
+        x: 0,
+        y: 0,
+        width: i32::MAX,
+        height: i32::MAX,
+    };
+    validate_manual_selection(&sel, &game_rect)?;
+    let battle = super::arena_info::last_arena_stamp();
+    *MANUAL_ANCHOR
+        .lock()
+        .map_err(|e| format!("manual anchor lock: {e}"))? = Some(ManualAnchor {
+        battle,
+        game_rect,
+        rect: sel,
+        team_sizes,
+    });
+    // Immediate panel feedback (green "manually located" badge + the button
+    // flips to "clear"). The watcher re-emits the identical payload when it
+    // actually places the chips, so a lost race costs nothing.
+    let rows = (team_sizes.0 + team_sizes.1) as u32;
+    if let Err(e) = app.emit(
+        OVERLAY_STATUS_EVENT,
+        OverlayStatus {
+            state: OverlayState::Manual,
+            rows: Some(rows),
+            manual: true,
+        },
+    ) {
+        tracing::warn!(error = %e, "emit overlay-status failed");
+    }
+    // Success — the picker's job is done; it must not linger as a zombie.
+    destroy_manual_locate_window(&app);
+    tracing::info!(
+        battle,
+        sel = format!("{}x{} at ({},{})", sel.width, sel.height, sel.x, sel.y),
+        allies = team_sizes.0,
+        enemies = team_sizes.1,
+        "manual roster anchor set"
+    );
+    Ok(())
+}
+
+/// Drop the manual anchor (the live-battle panel's "clear locate" button)
+/// and report the state the overlay is ACTUALLY in: visible → the automatic
+/// flow is searching; hidden (Tab up / game unfocused) → idle. An
+/// unconditional "searching" would stick forever — the watcher's hide branch
+/// only runs while the overlay is shown, so nothing would ever demote the
+/// badge afterwards. Also closes the picker if one is somehow still open.
+#[tauri::command]
+pub async fn clear_manual_roster_rect(app: AppHandle) -> Result<(), String> {
+    if take_manual_anchor().is_some() {
+        tracing::info!("manual anchor cleared by user");
+    }
+    destroy_manual_locate_window(&app);
+    let state = if overlay_window_visible(&app) {
+        OverlayState::Searching
+    } else {
+        OverlayState::Idle
+    };
+    if let Err(e) = app.emit(
+        OVERLAY_STATUS_EVENT,
+        OverlayStatus {
+            state,
+            rows: None,
+            manual: false,
+        },
+    ) {
+        tracing::warn!(error = %e, "emit overlay-status failed");
+    }
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Tab watcher
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -329,8 +718,16 @@ struct PinnedAnchor {
 /// from the last emitted one: the tick runs at ~30 Hz and its branches
 /// re-enter every poll, while the consumer (the live-battle panel badge)
 /// wants edge events, not level events. `last_status` is the loop-local
-/// mirror of what already went out (`None` = nothing emitted yet). `manual`
-/// stays `false` — the field is reserved for the upcoming manual-locate flow.
+/// mirror of what already went out (`None` = nothing emitted yet). Emissions
+/// from OUTSIDE the loop (`set_manual_roster_rect` /
+/// `clear_manual_roster_rect`) bypass this mirror — a duplicate payload at
+/// the consumer is harmless, so the loop just re-emits on its next edge.
+///
+/// While a manual anchor is STORED (armed, whatever its liveness), every
+/// automatic report carries `manual: true` and the anchor's row count: the
+/// panel's green manual badge + clear button must survive Idle/Searching
+/// transitions, because the anchor itself does — it re-anchors on the same
+/// battle's next Tab hold.
 #[cfg(target_os = "windows")]
 fn report_status(
     app: &AppHandle,
@@ -338,10 +735,12 @@ fn report_status(
     state: OverlayState,
     rows: Option<u32>,
 ) {
+    let manual_rows = manual_anchor_stored_rows();
+    let manual = manual_rows.is_some() || state == OverlayState::Manual;
     let status = OverlayStatus {
         state,
-        rows,
-        manual: false,
+        rows: rows.or(manual_rows.filter(|_| manual)),
+        manual,
     };
     if *last_status == Some(status) {
         return;
@@ -357,6 +756,10 @@ fn report_status(
 fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     let mut overlay_shown = false;
     let mut pinned_anchor: Option<PinnedAnchor> = None;
+    // Whether the CURRENTLY shown overlay is the manual anchor's placement
+    // (vs an automatic detection): gates the one-shot manual place_and_show
+    // so a live manual anchor does not re-place every 30 ms tick.
+    let mut manual_shown = false;
     let mut cached_game: Option<(GameWindow, Instant)> = None;
     // When the last game-window SCAN ran — bounds find_game_window() even
     // when it keeps failing (each call takes a full Toolhelp process
@@ -392,6 +795,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 &app,
                 &mut overlay_shown,
                 &mut pinned_anchor,
+                &mut manual_shown,
                 &mut cached_game,
                 &mut last_scan,
                 &mut last_capture_attempt,
@@ -423,6 +827,7 @@ fn watch_tab_tick(
     app: &AppHandle,
     overlay_shown: &mut bool,
     pinned_anchor: &mut Option<PinnedAnchor>,
+    manual_shown: &mut bool,
     cached_game: &mut Option<(GameWindow, Instant)>,
     last_scan: &mut Option<Instant>,
     last_capture_attempt: &mut Option<Instant>,
@@ -466,7 +871,65 @@ fn watch_tab_tick(
             battle_known = super::arena_info::refresh_battle_state();
             tracing::debug!(battle_known, "tab held: refreshed battle state");
         }
-        let want_visible = focused_on_game && tab_down && battle_known;
+        // The manual-locate picker covers the game and owns the pointer:
+        // while it exists the overlay must never fight it for screen space,
+        // and it is torn down when the game window disappears underneath it.
+        let picker_open = app.get_webview_window(MANUAL_LOCATE_LABEL).is_some();
+        if picker_open && game.is_none() {
+            destroy_manual_locate_window(app);
+        }
+
+        let battle = super::arena_info::last_arena_stamp();
+        let game_rect = game.map(|g| rect_from_win32(g.rect));
+        // MANUAL anchor first: while a user-drawn box is in force for THIS
+        // battle on THIS game-window geometry, it replaces the entire
+        // automatic machine for the tick — no capture, no detector, no pin.
+        // The 5 s revalidation never touches it (there is nothing to
+        // re-detect about a hand-drawn box), and hiding the overlay does
+        // not expire it (the same battle's next Tab hold re-places it). It
+        // shares the auto path's preconditions (game focused + Tab held +
+        // battle known), minus the picker.
+        let manual_active = if !picker_open && focused_on_game && tab_down && battle_known {
+            match manual_anchor_check(battle, game_rect) {
+                ManualAnchorCheck::Live(m, r) => Some((m, r)),
+                ManualAnchorCheck::Stale => {
+                    // New battle, or the game window moved/resized: expire
+                    // silently back to the automatic flow (the panel status
+                    // flips via the normal searching/idle reports).
+                    tracing::info!(battle, "manual anchor expired — back to auto detection");
+                    take_manual_anchor();
+                    None
+                },
+                // Nothing stored — or no game rect this tick to judge the
+                // window-geometry half with.
+                ManualAnchorCheck::Inert => None,
+            }
+        } else {
+            None
+        };
+
+        let want_visible = focused_on_game && tab_down && battle_known && !picker_open;
+        if let Some((m, manual_game)) = manual_active {
+            // Place ONCE per manual hold, not every 30 ms tick.
+            if !*overlay_shown || !*manual_shown {
+                let anchor = build_manual_anchor(&m, manual_game);
+                place_and_show(app, &anchor);
+                report_status(
+                    app,
+                    last_status,
+                    OverlayState::Manual,
+                    Some(anchor.row_centers.len() as u32),
+                );
+                *overlay_shown = true;
+                *manual_shown = true;
+                *last_hide = None;
+            }
+            // The manual anchor owns this tick: neither the automatic
+            // acquisition path below nor the hide-retry branch may touch
+            // the overlay while it stays live.
+            return;
+        }
+        *manual_shown = false;
         if want_visible {
             // A CONFIRMED pin is the only "done" state. Shown WITHOUT one —
             // the centered-fallback hint — must keep acquiring: a Tab press
@@ -501,8 +964,8 @@ fn watch_tab_tick(
                 // slightly different header bands frame to frame and the
                 // chips visibly wandered ("飘"). The pin lives for the whole
                 // battle (arena stamp) or until the window moves/resizes.
-                let battle = super::arena_info::last_arena_stamp();
-                let game_rect = game.map(|g| rect_from_win32(g.rect));
+                // (`battle` / `game_rect` are hoisted to the tick top, where
+                // the manual-anchor check above shares them.)
                 let pinned = pinned_anchor.as_ref().filter(|p| {
                     p.battle == battle
                         && game_rect.is_some_and(|r| r == p.game_rect)
@@ -662,7 +1125,8 @@ fn revalidate_pinned_anchor(
 }
 
 /// Whether the overlay window currently reports as visible (false when it is
-/// missing). Used to stop the hide-retry loop once the hide really landed.
+/// missing). Used to stop the hide-retry loop once the hide really landed,
+/// and by `clear_manual_roster_rect` to pick the honest post-clear state.
 #[cfg(target_os = "windows")]
 fn overlay_window_visible(app: &AppHandle) -> bool {
     use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
@@ -670,6 +1134,11 @@ fn overlay_window_visible(app: &AppHandle) -> bool {
         .and_then(|win| win.hwnd().ok())
         .map(|hwnd| unsafe { IsWindowVisible(windows::Win32::Foundation::HWND(hwnd.0)).as_bool() })
         .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn overlay_window_visible(_app: &AppHandle) -> bool {
+    false
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1227,5 +1696,203 @@ fn capture_game_rgba(rect: &windows::Win32::Foundation::RECT) -> Option<(Vec<u8>
         let _ = DeleteDC(hdc_mem);
         let _ = ReleaseDC(None, hdc_screen);
         out
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests (pure manual-anchor logic — no Win32, no window needed)
+// ─────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manual_row_centers_split_two_even_blocks() {
+        let rect = Rect {
+            x: 100,
+            y: 200,
+            width: 500,
+            height: 300,
+        };
+        // 3 allies vs 2 enemies: the pitch comes from the TALLER side
+        // (300 / 3 = 100), allies fill the box, the enemy block ends early.
+        let rows = manual_row_centers(&rect, (3, 2));
+        assert_eq!(rows.len(), 5, "allies block + enemies block");
+        // Allies: y + pitch * (i + 0.5).
+        assert_eq!(&rows[..3], &[250, 350, 450]);
+        // Enemies share the same pitch and box, just fewer rows.
+        assert_eq!(&rows[3..], &[250, 350]);
+    }
+
+    #[test]
+    fn manual_row_centers_handles_asymmetric_and_minimal() {
+        let rect = Rect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        // 12v6: pitch = 1080 / 12 = 90; 18 rows total.
+        let rows = manual_row_centers(&rect, (12, 6));
+        assert_eq!(rows.len(), 18);
+        assert_eq!(rows[0], 45);
+        assert_eq!(rows[11], 45 + 90 * 11);
+        assert_eq!(rows[12], 45, "enemy block restarts at the first row center");
+
+        // Degenerate (0, 0) roster: no rows at all (the command path
+        // rejects an empty roster before an anchor is ever stored).
+        let rows = manual_row_centers(&rect, (0, 0));
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn manual_selection_validation_bounds() {
+        let game = Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        // Happy path.
+        let sel = Rect {
+            x: 600,
+            y: 300,
+            width: 1200,
+            height: 500,
+        };
+        assert!(validate_manual_selection(&sel, &game).is_ok());
+        // Too small (per axis).
+        let tiny = Rect {
+            x: 10,
+            y: 10,
+            width: 20,
+            height: 400,
+        };
+        assert!(validate_manual_selection(&tiny, &game).is_err());
+        // Escapes the game window.
+        let outside = Rect {
+            x: 2000,
+            y: 300,
+            width: 1200,
+            height: 500,
+        };
+        assert!(validate_manual_selection(&outside, &game).is_err());
+        // Negative origin.
+        let negative = Rect {
+            x: -5,
+            y: 10,
+            width: 1200,
+            height: 500,
+        };
+        assert!(validate_manual_selection(&negative, &game).is_err());
+    }
+
+    #[test]
+    fn manual_anchor_check_liveness_and_staleness() {
+        let game = Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        let stored = ManualAnchor {
+            battle: 111,
+            game_rect: game,
+            rect: Rect {
+                x: 600,
+                y: 300,
+                width: 1200,
+                height: 500,
+            },
+            team_sizes: (12, 12),
+        };
+        *MANUAL_ANCHOR.lock().unwrap() = Some(stored.clone());
+
+        // Same battle + same window → live.
+        assert!(matches!(
+            manual_anchor_check(111, Some(game)),
+            ManualAnchorCheck::Live(_, r) if r == game
+        ));
+        // New battle → stale.
+        assert!(matches!(
+            manual_anchor_check(222, Some(game)),
+            ManualAnchorCheck::Stale
+        ));
+        // Window moved → stale.
+        let moved = Rect {
+            x: 10,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        assert!(matches!(
+            manual_anchor_check(111, Some(moved)),
+            ManualAnchorCheck::Stale
+        ));
+        // No game rect this tick → inert (NOT stale: a transient HWND miss
+        // must not nuke the box).
+        assert!(matches!(
+            manual_anchor_check(111, None),
+            ManualAnchorCheck::Inert
+        ));
+
+        // While stored, the anchor's row total backs the automatic status
+        // reports' manual flag (the panel badge survives Idle/Searching).
+        assert_eq!(manual_anchor_stored_rows(), Some(24)); // 12 + 12
+
+        // Empty store → inert, and no manual rows to report.
+        *MANUAL_ANCHOR.lock().unwrap() = None;
+        assert!(matches!(
+            manual_anchor_check(111, Some(game)),
+            ManualAnchorCheck::Inert
+        ));
+        assert_eq!(manual_anchor_stored_rows(), None);
+    }
+
+    #[test]
+    fn build_manual_anchor_rebases_to_the_overlay_origin() {
+        let game = Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        let m = ManualAnchor {
+            battle: 7,
+            game_rect: game,
+            rect: Rect {
+                x: 600,
+                y: 300,
+                width: 1200,
+                height: 250,
+            },
+            team_sizes: (5, 5),
+        };
+        let anchor = build_manual_anchor(&m, game);
+        // A manual anchor is always a CONFIRMED table.
+        assert!(anchor.table_detected);
+        // row_players stays None on purpose — no OCR on a hand-drawn box.
+        assert!(anchor.row_players.is_none());
+        assert_eq!(anchor.row_centers.len(), 10);
+        // The overlay window covers the selection inflated by the shared
+        // padding, and the anchor coordinates are re-based to ITS origin
+        // (same contract as the auto detector's anchor): game-relative
+        // centers 325..525 (pitch 250/5 = 50) shift up by dy = rect.y - pad.
+        let pad = overlay_detect::overlay_padding(&m.rect);
+        let padx = overlay_detect::overlay_padding_x(&m.rect);
+        let dy = m.rect.y - pad; // 300 - 31 = 269
+        assert_eq!(anchor.row_centers[0], 325 - dy);
+        assert_eq!(anchor.row_centers[4], 525 - dy);
+        assert_eq!(
+            anchor.row_centers[5],
+            325 - dy,
+            "enemy block shares the grid"
+        );
+        assert_eq!(anchor.overlay_rect.x, m.rect.x - padx);
+        assert_eq!(anchor.overlay_rect.y, m.rect.y - pad);
+        assert_eq!(anchor.roster_rect.x, padx);
+        assert_eq!(anchor.roster_rect.y, pad);
+        assert_eq!(anchor.team_split, 0.5);
     }
 }

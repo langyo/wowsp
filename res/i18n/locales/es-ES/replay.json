@@ -88,7 +88,12 @@
     "detectedRows": "Ubicado · {n} filas",
     "searching": "Localizando…",
     "manualLocate": "Ubicación manual",
-    "manualPending": "Próximamente"
+    "manualClear": "Quitar ubicación manual",
+    "manualRows": "Ubicado manualmente · {n} filas",
+    "manualDragHint": "Mantén pulsado el botón izquierdo y arrastra para enmarcar la tabla de jugadores del juego",
+    "manualConfirm": "Confirmar",
+    "manualCancel": "Cancelar",
+    "manualTooSmall": "La selección es demasiado pequeña"
   },
   "postbattle": {
     "rawData": "Datos en bruto",
