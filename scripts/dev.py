@@ -107,7 +107,42 @@ def start_mock(procs: list[subprocess.Popen]) -> None:
         _log.warn(f"mock backend did not bind :{MOCK_PORT} in time", module="mock")
 
 
+def _port_occupied_by(port: int) -> str | None:
+    """Return a human-readable hint about what listens on `port`, or None
+    when the port is free. Guards against the nasty failure where ANOTHER
+    project's dev server holds the port: `_wait_port` would then see it as
+    'Vite ready' and Tauri would load that foreign app in our window."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("127.0.0.1", port)) != 0:
+            return None  # connect failed → free
+    pid = None
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, text=True, timeout=10
+        ).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[1] == f"127.0.0.1:{port}" and parts[3] == "LISTENING":
+                pid = parts[4]
+                break
+    except (OSError, subprocess.SubprocessError):
+        pass
+    who = f" (pid {pid})" if pid else ""
+    return f"something is already listening on :{port}{who}"
+
+
 def start_vite(procs: list[subprocess.Popen], extra_env: dict | None = None) -> None:
+    occupied = _port_occupied_by(VITE_PORT)
+    if occupied:
+        _log.error(
+            f"{occupied}. This is NOT WoWSP's dev server — Tauri would load that "
+            "foreign app into the game-overlay window. Kill the other dev server "
+            f"(netstat -ano | findstr :{VITE_PORT}) and rerun `just dev`.",
+            module="vite",
+        )
+        raise SystemExit(1)
     pnpm = "pnpm"
     env = extra_env or {}
     p = _run([pnpm, "--filter", "@wowsp/webui", "dev"], env=env)

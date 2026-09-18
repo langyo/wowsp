@@ -11,7 +11,9 @@
 use std::fs;
 
 use serde::Deserialize;
-use wowsp_tauri_shared::{GameVersionInfo, PlayerShipStats, StatsSnapshot};
+use wowsp_tauri_shared::{
+    GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint, StatsSnapshot,
+};
 
 /// Fetch (and cache) a player's per-ship PvP stats. `ship_name_map` is built
 /// from the encyclopedia cache so each entry carries a readable name.
@@ -41,6 +43,9 @@ pub async fn lookup_player_ship_stats(
                 cache_file.clone(),
                 serde_json::to_string(&enriched).unwrap_or_default(),
             );
+            // Also append a per-ship history point so later lookups can
+            // derive real "recent N days" deltas (WG has no per-battle API).
+            append_ship_history(&realm, account_id, &enriched, now_ts());
             enriched
         },
         Err(e) => {
@@ -54,6 +59,82 @@ pub async fn lookup_player_ship_stats(
         },
     };
     Ok(stats)
+}
+
+/// Points landing within this window of the latest history point replace it —
+/// a flurry of same-session lookups would otherwise pile up near-identical
+/// points and crowd out the genuinely old baselines a 30d range needs.
+const HISTORY_MERGE_SECS: i64 = 6 * 3600;
+/// Cap the history file. Generous on purpose: a heavy user querying 4×/day
+/// needs ~120 points just to keep a 30d baseline, so 240 covers that with
+/// headroom (~8 months of daily lookups, low MBs even at roster size).
+const HISTORY_MAX_POINTS: usize = 240;
+
+/// Append (or merge) a per-ship history point to
+/// `ship-history/<realm>_<accountId>.json`. Best-effort: a history write
+/// failure must never fail the lookup itself. `timestamp` is injectable for
+/// tests; the command path passes `now_ts()`.
+///
+/// Empty stats are ignored: a hidden profile (or a transient WG hiccup)
+/// returning an empty list must never become a baseline — an empty baseline
+/// would turn the player's whole career into "recent" deltas later.
+fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], timestamp: i64) {
+    if stats.is_empty() {
+        return;
+    }
+    let file = format!("ship-history/{realm}_{account_id}.json");
+    let mut history: Vec<ShipStatsHistoryPoint> = appdata_read(file.clone())
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+
+    let merges_with_last = history
+        .last()
+        .is_some_and(|last| timestamp - last.timestamp < HISTORY_MERGE_SECS);
+    if merges_with_last {
+        let last = history.last_mut().expect("is_some_and checked for Some");
+        last.timestamp = timestamp;
+        last.ships = stats.iter().map(career_totals).collect();
+    } else {
+        history.push(ShipStatsHistoryPoint {
+            timestamp,
+            ships: stats.iter().map(career_totals).collect(),
+        });
+    }
+    if history.len() > HISTORY_MAX_POINTS {
+        let drop = history.len() - HISTORY_MAX_POINTS;
+        history.drain(0..drop);
+    }
+    let _ = appdata_write(file, serde_json::to_string(&history).unwrap_or_default());
+}
+
+fn career_totals(s: &PlayerShipStats) -> ShipCareerTotals {
+    ShipCareerTotals {
+        ship_id: s.ship_id,
+        battles: s.battles,
+        wins: s.wins,
+        damage_caused: s.damage_caused,
+        frags: s.frags,
+        survived_battles: s.survived_battles,
+        last_battle_time: s.last_battle_time,
+    }
+}
+
+/// Read the per-ship history points for an account. The frontend picks the
+/// latest point at or before a date-range cutoff as the baseline and shows
+/// current − baseline as the real "recent N days" stats.
+#[tauri::command]
+pub async fn read_ship_stats_history(
+    account_id: i64,
+    realm: String,
+) -> Result<Vec<ShipStatsHistoryPoint>, String> {
+    let file = format!("ship-history/{realm}_{account_id}.json");
+    Ok(appdata_read(file)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default())
 }
 
 /// Append a career-stat snapshot for the given account. Called by the frontend
@@ -473,6 +554,126 @@ mod tests {
         assert!(RawShipStats::from_vortex(1, Some(&serde_json::Value::Null)).is_none());
         let zero = serde_json::json!({ "battles_count": 0, "wins": 0 });
         assert!(RawShipStats::from_vortex(1, Some(&zero)).is_none());
+    }
+
+    fn mk_stats(ship_id: i64, battles: i64) -> PlayerShipStats {
+        PlayerShipStats {
+            ship_id,
+            name: String::new(),
+            battles,
+            wins: battles / 2,
+            damage_caused: battles * 10_000,
+            frags: battles,
+            survived_battles: battles / 3,
+            winrate: 50.0,
+            avg_damage: 10_000.0,
+            last_battle_time: 1_700_000_000,
+        }
+    }
+
+    fn read_history_file(file: &str) -> Vec<ShipStatsHistoryPoint> {
+        appdata_read(file.to_string())
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default()
+    }
+
+    /// Points within the merge window replace the latest point; points beyond
+    /// it append; the JSON round-trips with camelCase fields intact.
+    #[test]
+    fn ship_history_appends_and_merges() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file = format!("ship-history/test_{ts}.json");
+        let _ = appdata_write(file.clone(), "[]".into());
+
+        let t0: i64 = 1_700_000_000;
+        append_ship_history("test", ts as i64, &[mk_stats(1, 100)], t0);
+        // Same session (< 6h apart) — merges into one point, latest timestamp.
+        append_ship_history("test", ts as i64, &[mk_stats(1, 110)], t0 + 3600);
+        // Exactly HISTORY_MERGE_SECS later — the window is exclusive, so this
+        // appends rather than merges.
+        append_ship_history(
+            "test",
+            ts as i64,
+            &[mk_stats(1, 120)],
+            t0 + 3600 + HISTORY_MERGE_SECS,
+        );
+        // Next day — appends another point.
+        append_ship_history("test", ts as i64, &[mk_stats(1, 130)], t0 + 90_000);
+
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), 3, "only same-session points merge");
+        assert_eq!(history[0].timestamp, t0 + 3600);
+        assert_eq!(history[0].ships.len(), 1);
+        assert_eq!(history[0].ships[0].ship_id, 1);
+        assert_eq!(history[0].ships[0].battles, 110);
+        assert_eq!(history[0].ships[0].last_battle_time, 1_700_000_000);
+        assert_eq!(history[1].timestamp, t0 + 3600 + HISTORY_MERGE_SECS);
+        assert_eq!(history[2].timestamp, t0 + 90_000);
+        assert_eq!(history[2].ships[0].battles, 130);
+
+        let path = appdata_dir().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Empty stats (hidden profile / transient WG hiccup) must never be
+    /// recorded — an empty baseline would later turn the whole career into
+    /// "recent" deltas, silently resurrecting the original bug.
+    #[test]
+    fn ship_history_ignores_empty_stats() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file = format!("ship-history/test_{ts}.json");
+        let _ = appdata_write(file.clone(), "[]".into());
+
+        let t0: i64 = 1_700_000_000;
+        // Empty fetch inside the merge window — must not wipe the good point.
+        append_ship_history("test", ts as i64, &[mk_stats(1, 100)], t0);
+        append_ship_history("test", ts as i64, &[], t0 + 60);
+
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), 1, "empty fetch must be ignored");
+        assert_eq!(history[0].timestamp, t0);
+        assert_eq!(history[0].ships[0].battles, 100);
+
+        let path = appdata_dir().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// The history file is capped at HISTORY_MAX_POINTS, dropping the oldest.
+    #[test]
+    fn ship_history_caps_at_max_points() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file = format!("ship-history/test_{ts}.json");
+        let _ = appdata_write(file.clone(), "[]".into());
+
+        let t0: i64 = 1_700_000_000;
+        for i in 0..(HISTORY_MAX_POINTS as i64 + 5) {
+            // Step beyond the merge window so every point appends.
+            append_ship_history("test", ts as i64, &[mk_stats(1, i)], t0 + i * 7 * 3600);
+        }
+
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), HISTORY_MAX_POINTS);
+        // The oldest 5 points were dropped; the survivor with the smallest
+        // timestamp is the 6th point written (battles = 5).
+        assert_eq!(history[0].ships[0].battles, 5);
+        assert_eq!(
+            history.last().unwrap().ships[0].battles,
+            HISTORY_MAX_POINTS as i64 + 4,
+        );
+
+        let path = appdata_dir().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
     }
 
     /// Snapshot append: write 3 snapshots, read back, expect length 3 in order.

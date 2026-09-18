@@ -17,7 +17,12 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
 import { winrateColor } from "@/utils/winrate";
-import { filterByDateRange, type DateRange } from "@/utils/shipAggregation";
+import {
+  computeRecentDelta,
+  dateRangeCutoff,
+  filterByDateRange,
+  type DateRange,
+} from "@/utils/shipAggregation";
 import { api, type ClanInfo, type ClanSuggestion, type PlayerShipStats, type PlayerSuggestion, type PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import "./LookupView.scss";
@@ -143,9 +148,21 @@ export default defineComponent({
       );
     }
 
-    /** "Recently played" filter — same semantics as Dashboard's date range. */
+    /** Date range — same semantics as Dashboard's: real per-ship deltas
+     *  against the latest locally recorded baseline at or before the range
+     *  cutoff (WG has no per-battle data), with the labeled career
+     *  fallback while no old-enough baseline exists. */
     const dateRange = ref<DateRange>("all");
-    const dateFiltered = computed(() => filterByDateRange(shipRows.value, dateRange.value));
+    const recentDelta = computed(() => {
+      if (dateRange.value === "all") return null;
+      const acc = result.value;
+      if (!acc) return null;
+      const hist = shipStats.history.get(`${realm.value}_${acc.accountId}`) ?? [];
+      return computeRecentDelta(shipRows.value, hist, dateRangeCutoff(dateRange.value));
+    });
+    const dateFiltered = computed(
+      () => recentDelta.value?.ships ?? filterByDateRange(shipRows.value, dateRange.value),
+    );
     const rangeOptions = [
       { value: "1d", label: t("dashboard.range1d") },
       { value: "7d", label: t("dashboard.range7d") },
@@ -437,6 +454,17 @@ export default defineComponent({
                     onChange={(v) => (filterState.value = v)}
                   />
                 </div>
+                {/* What the selected range actually covers — WG only serves
+                    career totals, so deltas need a local baseline. */}
+                {dateRange.value !== "all" ? (
+                  <p class="lookup-view__range-note">
+                    {recentDelta.value
+                      ? t("dashboard.rangeSince", {
+                          date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                        })
+                      : t("dashboard.rangeNoHistory")}
+                  </p>
+                ) : null}
                 {/* Per-type summary cards */}
                 {typeSummary.value.length > 0 ? (
                   <div class="lookup-view__typegrid">

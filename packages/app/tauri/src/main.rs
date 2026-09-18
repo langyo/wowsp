@@ -277,6 +277,7 @@ fn main() {
             commands::encyclopedia::get_game_version,
             commands::encyclopedia::get_ship_encyclopedia,
             commands::ship_stats::lookup_player_ship_stats,
+            commands::ship_stats::read_ship_stats_history,
             commands::ship_stats::snapshot_player_stats,
             commands::gameparams::get_ship_gameparams,
             commands::model_pack::ensure_model_pack,
