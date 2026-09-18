@@ -31,6 +31,12 @@ const INDEX_CACHE_FILE: &str = "mod-catalog.json";
 const LEDGER_FILE: &str = "mods/installed.json";
 pub const CATALOG_PROGRESS_EVENT: &str = "wowsp://mod-catalog-progress";
 
+/// How long a cached `mod-catalog.json` is served without a re-fetch. A
+/// stale index whose package hashes drifted from the release is the classic
+/// "every install fails the SHA-256 check" trap; refetching keeps them in
+/// step while still working offline (a failed refresh falls back to cache).
+const INDEX_CACHE_TTL_HOURS: i64 = 6;
+
 /// Direct download first, then the updater's CN mirror prefixes.
 fn index_urls() -> Vec<String> {
     let path = "langyo/wowsp/releases/download/mod-hub/mod-index.json";
@@ -43,6 +49,35 @@ fn index_urls() -> Vec<String> {
     ]
 }
 
+/// Download candidates for a release asset: GitHub direct first, then the
+/// same CN mirror prefixes the index fetch uses. Non-GitHub URLs are
+/// returned unchanged (single candidate).
+fn download_candidates(url: &str) -> Vec<String> {
+    const MIRRORS: [&str; 4] = [
+        "https://ghp.ci/",
+        "https://gh-proxy.com/",
+        "https://ghfast.top/",
+        "https://ghproxy.net/",
+    ];
+    match url.strip_prefix("https://github.com/") {
+        Some(rest) => std::iter::once(url.to_string())
+            .chain(MIRRORS.map(|m| format!("{m}https://github.com/{rest}")))
+            .collect(),
+        None => vec![url.to_string()],
+    }
+}
+
+/// Serializes every mod-hub mutation (catalog install / uninstall, `.bak`
+/// toggles, unit uninstall): the guard is held across ledger writes and
+/// res_mods renames so parallel commands cannot interleave them. Network
+/// downloads stay outside the gate, so several installs still download in
+/// parallel and only their disk side serializes.
+static MOD_HUB_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+pub(crate) async fn mod_hub_gate() -> tokio::sync::MutexGuard<'static, ()> {
+    MOD_HUB_GATE.lock().await
+}
+
 fn data_file(rel: &str) -> Result<PathBuf, String> {
     let dir = paths::ensure_data_dir()?;
     Ok(dir.join(rel))
@@ -52,25 +87,49 @@ fn data_file(rel: &str) -> Result<PathBuf, String> {
 
 #[tauri::command]
 pub async fn mod_catalog_refresh(force: bool) -> Result<CatalogIndex, String> {
-    if !force {
-        if let Some(cached) = load_cached_index() {
-            // A cache written by an older app build can lack the i18n maps
-            // (schema drifted when threads gained the wowsp:i18n block);
-            // such a copy is stale by definition — refetch instead.
-            let localized = cached.mods.iter().any(|m| !m.i18n.is_empty());
-            if localized || cached.mods.is_empty() {
-                return Ok(cached);
-            }
+    let mut cached = if force { None } else { load_cached_index() };
+    if let Some(index) = cached.as_ref() {
+        // A cache written by an older app build can lack the i18n maps
+        // (schema drifted when threads gained the wowsp:i18n block);
+        // such a copy is stale by definition. A fresh-enough cache is
+        // served as-is; an expired one is refreshed (but stays the
+        // offline fallback if the fetch fails below).
+        let localized = index.mods.iter().any(|m| !m.i18n.is_empty()) || index.mods.is_empty();
+        let fresh = fetched_recently(&index.fetched_at);
+        if localized && fresh {
+            return Ok(index.clone());
+        }
+        if !localized && !index.mods.is_empty() {
             tracing::info!("cached mod catalog predates i18n — refetching");
+            cached = None;
         }
     }
-    let index = fetch_index().await?;
-    let path = data_file(INDEX_CACHE_FILE)?;
-    let json = serde_json::to_string(&index).map_err(|e| format!("serialize index: {e}"))?;
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json).map_err(|e| format!("write cache: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename cache: {e}"))?;
-    Ok(index)
+    let fetched = fetch_index().await;
+    match fetched {
+        Ok(index) => {
+            let path = data_file(INDEX_CACHE_FILE)?;
+            let json =
+                serde_json::to_string(&index).map_err(|e| format!("serialize index: {e}"))?;
+            let tmp = path.with_extension("json.tmp");
+            fs::write(&tmp, json).map_err(|e| format!("write cache: {e}"))?;
+            fs::rename(&tmp, &path).map_err(|e| format!("rename cache: {e}"))?;
+            Ok(index)
+        },
+        Err(e) => match cached {
+            Some(index) => {
+                tracing::warn!(error = %e, "catalog refresh failed — serving the stale cache");
+                Ok(index)
+            },
+            None => Err(e),
+        },
+    }
+}
+
+/// Whether the index's fetch stamp is younger than the cache TTL.
+fn fetched_recently(fetched_at: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(fetched_at)
+        .map(|t| Utc::now().signed_duration_since(t).num_hours() < INDEX_CACHE_TTL_HOURS)
+        .unwrap_or(false)
 }
 
 fn load_cached_index() -> Option<CatalogIndex> {
@@ -275,19 +334,19 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
 // ── Install ledger ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct Ledger {
+pub(crate) struct Ledger {
     #[serde(default)]
-    installs: Vec<ModInstallRecord>,
+    pub(crate) installs: Vec<ModInstallRecord>,
 }
 
-fn load_ledger() -> Ledger {
+pub(crate) fn load_ledger() -> Ledger {
     fs::read_to_string(data_file(LEDGER_FILE).unwrap_or_default())
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default()
 }
 
-fn save_ledger(ledger: &Ledger) -> Result<(), String> {
+pub(crate) fn save_ledger(ledger: &Ledger) -> Result<(), String> {
     let path = data_file(LEDGER_FILE)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create ledger dir: {e}"))?;
@@ -306,6 +365,16 @@ pub fn mod_hub_records() -> Result<Vec<ModInstallRecord>, String> {
 }
 
 // ── Install ─────────────────────────────────────────────────────────────────
+
+/// Drop-guard for the per-install temp work dir: every early `?` return
+/// cleans up after itself instead of leaking archives into %TEMP%.
+struct WorkDir(PathBuf);
+
+impl Drop for WorkDir {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.0).ok();
+    }
+}
 
 #[tauri::command]
 pub async fn mod_catalog_install(
@@ -335,36 +404,67 @@ pub async fn mod_catalog_install(
     });
 
     let client = super::network::build_http_client()?;
-    let work = std::env::temp_dir().join(format!(
+    let work = WorkDir(std::env::temp_dir().join(format!(
         "wowsp-modhub-{}-{}",
         entry.id,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis()
-    ));
-    fs::create_dir_all(&work).map_err(|e| format!("create workdir: {e}"))?;
+    )));
+    fs::create_dir_all(&work.0).map_err(|e| format!("create workdir: {e}"))?;
 
     let mut received_total = 0u64;
     let total = entry.packages.iter().map(|p| p.size).sum::<u64>().max(1);
     for (i, pkg) in entry.packages.iter().enumerate() {
-        let resp = client
-            .get(&pkg.url)
-            .send()
-            .await
-            .map_err(|e| format!("download {}: {e}", pkg.name))?;
-        if !resp.status().is_success() {
-            return Err(format!("download {}: HTTP {}", pkg.name, resp.status()));
+        // GitHub direct first, then the CN mirrors — a plain `github.com`
+        // download 404s/timeout for many CN users, which used to fail every
+        // install even though the catalog itself had loaded through a mirror.
+        let candidates = download_candidates(&pkg.url);
+        let mut bytes: Option<Vec<u8>> = None;
+        let mut last_err = String::from("no mirror attempted");
+        for url in &candidates {
+            let mut since_emit = 0u64;
+            let id = entry.id.clone();
+            let packages = entry.packages.len() as u32;
+            // A mirror dying mid-transfer must not keep its bytes counted —
+            // rewind so the retry does not inflate the progress bar.
+            let attempt_start = received_total;
+            let result = fetch_package(&client, url, |n| {
+                received_total += n;
+                since_emit += n;
+                if since_emit >= 262_144 {
+                    since_emit = 0;
+                    progress(CatalogProgress {
+                        id: id.clone(),
+                        phase: "downloading".into(),
+                        package: (i + 1) as u32,
+                        packages,
+                        received: received_total,
+                        total,
+                    });
+                }
+            })
+            .await;
+            match result {
+                Ok(data) => {
+                    bytes = Some(data);
+                    break;
+                },
+                Err(e) => {
+                    received_total = attempt_start;
+                    last_err = e;
+                },
+            }
         }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("download {}: {e}", pkg.name))?;
+        let Some(bytes) = bytes else {
+            return Err(format!("download {}: {last_err}", pkg.name));
+        };
         if !pkg.sha256.is_empty() {
             let digest = hex::encode(Sha256::digest(&bytes));
             if digest != pkg.sha256.to_ascii_lowercase() {
                 return Err(format!(
-                    "{} failed the SHA-256 check ({} != {}); the package on the release is damaged or was swapped",
+                    "{} failed the SHA-256 check ({} != {}); refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged",
                     pkg.name, digest, pkg.sha256
                 ));
             }
@@ -377,9 +477,8 @@ pub async fn mod_catalog_install(
                 pkg.size
             ));
         }
-        let dest = work.join(format!("{i:02}-{}", pkg.name));
+        let dest = work.0.join(format!("{i:02}-{}", pkg.name));
         fs::write(&dest, &bytes).map_err(|e| format!("write {}: {e}", pkg.name))?;
-        received_total += bytes.len() as u64;
         progress(CatalogProgress {
             id: entry.id.clone(),
             phase: "downloading".into(),
@@ -399,12 +498,16 @@ pub async fn mod_catalog_install(
         total,
     });
 
+    // Serialize the disk side (unpack, res_mods writes, ledger) while other
+    // installs may still be in their download phase.
+    let _gate = mod_hub_gate().await;
+
     // Unpack + classify + write are blocking fs work — keep them off the
     // async runtime threads.
     let unpack_id = entry.id.clone();
     let unpack_root = game_root.clone();
     let unpack_pkgs = entry.packages.clone();
-    let unpack_work = work.clone();
+    let unpack_work = work.0.clone();
     let (report, written, restore_dir) = tauri::async_runtime::spawn_blocking(move || {
         unpack_and_install(&unpack_id, &unpack_work, &unpack_root, &unpack_pkgs)
     })
@@ -429,7 +532,8 @@ pub async fn mod_catalog_install(
     });
     save_ledger(&ledger)?;
 
-    fs::remove_dir_all(&work).ok();
+    drop(_gate);
+
     progress(CatalogProgress {
         id: entry.id.clone(),
         phase: "done".into(),
@@ -440,6 +544,33 @@ pub async fn mod_catalog_install(
     });
     tracing::info!(id = %entry.id, version = %entry.version, "mod_catalog_install done");
     Ok(report)
+}
+
+/// Stream one package URL into memory. Downloads previously buffered via
+/// `bytes()` with no timeout: a stalled connection hung the install forever
+/// and the progress bar never moved. Emits each chunk length so the caller
+/// keeps the cross-package received counter and can push progress while a
+/// big single archive is still arriving.
+async fn fetch_package(
+    client: &reqwest::Client,
+    url: &str,
+    mut on_chunk: impl FnMut(u64),
+) -> Result<Vec<u8>, String> {
+    let mut resp = client
+        .get(url)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .map_err(|e| format!("{url}: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("{url}: HTTP {}", resp.status()));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("{url}: {e}"))? {
+        on_chunk(chunk.len() as u64);
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 /// Extract every package archive (part order = index order) into `work`, then
@@ -605,7 +736,11 @@ pub struct UninstallReport {
 }
 
 #[tauri::command]
-pub fn mod_catalog_uninstall(mod_id: String, game_root: String) -> Result<UninstallReport, String> {
+pub async fn mod_catalog_uninstall(
+    mod_id: String,
+    game_root: String,
+) -> Result<UninstallReport, String> {
+    let _gate = mod_hub_gate().await;
     let mut ledger = load_ledger();
     let report = uninstall_from_ledger(&mut ledger.installs, &mod_id, &game_root)?;
     save_ledger(&ledger)?;
@@ -616,7 +751,7 @@ pub fn mod_catalog_uninstall(mod_id: String, game_root: String) -> Result<Uninst
 /// Uninstall core, split from the command so tests can drive it against a
 /// plain record list. Removes recorded files (`@game/` entries from the game
 /// root, the rest from res_mods), restores snapshots, drops the record.
-fn uninstall_from_ledger(
+pub(crate) fn uninstall_from_ledger(
     installs: &mut Vec<ModInstallRecord>,
     mod_id: &str,
     game_root: &str,

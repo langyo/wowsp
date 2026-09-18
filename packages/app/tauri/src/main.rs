@@ -283,6 +283,8 @@ fn main() {
             commands::mod_hub::mod_hub_scan_installed,
             commands::mod_hub::mod_hub_classify_path,
             commands::mod_hub::mod_hub_install,
+            commands::mod_hub::mod_hub_set_unit_enabled,
+            commands::mod_hub::mod_hub_uninstall_unit,
             commands::mod_catalog::mod_catalog_refresh,
             commands::mod_catalog::mod_catalog_install,
             commands::mod_catalog::mod_catalog_uninstall,

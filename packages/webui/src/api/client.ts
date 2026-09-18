@@ -54,6 +54,8 @@ export interface ReplayMeta {
   scenario?: string | null;
   /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
   eventType?: string | null;
+  /** Roster entries with the client's `:Name:` bot nickname. */
+  botCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
@@ -75,6 +77,8 @@ export interface ReplayMetaLite {
   scenario?: string | null;
   /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
   eventType?: string | null;
+  /** Roster entries with the client's `:Name:` bot nickname. */
+  botCount?: number | null;
   /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
   ownShipId?: number | null;
   /** Recorder's ship display name when resolvable, else null. */
@@ -88,6 +92,10 @@ export interface ArenaInfo {
   matchGroup?: string | null;
   dateTime?: string | null;
   mapName?: string | null;
+  /** Scenario name — the "tournament" variants are custom-room fingerprints. */
+  scenario?: string | null;
+  /** Roster entries with the client's `:Name:` bot nickname. */
+  botCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
@@ -643,7 +651,7 @@ export interface NetworkConfig {
 // ── Mod Hub (mirrors `wowsp_tauri_shared`, see commands/mod_hub.rs) ────────
 
 /** Plugin category from on-disk structure signatures (mod-formats.md). */
-export type ModKind = "voice" | "skin" | "textures" | "gui" | "patch";
+export type ModKind = "voice" | "skin" | "script" | "textures" | "gui" | "patch";
 
 /** One classified plugin found installed under `res_mods/<version>/`. */
 export interface InstalledMod {
@@ -651,7 +659,23 @@ export interface InstalledMod {
   name: string;
   /** PnF ship id / voice-over selector label, when the format carries one. */
   detail?: string | null;
+  /** Primary res_mods-relative path — the key the unit commands take.
+   *  Manifest-only rows (no files matched on disk) key on the mod name. */
   relPath: string;
+  /** Every root the unit spans (res_mods-relative, disjoint). */
+  paths: string[];
+  /** True when every file of the unit is renamed with a `.bak` suffix. */
+  disabled: boolean;
+  /** Version from Aslain's installed_mods.xml, when manifest-backed. */
+  version?: string | null;
+}
+
+/** Result of toggling one installed plugin's `.bak` state. */
+export interface UnitToggleReport {
+  relPath: string;
+  /** State after the toggle: true = files renamed to `.bak`. */
+  disabled: boolean;
+  renamedFiles: number;
 }
 
 /** One subtree copy in an install plan (package rel → res_mods rel). */
@@ -885,6 +909,18 @@ export const api = {
     transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
   modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>
     transport.invoke<InstallReport>(RPC.mod_hub_install, { sourceRoot, gameRoot, plan }),
+  /** Toggle one installed plugin's temporary disable state: disabling
+   *  renames every file with a `.bak` suffix, enabling strips it again. */
+  modHubSetUnitEnabled: (relPath: string, gameRoot: string, enabled: boolean) =>
+    transport.invoke<UnitToggleReport>(RPC.mod_hub_set_unit_enabled, {
+      relPath,
+      gameRoot,
+      enabled,
+    }),
+  /** Uninstall one installed plugin unit (deletes its files, restores
+   *  snapshotted originals, syncs the Aslain manifest when relevant). */
+  modHubUninstallUnit: (relPath: string, gameRoot: string) =>
+    transport.invoke<UninstallReport>(RPC.mod_hub_uninstall_unit, { relPath, gameRoot }),
   // ── Mod Hub online catalog ──
   /** Fetch (or serve cached) `mod-index.json` from the mod-hub release. */
   modCatalogRefresh: (force: boolean) =>

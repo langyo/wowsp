@@ -201,6 +201,34 @@ record`.
 - **Conflict policy**: later installs win, but the UI explicitly warns
   "this will overwrite N files from mod X".
 
+#### 3.1 Managing installed plugins
+
+The installed list is anchored on **Aslain's
+`bin/<build>/res_mods/installed_mods.xml`** (rows of
+`<mod name version installer/>`) when present: filesystem groups
+(`banks/<bank>`, `PnFMods/<dir>`, `gui/unbound2/<mod>`, `gui/<child>`,
+top-level `*.xml` patches, leftover top-level dirs) are attached to
+manifest rows by normalized-name similarity (exact > containment >
+shared prefix), so the app shows what the installer actually installed
+instead of raw directories. Rows without matched files stay listed as
+manifest-only entries; groups no row claims keep their heuristic identity.
+
+Each unit supports two operations:
+
+- **Temporary disable** — every file of the unit is renamed with a `.bak`
+  suffix; enabling strips it again. The scanner recognizes `.bak` files
+  (`mod.xml.bak`, `Main.py.bak`, `x.xml.bak`), so disabled units stay
+  visible and toggleable. Directory names are never touched — the game
+  stops loading the files, PnF's loader finds no `Main.py` to import.
+- **Uninstall** — ledger records overlapping the unit restore their
+  vanilla snapshots first, then the whole unit (including `.bak` twins)
+  is deleted, emptied parent dirs are pruned up to `res_mods`, and a
+  manifest-backed unit's row is removed from `installed_mods.xml`.
+
+All mutations (install / uninstall / toggle) serialize through an async
+gate so parallel catalog installs can download simultaneously without
+interleaving ledger writes or file renames.
+
 ### 4. Version migration & compatibility confirmation
 
 After a game update (a new `bin/<version>/` directory appears), the

@@ -29,7 +29,8 @@
     "skin": "舰船涂装（PnF）",
     "textures": "贴图覆盖",
     "gui": "界面图标",
-    "patch": "配置补丁"
+    "patch": "配置补丁",
+    "script": "脚本插件"
   },
   "catalogTitle": "在线插件目录",
   "catalogHint": "来自 WoWSP 插件仓库的精选工具类插件。每个插件都带版本号与 SHA-256 校验，安装时直接从项目 GitHub release 下载。",
@@ -65,5 +66,12 @@
     "catalog": "在线目录",
     "installed": "已安装",
     "local": "本地安装"
-  }
+  },
+  "enabled": "已启用",
+  "disabled": "已停用",
+  "unitEnabled": "已启用「{name}」。",
+  "unitDisabled": "已停用「{name}」—— 文件已加 .bak 后缀。",
+  "confirmUnitUninstall": "卸载「{name}」？将删除其全部文件（含停用的 .bak 副本），并还原被覆盖的原始文件。",
+  "manifestOnly": "未在 res_mods 中找到对应文件（仅插件清单记录）。",
+  "manifestOnlyShort": "仅清单记录"
 }
