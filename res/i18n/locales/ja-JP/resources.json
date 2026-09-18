@@ -29,7 +29,8 @@
     "skin": "艦艇スキン（PnF）",
     "textures": "テクスチャ上書き",
     "gui": "HUD アイコン",
-    "patch": "設定パッチ"
+    "patch": "設定パッチ",
+    "script": "スクリプト型MOD"
   },
   "catalogTitle": "オンラインカタログ",
   "catalogHint": "WoWSP MOD ハブ厳選のツール系プラグイン。各プラグインにはバージョンと SHA-256 が付いており、インストール時はプロジェクトの GitHub リリースから直接ダウンロードします。",
@@ -65,5 +66,12 @@
     "catalog": "オンラインカタログ",
     "installed": "インストール済み",
     "local": "フォルダからインストール"
-  }
+  },
+  "enabled": "有効",
+  "disabled": "無効",
+  "unitEnabled": "「{name}」を有効にしました。",
+  "unitDisabled": "「{name}」を無効にしました（ファイルに .bak を付与）。",
+  "confirmUnitUninstall": "「{name}」をアンインストールしますか？ファイル（無効な .bak コピーを含む）を削除し、上書きされた元のファイルを復元します。",
+  "manifestOnly": "res_mods 以下に対応するファイルが見つかりません（マニフェストの記録のみ）。",
+  "manifestOnlyShort": "マニフェストのみ"
 }

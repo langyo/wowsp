@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   AudioLines,
   ExternalLink,
+  FileCode,
   FolderSearch,
   Globe,
   Hash,
@@ -19,6 +20,7 @@ import {
   HButton,
   HConfirmDialog,
   HSearchInput,
+  HSwitch,
   HTabs,
   useToast,
 } from "@celestia-island/hikari";
@@ -32,17 +34,19 @@ import {
   type ModKind,
   type PackagePlan,
 } from "@/api";
+import { openExternal } from "@/utils/openExternal";
 import { useConfigStore } from "@/stores/config";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
 
-const KIND_ORDER: ModKind[] = ["voice", "skin", "gui", "patch", "textures"];
+const KIND_ORDER: ModKind[] = ["voice", "skin", "script", "gui", "patch", "textures"];
 
 /** lucide glyph + accent hue per plugin category. */
 const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> = {
   voice: { icon: AudioLines, class: "voice" },
   skin: { icon: Palette, class: "skin" },
+  script: { icon: FileCode, class: "script" },
   gui: { icon: ImageIcon, class: "gui" },
   patch: { icon: ScrollText, class: "patch" },
   textures: { icon: PackageCheck, class: "textures" },
@@ -96,17 +100,30 @@ export default defineComponent({
     const catalogFilter = ref<"all" | CatalogCat>("all");
     const catalogSearch = ref("");
     const records = ref<ModInstallRecord[]>([]);
-    const busyId = ref("");
-    const busyKind = ref<"install" | "uninstall" | "">("");
-    const progress = ref<CatalogProgress | null>(null);
+    // Per-plugin busy/progress maps (Vue instruments collection mutations,
+    // so `.set`/`.delete` re-render). Only the plugins currently being
+    // processed appear here — every other card stays fully clickable while
+    // one download runs, and parallel installs each track their own state.
+    const busy = ref(new Map<string, "install" | "uninstall">());
+    const progresses = ref(new Map<string, CatalogProgress>());
     const confirmTarget = ref<CatalogEntry | null>(null);
+
+    // Installed-tab unit actions: relPath → "toggle" | "uninstall".
+    const unitBusy = ref(new Map<string, "toggle" | "uninstall">());
+    const unitTarget = ref<InstalledMod | null>(null);
 
     const gameRoot = computed(() => config.activeInstall?.path ?? "");
 
     let unlisten: (() => void) | undefined;
     onMounted(() => {
       api
-        .listenCatalogProgress?.((p) => (progress.value = p.phase === "done" ? null : p))
+        .listenCatalogProgress?.((p) => {
+          if (p.phase === "done") {
+            progresses.value.delete(p.id);
+          } else {
+            progresses.value.set(p.id, p);
+          }
+        })
         ?.then((un) => (unlisten = un));
     });
     onUnmounted(() => unlisten?.());
@@ -137,10 +154,12 @@ export default defineComponent({
 
     const recordOf = (id: string) => records.value.find((r) => r.id === id);
 
+    /** Installed units are keyed by their primary path (unique per unit). */
+    const unitKey = (m: InstalledMod) => m.relPath;
+
     async function installMod(entry: CatalogEntry) {
-      if (!gameRoot.value || busyId.value) return;
-      busyId.value = entry.id;
-      busyKind.value = "install";
+      if (!gameRoot.value || busy.value.has(entry.id)) return;
+      busy.value.set(entry.id, "install");
       try {
         const r = await api.modCatalogInstall(entry.id, gameRoot.value);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
@@ -148,18 +167,16 @@ export default defineComponent({
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
-        busyId.value = "";
-        busyKind.value = "";
-        progress.value = null;
+        busy.value.delete(entry.id);
+        progresses.value.delete(entry.id);
       }
     }
 
     async function uninstallMod() {
       const entry = confirmTarget.value;
-      if (!entry || !gameRoot.value || busyId.value) return;
+      if (!entry || !gameRoot.value || busy.value.has(entry.id)) return;
       confirmTarget.value = null;
-      busyId.value = entry.id;
-      busyKind.value = "uninstall";
+      busy.value.set(entry.id, "uninstall");
       try {
         const r = await api.modCatalogUninstall(entry.id, gameRoot.value);
         toast.success(
@@ -173,8 +190,49 @@ export default defineComponent({
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
-        busyId.value = "";
-        busyKind.value = "";
+        busy.value.delete(entry.id);
+      }
+    }
+
+    // ── Installed-unit actions (temporary disable via `.bak`, uninstall) ──
+
+    async function toggleUnit(mod: InstalledMod, enabled: boolean) {
+      if (!gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
+      unitBusy.value.set(unitKey(mod), "toggle");
+      try {
+        await api.modHubSetUnitEnabled(mod.relPath, gameRoot.value, enabled);
+        toast.success(
+          enabled
+            ? t("resources.unitEnabled", { name: mod.name })
+            : t("resources.unitDisabled", { name: mod.name }),
+        );
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        unitBusy.value.delete(unitKey(mod));
+        await scan();
+      }
+    }
+
+    async function uninstallUnit() {
+      const mod = unitTarget.value;
+      if (!mod || !gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
+      unitTarget.value = null;
+      unitBusy.value.set(unitKey(mod), "uninstall");
+      try {
+        const r = await api.modHubUninstallUnit(mod.relPath, gameRoot.value);
+        toast.success(
+          t("resources.uninstalledDone", {
+            name: r.name,
+            removed: r.removedFiles,
+            restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
+          }),
+        );
+        await Promise.all([scan(), loadRecords()]);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        unitBusy.value.delete(unitKey(mod));
       }
     }
 
@@ -395,10 +453,10 @@ export default defineComponent({
                           const text = localized(entry);
                           const record = recordOf(entry.id);
                           const upToDate = record && record.version === entry.version;
-                          const busyInstall =
-                            busyId.value === entry.id && busyKind.value === "install";
-                          const busyUninstall =
-                            busyId.value === entry.id && busyKind.value === "uninstall";
+                          const busyState = busy.value.get(entry.id);
+                          const busyInstall = busyState === "install";
+                          const busyUninstall = busyState === "uninstall";
+                          const progressEntry = progresses.value.get(entry.id);
                           const url = discussionUrl(entry.discussion);
                           const kb = catalogKb(entry);
                           return (
@@ -443,7 +501,7 @@ export default defineComponent({
                                   <HButton
                                     size="sm"
                                     variant="primary"
-                                    disabled={!!busyId.value || !gameRoot.value}
+                                    disabled={!!busyState || !gameRoot.value}
                                     loading={busyInstall}
                                     onClick={() => installMod(entry)}
                                   >
@@ -459,7 +517,7 @@ export default defineComponent({
                                     class="catalog-card__uninstall"
                                     data-hint={t("resources.uninstall")}
                                     aria-label={t("resources.uninstall")}
-                                    disabled={!!busyId.value}
+                                    disabled={!!busyState}
                                     onClick={() => (confirmTarget.value = entry)}
                                   >
                                     <Trash2 size={13} />
@@ -467,27 +525,25 @@ export default defineComponent({
                                   </button>
                                 )}
                                 {url && (
-                                  <a
+                                  <button
                                     class="catalog-card__thread"
-                                    href={url}
-                                    target="_blank"
-                                    rel="noreferrer"
                                     data-hint={t("resources.openDiscussion")}
+                                    onClick={() => openExternal(url)}
                                   >
                                     <ExternalLink size={13} />
                                     {t("resources.discuss")}
-                                  </a>
+                                  </button>
                                 )}
                               </div>
-                              {busyInstall && progress.value && (
+                              {busyInstall && progressEntry && (
                                 <div class="catalog-card__progress">
                                   <div
                                     class="catalog-card__progress-bar"
                                     style={{
                                       width: `${Math.min(
                                         100,
-                                        progress.value.total > 0
-                                          ? (progress.value.received / progress.value.total) * 100
+                                        progressEntry.total > 0
+                                          ? (progressEntry.received / progressEntry.total) * 100
                                           : 12,
                                       )}%`,
                                     }}
@@ -549,14 +605,64 @@ export default defineComponent({
                     {shown.value.map((m) => {
                       const meta = KIND_META[m.kind];
                       const Icon = meta.icon;
+                      const state = unitBusy.value.get(m.relPath);
+                      const busyToggle = state === "toggle";
                       return (
-                        <div key={m.relPath + m.name} class={`mod-card mod-card--${meta.class}`}>
-                          <Icon size={20} />
-                          <div class="mod-card__body">
-                            <div class="mod-card__name">{m.name}</div>
-                            <div class="mod-card__kind">{kindLabel(m.kind)}</div>
-                            {m.detail && <div class="mod-card__detail">{m.detail}</div>}
-                            <div class="mod-card__path">{m.relPath}</div>
+                        <div
+                          key={m.relPath}
+                          class={[
+                            "mod-card",
+                            `mod-card--${meta.class}`,
+                            m.disabled && "mod-card--disabled",
+                          ]}
+                        >
+                          <div class="mod-card__main">
+                            <Icon size={20} />
+                            <div class="mod-card__body">
+                              <div class="mod-card__name">
+                                {m.name}
+                                {m.version && (
+                                  <span class="mod-card__version">{m.version}</span>
+                                )}
+                              </div>
+                              <div class="mod-card__kind">{kindLabel(m.kind)}</div>
+                              {m.detail && <div class="mod-card__detail">{m.detail}</div>}
+                              <div class="mod-card__path" title={m.paths.join("\n")}>
+                                {m.relPath}
+                                {m.paths.length > 1 && ` +${m.paths.length - 1}`}
+                              </div>
+                              {m.paths.length === 0 && (
+                                <div class="mod-card__detail">{t("resources.manifestOnly")}</div>
+                              )}
+                            </div>
+                            <button
+                              class="mod-card__uninstall"
+                              data-hint={t("resources.uninstall")}
+                              aria-label={t("resources.uninstall")}
+                              disabled={!!state}
+                              onClick={() => (unitTarget.value = m)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div class="mod-card__foot">
+                            {m.paths.length > 0 ? (
+                              <HSwitch
+                                size="sm"
+                                modelValue={!m.disabled}
+                                disabled={!!state}
+                                onUpdate:modelValue={(v: boolean) => toggleUnit(m, v)}
+                              >
+                                {m.disabled
+                                  ? t("resources.disabled")
+                                  : t("resources.enabled")}
+                              </HSwitch>
+                            ) : (
+                              <span class="mod-card__foot-note">
+                                {t("resources.manifestOnlyShort")}
+                              </span>
+                            )}
+                            {busyToggle && <span class="mod-card__spinner" />}
                           </div>
                         </div>
                       );
@@ -660,6 +766,19 @@ export default defineComponent({
           onConfirm={uninstallMod}
           onUpdate:open={(v: boolean) => {
             if (!v) confirmTarget.value = null;
+          }}
+        />
+
+        <HConfirmDialog
+          open={!!unitTarget.value}
+          title={t("resources.uninstall")}
+          message={t("resources.confirmUnitUninstall", {
+            name: unitTarget.value?.name || "",
+          })}
+          confirmLabel={t("resources.uninstall")}
+          onConfirm={uninstallUnit}
+          onUpdate:open={(v: boolean) => {
+            if (!v) unitTarget.value = null;
           }}
         />
       </div>

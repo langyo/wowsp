@@ -1050,8 +1050,10 @@ pub struct CommunityTrend {
 pub enum ModKind {
     /// WWise voice bank (`banks/mods/*` + AudioModification xml).
     Voice,
-    /// PnF ship-model/camouflage mod (`PnFMods/*/Main.py`).
+    /// PnF ship-model/camouflage mod (`PnFMods/*/Main.py` registering a ship).
     Skin,
+    /// PnF or Unbound script mod whose `Main.py` registers no ship.
+    Script,
     /// Direct file overrides under `content/` (`.dds` textures etc.).
     Textures,
     /// HUD art (`gui/ribbons`, `gui/BFGC/BattleWave`).
@@ -1069,8 +1071,34 @@ pub struct InstalledMod {
     /// PnF `registerShipMod(...)` ship id for skins; in-game voice-over option
     /// label for banks. `None` when the kind has no secondary identifier.
     pub detail: Option<String>,
-    /// Path of the entry relative to the `res_mods/<version>/` root.
+    /// Primary path of the entry relative to the `res_mods/<version>/` root —
+    /// the key the enable/uninstall commands take. Manifest-only rows (an
+    /// `installed_mods.xml` entry with no matched files) key on the row name.
     pub rel_path: String,
+    /// Every root the unit spans (res_mods-relative, disjoint). Directory
+    /// paths keep their names; the disabled state lives in the FILES under
+    /// them (`.bak` suffix), not in the directory names.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// True when every file of the unit carries a `.bak` suffix (temporarily
+    /// disabled). The scan recognizes `.bak` files so units survive being
+    /// disabled and can be re-enabled.
+    #[serde(default)]
+    pub disabled: bool,
+    /// Version reported by Aslain's `installed_mods.xml` when the unit is
+    /// backed by a manifest entry. `None` for pure filesystem heuristics.
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+/// Result of toggling one installed plugin's `.bak` state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnitToggleReport {
+    pub rel_path: String,
+    /// State AFTER the toggle: true = files renamed to `.bak`.
+    pub disabled: bool,
+    pub renamed_files: usize,
 }
 
 /// One subtree copy the install performs: `fromRel` (relative to the package

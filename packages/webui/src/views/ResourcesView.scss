@@ -137,34 +137,70 @@
 .mod-card {
   --accent: var(--color-primary);
   display: flex;
-  gap: 0.625rem;
+  flex-direction: column;
+  gap: 0.5rem;
   padding: 0.75rem;
   background: rgb(var(--color-bg));
   border: 1px solid rgb(var(--color-border) / 12%);
   border-left: 3px solid rgb(var(--accent) / 70%);
   border-radius: var(--radius-sm);
-
-  > svg {
-    flex: none;
-    margin-top: 0.125rem;
-    color: rgb(var(--accent));
-  }
+  transition: opacity 0.2s ease;
 
   &--voice     { --accent: 48, 148, 245; }   // blue — audio waves
   &--skin      { --accent: 168, 85, 247; }   // violet — paint
+  &--script    { --accent: 20, 184, 166; }   // teal — python scripts
   &--gui       { --accent: 234, 179, 8; }    // amber — icons
   &--patch     { --accent: 16, 185, 129; }   // green — patch note
   &--textures  { --accent: 148, 163, 184; }  // grey — raw overrides
 
-  &__body { min-width: 0; }
+  // Temporarily disabled via `.bak` — dim the whole card so the state
+  // reads at a glance, the switch stays the obvious way back.
+  &--disabled {
+    opacity: 0.55;
+
+    .mod-card__name {
+      text-decoration: line-through;
+      text-decoration-color: rgb(var(--color-muted) / 60%);
+    }
+  }
+
+  &__main {
+    display: flex;
+    gap: 0.625rem;
+    min-width: 0;
+
+    > svg {
+      flex: none;
+      margin-top: 0.125rem;
+      color: rgb(var(--accent));
+    }
+  }
+
+  &__body { min-width: 0; flex: 1; }
 
   &__name {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
     font-size: var(--text-sm);
     font-weight: 600;
     color: rgb(var(--color-text));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  &__version {
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: rgb(var(--accent));
+    background: rgb(var(--accent) / 10%);
+    border-radius: var(--radius-sm);
+    padding: 0 0.25rem;
   }
 
   &__kind {
@@ -190,6 +226,54 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  &__uninstall {
+    flex: none;
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.625rem;
+    height: 1.625rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      color: rgb(239, 68, 68);
+      background: rgb(239 68 68 / 10%);
+    }
+
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+
+  // Bottom strip: the per-plugin enable switch sits at the left edge.
+  &__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed rgb(var(--color-border) / 25%);
+  }
+
+  &__foot-note {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted) / 70%);
+  }
+
+  &__spinner {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: none;
+    border: 2px solid rgb(var(--accent) / 25%);
+    border-top-color: rgb(var(--accent));
+    border-radius: 50%;
+    animation: resources-spin 0.9s linear infinite;
   }
 }
 
@@ -485,14 +569,19 @@
     }
   }
 
+  // Opens through open_external (default browser) — a <button> in the Tauri
+  // shell, where target="_blank" anchors are swallowed by the webview.
   &__thread {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
     margin-left: auto;
+    padding: 0;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
-    text-decoration: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
 
     &:hover {
       color: rgb(var(--color-primary));

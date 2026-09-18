@@ -29,7 +29,8 @@
     "skin": "Ship skin (PnF)",
     "textures": "Texture override",
     "gui": "HUD icons",
-    "patch": "Config patch"
+    "patch": "Config patch",
+    "script": "Script mod"
   },
   "catalogTitle": "Online catalog",
   "catalogHint": "Curated tool-type plugins from the WoWSP mod hub. Each ships with a version and a SHA-256; install downloads straight from the project's GitHub release.",
@@ -65,5 +66,12 @@
     "catalog": "Online catalog",
     "installed": "Installed",
     "local": "From folder"
-  }
+  },
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "unitEnabled": "Enabled “{name}”.",
+  "unitDisabled": "Disabled “{name}” — files renamed with a .bak suffix.",
+  "confirmUnitUninstall": "Uninstall “{name}”? All of its files (including disabled .bak copies) are removed; overwritten originals are restored.",
+  "manifestOnly": "No matching files found under res_mods (installer manifest entry only).",
+  "manifestOnlyShort": "Manifest entry only"
 }
