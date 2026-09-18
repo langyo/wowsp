@@ -127,7 +127,10 @@
 
   &__game-pid {
     display: inline-flex;
-    align-items: center;
+    /* Baseline (not center): the label is set in the UI font and the digits
+       in the mono face — centering each box lets the two metrics disagree
+       and the number rides visibly above the label's baseline. */
+    align-items: baseline;
     gap: 0.2rem;
     cursor: pointer;
     width: fit-content;

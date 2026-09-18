@@ -22,8 +22,12 @@ pub enum GameInstallKind {
     Steam,
     /// Lesta Games (post-split RU region, korabli.su).
     Lesta,
-    /// 360.cn joint-venture CN region.
+    /// 360.cn joint-venture CN region (current operator).
     Cn360,
+    /// Legacy KongZhong (空中网) CN client — the pre-360 operator. Installers
+    /// of that generation register their own publisher string in the Windows
+    /// Uninstall registry, distinct from 360's `360.cn`.
+    CnKongzhong,
     /// User-pinned manual path.
     Manual,
 }

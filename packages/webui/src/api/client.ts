@@ -8,7 +8,7 @@ import { RPC } from "@/rpc";
 
 /** Mirrors `wowsp_tauri_shared::GameInstall`. */
 export interface GameInstall {
-  kind: "wargaming" | "steam" | "lesta" | "cn360" | "manual";
+  kind: "wargaming" | "steam" | "lesta" | "cn360" | "cnKongzhong" | "manual";
   path: string;
   realm?: string | null;
 }
