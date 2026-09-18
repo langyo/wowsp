@@ -95,6 +95,9 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 ///                      win_and_survived→survived_wins, exp→xp,
 ///                      shots_by_main/hits_by_main→main_battery.{shots,hits}
 ///   pvp_solo/div2/div3 battles_count→battles
+///   statistics.seasons → same per-mode mapping (WG seasons API shape:
+///                      seasons.<id>.<shipType>.<mode>) for `ranked`
+///   statistics.rank_info → passed through (fields already match WG)
 ///
 /// A hidden profile (`hidden_profile: true`) and an empty statistics node
 /// (fresh account) both normalize to `statistics: {pvp: null}` — the same
@@ -109,6 +112,10 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
     let basic = statistics
         .and_then(|s| s.get("basic"))
         .filter(|v| !v.is_null());
+    let rank_info = statistics
+        .and_then(|s| s.get("rank_info"))
+        .filter(|v| !v.is_null());
+    let seasons = statistics.and_then(|s| s.get("seasons"));
     let stats_json = if hidden {
         serde_json::json!({ "pvp": serde_json::Value::Null })
     } else {
@@ -117,6 +124,11 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
             "pvp_solo": normalize_div(statistics.and_then(|s| s.get("pvp_solo"))),
             "pvp_div2": normalize_div(statistics.and_then(|s| s.get("pvp_div2"))),
             "pvp_div3": normalize_div(statistics.and_then(|s| s.get("pvp_div3"))),
+            // Ranked trees, shaped like the WG seasons API so the shared
+            // flatten in `ranked` consumes them verbatim (rank_info passes
+            // through as-is: its rank/rank_best fields already match).
+            "rank_info": rank_info.cloned().unwrap_or(serde_json::Value::Null),
+            "seasons": normalize_seasons(seasons),
         })
     };
     serde_json::json!({
@@ -166,6 +178,36 @@ fn normalize_div(div: Option<&serde_json::Value>) -> serde_json::Value {
         }),
         None => serde_json::Value::Null,
     }
+}
+
+/// Map the vortex ranked-seasons tree onto the WG seasons API shape:
+/// `seasons.<id>.<shipType>.<mode>` with each mode node run through
+/// `normalize_pvp` (same vortex field names as the account pvp node). Nodes
+/// that are empty (`{}` = never played that mode) normalize to null — the
+/// flatten in `ranked` skips those like it skips missing WG seasons.
+fn normalize_seasons(seasons: Option<&serde_json::Value>) -> serde_json::Value {
+    let Some(seasons) = seasons.and_then(|v| v.as_object()) else {
+        return serde_json::Value::Null;
+    };
+    let mut out = serde_json::Map::with_capacity(seasons.len());
+    for (sid, ships) in seasons {
+        let Some(ships) = ships.as_object() else {
+            continue;
+        };
+        let mut ships_out = serde_json::Map::with_capacity(ships.len());
+        for (ship_type, modes) in ships {
+            let Some(modes) = modes.as_object() else {
+                continue;
+            };
+            let mut modes_out = serde_json::Map::with_capacity(modes.len());
+            for (mode, node) in modes {
+                modes_out.insert(mode.clone(), normalize_pvp(Some(node)));
+            }
+            ships_out.insert(ship_type.clone(), serde_json::Value::Object(modes_out));
+        }
+        out.insert(sid.clone(), serde_json::Value::Object(ships_out));
+    }
+    serde_json::Value::Object(out)
 }
 
 fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
@@ -583,6 +625,47 @@ pub(crate) async fn lookup_clan_info(clan_id: i64) -> Result<ClanInfo, String> {
     Ok(clan_info_from_cn(clan_id, &clan_node, &members))
 }
 
+// ── ranked ────────────────────────────────────────────────────────────────
+
+/// CN arm of `ranked::get_ranked_stats`. CN exposes no `/wows/seasons/`
+/// endpoints, but the vortex detail endpoint carries the same ranked trees —
+/// `statistics.seasons.<id>.<shipType>.<mode>` and `statistics.rank_info` —
+/// already normalized into the WG shape by `normalize_player`, so the shared
+/// flatten consumes them verbatim. Season ids come from the player's own
+/// seasons map (there is no seasons/info metadata endpoint to list them);
+/// the id convention matches WG (1001 = Season 1), which the season naming
+/// in the flatten relies on.
+pub(crate) async fn ranked_stats(
+    account_id: i64,
+    season_count: usize,
+) -> Result<Vec<super::ranked::RankedSeasonStats>, String> {
+    let client = vortex_client()?;
+    let node = account_info(&client, account_id)
+        .await?
+        .ok_or_else(|| format!("no account found for id {account_id} on cn"))?;
+    let statistics = node.get("statistics");
+    let seasons = statistics
+        .and_then(|s| s.get("seasons"))
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    let mut season_ids: Vec<i64> = seasons
+        .as_object()
+        .map(|o| o.keys().filter_map(|k| k.parse::<i64>().ok()).collect())
+        .unwrap_or_default();
+    season_ids.sort_by(|a, b| b.cmp(a)); // descending = most recent first
+    season_ids.truncate(season_count);
+
+    let player = serde_json::json!({
+        "seasons": seasons,
+        "rank_info": statistics
+            .and_then(|s| s.get("rank_info"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    });
+    Ok(super::ranked::flatten_ranked_seasons(&player, &season_ids))
+}
+
 /// Assemble a `ClanInfo` from the CN claninfo + members responses. Pure —
 /// unit-tested. `created_at` arrives as an ISO-8601 local timestamp (no zone
 /// designator); it is read as UTC, which is plenty for a creation-date
@@ -803,6 +886,57 @@ mod tests {
 
         // Dog tag parses through the shared helper.
         assert!(node.get("dog_tag").and_then(parse_dog_tag).is_some());
+    }
+
+    /// The vortex ranked trees must survive normalization in the WG seasons
+    /// API shape so `ranked::flatten_ranked_seasons` consumes them (this is
+    /// what feeds the CN ranked cards).
+    #[test]
+    fn normalize_player_maps_ranked_trees_to_wg_shape() {
+        let vortex_node = serde_json::json!({
+            "name": "青空雪舞",
+            "statistics": {
+                "rank_info": {
+                    "1024": {
+                        "-1": { "0": { "rank": 0, "rank_best": 0 } },
+                        "1": { "3": { "rank": 5, "rank_best": 5 } }
+                    }
+                },
+                "seasons": {
+                    "1024": { "0": { "rank_solo": {
+                        "battles_count": 6, "wins": 6, "losses": 0,
+                        "damage_dealt": 31424, "frags": 1,
+                        "exp": 19922, "max_exp": 8831,
+                        "max_damage_dealt": 11000, "survived": 1, "planes_killed": 1
+                    } } },
+                    // an unplayed season's empty mode node collapses to null
+                    "1002": { "0": { "rank_solo": {} } }
+                }
+            }
+        });
+        let node = normalize_player(&vortex_node);
+        let st = node.get("statistics").unwrap();
+        // rank_info passes through untouched.
+        assert_eq!(st.pointer("/rank_info/1024/1/3/rank").unwrap(), 5);
+        // seasons: vortex field names map onto the WG ones.
+        assert_eq!(st.pointer("/seasons/1024/0/rank_solo/battles").unwrap(), 6);
+        assert_eq!(st.pointer("/seasons/1024/0/rank_solo/wins").unwrap(), 6);
+        assert_eq!(
+            st.pointer("/seasons/1024/0/rank_solo/max_xp").unwrap(),
+            8831
+        );
+        assert!(st.pointer("/seasons/1002/0/rank_solo").unwrap().is_null());
+
+        // The synthetic node `ranked_stats` feeds the shared flatten with is
+        // exactly these trees — run it through end-to-end.
+        let player = serde_json::json!({
+            "seasons": st.get("seasons").cloned().unwrap(),
+            "rank_info": st.get("rank_info").cloned().unwrap(),
+        });
+        let out = super::super::ranked::flatten_ranked_seasons(&player, &[1024, 1002]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].season_name, "Season 24");
+        assert_eq!((out[0].battles, out[0].wins), (6, 6));
     }
 
     /// Live-response fixture (player saber, id 7047835131): a never-played
