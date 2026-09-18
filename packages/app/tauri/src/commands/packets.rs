@@ -354,6 +354,15 @@ fn remap_legacy_packet_id(raw: u32) -> u32 {
     }
 }
 
+/// Copy `N` bytes out of `data` starting at `off` without panicking on a
+/// truncated slice. Every caller length-guards ahead of use, so `None` replaces
+/// the previously hardcoded panic on the (unreachable) short-slice case while
+/// keeping the decoders total on malformed input (skip the item / stop the
+/// walk, as each site dictates).
+fn read_bytes<const N: usize>(data: &[u8], off: usize) -> Option<[u8; N]> {
+    data.get(off..off + N).and_then(|s| s.try_into().ok())
+}
+
 /// Walk `[u32 size][u32 type][f32 time][payload]` frames, collecting Position
 /// samples (grouped by entity id) and EntityCreate metadata. Stops cleanly if a
 /// frame header is truncated or declares an absurd size (trailing padding).
@@ -394,9 +403,18 @@ fn walk_frames(
     let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
-        let size = u32::from_le_bytes(inflated[cur..cur + 4].try_into().unwrap()) as usize;
-        let ptype = u32::from_le_bytes(inflated[cur + 4..cur + 8].try_into().unwrap());
-        let time = f32::from_le_bytes(inflated[cur + 8..cur + 12].try_into().unwrap());
+        let Some(size) = read_bytes(inflated, cur)
+            .map(u32::from_le_bytes)
+            .map(|v| v as usize)
+        else {
+            break;
+        };
+        let Some(ptype) = read_bytes(inflated, cur + 4).map(u32::from_le_bytes) else {
+            break;
+        };
+        let Some(time) = read_bytes(inflated, cur + 8).map(f32::from_le_bytes) else {
+            break;
+        };
         let payload_end = cur + 12 + size;
         if size > 200_000 || payload_end > inflated.len() {
             break;
@@ -565,7 +583,10 @@ fn walk_frames(
             continue;
         }
         if n.payload.len() >= 4 {
-            let f = f32::from_le_bytes(n.payload[n.payload.len() - 4..].try_into().unwrap());
+            let Some(f) = read_bytes(&n.payload, n.payload.len() - 4).map(f32::from_le_bytes)
+            else {
+                continue;
+            };
             if f.is_finite() && (0.0..=1.5).contains(&f) {
                 cap_progress
                     .entry(n.entity_id)
@@ -625,18 +646,24 @@ fn walk_frames(
         } else if call.method_id == m.avatar_receive_remove_minimap_squadron
             && args_is_plane_id(&call.args)
         {
+            let Some(plane_id) = read_bytes(&call.args, 0).map(u64::from_le_bytes) else {
+                continue;
+            };
             minimap_squadron_removes.push(wowsp_tauri_shared::MinimapSquadronRemove {
                 time: call.time,
-                plane_id: u64::from_le_bytes(call.args[0..8].try_into().unwrap()),
+                plane_id,
             });
         } else if call.method_id == m.avatar_receive_ward_added {
             if let Some(w) = decode_ward_added(call.time, &call.args, profile.ward_has_type) {
                 wards.push(w);
             }
         } else if call.method_id == m.avatar_receive_ward_removed && args_is_plane_id(&call.args) {
+            let Some(plane_id) = read_bytes(&call.args, 0).map(u64::from_le_bytes) else {
+                continue;
+            };
             ward_removes.push(wowsp_tauri_shared::WardRemoveEvent {
                 time: call.time,
-                plane_id: u64::from_le_bytes(call.args[0..8].try_into().unwrap()),
+                plane_id,
             });
         } else if call.method_id == m.avatar_receive_shot_kills {
             shot_kills.extend(decode_shot_kills(
@@ -779,16 +806,15 @@ fn decode_ward_added(
         return None;
     }
     let squadron_id = u64::from_le_bytes(args[0..8].try_into().ok()?);
-    let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
     Some(wowsp_tauri_shared::WardEvent {
         time,
         squadron_id,
         owner_id: i64::from_le_bytes(args[29..37].try_into().ok()?),
         team_id: args[28] as i8,
-        x: f(8),
-        y: f(12),
-        z: f(16),
-        radius: f(24),
+        x: f32::from_le_bytes(read_bytes(args, 8)?),
+        y: f32::from_le_bytes(read_bytes(args, 12)?),
+        z: f32::from_le_bytes(read_bytes(args, 16)?),
+        radius: f32::from_le_bytes(read_bytes(args, 24)?),
         ward_type: if ward_has_type { args[37] } else { 0 },
     })
 }
@@ -813,7 +839,9 @@ fn decode_shot_kills(
         if off + 6 > args.len() {
             break;
         }
-        let owner_id = i32::from_le_bytes(args[off..off + 4].try_into().unwrap());
+        let Some(owner_id) = read_bytes(args, off).map(i32::from_le_bytes) else {
+            break;
+        };
         let hit_type = args[off + 4];
         let kills = args[off + 5] as usize;
         off += 6;
@@ -822,15 +850,26 @@ fn decode_shot_kills(
             if off + fixed > args.len() {
                 break 'packs;
             }
-            let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+            let Some(shot_id) = read_bytes(args, off + 12).map(u16::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(x) = read_bytes(args, off).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(y) = read_bytes(args, off + 4).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(z) = read_bytes(args, off + 8).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
             out.push(wowsp_tauri_shared::ShotKillEvent {
                 time,
                 owner_id,
                 hit_type,
-                shot_id: u16::from_le_bytes(args[off + 12..off + 14].try_into().unwrap()),
-                x: f(off),
-                y: f(off + 4),
-                z: f(off + 8),
+                shot_id,
+                x,
+                y,
+                z,
             });
             off += 14;
             if has_ballistics {
@@ -872,31 +911,66 @@ fn decode_artillery_shots(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::She
         if off + 13 > args.len() {
             break;
         }
-        let params_id = u32::from_le_bytes(args[off..off + 4].try_into().unwrap());
-        let owner_id = i32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
-        let salvo_id = i32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        let Some(params_id) = read_bytes(args, off).map(u32::from_le_bytes) else {
+            break;
+        };
+        let Some(owner_id) = read_bytes(args, off + 4).map(i32::from_le_bytes) else {
+            break;
+        };
+        let Some(salvo_id) = read_bytes(args, off + 8).map(i32::from_le_bytes) else {
+            break;
+        };
         let shots = args[off + 12] as usize;
         off += 13;
         for _ in 0..shots {
             if off + 48 > args.len() {
                 break 'packs;
             }
-            let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+            let Some(x) = read_bytes(args, off).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(y) = read_bytes(args, off + 4).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(z) = read_bytes(args, off + 8).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(speed) = read_bytes(args, off + 16).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(target_x) = read_bytes(args, off + 20).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(target_y) = read_bytes(args, off + 24).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(target_z) = read_bytes(args, off + 28).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(shot_id) = read_bytes(args, off + 32).map(u16::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(gun_barrel_id) = read_bytes(args, off + 34).map(u16::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(server_time_left) = read_bytes(args, off + 36).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
             out.push(wowsp_tauri_shared::ShellLaunchEvent {
                 time,
                 owner_id,
                 params_id,
                 salvo_id,
-                shot_id: u16::from_le_bytes(args[off + 32..off + 34].try_into().unwrap()),
-                x: f(off),
-                y: f(off + 4),
-                z: f(off + 8),
-                target_x: f(off + 20),
-                target_y: f(off + 24),
-                target_z: f(off + 28),
-                server_time_left: f(off + 36),
-                speed: f(off + 16),
-                gun_barrel_id: u16::from_le_bytes(args[off + 34..off + 36].try_into().unwrap()),
+                shot_id,
+                x,
+                y,
+                z,
+                target_x,
+                target_y,
+                target_z,
+                server_time_left,
+                speed,
+                gun_barrel_id,
             });
             off += 48;
         }
@@ -920,9 +994,15 @@ fn decode_torpedo_salvos(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Torp
         if off + 17 > args.len() {
             break;
         }
-        let params_id = u32::from_le_bytes(args[off..off + 4].try_into().unwrap());
-        let owner_id = i32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
-        let salvo_id = i32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
+        let Some(params_id) = read_bytes(args, off).map(u32::from_le_bytes) else {
+            break;
+        };
+        let Some(owner_id) = read_bytes(args, off + 4).map(i32::from_le_bytes) else {
+            break;
+        };
+        let Some(salvo_id) = read_bytes(args, off + 8).map(i32::from_le_bytes) else {
+            break;
+        };
         let count = args[off + 16] as usize;
         off += 17;
         for _ in 0..count {
@@ -931,8 +1011,27 @@ fn decode_torpedo_salvos(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Torp
             if off + 29 > args.len() {
                 break 'packs;
             }
-            let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
-            let shot_id = u16::from_le_bytes(args[off + 24..off + 26].try_into().unwrap());
+            let Some(x) = read_bytes(args, off).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(y) = read_bytes(args, off + 4).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(z) = read_bytes(args, off + 8).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(dir_x) = read_bytes(args, off + 12).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(dir_y) = read_bytes(args, off + 16).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(dir_z) = read_bytes(args, off + 20).map(f32::from_le_bytes) else {
+                break 'packs;
+            };
+            let Some(shot_id) = read_bytes(args, off + 24).map(u16::from_le_bytes) else {
+                break 'packs;
+            };
             let armed = args[off + 26] != 0;
             out.push(wowsp_tauri_shared::TorpedoLaunch {
                 time,
@@ -940,12 +1039,12 @@ fn decode_torpedo_salvos(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Torp
                 params_id,
                 salvo_id,
                 shot_id,
-                x: f(off),
-                y: f(off + 4),
-                z: f(off + 8),
-                dir_x: f(off + 12),
-                dir_y: f(off + 16),
-                dir_z: f(off + 20),
+                x,
+                y,
+                z,
+                dir_x,
+                dir_y,
+                dir_z,
                 armed,
             });
             off += 27;
@@ -995,17 +1094,32 @@ fn decode_torpedo_directions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::
     if args.len() < 22 {
         return out;
     }
-    let owner_id = i32::from_le_bytes(args[0..4].try_into().unwrap());
-    let shot_id = u16::from_le_bytes(args[4..6].try_into().unwrap());
-    let f = |o: usize| f32::from_le_bytes(args[o..o + 4].try_into().unwrap());
+    let Some(owner_id) = read_bytes(args, 0).map(i32::from_le_bytes) else {
+        return out;
+    };
+    let Some(shot_id) = read_bytes(args, 4).map(u16::from_le_bytes) else {
+        return out;
+    };
+    let Some(x) = read_bytes(args, 6).map(f32::from_le_bytes) else {
+        return out;
+    };
+    let Some(y) = read_bytes(args, 10).map(f32::from_le_bytes) else {
+        return out;
+    };
+    let Some(z) = read_bytes(args, 14).map(f32::from_le_bytes) else {
+        return out;
+    };
+    let Some(target_yaw) = read_bytes(args, 18).map(f32::from_le_bytes) else {
+        return out;
+    };
     out.push(wowsp_tauri_shared::TorpedoSteer {
         time,
         owner_id,
         shot_id,
-        x: f(6),
-        y: f(10),
-        z: f(14),
-        target_yaw: f(18),
+        x,
+        y,
+        z,
+        target_yaw,
     });
     out
 }
@@ -1017,17 +1131,27 @@ fn decode_squadron_update(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Squ
     if args.len() < 13 {
         return out;
     }
-    let plane_id = u64::from_le_bytes(args[0..8].try_into().unwrap());
+    let Some(plane_id) = read_bytes(args, 0).map(u64::from_le_bytes) else {
+        return out;
+    };
     let count = args[12] as usize;
     let mut off = 13usize;
     for index in 0..count {
         if off + 20 > args.len() {
             break;
         }
-        let x = f32::from_le_bytes(args[off..off + 4].try_into().unwrap());
-        let y = f32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
-        let z = f32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
-        let yaw = f32::from_le_bytes(args[off + 12..off + 16].try_into().unwrap());
+        let Some(x) = read_bytes(args, off).map(f32::from_le_bytes) else {
+            break;
+        };
+        let Some(y) = read_bytes(args, off + 4).map(f32::from_le_bytes) else {
+            break;
+        };
+        let Some(z) = read_bytes(args, off + 8).map(f32::from_le_bytes) else {
+            break;
+        };
+        let Some(yaw) = read_bytes(args, off + 12).map(f32::from_le_bytes) else {
+            break;
+        };
         off += 20;
         out.push(wowsp_tauri_shared::SquadronPlane {
             time,
@@ -1058,17 +1182,16 @@ fn parse_camera(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::CameraS
     if payload.len() < 56 {
         return None;
     }
-    let f = |o: usize| f32::from_le_bytes(payload[o..o + 4].try_into().unwrap());
     Some(wowsp_tauri_shared::CameraSample {
         time,
-        rot_x: f(0),
-        rot_y: f(4),
-        rot_z: f(8),
-        rot_w: f(12),
-        x: f(16),
-        y: f(20),
-        z: f(24),
-        fov: f(28),
+        rot_x: f32::from_le_bytes(read_bytes(payload, 0)?),
+        rot_y: f32::from_le_bytes(read_bytes(payload, 4)?),
+        rot_z: f32::from_le_bytes(read_bytes(payload, 8)?),
+        rot_w: f32::from_le_bytes(read_bytes(payload, 12)?),
+        x: f32::from_le_bytes(read_bytes(payload, 16)?),
+        y: f32::from_le_bytes(read_bytes(payload, 20)?),
+        z: f32::from_le_bytes(read_bytes(payload, 24)?),
+        fov: f32::from_le_bytes(read_bytes(payload, 28)?),
     })
 }
 
@@ -1224,10 +1347,18 @@ fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::Explosio
         if off + 17 > args.len() {
             break;
         }
-        let x = f32::from_le_bytes(args[off..off + 4].try_into().unwrap());
-        let y = f32::from_le_bytes(args[off + 4..off + 8].try_into().unwrap());
-        let z = f32::from_le_bytes(args[off + 8..off + 12].try_into().unwrap());
-        let params_id = u32::from_le_bytes(args[off + 12..off + 16].try_into().unwrap());
+        let Some(x) = read_bytes(args, off).map(f32::from_le_bytes) else {
+            break;
+        };
+        let Some(y) = read_bytes(args, off + 4).map(f32::from_le_bytes) else {
+            break;
+        };
+        let Some(z) = read_bytes(args, off + 8).map(f32::from_le_bytes) else {
+            break;
+        };
+        let Some(params_id) = read_bytes(args, off + 12).map(u32::from_le_bytes) else {
+            break;
+        };
         off += 17; // pos(12) + paramsID(4) + hitType(1)
         out.push(wowsp_tauri_shared::ExplosionEvent {
             time,
@@ -1428,16 +1559,27 @@ fn parse_property(payload: &[u8], time: f32) -> Vec<PropertyChange> {
     let entity_id = i32::from_le_bytes(payload[0..4].try_into().unwrap_or([0; 4]));
     let mut off = 4usize;
     while off + 8 <= payload.len() {
-        let property_index = u32::from_le_bytes(payload[off..off + 4].try_into().unwrap());
-        let value_size = u32::from_le_bytes(payload[off + 4..off + 8].try_into().unwrap()) as usize;
+        let Some(property_index) = read_bytes(payload, off).map(u32::from_le_bytes) else {
+            break;
+        };
+        let Some(value_size) = read_bytes(payload, off + 4)
+            .map(u32::from_le_bytes)
+            .map(|v| v as usize)
+        else {
+            break;
+        };
         if value_size > 8 || off + 8 + value_size > payload.len() {
             break;
         }
         let value_bytes = &payload[off + 8..off + 8 + value_size];
         let value = match value_size {
             1 => value_bytes[0] as u32,
-            2 => u16::from_le_bytes(value_bytes.try_into().unwrap()) as u32,
-            4 => u32::from_le_bytes(value_bytes.try_into().unwrap()),
+            2 => read_bytes(value_bytes, 0)
+                .map(u16::from_le_bytes)
+                .unwrap_or(0) as u32,
+            4 => read_bytes(value_bytes, 0)
+                .map(u32::from_le_bytes)
+                .unwrap_or(0),
             _ => 0,
         };
         out.push(PropertyChange {
