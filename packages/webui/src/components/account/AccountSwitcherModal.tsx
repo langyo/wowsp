@@ -1,5 +1,5 @@
 import { defineComponent, ref, watch } from "vue";
-import { X, Trophy, Swords } from "@lucide/vue";
+import { X, Trophy, Swords, Star } from "@lucide/vue";
 
 import { HButton, HInput, HModal, HSelect, HTag } from "@celestia-island/hikari";
 
@@ -79,6 +79,13 @@ export default defineComponent({
       await accounts.removeAccount(profile.realm, profile.accountId);
     }
 
+    /** Promote to the realm's preferred account (the ✦ server switches land
+     *  on it). Only offered when the realm has more than one bound account. */
+    async function promote(profile: AccountProfile, e: MouseEvent) {
+      e.stopPropagation();
+      await accounts.setPreferred(profile.realm, profile.accountId);
+    }
+
     /** Hydrate cached stats for every bound account so cards can show
      *  winrate/battles/clan without re-hitting the WG API. */
     async function hydrateStats() {
@@ -144,8 +151,13 @@ export default defineComponent({
                   accounts.activeAccountId === a.accountId &&
                   accounts.activeRealm === a.realm;
                 const s = statsById.value.get(`${a.realm}_${a.accountId}`);
+                const preferred = accounts.preferredAccount(a.realm);
+                const isPreferred = preferred?.accountId === a.accountId;
+                const realmHasChoice =
+                  accounts.accounts.filter((x) => x.realm === a.realm).length > 1;
                 return (
                   <div
+                    key={`${a.realm}_${a.accountId}`}
                     class={[
                       "acct-card",
                       isActive ? "acct-card--active" : "",
@@ -162,6 +174,11 @@ export default defineComponent({
                           <span class="acct-card__clan">[{s.clanTag}]</span>
                         ) : null}
                         <span class="acct-card__name">{a.nickname}</span>
+                        {isPreferred ? (
+                          <span class="acct-card__preferred" data-hint={t("account.preferred")}>
+                            <Star size={11} />
+                          </span>
+                        ) : null}
                       </div>
                       <div class="acct-card__meta">
                         <HTag variant="default" size="sm">{a.realm.toUpperCase()}</HTag>
@@ -188,6 +205,16 @@ export default defineComponent({
                         ) : null}
                       </div>
                     </div>
+                    {!isPreferred && realmHasChoice ? (
+                      <button
+                        class="acct-card__promote"
+                        onClick={(e) => void promote(a, e)}
+                        aria-label={t("account.setPreferred")}
+                        data-hint={t("account.setPreferred")}
+                      >
+                        <Star size={14} />
+                      </button>
+                    ) : null}
                     <button
                       class="acct-card__remove"
                       onClick={(e) => void remove(a, e)}

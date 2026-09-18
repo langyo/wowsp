@@ -80,6 +80,18 @@
     gap: 0.5rem;
   }
 
+  /* App-wide server (client-install) selector — the replay list, mod hub and
+     account auto-switching all follow it. */
+  &__server {
+    display: flex;
+    width: 100%;
+
+    :deep(.hk-select-wrapper),
+    :deep(.hk-select-trigger) {
+      width: 100%;
+    }
+  }
+
   /* Account + settings button on the same row */
   &__account-row {
     display: flex;

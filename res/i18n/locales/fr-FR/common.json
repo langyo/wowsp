@@ -40,6 +40,7 @@
     "unset": "Non défini",
     "detected": "Installations détectées",
     "browse": "Parcourir…",
+    "pick": "Choisir le dossier du jeu…",
     "redetect": "Relancer la détection",
     "runningHint": "Jeu en cours d'exécution détecté : {path}",
     "useRunning": "Utiliser ce chemin",

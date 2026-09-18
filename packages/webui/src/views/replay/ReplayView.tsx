@@ -1,5 +1,5 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
-import { Play, RefreshCw } from "@lucide/vue";
+import { FolderOpen, Play, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
@@ -8,16 +8,16 @@ import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useOverlayStore } from "@/stores/overlay";
-import { api } from "@/api";
+import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
   CameraSample,
   EntityTrajectory,
   ExplosionEvent,
-  GameInstallKind,
   HpSample,
   MinimapSquadronAdd,
   MinimapSquadronMove,
   MinimapSquadronRemove,
+  ReplayMetaLite,
   ShotKillEvent,
   WardEvent,
   WardRemoveEvent,
@@ -37,11 +37,7 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HButton, HSelect, HSpinner, useToast } from "@celestia-island/hikari";
-
-/** Hikari select option shape (HkSelectOption is not re-exported). */
-type SelectOption = { value: string; label: string; disabled?: boolean };
-
+import { HButton, HSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -55,19 +51,6 @@ import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
 import "./ReplayView.scss";
-
-/** Map a client kind to its localized label (e.g. Steam / 官服 / Lesta / 国服). */
-function kindLabel(kind: GameInstallKind | null | undefined): string {
-  if (!kind) return "";
-  return t(`common.game.kind.${kind}`);
-}
-
-/** Build a short label for a client selector option: "Steam · ASIA". */
-function installLabel(kind: GameInstallKind, realm?: string | null): string {
-  const parts = [kindLabel(kind)];
-  if (realm) parts.push(realm.toUpperCase());
-  return parts.join(" · ");
-}
 
 /** The replays subfolder of a client install. WoWS writes replays under
  *  `<install>/replays/`. */
@@ -559,6 +542,9 @@ const PostBattleFallbackPanel = defineComponent({
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
     explosions: { type: Array as () => ExplosionEvent[], default: () => [] },
     shotKills: { type: Array as () => ShotKillEvent[], default: () => [] },
+    /** Server-authoritative damage stats (receiveDamageStat) — preferred
+     *  over the shot-kill HP-delta heuristic when present. */
+    damageStats: { type: Array as () => DamageStatSample[], default: () => [] },
     /** Query realm (shared with the parent view) — the replay belongs to
      *  the client install, not to the bound account. */
     realm: { type: String, default: "asia" },
@@ -613,7 +599,12 @@ const PostBattleFallbackPanel = defineComponent({
     /** Recorder's own inferred damage dealt / frags / hits. */
     const selfStats = computed(() => {
       const self = props.vehicles.find((v) => v.relation === 0);
-      return computeSelfStats(props.trajectories, props.shotKills ?? [], self?.shipId);
+      return computeSelfStats(
+        props.trajectories,
+        props.shotKills ?? [],
+        self?.shipId,
+        props.damageStats,
+      );
     });
     const rows = computed(() =>
       props.vehicles.map((v) => {
@@ -954,21 +945,27 @@ function hpAtTime(hp: HpSample[] | undefined, t: number): number | null {
   return last;
 }
 
-/** Recorder's own damage dealt / frags / hits, inferred from the projectile-
- *  kill stream (receiveShotKills — server-confirmed hits carrying the firing
- *  vehicle id). 15.7+ replays no longer carry receiveExplosions, so this —
- *  not the explosion stream — is the reliable hit signal. */
+/** Recorder's own damage dealt / frags / hits. Damage PREFERS the
+ *  server-authoritative receiveDamageStat stream (exact, per-weapon, incl.
+ *  aircraft weapons — the HP-delta heuristic below over-counts multi-hit
+ *  salvos and misses out-of-view DoT); the heuristic from the projectile-kill
+ *  stream (receiveShotKills — server-confirmed hits carrying the firing
+ *  vehicle id) remains the fallback for versions without damage stats. */
 function computeSelfStats(
   trajectories: EntityTrajectory[],
   shotKills: ShotKillEvent[],
   selfShipId: number | undefined,
-): { damage: number; frags: number; hits: number } {
-  const out = { damage: 0, frags: 0, hits: 0 };
-  if (selfShipId == null) return out;
+  damageStats?: DamageStatSample[] | null,
+): { damage: number; planeDamage: number; frags: number; hits: number } {
+  const authoritative = damageStats?.length ? foldDamageStats(damageStats, Infinity) : null;
+  const out = { damage: 0, planeDamage: 0, frags: 0, hits: 0 };
+  if (selfShipId == null) return authoritative ? { ...out, ...authoritative } : out;
   const selfTraj = trajectories.find(
     (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
   );
-  if (!selfTraj || selfTraj.samples.length === 0) return out;
+  if (!selfTraj || selfTraj.samples.length === 0) {
+    return authoritative ? { ...out, ...authoritative } : out;
+  }
   for (const e of shotKills) {
     if (e.ownerId !== selfTraj.entityId) continue;
     out.hits++;
@@ -986,6 +983,11 @@ function computeSelfStats(
         out.frags++;
       }
     }
+  }
+  if (authoritative) {
+    out.damage = authoritative.damage;
+    out.planeDamage = authoritative.planeDamage;
+    out.hits = authoritative.hits;
   }
   return out;
 }
@@ -1144,13 +1146,6 @@ export default defineComponent({
       }
     });
 
-    // Client-selector options derived from detected installs.
-    const clientOptions = computed<SelectOption[]>(() =>
-      gd.config.installs.map((i) => ({
-        value: i.path,
-        label: installLabel(i.kind, i.realm),
-      })),
-    );
     const activePath = computed(() => gd.config.activeInstall?.path ?? "");
     const hasClient = computed(() => gd.config.installs.length > 0);
 
@@ -1198,14 +1193,42 @@ export default defineComponent({
       }
     });
 
-    async function onSelectClient(path: string) {
-      await gd.config.selectInstall(path);
-      await reload(path);
-    }
-
     watch(activePath, (p, prev) => {
       if (p && p !== prev) void reload(p);
     });
+
+    /** Pick replays from anywhere on disk (shared files outside the game's
+     *  replays folder). Each picked file header-parses into a temporary card
+     *  queued right after the live entry; the first pick opens immediately. */
+    const openingExternal = ref(false);
+    async function onOpenExternal() {
+      if (openingExternal.value) return;
+      openingExternal.value = true;
+      try {
+        const picked = await api.pickReplayFiles();
+        const { added, failed } = await parser.addExternal(picked);
+        for (const f of failed) {
+          toast.error(`${f.path}\n${f.error}`);
+        }
+        const first = added[0];
+        if (first) {
+          pane.value = { kind: "archive", path: first };
+          void parser.open(first);
+        }
+      } catch (e) {
+        toast.error((e as Error).message);
+      } finally {
+        openingExternal.value = false;
+      }
+    }
+
+    /** Drop an external entry; reset the pane if its replay was open. */
+    function onCloseExternal(path: string) {
+      parser.removeExternal(path);
+      if (pane.value.kind === "archive" && pane.value.path === path) {
+        pane.value = { kind: "none" };
+      }
+    }
 
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
     // open so the header parse stays fast; the decode is the expensive step.
@@ -1230,6 +1253,7 @@ export default defineComponent({
     const wards = ref<WardEvent[]>([]);
     const wardRemoves = ref<WardRemoveEvent[]>([]);
     const shotKills = ref<ShotKillEvent[]>([]);
+    const damageStats = ref<DamageStatSample[]>([]);
     const showResults = ref(false);
     /** True while the packet stream is decoding (post-battle results pending). */
     const resultsLoading = ref(false);
@@ -1261,6 +1285,7 @@ export default defineComponent({
         wards.value = [];
         wardRemoves.value = [];
         shotKills.value = [];
+        damageStats.value = [];
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -1288,6 +1313,7 @@ export default defineComponent({
           wards.value = stream.wards ?? [];
           wardRemoves.value = stream.wardRemoves ?? [];
           shotKills.value = stream.shotKills ?? [];
+          damageStats.value = stream.damageStats ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1322,33 +1348,110 @@ export default defineComponent({
       }
     }
 
+    /** One replay info card. `external` cards are session-temporary picks
+     *  from outside the game folder — they carry an "external" pill and a
+     *  corner ✕ (a sibling of the card button, so no nested buttons). Their
+     *  key is namespaced so a pick that also exists in the scanned folder
+     *  can't collide with the regular card's key. */
+    function renderReplayCard(r: ReplayMetaLite, external: boolean) {
+      return (
+        <li key={external ? `ext_${r.path}` : r.path} class="replay-view__item">
+          <button
+            type="button"
+            class={[
+              "replay-card",
+              external ? "replay-card--external" : "",
+              pane.value.kind === "archive" && pane.value.path === r.path
+                ? "replay-card--active"
+                : "",
+            ]}
+            onClick={() => {
+              // Transition the pane (closing any live view) BEFORE opening
+              // the archive — exactly one pane at a time.
+              pane.value = { kind: "archive", path: r.path };
+              void parser.open(r.path);
+            }}
+          >
+            <div class="replay-card__top">
+              <span class="replay-card__ship">{r.ownShipName ?? t("replay.ownShip")}</span>
+              <span class="replay-card__pills">
+                {external ? (
+                  <span class="replay-card__pill replay-card__pill--external">
+                    {t("replay.external.tag")}
+                  </span>
+                ) : null}
+                {r.matchGroup ? (
+                  <span
+                    class="replay-card__pill"
+                    style={modeColor(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0) as CSSProperties}
+                  >
+                    {modeLabel(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0)}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            <div class="replay-card__row">
+              <span class="replay-card__label">{t("replay.matchTime")}</span>
+              <span class="replay-card__val">{formatDateTime(r.dateTime)}</span>
+            </div>
+            <div class="replay-card__row">
+              <span class="replay-card__label">{t("replay.mapLabel")}</span>
+              <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
+            </div>
+            <div class="replay-card__foot">
+              <span class="replay-card__players">
+                {t("replay.players", { n: r.playerCount })}
+              </span>
+            </div>
+          </button>
+          {external ? (
+            <button
+              type="button"
+              class="replay-card__close"
+              onClick={() => onCloseExternal(r.path)}
+              aria-label={t("replay.external.close")}
+            >
+              <X size={12} />
+            </button>
+          ) : null}
+        </li>
+      );
+    }
+
     return () => (
       <main class="replay-view">
         <aside class="replay-view__list">
           <div class="replay-view__list-head">
             <div class="replay-view__list-head-row">
               <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
-              <HButton
-                size="sm"
-                variant="ghost"
-                disabled={!hasClient.value || refreshing.value}
-                onClick={() => void onRefresh()}
-                ariaLabel={t("replay.refresh")}
-              >
-                <RefreshCw size={14} class={refreshing.value ? "replay-view__spin" : ""} />
-              </HButton>
+              <span class="replay-view__list-head-actions">
+                <HButton
+                  size="sm"
+                  variant="ghost"
+                  loading={openingExternal.value}
+                  onClick={() => void onOpenExternal()}
+                  ariaLabel={t("replay.list.openExternal")}
+                >
+                  <FolderOpen size={14} />
+                </HButton>
+                <HButton
+                  size="sm"
+                  variant="ghost"
+                  disabled={!hasClient.value || refreshing.value}
+                  onClick={() => void onRefresh()}
+                  ariaLabel={t("replay.refresh")}
+                >
+                  <RefreshCw size={14} class={refreshing.value ? "replay-view__spin" : ""} />
+                </HButton>
+              </span>
             </div>
 
-            {hasClient.value ? (
-              <HSelect
-                modelValue={activePath.value}
-                onUpdate:modelValue={(v: string) => void onSelectClient(v)}
-                options={clientOptions.value}
-                placeholder={t("replay.client")}
-              />
-            ) : (
+            {/* The client/server selector lives in the sidebar footer (shared
+                with plugin management + account switching); the replay list
+                just reads the active install. */}
+            {!hasClient.value ? (
               <p class="replay-view__no-client">{t("replay.list.noClient")}</p>
-            )}
+            ) : null}
 
             {parser.list.value.length > 0 ? (
               <span class="replay-view__count">
@@ -1358,9 +1461,9 @@ export default defineComponent({
           </div>
 
           <div class="replay-view__list-scroll">
-            {!hasClient.value ? (
+            {parser.external.value.length === 0 && !hasClient.value ? (
               <p class="replay-view__empty">{t("replay.list.noClient")}</p>
-            ) : parser.list.value.length === 0 ? (
+            ) : parser.external.value.length === 0 && parser.list.value.length === 0 ? (
               <p class="replay-view__empty">{t("replay.list.empty")}</p>
             ) : (
               <ul class="replay-view__items">
@@ -1436,52 +1539,10 @@ export default defineComponent({
                     </button>
                   </li>
                 ) : null}
-                {parser.list.value.map((r) => (
-                  <li key={r.path} class="replay-view__item">
-                    <button
-                      type="button"
-                      class={[
-                        "replay-card",
-                        pane.value.kind === "archive" && pane.value.path === r.path
-                          ? "replay-card--active"
-                          : "",
-                      ]}
-                      onClick={() => {
-                        // Transition the pane (closing any live view) BEFORE
-                        // opening the archive — exactly one pane at a time.
-                        pane.value = { kind: "archive", path: r.path };
-                        void parser.open(r.path);
-                      }}
-                    >
-                      <div class="replay-card__top">
-                        <span class="replay-card__ship">
-                          {r.ownShipName ?? t("replay.ownShip")}
-                        </span>
-                        {r.matchGroup ? (
-                          <span
-                            class="replay-card__pill"
-                            style={modeColor(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0) as CSSProperties}
-                          >
-                            {modeLabel(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0)}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div class="replay-card__row">
-                        <span class="replay-card__label">{t("replay.matchTime")}</span>
-                        <span class="replay-card__val">{formatDateTime(r.dateTime)}</span>
-                      </div>
-                      <div class="replay-card__row">
-                        <span class="replay-card__label">{t("replay.mapLabel")}</span>
-                        <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
-                      </div>
-                      <div class="replay-card__foot">
-                        <span class="replay-card__players">
-                          {t("replay.players", { n: r.playerCount })}
-                        </span>
-                      </div>
-                    </button>
-                  </li>
-                ))}
+                {/* Manually picked files queue-jump to right after the live
+                    entry — newest picks sit closest to the live card. */}
+                {parser.external.value.map((r) => renderReplayCard(r, true))}
+                {parser.list.value.map((r) => renderReplayCard(r, false))}
               </ul>
             )}
           </div>
@@ -1585,6 +1646,7 @@ export default defineComponent({
                           trajectories={trajectories.value}
                           explosions={explosions.value}
                           shotKills={shotKills.value}
+                          damageStats={damageStats.value}
                           realm={realm.value}
                           onClose={() => (showResults.value = false)}
                         />
@@ -1624,6 +1686,7 @@ export default defineComponent({
                       wards={wards.value}
                       wardRemoves={wardRemoves.value}
                       shotKills={shotKills.value}
+                      damageStats={damageStats.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}

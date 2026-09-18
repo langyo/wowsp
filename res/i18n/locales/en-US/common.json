@@ -40,6 +40,7 @@
     "unset": "Not set",
     "detected": "Detected installs",
     "browse": "Browse folder…",
+    "pick": "Choose game folder…",
     "redetect": "Re-detect",
     "runningHint": "Running game detected: {path}",
     "useRunning": "Use this path",

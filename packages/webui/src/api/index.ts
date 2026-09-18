@@ -1,4 +1,4 @@
-export { api } from "./client";
+export { api, foldDamageStats } from "./client";
 export type {
   GameInstall,
   GameInstallKind,
@@ -47,6 +47,7 @@ export type {
   WardEvent,
   WardRemoveEvent,
   ShotKillEvent,
+  DamageStatSample,
   ReplayStream,
   PlayerStats,
   PlayerSuggestion,

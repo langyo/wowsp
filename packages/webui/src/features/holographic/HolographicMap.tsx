@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
-import { Crosshair, Shield, Skull, Swords } from "@lucide/vue";
+import { Crosshair, Plane, Shield, Skull, Swords } from "@lucide/vue";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
@@ -30,6 +30,7 @@ import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
   CameraSample,
+  DamageStatSample,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -49,6 +50,7 @@ import type {
   VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
+import { foldDamageStats } from "@/api";
 import planeIcon from "./planeIcons";
 import { shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
@@ -291,6 +293,10 @@ export default defineComponent({
     /** Projectile kills (receiveShotKills) — snap arcs onto victims, stop
      *  in-flight torpedoes at the hit. */
     shotKills: { type: Array as () => ShotKillEvent[], default: () => [] },
+    /** Server-authoritative cumulative damage stats (receiveDamageStat):
+     *  exact per-weapon damage incl. aircraft weapons, tracked live against
+     *  the playhead. Absent on versions without a pinned method id. */
+    damageStats: { type: Array as () => DamageStatSample[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -479,9 +485,20 @@ export default defineComponent({
     // reliable hit signal. Damage is the HP loss of ships near the impact
     // right after it; a sinking near an impact counts as a frag.
     const selfStats = computed(() => {
+      // Server-authoritative totals (receiveDamageStat) — exact per-weapon
+      // damage incl. aircraft weapons, folded to the playhead. When present
+      // they override the heuristic damage/hits below (the HP-delta estimate
+      // over-counts multi-hit salvos and misses out-of-view DoT).
+      const folded = props.damageStats.length
+        ? foldDamageStats(props.damageStats, current.value)
+        : null;
       const selfTraj = props.trajectories.find(
         (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(tr) === "self",
-      );      if (!selfTraj || selfTraj.samples.length === 0) return null;
+      );      if (!selfTraj || selfTraj.samples.length === 0) {
+        // No trajectory join (very early battle): the authoritative stream is
+        // still the recorder's own and usable on its own.
+        return folded ? { ...folded, frags: 0, taken: 0 } : null;
+      }
       let hits = 0;
       let damage = 0;
       let frags = 0;
@@ -515,7 +532,11 @@ export default defineComponent({
           }
         }
       }
-      return { hits, damage, frags, taken };
+      if (folded) {
+        damage = folded.damage;
+        hits = folded.hits;
+      }
+      return { hits, damage, frags, taken, planeDamage: folded?.planeDamage ?? 0 };
     });
     /** Ship class for a shipId (encyclopedia → offline DB → "". */
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
@@ -4792,6 +4813,15 @@ export default defineComponent({
                     <i class="holo-map__selfstat-label">{i18nT("replay.selfDamage")}</i>
                     <b class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</b>
                   </span>
+                  {selfStats.value.planeDamage > 0 ? (
+                    <span class="holo-map__selfstat">
+                      <Plane size={14} class="holo-map__selfstat-ico" />
+                      <i class="holo-map__selfstat-label">{i18nT("replay.selfPlane")}</i>
+                      <b class="holo-map__selfstat-num">
+                        {selfStats.value.planeDamage.toLocaleString()}
+                      </b>
+                    </span>
+                  ) : null}
                   <span class="holo-map__selfstat">
                     <Shield size={14} class="holo-map__selfstat-ico" />
                     <i class="holo-map__selfstat-label">{i18nT("replay.selfTaken")}</i>

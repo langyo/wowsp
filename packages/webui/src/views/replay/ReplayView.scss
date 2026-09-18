@@ -28,6 +28,14 @@
     gap: 0.5rem;
   }
 
+  /* Head action pair: open-external picker + list refresh. */
+  &__list-head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    flex-shrink: 0;
+  }
+
   &__list-title {
     margin: 0;
     font-size: var(--text-sm);
@@ -79,7 +87,9 @@
   }
 
   &__item {
-    /* The button fills the list item; this just normalizes margins. */
+    /* The button fills the list item; external entries absolutely position
+       their ✕ against the item, so it needs to be the containing block. */
+    position: relative;
   }
 
   &__spin {
@@ -660,6 +670,17 @@
     background: rgb(var(--color-success) / 5%);
   }
 
+  /* Session-temporary pick from outside the game folder — visually tied to
+     the manual ✕ rather than the client scan. */
+  &--external {
+    border-style: dashed;
+
+    /* Keep the top row clear of the in-corner ✕. */
+    & .replay-card__top {
+      padding-right: 1.4rem;
+    }
+  }
+
   &__top {
     display: flex;
     align-items: center;
@@ -705,6 +726,39 @@
     &--settling {
       background: rgb(var(--color-warning) / 18%);
       color: rgb(var(--color-warning));
+    }
+
+    /* Manually picked file from outside the game folder. */
+    &--external {
+      background: rgb(var(--color-primary) / 14%);
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  /* Corner ✕ on external cards — a sibling of the card button (no nested
+     buttons), pinned into the card's top-right corner. */
+  &__close {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.3rem;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.15rem;
+    height: 1.15rem;
+    padding: 0;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color var(--duration-short) var(--ease-standard),
+      border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 60%);
     }
   }
 

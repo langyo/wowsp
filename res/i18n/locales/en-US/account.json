@@ -12,5 +12,8 @@
   "notFound": "No account found",
   "bound": "Bound",
   "selectRealm": "Select realm",
-  "noAccounts": "No accounts bound yet. Search a nickname above to bind one."
+  "noAccounts": "No accounts bound yet. Search a nickname above to bind one.",
+  "preferred": "Preferred",
+  "setPreferred": "Make preferred",
+  "autoSwitched": "Switched to {name}"
 }
