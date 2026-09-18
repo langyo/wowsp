@@ -40,6 +40,7 @@
     "unset": "未設定",
     "detected": "検出されたインストール",
     "browse": "フォルダーを選択…",
+    "pick": "ゲームフォルダーを選択…",
     "redetect": "再検出",
     "runningHint": "実行中のゲームを検出しました：{path}",
     "useRunning": "このパスを使用",

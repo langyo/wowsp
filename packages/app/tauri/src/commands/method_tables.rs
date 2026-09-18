@@ -22,6 +22,11 @@ pub struct MethodIds {
     pub avatar_receive_ward_added: i32,
     pub avatar_receive_ward_removed: i32,
     pub avatar_receive_shot_kills: i32,
+    /// Server-authoritative cumulative damage stats (receiveDamageStat).
+    /// `None` for versions whose exposed id hasn't been pinned yet — the
+    /// decoder then leaves the stream empty and the frontend falls back to
+    /// its HP-delta heuristic.
+    pub avatar_receive_damage_stat: Option<i32>,
 }
 
 /// (major, minor, patch) → ids, ascending. Produced from every version the
@@ -42,6 +47,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 53,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -59,6 +65,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 53,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -76,6 +83,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 96,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 107,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -93,6 +101,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 110,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -110,6 +119,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 110,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -127,6 +137,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 110,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -144,6 +155,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 97,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 108,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -161,6 +173,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 97,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 108,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -178,6 +191,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 97,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 108,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -195,6 +209,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 110,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -212,6 +227,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -229,6 +245,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -246,6 +263,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 110,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -263,6 +281,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -280,6 +299,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -297,6 +317,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -314,6 +335,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 100,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 112,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -331,6 +353,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -348,6 +371,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -365,6 +389,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -382,6 +407,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -399,6 +425,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -416,6 +443,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -433,6 +461,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -450,6 +479,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -467,6 +497,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -484,6 +515,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -501,6 +533,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -518,6 +551,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -535,6 +569,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -552,6 +587,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -569,6 +605,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -586,6 +623,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -603,6 +641,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -620,6 +659,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -637,6 +677,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -654,6 +695,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -671,6 +713,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 104,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 118,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -688,6 +731,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -705,6 +749,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -722,6 +767,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -739,6 +785,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -756,6 +803,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -773,6 +821,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -790,6 +839,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 124,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -807,6 +857,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 124,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -824,6 +875,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 124,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -841,6 +893,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 122,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -858,6 +911,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 50,
             avatar_receive_shot_kills: 124,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -875,6 +929,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -892,6 +947,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -909,6 +965,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -926,6 +983,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_damage_stat: None,
         },
     ),
     (
@@ -943,6 +1001,32 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 112,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 127,
+            avatar_receive_damage_stat: None,
+        },
+    ),
+    // 15.8.0 has no reference entity definitions yet — this row is derived
+    // empirically from captured 15.8 replays (see `EMPIRICAL_OVERRIDES` in
+    // scripts/gen_method_tables.py): three avatar methods inserted below the
+    // battle-effect cluster shift it +3 (artillery 123→126, torpedoes
+    // 124→127, shotKills 127→130, updateSquadron 142→145), while the
+    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat —
+    // absent from every shipped def table so far — sits at 163.
+    (
+        (15, 8, 0),
+        MethodIds {
+            avatar_receive_artillery_shots: 126,
+            avatar_receive_torpedoes: 127,
+            avatar_receive_explosions: 128,
+            avatar_receive_torpedo_direction: 113,
+            avatar_receive_add_squadron: 116,
+            avatar_receive_update_squadron: 145,
+            avatar_receive_add_minimap_squadron: 101,
+            avatar_receive_update_minimap_squadron: 93,
+            avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 112,
+            avatar_receive_ward_removed: 50,
+            avatar_receive_shot_kills: 130,
+            avatar_receive_damage_stat: Some(163),
         },
     ),
 ];

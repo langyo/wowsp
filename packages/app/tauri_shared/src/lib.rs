@@ -559,6 +559,27 @@ pub struct ShotKillEvent {
     pub z: f32,
 }
 
+/// One cumulative damage-stat tick (`receiveDamageStat` on the recorder's
+/// avatar): the server's running total for a single (weapon, category) pair
+/// at a battle timestamp. Values are CUMULATIVE and REPLACE the previous
+/// entry for the same pair — fold by keeping the latest sample per pair
+/// (at or before a given time), never by summing across samples. Only
+/// category 0 (enemy) rows count as damage dealt.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DamageStatSample {
+    pub time: f32,
+    /// Weapon id (DamageStatWeapon): 1/2 main-gun AP/HE, 7 ship torpedo,
+    /// 11/12/28/41-43 aircraft bombs/torps/rockets, 17 burn, 20 flood, ...
+    pub weapon: i64,
+    /// 0 = enemy (damage dealt), 1 = ally, 2 = spotting, 3 = agro.
+    pub category: i64,
+    /// Cumulative hit count for the pair.
+    pub count: i64,
+    /// Cumulative damage total for the pair.
+    pub total: f64,
+}
+
 /// A weapon-lock state change (`SetWeaponLock`, 0x30): the recorder's own
 /// vehicle locking/unlocking a target entity. The lock timeline lets the
 /// frontend draw an aim line to the locked ship and prefer it when
@@ -702,6 +723,11 @@ pub struct ReplayStream {
     /// Projectile kills (receiveShotKills) — terminal impact points.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shot_kills: Vec<ShotKillEvent>,
+    /// Server-authoritative cumulative damage stats (receiveDamageStat) for
+    /// the recorder — exact per-weapon damage (incl. aircraft weapons),
+    /// emitted every few seconds during engagements.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub damage_stats: Vec<DamageStatSample>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

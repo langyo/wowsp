@@ -419,6 +419,59 @@ export interface ShotKillEvent {
   z: number;
 }
 
+/** One cumulative damage-stat tick (receiveDamageStat): the server's running
+ *  total for a (weapon, category) pair at a battle time. CUMULATIVE and
+ *  replace-per-pair — fold by keeping the latest sample per pair (at or
+ *  before time T), never by summing samples. category 0 = damage dealt;
+ *  weapons 11/12/28/41-43/51-58/63-70/74-81 are aircraft weapons. */
+export interface DamageStatSample {
+  time: number;
+  weapon: number;
+  category: number;
+  count: number;
+  total: number;
+}
+
+/** Aircraft weapon ids (DamageStatWeapon): carrier rockets / bombers /
+ *  torpedo bombers / skip bombers plus the Alt-/Tb- variants. Burn (17) and
+ *  flood (20) are DoT categories shared with ship weapons, so they stay out. */
+const PLANE_WEAPON_IDS: ReadonlySet<number> = new Set<number>([
+  11, 12, 28, 41, 42, 43, ...range(51, 58), ...range(63, 70), ...range(74, 81),
+]);
+
+function range(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+}
+
+/** Whether a damage-stat weapon id is an aircraft weapon (carrier planes). */
+function isPlaneWeapon(weapon: number): boolean {
+  return PLANE_WEAPON_IDS.has(weapon);
+}
+
+/** Fold cumulative damage-stat samples into the totals at (or before) `t`.
+ *  Keeps the latest sample per (weapon, category) pair — the values are
+ *  running totals, so summing across samples would multi-count. */
+export function foldDamageStats(
+  samples: DamageStatSample[] | null | undefined,
+  t: number,
+): { damage: number; planeDamage: number; hits: number } {
+  const latest = new Map<string, DamageStatSample>();
+  for (const s of samples ?? []) {
+    if (s.time > t) continue;
+    latest.set(`${s.weapon}_${s.category}`, s);
+  }
+  let damage = 0;
+  let planeDamage = 0;
+  let hits = 0;
+  for (const s of latest.values()) {
+    if (s.category !== 0) continue; // 1=ally, 2=spot, 3=agro — not damage dealt
+    damage += s.total;
+    hits += s.count;
+    if (isPlaneWeapon(s.weapon)) planeDamage += s.total;
+  }
+  return { damage, planeDamage, hits };
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
@@ -457,6 +510,10 @@ export interface ReplayStream {
   wardRemoves?: WardRemoveEvent[];
   /** Projectile kills (receiveShotKills) — terminal impact points. */
   shotKills?: ShotKillEvent[];
+  /** Server-authoritative cumulative damage stats (receiveDamageStat) for
+   *  the recorder — exact per-weapon damage incl. aircraft weapons. Absent
+   *  on versions whose exposed method id isn't pinned yet. */
+  damageStats?: DamageStatSample[];
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */
@@ -844,6 +901,9 @@ export const api = {
   /** Native folder picker for the manual game-location entry. Null = the
    *  user cancelled the dialog. */
   pickGameFolder: () => transport.invoke<GameInstall | null>(RPC.pick_game_folder),
+  /** Native multi-select dialog for .wowsreplay files anywhere on disk.
+   *  Empty array = cancelled. */
+  pickReplayFiles: () => transport.invoke<string[]>(RPC.pick_replay_files),
   /** res_mods ribbon-skin directory for a game install (None if unmodded). */
   ribbonSkinDir: (gamePath: string) =>
     transport.invoke<string | null>(RPC.ribbon_skin_dir, { gamePath }),

@@ -62,6 +62,11 @@ export const useConfigStore = defineStore("config", () => {
         }
       }
       activeInstall.value = resolved;
+      // A remembered manual path that auto-detection can't see must still be
+      // selectable in the sidebar's server dropdown.
+      if (resolved && !installs.value.some((i) => i.path === resolved.path)) {
+        installs.value = [...installs.value, resolved];
+      }
       rememberedPath = null; // consumed
       await persist();
     } finally {
@@ -80,7 +85,12 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   async function setManualPath(path: string) {
-    activeInstall.value = await api.setGamePath(path);
+    const resolved = await api.setGamePath(path);
+    activeInstall.value = resolved;
+    // Keep the manual install selectable in the sidebar's server dropdown.
+    if (!installs.value.some((i) => i.path === resolved.path)) {
+      installs.value = [...installs.value, resolved];
+    }
     await persist();
   }
 

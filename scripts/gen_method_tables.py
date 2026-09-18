@@ -40,7 +40,48 @@ AVATAR_METHODS = [
     "receive_wardAdded",
     "receive_wardRemoved",
     "receiveShotKills",
+    "receiveDamageStat",
 ]
+
+# Fields emitted as `Option<i32>`: the reference entity defs don't expose every
+# method the replay stream carries, so a missing def resolves to `None` (the
+# decoder then leaves that stream empty) instead of a bogus id.
+OPTIONAL_FIELDS = {"avatar_receive_damage_stat"}
+
+# Rows for versions the reference entity definitions don't ship yet, derived
+# empirically from captured replays (decode a real 15.8 .wowsreplay, identify
+# each method by wire shape). Each override merges over the nearest older
+# generated row; the id drift it captures is documented per version below.
+EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
+    # 15.8.0: three avatar methods inserted below the battle-effect cluster
+    # shift it +3 (artillery 123→126, torpedoes 124→127, shotKills 127→130,
+    # updateSquadron 142→145); squadron add/minimap ids keep their 15.7
+    # values; receiveDamageStat — absent from every shipped def table so far
+    # — sits at 163 (verified: 137 calls on the recorder's avatar in a
+    # full-battle capture).
+    (15, 8, 0): {
+        "avatar_receive_artillery_shots": 126,
+        "avatar_receive_torpedoes": 127,
+        "avatar_receive_shot_kills": 130,
+        "avatar_receive_update_squadron": 145,
+        "avatar_receive_ward_removed": 50,
+        "avatar_receive_damage_stat": 163,
+    },
+}
+
+EMPIRICAL_NOTES = {
+    (
+        15,
+        8,
+        0,
+    ): """    // 15.8.0 has no reference entity definitions yet — this row is derived
+    // empirically from captured 15.8 replays (see `EMPIRICAL_OVERRIDES` in
+    // scripts/gen_method_tables.py): three avatar methods inserted below the
+    // battle-effect cluster shift it +3 (artillery 123→126, torpedoes
+    // 124→127, shotKills 127→130, updateSquadron 142→145), while the
+    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat —
+    // absent from every shipped def table so far — sits at 163.""",
+}
 
 
 def to_snake(name: str) -> str:
@@ -87,6 +128,23 @@ def main() -> None:
                     entry[f"{entity.lower()}_{to_snake(m)}"] = names[m]
         rows.append(entry)
 
+    # Empirical rows for versions newer than the reference defs: merge each
+    # override over the nearest older generated row, then append ascending.
+    # An override whose version the defs now ship is dropped — the generated
+    # row is authoritative and must not be shadowed by a stale capture.
+    for ver, overrides in EMPIRICAL_OVERRIDES.items():
+        if any(row["version"] == ver for row in rows):
+            continue
+        base = None
+        for row in rows:
+            if row["version"] < ver:
+                base = row
+        merged = dict(base) if base else {}
+        merged["version"] = ver
+        merged.update(overrides)
+        rows.append(merged)
+    rows.sort(key=lambda r: r["version"])
+
     fields = [f"avatar_{to_snake(m)}" for m in AVATAR_METHODS]
 
     out = sys.stdout
@@ -103,19 +161,26 @@ def main() -> None:
     w("#[derive(Debug, Clone, Copy)]\n")
     w("pub struct MethodIds {\n")
     for f in fields:
-        w(f"    pub {f}: i32,\n")
+        ty = "Option<i32>" if f in OPTIONAL_FIELDS else "i32"
+        w(f"    pub {f}: {ty},\n")
     w("}\n\n")
     w("/// (major, minor, patch) → ids, ascending. Produced from every version the\n")
     w("/// reference entity definitions ship.\n")
     w("pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[\n")
     for e in rows:
         ver = e["version"]
+        note = EMPIRICAL_NOTES.get(ver)
+        if note:
+            w(note + "\n")
         # Emission shape matches `cargo fmt` canonical formatting exactly
         # (tuple + struct literal wrapped across lines) so regeneration is
         # fmt-stable.
         w(f"    (\n        ({ver[0]}, {ver[1]}, {ver[2]}),\n        MethodIds {{\n")
         for f in fields:
-            w(f"            {f}: {e.get(f, -1)},\n")
+            if f in OPTIONAL_FIELDS:
+                w(f"            {f}: {f'Some({e[f]})' if f in e else 'None'},\n")
+            else:
+                w(f"            {f}: {e.get(f, -1)},\n")
         w("        },\n    ),\n")
     w("];\n")
     w("""

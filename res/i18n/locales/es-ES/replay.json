@@ -3,7 +3,12 @@
     "title": "Repeticiones",
     "empty": "No se encontraron repeticiones en la carpeta del cliente seleccionado.",
     "count": "{n} repeticiones",
-    "noClient": "No se detectó ningún cliente del juego. Ejecuta un escaneo en el panel de inicio o define una ruta manualmente."
+    "noClient": "No se detectó ningún cliente del juego. Ejecuta un escaneo en el panel de inicio o define una ruta manualmente.",
+    "openExternal": "Abrir repeticiones externas…"
+  },
+  "external": {
+    "tag": "Externa",
+    "close": "Cerrar"
   },
   "client": "Cliente",
   "refresh": "Actualizar",
@@ -149,5 +154,6 @@
   "selfHits": "Aciertos",
   "selfFrags": "Hundimientos",
   "selfDamage": "Daño",
-  "selfTaken": "Recibido"
+  "selfTaken": "Recibido",
+  "selfPlane": "Aéreo"
 }

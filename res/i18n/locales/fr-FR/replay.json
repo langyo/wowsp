@@ -3,7 +3,12 @@
     "title": "Replays",
     "empty": "Aucun replay trouvé dans le dossier du client sélectionné.",
     "count": "{n} replays",
-    "noClient": "Aucun client de jeu détecté. Lancez une analyse sur le tableau de bord, ou définissez un chemin manuellement."
+    "noClient": "Aucun client de jeu détecté. Lancez une analyse sur le tableau de bord, ou définissez un chemin manuellement.",
+    "openExternal": "Ouvrir des replays externes…"
+  },
+  "external": {
+    "tag": "Externe",
+    "close": "Fermer"
   },
   "client": "Client",
   "refresh": "Actualiser",
@@ -149,5 +154,6 @@
   "selfHits": "Touches",
   "selfFrags": "Destructions",
   "selfDamage": "Dégâts",
-  "selfTaken": "Subis"
+  "selfTaken": "Subis",
+  "selfPlane": "Aérien"
 }

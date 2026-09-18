@@ -210,6 +210,10 @@ pub struct DecodedReplay {
     pub ward_removes: Vec<wowsp_tauri_shared::WardRemoveEvent>,
     /// Projectile kills (avatar receiveShotKills) — terminal impact points.
     pub shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent>,
+    /// Cumulative damage stats (avatar receiveDamageStat) — the server's
+    /// authoritative per-weapon totals for the recorder, incl. aircraft
+    /// weapons. Empty on versions whose exposed method id isn't pinned.
+    pub damage_stats: Vec<wowsp_tauri_shared::DamageStatSample>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -401,6 +405,7 @@ fn walk_frames(
     let mut wards: Vec<wowsp_tauri_shared::WardEvent> = Vec::new();
     let mut ward_removes: Vec<wowsp_tauri_shared::WardRemoveEvent> = Vec::new();
     let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
+    let mut damage_stats: Vec<wowsp_tauri_shared::DamageStatSample> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -671,6 +676,8 @@ fn walk_frames(
                 &call.args,
                 profile.shotkill_has_ballistics,
             ));
+        } else if m.avatar_receive_damage_stat == Some(call.method_id) {
+            damage_stats.extend(decode_damage_stat(call.time, &call.args));
         }
     }
     for samples in positions.values_mut() {
@@ -716,6 +723,7 @@ fn walk_frames(
         wards,
         ward_removes,
         shot_kills,
+        damage_stats,
     }
 }
 
@@ -879,6 +887,241 @@ fn decode_shot_kills(
                 }
             }
         }
+    }
+    out
+}
+
+/// A value from a narrow pickle-proto-2 subset — exactly the shapes the
+/// `receiveDamageStat` payload uses (dict of `(i64, i64)` keys to
+/// `[i64, f64]` lists). Anything outside the subset aborts the parse.
+#[derive(Debug, Clone, PartialEq)]
+enum PyVal {
+    None,
+    Int(i64),
+    Float(f64),
+    Tuple(Vec<PyVal>),
+    List(Vec<PyVal>),
+    Dict(Vec<(PyVal, PyVal)>),
+}
+
+/// Evaluate a pickle-proto-2 bytecode subset (see [`PyVal`]): a tiny stack
+/// machine with the CPython metastack MARK semantics. Returns the single
+/// top-level value, or `None` on truncated/unsupported opcodes (the caller
+/// then just leaves that sample set empty — damage stats are an enhancement,
+/// never a hard requirement).
+fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
+    let mut stack: Vec<PyVal> = Vec::new();
+    let mut metastack: Vec<Vec<PyVal>> = Vec::new();
+    let mut memo: Vec<PyVal> = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let op = bytes[i];
+        i += 1;
+        match op {
+            0x80 => i += 1,                                     // PROTO (version byte)
+            0x28 => metastack.push(std::mem::take(&mut stack)), // MARK '('
+            0x4e => stack.push(PyVal::None),                    // NONE 'N'
+            0x4b => {
+                // BININT1 'K' — u8
+                stack.push(PyVal::Int(*bytes.get(i)? as i64));
+                i += 1;
+            },
+            0x4d => {
+                // BININT2 'M' — u16 LE
+                stack.push(PyVal::Int(u16::from_le_bytes(read_bytes(bytes, i)?) as i64));
+                i += 2;
+            },
+            0x4a => {
+                // BININT 'J' — i32 LE
+                stack.push(PyVal::Int(i32::from_le_bytes(read_bytes(bytes, i)?) as i64));
+                i += 4;
+            },
+            0x8a => {
+                // LONG1 — 1-byte length + little-endian two's-complement payload.
+                // Payloads beyond i64 width are outside the supported subset.
+                let n = *bytes.get(i)? as usize;
+                i += 1;
+                if n > 8 {
+                    return None;
+                }
+                let raw = bytes.get(i..i + n)?;
+                i += n;
+                let mut v: i64 = 0;
+                for (k, b) in raw.iter().enumerate() {
+                    v |= (*b as i64) << (8 * k);
+                }
+                // Sign-extend from the last payload byte (n == 8 needs none).
+                if n > 0 && n < 8 {
+                    let shift = 64 - 8 * n;
+                    v = (v << shift) >> shift;
+                }
+                stack.push(PyVal::Int(v));
+            },
+            0x47 => {
+                // BINFLOAT 'G' — f64 BIG-endian (the pickle spec's one big-endian field)
+                stack.push(PyVal::Float(f64::from_be_bytes(read_bytes(bytes, i)?)));
+                i += 8;
+            },
+            0x86 => {
+                // TUPLE2
+                let b = stack.pop()?;
+                let a = stack.pop()?;
+                stack.push(PyVal::Tuple(vec![a, b]));
+            },
+            0x74 => {
+                // TUPLE 't' — everything back to the mark
+                let items = pop_mark(&mut stack, &mut metastack)?;
+                stack.push(PyVal::Tuple(items));
+            },
+            0x5d => stack.push(PyVal::List(Vec::new())), // EMPTY_LIST ']'
+            0x7d => stack.push(PyVal::Dict(Vec::new())), // EMPTY_DICT '}'
+            0x6c => {
+                // LIST 'l' — everything back to the mark
+                let items = pop_mark(&mut stack, &mut metastack)?;
+                stack.push(PyVal::List(items));
+            },
+            0x61 => {
+                // APPEND 'a'
+                let v = stack.pop()?;
+                match stack.last_mut()? {
+                    PyVal::List(l) => l.push(v),
+                    _ => return None,
+                }
+            },
+            0x65 => {
+                // APPENDS 'e' — items back to the mark, into the list below them
+                let items = pop_mark(&mut stack, &mut metastack)?;
+                match stack.last_mut()? {
+                    PyVal::List(l) => l.extend(items),
+                    _ => return None,
+                }
+            },
+            0x73 => {
+                // SETITEM 's' — value + key into the dict below them
+                let value = stack.pop()?;
+                let key = stack.pop()?;
+                match stack.last_mut()? {
+                    PyVal::Dict(d) => d.push((key, value)),
+                    _ => return None,
+                }
+            },
+            0x75 => {
+                // SETITEMS 'u' — pairs back to the mark, into the dict below them
+                let items = pop_mark(&mut stack, &mut metastack)?;
+                if items.len() % 2 != 0 {
+                    return None;
+                }
+                match stack.last_mut()? {
+                    PyVal::Dict(d) => {
+                        for pair in items.chunks_exact(2) {
+                            d.push((pair[0].clone(), pair[1].clone()));
+                        }
+                    },
+                    _ => return None,
+                }
+            },
+            0x71 => {
+                // BINPUT 'q' — memoize the top of stack (1-byte index)
+                let idx = *bytes.get(i)? as usize;
+                i += 1;
+                if let Some(v) = stack.last() {
+                    if memo.len() <= idx {
+                        memo.resize(idx + 1, PyVal::None);
+                    }
+                    memo[idx] = v.clone();
+                }
+            },
+            0x72 => {
+                // LONG_BINPUT 'r' — same with a 4-byte index
+                let idx = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
+                i += 4;
+                if let Some(v) = stack.last() {
+                    if memo.len() <= idx {
+                        memo.resize(idx + 1, PyVal::None);
+                    }
+                    memo[idx] = v.clone();
+                }
+            },
+            0x68 => {
+                // BINGET 'h' — push a memoized value back
+                let idx = *bytes.get(i)? as usize;
+                i += 1;
+                stack.push(memo.get(idx)?.clone());
+            },
+            0x6a => {
+                // LONG_BINGET 'j'
+                let idx = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
+                i += 4;
+                stack.push(memo.get(idx)?.clone());
+            },
+            0x2e => break, // STOP '.'
+            _ => return None,
+        }
+    }
+    stack.pop()
+}
+
+/// Pop the current stack back to the last MARK (CPython `pop_mark`).
+fn pop_mark(stack: &mut Vec<PyVal>, metastack: &mut Vec<Vec<PyVal>>) -> Option<Vec<PyVal>> {
+    let items = std::mem::take(stack);
+    *stack = metastack.pop()?;
+    Some(items)
+}
+
+/// Decode the avatar's `receiveDamageStat` args: one BLOB argument — a u8
+/// length prefix followed by a pickle-proto-2 dict `{(weapon, category):
+/// [count, total]}`. The dict carries a PARTIAL update: each key's value
+/// replaces the running total for that pair (never summed across calls), so
+/// the samples are emitted as-is and folded by the consumer. Spotting damage
+/// can arrive with an integer total — coerced to f64.
+fn decode_damage_stat(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::DamageStatSample> {
+    let mut out = Vec::new();
+    // BLOB arg: u8 length prefix + that many pickle bytes.
+    let Some(&len) = args.first() else {
+        return out;
+    };
+    let len = len as usize;
+    if len == 0 || args.len() < 1 + len {
+        return out;
+    }
+    let Some(PyVal::Dict(entries)) = parse_pickle(&args[1..1 + len]) else {
+        return out;
+    };
+    for (k, v) in entries {
+        // Key: (weapon, category) tuple of ints. Anything else is a future
+        // shape — skip the pair rather than guessing.
+        let PyVal::Tuple(key) = k else {
+            continue;
+        };
+        if key.len() != 2 {
+            continue;
+        }
+        let (Some(PyVal::Int(weapon)), Some(PyVal::Int(category))) = (key.first(), key.get(1))
+        else {
+            continue;
+        };
+        // Value: [count, total].
+        let PyVal::List(vals) = v else {
+            continue;
+        };
+        if vals.len() != 2 {
+            continue;
+        }
+        let Some(PyVal::Int(count)) = vals.first() else {
+            continue;
+        };
+        let total = match vals.get(1) {
+            Some(PyVal::Float(f)) => *f,
+            Some(PyVal::Int(i)) => *i as f64,
+            _ => continue,
+        };
+        out.push(wowsp_tauri_shared::DamageStatSample {
+            time,
+            weapon: *weapon,
+            category: *category,
+            count: *count,
+            total,
+        });
     }
     out
 }
@@ -2232,5 +2475,81 @@ mod tests {
         assert!((steers[0].target_yaw - 0.8).abs() < 1e-4);
         // Truncated payloads (below the decoded head fields) yield nothing.
         assert!(decode_torpedo_directions(0.0, &args[..15]).is_empty());
+    }
+
+    /// receiveDamageStat: the exact wire shape a 15.8 capture sends — BLOB
+    /// length prefix + pickle-proto-2 dict built as EMPTY_DICT, then per pair
+    /// TUPLE2(weapon, category) + EMPTY_LIST + MARK + [BININT1 count,
+    /// BINFLOAT total] + APPENDS + SETITEM. Byte-for-byte the first packet of
+    /// the reference Lexington replay ({(28, 0): [4, 2640.0]} at t=100.75).
+    #[test]
+    fn decodes_damage_stat_pickle() {
+        let pickle: Vec<u8> = vec![
+            0x80, 0x02, // PROTO 2
+            0x7d, // EMPTY_DICT
+            0x71, 0x01, // BINPUT 1
+            0x4b, 0x1c, // BININT1 28 (RocketHe)
+            0x4b, 0x00, // BININT1 0 (enemy)
+            0x86, // TUPLE2
+            0x71, 0x02, // BINPUT 2
+            0x5d, // EMPTY_LIST
+            0x71, 0x03, // BINPUT 3
+            0x28, // MARK
+            0x4b, 0x04, // BININT1 4 (count)
+            0x47, 0x40, 0xa4, 0xa0, 0x00, 0x00, 0x00, 0x00, 0x00, // BINFLOAT 2640.0 (BE)
+            0x65, // APPENDS
+            0x73, // SETITEM
+            0x2e, // STOP
+        ];
+        let mut args = vec![pickle.len() as u8];
+        args.extend_from_slice(&pickle);
+        let out = decode_damage_stat(100.75, &args);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].weapon, 28);
+        assert_eq!(out[0].category, 0);
+        assert_eq!(out[0].count, 4);
+        assert!((out[0].total - 2640.0).abs() < 1e-9);
+        assert!((out[0].time - 100.75).abs() < 1e-6);
+    }
+
+    /// receiveDamageStat variants: multiple pairs per dict (SETITEMS batch
+    /// form), integer totals (spotting damage arrives as int), BININT/BININT2
+    /// encodings, and tolerance — truncated blob or non-dict payload yields
+    /// an empty vec instead of panicking.
+    #[test]
+    fn decodes_damage_stat_variants() {
+        // {(1, 0): [9, 4321.5], (17, 2): [3, 0]} via the SETITEMS batch form:
+        // EMPTY_DICT, MARK, then alternating key/value pairs, SETITEMS.
+        let mut pickle = vec![0x80u8, 0x02, 0x7d, 0x71, 0x01, 0x28];
+        // Key 1: (weapon 1 via BININT, category 0 via BININT1).
+        pickle.extend_from_slice(&[0x4a]);
+        pickle.extend_from_slice(&1i32.to_le_bytes());
+        pickle.extend_from_slice(&[0x4b, 0x00, 0x86]);
+        // Value 1: EMPTY_LIST + MARK + count 9 (BININT2) + total 4321.5.
+        pickle.extend_from_slice(&[0x5d, 0x28]);
+        pickle.extend_from_slice(&[0x4d]);
+        pickle.extend_from_slice(&9u16.to_le_bytes());
+        pickle.extend_from_slice(&[0x47]);
+        pickle.extend_from_slice(&4321.5f64.to_be_bytes());
+        pickle.extend_from_slice(&[0x65]);
+        // Key 2: (weapon 17 via BININT1, category 2 via BININT1).
+        pickle.extend_from_slice(&[0x4b, 0x11, 0x4b, 0x02, 0x86]);
+        // Value 2: total as integer 0 (LONG1) — the spotting-damage shape.
+        pickle.extend_from_slice(&[0x5d, 0x28, 0x4b, 0x03, 0x8a, 0x01, 0x00, 0x65]);
+        pickle.extend_from_slice(&[0x75, 0x2e]); // SETITEMS + STOP
+        let mut args = vec![pickle.len() as u8];
+        args.extend_from_slice(&pickle);
+        let out = decode_damage_stat(500.0, &args);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].weapon, 1);
+        assert_eq!(out[0].count, 9);
+        assert!((out[0].total - 4321.5).abs() < 1e-9);
+        assert_eq!(out[1].weapon, 17);
+        assert_eq!(out[1].category, 2);
+        assert_eq!(out[1].total, 0.0);
+        // Tolerance: bad length prefix / non-dict / empty args → empty.
+        assert!(decode_damage_stat(0.0, &[64, 0x80]).is_empty());
+        assert!(decode_damage_stat(0.0, &[2, 0x4b, 0x01]).is_empty());
+        assert!(decode_damage_stat(0.0, &[]).is_empty());
     }
 }
