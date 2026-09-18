@@ -18,6 +18,7 @@ pub mod model_pack;
 pub mod network;
 pub mod open_external;
 pub mod overlay;
+pub mod overlay_config;
 pub mod overlay_detect;
 pub mod packets;
 pub mod ranked;
