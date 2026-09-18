@@ -417,7 +417,18 @@ fn watch_tab_tick(
         }
         let want_visible = focused_on_game && tab_down && battle_known;
         if want_visible {
-            if !*overlay_shown {
+            // A CONFIRMED pin is the only "done" state. Shown WITHOUT one —
+            // the centered-fallback hint — must keep acquiring: a Tab press
+            // can beat the panel's first render (the scene gate opens on the
+            // battle HUD alone), and with the gates below split on
+            // `overlay_shown` / `pinned_anchor.is_some()` that hint was a
+            // terminal state for the whole hold — acquisition stopped, and
+            // revalidation had no pin to re-check, so the hint never
+            // recovered even once the table was fully on screen.
+            let confirmed_pin = pinned_anchor
+                .as_ref()
+                .is_some_and(|p| p.anchor.table_detected);
+            if !*overlay_shown || !confirmed_pin {
                 // BATTLE-PINNED anchor first: once a table was located for
                 // THIS battle and this game-window geometry, every later
                 // press reuses it verbatim — per-press re-detection measured
@@ -435,9 +446,10 @@ fn watch_tab_tick(
                     Some(p) => Some(p.anchor.clone()),
                     None => {
                         // Rate-limited acquisition attempt. A FAILED attempt
-                        // leaves overlay_shown false, so the next tick (after
-                        // the rate limit) retries — no release-and-press
-                        // needed. Only a CONFIRMED table detection pins;
+                        // stays unpinned, so the next tick (after the rate
+                        // limit) retries — no release-and-press needed,
+                        // whether the overlay is still hidden or sitting on
+                        // the hint. Only a CONFIRMED table detection pins;
                         // fallback anchors (hint box) stay unpinned so the
                         // next attempt keeps trying for the real table.
                         let Some(g) = game else {
@@ -461,7 +473,13 @@ fn watch_tab_tick(
                     },
                 };
                 if let Some(anchor) = anchor {
-                    place_and_show(app, &anchor);
+                    // Place when the overlay is not up yet, or when a
+                    // CONFIRMED anchor must replace the on-screen hint;
+                    // re-placing an identical fallback hint every rate-limit
+                    // window would only churn the event pipe.
+                    if !*overlay_shown || anchor.table_detected {
+                        place_and_show(app, &anchor);
+                    }
                     *overlay_shown = true;
                     *last_hide = None;
                     // The anchor on screen is fresh as of NOW (a new pin, or
@@ -473,14 +491,12 @@ fn watch_tab_tick(
                 // A failed acquisition while ALREADY shown keeps the old
                 // anchor on screen — the previous behavior of hiding here
                 // made a single failed re-capture blink the overlay off.
-            } else if pinned_anchor.is_some()
-                && last_revalidate.is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL)
-            {
-                // Shown AND pinned: periodically re-check the pin against a
-                // live detection — the panel moves as a whole when HUD
-                // phases change (countdown → combat) and neither pin key
-                // (arena stamp, window rect) can see it. A shown overlay
-                // WITHOUT a pin (fallback anchor) has nothing to re-check.
+            } else if last_revalidate.is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL) {
+                // Shown AND pinned (the only way to reach this arm):
+                // periodically re-check the pin against a live detection —
+                // the panel moves as a whole when HUD phases change
+                // (countdown → combat) and neither pin key (arena stamp,
+                // window rect) can see it.
                 revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate);
             }
         } else if *overlay_shown {
