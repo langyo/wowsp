@@ -33,10 +33,13 @@
   "resourceCdnPlaceholder": "Leave empty to use the official Wargaming CDN",
   "resourceCdnHint": "Mirror base for portraits and other remote resources — the URL path is preserved, and requests still flow through the app's proxy settings.",
   "overlay": "In-game overlay",
-  "overlayOn": "On",
-  "overlayOff": "Off",
   "overlayDesc": "Fetches both teams' stats automatically when a battle starts; hold Tab while the game window is focused to see each player's win rate and average damage next to their name.",
-  "overlayTabToggle": "Hold Tab to view stats",
+  "overlayTable": "Table anchoring",
+  "overlayTableDetect": "Pixel detection",
+  "overlayTableOff": "Off (disables the tab overlay)",
+  "overlayRoster": "Roster recognition",
+  "overlayRosterOcr": "OCR recognition",
+  "overlayRosterOff": "Off (roster order)",
   "overlayFullscreenNote": "※ Unavailable in exclusive fullscreen: in that mode GDI screen capture only returns black frames, and the overlay window cannot sit on top of a fullscreen swap chain. Set the game's display mode to borderless or windowed.",
   "gamePathChange": "Change…"
 }

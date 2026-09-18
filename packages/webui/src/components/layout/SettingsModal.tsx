@@ -8,7 +8,11 @@ import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type NetworkConfig } from "@/api";
 import { useConfigStore } from "@/stores/config";
-import { useOverlayConfigStore } from "@/stores/overlayConfig";
+import {
+  useOverlayConfigStore,
+  type RosterRecognitionMode,
+  type TableAnchorMode,
+} from "@/stores/overlayConfig";
 import AboutModal from "@/components/layout/AboutModal";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import "./SettingsModal.scss";
@@ -315,24 +319,45 @@ export default defineComponent({
 
           {/* in-game overlay (Mode 2) — pre-creates the transparent window
               + Tab watcher while the game runs; hold Tab in battle to see
-              per-player WR / avg damage over the team list. The note under
-              the toggle explains why exclusive fullscreen can't work. */}
+              per-player WR / avg damage over the team list. TWO independent
+              switches (radio-style so a future "plugin" mode can join each
+              later without schema churn): table anchoring pixel-detects the
+              team table, and its off state disables the WHOLE Tab overlay;
+              roster recognition picks OCR row→name matching or falls back
+              to the roster/index order with no pending hints. The note
+              under the first switch explains why exclusive fullscreen
+              can't work. */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.overlay")}</h2>
             <p class="settings-modal__hint">{t("settings.overlayDesc")}</p>
             <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.overlayTabToggle")}</h3>
+              <h3 class="settings-modal__sub-title">{t("settings.overlayTable")}</h3>
               <HTabs
                 block
                 variant="segmented"
-                modelValue={overlayCfg.enabled ? "on" : "off"}
-                onUpdate:modelValue={(v: string) => void overlayCfg.setEnabled(v === "on")}
+                modelValue={overlayCfg.table}
+                onUpdate:modelValue={(v: string) => void overlayCfg.setTable(v as TableAnchorMode)}
                 tabs={[
-                  { key: "on", label: t("settings.overlayOn") },
-                  { key: "off", label: t("settings.overlayOff") },
+                  { key: "detect", label: t("settings.overlayTableDetect") },
+                  { key: "off", label: t("settings.overlayTableOff") },
                 ]}
               />
               <p class="settings-modal__hint">{t("settings.overlayFullscreenNote")}</p>
+            </div>
+            <div class="settings-modal__sub">
+              <h3 class="settings-modal__sub-title">{t("settings.overlayRoster")}</h3>
+              <HTabs
+                block
+                variant="segmented"
+                modelValue={overlayCfg.roster}
+                onUpdate:modelValue={(v: string) =>
+                  void overlayCfg.setRoster(v as RosterRecognitionMode)
+                }
+                tabs={[
+                  { key: "ocr", label: t("settings.overlayRosterOcr") },
+                  { key: "off", label: t("settings.overlayRosterOff") },
+                ]}
+              />
             </div>
           </section>
 
