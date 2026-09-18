@@ -7,7 +7,11 @@
    the single-file installer pattern; see packages/installer-shell/build.rs).
    Every installer carries the FULL payload: the application plus the
    current 2D/3D model pack, so an install never touches the network for
-   resources. The only variant split is WebView2:
+   resources. The pack comes from a local bake
+   (``packages/webui/src/res/models`` — ``scripts/fetch_models.py`` output)
+   when present, and is otherwise fetched ONCE from the published
+   ``res-latest`` release and extracted into the same layout — which is what
+   release CI does on its clean runners. The only variant split is WebView2:
 
    - (default)     — application + full model pack, and
    - ``webview2``  — the same payload with the Evergreen offline runtime
@@ -52,6 +56,15 @@ TARGET = REPO / "target" / "release"
 OUT = TARGET / "bundle" / "installer"
 SHELL_BUILD_DIR = TARGET / "build"
 
+# Model-pack fetch (release CI runners hold no local bake): the published
+# res-latest archive and where the one-time download caches itself.
+MODELS_CACHE = TARGET / "model-pack"
+MODELS_ARCHIVE = "wowsp-models.tar.gz"
+MODELS_ASSET_URL = (
+    "https://github.com/langyo/wowsp/releases/download/res-latest/"
+    "wowsp-models.tar.gz"
+)
+
 
 def app_version() -> str:
     raw = (REPO / "package.json").read_text(encoding="utf-8")
@@ -78,6 +91,96 @@ def model_pack_version() -> str:
     except Exception as exc:
         print(f"[warn] model pack version fetch failed: {exc}")
         return ""
+
+
+def model_pack_asset_size() -> int | None:
+    """Expected archive size in bytes per the release API, or None when the
+    query fails (the download then simply skips its final size check)."""
+    try:
+        out = subprocess.run(
+            ["gh", "api",
+             "repos/langyo/wowsp/releases/tags/res-latest",
+             "--jq", '[.assets[] | select(.name == "wowsp-models.tar.gz") | .size] | first // 0'],
+            capture_output=True, text=True, check=True, timeout=60,
+        )
+        return int(out.stdout.strip() or 0) or None
+    except Exception:
+        return None
+
+
+def download_model_pack(archive: Path) -> None:
+    """Download the pack with HTTP Range resume and a BOUNDED retry count —
+    never an unbounded loop. A server that ignores the Range header answers
+    200 instead of 206; that restarts the file from zero rather than
+    appending a corrupted tail."""
+    expected = model_pack_asset_size()
+    attempts = 5
+    for attempt in range(1, attempts + 1):
+        have = archive.stat().st_size if archive.exists() else 0
+        headers = {"User-Agent": "wowsp-installer-build"}
+        if have:
+            headers["Range"] = f"bytes={have}-"
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(MODELS_ASSET_URL, headers=headers),
+                timeout=120,
+            ) as resp:
+                resume = have > 0 and getattr(resp, "status", None) == 206
+                start = have if resume else 0
+                total = start + int(resp.headers.get("Content-Length", 0) or 0)
+                with open(archive, "ab" if resume else "wb") as fh:
+                    copied = 0
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        copied += len(chunk)
+                        if copied % (64 << 20) < (1 << 20):
+                            print(f"[models] {start + copied:,} / {total or '?':,} bytes")
+            size = archive.stat().st_size
+            if expected is not None and size != expected:
+                raise IOError(f"downloaded size {size:,} != release size {expected:,}")
+            return
+        except Exception as exc:
+            print(f"[warn] model pack download attempt {attempt}/{attempts} failed: {exc}")
+    sys.exit("model pack download failed after bounded retries")
+
+
+def has_baked_glb() -> bool:
+    """Whether MODELS holds a REAL bake. The git-tracked models subset is
+    2D-only (silhouettes/minimaps, ~27 MB) and always present in a fresh
+    checkout — including CI's — so directory existence proves nothing. The
+    untracked bake output is what carries ships/<id>.glb, so one glb file
+    discriminates bake-present from tracked-subset-only."""
+    ships = MODELS / "ships"
+    return ships.is_dir() and any(p.suffix == ".glb" for p in ships.glob("*"))
+
+
+def ensure_models(force_fetch: bool = False) -> None:
+    """Guarantee the FULL model pack exists for staging. A local bake wins
+    in auto mode (glb files present — see has_baked_glb); otherwise the
+    published res-latest archive is fetched once into target/model-pack and
+    extracted OVER whatever the checkout holds — restoring the exact layout
+    release_models.py packed (top-level ``models/`` under res/). CI passes
+    ``--models fetch`` to force this even though its tracked subset exists."""
+    if not force_fetch and has_baked_glb():
+        print(f"[models] using local bake: {MODELS}")
+        return
+    MODELS_CACHE.mkdir(parents=True, exist_ok=True)
+    archive = MODELS_CACHE / MODELS_ARCHIVE
+    if not (
+        archive.exists()
+        and (model_pack_asset_size() in (None, archive.stat().st_size))
+    ):
+        print(f"[models] no local bake — fetching {MODELS_ASSET_URL}")
+        download_model_pack(archive)
+    else:
+        print(f"[models] reusing cached archive: {archive}")
+    print(f"[models] extracting into {MODELS.parent}")
+    run(["tar", "-xzf", str(archive), "-C", str(MODELS.parent)])
+    if not has_baked_glb():
+        sys.exit(f"model pack extraction left {MODELS} without any baked glb")
 
 
 def build_app() -> Path:
@@ -212,6 +315,15 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe")
     ap.add_argument(
+        "--models",
+        choices=("auto", "fetch"),
+        default="auto",
+        help="model pack source: auto uses a local bake when one is present "
+        "(glb files under models/ships) and otherwise fetches the res-latest "
+        "archive; fetch ALWAYS fetches-and-extracts it — what release CI "
+        "passes, since its checkout holds only the tracked 2D subset",
+    )
+    ap.add_argument(
         "--flavors",
         default="full,full-webview2",
         help="comma list of artifacts to build: full, full-webview2 "
@@ -257,6 +369,7 @@ def main() -> int:
         "full-webview2": "-webview2",
     }
 
+    ensure_models(force_fetch=args.models == "fetch")
     stage = stage_payload(app_exe)
     stage_models(stage)
     for flavor in flavors:

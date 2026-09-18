@@ -66,7 +66,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Build shun installers
-        run: python scripts/build_installers.py
+        # --models fetch: the runner's checkout holds only the tracked 2D
+        # model subset — force-fetch the published res-latest pack so every
+        # installer embeds the full 2D/3D payload (fresh installs never
+        # touch the network for resources).
+        run: python scripts/build_installers.py --models fetch
 
       - name: Upload release artifacts (draft)
         # Only tag pushes publish: a workflow_dispatch on a branch has no
