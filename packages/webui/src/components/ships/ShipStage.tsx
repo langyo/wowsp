@@ -146,9 +146,6 @@ export default defineComponent({
           try {
             const armorModel = await loadGlbModel(armorUrl);
             if (armorModel) {
-              armorModel.scale.copy(model.scale);
-              armorModel.position.copy(model.position);
-
               armorModel.traverse((child) => {
                 const mesh = child as THREE.Mesh;
                 if (mesh.isMesh) {
@@ -162,6 +159,13 @@ export default defineComponent({
                   });
                   mesh.material = mat;
                   mesh.renderOrder = 1;
+                  // Armor GLBs come from wowsunpack in the game's own
+                  // orientation (bow at -Z), while visual GLBs from
+                  // wows-gltf-exporter face bow at +Z — rotate 180° about Y so
+                  // the two models face the same way. The rotation must live
+                  // on the mesh node: the reparent below keeps only the local
+                  // transform, and any group-level transform would be dropped.
+                  mesh.rotation.y = Math.PI;
                   armorSc.add(mesh);
                 }
               });
