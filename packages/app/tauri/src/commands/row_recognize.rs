@@ -17,13 +17,13 @@
 //! `row_players = None`, which the frontend reads as "fall back to the
 //! historical index mapping" (default behavior, byte-identical to master).
 //!
-//! Engines implement [`RowRecognizer`]. PR 3a ships only the
-//! [`NullRecognizer`] placeholder and the `WOWSP_ROW_RECOGNIZER` selection
-//! plumbing; PR 3b lands the real engine (Windows OCR / RapidOCR) behind a
-//! new env value and tunes the crop constants against the #372 tab dumps.
-//! The pipeline stays FAST and IO-FREE while off: an unset env short-
-//! circuits before any crop, and the one arena-file read happens only after
-//! some text was actually recognized.
+//! Engines implement [`RowRecognizer`]. PR 3a shipped the [`NullRecognizer`]
+//! placeholder and the `WOWSP_ROW_RECOGNIZER` selection plumbing; PR 3b adds
+//! the real on-device engine (`windows-ocr`, the OS-bundled Windows.Media.Ocr
+//! — see [`row_ocr_windows`]) behind its own env value. The pipeline stays
+//! FAST and IO-FREE while off: an unset env short-circuits before any crop,
+//! and the one arena-file read happens only after some text was actually
+//! recognized.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -31,10 +31,15 @@ use wowsp_tauri_shared::{ArenaInfo, Rect, VehicleEntry};
 
 use super::{arena_info, overlay_detect, row_match};
 
+#[cfg(target_os = "windows")]
+#[path = "row_ocr_windows.rs"]
+mod row_ocr_windows;
+
 /// Environment variable selecting the row recognizer engine. Unset / empty =
 /// off (the whole pipeline is skipped); `off` / `null` explicitly selects
-/// the do-nothing placeholder; any other value warns once and stays off
-/// until a real engine registers its own name (PR 3b).
+/// the do-nothing placeholder; `windows-ocr` selects the OS-bundled
+/// Windows.Media.Ocr engine (Windows builds); any other value warns once
+/// and stays off.
 const RECOGNIZER_ENV: &str = "WOWSP_ROW_RECOGNIZER";
 
 /// One row-name recognition engine. Implementations receive the raw RGBA
@@ -59,6 +64,11 @@ impl RowRecognizer for NullRecognizer {
 /// the log on every Tab capture.
 static WARNED_UNKNOWN: AtomicBool = AtomicBool::new(false);
 
+/// Warn-once latch for "windows-ocr selected but the OS has no usable OCR
+/// language pack" — the selection degrades to the null engine (the pipeline
+/// keeps running and simply recognizes nothing) and says so exactly once.
+static WARNED_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+
 /// Pure engine selection from the raw env value (split from the env read so
 /// tests never mutate process state — same pattern as tab_dump's gate).
 /// `None` = pipeline off entirely.
@@ -67,6 +77,21 @@ fn select_recognizer(raw: Option<std::ffi::OsString>) -> Option<Box<dyn RowRecog
     match raw.to_string_lossy().trim().to_ascii_lowercase().as_str() {
         "" => None,
         "off" | "null" => Some(Box::new(NullRecognizer)),
+        // The real on-device engine (PR 3b). When the OS cannot provide one
+        // (no recognizer language installed) degrade to the placeholder so
+        // the pipeline keeps its shape — it will simply recognize nothing.
+        #[cfg(target_os = "windows")]
+        "windows-ocr" => match row_ocr_windows::WindowsOcrRecognizer::acquire() {
+            Some(engine) => Some(Box::new(engine)),
+            None => {
+                if !WARNED_UNAVAILABLE.swap(true, Ordering::Relaxed) {
+                    tracing::warn!(
+                        "windows-ocr: no usable OCR language pack — row recognition stays off"
+                    );
+                }
+                Some(Box::new(NullRecognizer))
+            },
+        },
         other => {
             if !WARNED_UNKNOWN.swap(true, Ordering::Relaxed) {
                 tracing::warn!(
@@ -203,6 +228,7 @@ fn row_match_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::replay;
 
     /// Stub engine: reads a strip as bright/dark — `Some("bright")` for a
     /// mostly-white crop, `None` otherwise. Lets the tests verify WHICH
@@ -266,8 +292,14 @@ mod tests {
         assert!(select_recognizer(Some("off".into())).is_some());
         assert!(select_recognizer(Some("OFF".into())).is_some());
         assert!(select_recognizer(Some("null".into())).is_some());
-        // Unknown values warn once and stay off.
+        // The real engine name selects it (or the degraded placeholder when
+        // the OS has no OCR language pack) — either way the pipeline runs.
+        // On non-Windows builds the name stays unknown.
+        #[cfg(target_os = "windows")]
+        assert!(select_recognizer(Some("windows-ocr".into())).is_some());
+        #[cfg(not(target_os = "windows"))]
         assert!(select_recognizer(Some("windows-ocr".into())).is_none());
+        // Unknown values warn once and stay off.
         assert!(select_recognizer(Some("rapidocr".into())).is_none());
     }
 
@@ -442,5 +474,165 @@ mod tests {
             raw: serde_json::Value::Null,
         };
         assert_eq!(row_match_blocks(&[None, None], &info, 2), vec![None, None]);
+    }
+
+    // ── real-frame acceptance (PR 3b hard gate, opt-in) ──────────────────
+
+    /// Run the REAL pipeline — decode frame, detect the table, crop the name
+    /// strips, read them with the Windows OCR engine, match against the
+    /// dump's arena roster — over every `*.frame.png` + `*.arena.json` pair
+    /// in `WOWSP_OCR_FIXTURES`, and require ≥60% of each frame's rows to
+    /// match (20 rows across the two #372 dumps carry ellipsized names and
+    /// CJK ship-name noise; 60% is the realistic floor).
+    ///
+    /// `#[ignore]`d because CI has neither the local dump directory nor OCR
+    /// language packs; even when run WITHOUT the env it returns early and
+    /// stays green. Usage on a dev machine with the dumps:
+    ///
+    /// ```text
+    /// WOWSP_OCR_FIXTURES=D:\wowsp-tab-dumps \
+    ///   cargo test -p wowsp_tauri ocr -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "needs local Tab-frame dumps (WOWSP_OCR_FIXTURES) and Windows OCR language packs"]
+    #[cfg(target_os = "windows")]
+    fn real_frame_windows_ocr_acceptance() {
+        let Some(dir) = std::env::var_os("WOWSP_OCR_FIXTURES")
+            .map(std::path::PathBuf::from)
+            .filter(|d| !d.as_os_str().is_empty())
+        else {
+            eprintln!(
+                "real_frame_windows_ocr_acceptance: set WOWSP_OCR_FIXTURES to the tab-dump \
+                 directory to run the real-frame gate; skipping"
+            );
+            return;
+        };
+        let engine = select_recognizer(Some("windows-ocr".into()))
+            .expect("windows-ocr must select an engine (real or degraded null)");
+
+        let mut frames: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+            .expect("fixture dir must be readable")
+            .map(|e| e.expect("dir entry").path())
+            .filter(|p| p.to_string_lossy().ends_with(".frame.png"))
+            .collect();
+        frames.sort();
+        assert!(
+            !frames.is_empty(),
+            "no *.frame.png fixtures under {}",
+            dir.display()
+        );
+
+        let mut failures: Vec<String> = Vec::new();
+        for frame_path in frames {
+            let raw_stem = frame_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let stem = raw_stem.trim_end_matches(".frame.png").to_owned();
+            let arena_path = frame_path.with_file_name(format!("{stem}.arena.json"));
+
+            let img = image::open(&frame_path)
+                .unwrap_or_else(|e| panic!("decode {}: {e}", frame_path.display()))
+                .to_rgba8();
+            let (w, h) = img.dimensions();
+            let rgba = img.into_raw();
+
+            // The roster: same parse the live pipeline uses (the dump's
+            // arena.json is the raw descriptor text; the extractor tolerates
+            // the 8-byte-prefixed file variant too).
+            let arena_bytes = std::fs::read(&arena_path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", arena_path.display()));
+            let json = replay::extract_descriptor_json_pub(&arena_bytes)
+                .unwrap_or_else(|| panic!("extract {}", arena_path.display()));
+            let raw: serde_json::Value = serde_json::from_str(&json).expect("arena json parse");
+            let meta = replay::meta_from_raw_pub(arena_path.to_string_lossy().into_owned(), raw);
+            let info = ArenaInfo {
+                match_group: meta.match_group,
+                date_time: meta.date_time,
+                map_name: meta.map_name,
+                scenario: meta.scenario,
+                bot_count: meta.bot_count,
+                vehicles: meta.vehicles,
+                raw: serde_json::Value::Null,
+            };
+            let allies = info.vehicles.iter().filter(|v| v.relation <= 1).count();
+            let enemies = info.vehicles.iter().filter(|v| v.relation > 1).count();
+            assert!((allies, enemies) != (0, 0), "{stem}: roster is empty");
+
+            let Some(det) = overlay_detect::detect_roster(&rgba, w, h, (allies, enemies)) else {
+                failures.push(format!("{stem}: table not detected"));
+                continue;
+            };
+            let frame = RowFrame {
+                rgba: &rgba,
+                width: w,
+                height: h,
+                roster: &det.rect,
+                row_centers: &det.row_centers,
+                team_split: det.team_split,
+                ally_rows: allies,
+            };
+
+            let started = std::time::Instant::now();
+            let texts = recognize_texts(engine.as_ref(), &frame);
+            let elapsed = started.elapsed();
+            let matched = row_match_blocks(&texts, &info, allies);
+
+            // Diagnostics: per row, the OCR raw text, the pinned roster name
+            // and its score; unmatched rows get their block's best score so
+            // the reason (noise vs below-threshold read) is visible.
+            let norm: Vec<Vec<char>> = info
+                .vehicles
+                .iter()
+                .map(|v| row_match::normalize(&v.name).chars().collect())
+                .collect();
+            let score_of = |name: &str, text: &str| -> f32 {
+                let tn: Vec<char> = row_match::normalize(text).chars().collect();
+                let nn: Vec<char> = row_match::normalize(name).chars().collect();
+                row_match::pair_score(&nn, &tn)
+            };
+            let best_in_block = |row: usize, text: &str| -> f32 {
+                let tn: Vec<char> = row_match::normalize(text).chars().collect();
+                let (a, b) = if row < allies {
+                    (0, allies)
+                } else {
+                    (allies, norm.len())
+                };
+                norm[a..b]
+                    .iter()
+                    .map(|n| row_match::pair_score(n, &tn))
+                    .fold(0.0f32, f32::max)
+            };
+            println!(
+                "== {stem}: {w}x{h}, rect {:?}, {} rows, recognize+match {elapsed:?}",
+                det.rect,
+                texts.len()
+            );
+            println!("   row centers: {:?}", det.row_centers);
+            for (i, (text, name)) in texts.iter().zip(&matched).enumerate() {
+                match (text, name) {
+                    (Some(t), Some(n)) => println!(
+                        "  row {i:2}  MATCH {:?} -> {:?} (score {:.3})",
+                        t,
+                        n,
+                        score_of(n, t)
+                    ),
+                    (Some(t), None) => println!(
+                        "  row {i:2}  MISS  {:?} -> no roster name (best {:.3} < {:.2})",
+                        t,
+                        best_in_block(i, t),
+                        row_match::MATCH_THRESHOLD
+                    ),
+                    (None, _) => println!("  row {i:2}  MISS  (no text read from the strip)"),
+                }
+            }
+            let hits = matched.iter().filter(|m| m.is_some()).count();
+            println!("   {stem}: {hits}/{} rows matched", texts.len());
+            if hits * 10 < texts.len() * 6 {
+                failures.push(format!("{stem}: only {hits}/{} rows matched", texts.len()));
+            }
+        }
+        assert!(failures.is_empty(), "real-frame gate failed: {failures:?}");
     }
 }

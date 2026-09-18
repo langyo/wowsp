@@ -898,11 +898,17 @@ mod tests {
         let rows: Vec<i32> = (0..6).map(|i| 340 + 50 * i).collect();
         let ally = row_name_strip_rect(&roster, &rows, 0.5, 3, 0).expect("ally strip");
         let enemy = row_name_strip_rect(&roster, &rows, 0.5, 3, 3).expect("enemy strip");
-        // Ally names sit in the LEFT half (starting at the roster's left
-        // edge), enemy names in the RIGHT half (starting at the team split).
-        assert_eq!(ally.x, 1000 + (600.0f32 * 0.14).round() as i32);
-        assert_eq!(enemy.x, 1600 + (600.0f32 * 0.14).round() as i32);
-        assert_eq!(ally.width, enemy.width);
+        // The halves are MIRRORED (measured on the #372 dumps): ally names
+        // hug the left edge of the left half, enemy names the right edge of
+        // the right half.
+        assert_eq!(ally.x, 1000 + (600.0f32 * 0.02).round() as i32);
+        assert_eq!(
+            enemy.x + enemy.width,
+            (1600.0f32 + 600.0f32 * 0.96).round() as i32,
+            "enemy strip hugs its half's outer (right) edge"
+        );
+        assert_eq!(ally.width, (600.0f32 * 0.38).round() as i32);
+        assert_eq!(enemy.width, (600.0f32 * 0.34).round() as i32);
         // Vertical: row center 340 ± 50 × 0.42 → 21 px each way.
         assert_eq!(ally.y, 340 - 21);
         assert_eq!(ally.height, 42);
@@ -1496,15 +1502,22 @@ pub(crate) fn anchor_meaningfully_moved(
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Horizontal bounds of the player-name column INSIDE one sub-table half, as
-/// fractions of that half's width. The vanilla panel lays each half out
-/// left→right as: ship-class/icon column (~0–0.14), player nickname
-/// (~0.14–0.66), ship name, then the numeric stat columns hugging the outer
-/// edge — so the strip starts after the icon column and stops before the
-/// ship column to keep the recognizer's input mostly nickname. The exact
-/// numbers are re-tuned against the #372 tab dumps when a real engine lands
-/// (PR 3b); until then the null recognizer never even sees these crops.
-const NAME_STRIP_X0_FRAC: f32 = 0.14;
-const NAME_STRIP_X1_FRAC: f32 = 0.66;
+/// fractions of that half's width. The two halves are MIRRORED (measured on
+/// the #372 tab dumps, 3072x1920, countdown + combat layouts):
+///
+/// - ally half (left→right): icon column (~0–0.03), player nickname column
+///   (~0.04–0.37, long names ellipsized by the panel), ship silhouette
+///   (~0.42), ship name — the strip hugs the LEFT edge;
+/// - enemy half: ship name column (~0.09–0.27), ship silhouette, then the
+///   player nicknames RIGHT-ALIGNED near the outer edge (~0.64–0.93) — the
+///   strip hugs the RIGHT edge.
+///
+/// Both strips stop short of the silhouette/ship columns so the recognizer's
+/// input stays mostly nickname.
+const ALLY_NAME_STRIP_X0_FRAC: f32 = 0.02;
+const ALLY_NAME_STRIP_X1_FRAC: f32 = 0.40;
+const ENEMY_NAME_STRIP_X0_FRAC: f32 = 0.62;
+const ENEMY_NAME_STRIP_X1_FRAC: f32 = 0.96;
 
 /// Vertical half-extent of one row's name strip as a fraction of the row
 /// pitch. One row's glyphs sit well inside ±0.5 pitch; staying under it
@@ -1542,19 +1555,26 @@ pub(crate) fn row_name_strip_rect(
         return None;
     }
     let split = team_split.clamp(0.0, 1.0);
-    let (half_x0, half_w) = if row < ally_rows {
-        (roster.x as f32, roster.width as f32 * split)
+    let (half_x0, half_w, x0_frac, x1_frac) = if row < ally_rows {
+        (
+            roster.x as f32,
+            roster.width as f32 * split,
+            ALLY_NAME_STRIP_X0_FRAC,
+            ALLY_NAME_STRIP_X1_FRAC,
+        )
     } else {
         (
             roster.x as f32 + roster.width as f32 * split,
             roster.width as f32 * (1.0 - split),
+            ENEMY_NAME_STRIP_X0_FRAC,
+            ENEMY_NAME_STRIP_X1_FRAC,
         )
     };
     if half_w <= 0.0 {
         return None;
     }
-    let x0 = (half_x0 + half_w * NAME_STRIP_X0_FRAC).round() as i32;
-    let x1 = (half_x0 + half_w * NAME_STRIP_X1_FRAC).round() as i32;
+    let x0 = (half_x0 + half_w * x0_frac).round() as i32;
+    let x1 = (half_x0 + half_w * x1_frac).round() as i32;
     // Row pitch from the row's own block neighbors (the two sub-tables can
     // pitch differently); a single-row block falls back to a coarse
     // roster-height estimate — rare (1v1), and the crop is frame-clamped

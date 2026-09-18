@@ -15,6 +15,11 @@
 //! - a clean CONTAINMENT (the full normalized nickname appearing verbatim
 //!   inside the recognized line) scores 1.0 — the line usually carries extra
 //!   tokens (ship name, damage digits) around the nickname;
+//! - a TRUNCATED name read scores 0.9: the panel ellipsizes long nicknames
+//!   ("RuaRuaRu…"), so when the line's text before the first ellipsis ends
+//!   with a head of the nickname (at least max(4, half its length) chars),
+//!   that counts as strong evidence — below a clean containment, above the
+//!   generic edit hits;
 //! - otherwise a normalized LEVENSHTEIN similarity, taken over the best
 //!   name-length window of the line so leading/trailing junk tokens do not
 //!   dilute the score, decides.
@@ -43,6 +48,28 @@ use wowsp_tauri_shared::VehicleEntry;
 /// rejecting unrelated text; with the closed set + one-to-one constraint
 /// false positives need TWO similarly-spelled roster members AND a bad read.
 pub(crate) const MATCH_THRESHOLD: f32 = 0.75;
+
+/// Score given to a truncated-name read (see [`truncated_prefix_score`]):
+/// deliberately BELOW a clean containment (1.0 — a full verbatim read is
+/// strictly stronger evidence) and ABOVE the generic edit-similarity hits
+/// (which start at [`MATCH_THRESHOLD`]).
+const TRUNCATED_PREFIX_SCORE: f32 = 0.9;
+
+/// Floor (in chars) for a truncated-name head to count as evidence at all —
+/// a 1–3 char head could prefix half the roster's short names by accident.
+const MIN_TRUNCATED_PREFIX: usize = 4;
+/// Cap for the half-length part of that floor: the panel's name column
+/// ellipsizes LONG nicknames down to ~10 visible chars ("tomas0312..." out
+/// of "tomas0312_gmail_com_toma"), so demanding half of a 24-char name (12)
+/// would reject every real truncated read of it. Beyond 16-char names the
+/// floor stops growing (measured on the #372 dumps).
+const MAX_TRUNCATED_HEAD_FLOOR: usize = 8;
+
+/// The panel's ellipsis glyph OCRs inconsistently: plain dots, the proper
+/// '…', or the visually-similar low quote '„' before a dot.
+fn is_dot_ish(c: char) -> bool {
+    c == '.' || c == '…' || c == '„'
+}
 
 /// Normalize a name or a recognized line for comparison: strip bracketed
 /// clan tags (anywhere — the panel renders them as prefix or suffix), fold
@@ -97,18 +124,56 @@ fn similarity(a: &[char], b: &[char]) -> f32 {
     1.0 - levenshtein(a, b) as f32 / denom as f32
 }
 
+/// Evidence for a TRUNCATED panel name: the panel ellipsizes long nicknames
+/// to fit the column ("RuaRuaRua1909" renders as "RuaRuaRu..."), so when
+/// the recognized line carries an ellipsis marker (see [`is_dot_ish`]) and
+/// the text BEFORE it ends with a head of the roster name, that is a strong
+/// read. The head must be at least `max(`[`MIN_TRUNCATED_PREFIX`]`,
+/// capped half the name's length — see [`MAX_TRUNCATED_HEAD_FLOOR`]`)`
+/// chars — a longer head cannot accidentally prefix an unrelated short
+/// name. The head is matched as the longest qualifying SUFFIX of the
+/// pre-ellipsis text because the OCR may keep (or fuse) the clan tag in
+/// front of it. `None` when the line has no truncation marker or no
+/// qualifying head.
+fn truncated_prefix_score(name: &[char], text: &[char]) -> Option<f32> {
+    let cut = text.iter().position(|&c| c == '…').or_else(|| {
+        text.windows(2)
+            .position(|w| is_dot_ish(w[0]) && is_dot_ish(w[1]))
+    })?;
+    let mut end = cut;
+    while end > 0 && text[end - 1] == ' ' {
+        end -= 1;
+    }
+    let head = &text[..end];
+    // Half the name, floored at the 4-char evidence minimum and capped so
+    // very long names stay matchable (MAX >= MIN holds for the constants).
+    let min_head = (name.len() / 2).clamp(MIN_TRUNCATED_PREFIX, MAX_TRUNCATED_HEAD_FLOOR);
+    let max_head = head.len().min(name.len());
+    for k in (min_head..=max_head).rev() {
+        if head[head.len() - k..] == name[..k] {
+            return Some(TRUNCATED_PREFIX_SCORE);
+        }
+    }
+    None
+}
+
 /// Best similarity between one normalized roster name and one normalized
-/// recognized line: exact containment wins outright, otherwise the best
-/// name-length window of the line (and the line as a whole) by edit
-/// similarity. Empty on either side can never match.
-fn pair_score(name: &[char], text: &[char]) -> f32 {
+/// recognized line: exact containment wins outright, a truncated-name head
+/// (ellipsis in the line) scores high, otherwise the best name-length
+/// window of the line (and the line as a whole) by edit similarity. Empty
+/// on either side can never match.
+pub(crate) fn pair_score(name: &[char], text: &[char]) -> f32 {
     if name.is_empty() || text.is_empty() {
         return 0.0;
     }
     if name.len() <= text.len() && text.windows(name.len()).any(|w| w == name) {
         return 1.0;
     }
-    let mut best = similarity(name, text);
+    let mut best = truncated_prefix_score(name, text).unwrap_or(0.0);
+    let window_best = similarity(name, text);
+    if window_best > best {
+        best = window_best;
+    }
     if text.len() >= name.len() {
         for w in text.windows(name.len()) {
             let s = similarity(name, w);
@@ -253,6 +318,92 @@ mod tests {
         let roster = vec![veh("PlayerOne")];
         let out = assign_rows(&lines(&[Some("piayexone 120k")]), &roster);
         assert_eq!(out, vec![Some("PlayerOne".into())]);
+    }
+
+    // ── truncated panel names (ellipsis) ─────────────────────────────────
+
+    #[test]
+    fn truncated_panel_name_matches_by_prefix() {
+        // The panel ellipsizes long nicknames: "RuaRuaRua1909" renders as
+        // "RuaRuaRu..." and the OCR reads exactly that. The ellipsis head is
+        // a prefix of the roster name (8 chars ≥ max(4, 13/2 = 6)).
+        let roster = vec![veh("RuaRuaRua1909")];
+        let out = assign_rows(&lines(&[Some("RuaRuaRu...")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+        // Mid-line ellipsis: more panel columns follow inside the strip.
+        let out = assign_rows(&lines(&[Some("RuaRuaRu... VIII 黎塞留")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+        // The OCR dropped one dot of the glyph.
+        let out = assign_rows(&lines(&[Some("RuaRuaRu..")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+        // A clan tag (kept or fused by the OCR) in front of the head.
+        let out = assign_rows(&lines(&[Some("[CLBQ]RuaRuaRu...")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+        let out = assign_rows(&lines(&[Some("clbq ruaruaru...")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+    }
+
+    #[test]
+    fn truncated_prefix_needs_enough_evidence() {
+        let roster = vec![veh("RuaRuaRua1909")];
+        // 3 chars < max(4, 13/2 = 6): too short to prefix-match by itself.
+        let out = assign_rows(&lines(&[Some("Rua...")]), &roster);
+        assert_eq!(out, vec![None]);
+        // The same short head WITHOUT the ellipsis marker is no evidence at
+        // all — a partial OCR read must not pin a different player's row.
+        let out = assign_rows(&lines(&[Some("ruaruaru")]), &roster);
+        assert_eq!(out, vec![None]);
+    }
+
+    #[test]
+    fn truncation_scores_between_containment_and_edit_hits() {
+        let name: Vec<char> = normalize("RuaRuaRua1909").chars().collect();
+        // Clean containment: the full name verbatim inside the line.
+        let contained: Vec<char> = normalize("RuaRuaRua1909 45k").chars().collect();
+        assert_eq!(pair_score(&name, &contained), 1.0);
+        // Truncated head: exactly the 0.9 tier.
+        let truncated: Vec<char> = normalize("RuaRuaRu...").chars().collect();
+        assert_eq!(pair_score(&name, &truncated), 0.9);
+        // A generic (non-truncation) edit hit lands below the 0.9 tier but
+        // above the assignment threshold — two wrong chars in 13.
+        let edit_hit: Vec<char> = normalize("RuaRuaRua1807").chars().collect();
+        let score = pair_score(&name, &edit_hit);
+        assert!(
+            (0.75..0.9).contains(&score),
+            "generic edit hit {score} must sit in [0.75, 0.9)"
+        );
+    }
+
+    #[test]
+    fn truncated_head_prefers_the_name_it_actually_truncates() {
+        // Two roster names sharing a prefix: the truncated head must pin the
+        // row to the name it is actually a head OF, not the short one.
+        let roster = vec![veh("RuaXYZ1234567"), veh("RuaRuaRua1909")];
+        let out = assign_rows(&lines(&[Some("RuaRuaRu...")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+    }
+
+    #[test]
+    fn ellipsis_glyph_ocr_confusions_still_mark_the_cut() {
+        // Real reads off the #372 dumps: the panel's ellipsis glyph comes
+        // back as the low quote '„' before a dot.
+        let roster = vec![veh("RuaRuaRua1909")];
+        let out = assign_rows(&lines(&[Some("[TSUGUlRuaRuaRu„.")]), &roster);
+        assert_eq!(out, vec![Some("RuaRuaRua1909".into())]);
+    }
+
+    #[test]
+    fn long_truncated_names_use_the_capped_floor() {
+        // "tomas0312_gmail_com_toma" (24 chars) renders as "tomas0312..." —
+        // a 9-char head. Half the name (12) would reject every real read of
+        // it, so the floor caps at 8; the 9-char head still qualifies.
+        let roster = vec![veh("tomas0312_gmail_com_toma")];
+        let out = assign_rows(&lines(&[Some("[HEART]tomas0312...")]), &roster);
+        assert_eq!(out, vec![Some("tomas0312_gmail_com_toma".into())]);
+        // The same head WITHOUT the truncation marker stays insufficient —
+        // a 9-char partial read of a 24-char name is not evidence.
+        let out = assign_rows(&lines(&[Some("[HEART]tomas0312")]), &roster);
+        assert_eq!(out, vec![None]);
     }
 
     #[test]
