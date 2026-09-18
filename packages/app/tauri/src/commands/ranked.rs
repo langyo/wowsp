@@ -88,18 +88,16 @@ pub async fn get_ranked_stats(
     realm: String,
     season_count: Option<i64>,
 ) -> Result<Vec<RankedSeasonStats>, String> {
-    // The CN cluster exposes no seasons API; ranked history is simply not
-    // available there (fail loudly rather than rendering empty seasons).
+    let n = season_count.unwrap_or(5).min(30) as usize;
+    // The CN cluster has no seasons API, but its vortex detail endpoint
+    // embeds the same seasons/rank_info trees — `wg_api_cn::ranked_stats`
+    // normalizes and flattens them through the shared path below.
     if realm == "cn" {
-        return Err(
-            "ranked season history is unavailable on the CN realm (no seasons API is exposed there)"
-                .to_string(),
-        );
+        return super::wg_api_cn::ranked_stats(account_id, n).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
     let client = wg_client()?;
-    let n = season_count.unwrap_or(5).min(30) as usize;
 
     // 1. Get season IDs (sorted descending = most recent first).
     let seasons_url = format!("https://{host}/wows/seasons/info/?application_id={app_id}");
@@ -157,15 +155,25 @@ pub async fn get_ranked_stats(
         .data
         .as_ref()
         .and_then(|d| d.get(account_id.to_string()));
-    let player = match player {
-        Some(p) if !p.is_null() => p,
-        _ => return Ok(Vec::new()),
+    let Some(player) = player.filter(|p| !p.is_null()) else {
+        return Ok(Vec::new());
     };
+    Ok(flatten_ranked_seasons(player, &recent_ids))
+}
 
+/// Flatten the WG-shaped ranked trees of one player node into per-season
+/// summaries, most recent first. Shared by the WG seasons API path and the
+/// CN vortex path (`wg_api_cn::ranked_stats` feeds a synthetic node with the
+/// same `seasons` / `rank_info` layout). Seasons without playable stats are
+/// skipped. Pure — unit-tested.
+pub(crate) fn flatten_ranked_seasons(
+    player: &serde_json::Value,
+    recent_ids: &[i64],
+) -> Vec<RankedSeasonStats> {
     let seasons_data = player.get("seasons");
     let rank_info = player.get("rank_info");
     let mut out = Vec::new();
-    for sid in &recent_ids {
+    for sid in recent_ids {
         let sid_str = sid.to_string();
         // Stats are under seasons.<id>.<shipType>.<mode>
         // Use shipType "0" (all) + mode "rank_solo" as the primary stats.
@@ -205,7 +213,7 @@ pub async fn get_ranked_stats(
             best_rank_display: rank.map(|r| format_rank_display(r.2, r.1)),
         });
     }
-    Ok(out)
+    out
 }
 
 /// Extract (current_rank, best_rank, best_league) from the rank_info structure.
@@ -216,7 +224,9 @@ pub async fn get_ranked_stats(
 ///
 /// "Best" = the highest league reached, then the best (lowest) rank inside it
 /// (Silver 9 outranks Bronze 1, matching community sites). "Current" = the
-/// snapshot from the latest sprint with activity.
+/// snapshot from the latest sprint with activity. Zero ranks are placeholders
+/// (the CN vortex answers with all-zero nodes, e.g. under a "-1" sprint key)
+/// and never count as data.
 fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Option<(i32, i32, i32)> {
     let season = rank_info?.get(season_id)?;
     let mut best_league: Option<i32> = None;
@@ -232,8 +242,13 @@ fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Optio
                     let rb = info
                         .get("rank_best")
                         .and_then(|v| v.as_i64())
+                        .filter(|v| *v > 0)
                         .map(|v| v as i32);
-                    let r = info.get("rank").and_then(|v| v.as_i64()).map(|v| v as i32);
+                    let r = info
+                        .get("rank")
+                        .and_then(|v| v.as_i64())
+                        .filter(|v| *v > 0)
+                        .map(|v| v as i32);
                     if let Some(rb) = rb {
                         // Lower league number = better (1 gold > 2 silver > 3 bronze);
                         // within a league, lower rank number = better.
@@ -268,4 +283,49 @@ fn extract_rank(rank_info: Option<&serde_json::Value>, season_id: &str) -> Optio
 
 fn get_i64(v: &serde_json::Value, key: &str) -> i64 {
     v.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flatten_skips_empty_seasons_and_names_the_rest() {
+        let player = serde_json::json!({
+            "seasons": {
+                "1030": { "0": { "rank_solo": { "battles": 53, "wins": 33 } } },
+                "1029": { "0": { "rank_solo": { "battles": 108, "wins": 54 } } },
+                // a season key with no playable stats is skipped, not
+                // zero-filled (matches how WG omits unplayed seasons)
+                "1028": {}
+            },
+            "rank_info": { "1030": { "1": { "2": { "rank": 9, "rank_best": 9 } } } }
+        });
+        let out = flatten_ranked_seasons(&player, &[1030, 1029, 1028]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].season_id, 1030);
+        assert_eq!(out[0].season_name, "Season 30");
+        assert_eq!(out[0].battles, 53);
+        assert_eq!(out[0].wins, 33);
+        assert_eq!(out[0].best_rank_display.as_deref(), Some("Silver 9"));
+        assert!(!out.iter().any(|s| s.season_id == 1028));
+    }
+
+    #[test]
+    fn extract_rank_ignores_zero_placeholder_nodes() {
+        // The CN vortex embeds all-zero nodes (e.g. under a "-1" sprint key);
+        // zero ranks must never win best/latest.
+        let info = serde_json::json!({
+            "1024": {
+                "-1": { "0": { "rank": 0, "rank_best": 0 } },
+                "1": { "3": { "rank": 5, "rank_best": 5 } },
+                "2": { "3": { "rank": 10, "rank_best": 0 } }
+            }
+        });
+        let rank = extract_rank(Some(&info), "1024").expect("rank from real sprints");
+        assert_eq!(rank, (10, 5, 3)); // current, best, league (3 = Bronze)
+        // A season with only placeholder nodes yields nothing at all.
+        let zeros = serde_json::json!({ "1025": { "-1": { "0": { "rank": 0, "rank_best": 0 } } } });
+        assert!(extract_rank(Some(&zeros), "1025").is_none());
+    }
 }
