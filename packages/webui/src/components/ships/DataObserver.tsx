@@ -2,16 +2,15 @@ import { computed, defineComponent, type PropType } from "vue";
 import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
 import { buildShipSpecs } from "./shipSpecs";
-import { recomputeStats } from "./modifierPipeline";
-import { skillClassFor } from "./skillTree";
+import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { t } from "@/i18n";
 import type { ShipInfo } from "@/api";
 import "./DataObserver.scss";
 
 /**
- * Data Observer panel — replaces the 2D/3D portrait at the top of the captain
- * skills tab (equipment / skills / flags). Shows how the ship's base specs
- * change after applying equipment + captain skills + signal flags.
+ * Data Observer — the build planner's 综合属性 stats panel. Shows how the
+ * ship's base specs change after applying the current build (skills + flags +
+ * upgrades) at the selected HP level.
  *
  * Each stat is displayed as:
  *   基础值  ±Δ  =  最终值
@@ -19,10 +18,6 @@ import "./DataObserver.scss";
  *
  * Groups mirror the SpecsPanel layout (Survivability / Main Battery / etc.)
  * but with per-stat delta annotations. Stats that don't change show as-is.
- *
- * The stats actually affected are: HP, reload, range, traverse, concealment,
- * speed, torpedo speed, HE pen, HE/AP damage, fire chance. Derived DPM values
- * are recomputed from modified reload.
  */
 
 /** Numeric stat delta helpers. */
@@ -42,70 +37,31 @@ function fmtDeltaInt(base: number, mod: number, suffix: string): string {
   return `${b} ${sign}${Math.abs(diff)} = ${m}${suffix}`;
 }
 
-/** Return a modified reload value factoring any skill multiplier. */
-function modifiedReload(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.reload;
-}
-
-function modifiedRange(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.range;
-}
-
-function modifiedTraverse(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.traverse;
-}
-
-function modifiedHp(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.hp;
-}
-
-function modifiedConceal(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.concealmentShip;
-}
-
-function modifiedSpeed(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.speed;
-}
-
-function modifiedTorpedoSpeed(profile: Record<string, any>, rank: Record<string, number>, cls: string, healthPct: number): number | null {
-  const stats = recomputeStats(profile, cls, rank, healthPct);
-  return stats.modified.torpedoSpeed;
-}
-
 export default defineComponent({
   name: "DataObserver",
   props: {
     ship: { type: Object as PropType<ShipInfo>, required: true },
-    rank: { type: Object as PropType<Record<string, number>>, required: true },
-    healthPct: { type: Number, default: 1 },
+    build: { type: Object as PropType<PlannerBuild>, required: true },
   },
   setup(props) {
     const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, any>);
-    const cls = computed(() => skillClassFor(props.ship.type));
-    const nation = computed(() => props.ship.nation);
+
+    const stats = computed(() =>
+      recomputeStats(profile.value, props.ship.type, props.ship.tier, props.build, props.build.healthPct),
+    );
 
     /**
      * Build observer rows: take the base spec groups and enrich the numeric
      * rows with modified values + delta formatting where applicable.
      */
     const observerGroups = computed(() => {
-      const groups = buildShipSpecs(profile.value, nation.value);
-      const p = profile.value;
-      const rank = props.rank;
-      const hp = props.healthPct;
-
+      const groups = buildShipSpecs(profile.value, props.ship.nation);
       if (groups.length === 0) return [];
-
+      const { base, modified } = stats.value;
       return groups.map((g) => ({
         ...g,
         rows: g.rows.map((row) => {
-          const delta = computeDelta(row.key, p, rank, cls.value, hp);
+          const delta = computeDelta(row.key, profile.value, base, modified);
           if (delta) {
             return {
               ...row,
@@ -173,71 +129,58 @@ export default defineComponent({
 function computeDelta(
   key: string,
   profile: Record<string, any>,
-  rank: Record<string, number>,
-  cls: string,
-  healthPct: number,
+  base: ModifiedStats,
+  modified: ModifiedStats,
 ): string | null {
   const p = profile as Record<string, any>;
   const art = p.artillery as Record<string, any> | undefined;
   const hull = p.hull as Record<string, any> | undefined;
-  const mob = p.mobility as Record<string, any> | undefined;
-  const con = p.concealment as Record<string, any> | undefined;
-  const torp = p.torpedoes as Record<string, any> | undefined;
-
-  const baseReload = num(art?.shot_delay);
-  const baseRange = num(art?.distance);
-  const baseTraverse = num(art?.rotation_time);
-  const baseSpeed = num(mob?.max_speed);
-  const baseConceal = num(con?.detect_distance_by_ship);
-  const baseHp = num(hull?.health);
-  const baseTorpedoSpeed = num(torp?.torpedo_speed);
 
   switch (key) {
     case "hp": {
-      if (baseHp == null) return null;
-      const mod = modifiedHp(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseHp.toLocaleString()}`;
-      return fmtDeltaInt(baseHp, mod, "");
+      if (base.hp == null || modified.hp == null) return null;
+      return fmtDeltaInt(base.hp, modified.hp, "");
     }
     case "mainGunReload": {
-      if (baseReload == null) return null;
-      const mod = modifiedReload(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseReload.toFixed(1)} s`;
-      return fmtDelta(baseReload, mod, 1, " s");
+      if (base.reload == null || modified.reload == null) return null;
+      return fmtDelta(base.reload, modified.reload, 1, " s");
     }
     case "mainGunRange": {
-      if (baseRange == null) return null;
-      const mod = modifiedRange(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseRange.toFixed(1)} km`;
-      return fmtDelta(baseRange, mod, 1, " km");
+      if (base.range == null || modified.range == null) return null;
+      return fmtDelta(base.range, modified.range, 1, " km");
     }
     case "turretTraverse": {
-      if (baseTraverse == null) return null;
-      const mod = modifiedTraverse(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseTraverse.toFixed(1)} s / 180°`;
-      return fmtDelta(baseTraverse, mod, 1, " s / 180°");
+      if (base.traverse == null || modified.traverse == null) return null;
+      return fmtDelta(base.traverse, modified.traverse, 1, " s / 180°");
     }
     case "surfaceDetect": {
-      if (baseConceal == null) return null;
-      const mod = modifiedConceal(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseConceal.toFixed(1)} km`;
-      return fmtDelta(baseConceal, mod, 1, " km");
+      if (base.concealmentShip == null || modified.concealmentShip == null) return null;
+      return fmtDelta(base.concealmentShip, modified.concealmentShip, 1, " km");
     }
     case "maxSpeed": {
-      if (baseSpeed == null) return null;
-      const mod = modifiedSpeed(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseSpeed.toFixed(1)} kn`;
-      return fmtDelta(baseSpeed, mod, 1, " kn");
+      if (base.speed == null || modified.speed == null) return null;
+      return fmtDelta(base.speed, modified.speed, 1, " kn");
     }
     case "torpSpeed": {
-      if (baseTorpedoSpeed == null) return null;
-      const mod = modifiedTorpedoSpeed(profile, rank, cls, healthPct);
-      if (mod == null) return `${baseTorpedoSpeed} kn`;
-      return fmtDelta(baseTorpedoSpeed, mod, 0, " kn");
+      if (base.torpedoSpeed == null || modified.torpedoSpeed == null) return null;
+      return fmtDelta(base.torpedoSpeed, modified.torpedoSpeed, 0, " kn");
+    }
+    case "torpReload": {
+      if (base.torpedoReload == null || modified.torpedoReload == null) return null;
+      return fmtDelta(base.torpedoReload, modified.torpedoReload, 1, " s");
+    }
+    case "rudderShift": {
+      if (base.rudderShift == null || modified.rudderShift == null) return null;
+      return fmtDelta(base.rudderShift, modified.rudderShift, 1, " s");
+    }
+    case "heFireChance": {
+      if (base.fireChanceOut == null || modified.fireChanceOut == null) return null;
+      return fmtDelta(base.fireChanceOut, modified.fireChanceOut, 0, "%");
     }
     // DPM: recompute from modified reload
     case "heDpm":
     case "apDpm": {
+      const baseReload = base.reload;
       if (baseReload == null) return null;
       const barrels = num(hull?.artillery_barrels);
       if (barrels == null) return null;
@@ -246,8 +189,8 @@ function computeDelta(
       const dmg = num(shells?.[isHe ? "HE" : "AP"]?.damage);
       if (dmg == null) return null;
       const baseDpm = (dmg * barrels) / baseReload;
-      const modReload = modifiedReload(profile, rank, cls, healthPct);
-      if (modReload == null || modReload === baseReload) return `${Math.round(baseDpm).toLocaleString()}`;
+      const modReload = modified.reload ?? baseReload;
+      if (modReload === baseReload) return `${Math.round(baseDpm).toLocaleString()}`;
       const modDpm = (dmg * barrels) / modReload;
       return fmtDeltaInt(Math.round(baseDpm), Math.round(modDpm), "");
     }

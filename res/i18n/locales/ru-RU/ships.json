@@ -224,7 +224,8 @@
     "surfaceDetectHint": "Дистанция, с которой вас замечают вражеские корабли. Чем меньше, тем незаметнее корабль.",
     "airDetect": "Обнаружение с воздуха",
     "airDetectHint": "Дистанция, с которой вас замечает авиация противника.",
-    "subDetect": "Обнаружение с подводных лодок"
+    "subDetect": "Обнаружение с подводных лодок",
+    "heFireChance": "Шанс пожара от ОФ-снарядов"
   },
   "skills": {
     "title": "Конструктор навыков командира",
@@ -243,7 +244,62 @@
     "CV": "Авианосец",
     "SS": "Подводная лодка",
     "equipment": "Оборудование",
-    "flags": "Флаги"
+    "flags": "Флаги",
+    "tabSkills": "Навыки командира",
+    "tabCaptains": "Выбор командира",
+    "tabFlags": "Сигнальные флаги",
+    "tabUpgrades": "Модули",
+    "statsTitle": "Итоговые характеристики",
+    "health": "Текущее HP",
+    "slot": "Слот {n}",
+    "noCommander": "Нет командира",
+    "commanderInfoNote": "Таланты командира — активируемые эффекты; показаны для справки и не учтены в характеристиках.",
+    "talentTrigger": "Триггер",
+    "talentMax": "До {n} срабатываний",
+    "slotNone": "Пусто",
+    "activator": {
+      "DamageDoneActivator": "При нанесении урона",
+      "TargetsDamagedActivator": "При попаданиях",
+      "RibbonActivator": "При потоплении/лентах",
+      "DamagePerTimePeriodActivator": "Урон за ограниченное время",
+      "PotentialDamageActivator": "Получен потенциальный урон",
+      "FirstShipKillActivator": "Первое потопление",
+      "RemainingHealthActivator": "При низком запасе прочности",
+      "RageModeActivator": "Режим ярости",
+      "AllInGroupActivator": "Весь отряд"
+    },
+    "signals": {
+      "PCEF005": "Sierra Mike",
+      "PCEF006": "Hotel Yankee",
+      "PCEF007": "India Delta",
+      "PCEF008": "India Yankee",
+      "PCEF009": "Juliet Yankee Bissotwo",
+      "PCEF010": "Juliet Charlie",
+      "PCEF012": "Mike Yankee Soxisix",
+      "PCEF014": "November Foxtrot",
+      "PCEF016": "November Echo Setteseven",
+      "PCEF017": "Victor Lima",
+      "PCEF018": "India X-Ray",
+      "PCEF019": "Juliet Whiskey Unaone",
+      "PCEF028": "X-Ray Papa Unaone",
+      "PCEF029": "Sierra Bravo",
+      "PCEF030": "Charlie Kilo"
+    },
+    "commanders": {
+      "Yamamoto": "Yamamoto",
+      "Halsey": "Halsey",
+      "LUTJENS": "Lutjens",
+      "CUNNINGHAM": "Cunningham",
+      "KUZNETSOV": "Kuznetsov",
+      "SANSONETTI": "Sansonetti",
+      "AUBOYNEAU": "Auboyneau",
+      "Helfrich": "Helfrich",
+      "Topete": "Topete",
+      "Collins": "Collins",
+      "Lisboa": "Lisboa",
+      "SWIRSKI": "Swirski",
+      "Sa_Zhenbing": "Sa Zhenbing"
+    }
   },
   "viewMode": {
     "tree": "Дерево исследований",

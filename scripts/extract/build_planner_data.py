@@ -503,9 +503,26 @@ def main() -> int:
         print(f"error: gui pkg not found ({pkg_path})", file=sys.stderr)
         return 1
 
-    print(f"[planner] scanning {pkg_path.name} ({pkg_path.stat().st_size >> 20} MB) for portraits ...",
-          flush=True)
+    print(f"[planner] scanning {pkg_path.name} ({pkg_path.stat().st_size >> 20} MB) ...", flush=True)
     pkg_bytes = pkg_path.read_bytes()
+
+    # Modernization icons: crc-matched slices from /gui/modernization_icons
+    # (the previously committed set came from loose size-matching and
+    # contained wrong blobs for several entries).
+    mod_rows = [e for e in meta
+                if e.get("path", "").startswith("/gui/modernization_icons/")
+                and not e.get("is_directory")]
+    written = 0
+    for e in mod_rows:
+        png = find_pkg_png(pkg_bytes, e["unpacked_size"], e.get("crc32"))
+        if png is None:
+            print(f"[planner] MISS {e['path']}")
+            continue
+        stem = e["path"].rsplit("/", 1)[-1][:-4]
+        (OUT_IMG / "modernization" / (stem + ".webp")).write_bytes(png_to_webp(png))
+        written += 1
+    print(f"[planner] wrote {written} modernization icons")
+
     written = 0
     for path, stem in wanted.items():
         entry = next((e for e in meta if e["path"] == path), None)

@@ -224,7 +224,8 @@
     "surfaceDetectHint": "敌水面舰艇发现你的距离。越短越隐蔽。",
     "airDetect": "空中被发现距离",
     "airDetectHint": "敌机发现你的距离。",
-    "subDetect": "被潜艇发现距离"
+    "subDetect": "被潜艇发现距离",
+    "heFireChance": "HE弹点火率"
   },
   "skills": {
     "title": "舰长加点模拟",
@@ -243,7 +244,62 @@
     "CV": "航空母舰",
     "SS": "潜艇",
     "equipment": "装备",
-    "flags": "信号旗"
+    "flags": "信号旗",
+    "tabSkills": "舰长技能",
+    "tabCaptains": "舰长选择",
+    "tabFlags": "信号旗",
+    "tabUpgrades": "装备槽位",
+    "statsTitle": "综合属性",
+    "health": "当前血量",
+    "slot": "槽位 {n}",
+    "noCommander": "无舰长",
+    "commanderInfoNote": "舰长天赋为触发式效果，仅供参考，未计入右侧属性。",
+    "talentTrigger": "触发",
+    "talentMax": "最多触发 {n} 次",
+    "slotNone": "空",
+    "activator": {
+      "DamageDoneActivator": "造成损伤时",
+      "TargetsDamagedActivator": "命中目标时",
+      "RibbonActivator": "击沉/奖章触发",
+      "DamagePerTimePeriodActivator": "限时内持续造成损伤",
+      "PotentialDamageActivator": "承受潜在损伤时",
+      "FirstShipKillActivator": "首次击沉",
+      "RemainingHealthActivator": "血量降低时",
+      "RageModeActivator": "狂暴模式",
+      "AllInGroupActivator": "全队共同触发"
+    },
+    "signals": {
+      "PCEF005": "塞拉·迈克",
+      "PCEF006": "旅馆·扬基",
+      "PCEF007": "印度·三角洲",
+      "PCEF008": "印度·扬基",
+      "PCEF009": "朱丽叶·扬基·比索图",
+      "PCEF010": "朱丽叶·查理",
+      "PCEF012": "迈克·扬基6",
+      "PCEF014": "11月·福克斯特",
+      "PCEF016": "11月·回声·塞特7",
+      "PCEF017": "维克托·利马",
+      "PCEF018": "印度·X射线",
+      "PCEF019": "朱丽叶·威士忌·乌那恩",
+      "PCEF028": "X光·帕帕",
+      "PCEF029": "塞拉·布拉沃",
+      "PCEF030": "查理·基洛"
+    },
+    "commanders": {
+      "Yamamoto": "山本五十六",
+      "Halsey": "哈尔西",
+      "LUTJENS": "吕特晏斯",
+      "CUNNINGHAM": "坎宁安",
+      "KUZNETSOV": "库兹涅佐夫",
+      "SANSONETTI": "桑索内蒂",
+      "AUBOYNEAU": "奥布瓦诺",
+      "Helfrich": "赫尔弗里赫",
+      "Topete": "托佩特",
+      "Collins": "柯林斯",
+      "Lisboa": "里斯博阿",
+      "SWIRSKI": "希维尔斯基",
+      "Sa_Zhenbing": "萨镇冰"
+    }
   },
   "viewMode": {
     "tree": "科技树",

@@ -175,6 +175,10 @@ export function buildShipSpecs(profile: Profile, nation?: string): SpecGroup[] {
     : null;
   if (hePen != null)
     artRows.push({ key: "hePenetration", value: `${hePen} mm`, hint: "hePenetrationHint" });
+  // HE fire chance in percent (fraction × 100); the build planner recomputes it.
+  const heBurn = heShell ? num(heShell.burn_chance) ?? num(heShell.burn_probability) : null;
+  if (heBurn != null)
+    artRows.push({ key: "heFireChance", value: `${Math.round(heBurn * 100)}%` });
   // Per-shell rows (damage / fire / muzzle velocity for each shell type).
   artRows.push(...shellRows(shells));
   // DPM (best of HE / AP), computed as perShellDamage × barrels / reload.

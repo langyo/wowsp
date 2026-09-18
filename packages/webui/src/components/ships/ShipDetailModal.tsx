@@ -15,8 +15,8 @@ import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
-import SkillBuilder from "./SkillBuilder";
-import DataObserver from "./DataObserver";
+import BuildPlanner from "./BuildPlanner";
+import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
 import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
@@ -49,9 +49,8 @@ export default defineComponent({
 
     const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
 
-    // ── Captain skills state (shared between SkillBuilder + DataObserver) ──
-    const skillRank = ref<Record<string, number>>({});
-    const skillHealthPct = ref(1);
+    // ── Build-planner state (skills / commander / flags / upgrades / HP) ──
+    const build = ref<PlannerBuild>(emptyBuild());
 
     // ── Holographic stage ─────────────────────────────────────────────────
     const stageRef = ref<
@@ -129,8 +128,7 @@ export default defineComponent({
         gpFetched.value = false;
         gpError.value = null;
         myStatsLoaded.value = false;
-        skillRank.value = {};
-        skillHealthPct.value = 1;
+        build.value = emptyBuild();
         if (s) {
           void loadGameparams();
           void trends.loadCommunity(s.shipId);
@@ -264,20 +262,14 @@ export default defineComponent({
       >
         {!props.ship ? null : (
           <div class="ship-detail">
-            {/* holographic stage: shown for all tabs except skill (where data observer replaces it) */}
+            {/* holographic stage: shown for all tabs except skill (where the
+                build planner replaces it) */}
             {tab.value !== "skill" ? (
               <>
                 <ShipStage ref={stageRef} ship={props.ship} armorZones={armorZones.value} waterlineDraft={waterlineDraft.value} />
                 <WeaponBar gameparams={gameparams.value as Record<string, unknown> | null} onFocus={onWeaponFocus} />
               </>
-            ) : (
-              /* Data observer: replaces the stage when in the captain skills tab */
-              <DataObserver
-                ship={props.ship}
-                rank={skillRank.value}
-                healthPct={skillHealthPct.value}
-              />
-            )}
+            ) : null}
 
             {/* identity header */}
             <div class="ship-detail__id">
@@ -367,26 +359,10 @@ export default defineComponent({
                 </div>
               ) : (
                 <div class="ship-detail__skill" key="skill">
-                  {/* HP slider for Adrenaline Rush effect in DataObserver */}
-                  <div class="ship-detail__hp-slider">
-                    <label class="ship-detail__hp-label">
-                      {t("ships.shipyard.healthSlider")}:
-                      <strong>{Math.round(skillHealthPct.value * 100)}%</strong>
-                    </label>
-                    <input
-                      class="ship-detail__hp-input"
-                      type="range"
-                      min={1}
-                      max={100}
-                      step={1}
-                      value={Math.round(skillHealthPct.value * 100)}
-                      onInput={(e) => (skillHealthPct.value = Number((e.target as HTMLInputElement).value) / 100)}
-                    />
-                  </div>
-                  <SkillBuilder
-                    shipType={props.ship.type}
-                    modelRank={skillRank.value}
-                    onUpdate:modelRank={(r: Record<string, number>) => (skillRank.value = r)}
+                  <BuildPlanner
+                    ship={props.ship}
+                    build={build.value}
+                    onUpdate:build={(b: PlannerBuild) => (build.value = b)}
                   />
                 </div>
               )}
