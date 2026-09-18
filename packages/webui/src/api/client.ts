@@ -851,6 +851,20 @@ export const api = {
   destroyOverlayWindow: () => transport.invoke<null>(RPC.destroy_overlay_window),
   startOverlayTabWatch: () => transport.invoke<null>(RPC.start_overlay_tab_watch),
   stopOverlayTabWatch: () => transport.invoke<null>(RPC.stop_overlay_tab_watch),
+  /** Screenshot-style manual locate: open the drag-box picker window over
+   *  the game rect (single-instance; errors when no fresh battle roster or
+   *  game window). `locale` picks the picker page's copy. */
+  startManualLocate: (locale?: string) =>
+    transport.invoke<null>(RPC.start_manual_locate, { locale: locale ?? null }),
+  /** Close the picker without storing anything (its Esc / Cancel path). */
+  cancelManualLocate: () => transport.invoke<null>(RPC.cancel_manual_locate),
+  /** Submit the picker's drag-box selection (PHYSICAL px relative to the
+   *  game window origin). Validates + freezes the manual roster anchor and
+   *  closes the picker; the overlay chips re-anchor on the next Tab hold. */
+  setManualRosterRect: (x: number, y: number, width: number, height: number) =>
+    transport.invoke<null>(RPC.set_manual_roster_rect, { x, y, width, height }),
+  /** Drop the manual anchor; detection returns to the automatic flow. */
+  clearManualRosterRect: () => transport.invoke<null>(RPC.clear_manual_roster_rect),
   /** Anchor push from the Rust Tab watcher (capture + detector result). */
   listenOverlayAnchor: (handler: (anchor: OverlayAnchor) => void) =>
     transport.listen?.<OverlayAnchor>("wowsp://overlay-anchor", handler),

@@ -88,7 +88,12 @@
     "detectedRows": "位置特定済み · {n} 行",
     "searching": "位置特定中…",
     "manualLocate": "手動で位置合わせ",
-    "manualPending": "近日対応予定"
+    "manualClear": "配置を解除",
+    "manualRows": "手動配置済み · {n} 行",
+    "manualDragHint": "左ボタンをドラッグして、ゲーム内の成績テーブルを囲んでください",
+    "manualConfirm": "確認",
+    "manualCancel": "キャンセル",
+    "manualTooSmall": "選択範囲が小さすぎます"
   },
   "postbattle": {
     "rawData": "生データ",

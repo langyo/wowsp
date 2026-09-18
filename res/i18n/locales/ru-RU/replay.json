@@ -88,7 +88,12 @@
     "detectedRows": "Найдено · {n} строк",
     "searching": "Поиск позиции…",
     "manualLocate": "Ручное позиционирование",
-    "manualPending": "Скоро"
+    "manualClear": "Сбросить вручную",
+    "manualRows": "Расположено вручную · {n} строк",
+    "manualDragHint": "Зажмите левую кнопку мыши и обведите таблицу состава в игре",
+    "manualConfirm": "Подтвердить",
+    "manualCancel": "Отмена",
+    "manualTooSmall": "Область слишком мала"
   },
   "postbattle": {
     "rawData": "Исходные данные",

@@ -275,8 +275,9 @@ pub enum OverlayState {
     Detected,
     /// The centered "table not located" hint is on screen instead of chips.
     Fallback,
-    /// The overlay sits at a user-supplied position. RESERVED — not produced
-    /// until the manual-locate flow ships.
+    /// The overlay sits at a user-drawn (manual-locate) position: chips are
+    /// anchored to a box the player dragged over the game window. `rows`
+    /// carries the row count, same as `Detected`.
     Manual,
 }
 
@@ -290,10 +291,10 @@ pub struct OverlayStatus {
     /// Number of anchored player rows while `state` is detected/manual
     /// (`None` in every other state).
     pub rows: Option<u32>,
-    /// True while a user-picked (manually located) anchor is in force.
-    /// Always `false` until the manual-locate flow ships — the field exists
-    /// so the wire shape is final and consumers can render the badge's
-    /// manual variant without another format break.
+    /// True while a user-picked (manually located) anchor is in force —
+    /// the manual-locate flow's drag-box replaces the auto detector until
+    /// the battle or the game-window geometry changes (or the user clears
+    /// it). Every automatic state carries `false`.
     pub manual: bool,
 }
 
