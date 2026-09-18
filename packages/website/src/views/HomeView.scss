@@ -251,25 +251,6 @@ html {
   }
 }
 
-/* Phones in portrait AND any very short viewport (landscape phones, half
-   tiled windows): fixed one-viewport pages would clip their content, so
-   sections fall back to natural height. */
-@media (max-width: 720px), (max-height: 600px) {
-  /* Sections may exceed one viewport, so the 1/3-page grid no longer
-     matches the content — relax the (mobile) snap to proximity. */
-  html { scroll-snap-type: y proximity; }
-
-  .hero, .showcase, .features, .cta-band {
-    height: auto;
-    min-height: 100dvh;
-  }
-
-  .ship-stage {
-    min-height: 62vh;
-    border-radius: var(--radius-lg);
-  }
-}
-
 /* ── FEATURES ─────────────────────────────────────────────── */
 .features {
   height: calc(100vh - 4rem);
@@ -388,5 +369,19 @@ html {
     flex-wrap: wrap;
     gap: var(--space-16);
     margin-top: var(--space-40);
+  }
+}
+
+@media (max-width: 720px), (max-height: 600px) {
+  html { scroll-snap-type: y proximity; }
+
+  .hero, .showcase, .features, .cta-band {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .ship-stage {
+    min-height: 62vh;
+    border-radius: var(--radius-lg);
   }
 }
