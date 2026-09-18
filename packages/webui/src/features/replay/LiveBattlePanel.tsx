@@ -204,17 +204,19 @@ export default defineComponent({
           const stamp = careerStamp(st.pr, st.battles);
           return (
             <span>
-              <b style={{ color: winrateColor(st.winrate) }}>
-                {st.winrate.toFixed(1)}%
-              </b>{" "}
-              WR ·{" "}
-              <b
-                class={tier.rainbow ? "rainbow-text" : undefined}
-                style={tier.rainbow ? undefined : { color: tier.color }}
-              >
-                {st.pr ?? "—"}
-              </b>{" "}
-              PR
+              <span class="live-battle__player-statline">
+                <b style={{ color: winrateColor(st.winrate) }}>
+                  {st.winrate.toFixed(1)}%
+                </b>{" "}
+                WR ·{" "}
+                <b
+                  class={tier.rainbow ? "rainbow-text" : undefined}
+                  style={tier.rainbow ? undefined : { color: tier.color }}
+                >
+                  {st.pr ?? "—"}
+                </b>{" "}
+                PR
+              </span>
               {stamp ? <RatingStamp kind={stamp} size={13} variant="mini" /> : null}
             </span>
           );

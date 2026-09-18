@@ -207,12 +207,20 @@
   }
 
   &__player-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: var(--text-2xs);
     color: rgb(var(--color-text) / 0.7);
 
     /* WR / PR values carry their tier color inline (winrateColor / prTier). */
     b {
       font-weight: 600;
+    }
+
+    /* The career seal rides the row's right edge, clear of the numbers. */
+    .rating-stamp {
+      margin-left: auto;
     }
   }
 
