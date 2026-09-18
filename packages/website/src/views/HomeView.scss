@@ -279,8 +279,9 @@ html {
   }
 
   &__grid {
-    /* Capped inside the container: four cards across the full 72rem grid
-       stretch the same wide-band look the showcase stages just shed. */
+    /* Capped inside the container: cards across the full 72rem grid
+       stretch the same wide-band look the showcase stages just shed —
+       three cards fill one row inside the cap. */
     max-width: 62rem;
     margin-inline: auto;
     display: grid;
