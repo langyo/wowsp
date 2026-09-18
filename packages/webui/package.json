@@ -1,6 +1,6 @@
 {
   "name": "@wowsp/webui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,8 +15,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.40.18",
-    "@lucide/vue": "^1.38.0",
+    "@celestia-island/hikari": "^0.52.0",
+    "@lucide/vue": "^1.46.0",
     "@tauri-apps/api": "^2.11.1",
     "@vue/devtools-api": "^8.2.1",
     "@vueuse/core": "^14.4.0",
@@ -27,7 +27,7 @@
     "uuid": "^14.0.2",
     "vue": "^3.5.42",
     "vue-i18n": "^11.4.10",
-    "vue-router": "^5.3.0"
+    "vue-router": "^5.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
@@ -37,7 +37,7 @@
     "happy-dom": "^20.12.0",
     "sass": "^1.103.1",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
-    "vitest": "^4.1.11"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   }
 }
