@@ -240,10 +240,26 @@ pub struct OverlayAnchor {
     ///     exists to fix). When EVERY row fails to match, the vec is
     ///     deliberately all `None` — the whole overlay goes silent instead
     ///     of showing index-guessed stats (honest silence over confidently
-    ///     wrong data; a confidence gate downgrading total match failure
-    ///     back to `None` is a planned 3b follow-up).
+    ///     wrong data). Such an all-`None` vec is NOT a trusted mapping:
+    ///     instead of a confidence gate downgrading it back to `None`, the
+    ///     anchor reports `row_players_pending` (below) and the Tab watcher
+    ///     keeps re-running recognition until something actually matches.
     #[serde(default)]
     pub row_players: Option<Vec<Option<String>>>,
+    /// True when recognition is ENABLED but this anchor carries no trusted
+    /// row→name mapping yet: `row_players` is `None` (the arena roster was
+    /// not ready when the table was pinned, or OCR read nothing) OR an
+    /// all-`None` vec (every row's text failed to match the roster). The
+    /// overlay page shows its "recognizing roster" badge while this is up
+    /// and keeps rendering the current chips; the Tab watcher keeps
+    /// re-running recognition and transplants the mapping onto the pin when
+    /// it arrives. Always `false` for manual anchors (recognition is never
+    /// run on a hand-drawn box) and when recognition is off; on a fallback
+    /// anchor (table not located) it is meaningless — recognition only runs
+    /// on a confirmed detection — and the overlay only badges confirmed
+    /// tables anyway.
+    #[serde(default)]
+    pub row_players_pending: bool,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.

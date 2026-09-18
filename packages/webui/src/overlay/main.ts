@@ -18,23 +18,31 @@ import "./overlay.css";
 
 // Same locale files the Vue app consumes — one source of truth for the hint
 // copy, bundled eagerly into this tiny page (a few KB across 9 locales).
-const MESSAGES = import.meta.glob<{ locateHint: string }>(
+interface OverlayMessages {
+  /** Failed-locate copy (the centered hint box IS the failure). */
+  locateHint: string;
+  /** Locating copy: recognition is on, the table just isn't pinned yet. */
+  locatingHint: string;
+  /** Small badge over the table while the row mapping is still pending. */
+  recognizingBadge: string;
+}
+const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
   { eager: true },
 );
-const hintMessages = new Map<string, string>();
+const hintMessages = new Map<string, OverlayMessages>();
 for (const [path, mod] of Object.entries(MESSAGES)) {
   const m = path.match(/locales\/([a-zA-Z-]+)\/overlay\.json$/);
-  if (m && mod?.locateHint) hintMessages.set(m[1], mod.locateHint);
+  if (m && mod?.locatingHint) hintMessages.set(m[1], mod);
 }
 
-function localizedHint(): string {
-  const exact = hintMessages.get(locale);
+function localized(key: keyof OverlayMessages): string {
+  const exact = hintMessages.get(locale)?.[key];
   if (exact) return exact;
   const lang = locale.split("-")[0];
   const byLang = [...hintMessages.entries()].find(([k]) => k.split("-")[0] === lang);
-  if (byLang) return byLang[1];
-  return hintMessages.get("en-US") ?? [...hintMessages.values()][0] ?? "";
+  if (byLang) return byLang[1][key];
+  return hintMessages.get("en-US")?.[key] ?? [...hintMessages.values()][0]?.[key] ?? "";
 }
 
 interface OverlayTauriApi {
@@ -71,6 +79,11 @@ interface OverlayAnchor {
    *  in-game panel sorts rows its own way, which is what the matcher
    *  exists to fix. */
   rowPlayers?: (string | null)[] | null;
+  /** True when recognition is enabled but this anchor has no trusted
+   *  row→name mapping yet (absent, or an all-null read — nothing
+   *  matched): a small "recognizing roster" badge renders over the table
+   *  until the watcher transplants the mapping onto the pin. */
+  rowPlayersPending?: boolean;
 }
 
 interface Stat {
@@ -94,6 +107,11 @@ const locale = new URLSearchParams(window.location.search).get("locale") || "en-
 
 let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
+// Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
+// the wire; null before the first event). Picks the two-level hint copy:
+// only `fallback` is a tried-and-failed state, everything else still reads
+// as "locating".
+let statusState: string | null = null;
 const stats = new Map<string, Stat>();
 const pending = new Set<string>();
 let batchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -124,11 +142,15 @@ function render() {
   root.textContent = "";
   if (!anchor) return;
   // Battle is on but the table itself wasn't located — show a centered hint
-  // box instead of chips that would sit on guessed rows.
+  // box instead of chips that would sit on guessed rows. Two copy levels:
+  // `fallback` is the one state that means a detection was TRIED and
+  // failed (the centered box IS the failure) — the old failure-tone copy;
+  // still-searching (or no status event yet) gets the softer "hold Tab,
+  // recognizing the roster" copy.
   if (!anchor.tableDetected) {
     const box = document.createElement("div");
     box.className = "overlay-hint";
-    box.textContent = localizedHint();
+    box.textContent = localized(statusState === "fallback" ? "locateHint" : "locatingHint");
     root.appendChild(box);
     return;
   }
@@ -196,6 +218,25 @@ function render() {
       root.appendChild(el);
     });
   }
+
+  // Recognition-enabled but no trusted row→name mapping yet (the arena
+  // roster landed after the pin, or the first OCR pass read nothing): a
+  // low-key badge at the table's top edge tells the player the chips'
+  // attribution is still settling. Disappears on the next anchor event
+  // once the watcher transplants the mapping (render() rebuilds from
+  // scratch each time). Sits centered over the table's top edge — the
+  // chips live OUTSIDE the left/right edges, so nothing is covered but
+  // the table's own header band.
+  if (anchor.rowPlayersPending) {
+    const badge = document.createElement("div");
+    badge.className = "overlay-badge";
+    badge.style.left = `${(anchor.rosterRect.x + anchor.rosterRect.width / 2) / dpr}px`;
+    // `top` is the badge's BOTTOM edge (translateY(-100%) in CSS); clamp
+    // so a thin top padding (small roster / high DPR) cannot clip it.
+    badge.style.top = `${Math.max(26, anchor.rosterRect.y / dpr - gap)}px`;
+    badge.textContent = localized("recognizingBadge");
+    root.appendChild(badge);
+  }
 }
 
 function scheduleBatch() {
@@ -254,6 +295,13 @@ async function start() {
   await listen("wowsp://arena-info", (e: { payload: unknown }) => {
     arena = e.payload as ArenaInfo;
     scheduleBatch();
+  });
+  await listen("wowsp://overlay-status", (e: { payload: unknown }) => {
+    // Detection-state broadcast (the same event the live-battle panel
+    // badges). Only steers the hint copy; a re-render keeps a hint box
+    // already on screen current without waiting for the next anchor event.
+    statusState = (e.payload as { state?: string } | null)?.state ?? null;
+    render();
   });
   await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
     anchor = e.payload as OverlayAnchor;
