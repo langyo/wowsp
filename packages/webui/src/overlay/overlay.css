@@ -70,3 +70,23 @@ html.overlay-hidden body {
   text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
   white-space: normal;
 }
+
+/* "Recognizing roster…" pill while the anchor's row→name mapping is still
+   pending: deliberately low-key (small, translucent) — it must be readable
+   over the game without competing with the chips it vouches for. Centered
+   over the table's top edge; the chips render outside the left/right
+   edges, so the pill only ever overlaps the table's own header band. */
+.overlay-badge {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 0.12em 0.75em;
+  border-radius: 999px;
+  background: rgb(10 14 20 / 55%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  color: rgb(198 208 220);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
+  pointer-events: none;
+}

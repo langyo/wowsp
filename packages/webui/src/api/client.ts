@@ -128,6 +128,13 @@ export interface OverlayAnchor {
    *  player was not recognized (render a silent placeholder, never guess
    *  by index). Names are the roster's own nicknames (stats-cache keys). */
   rowPlayers?: (string | null)[] | null;
+  /** True when recognition is enabled but this anchor has no trusted
+   *  row→name mapping yet (arena roster not ready, OCR read nothing, or
+   *  no row's text matched the roster): the overlay shows its "recognizing
+   *  roster" badge while this is up and the watcher transplants the
+   *  mapping onto the pin once it lands. Always false for manual anchors
+   *  and when recognition is off. */
+  rowPlayersPending?: boolean;
 }
 
 /** Mirrors `wowsp_tauri_shared::CaptureResult`. */

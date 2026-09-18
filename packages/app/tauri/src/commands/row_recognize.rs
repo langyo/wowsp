@@ -15,15 +15,16 @@
 //! Every step degrades to `None` on failure — the pipeline must never block
 //! nor panic the Tab watcher, and when it yields nothing the anchor keeps
 //! `row_players = None`, which the frontend reads as "fall back to the
-//! historical index mapping" (default behavior, byte-identical to master).
+//! historical index mapping".
 //!
-//! Engines implement [`RowRecognizer`]. PR 3a shipped the [`NullRecognizer`]
-//! placeholder and the `WOWSP_ROW_RECOGNIZER` selection plumbing; PR 3b adds
-//! the real on-device engine (`windows-ocr`, the OS-bundled Windows.Media.Ocr
-//! — see [`row_ocr_windows`]) behind its own env value. The pipeline stays
-//! FAST and IO-FREE while off: an unset env short-circuits before any crop,
-//! and the one arena-file read happens only after some text was actually
-//! recognized.
+//! Engines implement [`RowRecognizer`]. PR 3a shipped the selection plumbing
+//! and the `WOWSP_ROW_RECOGNIZER` env; PR 3b added the real on-device engine
+//! (`windows-ocr`, the OS-bundled Windows.Media.Ocr — see
+//! [`row_ocr_windows`]), which is now the DEFAULT: recognition runs unless
+//! the env explicitly opts out (`off` / `null`). The pipeline stays
+//! IO-LIGHT: the one arena-file read happens only after some text was
+//! actually recognized, and a disabled engine short-circuits before any
+//! crop.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -36,11 +37,31 @@ use super::{arena_info, overlay_detect, row_match};
 mod row_ocr_windows;
 
 /// Environment variable selecting the row recognizer engine. Unset / empty =
-/// off (the whole pipeline is skipped); `off` / `null` explicitly selects
-/// the do-nothing placeholder; `windows-ocr` selects the OS-bundled
-/// Windows.Media.Ocr engine (Windows builds); any other value warns once
-/// and stays off.
+/// the DEFAULT engine (`windows-ocr`; off on non-Windows builds, where that
+/// engine does not exist); `off` / `null` explicitly turns the pipeline off;
+/// `windows-ocr` names the OS-bundled Windows.Media.Ocr engine (Windows
+/// builds); any other value warns once and falls back to the default.
 const RECOGNIZER_ENV: &str = "WOWSP_ROW_RECOGNIZER";
+
+/// Parsed engine selection — pure and CHEAP (no engine construction), so
+/// tests and the pending/catch-up machinery can ask "is recognition on?"
+/// without ever building an OCR engine just to know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecognizerKind {
+    /// The OS-bundled Windows OCR engine.
+    WindowsOcr,
+    /// Off: the whole pipeline is skipped — `row_players` stays `None` and
+    /// the frontend falls back to the historical index mapping.
+    Off,
+}
+
+/// What every non-explicit env value resolves to: `windows-ocr` where the
+/// engine exists, off on the other compile targets (the `row_ocr_windows`
+/// module is cfg-gated to Windows).
+#[cfg(target_os = "windows")]
+const DEFAULT_RECOGNIZER: RecognizerKind = RecognizerKind::WindowsOcr;
+#[cfg(not(target_os = "windows"))]
+const DEFAULT_RECOGNIZER: RecognizerKind = RecognizerKind::Off;
 
 /// One row-name recognition engine. Implementations receive the raw RGBA
 /// crop of one row's name strip and return the text READ from it — raw and
@@ -69,19 +90,40 @@ static WARNED_UNKNOWN: AtomicBool = AtomicBool::new(false);
 /// keeps running and simply recognizes nothing) and says so exactly once.
 static WARNED_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 
-/// Pure engine selection from the raw env value (split from the env read so
-/// tests never mutate process state — same pattern as tab_dump's gate).
-/// `None` = pipeline off entirely.
-fn select_recognizer(raw: Option<std::ffi::OsString>) -> Option<Box<dyn RowRecognizer>> {
-    let raw = raw?;
+/// Pure env parse (split from the engine CONSTRUCTION so tests never mutate
+/// process state nor build an OCR engine — same pattern as tab_dump's gate).
+fn recognizer_kind(raw: Option<&std::ffi::OsStr>) -> RecognizerKind {
+    let Some(raw) = raw else {
+        return DEFAULT_RECOGNIZER;
+    };
     match raw.to_string_lossy().trim().to_ascii_lowercase().as_str() {
-        "" => None,
-        "off" | "null" => Some(Box::new(NullRecognizer)),
-        // The real on-device engine (PR 3b). When the OS cannot provide one
-        // (no recognizer language installed) degrade to the placeholder so
-        // the pipeline keeps its shape — it will simply recognize nothing.
+        "" => DEFAULT_RECOGNIZER,
+        "off" | "null" => RecognizerKind::Off,
+        // The real on-device engine. On non-Windows builds the constant is
+        // Off: the name resolves to off there, exactly as before it existed.
+        "windows-ocr" => DEFAULT_RECOGNIZER,
+        other => {
+            if !WARNED_UNKNOWN.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    engine = %other,
+                    "unknown WOWSP_ROW_RECOGNIZER engine — falling back to the default windows-ocr"
+                );
+            }
+            DEFAULT_RECOGNIZER
+        },
+    }
+}
+
+/// Engine selection from the raw env value: parse the kind, then construct
+/// its engine. `None` = recognition off — nothing downstream runs.
+fn select_recognizer(raw: Option<std::ffi::OsString>) -> Option<Box<dyn RowRecognizer>> {
+    match recognizer_kind(raw.as_deref()) {
+        RecognizerKind::Off => None,
+        // When the OS cannot provide an engine (no recognizer language
+        // installed) degrade to the placeholder so the pipeline keeps its
+        // shape — it will simply recognize nothing.
         #[cfg(target_os = "windows")]
-        "windows-ocr" => match row_ocr_windows::WindowsOcrRecognizer::acquire() {
+        RecognizerKind::WindowsOcr => match row_ocr_windows::WindowsOcrRecognizer::acquire() {
             Some(engine) => Some(Box::new(engine)),
             None => {
                 if !WARNED_UNAVAILABLE.swap(true, Ordering::Relaxed) {
@@ -92,15 +134,33 @@ fn select_recognizer(raw: Option<std::ffi::OsString>) -> Option<Box<dyn RowRecog
                 Some(Box::new(NullRecognizer))
             },
         },
-        other => {
-            if !WARNED_UNKNOWN.swap(true, Ordering::Relaxed) {
-                tracing::warn!(
-                    engine = %other,
-                    "unknown WOWSP_ROW_RECOGNIZER engine — row recognition stays off"
-                );
-            }
-            None
-        },
+        // Unreachable: the parse above resolves every value to Off on
+        // non-Windows targets, so no WindowsOcr kind can be produced there.
+        #[cfg(not(target_os = "windows"))]
+        RecognizerKind::WindowsOcr => None,
+    }
+}
+
+/// Whether row recognition is ON under the current environment: the parsed
+/// engine kind selects Windows OCR AND the OS can actually build the engine
+/// — a machine with no OCR language pack can never produce a row mapping,
+/// so the pending machinery (anchor `row_players_pending`, watcher
+/// catch-up) must not wait for one. Consumed by `compute_anchor` and by the
+/// Tab watcher's recognition catch-up gate.
+pub(crate) fn recognizer_enabled() -> bool {
+    recognizer_enabled_for(std::env::var_os(RECOGNIZER_ENV).as_deref())
+}
+
+/// Env-injected core of [`recognizer_enabled`] (testable without mutating
+/// process state). The engine probe runs through the same lazy `OnceLock`
+/// the capture path uses, so after the first capture this is a cheap read.
+fn recognizer_enabled_for(raw: Option<&std::ffi::OsStr>) -> bool {
+    match recognizer_kind(raw) {
+        RecognizerKind::Off => false,
+        #[cfg(target_os = "windows")]
+        RecognizerKind::WindowsOcr => row_ocr_windows::WindowsOcrRecognizer::acquire().is_some(),
+        #[cfg(not(target_os = "windows"))]
+        RecognizerKind::WindowsOcr => false,
     }
 }
 
@@ -132,9 +192,9 @@ pub(crate) struct RowFrame<'a> {
 /// (capture-relative) geometry, BEFORE `build_anchor` re-bases it to the
 /// overlay origin.
 ///
-/// Cost contract: with the env off this is one `var_os` read and nothing
-/// else; the arena-file IO happens only after at least one row produced
-/// text (i.e. never with the null engine).
+/// Cost contract: with recognition disabled this is one `var_os` read and
+/// nothing else; the arena-file IO happens only after at least one row
+/// produced text (i.e. never with the null engine).
 pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<Vec<Option<String>>> {
     // Env gate FIRST — with no engine configured this is the whole function.
     let engine = select_recognizer(std::env::var_os(RECOGNIZER_ENV))?;
@@ -151,8 +211,10 @@ pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<Vec<Option<Strin
     // From here the payload is Some(vec) — recognition RAN. Even when every
     // row then fails to match (an all-None vec) it stays Some: honest
     // silence ("nothing was recognized confidently") beats pinning stats by
-    // the known-wrong index guess. A confidence gate that downgrades total
-    // match failure back to None is a deliberate PR 3b follow-up.
+    // the known-wrong index guess. No separate confidence gate downgrades
+    // that vec back to None; instead `compute_anchor` reports the anchor as
+    // `row_players_pending` and the Tab watcher's catch-up keeps re-running
+    // this pipeline until some row actually matches the roster.
     Some(row_match_blocks(&texts, &info, frame.ally_rows))
 }
 
@@ -284,23 +346,79 @@ mod tests {
 
     #[test]
     fn select_recognizer_env_gate() {
-        // Unset / empty → off entirely.
-        assert!(select_recognizer(None).is_none());
-        assert!(select_recognizer(Some("".into())).is_none());
-        assert!(select_recognizer(Some("   ".into())).is_none());
-        // Explicit off / null → the placeholder engine is selected.
-        assert!(select_recognizer(Some("off".into())).is_some());
-        assert!(select_recognizer(Some("OFF".into())).is_some());
-        assert!(select_recognizer(Some("null".into())).is_some());
-        // The real engine name selects it (or the degraded placeholder when
-        // the OS has no OCR language pack) — either way the pipeline runs.
-        // On non-Windows builds the name stays unknown.
+        // Unset / empty / unknown all resolve to the DEFAULT engine — the
+        // real Windows OCR, or the degraded placeholder when the OS has no
+        // OCR language pack; on non-Windows builds the default is off.
         #[cfg(target_os = "windows")]
-        assert!(select_recognizer(Some("windows-ocr".into())).is_some());
+        {
+            assert!(select_recognizer(None).is_some());
+            assert!(select_recognizer(Some("".into())).is_some());
+            assert!(select_recognizer(Some("   ".into())).is_some());
+            assert!(select_recognizer(Some("rapidocr".into())).is_some());
+            // The real engine name selects it — either way the pipeline runs.
+            assert!(select_recognizer(Some("windows-ocr".into())).is_some());
+        }
         #[cfg(not(target_os = "windows"))]
-        assert!(select_recognizer(Some("windows-ocr".into())).is_none());
-        // Unknown values warn once and stay off.
-        assert!(select_recognizer(Some("rapidocr".into())).is_none());
+        {
+            assert!(select_recognizer(None).is_none());
+            assert!(select_recognizer(Some("".into())).is_none());
+            assert!(select_recognizer(Some("windows-ocr".into())).is_none());
+            assert!(select_recognizer(Some("rapidocr".into())).is_none());
+        }
+        // Explicit off / null → off entirely.
+        assert!(select_recognizer(Some("off".into())).is_none());
+        assert!(select_recognizer(Some("OFF".into())).is_none());
+        assert!(select_recognizer(Some("null".into())).is_none());
+    }
+
+    #[test]
+    fn recognizer_kind_defaults_to_windows_ocr() {
+        use std::ffi::OsStr;
+        fn os(s: &str) -> Option<&OsStr> {
+            Some(OsStr::new(s))
+        }
+        let default = if cfg!(target_os = "windows") {
+            RecognizerKind::WindowsOcr
+        } else {
+            RecognizerKind::Off
+        };
+        // Unset / empty / unknown → the default; only off/null disables.
+        assert_eq!(recognizer_kind(None), default);
+        assert_eq!(recognizer_kind(os("")), default);
+        assert_eq!(recognizer_kind(os("  ")), default);
+        assert_eq!(recognizer_kind(os("rapidocr")), default);
+        assert_eq!(recognizer_kind(os("off")), RecognizerKind::Off);
+        assert_eq!(recognizer_kind(os("NULL")), RecognizerKind::Off);
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            recognizer_kind(os("windows-ocr")),
+            RecognizerKind::WindowsOcr
+        );
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(recognizer_kind(os("windows-ocr")), RecognizerKind::Off);
+    }
+
+    #[test]
+    fn recognizer_enabled_follows_parse_and_engine_availability() {
+        use std::ffi::OsStr;
+        // Explicit off never enables, whatever the machine has installed.
+        assert!(!recognizer_enabled_for(Some(OsStr::new("off"))));
+        // Unset → the default: enabled exactly when the Windows OCR engine
+        // is constructible (needs an installed OCR language pack) — which
+        // this assertion probes through the same lazy OnceLock, so the test
+        // makes no assumption about the machine's packs. Never enabled on
+        // non-Windows builds, whatever the env says.
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            recognizer_enabled_for(None),
+            row_ocr_windows::WindowsOcrRecognizer::acquire().is_some(),
+            "default env enables recognition iff the engine is constructible"
+        );
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(!recognizer_enabled_for(None));
+            assert!(!recognizer_enabled_for(Some(OsStr::new("windows-ocr"))));
+        }
     }
 
     #[test]

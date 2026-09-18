@@ -1080,6 +1080,7 @@ mod tests {
             team_split: 0.5,
             table_detected: detected,
             row_players: None,
+            row_players_pending: false,
         }
     }
 
@@ -1395,8 +1396,11 @@ pub(crate) fn build_anchor(
         team_split,
         table_detected,
         // Anchors are built without recognition; the row→name pipeline in
-        // `row_recognize` fills `row_players` afterwards when it ran.
+        // `row_recognize` fills `row_players` afterwards when it ran (and
+        // flips `row_players_pending` with it — manual/automatic alike,
+        // pending never starts as true).
         row_players: None,
+        row_players_pending: false,
     };
     (overlay, anchor)
 }
