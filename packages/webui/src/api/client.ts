@@ -898,6 +898,8 @@ export const api = {
   /** Download model pack from GitHub Releases to local cache. Returns the
    *  cache directory path so the frontend can construct file URLs. */
   ensureModelPack: () => transport.invoke<string>(RPC.ensure_model_pack),
+  /** Dog-tag pack (map + part PNGs) overlaying the bundled snapshot. */
+  ensureDogtagPack: () => transport.invoke<string>(RPC.ensure_dogtag_pack),
   /** Network proxy settings (system / none / manual), applied globally. */
   getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
   setNetworkConfig: (config: NetworkConfig) =>

@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
-"""Package baked GLB models as a GitHub Release asset with fixed tags.
+"""Package baked GLB models + the dog-tag asset pack as GitHub Release assets
+with fixed tags.
 
 The downloader in the app always fetches `res-latest`; this script manages
 the tag rotation so at most 2 old packs are kept as fallbacks.
 
 Workflow:
   1. Run `just extract models && just bake-ships` to produce the GLBs.
+     Run `just extract dogtags` to refresh the dog-tag map + PNGs.
   2. Run this script: `python scripts/release_models.py`.
-  3. It packages models/ into wowsp-models.tar.gz, deletes the current
-     `res-latest` release, shifts old tags (res-latest-old-1 → old-2),
-     creates a new `res-latest` release, and uploads the archive.
+  3. It packages models/ into wowsp-models.tar.gz (plus a .shun variant),
+     packages the dog-tag snapshot into wowsp-dogtags.tar.gz, deletes the
+     current `res-latest` release, recreates it, and uploads the archives.
+
+`--dogtags-only` instead re-uploads just wowsp-dogtags.tar.gz onto the
+existing res-latest release (no rotation): the models asset keeps its
+upload timestamp, so installed apps re-download only the small dog-tag
+pack. That is the right mode for the periodic medal refresh after
+`just extract dogtags` — the full rebuild is for model changes.
+
+Both archives ride the same release rotation; the dog-tag pack is small
+(~3 MB) and changes on every game content update, which is why it is a
+separate asset — refreshing it never re-downloads the ~500 MB model pack.
 
 Tag set after each run:
   res-latest        — newest pack (always the download target)
@@ -21,6 +33,7 @@ Requires `gh` CLI authenticated with `repo` scope.
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import subprocess
@@ -30,9 +43,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models"
+DOGTAGS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "dogtags"
+DOGTAGS_MAP = REPO_ROOT / "packages" / "webui" / "src" / "data" / "dogtags_map.json"
 REPO = "langyo/wowsp"
 ARCHIVE_NAME = "wowsp-models.tar.gz"
 SHUN_ARCHIVE_NAME = "wowsp-models.shun"
+DOGTAGS_ARCHIVE_NAME = "wowsp-dogtags.tar.gz"
 PRIMARY_TAG = "res-latest"
 FALLBACK_TAGS = ["res-latest-old-1", "res-latest-old-2"]
 
@@ -77,14 +93,74 @@ def delete_release_by_tag(tag: str) -> None:
     )
 
 
+def package_dogtags(tmp: str) -> Path | None:
+    """Stage res/dogtags + the map into wowsp-dogtags.tar.gz.
+
+    The archive mirrors the repo snapshot: top-level `dogtags/` (part PNGs)
+    plus the id→index/species map so the runtime overlay covers medals added
+    after the installed app build was cut. None when there is nothing to
+    package.
+    """
+    if not DOGTAGS_DIR.is_dir():
+        print(f"  dogtags dir not found ({DOGTAGS_DIR}) — skip")
+        return None
+    print(f"  packaging {DOGTAGS_DIR} → {DOGTAGS_ARCHIVE_NAME} ...")
+    stage = Path(tmp) / "dogtags-pkg" / "dogtags"
+    shutil.copytree(DOGTAGS_DIR, stage)
+    if DOGTAGS_MAP.is_file():
+        shutil.copy2(DOGTAGS_MAP, stage / DOGTAGS_MAP.name)
+    else:
+        print("  warning: dogtags_map.json missing — pack ships PNGs only")
+    archive = Path(tmp) / DOGTAGS_ARCHIVE_NAME
+    run([
+        "tar", "-czf", str(archive),
+        "-C", str(stage.parent),
+        "dogtags",
+    ])
+    print(f"  archive: {archive.stat().st_size / 1024 / 1024:.1f} MB")
+    return archive
+
+
+def dogtags_only() -> None:
+    """Refresh just the dog-tag asset on the existing res-latest release.
+
+    `gh release upload --clobber` keeps the release (and the models asset's
+    upload timestamp) untouched, so installed apps re-download only the
+    small dog-tag pack — the models pack is left cached.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = package_dogtags(tmp)
+        if archive is None:
+            sys.exit(1)
+        run([
+            "gh", "release", "upload", PRIMARY_TAG,
+            str(archive),
+            "--repo", REPO,
+            "--clobber",
+        ])
+    print(f"done. dog-tag pack refreshed on https://github.com/{REPO}/releases/tag/{PRIMARY_TAG}")
+
+
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--dogtags-only",
+        action="store_true",
+        help="re-upload only wowsp-dogtags.tar.gz onto the existing "
+             "res-latest release (no rotation, models asset untouched)",
+    )
+    args = ap.parse_args()
+    if args.dogtags_only:
+        dogtags_only()
+        return
+
     if not MODELS_DIR.is_dir():
         print(f"error: models dir not found: {MODELS_DIR}", file=sys.stderr)
         print("  Run `just extract models && just bake-ships` first.", file=sys.stderr)
         sys.exit(1)
 
     # ── Package models ──────────────────────────────────────────────────
-    print(f"[1/3] packaging {MODELS_DIR} → {ARCHIVE_NAME} ...")
+    print(f"[1/4] packaging {MODELS_DIR} → {ARCHIVE_NAME} ...")
     with tempfile.TemporaryDirectory() as tmp:
         tmp_archive = Path(tmp) / ARCHIVE_NAME
         run([
@@ -107,8 +183,11 @@ def main() -> None:
             run([shun, "pack", str(MODELS_DIR), "--out", str(tmp_shun)])
             print(f"  shun archive: {tmp_shun.stat().st_size / 1024 / 1024:.1f} MB")
 
+        # ── Package dog tags ──────────────────────────────────────────
+        tmp_dogtags = package_dogtags(tmp)
+
         # ── Rotate tags ─────────────────────────────────────────────────
-        print(f"[2/3] rotating release tags ...")
+        print(f"[3/4] rotating release tags ...")
         # Shift old-1 → old-2, old-0 (primary) → old-1.
         # We do this by deleting the oldest first, then recreating with gh.
         # Simpler: just delete all three, then create primary fresh.
@@ -158,7 +237,7 @@ def main() -> None:
         print(f"  to recover, browse https://github.com/{REPO}/releases")
 
         # ── Create release + upload ─────────────────────────────────────
-        print(f"[3/3] creating release {PRIMARY_TAG} ...")
+        print(f"[4/4] creating release {PRIMARY_TAG} ...")
         body = json.dumps({
             "tag_name": PRIMARY_TAG,
             "name": "Model Pack (latest)",
@@ -172,6 +251,8 @@ def main() -> None:
         uploads = [str(tmp_archive)]
         if tmp_shun.exists():
             uploads.append(str(tmp_shun))
+        if tmp_dogtags is not None:
+            uploads.append(str(tmp_dogtags))
         run([
             "gh", "release", "upload", PRIMARY_TAG,
             *uploads,
