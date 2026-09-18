@@ -129,6 +129,9 @@ export default defineComponent({
     );
 
     const avgPrTier = computed(() => prTier(props.clan.avgPr ?? null));
+    const avgPrLabel = computed(() =>
+      avgPrTier.value.key === "unknown" ? "—" : t(`stats.${avgPrTier.value.key}`),
+    );
 
     const kpis = computed(() => [
       {
@@ -206,11 +209,14 @@ export default defineComponent({
             </span>
           </div>
           {/* Average member PR — same tier scale/color as the player card. */}
-          <div class="clan-card__pr-block" style={{ color: avgPrTier.value.color }}>
+          <div
+            class={["clan-card__pr-block", avgPrTier.value.rainbow ? "rainbow-text" : null]}
+            style={avgPrTier.value.rainbow ? undefined : { color: avgPrTier.value.color }}
+          >
             <span class="clan-card__pr-num">
               {props.clan.avgPr != null ? props.clan.avgPr.toLocaleString() : "—"}
             </span>
-            <span class="clan-card__pr-label">{avgPrTier.value.label}</span>
+            <span class="clan-card__pr-label">{avgPrLabel.value}</span>
           </div>
         </div>
 
@@ -233,53 +239,56 @@ export default defineComponent({
             {headCell("pr", t("stats.pr"))}
             {headCell("avgDamage", t("stats.avgDamage"))}
           </div>
-          {members.value.map((m) => (
-            <button
-              key={m.accountId}
-              type="button"
-              class={[
-                "clan-card__member",
-                m.stats.hidden ? "clan-card__member--hidden" : "",
-              ]}
-              onClick={() => props.onMemberClick?.(m)}
-              data-hint={
-                props.onMemberClick
-                  ? `${t("account.nickname")}: ${m.name}`
-                  : undefined
-              }
-            >
-              <span class="clan-card__col clan-card__col--name">{m.name}</span>
-              <span class="clan-card__col clan-card__col--role">{roleLabel(m.role)}</span>
-              <span class="clan-card__col clan-card__col--num">
-                {m.stats.battles != null ? m.stats.battles.toLocaleString() : "—"}
-              </span>
-              <span
-                class="clan-card__col clan-card__col--num"
-                style={
-                  m.stats.winrate != null
-                    ? { color: winrateColor(m.stats.winrate), fontWeight: 600 }
+          {members.value.map((m) => {
+            const memberPrTier = prTier(m.stats.pr);
+            return (
+              <button
+                key={m.accountId}
+                type="button"
+                class={[
+                  "clan-card__member",
+                  m.stats.hidden ? "clan-card__member--hidden" : "",
+                ]}
+                onClick={() => props.onMemberClick?.(m)}
+                data-hint={
+                  props.onMemberClick
+                    ? `${t("account.nickname")}: ${m.name}`
                     : undefined
                 }
               >
-                {m.stats.winrate != null ? `${m.stats.winrate.toFixed(1)}%` : "—"}
-              </span>
-              <span
-                class="clan-card__col clan-card__col--num"
-                style={
-                  m.stats.pr != null
-                    ? { color: prTier(m.stats.pr).color, fontWeight: 600 }
-                    : undefined
-                }
-              >
-                {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
-              </span>
-              <span class="clan-card__col clan-card__col--num">
-                {m.stats.avgDamage != null
-                  ? Math.round(m.stats.avgDamage).toLocaleString()
-                  : "—"}
-              </span>
-            </button>
-          ))}
+                <span class="clan-card__col clan-card__col--name">{m.name}</span>
+                <span class="clan-card__col clan-card__col--role">{roleLabel(m.role)}</span>
+                <span class="clan-card__col clan-card__col--num">
+                  {m.stats.battles != null ? m.stats.battles.toLocaleString() : "—"}
+                </span>
+                <span
+                  class="clan-card__col clan-card__col--num"
+                  style={
+                    m.stats.winrate != null
+                      ? { color: winrateColor(m.stats.winrate), fontWeight: 600 }
+                      : undefined
+                  }
+                >
+                  {m.stats.winrate != null ? `${m.stats.winrate.toFixed(1)}%` : "—"}
+                </span>
+                <span
+                  class={["clan-card__col", "clan-card__col--num", memberPrTier.rainbow ? "rainbow-text" : null]}
+                  style={
+                    m.stats.pr != null && !memberPrTier.rainbow
+                      ? { color: memberPrTier.color, fontWeight: 600 }
+                      : undefined
+                  }
+                >
+                  {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
+                </span>
+                <span class="clan-card__col clan-card__col--num">
+                  {m.stats.avgDamage != null
+                    ? Math.round(m.stats.avgDamage).toLocaleString()
+                    : "—"}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
     );
