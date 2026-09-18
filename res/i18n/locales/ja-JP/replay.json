@@ -84,7 +84,11 @@
     "notStarted": "新しい戦闘はまだ開始されていません",
     "settling": "集計中",
     "hiddenProfile": "このプレイヤーは戦績を非公開にしています",
-    "viewProfile": "このプレイヤーの戦績を見る"
+    "viewProfile": "このプレイヤーの戦績を見る",
+    "detectedRows": "位置特定済み · {n} 行",
+    "searching": "位置特定中…",
+    "manualLocate": "手動で位置合わせ",
+    "manualPending": "近日対応予定"
   },
   "postbattle": {
     "rawData": "生データ",

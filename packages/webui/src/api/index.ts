@@ -25,6 +25,8 @@ export type {
   CaptureResult,
   Rect,
   OverlayAnchor,
+  OverlayState,
+  OverlayStatus,
   PositionSample,
   EntityKind,
   EntityTrajectory,

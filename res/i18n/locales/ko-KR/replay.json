@@ -84,7 +84,11 @@
     "notStarted": "아직 새 전투가 시작되지 않았습니다",
     "settling": "정산 중",
     "hiddenProfile": "이 플레이어는 전적을 숨겼습니다",
-    "viewProfile": "이 플레이어의 전적 보기"
+    "viewProfile": "이 플레이어의 전적 보기",
+    "detectedRows": "위치 확인됨 · {n}행",
+    "searching": "위치 확인 중…",
+    "manualLocate": "수동 위치 지정",
+    "manualPending": "곧 지원 예정"
   },
   "postbattle": {
     "rawData": "원본 데이터",
