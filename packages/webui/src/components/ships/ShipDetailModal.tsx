@@ -449,14 +449,14 @@ const SpecsPanel = defineComponent({
                       <dt class="specs-group__label">
                         {t(`ships.spec.${row.key}`)}
                         {row.hint ? (
-                          <span class="specs-group__hint" title={t(`ships.spec.${row.hint}`)}>
+                          <span class="specs-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
                             <HelpCircle size={11} />
                           </span>
                         ) : null}
                       </dt>
                       <dd
                         class="specs-group__value"
-                        title={t("ships.copied")}
+                        data-hint={t("common.clickToCopy")}
                         onClick={() => copy(String(row.value))}
                       >{row.value}</dd>
                     </div>
@@ -514,7 +514,7 @@ const TrendBars = defineComponent({
             return (
               <div class="trend-bars__col">
                 {patch ? (
-                  <span class="trend-bars__patch" title={patch.summary}><Sparkles size={12} /></span>
+                  <span class="trend-bars__patch" data-hint={patch.summary}><Sparkles size={12} /></span>
                 ) : null}
                 <div
                   class="trend-bars__bar"
@@ -522,7 +522,7 @@ const TrendBars = defineComponent({
                     height: `${heightPct}%`,
                     background: winrateColor(b.winrateAvg),
                   }}
-                  title={`${b.version}: ${b.winrateAvg.toFixed(1)}% WR, ${b.avgDamage.toFixed(0)} avg dmg (${b.snapshotCount} snapshots)`}
+                  data-hint={`${b.version}: ${b.winrateAvg.toFixed(1)}% WR, ${b.avgDamage.toFixed(0)} avg dmg (${b.snapshotCount} snapshots)`}
                 />
                 <span class="trend-bars__label">{b.version}</span>
               </div>

@@ -182,7 +182,7 @@ function rosterStatCols(
     return (
       <span
         class={`replay-view__postbattle-cell-stat ${mod}`}
-        title={tip}
+        data-hint={tip}
       >
         {body}
       </span>
@@ -468,7 +468,7 @@ const PostBattlePanel = defineComponent({
                       {sel.accountId !== pb.selfId ? (
                         <em
                           class="replay-view__postbattle-damage-unknown"
-                          title={t("replay.postbattle.damageUnknownNote")}
+                          data-hint={t("replay.postbattle.damageUnknownNote")}
                         >
                           *
                         </em>
@@ -488,7 +488,7 @@ const PostBattlePanel = defineComponent({
                         <span
                           key={x.key}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={`${name} ×${x.value}`}
+                          data-hint={`${name} ×${x.value}`}
                         >
                           <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
                           <em>{x.value}</em>
@@ -818,7 +818,7 @@ const PostBattleFallbackPanel = defineComponent({
                         <span
                           key={x.key}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={`${name} ×${x.value}`}
+                          data-hint={`${name} ×${x.value}`}
                         >
                           <AssetImage
                             src={bundledRibbonUrl(x.key)}

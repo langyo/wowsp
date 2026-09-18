@@ -17,6 +17,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { registerBrandThemes } from "./theme/brandThemes";
+import { installGlobalTooltip } from "./composables/globalTooltip";
 import { i18n } from "./i18n";
 
 /** Canonical wowsp locale → hikari i18n dir. Hikari ships simplified-
@@ -39,6 +40,10 @@ export function bootstrap(): void {
   registerBrandThemes();
   initTheme();
   initFontContext();
+
+  // Delegated tooltip hook: everything that used to lean on native
+  // `title` popups opts in via data-hint and renders hikari-style.
+  installGlobalTooltip();
 
   // One-shot deep link (?theme=light|dark): force the mode for this load
   // WITHOUT persisting it — same semantics as the pre-hikari theme manager.

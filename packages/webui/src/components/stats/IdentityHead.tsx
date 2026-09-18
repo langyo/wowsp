@@ -34,7 +34,7 @@ export default defineComponent({
                 type="button"
                 class="id-head__tag id-head__tag--link"
                 onClick={() => props.onTagClick?.()}
-                title={t("lookup.jumpClan")}
+                data-hint={t("lookup.jumpClan")}
               >
                 [{props.tag}]
               </button>

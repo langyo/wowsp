@@ -94,7 +94,7 @@ export default defineComponent({
                 key={tech.label}
                 type="button"
                 class="about-modal__tech-tag"
-                title={tech.url}
+                data-hint={tech.url}
                 onClick={() => void openExternal(tech.url)}
               >
                 {tech.label}
@@ -129,7 +129,7 @@ export default defineComponent({
             <button
               type="button"
               class="about-modal__license"
-              title="Synthetic Source License 1.0"
+              data-hint="Synthetic Source License 1.0"
               onClick={() => void openExternal("https://github.com/celestia-island/sysl")}
             >
               SySL-1.0 {t("about.license")}

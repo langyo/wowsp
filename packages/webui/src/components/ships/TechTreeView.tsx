@@ -294,7 +294,7 @@ export default defineComponent({
                             {cell.forkArchetypes.length > 0 ? (
                               <span
                                 class="tech-card-v3__fork"
-                                title={cell.forkArchetypes.map((a) => t(`ships.archetype.${a}`)).join(" / ")}
+                                data-hint={cell.forkArchetypes.map((a) => t(`ships.archetype.${a}`)).join(" / ")}
                               >
                                 <GitBranch size={10} />
                               </span>
