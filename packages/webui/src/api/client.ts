@@ -54,6 +54,8 @@ export interface ReplayMeta {
   scenario?: string | null;
   /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
   eventType?: string | null;
+  /** Roster entries with the client's `:Name:` bot nickname. */
+  botCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
@@ -75,6 +77,8 @@ export interface ReplayMetaLite {
   scenario?: string | null;
   /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
   eventType?: string | null;
+  /** Roster entries with the client's `:Name:` bot nickname. */
+  botCount?: number | null;
   /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
   ownShipId?: number | null;
   /** Recorder's ship display name when resolvable, else null. */
@@ -88,6 +92,10 @@ export interface ArenaInfo {
   matchGroup?: string | null;
   dateTime?: string | null;
   mapName?: string | null;
+  /** Scenario name — the "tournament" variants are custom-room fingerprints. */
+  scenario?: string | null;
+  /** Roster entries with the client's `:Name:` bot nickname. */
+  botCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }

@@ -91,6 +91,12 @@ pub struct ReplayMeta {
     pub scenario: Option<String>,
     /// Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric).
     pub event_type: Option<String>,
+    /// Roster entries whose nickname is the client's bot style (`:Name:`).
+    /// Factual count only — official co-op / asymmetric battles fill bots the
+    /// same way, so deciding "custom room with bots" from it (pvp-family match
+    /// group or tournament scenario) is the frontend classifier's job.
+    #[serde(default)]
+    pub bot_count: u32,
     /// Per-player roster.
     pub vehicles: Vec<VehicleEntry>,
     /// Raw JSON block preserved for the frontend to render arbitrary fields.
@@ -131,6 +137,10 @@ pub struct ReplayMetaLite {
     pub scenario: Option<String>,
     /// Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric).
     pub event_type: Option<String>,
+    /// Roster entries whose nickname is the client's bot style (`:Name:`) —
+    /// see [`ReplayMeta::bot_count`].
+    #[serde(default)]
+    pub bot_count: u32,
     /// The recording player's ship id — the roster entry with `relation == 0`.
     /// Used to render the per-replay holographic ship preview.
     pub own_ship_id: Option<i64>,
@@ -150,6 +160,14 @@ pub struct ArenaInfo {
     pub date_time: Option<String>,
     /// Client display name of the map, e.g. "spaces/40_Okinawa".
     pub map_name: Option<String>,
+    /// Scenario name, e.g. "domination_tournament_3point" (the tournament
+    /// variants are the custom-room fingerprints) — mirrors `ReplayMeta`.
+    #[serde(default)]
+    pub scenario: Option<String>,
+    /// Roster entries with the client's `:Name:` bot nickname style — see
+    /// [`ReplayMeta::bot_count`].
+    #[serde(default)]
+    pub bot_count: u32,
     pub vehicles: Vec<VehicleEntry>,
     pub raw: serde_json::Value,
 }

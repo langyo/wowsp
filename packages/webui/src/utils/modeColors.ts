@@ -5,10 +5,12 @@
  *   - matchGroup  — coarse bucket (pvp / ranked / clan / event / brawl / pve)
  *   - scenario    — scenario name (domination_3point, asymm_3point_coop, ...)
  *   - eventType   — GameParams BattleScript id (PCVE027 = EV27AsymCoop, ...)
+ *   - botCount    — roster entries with the client's `:Name:` bot nickname
  *
  * The eventType is the most specific signal (a WG battle-script id); scenario
- * is next; matchGroup is the fallback. This lets us label a battle "Asymmetric"
- * even though its matchGroup is just "event".
+ * is next; matchGroup is the fallback. botCount subdivides WITHIN that layering
+ * (see modeKey): the same bot-nickname style fills official co-op rosters, so
+ * it only reclassifies a battle where official bots cannot appear.
  */
 
 export interface ModeColor {
@@ -35,6 +37,7 @@ const MODE_HEX: Record<string, string> = {
   armsrace: "e756a3", // Arms race — pink (random-like)
   operation: "e6a817", // Operation — gold
   halloween: "8a4fff", // Halloween — purple
+  room_bots: "12a5b4", // Custom room vs bots — teal
 };
 
 /** Fallback colour (accent gold) for unknown modes. */
@@ -42,12 +45,25 @@ const FALLBACK_HEX = "e6a817";
 
 /**
  * Resolve a battle's canonical mode key from its layered identity fields.
- * Battle-script (eventType) wins, then scenario, then matchGroup.
+ * Battle-script (eventType) wins, then the custom-room subdivision, then
+ * scenario, then matchGroup.
+ *
+ * The custom-room subdivision sits between eventType and scenario because a
+ * training room copies whatever template it was created from: its descriptor
+ * reports a pvp-family matchGroup and scenario names like
+ * `domination_tournament_3point`. Two fingerprints, usable together or alone:
+ *   - the tournament scenario variants — room-only, regardless of roster;
+ *   - `:Name:` bot rosters — but official co-op fills bots the SAME way, so
+ *     this means "custom room" only where official bots cannot appear: a
+ *     pvp-family matchGroup (pvp / ranked / clan / brawl / squad), or when
+ *     the tournament scenario confirms the room. Bot rosters in pve-family
+ *     groups keep their official labels (Co-op, Asymmetric, Operations).
  */
 export function modeKey(
   matchGroup?: string | null,
   scenario?: string | null,
   eventType?: string | null,
+  botCount = 0,
 ): string {
   const et = (eventType ?? "").toLowerCase();
   const sc = (scenario ?? "").toLowerCase();
@@ -69,6 +85,18 @@ export function modeKey(
   if (et.includes("airbarrier")) return "event";
   if (et.includes("respawns")) return "event";
   if (et.includes("_op_") || et.includes("_hl_")) return "operation";
+
+  // Custom-room level (see doc above).
+  const tournamentRoom = sc.includes("tournament");
+  const pvpFamily =
+    mg === "pvp" ||
+    mg.includes("random") ||
+    mg.startsWith("ranked") ||
+    mg.includes("clan") ||
+    mg.includes("brawl") ||
+    mg.includes("squad");
+  if (botCount > 0 && (pvpFamily || tournamentRoom)) return "room_bots";
+  if (tournamentRoom) return "training";
 
   // Scenario level.
   if (sc.includes("asymm")) return "asymmetric";
@@ -95,8 +123,9 @@ export function modeColor(
   matchGroup?: string | null,
   scenario?: string | null,
   eventType?: string | null,
+  botCount = 0,
 ): ModeColor {
-  const key = modeKey(matchGroup, scenario, eventType);
+  const key = modeKey(matchGroup, scenario, eventType, botCount);
   const hex = (key && MODE_HEX[key]) || FALLBACK_HEX;
   return {
     background: `rgb(${parseHex(hex)} / 18%)`,
