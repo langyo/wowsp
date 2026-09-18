@@ -589,6 +589,24 @@ export interface PlayerShipStats {
   lastBattleTime: number;
 }
 
+/** Mirrors `wowsp_tauri_shared::ShipCareerTotals` — the monotonic subset of
+ *  PlayerShipStats stored in the per-ship history. */
+export interface ShipCareerTotals {
+  shipId: number;
+  battles: number;
+  wins: number;
+  damageCaused: number;
+  frags: number;
+  survivedBattles: number;
+  lastBattleTime: number;
+}
+
+/** Mirrors `wowsp_tauri_shared::ShipStatsHistoryPoint`. */
+export interface ShipStatsHistoryPoint {
+  timestamp: number;
+  ships: ShipCareerTotals[];
+}
+
 /** Mirrors `wowsp_tauri_shared::StatsSnapshot`. */
 export interface StatsSnapshot {
   timestamp: number;
@@ -899,6 +917,9 @@ export const api = {
     transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh, language }),
   lookupPlayerShipStats: (accountId: number, realm: string) =>
     transport.invoke<PlayerShipStats[]>(RPC.lookup_player_ship_stats, { accountId, realm }),
+  /** Per-ship history points — baselines for "recent N days" deltas. */
+  readShipStatsHistory: (accountId: number, realm: string) =>
+    transport.invoke<ShipStatsHistoryPoint[]>(RPC.read_ship_stats_history, { accountId, realm }),
   snapshotPlayerStats: (
     accountId: number,
     realm: string,

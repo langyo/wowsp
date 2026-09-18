@@ -16,6 +16,8 @@ import { useRankedStore } from "@/stores/ranked";
 import { useToast } from "@celestia-island/hikari";
 import { winrateColor } from "@/utils/winrate";
 import {
+  computeRecentDelta,
+  dateRangeCutoff,
   filterByDateRange,
   aggregateByType,
   SHIP_TYPE_SHORT,
@@ -70,8 +72,24 @@ export default defineComponent({
       return shipStats.cache.get(`${acc.realm}_${acc.accountId}`) ?? [];
     });
 
-    // Ships filtered by the selected date range.
-    const dateFiltered = computed(() => filterByDateRange(playerShips.value, dateRange.value));
+    // Real "recent N days" view — current career totals minus the latest
+    // locally recorded history point at or before the range cutoff (WG has
+    // no per-battle data). Null until an old-enough baseline exists, i.e.
+    // for the first lookups of an account on this install.
+    const recentDelta = computed(() => {
+      if (dateRange.value === "all") return null;
+      const acc = activeAccount.value;
+      if (!acc) return null;
+      const hist = shipStats.history.get(`${acc.realm}_${acc.accountId}`) ?? [];
+      return computeRecentDelta(playerShips.value, hist, dateRangeCutoff(dateRange.value));
+    });
+
+    // Ships shown for the selected range: true deltas when a baseline
+    // exists, otherwise the labeled career fallback (recently-played ships
+    // carrying career totals — see the range note below).
+    const dateFiltered = computed(
+      () => recentDelta.value?.ships ?? filterByDateRange(playerShips.value, dateRange.value),
+    );
 
     /** Filtered + multi-key-sorted ships and search-hit names, from
      *  ShipFilterBar (the chip drag order defines the sort priority). */
@@ -224,6 +242,18 @@ export default defineComponent({
                     onChange={(v) => (filterState.value = v)}
                   />
                 </div>
+
+                {/* What the selected range actually covers — WG only serves
+                    career totals, so deltas need a local baseline. */}
+                {dateRange.value !== "all" ? (
+                  <p class="dash-range-note">
+                    {recentDelta.value
+                      ? t("dashboard.rangeSince", {
+                          date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                        })
+                      : t("dashboard.rangeNoHistory")}
+                  </p>
+                ) : null}
 
                 {/* Group summary cards (compact) */}
                 {typeSummary.value.length > 0 ? (
