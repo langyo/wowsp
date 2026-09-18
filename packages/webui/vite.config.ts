@@ -107,11 +107,13 @@ export default defineConfig({
     emptyOutDir: false,
     target: 'es2020',
     rollupOptions: {
-      // Two entries: the main shell (Vue app) and the pre-rendered overlay
-      // page (bare DOM) the Rust Tab watcher loads — see src/overlay/main.ts.
+      // Three entries: the main shell (Vue app), the pre-rendered overlay
+      // page (bare DOM) the Rust Tab watcher loads — see src/overlay/main.ts
+      // — and the manual-locate drag-box picker (bare DOM as well).
       input: {
         main: resolve(pkgDir, "index.html"),
         overlay: resolve(pkgDir, "overlay.html"),
+        "manual-locate": resolve(pkgDir, "manual-locate.html"),
       },
       output: {
         manualChunks: vendorChunks,

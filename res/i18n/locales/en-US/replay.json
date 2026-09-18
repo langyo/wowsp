@@ -88,7 +88,12 @@
     "detectedRows": "Located · {n} rows",
     "searching": "Locating…",
     "manualLocate": "Manual locate",
-    "manualPending": "Coming soon"
+    "manualClear": "Clear locate",
+    "manualRows": "Manually located · {n} rows",
+    "manualDragHint": "Drag to box-select the scoreboard area in the game window",
+    "manualConfirm": "Confirm",
+    "manualCancel": "Cancel",
+    "manualTooSmall": "Selection is too small"
   },
   "postbattle": {
     "rawData": "Raw data",

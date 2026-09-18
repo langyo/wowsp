@@ -88,7 +88,12 @@
     "detectedRows": "已定位 · {n} 行",
     "searching": "定位中…",
     "manualLocate": "手動定位",
-    "manualPending": "即將支援"
+    "manualClear": "清除定位",
+    "manualRows": "已手動定位 · {n} 行",
+    "manualDragHint": "按住滑鼠左鍵拖曳，框選遊戲內的戰績表格區域",
+    "manualConfirm": "確認",
+    "manualCancel": "取消",
+    "manualTooSmall": "選區太小"
   },
   "postbattle": {
     "rawData": "原始資料",

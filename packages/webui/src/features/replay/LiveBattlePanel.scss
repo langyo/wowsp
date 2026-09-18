@@ -77,8 +77,8 @@
     margin-left: auto;
   }
 
-  /* Detection-status badge + the (disabled) manual-locate placeholder ride
-     the head's right corner, after the map label. */
+  /* Detection-status badge + the manual-locate button ride the head's right
+     corner, after the map label. */
   .live-battle__pill--status-detected {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
@@ -91,17 +91,41 @@
     color: rgb(var(--color-warning, 251 191 36));
   }
 
+  /* Manual anchor in force — same green family as the detected badge. */
+  .live-battle__pill--status-manual {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    background: rgb(var(--color-success, 74 222 128) / 16%);
+    color: rgb(var(--color-success, 74 222 128));
+  }
+
   &__manual-btn {
     padding: 0.1rem 0.55rem;
     border-radius: 999px;
     border: 1px solid rgb(var(--color-text) / 20%);
     background: transparent;
-    color: rgb(var(--color-text) / 45%);
+    color: rgb(var(--color-text) / 75%);
     font-size: var(--text-2xs);
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
-    cursor: not-allowed;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+  }
+
+  /* A manual anchor is live: the button now reads "clear locate". */
+  &__manual-btn--active {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    color: rgb(var(--color-success, 74 222 128));
+  }
+
+  /* Backend refused the manual-locate request (no battle / no game window):
+     a short horizontal shake so the refusal is visible, not silent. */
+  &__manual-btn--shake {
+    animation: live-battle-manual-shake 0.4s ease;
   }
 
   &__matrix {
@@ -200,5 +224,23 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: rgb(var(--color-error));
+  }
+}
+
+/* Manual-locate refusal shake (see .live-battle__manual-btn--shake).
+   Top-level: @keyframes cannot nest meaningfully inside a selector. */
+@keyframes live-battle-manual-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+  75% {
+    transform: translateX(-2px);
   }
 }
