@@ -2,6 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* This element is the page scroller. Padding here is content clearance
+     only — native scrollbars render at the border edge, so the vertical
+     bar still hugs the window's right edge (same rule as LookupView
+     __main); no ancestor may carry padding on that side. */
   padding: 1.5rem 2rem;
   overflow-y: auto;
 

@@ -125,6 +125,17 @@
     min-height: 0;
     overflow-y: auto;
     padding: 0 1.5rem 1.25rem;
+
+    // Tech-tree mode: the body hosts the tree region without padding and
+    // without scrolling itself; __tree-body below is the single scroller so
+    // its scrollbars hug the window's bottom/left/right edges (same
+    // edge-to-edge convention as LookupView / ReplayView).
+    &--tree {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
   }
 
   // ── filter bar (grid mode, sticky inside scroll body) ────────────────
@@ -282,13 +293,17 @@
   }
 
   // ── tech-tree view layout ──
-  // Header + meta are fixed at top; nation rail is sticky-left within the
-  // scrollable body; only the tree canvas drives the vertical scroll.
+  // Header + meta are fixed at top. The tree body is the single scroll
+  // container for both axes and fills the view edge-to-edge (no wrapper
+  // padding), so its horizontal scrollbar sits flush with the window's
+  // bottom edge and spans the full content width; the nation rail is
+  // sticky inside it and the canvas carries the breathing-room padding.
   &__tree-body {
     display: flex;
     gap: 0;
     flex: 1 1 0%;
     min-height: 0;
+    overflow: auto;
   }
 
   &__nation-rail {
@@ -300,8 +315,12 @@
     background: rgb(var(--color-surface) / 92%);
     border: 1px solid rgb(var(--color-border) / 25%);
     border-radius: var(--radius-md);
+    // Sticky within the scrolling tree body: pinned near the window's
+    // top-left corner while the tree canvas scrolls underneath.
     position: sticky;
-    top: 1rem;
+    top: 0.5rem;
+    left: 0.5rem;
+    margin: 0.5rem;
     align-self: flex-start;
     z-index: 5;
   }
@@ -337,10 +356,12 @@
   }
 
   &__tree-canvas {
-    flex: 1;
-    min-width: 0;
-    overflow: auto;
-    padding-left: 0.6rem;
+    // Grows to fill when the tree is narrower than the viewport and never
+    // shrinks below the tree's intrinsic width — the scroll happens on the
+    // tree body, not here. Padding is content clearance only; the
+    // scrollbars ride on the tree body's border edge.
+    flex: 1 0 auto;
+    padding: 0 0.75rem 1.25rem 0.6rem;
   }
 }
 

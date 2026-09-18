@@ -287,8 +287,11 @@ export default defineComponent({
           </HAlert>
         ) : null}
 
-        {/* ── scrollable content body ── */}
-        <div class="ships-view__body">
+        {/* ── scrollable content body ──
+            Tree mode strips the body's padding and scroll: the tree region
+            below becomes the single edge-to-edge scroller so its horizontal
+            scrollbar hugs the window's bottom/left/right edges. */}
+        <div class={["ships-view__body", viewMode.value === "tree" ? "ships-view__body--tree" : ""]}>
 
         {/* ── loading state ── */}
         {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
