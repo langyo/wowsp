@@ -27,7 +27,10 @@
 
   /* Dog tag mode — the player's real emblem, layered like the game client:
       base = background color fill; texture = pattern overlay; symbol = the
-      center emblem; frame = the plate border on top. */
+      center emblem; frame = the plate border on top. The --medal modifier
+      marks the standalone-medal shape (see PlayerBadge.tsx): the artwork is
+      a complete 80x80 emblem, so only the symbol img renders and the
+      generic full-bleed img rules below do all the sizing. */
   &--dogtag {
     border: none;
     overflow: hidden;
