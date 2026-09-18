@@ -84,7 +84,11 @@
     "notStarted": "A new battle has not started yet",
     "settling": "Settling",
     "hiddenProfile": "This player has hidden their stats",
-    "viewProfile": "View this player's stats"
+    "viewProfile": "View this player's stats",
+    "detectedRows": "Located · {n} rows",
+    "searching": "Locating…",
+    "manualLocate": "Manual locate",
+    "manualPending": "Coming soon"
   },
   "postbattle": {
     "rawData": "Raw data",

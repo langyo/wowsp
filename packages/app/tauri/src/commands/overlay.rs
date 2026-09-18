@@ -26,6 +26,17 @@
 //! a battle-pinned anchor would otherwise keep the countdown position for
 //! the entire battle.
 //!
+//! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
+//! searching/fallback (acquiring without a confirmed pin, the fallback
+//! variant meaning the centered hint is what's on screen) ↔ detected
+//! (chips anchored) — is additionally broadcast to ALL windows as
+//! `wowsp://overlay-status` (payload [`OverlayStatus`]). The main window's
+//! live-battle panel badges the detection state from it. Transitions only:
+//! the watcher keeps a loop-local mirror of the last emitted status and
+//! drops no-op reports, so the ~30 Hz poll can never flood the event pipe.
+//! The `manual` field of the payload stays `false` until the manual-locate
+//! flow ships.
+//!
 //! The overlay window is created lazily by `create_overlay_window` (called
 //! once when overlay mode starts, hidden) and destroyed by
 //! `destroy_overlay_window` (when the game exits or overlay mode is turned
@@ -44,7 +55,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use wowsp_tauri_shared::{CaptureResult, OverlayAnchor, Rect};
+use wowsp_tauri_shared::{CaptureResult, OverlayAnchor, OverlayState, OverlayStatus, Rect};
 
 use super::{overlay_detect, row_recognize};
 
@@ -60,6 +71,10 @@ pub const OVERLAY_ANCHOR_EVENT: &str = "wowsp://overlay-anchor";
 /// delayed by a busy main thread. This is the load-bearing hide; the native
 /// one only stops the (already invisible) webview from painting.
 pub const OVERLAY_VISIBILITY_EVENT: &str = "wowsp://overlay-visibility";
+
+/// Tauri event carrying the DETECTION-STATE machine to all windows (main
+/// window's live-battle panel badge). Transition-only — see `report_status`.
+pub const OVERLAY_STATUS_EVENT: &str = "wowsp://overlay-status";
 
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
@@ -310,6 +325,33 @@ struct PinnedAnchor {
     anchor: OverlayAnchor,
 }
 
+/// Push a detection-status report to ALL windows — but only when it differs
+/// from the last emitted one: the tick runs at ~30 Hz and its branches
+/// re-enter every poll, while the consumer (the live-battle panel badge)
+/// wants edge events, not level events. `last_status` is the loop-local
+/// mirror of what already went out (`None` = nothing emitted yet). `manual`
+/// stays `false` — the field is reserved for the upcoming manual-locate flow.
+#[cfg(target_os = "windows")]
+fn report_status(
+    app: &AppHandle,
+    last_status: &mut Option<OverlayStatus>,
+    state: OverlayState,
+    rows: Option<u32>,
+) {
+    let status = OverlayStatus {
+        state,
+        rows,
+        manual: false,
+    };
+    if *last_status == Some(status) {
+        return;
+    }
+    *last_status = Some(status);
+    if let Err(e) = app.emit(OVERLAY_STATUS_EVENT, status) {
+        tracing::warn!(error = %e, "emit overlay-status failed");
+    }
+}
+
 /// The watcher loop — see the module docs for the interaction contract.
 #[cfg(target_os = "windows")]
 fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
@@ -333,6 +375,10 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     // last_capture_attempt: it throttles the periodic re-check of the pin
     // while the overlay STAYS shown (see ANCHOR_REVALIDATE_INTERVAL).
     let mut last_revalidate: Option<Instant> = None;
+    // Mirror of the LAST `wowsp://overlay-status` payload emitted (None =
+    // nothing emitted yet). report_status() drops reports identical to it,
+    // so the per-tick status pushes are edge events, not level events.
+    let mut last_status: Option<OverlayStatus> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -352,6 +398,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 &mut last_hide,
                 &mut last_state_refresh,
                 &mut last_revalidate,
+                &mut last_status,
             );
         }));
         if tick.is_err() {
@@ -363,6 +410,9 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     if overlay_shown {
         hide_overlay(&app);
     }
+    // Nor a stale badge in the main window: drop the panel to idle (a no-op
+    // when the last emitted state already was idle).
+    report_status(&app, &mut last_status, OverlayState::Idle, None);
 }
 
 /// One poll iteration of the Tab watcher (factored out so the loop can wrap
@@ -379,6 +429,7 @@ fn watch_tab_tick(
     last_hide: &mut Option<Instant>,
     last_state_refresh: &mut Option<Instant>,
     last_revalidate: &mut Option<Instant>,
+    last_status: &mut Option<OverlayStatus>,
 ) {
     {
         // Resolve the game window: cached while valid, rescanned at most
@@ -429,6 +480,21 @@ fn watch_tab_tick(
                 .as_ref()
                 .is_some_and(|p| p.anchor.table_detected);
             if !*overlay_shown || !confirmed_pin {
+                // Status: acquiring without a confirmed pin. The one
+                // unambiguous "tried and failed" signal is the centered
+                // fallback hint being what's on screen — which is exactly
+                // what a Fallback mirror state means (it is emitted only
+                // from the two places below that put/keep the hint up, and
+                // every hide resets it to Idle). Everything else reads as
+                // Searching; report_status dedups the per-tick re-pushes.
+                if last_status
+                    .as_ref()
+                    .is_some_and(|s| s.state == OverlayState::Fallback)
+                {
+                    report_status(app, last_status, OverlayState::Fallback, None);
+                } else {
+                    report_status(app, last_status, OverlayState::Searching, None);
+                }
                 // BATTLE-PINNED anchor first: once a table was located for
                 // THIS battle and this game-window geometry, every later
                 // press reuses it verbatim — per-press re-detection measured
@@ -480,6 +546,22 @@ fn watch_tab_tick(
                     if !*overlay_shown || anchor.table_detected {
                         place_and_show(app, &anchor);
                     }
+                    // Status: what is on screen NOW. A confirmed anchor pins
+                    // the chips (detected + row count); a fallback anchor is
+                    // (or would re-place) the centered hint. place_and_show
+                    // may skip a redundant re-place of the hint, but the
+                    // hint staying up is still Fallback — and the mirror
+                    // dedup swallows the no-op anyway.
+                    if anchor.table_detected {
+                        report_status(
+                            app,
+                            last_status,
+                            OverlayState::Detected,
+                            Some(anchor.row_centers.len() as u32),
+                        );
+                    } else {
+                        report_status(app, last_status, OverlayState::Fallback, None);
+                    }
                     *overlay_shown = true;
                     *last_hide = None;
                     // The anchor on screen is fresh as of NOW (a new pin, or
@@ -497,7 +579,7 @@ fn watch_tab_tick(
                 // the panel moves as a whole when HUD phases change
                 // (countdown → combat) and neither pin key (arena stamp,
                 // window rect) can see it.
-                revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate);
+                revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate, last_status);
             }
         } else if *overlay_shown {
             // Keep re-sending the hide while the overlay should be down:
@@ -506,6 +588,10 @@ fn watch_tab_tick(
             // once the window reports itself actually hidden.
             if last_hide.is_none_or(|t| t.elapsed() >= HIDE_RETRY) {
                 hide_overlay(app);
+                // Overlay going down — drop the panel badge to idle. The
+                // mirror dedup keeps the hide-retry re-sends from emitting
+                // this more than once.
+                report_status(app, last_status, OverlayState::Idle, None);
                 *last_hide = Some(Instant::now());
                 if !overlay_window_visible(app) {
                     *overlay_shown = false;
@@ -534,6 +620,7 @@ fn revalidate_pinned_anchor(
     pinned_anchor: &mut Option<PinnedAnchor>,
     game: Option<GameWindow>,
     last_revalidate: &mut Option<Instant>,
+    last_status: &mut Option<OverlayStatus>,
 ) {
     *last_revalidate = Some(Instant::now());
     let Some(g) = game else {
@@ -562,6 +649,16 @@ fn revalidate_pinned_anchor(
         anchor: fresh.clone(),
     });
     place_and_show(app, &fresh);
+    // The replacement anchor is always CONFIRMED (a fallback fresh anchor
+    // can never move past `anchor_meaningfully_moved` against a confirmed
+    // pin) — but its row count may differ from the old pin's. report_status
+    // dedups, so an unchanged layout costs nothing.
+    report_status(
+        app,
+        last_status,
+        OverlayState::Detected,
+        Some(fresh.row_centers.len() as u32),
+    );
 }
 
 /// Whether the overlay window currently reports as visible (false when it is

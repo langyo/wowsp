@@ -84,7 +84,11 @@
     "notStarted": "尚未开始新的对局",
     "settling": "结算中",
     "hiddenProfile": "该玩家隐藏了水表",
-    "viewProfile": "查看该玩家的水表"
+    "viewProfile": "查看该玩家的水表",
+    "detectedRows": "已定位 · {n} 行",
+    "searching": "定位中…",
+    "manualLocate": "手动定位",
+    "manualPending": "即将支持"
   },
   "postbattle": {
     "rawData": "原始数据",
