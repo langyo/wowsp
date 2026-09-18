@@ -966,7 +966,10 @@ pub(crate) fn decode_wg_text(raw: &str) -> String {
 /// Parse a dog_tag JSON object from the Vortex API into a DogTag struct.
 /// The Vortex response has fields like `texture_id`, `symbol_id`,
 /// `border_color_id`, `background_color_id`, `background_id`. The color
-/// fields are ARGB-packed u32 values.
+/// fields are ARGB-packed u32 values. Standalone medal emblems (patches /
+/// unique emblems) carry only `symbol_id` and zero out every other field,
+/// so the all-zero tag — an account that never customised anything — is
+/// the only shape rejected here.
 pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared::DogTag> {
     let get_u32 = |key: &str| -> u32 {
         v.get(key)
@@ -981,8 +984,13 @@ pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared:
         background_color: get_u32("background_color_id"),
         background_id: get_u32("background_id"),
     };
-    // Only return if at least some fields are non-zero.
-    if tag.background_color != 0 || tag.border_color != 0 {
+    // Only return if at least one field is non-zero.
+    if tag.texture_id != 0
+        || tag.symbol_id != 0
+        || tag.border_color != 0
+        || tag.background_color != 0
+        || tag.background_id != 0
+    {
         Some(tag)
     } else {
         None
@@ -1180,6 +1188,49 @@ struct ClanListEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_dog_tag_accepts_standalone_medal_shape() {
+        // Live-response fixture (player 627197848, asia id 2028145456): a
+        // standalone medal emblem — the patch artwork rides in symbol_id and
+        // every other field is zero.
+        let raw = serde_json::json!({
+            "texture_id": 0,
+            "symbol_id": 4238887856_u64,
+            "border_color_id": 0,
+            "background_color_id": 0,
+            "background_id": 0
+        });
+        let tag = parse_dog_tag(&raw).expect("standalone medal must parse");
+        assert_eq!(tag.symbol_id, 4238887856);
+        assert_eq!(tag.background_id, 0);
+        assert_eq!(tag.background_color, 0);
+        assert_eq!(tag.border_color, 0);
+    }
+
+    #[test]
+    fn parse_dog_tag_rejects_all_zero_tag() {
+        let raw = serde_json::json!({
+            "texture_id": 0,
+            "symbol_id": 0,
+            "border_color_id": 0,
+            "background_color_id": 0,
+            "background_id": 0
+        });
+        assert!(parse_dog_tag(&raw).is_none());
+    }
+
+    #[test]
+    fn parse_dog_tag_accepts_full_custom_tag() {
+        let raw = serde_json::json!({
+            "texture_id": 4293282736_u64,
+            "symbol_id": 4274998192_u64,
+            "border_color_id": 4283911088_u64,
+            "background_color_id": 4293577648_u64,
+            "background_id": 4293905328_u64
+        });
+        assert!(parse_dog_tag(&raw).is_some());
+    }
 
     #[test]
     fn nickname_matches_accepts_exact_name_ignoring_case_and_padding() {

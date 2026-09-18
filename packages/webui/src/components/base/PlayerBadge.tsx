@@ -43,11 +43,21 @@ function partUrl(index: string): string {
   return "/dogtags/" + index + ".png";
 }
 
+/** Patch (PCNP) and unique-emblem (PCNU) species ship as complete medals on
+ *  their own 80x80 canvas. The game renders them as the whole avatar — they
+ *  never stack onto a custom dog tag — so they must bypass the assembled
+ *  plate/color/texture pipeline. Vortex carries them in symbol_id with every
+ *  other dog_tag field zeroed. */
+const STANDALONE_SPECIES = new Set(["Patch", "Emblem"]);
+
 /**
- * Player emblem badge - the player real in-game dog tag. Layers (bottom to
- * top): background color fill, flat plate (when present), texture pattern,
- * center symbol, then the border outline. The color fill and texture are
- * clipped to the plate shape so they never spill past its border.
+ * Player emblem badge - the player real in-game avatar. Two shapes:
+ *   - standalone medal: the symbol entry is a Patch/Emblem species; the
+ *     artwork is drawn as-is, with no plate, colors or frame behind it.
+ *   - custom dog tag: layers (bottom to top) background color fill, flat
+ *     plate (when present), texture pattern, center symbol, then the border
+ *     outline. The color fill and texture are clipped to the plate shape so
+ *     they never spill past its border.
  *
  * Falls back to the service-record tier badge when no dog tag is available.
  */
@@ -78,9 +88,24 @@ export default defineComponent({
       const texture = entryFor(dt?.textureId);
       const symbol = entryFor(dt?.symbolId) ?? entryFor(DEFAULT_SYMBOL_ID);
 
+      // Standalone medal: one full-bleed image, nothing else stacks.
+      if (symbol && STANDALONE_SPECIES.has(symbol[1])) {
+        return {
+          standalone: true,
+          bg: null,
+          border: null,
+          plateUrl: null,
+          frameUrl: null,
+          maskUrl: null,
+          textureUrl: null,
+          symbolUrl: partUrl(symbol[0]),
+        };
+      }
+
       const outline = shape ? isOutlineShape(shape[0]) : false;
       const shapeIndex = shape ? shape[0] : "";
       return {
+        standalone: false,
         bg: bgColor?.[2] ? hex(bgColor[2]) : null,
         border: borderColor?.[2] ? hex(borderColor[2]) : null,
         // Flat shapes are the plate (bottom layer); directory shapes only
@@ -118,15 +143,14 @@ export default defineComponent({
           class={[
             "player-badge",
             l ? "player-badge--dogtag" : tierClass.value,
+            l?.standalone ? "player-badge--medal" : null,
           ]}
           style={{ width: props.size + "px", height: props.size + "px" }}
           data-hint={l ? "Player emblem (Tier " + props.tier + ")" : "Service record tier " + props.tier}
         >
           {l ? (
-            <span class="player-badge__dt">
-              <span class="player-badge__clip" style={clipStyle}>
-                <AssetImage class="player-badge__dt-plate" src={l.plateUrl} alt="" />
-                <AssetImage class="player-badge__dt-texture" src={l.textureUrl} alt="" />
+            l.standalone ? (
+              <span class="player-badge__dt">
                 <AssetImage
                   class="player-badge__dt-symbol"
                   src={l.symbolUrl}
@@ -134,13 +158,26 @@ export default defineComponent({
                   fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
                 />
               </span>
-              <AssetImage
-                class="player-badge__dt-frame"
-                src={l.frameUrl}
-                alt=""
-                style={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
-              />
-            </span>
+            ) : (
+              <span class="player-badge__dt">
+                <span class="player-badge__clip" style={clipStyle}>
+                  <AssetImage class="player-badge__dt-plate" src={l.plateUrl} alt="" />
+                  <AssetImage class="player-badge__dt-texture" src={l.textureUrl} alt="" />
+                  <AssetImage
+                    class="player-badge__dt-symbol"
+                    src={l.symbolUrl}
+                    alt=""
+                    fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
+                  />
+                </span>
+                <AssetImage
+                  class="player-badge__dt-frame"
+                  src={l.frameUrl}
+                  alt=""
+                  style={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
+                />
+              </span>
+            )
           ) : (
             <span class="player-badge__tier">{props.tier || "?"}</span>
           )}
