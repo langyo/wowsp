@@ -1,17 +1,12 @@
-// hikari stylesheet entry for the WoWSP webui — mirrors shittim-chest's
-// hikari-chrome.scss: the shared theme foundation plus hikari's admin
-// tokens, WITHOUT the legacy `styles` aggregate (its monorepo-relative
-// imports escape the npm package, and its legacy class names collide with
-// the current components). Registry installs use the granular subpaths.
+// hikari stylesheet entry for the WoWSP webui — the shared theme foundation
+// (reset + channel palette + L2 scale tokens + admin component classes) via
+// the package's canonical aggregate. hikari 0.52 removed the legacy Gen-1
+// granular sheets (styles/theme/variables|mixins|foundation|themes|base) from
+// the npm package, so the aggregate is the only supported entry now.
 //
 // Loaded FIRST from main.ts so app-local rules (theme.scss and component
 // scss) can win the cascade.
-@use "@celestia-island/hikari/styles/theme/variables.scss" as hikari-variables;
-@use "@celestia-island/hikari/styles/theme/mixins.scss" as hikari-mixins;
-@use "@celestia-island/hikari/styles/theme/foundation.scss" as hikari-foundation;
-@use "@celestia-island/hikari/styles/theme/themes.scss" as hikari-themes;
-@use "@celestia-island/hikari/styles/theme/base.scss" as hikari-base;
-@use "@celestia-island/hikari/styles/admin-tokens.scss" as hikari-tokens;
+@use "@celestia-island/hikari/styles/index.scss";
 
 // Live alias kept for app-local scss written against wowsp's older token
 // set: hikari's theme system emits --color-background, wowsp components
