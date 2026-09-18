@@ -25,7 +25,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use wowsp_tauri_shared::{InstallReport, InstalledMod, ModKind, PackagePlan, PackagePlanEntry};
+use wowsp_tauri_shared::{
+    InstallReport, InstalledMod, ModInstallRecord, ModKind, PackagePlan, PackagePlanEntry,
+    UnitToggleReport,
+};
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
 /// written (res_mods-relative) and where overwritten originals were snapshotted.
@@ -62,14 +65,33 @@ fn first_xml_tag(body: &str, tag: &str) -> Option<String> {
     Some(body[start..start + close].trim().to_string())
 }
 
-/// Pull `registerShipMod('<arg>')` out of a PnF `Main.py`.
-fn registered_ship_id(main_py: &str) -> Option<String> {
-    let idx = main_py.find("registerShipMod")?;
-    let rest = &main_py[idx..];
-    let quote = rest.find(['\'', '"'])?;
-    let rest = &rest[quote + 1..];
-    let end = rest.find(['\'', '"'])?;
-    Some(rest[..end].trim().to_string())
+/// Pull `registerShipMod('<arg>')` out of a PnF `Main.py`. Byte-level so it
+/// also works on compiled `Main.pyc` payloads — real Aslain packs ship
+/// bytecode, and the marshal format keeps string constants as plain bytes.
+fn registered_ship_id_bytes(body: &[u8]) -> Option<String> {
+    let needle = b"registerShipMod";
+    let at = body.windows(needle.len()).position(|w| w == needle)?;
+    let rest = &body[at + needle.len()..];
+    let quote = *rest.iter().find(|b| **b == b'\'' || **b == b'"')?;
+    let rest = &rest[rest.iter().position(|b| *b == quote)? + 1..];
+    let end = rest.iter().position(|b| *b == quote)?;
+    let id = &rest[..end];
+    if id.is_ascii() {
+        Some(String::from_utf8_lossy(id).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// The PnF entry script, under any real-world spelling: `Main.py`,
+/// compiled `Main.pyc`, either with a `.bak` twin when disabled.
+fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
+    for name in ["Main.py", "Main.pyc"] {
+        if let (Some(path), _) = existing_with_bak(dir, name) {
+            return Some(path);
+        }
+    }
+    None
 }
 
 /// Copy a subtree (or a single mapped file) recursively, counting writes.
@@ -142,136 +164,743 @@ fn record_written(written: &Path, res_mods: &Path, out: &mut Vec<String>) {
 
 #[tauri::command]
 pub fn mod_hub_scan_installed(game_root: String) -> Result<Vec<InstalledMod>, String> {
-    let (_, ver_dir) = latest_bin_version(&game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
-    let res_mods = ver_dir.join("res_mods");
+    let res_mods = scan_root(&game_root)?;
     if !res_mods.is_dir() {
         return Ok(Vec::new());
     }
     Ok(classify_installed_root(&res_mods))
 }
 
-/// Classify one installed `res_mods/<version>/` root into typed entries.
-fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
-    let mut mods = Vec::new();
-    let Ok(top) = fs::read_dir(res_mods) else {
-        return mods;
+/// Resolve `bin/<latest>/res_mods` for a game install.
+fn scan_root(game_root: &str) -> Result<PathBuf, String> {
+    let (_, ver_dir) = latest_bin_version(game_root)
+        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+    Ok(ver_dir.join("res_mods"))
+}
+
+/// One `<mod name="…" version="…" installer="…"/>` row of Aslain's
+/// `installed_mods.xml` (the modpack installer writes it at the res_mods
+/// root). `span` covers the raw `<mod …` text up to (excluding) the `/>` so
+/// rows can be cut out surgically when their unit is uninstalled.
+struct ManifestEntry {
+    name: String,
+    version: Option<String>,
+    span: (usize, usize),
+}
+
+/// Tolerant reader for Aslain's `installed_mods.xml` — a flat
+/// `<data><mod …/></data>` list. Attribute names match
+/// ASCII-case-insensitively; rows without a `name` are skipped.
+fn parse_installed_manifest(res_mods: &Path) -> Vec<ManifestEntry> {
+    let Ok(body) = fs::read_to_string(res_mods.join("installed_mods.xml")) else {
+        return Vec::new();
     };
-    for entry in top.flatten() {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy().into_owned();
-
-        if name_str.eq_ignore_ascii_case("PnFModsLoader.py") {
-            continue; // marker, not content
-        }
-
-        // banks/<any-case>/…/mod.xml — real packs ship both `mods` and `Mods`,
-        // and Windows folds them into one physical directory, so walk the
-        // actual children instead of probing case variants.
-        if name_str.eq_ignore_ascii_case("banks") && entry.path().is_dir() {
-            let Ok(bank_roots) = fs::read_dir(entry.path()) else {
-                continue;
-            };
-            for root in bank_roots.flatten() {
-                if !root.path().is_dir()
-                    || !root
-                        .file_name()
-                        .to_string_lossy()
-                        .eq_ignore_ascii_case("mods")
-                {
-                    continue;
-                }
-                let Ok(banks) = fs::read_dir(root.path()) else {
-                    continue;
-                };
-                for bank in banks.flatten() {
-                    if bank.path().is_dir() && bank.path().join("mod.xml").is_file() {
-                        let detail = fs::read_to_string(bank.path().join("mod.xml"))
-                            .ok()
-                            .and_then(|body| first_xml_tag(&body, "Name"));
-                        mods.push(InstalledMod {
-                            kind: ModKind::Voice,
-                            name: bank.file_name().to_string_lossy().into_owned(),
-                            detail,
-                            rel_path: format!(
-                                "banks/{}/{}",
-                                root.file_name().to_string_lossy(),
-                                bank.file_name().to_string_lossy()
-                            ),
-                        });
-                    }
-                }
-            }
+    let lower = body.to_ascii_lowercase();
+    let mut entries = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(at) = lower[cursor..].find("<mod") {
+        let start = cursor + at;
+        // `<mod` must be its own element name, not a prefix (`<mods …`).
+        let next = lower[start + 4..].chars().next();
+        if !next.is_none_or(|c| c.is_ascii_whitespace() || c == '/' || c == '>') {
+            cursor = start + 4;
             continue;
         }
+        let Some(gt) = lower[start..].find('>') else {
+            break;
+        };
+        let tag_end = start + gt; // index of the closing '>'
+        if gt >= 2 && &lower[tag_end - 1..tag_end] == "/" {
+            let tag = &body[start..tag_end - 1];
+            // The removal span covers the whole `<mod … />` element so
+            // cutting a row leaves no stray `/>` behind.
+            if let Some(name) = tag_attr(tag, "name").filter(|n| !n.is_empty()) {
+                entries.push(ManifestEntry {
+                    name,
+                    version: tag_attr(tag, "version"),
+                    span: (start, tag_end + 1),
+                });
+            }
+        }
+        cursor = tag_end + 1;
+    }
+    entries
+}
 
-        // PnFMods/<Name>/Main.py — one entry per skin folder.
-        if name_str.eq_ignore_ascii_case("PnFMods") && entry.path().is_dir() {
-            let Ok(skins) = fs::read_dir(entry.path()) else {
+/// Pull `key="value"` out of one raw tag body (attribute names
+/// ASCII-case-insensitive, quote-aware so values may contain spaces,
+/// basic XML entities unescaped).
+fn tag_attr(tag: &str, key: &str) -> Option<String> {
+    let bytes = tag.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let key_start = i;
+        while i < bytes.len() && bytes[i] != b'=' && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let k = &tag[key_start..i];
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'=' {
+            continue;
+        }
+        i += 1;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let (raw, next) = if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+            let quote = bytes[i];
+            i += 1;
+            let value_start = i;
+            while i < bytes.len() && bytes[i] != quote {
+                i += 1;
+            }
+            (&tag[value_start..i], i + 1)
+        } else {
+            let value_start = i;
+            while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            (&tag[value_start..i], i)
+        };
+        if k.eq_ignore_ascii_case(key) {
+            return Some(xml_unescape(raw));
+        }
+        i = next;
+    }
+    None
+}
+
+fn xml_unescape(raw: &str) -> String {
+    if !raw.contains('&') {
+        return raw.to_string();
+    }
+    raw.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
+/// A filesystem grouping candidate: disjoint res_mods-relative roots that
+/// layout heuristics treat as one plugin, before any manifest name is
+/// attached.
+struct UnitCandidate {
+    kind: ModKind,
+    name: String,
+    detail: Option<String>,
+    /// res_mods-relative roots — directories or single files (files may be
+    /// physical `.bak` twins when the unit is disabled).
+    paths: Vec<String>,
+}
+
+/// Everything recognizable under the res_mods root as disjoint candidate
+/// units. Layout facts come from a live Aslain 4.x install:
+/// - `banks/<mods-case>/<bank>/mod.xml` — voice banks, `.bak`-tolerant
+/// - `PnFMods/<dir>/Main.py` — skins register a ship; PnF dirs without a
+///   `registerShipMod` call are script mods
+/// - `gui/unbound2/<mod>/` — one Unbound UI mod per grandchild directory;
+///   other `gui/<child>` dirs group one unit per child, loose files under
+///   `gui/` group into a single unit
+/// - top-level `*.xml` files are config patches (`installed_mods.xml` and
+///   `PnFModsLoader.py` are markers, never units)
+/// - any other top-level directory is a texture-override catch-all
+fn gather_candidates(res_mods: &Path) -> Vec<UnitCandidate> {
+    let mut cands = Vec::new();
+    let Ok(top) = fs::read_dir(res_mods) else {
+        return cands;
+    };
+    for entry in top.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+        let lower = name.to_ascii_lowercase();
+
+        if lower == "pnfmodsloader.py" || lower == "installed_mods.xml" {
+            continue; // markers, not content
+        }
+
+        if lower == "banks" && path.is_dir() {
+            cands.extend(bank_candidates(&path));
+            continue;
+        }
+        if lower == "pnfmods" && path.is_dir() {
+            cands.extend(pnf_candidates(&path));
+            continue;
+        }
+        if lower == "gui" && path.is_dir() {
+            cands.extend(gui_candidates(&path));
+            continue;
+        }
+        if path.is_file() && (lower.ends_with(".xml") || lower.ends_with(".xml.bak")) {
+            cands.push(UnitCandidate {
+                kind: ModKind::Patch,
+                name: display_file_name(&name),
+                detail: None,
+                paths: vec![name],
+            });
+            continue;
+        }
+        if path.is_dir() {
+            cands.push(UnitCandidate {
+                kind: ModKind::Textures,
+                name: name.clone(),
+                detail: None,
+                paths: vec![name],
+            });
+        }
+    }
+    cands.sort_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    });
+    cands
+}
+
+/// Voice banks: `banks/<any-case mods>/<bank>/mod.xml`. Real packs ship both
+/// `mods` and `Mods`; Windows folds case variants into one physical
+/// directory, so walk the actual children instead of probing spellings.
+fn bank_candidates(banks: &Path) -> Vec<UnitCandidate> {
+    let mut out = Vec::new();
+    let Ok(roots) = fs::read_dir(banks) else {
+        return out;
+    };
+    for root in roots.flatten() {
+        if !root.path().is_dir()
+            || !root
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("mods")
+        {
+            continue;
+        }
+        let Ok(list) = fs::read_dir(root.path()) else {
+            continue;
+        };
+        for bank in list.flatten() {
+            if !bank.path().is_dir() {
+                continue;
+            }
+            let (xml, _) = existing_with_bak(&bank.path(), "mod.xml");
+            let Some(xml_path) = xml else { continue };
+            let detail = fs::read_to_string(xml_path)
+                .ok()
+                .and_then(|body| first_xml_tag(&body, "Name"));
+            let name = bank.file_name().to_string_lossy().into_owned();
+            out.push(UnitCandidate {
+                kind: ModKind::Voice,
+                name,
+                detail,
+                paths: vec![format!(
+                    "banks/{}/{}",
+                    root.file_name().to_string_lossy(),
+                    bank.file_name().to_string_lossy()
+                )],
+            });
+        }
+    }
+    out
+}
+
+/// PnF payload directories: skins register a ship id in `Main.py`, the rest
+/// of the PnF ecosystem (gameplay scripts, UI helpers) does not.
+fn pnf_candidates(pnf: &Path) -> Vec<UnitCandidate> {
+    let mut out = Vec::new();
+    let Ok(list) = fs::read_dir(pnf) else {
+        return out;
+    };
+    for dir in list.flatten() {
+        if !dir.path().is_dir() {
+            continue;
+        }
+        let Some(main_py) = find_pnf_main(&dir.path()) else {
+            continue;
+        };
+        let body = fs::read(&main_py).unwrap_or_default();
+        let detail = registered_ship_id_bytes(&body);
+        let name = dir.file_name().to_string_lossy().into_owned();
+        out.push(UnitCandidate {
+            kind: if detail.is_some() {
+                ModKind::Skin
+            } else {
+                ModKind::Script
+            },
+            name,
+            detail,
+            paths: vec![format!("PnFMods/{}", dir.file_name().to_string_lossy())],
+        });
+    }
+    out
+}
+
+/// HUD groups: `gui/unbound2/<mod>/` hosts one Unbound UI mod per child
+/// directory; every other `gui/<child>` directory is its own unit; loose
+/// files dropped straight under `gui/` share one catch-all unit.
+fn gui_candidates(gui: &Path) -> Vec<UnitCandidate> {
+    let mut out = Vec::new();
+    let mut loose: Vec<String> = Vec::new();
+    let Ok(list) = fs::read_dir(gui) else {
+        return out;
+    };
+    for child in list.flatten() {
+        let name = child.file_name().to_string_lossy().into_owned();
+        let path = child.path();
+        if !path.is_dir() {
+            loose.push(format!("gui/{name}"));
+            continue;
+        }
+        let unbound = name.eq_ignore_ascii_case("unbound") || name.eq_ignore_ascii_case("unbound2");
+        if unbound {
+            let Ok(mods) = fs::read_dir(&path) else {
                 continue;
             };
-            for skin in skins.flatten() {
-                let main_py = skin.path().join("Main.py");
-                if !main_py.is_file() {
+            for sub in mods.flatten() {
+                if !sub.path().is_dir() {
                     continue;
                 }
-                let detail = fs::read_to_string(&main_py)
-                    .ok()
-                    .and_then(|body| registered_ship_id(&body));
-                mods.push(InstalledMod {
-                    kind: ModKind::Skin,
-                    name: skin.file_name().to_string_lossy().into_owned(),
-                    detail,
-                    rel_path: format!("PnFMods/{}", skin.file_name().to_string_lossy()),
+                let sub_name = sub.file_name().to_string_lossy().into_owned();
+                out.push(UnitCandidate {
+                    kind: ModKind::Gui,
+                    name: sub_name,
+                    detail: None,
+                    paths: vec![format!("gui/{name}/{}", sub.file_name().to_string_lossy())],
                 });
             }
             continue;
         }
-
-        // gui/ribbons + gui/BFGC/BattleWave art.
-        if name_str.eq_ignore_ascii_case("gui") && entry.path().is_dir() {
-            for known in ["ribbons", "BFGC"] {
-                let p = entry.path().join(known);
-                if p.is_dir() {
-                    mods.push(InstalledMod {
-                        kind: ModKind::Gui,
-                        name: known.to_string(),
-                        detail: None,
-                        rel_path: format!("gui/{known}"),
-                    });
-                }
-            }
-            continue;
-        }
-
-        // Single-file config patches.
-        if entry.path().is_file() && name_str.to_ascii_lowercase().ends_with(".xml") {
-            mods.push(InstalledMod {
-                kind: ModKind::Patch,
-                name: name_str.clone(),
-                detail: None,
-                rel_path: name_str.clone(),
-            });
-            continue;
-        }
-
-        // Anything else under content/ → texture overrides; other unknown
-        // top-level dirs are reported as textures too so nothing vanishes.
-        if entry.path().is_dir() {
-            mods.push(InstalledMod {
-                kind: ModKind::Textures,
-                name: name_str.clone(),
-                detail: None,
-                rel_path: name_str,
-            });
-        }
+        out.push(UnitCandidate {
+            kind: ModKind::Gui,
+            name,
+            detail: None,
+            paths: vec![format!("gui/{}", child.file_name().to_string_lossy())],
+        });
     }
+    if !loose.is_empty() {
+        loose.sort();
+        out.push(UnitCandidate {
+            kind: ModKind::Gui,
+            name: "gui".into(),
+            detail: None,
+            paths: loose,
+        });
+    }
+    out
+}
+
+/// Classify one installed res_mods root into typed plugin units. When
+/// Aslain's `installed_mods.xml` manifest exists, its rows are the
+/// authoritative plugin list: filesystem groups attach to rows by name
+/// similarity, leftover groups stay standalone, and rows with no matched
+/// files become manifest-only rows so the list still mirrors the installer.
+fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
+    let cands = gather_candidates(res_mods);
+    let manifest = parse_installed_manifest(res_mods);
+
+    // Best manifest row per candidate. Exact name beats containment beats a
+    // long shared prefix; ties go to the lexicographically smaller row name.
+    let mut owner: Vec<Option<usize>> = vec![None; cands.len()];
+    for (ci, cand) in cands.iter().enumerate() {
+        let mut best: Option<(i64, usize)> = None;
+        for (mi, m) in manifest.iter().enumerate() {
+            let score = manifest_name_score(&m.name, &cand.name);
+            let better = match best {
+                None => score > 0,
+                Some((bs, bi)) => {
+                    score > bs || (score == bs && score > 0 && manifest[bi].name > m.name)
+                },
+            };
+            if better {
+                best = Some((score, mi));
+            }
+        }
+        owner[ci] = best.map(|(_, mi)| mi);
+    }
+
+    let mut mods = Vec::new();
+
+    // Manifest rows in file order first.
+    for (mi, m) in manifest.iter().enumerate() {
+        let owned: Vec<&UnitCandidate> = cands
+            .iter()
+            .enumerate()
+            .filter(|(ci, _)| owner[*ci] == Some(mi))
+            .map(|(_, c)| c)
+            .collect();
+        let mut paths: Vec<String> = owned.iter().flat_map(|c| c.paths.iter().cloned()).collect();
+        paths.sort();
+        let kind = owned
+            .iter()
+            .map(|c| c.kind)
+            .min_by_key(|k| *k as u8)
+            .unwrap_or(ModKind::Patch);
+        let detail = owned.iter().find_map(|c| c.detail.clone());
+        mods.push(InstalledMod {
+            kind,
+            name: m.name.clone(),
+            detail,
+            // Manifest-only rows key on the (unique) row name instead of a
+            // path so uninstall can still resolve — and clean — them.
+            rel_path: paths.first().cloned().unwrap_or_else(|| m.name.clone()),
+            disabled: unit_disabled_state(res_mods, &paths),
+            paths,
+            version: m.version.clone(),
+        });
+    }
+
+    // Leftover filesystem groups keep their heuristic identity.
+    for (ci, cand) in cands.iter().enumerate() {
+        if owner[ci].is_some() {
+            continue;
+        }
+        let disabled = unit_disabled_state(res_mods, &cand.paths);
+        mods.push(InstalledMod {
+            kind: cand.kind,
+            name: cand.name.clone(),
+            detail: cand.detail.clone(),
+            rel_path: cand.paths.first().cloned().unwrap_or_default(),
+            paths: cand.paths.clone(),
+            disabled,
+            version: None,
+        });
+    }
+
     mods.sort_by(|a, b| {
         (a.kind as u8)
             .cmp(&(b.kind as u8))
-            .then(a.name.cmp(&b.name))
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     mods
+}
+
+/// Similarity between an `installed_mods.xml` row name and a filesystem
+/// group's base name — Aslain rows rarely match folder names verbatim
+/// (`SmokeMarker` → `PnFMods/SmokeMarkerPy`, `BattleFrame_TorpedoDetection`
+/// → `gui/unbound2/!battleframe`, `TTaroModConfig` → `gui/ttaro_mod_config`).
+/// Both sides normalize to lowercase alphanumerics; an exact match wins,
+/// then substring containment, then a shared prefix of at least eight
+/// characters (so `BattleFrame_Torpedoes` still groups under
+/// `BattleFrame_TorpedoDetection` while unrelated short names stay apart).
+fn manifest_name_score(mod_name: &str, base: &str) -> i64 {
+    let norm = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase()
+    };
+    let m = norm(mod_name);
+    if m.len() < 4 {
+        return 0;
+    }
+    let b = norm(base);
+    // PnF payload folders conventionally append `Py` (SmokeMarkerPy).
+    let b_bare = if b.len() > 4 && b.ends_with("py") {
+        b[..b.len() - 2].to_string()
+    } else {
+        String::new()
+    };
+    let mut best = 0i64;
+    for cand in [b.as_str(), b_bare.as_str()] {
+        if cand.len() < 4 {
+            continue;
+        }
+        if cand == m {
+            return 10_000;
+        }
+        if (cand.contains(&m) || m.contains(cand)) && cand.len().min(m.len()) >= 6 {
+            best = best.max((cand.len().min(m.len()) * 2) as i64);
+        }
+        let prefix = m
+            .bytes()
+            .zip(cand.bytes())
+            .take_while(|(mc, bc)| mc == bc)
+            .count();
+        if prefix >= 8 {
+            best = best.max(prefix as i64);
+        }
+    }
+    best
+}
+
+/// Prefer the live `file` in `dir`, fall back to its `.bak` twin. Returns
+/// the existing path plus whether it is the disabled variant.
+fn existing_with_bak(dir: &Path, file: &str) -> (Option<PathBuf>, bool) {
+    let live = dir.join(file);
+    if live.is_file() {
+        return (Some(live), false);
+    }
+    let bak = dir.join(format!("{file}.bak"));
+    if bak.is_file() {
+        return (Some(bak), true);
+    }
+    (None, false)
+}
+
+/// Display name of a patch file: the `.bak` suffix is a toggle marker, not
+/// part of the mod name.
+fn display_file_name(name: &str) -> String {
+    name.strip_suffix(".bak").unwrap_or(name).to_string()
+}
+
+/// Every file a unit root covers: the root itself when it is a file,
+/// otherwise its recursive contents.
+fn unit_files(res_mods: &Path, rel: &str) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut stack = vec![res_mods.join(rel)];
+    while let Some(path) = stack.pop() {
+        if path.is_file() {
+            files.push(path);
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&path) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let p = ent.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                files.push(p);
+            }
+        }
+    }
+    files
+}
+
+/// A unit counts as disabled when it has files and every one of them is a
+/// `.bak` twin.
+fn unit_disabled_state(res_mods: &Path, paths: &[String]) -> bool {
+    let mut total = 0usize;
+    let mut bak = 0usize;
+    for rel in paths {
+        for file in unit_files(res_mods, rel) {
+            total += 1;
+            if file.to_string_lossy().ends_with(".bak") {
+                bak += 1;
+            }
+        }
+    }
+    total > 0 && bak == total
+}
+
+/// Does any unit root cover a res_mods-relative file? Directory roots cover
+/// their subtree; file roots compare with the `.bak` suffix neutralized so
+/// ledger-recorded names match disabled twins.
+fn unit_covers(paths: &[String], file_rel: &str) -> bool {
+    let bare = file_rel.strip_suffix(".bak").unwrap_or(file_rel);
+    paths.iter().any(|p| {
+        let p_bare = p.strip_suffix(".bak").unwrap_or(p);
+        bare == p_bare
+            || bare.starts_with(&format!("{p_bare}/"))
+            || file_rel.starts_with(&format!("{p}/"))
+    })
+}
+
+// ── Unit enable / uninstall ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn mod_hub_set_unit_enabled(
+    game_root: String,
+    rel_path: String,
+    enabled: bool,
+) -> Result<UnitToggleReport, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    let res_mods = scan_root(&game_root)?;
+    if !res_mods.is_dir() {
+        return Err("res_mods directory not found".into());
+    }
+    let unit = classify_installed_root(&res_mods)
+        .into_iter()
+        .find(|u| u.rel_path == rel_path)
+        .ok_or_else(|| format!("no installed plugin at {rel_path}"))?;
+    if unit.paths.is_empty() {
+        return Err(format!("{rel_path} has no files to toggle"));
+    }
+    let renamed = set_paths_state(&res_mods, &unit.paths, enabled)?;
+    tracing::info!(rel = %rel_path, enabled, renamed, "mod_hub_set_unit_enabled done");
+    Ok(UnitToggleReport {
+        rel_path,
+        disabled: !enabled,
+        renamed_files: renamed,
+    })
+}
+
+/// Rename every file of a unit between live names and `.bak` twins
+/// (disabling appends the suffix, enabling strips it). Existing targets are
+/// skipped, never clobbered; a partially-applied state heals on the next
+/// toggle in the same direction. Returns how many files moved.
+fn set_paths_state(res_mods: &Path, paths: &[String], enabled: bool) -> Result<usize, String> {
+    let mut renamed = 0usize;
+    for rel in paths {
+        for file in unit_files(res_mods, rel) {
+            let Some(name) = file.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+                continue;
+            };
+            let target = if enabled {
+                if !name.ends_with(".bak") {
+                    continue;
+                }
+                file.with_file_name(&name[..name.len() - 4])
+            } else {
+                if name.ends_with(".bak") {
+                    continue;
+                }
+                file.with_file_name(format!("{name}.bak"))
+            };
+            if target.exists() {
+                continue;
+            }
+            fs::rename(&file, &target).map_err(|e| format!("rename {}: {e}", file.display()))?;
+            renamed += 1;
+        }
+    }
+    Ok(renamed)
+}
+
+#[tauri::command]
+pub async fn mod_hub_uninstall_unit(
+    game_root: String,
+    rel_path: String,
+) -> Result<super::mod_catalog::UninstallReport, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    let res_mods = scan_root(&game_root)?;
+    if !res_mods.is_dir() {
+        return Err("res_mods directory not found".into());
+    }
+    let unit = classify_installed_root(&res_mods)
+        .into_iter()
+        .find(|u| u.rel_path == rel_path)
+        .ok_or_else(|| format!("no installed plugin at {rel_path}"))?;
+
+    let mut ledger = super::mod_catalog::load_ledger();
+    let report = uninstall_unit_core(&game_root, &res_mods, &unit, &mut ledger.installs)?;
+    super::mod_catalog::save_ledger(&ledger)?;
+    Ok(report)
+}
+
+/// Everything [`mod_hub_uninstall_unit`] does once the unit is resolved —
+/// split out so tests can drive it against an in-memory record list instead
+/// of the real ledger. Deletes the unit's files directly FIRST, then lets
+/// the ledger records restore their vanilla snapshots (whose targets may
+/// well be paths this unit had overwritten — deleting first means the
+/// restore actually lands instead of being wiped by the tree removal),
+/// prunes emptied parents and syncs Aslain's manifest when the unit came
+/// from it.
+fn uninstall_unit_core(
+    game_root: &str,
+    res_mods: &Path,
+    unit: &InstalledMod,
+    installs: &mut Vec<ModInstallRecord>,
+) -> Result<super::mod_catalog::UninstallReport, String> {
+    let mut removed = 0usize;
+    let mut restored = 0usize;
+
+    // Everything the ledger did not know about goes away directly — live
+    // paths and their `.bak` twins alike. Ledger-covered files are also
+    // removed here; the ledger pass below tolerates already-missing files
+    // and only counts what it still finds.
+    if !unit.paths.is_empty() {
+        for rel in &unit.paths {
+            let path = res_mods.join(rel);
+            let twin = if rel.ends_with(".bak") {
+                res_mods.join(&rel[..rel.len() - 4])
+            } else {
+                res_mods.join(format!("{rel}.bak"))
+            };
+            if path.is_dir() {
+                removed += unit_files(res_mods, rel).len();
+                fs::remove_dir_all(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+            } else if path.is_file() {
+                fs::remove_file(&path).ok();
+                removed += 1;
+            }
+            if twin.is_file() {
+                fs::remove_file(&twin).ok();
+                removed += 1;
+            }
+        }
+        prune_empty_parents(res_mods, &unit.paths);
+    }
+
+    // Ledger records overlapping the unit get the full treatment: restore
+    // the vanilla files they snapshotted, then drop the record.
+    let ids: Vec<String> = installs
+        .iter()
+        .filter(|r| {
+            r.files
+                .iter()
+                .any(|f| !f.starts_with("@game/") && unit_covers(&unit.paths, f))
+        })
+        .map(|r| r.id.clone())
+        .collect();
+    for id in &ids {
+        let report = super::mod_catalog::uninstall_from_ledger(installs, id, game_root)?;
+        removed += report.removed_files;
+        restored += report.restored_files;
+    }
+
+    // Keep Aslain's manifest describing reality when the unit came from it.
+    if unit.version.is_some() {
+        remove_manifest_entry(res_mods, &unit.name);
+    }
+
+    tracing::info!(rel = %unit.rel_path, removed, restored, "uninstall_unit_core done");
+    Ok(super::mod_catalog::UninstallReport {
+        id: unit.rel_path.clone(),
+        name: unit.name.clone(),
+        removed_files: removed,
+        restored_files: restored,
+    })
+}
+
+/// Remove directories a unit emptied, walking each root's parents up to (and
+/// excluding) the res_mods root itself. `remove_dir` only succeeds on empty
+/// directories, so shared parents with other units survive.
+fn prune_empty_parents(res_mods: &Path, paths: &[String]) {
+    for rel in paths {
+        let mut dir = res_mods.join(rel).parent().map(|p| p.to_path_buf());
+        while let Some(d) = dir {
+            if d == res_mods || !d.starts_with(res_mods) {
+                break;
+            }
+            if fs::remove_dir(&d).is_err() {
+                break;
+            }
+            dir = d.parent().map(|p| p.to_path_buf());
+        }
+    }
+}
+
+/// Drop one `<mod name="…"/>` row from Aslain's manifest after its unit was
+/// uninstalled. Best effort: a failed rewrite leaves the manifest untouched.
+fn remove_manifest_entry(res_mods: &Path, name: &str) {
+    let path = res_mods.join("installed_mods.xml");
+    let Ok(body) = fs::read_to_string(&path) else {
+        return;
+    };
+    let spans: Vec<(usize, usize)> = parse_installed_manifest(res_mods)
+        .into_iter()
+        .filter(|e| e.name == name)
+        .map(|e| e.span)
+        .collect();
+    if spans.is_empty() {
+        return;
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut cursor = 0usize;
+    for (start, end) in spans {
+        if start < cursor {
+            continue;
+        }
+        out.push_str(&body[cursor..start]);
+        cursor = end;
+    }
+    out.push_str(&body[cursor..]);
+    fs::write(&path, out).ok();
 }
 
 // ── Classify incoming package ───────────────────────────────────────────────
@@ -436,15 +1065,17 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
             "PnFMods",
             ModKind::Skin,
         );
-        // Parse every skin's Main.py for the ship ids + remember names/details.
+        // Parse every skin's entry script for the ship ids + remember
+        // names/details (accepts Main.py and compiled Main.pyc).
         let pnf = src.join("PnFMods");
         if let Ok(skins) = fs::read_dir(&pnf) {
             let mut details: Vec<String> = Vec::new();
             for skin in skins.flatten() {
-                let main_py = skin.path().join("Main.py");
-                if let Ok(body) = fs::read_to_string(&main_py) {
-                    if let Some(id) = registered_ship_id(&body) {
-                        details.push(id);
+                if let Some(main_py) = find_pnf_main(&skin.path()) {
+                    if let Ok(body) = fs::read(&main_py) {
+                        if let Some(id) = registered_ship_id_bytes(&body) {
+                            details.push(id);
+                        }
                     }
                 }
             }
@@ -501,12 +1132,19 @@ fn sanitize_dir_name(name: &str) -> String {
 // ── Install ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn mod_hub_install(
+pub async fn mod_hub_install(
     source_root: String,
     game_root: String,
     plan: PackagePlan,
 ) -> Result<InstallReport, String> {
-    install_plan(Path::new(&source_root), &game_root, &plan).map(|applied| applied.report)
+    // Same gate as the catalog install: the plan's copy must not interleave
+    // with another install's res_mods writes or a `.bak` rename sweep.
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    tauri::async_runtime::spawn_blocking(move || {
+        install_plan(Path::new(&source_root), &game_root, &plan).map(|applied| applied.report)
+    })
+    .await
+    .map_err(|e| format!("install task: {e}"))?
 }
 
 /// Core installer shared by the local-folder command and the online catalog:
@@ -613,6 +1251,202 @@ mod tests {
     fn touch(path: &Path) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"x").unwrap();
+    }
+
+    #[test]
+    fn scan_anchors_units_on_installed_mods_manifest() {
+        let tmp = std::env::temp_dir().join("wowsp_manifest_scan");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("bin/13187581/res_mods");
+        fs::create_dir_all(&rm).unwrap();
+        fs::write(
+            rm.join("installed_mods.xml"),
+            "<?xml version=\"1.0\" ?>\n<data>\n\t<mod installer=\"4.3.1\" name=\"SmokeMarker\" version=\"1.4.0\"/>\n\t<mod installer=\"4.3.1\" name=\"BattleFrame_TorpedoDetection\" version=\"1.0\"/>\n\t<mod installer=\"4.3.1\" name=\"Intuitions\" version=\"1.0.0\"/>\n\t<mod installer=\"4.3.1\" name=\"GhostOnly\" version=\"9.9\"/>\n</data>\n",
+        )
+        .unwrap();
+        // PnF script mod claimed by SmokeMarker through the `Py` convention.
+        touch(&rm.join("PnFMods/SmokeMarkerPy/Main.py"));
+        fs::write(rm.join("PnFMods/SmokeMarkerPy/Main.py"), "print('no ship')").unwrap();
+        // Unbound UI group claimed by the BattleFrame row via shared prefix.
+        touch(&rm.join("gui/unbound2/!battleframe/label.xml"));
+        // Exact-name PnF skin.
+        touch(&rm.join("PnFMods/Intuitions/Main.py"));
+        fs::write(
+            rm.join("PnFMods/Intuitions/Main.py"),
+            "contentSdk.registerShipMod('RSC110')",
+        )
+        .unwrap();
+        touch(&rm.join("PnFModsLoader.py"));
+        // Leftover voice bank stays standalone.
+        touch(&rm.join("banks/mods/Hoshino/mod.xml"));
+
+        let mods = classify_installed_root(&rm);
+        let smoke = mods.iter().find(|m| m.name == "SmokeMarker").unwrap();
+        assert_eq!(smoke.version.as_deref(), Some("1.4.0"));
+        assert_eq!(smoke.kind, ModKind::Script);
+        assert!(
+            smoke.paths.contains(&"PnFMods/SmokeMarkerPy".to_string()),
+            "{:?}",
+            smoke.paths
+        );
+        let bf = mods
+            .iter()
+            .find(|m| m.name == "BattleFrame_TorpedoDetection")
+            .unwrap();
+        assert!(
+            bf.paths.contains(&"gui/unbound2/!battleframe".to_string()),
+            "{:?}",
+            bf.paths
+        );
+        assert!(!bf.paths.contains(&"PnFMods/SmokeMarkerPy".to_string()));
+        let intu = mods.iter().find(|m| m.name == "Intuitions").unwrap();
+        assert_eq!(intu.kind, ModKind::Skin);
+        assert!(intu.paths.contains(&"PnFMods/Intuitions".to_string()));
+        // Manifest-only row survives; its key is the unique row name.
+        let ghost = mods.iter().find(|m| m.name == "GhostOnly").unwrap();
+        assert!(ghost.paths.is_empty());
+        assert_eq!(ghost.rel_path, "GhostOnly");
+        assert!(!ghost.disabled);
+        // Leftover bank keeps heuristic identity, no version.
+        let hoshino = mods.iter().find(|m| m.name == "Hoshino").unwrap();
+        assert_eq!(hoshino.version, None);
+        // The manifest itself is a marker, never a patch unit.
+        assert!(!mods.iter().any(|m| m.name == "installed_mods.xml"));
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn toggle_disables_and_reenables_unit_files() {
+        let tmp = std::env::temp_dir().join("wowsp_toggle_test");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("bin/1/res_mods");
+        touch(&rm.join("PnFMods/SmokeMarkerPy/Main.py"));
+        touch(&rm.join("PnFMods/SmokeMarkerPy/data.xml"));
+        touch(&rm.join("ime_config.xml"));
+
+        let unit = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.rel_path == "PnFMods/SmokeMarkerPy")
+            .unwrap();
+        assert!(!unit.disabled);
+
+        // Disable: every file gains `.bak`, the scan reports the unit off.
+        let renamed = set_paths_state(&rm, &unit.paths, false).unwrap();
+        assert_eq!(renamed, 2);
+        assert!(rm.join("PnFMods/SmokeMarkerPy/Main.py.bak").is_file());
+        assert!(!rm.join("PnFMods/SmokeMarkerPy/Main.py").exists());
+        let unit = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.rel_path == "PnFMods/SmokeMarkerPy")
+            .unwrap();
+        assert!(unit.disabled, "rescan must recognize the disabled unit");
+
+        // Disabling a single-file patch keeps its name; the path is the twin.
+        let ime_before = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.name == "ime_config.xml")
+            .unwrap();
+        assert!(!ime_before.disabled);
+        set_paths_state(&rm, &ime_before.paths, false).unwrap();
+        let ime = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.name == "ime_config.xml")
+            .unwrap();
+        assert!(ime.disabled);
+        assert_eq!(ime.paths, vec!["ime_config.xml.bak".to_string()]);
+
+        // Re-enable strips the suffixes again.
+        let renamed = set_paths_state(&rm, &unit.paths, true).unwrap();
+        assert_eq!(renamed, 2);
+        assert!(rm.join("PnFMods/SmokeMarkerPy/Main.py").is_file());
+        assert!(!rm.join("PnFMods/SmokeMarkerPy/Main.py.bak").exists());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn uninstall_unit_removes_files_and_syncs_manifest() {
+        let tmp = std::env::temp_dir().join("wowsp_unit_uninstall");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(&rm).unwrap();
+        touch(&rm.join("PnFMods/SmokeMarkerPy/Main.py"));
+        // The loader marker sits at the res_mods root — no unit owns it, so
+        // uninstalling any unit must leave it alone.
+        touch(&rm.join("PnFModsLoader.py"));
+        // A disabled twin must go too.
+        touch(&rm.join("gui/unbound2/!battleframe/label.xml.bak"));
+        fs::write(
+            rm.join("installed_mods.xml"),
+            "<data>\n\t<mod installer=\"4\" name=\"SmokeMarker\" version=\"1.0\"/>\n\t<mod installer=\"4\" name=\"BattleFrame_TorpedoDetection\" version=\"1.0\"/>\n</data>\n",
+        )
+        .unwrap();
+
+        let smoke = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.name == "SmokeMarker")
+            .unwrap();
+        let mut installs: Vec<ModInstallRecord> = Vec::new();
+        let report =
+            uninstall_unit_core(game.to_str().unwrap(), &rm, &smoke, &mut installs).unwrap();
+        assert_eq!(report.removed_files, 1);
+        assert!(!rm.join("PnFMods/SmokeMarkerPy").exists());
+        assert!(rm.join("PnFModsLoader.py").is_file());
+        // The manifest row is gone, the untouched row survives.
+        let manifest = fs::read_to_string(rm.join("installed_mods.xml")).unwrap();
+        assert!(!manifest.contains("SmokeMarker"));
+        assert!(manifest.contains("BattleFrame_TorpedoDetection"));
+
+        // A manifest-backed unit with disabled files clears both variants.
+        let bf = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.name == "BattleFrame_TorpedoDetection")
+            .unwrap();
+        assert!(bf.disabled);
+        let report = uninstall_unit_core(game.to_str().unwrap(), &rm, &bf, &mut installs).unwrap();
+        assert_eq!(report.removed_files, 1);
+        assert!(!rm.join("gui/unbound2/!battleframe").exists());
+        assert!(
+            !fs::read_to_string(rm.join("installed_mods.xml"))
+                .unwrap()
+                .contains("<mod ")
+        );
+
+        // A ledger record whose file the unit overwrote: the vanilla
+        // snapshot must survive the uninstall — deletion happens first,
+        // the restore lands afterwards (not the other way around).
+        let restore = tmp.join("restore-cam");
+        fs::create_dir_all(&restore).unwrap();
+        fs::write(restore.join("camerasConsumer.xml"), b"vanilla").unwrap();
+        fs::write(rm.join("camerasConsumer.xml"), b"modded").unwrap();
+        installs.push(ModInstallRecord {
+            id: "cam".into(),
+            name: "Cam".into(),
+            version: "1".into(),
+            category: "patch".into(),
+            source: "local".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["camerasConsumer.xml".into()],
+            restore_dir: Some(restore.to_string_lossy().into_owned()),
+        });
+        let cam = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.name == "camerasConsumer.xml")
+            .unwrap();
+        let report = uninstall_unit_core(game.to_str().unwrap(), &rm, &cam, &mut installs).unwrap();
+        assert_eq!(report.restored_files, 1);
+        assert_eq!(
+            fs::read(rm.join("camerasConsumer.xml")).unwrap(),
+            b"vanilla",
+            "the vanilla snapshot must outlive the unit deletion"
+        );
+        assert!(installs.is_empty());
+
+        fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]
@@ -733,11 +1567,12 @@ mod tests {
 
         let plan = classify_package(&pkg).unwrap();
         assert_eq!(plan.kind, ModKind::Patch);
-        let report = mod_hub_install(
-            pkg.to_str().unwrap().into(),
-            game.to_str().unwrap().into(),
-            plan,
+        let report = install_plan(
+            Path::new(pkg.to_str().unwrap()),
+            game.to_str().unwrap(),
+            &plan,
         )
+        .map(|applied| applied.report)
         .unwrap();
         assert_eq!(report.wrote_files, 1);
         assert!(game.join("bin/1/res_mods/ime_config.xml").is_file());
@@ -757,11 +1592,12 @@ mod tests {
         fs::create_dir_all(game.join("bin/12668706")).unwrap();
 
         let plan = classify_package(&pkg).unwrap();
-        let report = mod_hub_install(
-            pkg.to_str().unwrap().into(),
-            game.to_str().unwrap().into(),
-            plan,
+        let report = install_plan(
+            Path::new(pkg.to_str().unwrap()),
+            game.to_str().unwrap(),
+            &plan,
         )
+        .map(|applied| applied.report)
         .unwrap();
         assert_eq!(report.wrote_files, 1);
         assert_eq!(report.bin_version, "12668706");
@@ -785,6 +1621,23 @@ mod tests {
     //   -- --ignored --nocapture mod_hub_real
     //
     // `classify` sweep is read-only; the install leg writes only under %TEMP%.
+
+    /// Read-only dump of the scan against a real game install — anchors the
+    /// manifest grouping on what Aslain actually writes (skipped in CI):
+    ///   WOWSP_GAME_ROOT="D:\...\World of Warships" cargo test -p wowsp_tauri
+    ///   -- --ignored --nocapture mod_hub_real_game_scan
+    #[test]
+    #[ignore]
+    fn mod_hub_real_game_scan() {
+        let root = std::env::var("WOWSP_GAME_ROOT").expect("set WOWSP_GAME_ROOT");
+        let res_mods = scan_root(&root).expect("scan root");
+        for m in classify_installed_root(&res_mods) {
+            println!(
+                "{:?} {:?} v={:?} disabled={} paths={:?}",
+                m.kind, m.name, m.version, m.disabled, m.paths
+            );
+        }
+    }
 
     /// Every top-level entry of the samples dir must classify cleanly: dirs
     /// produce a typed plan, archives hit the structured unpack hint.
@@ -852,11 +1705,12 @@ mod tests {
         // 1. ime_config.xml (config-patch, folder layout).
         let ime = find_dir(&dir, "输入法").expect("ime sample");
         let plan = classify_package(&ime).unwrap();
-        let report = mod_hub_install(
-            ime.to_string_lossy().into_owned(),
-            game.to_string_lossy().into_owned(),
-            plan,
+        let report = install_plan(
+            Path::new(ime.to_string_lossy().as_ref()),
+            &game.to_string_lossy(),
+            &plan,
         )
+        .map(|applied| applied.report)
         .unwrap();
         assert!(report.wrote_files >= 1);
         assert!(game.join("bin/12668706/res_mods/ime_config.xml").is_file());
@@ -865,11 +1719,12 @@ mod tests {
         let miyako = find_dir(&dir, "Miyako_soundmod").expect("banks sample");
         let plan = classify_package(&miyako).unwrap();
         assert_eq!(plan.kind, ModKind::Voice);
-        let report = mod_hub_install(
-            miyako.to_string_lossy().into_owned(),
-            game.to_string_lossy().into_owned(),
-            plan,
+        let report = install_plan(
+            Path::new(miyako.to_string_lossy().as_ref()),
+            &game.to_string_lossy(),
+            &plan,
         )
+        .map(|applied| applied.report)
         .unwrap();
         assert!(
             report.wrote_files > 90,
@@ -888,11 +1743,12 @@ mod tests {
             .unwrap();
         let plan = classify_package(&pnf_root).unwrap();
         assert_eq!(plan.kind, ModKind::Skin);
-        let report = mod_hub_install(
-            pnf_root.to_string_lossy().into_owned(),
-            game.to_string_lossy().into_owned(),
-            plan,
+        let report = install_plan(
+            Path::new(pnf_root.to_string_lossy().as_ref()),
+            &game.to_string_lossy(),
+            &plan,
         )
+        .map(|applied| applied.report)
         .unwrap();
         assert!(
             report.wrote_files > 100,

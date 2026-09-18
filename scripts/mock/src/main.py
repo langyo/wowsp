@@ -154,20 +154,51 @@ async def cmd_ribbon_skin_dir(request: Request):
 # the same UI flow against the mock appdata sandbox.
 _MOCK_INSTALLED = [
     {"kind": "voice", "name": "Hoshino", "detail": "Hoshino",
-     "relPath": "banks/mods/Hoshino"},
-    {"kind": "voice", "name": "OTTO Ver1.0", "detail": "OTTO Ver1.1",
-     "relPath": "banks/Mods/OTTO Ver1.0"},
+     "relPath": "banks/mods/Hoshino", "paths": ["banks/mods/Hoshino"],
+     "disabled": False, "version": None},
     {"kind": "skin", "name": "Hina_Moskva", "detail": "RSC110_Pr_66_Moskva",
-     "relPath": "PnFMods/Hina_Moskva"},
-    {"kind": "gui", "name": "ribbons", "detail": None, "relPath": "gui/ribbons"},
+     "relPath": "PnFMods/Hina_Moskva", "paths": ["PnFMods/Hina_Moskva"],
+     "disabled": False, "version": None},
+    {"kind": "script", "name": "SmokeMarker", "detail": None,
+     "relPath": "PnFMods/SmokeMarkerPy", "paths": ["PnFMods/SmokeMarkerPy"],
+     "disabled": False, "version": "1.4.0"},
+    {"kind": "gui", "name": "!battleframe", "detail": None,
+     "relPath": "gui/unbound2/!battleframe",
+     "paths": ["gui/unbound2/!battleframe"],
+     "disabled": False, "version": "1.0"},
     {"kind": "patch", "name": "ime_config.xml", "detail": None,
-     "relPath": "ime_config.xml"},
+     "relPath": "ime_config.xml", "paths": ["ime_config.xml"],
+     "disabled": False, "version": None},
 ]
 
 
 @app.post("/api/mod_hub_scan_installed")
 async def cmd_mod_hub_scan_installed(request: Request) -> list[dict]:
     return _MOCK_INSTALLED
+
+
+@app.post("/api/mod_hub_set_unit_enabled")
+async def cmd_mod_hub_set_unit_enabled(request: Request) -> dict:
+    body = await request.json()
+    rel = body.get("relPath", "")
+    for mod in _MOCK_INSTALLED:
+        if mod["relPath"] == rel:
+            mod["disabled"] = not body.get("enabled", True)
+            return {"relPath": rel, "disabled": mod["disabled"],
+                    "renamedFiles": 3}
+    raise HTTPException(status_code=404, detail=f"no installed plugin at {rel}")
+
+
+@app.post("/api/mod_hub_uninstall_unit")
+async def cmd_mod_hub_uninstall_unit(request: Request) -> dict:
+    body = await request.json()
+    rel = body.get("relPath", "")
+    for i, mod in enumerate(_MOCK_INSTALLED):
+        if mod["relPath"] == rel:
+            _MOCK_INSTALLED.pop(i)
+            return {"id": rel, "name": mod["name"],
+                    "removedFiles": 4, "restoredFiles": 0}
+    raise HTTPException(status_code=404, detail=f"no installed plugin at {rel}")
 
 
 @app.post("/api/mod_hub_classify_path")

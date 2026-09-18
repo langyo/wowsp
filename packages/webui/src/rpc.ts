@@ -57,6 +57,8 @@ export const RPC = {
   mod_hub_scan_installed: "mod_hub_scan_installed",
   mod_hub_classify_path: "mod_hub_classify_path",
   mod_hub_install: "mod_hub_install",
+  mod_hub_set_unit_enabled: "mod_hub_set_unit_enabled",
+  mod_hub_uninstall_unit: "mod_hub_uninstall_unit",
   mod_catalog_refresh: "mod_catalog_refresh",
   mod_catalog_install: "mod_catalog_install",
   mod_catalog_uninstall: "mod_catalog_uninstall",

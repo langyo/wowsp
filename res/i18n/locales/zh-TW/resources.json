@@ -29,7 +29,8 @@
     "skin": "艦船塗裝（PnF）",
     "textures": "貼圖覆蓋",
     "gui": "介面圖示",
-    "patch": "設定補丁"
+    "patch": "設定補丁",
+    "script": "腳本插件"
   },
   "catalogTitle": "線上模組目錄",
   "catalogHint": "來自 WoWSP 模組倉庫的精選工具類模組。每個模組都帶版本號與 SHA-256 驗證，安裝時直接從專案的 GitHub release 下載。",
@@ -65,5 +66,12 @@
     "catalog": "線上目錄",
     "installed": "已安裝",
     "local": "本機安裝"
-  }
+  },
+  "enabled": "已啟用",
+  "disabled": "已停用",
+  "unitEnabled": "已啟用「{name}」。",
+  "unitDisabled": "已停用「{name}」—— 檔案已加 .bak 後綴。",
+  "confirmUnitUninstall": "卸載「{name}」？將刪除其全部檔案（含停用的 .bak 副本），並還原被覆蓋的原始檔案。",
+  "manifestOnly": "未在 res_mods 中找到對應檔案（僅插件清單記錄）。",
+  "manifestOnlyShort": "僅清單記錄"
 }

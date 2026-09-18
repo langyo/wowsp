@@ -29,7 +29,8 @@
     "skin": "함선 스킨 (PnF)",
     "textures": "텍스처 교체",
     "gui": "HUD 아이콘",
-    "patch": "설정 패치"
+    "patch": "설정 패치",
+    "script": "스크립트 모드"
   },
   "catalogTitle": "온라인 카탈로그",
   "catalogHint": "WoWSP 모드 허브에서 엄선한 도구형 플러그인입니다. 각 항목에는 버전과 SHA-256이 포함되어 있으며, 설치 시 프로젝트의 GitHub release에서 바로 다운로드합니다.",
@@ -65,5 +66,12 @@
     "catalog": "온라인 카탈로그",
     "installed": "설치됨",
     "local": "폴더에서 설치"
-  }
+  },
+  "enabled": "활성화됨",
+  "disabled": "비활성화됨",
+  "unitEnabled": "“{name}”을(를) 활성화했습니다.",
+  "unitDisabled": "“{name}”을(를) 비활성화했습니다(파일에 .bak 추가).",
+  "confirmUnitUninstall": "“{name}”을(를) 제거하시겠습니까? 파일(.bak 사본 포함)이 삭제되고 덮어쓰인 원본이 복원됩니다.",
+  "manifestOnly": "res_mods에서 일치하는 파일을 찾을 수 없습니다(매니페스트 기록만 있음).",
+  "manifestOnlyShort": "매니페스트만"
 }

@@ -165,11 +165,14 @@ fn wininet_proxy() -> Option<String> {
 /// Build a reqwest client builder honoring the persisted network config.
 /// All outbound HTTP in the app goes through here so the Settings -> Network
 /// choice is truly global. Callers that need a client-level timeout (small
-/// JSON lookups) apply it on the returned builder before build().
+/// JSON lookups) apply it on the returned builder before build(). Connect
+/// gets a global ceiling so a dead host can never stall a lookup forever —
+/// per-request bodies set their own `.timeout()` where it matters.
 pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
     let config = load_config();
-    let mut builder =
-        reqwest::Client::builder().user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)");
+    let mut builder = reqwest::Client::builder()
+        .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
+        .connect_timeout(std::time::Duration::from_secs(15));
     if let Some(url) = effective_proxy(&config) {
         let mut proxy =
             reqwest::Proxy::all(url.clone()).map_err(|e| format!("proxy {url}: {e}"))?;

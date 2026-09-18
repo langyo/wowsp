@@ -29,7 +29,8 @@
     "skin": "Skin de navire (PnF)",
     "textures": "Remplacement de textures",
     "gui": "Icônes d'interface",
-    "patch": "Correctif de configuration"
+    "patch": "Correctif de configuration",
+    "script": "Mod de script"
   },
   "catalogTitle": "Catalogue en ligne",
   "catalogHint": "Plugins utilitaires sélectionnés du hub de mods WoWSP. Chacun est livré avec une version et un SHA-256 ; l'installation télécharge directement depuis la release GitHub du projet.",
@@ -65,5 +66,12 @@
     "catalog": "Catalogue en ligne",
     "installed": "Installés",
     "local": "Depuis un dossier"
-  }
+  },
+  "enabled": "Activé",
+  "disabled": "Désactivé",
+  "unitEnabled": "« {name} » activé.",
+  "unitDisabled": "« {name} » désactivé — fichiers renommés avec le suffixe .bak.",
+  "confirmUnitUninstall": "Désinstaller « {name} » ? Tous ses fichiers (y compris les copies .bak désactivées) sont supprimés ; les originaux écrasés sont restaurés.",
+  "manifestOnly": "Aucun fichier correspondant sous res_mods (entrée du manifeste uniquement).",
+  "manifestOnlyShort": "manifeste seul"
 }
