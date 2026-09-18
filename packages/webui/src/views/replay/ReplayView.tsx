@@ -1022,6 +1022,34 @@ export default defineComponent({
     const pane = ref<Pane>({ kind: "none" });
     /** Live battle clock (from tempArenaInfo's dateTime). */
     const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
+    /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
+     *  (the settling watcher never fires) and the game deletes
+     *  tempArenaInfo.json, which only the live-pane poll notices — so a
+     *  stale roster + ticking clock can survive forever. Cap every battle by
+     *  its clock: PvP modes end at 20 min, everything else (co-op /
+     *  operations / training rooms, which legitimately run long) at 30 min —
+     *  matching the Rust overlay window's ARENA_FRESHNESS_SECS. Past the cap
+     *  the roster is force-cleared and the live card falls back to "not
+     *  started" until the next arena-info event repopulates it. */
+    const PVP_BATTLE_CAP_SECS = 20 * 60;
+    const PVE_BATTLE_CAP_SECS = 30 * 60;
+    const battleCapHit = computed(() => {
+      const a = overlay.arenaInfo;
+      const elapsed = liveClock.elapsed.value;
+      if (!a || elapsed == null) return false;
+      const key = modeKey(a.matchGroup, a.scenario, null, a.botCount ?? 0);
+      const pvp =
+        key === "pvp" ||
+        key === "ranked" ||
+        key === "clan" ||
+        key === "brawl" ||
+        key === "squad" ||
+        key === "armsrace";
+      return elapsed >= (pvp ? PVP_BATTLE_CAP_SECS : PVE_BATTLE_CAP_SECS);
+    });
+    watch(battleCapHit, (hit) => {
+      if (hit) overlay.clearArenaInfo();
+    });
     // While the live pane is open, poll the game's tempArenaInfo.json so the
     // roster refreshes as players load in / the battle ends.
     let arenaTimer: number | null = null;
@@ -1355,31 +1383,37 @@ export default defineComponent({
                           <Play size={13} class="replay-card__live-ico" strokeWidth={2.4} />
                           {t("replay.live.title")}
                         </span>
-                        {overlay.arenaInfo?.matchGroup ? (
-                          <span
-                            class="replay-card__pill"
-                            style={modeColor(
-                              overlay.arenaInfo.matchGroup,
-                              overlay.arenaInfo.scenario,
-                              null,
-                              overlay.arenaInfo.botCount ?? 0,
-                            ) as CSSProperties}
-                          >
-                            {modeLabel(
-                              overlay.arenaInfo.matchGroup,
-                              overlay.arenaInfo.scenario,
-                              null,
-                              overlay.arenaInfo.botCount ?? 0,
-                            )}
-                          </span>
-                        ) : null}
-                        {livePhase.value === "settling" ? (
-                        <span class="replay-card__pill replay-card__pill--settling">
-                          {t("replay.live.settling")}
+                        {/* Pills ride as ONE right-aligned group: __top is
+                            space-between, so loose children would each claim
+                            a spread-out slot (the mode pill used to end up
+                            centered between title and LIVE). */}
+                        <span class="replay-card__pills">
+                          {overlay.arenaInfo?.matchGroup ? (
+                            <span
+                              class="replay-card__pill"
+                              style={modeColor(
+                                overlay.arenaInfo.matchGroup,
+                                overlay.arenaInfo.scenario,
+                                null,
+                                overlay.arenaInfo.botCount ?? 0,
+                              ) as CSSProperties}
+                            >
+                              {modeLabel(
+                                overlay.arenaInfo.matchGroup,
+                                overlay.arenaInfo.scenario,
+                                null,
+                                overlay.arenaInfo.botCount ?? 0,
+                              )}
+                            </span>
+                          ) : null}
+                          {livePhase.value === "settling" ? (
+                            <span class="replay-card__pill replay-card__pill--settling">
+                              {t("replay.live.settling")}
+                            </span>
+                          ) : (
+                            <span class="replay-card__pill replay-card__pill--live">LIVE</span>
+                          )}
                         </span>
-                      ) : (
-                        <span class="replay-card__pill replay-card__pill--live">LIVE</span>
-                      )}
                       </div>
                       <div class="replay-card__row">
                         <span class="replay-card__label">{t("replay.mapLabel")}</span>

@@ -49,14 +49,25 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
     if (!realm.value) realm.value = "asia";
   }
 
-  /** One-shot read of tempArenaInfo.json (if the game is in a battle). */
+  /** One-shot read of tempArenaInfo.json (if the game is in a battle). The
+   *  game DELETES the file when the battle ends / the player returns to
+   *  port (mid-battle quits included — no .wowsreplay is written then), so
+   *  an absent file must drop the cached roster instead of leaving a stale
+   *  one ticking forever. A partially-written file fails the read (throws)
+   *  and keeps the current value. */
   async function refreshArenaInfo(dir?: string) {
     try {
       const info = await api.readTempArenaInfo(dir);
-      if (info) arenaInfo.value = info;
+      arenaInfo.value = info ?? null;
     } catch (e) {
       error.value = (e as Error).message;
     }
+  }
+
+  /** Force-drop the cached roster (hard battle-duration cap — see
+   *  ReplayView's battleCap watcher). */
+  function clearArenaInfo() {
+    arenaInfo.value = null;
   }
 
   /** Start the file watcher; incoming arena-info events update `arenaInfo`,
@@ -95,6 +106,7 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
     error,
     initRealm,
     refreshArenaInfo,
+    clearArenaInfo,
     startWatching,
     stopWatching,
   };
