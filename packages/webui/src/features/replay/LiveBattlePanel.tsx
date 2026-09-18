@@ -7,10 +7,11 @@
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
  */
-import { computed, defineComponent, type CSSProperties } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type CSSProperties } from "vue";
 import { useRouter } from "vue-router";
 
-import type { ArenaInfo, VehicleEntry } from "@/api";
+import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
+import { api } from "@/api";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
@@ -77,6 +78,31 @@ export default defineComponent({
     const { stats } = useRosterStats({
       realm: () => realm.value,
       arena: () => props.arena,
+    });
+
+    // Overlay detection state, streamed by the Rust Tab watcher as
+    // transition-only `wowsp://overlay-status` events. Rendered as a badge
+    // in the panel's head (right corner) and the base for the upcoming
+    // manual-locate flow. `null` = nothing received yet → show nothing
+    // (a panel that never used overlay mode stays badge-free).
+    const overlayStatus = ref<OverlayStatus | null>(null);
+    let unlistenStatus: (() => void) | null = null;
+    onMounted(async () => {
+      unlistenStatus = (await api.listenOverlayStatus((s) => {
+        overlayStatus.value = s;
+      })) as (() => void) | null;
+    });
+    onBeforeUnmount(() => {
+      unlistenStatus?.();
+      unlistenStatus = null;
+    });
+
+    const statusBadge = computed(() => {
+      const s = overlayStatus.value;
+      if (!s || s.state === "idle") return null;
+      return s.state === "detected"
+        ? { cls: "detected", text: t("replay.live.detectedRows", { n: s.rows ?? 0 }) }
+        : { cls: "searching", text: t("replay.live.searching") };
     });
 
     const allies = computed(
@@ -175,7 +201,7 @@ export default defineComponent({
 
       return (
         <div class="live-battle">
-          <div class="live-battle__head">
+          <div class="live-battle__head live-battle__head--status">
             <span class="live-battle__title">{t("replay.live.title")}</span>
             {props.settling ? (
               <span class="live-battle__pill live-battle__pill--settling">
@@ -191,6 +217,26 @@ export default defineComponent({
             <span class="live-battle__map">
               {displayMapName(props.arena.mapName, dataLanguage.value)}
             </span>
+            {statusBadge.value ? (
+              <>
+                <span
+                  class={[
+                    "live-battle__pill",
+                    `live-battle__pill--status-${statusBadge.value.cls}`,
+                  ]}
+                >
+                  {statusBadge.value.text}
+                </span>
+                <button
+                  class="live-battle__manual-btn"
+                  type="button"
+                  disabled
+                  title={t("replay.live.manualPending")}
+                >
+                  {t("replay.live.manualLocate")}
+                </button>
+              </>
+            ) : null}
           </div>
           <div class="live-battle__matrix">
             <div class="live-battle__col">

@@ -256,6 +256,47 @@ pub struct Rect {
     pub height: i32,
 }
 
+/// Lifecycle of the in-game Tab-table detection, as observed by the overlay
+/// Tab watcher. Broadcast on every STATE CHANGE to all windows via
+/// `wowsp://overlay-status` so the main window's live-battle panel can badge
+/// whether the overlay chips are currently anchored. Serde-lowercase to match
+/// the event-payload string conventions of the other cross-window events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OverlayState {
+    /// Overlay hidden — no battle known, Tab up, or game unfocused.
+    Idle,
+    /// Battle known and acquisition running, but no confirmed table pin yet
+    /// and the centered fallback hint is NOT on screen (nothing shown, or
+    /// the scene gate / rate limit is holding the attempt back).
+    Searching,
+    /// A confirmed table detection is on screen — chips are anchored, and
+    /// `OverlayStatus::rows` carries the row count.
+    Detected,
+    /// The centered "table not located" hint is on screen instead of chips.
+    Fallback,
+    /// The overlay sits at a user-supplied position. RESERVED — not produced
+    /// until the manual-locate flow ships.
+    Manual,
+}
+
+/// Payload of the `wowsp://overlay-status` event, pushed by the overlay Tab
+/// watcher whenever the detection state TRANSITIONS (never per tick — the
+/// watcher dedups against a loop-local mirror).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayStatus {
+    pub state: OverlayState,
+    /// Number of anchored player rows while `state` is detected/manual
+    /// (`None` in every other state).
+    pub rows: Option<u32>,
+    /// True while a user-picked (manually located) anchor is in force.
+    /// Always `false` until the manual-locate flow ships — the field exists
+    /// so the wire shape is final and consumers can render the badge's
+    /// manual variant without another format break.
+    pub manual: bool,
+}
+
 /// One position sample for one entity at one instant — the raw output of M3's
 /// packet-stream decoder. WoWS maps are planar: x = east, z = north, y ≈ 0.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

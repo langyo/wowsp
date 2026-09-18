@@ -137,6 +137,21 @@ export interface CaptureResult {
   anchor?: OverlayAnchor | null;
 }
 
+/** Lifecycle of the in-game Tab-table detection (mirrors
+ *  `wowsp_tauri_shared::OverlayState`, serde-lowercase on the wire). */
+export type OverlayState = "idle" | "searching" | "detected" | "fallback" | "manual";
+
+/** Payload of the `wowsp://overlay-status` event (mirrors
+ *  `wowsp_tauri_shared::OverlayStatus`), pushed on every detection-state
+ *  TRANSITION by the Tab watcher. `rows` is set only while `state` is
+ *  detected/manual; `manual` is always `false` until the manual-locate
+ *  flow ships. */
+export interface OverlayStatus {
+  state: OverlayState;
+  rows?: number | null;
+  manual: boolean;
+}
+
 /** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
  * maps are planar: x = east, z = north, y ≈ 0 (sea level). */
 export interface PositionSample {
@@ -839,6 +854,9 @@ export const api = {
   /** Anchor push from the Rust Tab watcher (capture + detector result). */
   listenOverlayAnchor: (handler: (anchor: OverlayAnchor) => void) =>
     transport.listen?.<OverlayAnchor>("wowsp://overlay-anchor", handler),
+  /** Detection-state push from the Tab watcher (transition-only). */
+  listenOverlayStatus: (handler: (status: OverlayStatus) => void) =>
+    transport.listen?.<OverlayStatus>("wowsp://overlay-status", handler),
   lookupPlayerStats: (name: string, realm: string) =>
     transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
   /** Batch roster lookup: one entry per input name, in order; null = not

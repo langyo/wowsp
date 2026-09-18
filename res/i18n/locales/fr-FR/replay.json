@@ -84,7 +84,11 @@
     "notStarted": "Aucune nouvelle bataille n'a encore commencé",
     "settling": "Résolution",
     "hiddenProfile": "Ce joueur a masqué ses statistiques",
-    "viewProfile": "Voir les statistiques de ce joueur"
+    "viewProfile": "Voir les statistiques de ce joueur",
+    "detectedRows": "Localisé · {n} lignes",
+    "searching": "Localisation…",
+    "manualLocate": "Positionnement manuel",
+    "manualPending": "Bientôt disponible"
   },
   "postbattle": {
     "rawData": "Données brutes",

@@ -84,7 +84,11 @@
     "notStarted": "Aún no ha comenzado una nueva batalla",
     "settling": "Calculando",
     "hiddenProfile": "Este jugador ha ocultado sus estadísticas",
-    "viewProfile": "Ver las estadísticas de este jugador"
+    "viewProfile": "Ver las estadísticas de este jugador",
+    "detectedRows": "Ubicado · {n} filas",
+    "searching": "Localizando…",
+    "manualLocate": "Ubicación manual",
+    "manualPending": "Próximamente"
   },
   "postbattle": {
     "rawData": "Datos en bruto",

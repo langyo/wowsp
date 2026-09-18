@@ -77,6 +77,33 @@
     margin-left: auto;
   }
 
+  /* Detection-status badge + the (disabled) manual-locate placeholder ride
+     the head's right corner, after the map label. */
+  .live-battle__pill--status-detected {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    background: rgb(var(--color-success, 74 222 128) / 16%);
+    color: rgb(var(--color-success, 74 222 128));
+  }
+
+  .live-battle__pill--status-searching {
+    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
+    background: rgb(var(--color-warning, 251 191 36) / 16%);
+    color: rgb(var(--color-warning, 251 191 36));
+  }
+
+  &__manual-btn {
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-text) / 20%);
+    background: transparent;
+    color: rgb(var(--color-text) / 45%);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: not-allowed;
+  }
+
   &__matrix {
     display: grid;
     grid-template-columns: 1fr 1fr;
