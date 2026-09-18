@@ -676,6 +676,15 @@
     white-space: nowrap;
   }
 
+  /* Right-aligned pill group for the live card's head (mode + LIVE), so
+     __top's space-between never spreads the pills apart. */
+  &__pills {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-shrink: 0;
+  }
+
   &__pill {
     flex-shrink: 0;
     padding: 0.05rem 0.45rem;
@@ -689,6 +698,13 @@
       background: rgb(var(--color-error) / 18%);
       color: rgb(var(--color-error));
       letter-spacing: 0.06em;
+    }
+
+    /* Battle ended (replay file appeared), game on the results screen —
+       same warning amber as the live panel's settling pill. */
+    &--settling {
+      background: rgb(var(--color-warning) / 18%);
+      color: rgb(var(--color-warning));
     }
   }
 
