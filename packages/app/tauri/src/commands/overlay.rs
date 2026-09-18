@@ -869,6 +869,16 @@ fn watch_tab_tick(
         let focused_on_game = game.is_some_and(|g| g.is_foreground());
         let tab_down = tab_key_down();
 
+        // Table-anchoring switch (`overlay-config.json`, written by the
+        // settings modal): `table: "off"` disables the WHOLE Tab overlay.
+        // The webui never creates the overlay window + watcher while it is
+        // off and tears them down on the off edge; this cached read is the
+        // Rust-side belt-and-suspenders — a stray tick (or a stale watcher
+        // outliving the webui's teardown) must never show the window
+        // against the setting, and an already-shown one hides again as soon
+        // as `want_visible` flips false below.
+        let table_off = super::overlay_config::table_overlay_off();
+
         // WANT-VISIBLE state machine instead of press-edge triggering: the
         // previous edge-only model did all its work exactly once per press,
         // so a single failed capture (transient scene-probe miss, rate-limit
@@ -905,26 +915,28 @@ fn watch_tab_tick(
         // not expire it (the same battle's next Tab hold re-places it). It
         // shares the auto path's preconditions (game focused + Tab held +
         // battle known), minus the picker.
-        let manual_active = if !picker_open && focused_on_game && tab_down && battle_known {
-            match manual_anchor_check(battle, game_rect) {
-                ManualAnchorCheck::Live(m, r) => Some((m, r)),
-                ManualAnchorCheck::Stale => {
-                    // New battle, or the game window moved/resized: expire
-                    // silently back to the automatic flow (the panel status
-                    // flips via the normal searching/idle reports).
-                    tracing::info!(battle, "manual anchor expired — back to auto detection");
-                    take_manual_anchor();
-                    None
-                },
-                // Nothing stored — or no game rect this tick to judge the
-                // window-geometry half with.
-                ManualAnchorCheck::Inert => None,
-            }
-        } else {
-            None
-        };
+        let manual_active =
+            if !picker_open && focused_on_game && tab_down && battle_known && !table_off {
+                match manual_anchor_check(battle, game_rect) {
+                    ManualAnchorCheck::Live(m, r) => Some((m, r)),
+                    ManualAnchorCheck::Stale => {
+                        // New battle, or the game window moved/resized: expire
+                        // silently back to the automatic flow (the panel status
+                        // flips via the normal searching/idle reports).
+                        tracing::info!(battle, "manual anchor expired — back to auto detection");
+                        take_manual_anchor();
+                        None
+                    },
+                    // Nothing stored — or no game rect this tick to judge the
+                    // window-geometry half with.
+                    ManualAnchorCheck::Inert => None,
+                }
+            } else {
+                None
+            };
 
-        let want_visible = focused_on_game && tab_down && battle_known && !picker_open;
+        let want_visible =
+            focused_on_game && tab_down && battle_known && !picker_open && !table_off;
         if let Some((m, manual_game)) = manual_active {
             // Place ONCE per manual hold, not every 30 ms tick.
             if !*overlay_shown || !*manual_shown {
@@ -1431,10 +1443,11 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     // default (WOWSP_ROW_RECOGNIZER, engine `windows-ocr`) and a no-op then
     // only when it fails — the anchor keeps row_players = None, which the
     // frontend reads as the historical index mapping. Explicitly disabled
-    // with `off` / `null`. Every failure inside degrades to None and must
-    // never disturb the anchor flow. `ally_rows` is the SAME team_sizes read
-    // the detection grid above was built from — the single source of truth
-    // for the pipeline's block split.
+    // with the settings switch (`overlay-config.json` `roster: "off"`) or
+    // the env (`off` / `null`). Every failure inside degrades to None and
+    // must never disturb the anchor flow. `ally_rows` is the SAME
+    // team_sizes read the detection grid above was built from — the single
+    // source of truth for the pipeline's block split.
     let row_players = if detected {
         row_recognize::recognize_row_players(&row_recognize::RowFrame {
             rgba: &rgba,

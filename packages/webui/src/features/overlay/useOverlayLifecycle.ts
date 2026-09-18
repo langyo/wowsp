@@ -1,10 +1,11 @@
 /**
- * Overlay lifecycle (main window): while the game is running AND the in-game
- * overlay setting is enabled, ensure the hidden transparent overlay window
- * exists (created once — it preloads the webui so the first Tab press is
- * instant) and the Rust Tab watcher is running (`create_overlay_window`
- * starts both, idempotently). When the game exits or the setting turns off,
- * tear the window down.
+ * Overlay lifecycle (main window): while the game is running AND the table
+ * anchoring switch is not off (i.e. the in-game overlay feature is enabled),
+ * ensure the hidden transparent overlay window exists (created once — it
+ * preloads the webui so the first Tab press is instant) and the Rust Tab
+ * watcher is running (`create_overlay_window` starts both, idempotently).
+ * When the game exits or the table switch turns off (disabling the whole
+ * Tab overlay), tear the window down.
  *
  * Mounted once from App.tsx (the main window root); the gameStatus store's
  * 3-second process poll drives it.
@@ -29,7 +30,7 @@ export function useOverlayLifecycle() {
   let createdRealm: string | null | undefined;
 
   async function sync() {
-    const want = game.process.running && overlayCfg.enabled;
+    const want = game.process.running && overlayCfg.table !== "off";
     // Realm of the running client, else of the selected install.
     const realm = game.process.realm ?? installs.activeInstall?.realm ?? null;
     // The realm is baked into the overlay window's URL — recreate the window
@@ -61,7 +62,7 @@ export function useOverlayLifecycle() {
   }
 
   watch(
-    [() => game.process.running, () => overlayCfg.enabled, () => game.process.realm],
+    [() => game.process.running, () => overlayCfg.table, () => game.process.realm],
     () => void sync(),
     { immediate: true },
   );

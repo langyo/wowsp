@@ -33,10 +33,13 @@
   "resourceCdnPlaceholder": "留空使用官方 Wargaming CDN",
   "resourceCdnHint": "頭像等遠端資源的鏡像源，保留原 URL 路徑；請求仍經由應用程式代理設定轉發。",
   "overlay": "遊戲內水表",
-  "overlayOn": "開啟",
-  "overlayOff": "關閉",
   "overlayDesc": "對局開始後自動取得雙方陣容的戰績；遊戲視窗在前台時按住 Tab，即可在雙方玩家暱稱旁看到彩色勝率與場均傷害。",
-  "overlayTabToggle": "按住 Tab 檢視戰績",
+  "overlayTable": "表格定位",
+  "overlayTableDetect": "像素偵測",
+  "overlayTableOff": "關閉（停用 Tab 顯示）",
+  "overlayRoster": "名單辨識",
+  "overlayRosterOcr": "OCR 辨識",
+  "overlayRosterOff": "關閉（按隊伍順序顯示）",
   "overlayFullscreenNote": "※ 獨占全螢幕下無法顯示：該模式下 Windows GDI 擷取畫面只能取得黑幀，覆蓋視窗也無法疊加在全螢幕交換鏈之上。請在遊戲設定中將顯示模式改為「無邊框」或「視窗化」。",
   "gamePathChange": "變更…"
 }
