@@ -1,4 +1,6 @@
 {
   "hint": "Hold Tab in battle to show team stats.",
-  "locateHint": "Detection is active, but the team list hasn't been located yet — enter a battle and try again."
+  "locateHint": "Detection is active, but the team list hasn't been located yet — enter a battle and try again.",
+  "locatingHint": "Hold Tab — recognizing the roster…",
+  "recognizingBadge": "Recognizing roster…"
 }

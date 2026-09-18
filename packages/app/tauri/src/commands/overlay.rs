@@ -24,7 +24,15 @@
 //! detection and replaced when the table moved at row scale — the in-battle
 //! panel shifts as a whole when HUD phases change (countdown → combat), and
 //! a battle-pinned anchor would otherwise keep the countdown position for
-//! the entire battle.
+//! the entire battle. The same pass now also RECONCILES the row→name
+//! recognition: while a pin still lacks a trusted mapping (the arena roster
+//! file landed after the pin, or an all-`None` OCR read matched nothing) it
+//! re-runs at the capture rate limit ([`CAPTURE_MIN_INTERVAL`]) instead of
+//! the full 5 s, and whenever a fresh detection disagrees with the pin's
+//! mapping — first recognition landing late, or sunk ships re-sorting the
+//! rows — only the mapping is transplanted onto the pin (geometry
+//! untouched) and the anchor is re-emitted, so the chips re-render with
+//! correct attribution without ever wandering.
 //!
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
@@ -778,6 +786,12 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     // last_capture_attempt: it throttles the periodic re-check of the pin
     // while the overlay STAYS shown (see ANCHOR_REVALIDATE_INTERVAL).
     let mut last_revalidate: Option<Instant> = None;
+    // When the last recognition CATCH-UP pass ran. Its own stamp (not
+    // last_capture_attempt — that one only gates the acquisition arm, which
+    // never runs while a confirmed pin is shown) spaces the faster-than-5 s
+    // revalidation passes that keep trying while a pin still lacks its
+    // row→name mapping.
+    let mut last_catch_up: Option<Instant> = None;
     // Mirror of the LAST `wowsp://overlay-status` payload emitted (None =
     // nothing emitted yet). report_status() drops reports identical to it,
     // so the per-tick status pushes are edge events, not level events.
@@ -802,6 +816,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 &mut last_hide,
                 &mut last_state_refresh,
                 &mut last_revalidate,
+                &mut last_catch_up,
                 &mut last_status,
             );
         }));
@@ -834,6 +849,7 @@ fn watch_tab_tick(
     last_hide: &mut Option<Instant>,
     last_state_refresh: &mut Option<Instant>,
     last_revalidate: &mut Option<Instant>,
+    last_catch_up: &mut Option<Instant>,
     last_status: &mut Option<OverlayStatus>,
 ) {
     {
@@ -1036,6 +1052,20 @@ fn watch_tab_tick(
                 // A failed acquisition while ALREADY shown keeps the old
                 // anchor on screen — the previous behavior of hiding here
                 // made a single failed re-capture blink the overlay off.
+            } else if should_catch_up_recognition(
+                pinned_anchor.as_ref().map(|p| &p.anchor),
+                row_recognize::recognizer_enabled(),
+                last_catch_up.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL),
+            ) {
+                // Recognition is still pending on a CONFIRMED pin (the arena
+                // roster landed after the pin, or the first OCR pass read
+                // nothing): run the SAME revalidation pass at the capture
+                // rate limit instead of waiting the full 5 s — the fresh
+                // detection both re-checks the geometry and carries a new
+                // row→name mapping for the transplant inside. The pass bumps
+                // last_revalidate itself, so the two cadences never stack.
+                *last_catch_up = Some(Instant::now());
+                revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate, last_status);
             } else if last_revalidate.is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL) {
                 // Shown AND pinned (the only way to reach this arm):
                 // periodically re-check the pin against a live detection —
@@ -1064,12 +1094,92 @@ fn watch_tab_tick(
     }
 }
 
+/// Pure: does this `row_players` payload count as "no trusted row→name
+/// mapping"? Both `None` (recognition off, or the pipeline bailed) and a
+/// vec where EVERY row failed to match (honest silence — text was read but
+/// nothing stuck to the roster) leave the chips without trusted
+/// attribution: the pending badge and the recognition catch-up stay on for
+/// both.
+fn mapping_untrusted(players: &Option<Vec<Option<String>>>) -> bool {
+    match players {
+        None => true,
+        Some(v) => v.iter().all(Option::is_none),
+    }
+}
+
+/// Pure catch-up gate (unit-testable; time and engine availability are
+/// injected by the caller): run a recognition catch-up pass when a CONFIRMED
+/// pin is on screen but still lacks a trusted row→name mapping (absent, or
+/// an all-`None` read — nothing matched) while recognition is enabled — and
+/// the throttle says a capture may run.
+///
+/// Keeping the gate armed on an all-`None` pin cannot oscillate: a
+/// deterministic re-read is again all-`None`, compares equal to the pin's
+/// mapping, `should_transplant_rows` stays false and the pass re-emits
+/// nothing.
+fn should_catch_up_recognition(
+    pin: Option<&OverlayAnchor>,
+    recognizer_on: bool,
+    throttle_elapsed: bool,
+) -> bool {
+    pin.is_some_and(|p| p.table_detected && mapping_untrusted(&p.row_players))
+        && recognizer_on
+        && throttle_elapsed
+}
+
+/// Pure transplant decision (unit-testable): a fresh detection carries a
+/// row→name mapping worth copying onto the pinned anchor. ALL of:
+///
+/// - the fresh anchor is a CONFIRMED table (a fallback detection never
+///   touches the pin);
+/// - its mapping covers exactly the pinned grid's rows — `row_players` is
+///   indexed BY ROW, so a length mismatch means the two grids disagree and
+///   the mapping would pin stats onto the wrong rows: dropped;
+/// - the mapping actually DIFFERS (absent→present catch-up, an all-`None`
+///   read landing for the first time, or a re-sort after sinks) — identical
+///   mappings are dropped so a pass that found nothing new never re-emits
+///   the anchor.
+fn should_transplant_rows(fresh: &OverlayAnchor, pinned: &OverlayAnchor) -> bool {
+    fresh.table_detected
+        && fresh.row_players.as_ref().map(Vec::len) == Some(pinned.row_centers.len())
+        && fresh.row_players != pinned.row_players
+}
+
+/// Pure transplant: the pinned anchor with `fresh`'s row→name mapping and
+/// pending flag copied in — every geometry field untouched (the mapping is
+/// indexed by row, and the rows themselves did not move). `None` when
+/// [`should_transplant_rows`] says there is nothing to transplant.
+fn transplant_row_players(pinned: &OverlayAnchor, fresh: &OverlayAnchor) -> Option<OverlayAnchor> {
+    if !should_transplant_rows(fresh, pinned) {
+        return None;
+    }
+    let mut updated = pinned.clone();
+    updated.row_players = fresh.row_players.clone();
+    // Pending survives an all-`None` transplant (honest silence is not a
+    // trusted mapping — the badge and the catch-up stay on); only a
+    // mapping that matched at least one row clears it.
+    updated.row_players_pending = mapping_untrusted(&updated.row_players);
+    Some(updated)
+}
+
 /// One revalidation pass over the pinned anchor while the overlay is shown:
-/// re-run the capture + detector against the live frame and replace the pin
-/// (re-emitting the anchor) only when the table MOVED at row scale
-/// (`overlay_detect::anchor_meaningfully_moved`). Every other outcome — a
-/// failed capture, a fallback detection, sub-pitch jitter — keeps the pin
-/// and emits nothing, so this pass can never make the chips wander.
+/// re-run the capture + detector against the live frame and reconcile the
+/// pin with it. Two outcomes change the pin (re-emitting the anchor):
+///
+/// - the table MOVED at row scale (`overlay_detect::anchor_meaningfully_moved`)
+///   → the whole pin is replaced by the fresh anchor, which carries its own
+///   fresh recognition;
+/// - the geometry is unchanged but the row→name mapping CHANGED
+///   ([`transplant_row_players`] — first recognition landing after the pin
+///   because the arena roster file was late, or a re-detection after sinks
+///   re-sorted the rows) → only `row_players` / `row_players_pending` are
+///   transplanted onto the pin, geometry untouched.
+///
+/// Every other outcome — a failed capture, a fallback detection, sub-pitch
+/// jitter, an identical mapping — keeps the pin and emits nothing, so this
+/// pass can never make the chips wander. Status reports are only touched by
+/// the move-replacement (whose row count may change); a transplant keeps the
+/// `detected` state and merely re-renders the chips.
 /// `last_revalidate` is bumped unconditionally: the pass costs a full
 /// capture attempt regardless of its outcome.
 ///
@@ -1096,32 +1206,51 @@ fn revalidate_pinned_anchor(
         tracing::debug!("anchor revalidation: capture/detection failed — pin kept");
         return;
     };
-    if !overlay_detect::anchor_meaningfully_moved(&pinned, &fresh) {
+    if overlay_detect::anchor_meaningfully_moved(&pinned, &fresh) {
+        tracing::info!(
+            pinned_first_row = pinned.row_centers.first().copied().unwrap_or(0),
+            fresh_first_row = fresh.row_centers.first().copied().unwrap_or(0),
+            "panel layout shifted — replacing the pinned anchor"
+        );
+        // Re-key the pin to the CURRENT battle + window geometry: the fresh
+        // anchor was computed from THIS frame, so it belongs to this geometry.
+        *pinned_anchor = Some(PinnedAnchor {
+            battle: super::arena_info::last_arena_stamp(),
+            game_rect: rect_from_win32(g.rect),
+            anchor: fresh.clone(),
+        });
+        place_and_show(app, &fresh);
+        // The replacement anchor is always CONFIRMED (a fallback fresh anchor
+        // can never move past `anchor_meaningfully_moved` against a confirmed
+        // pin) — but its row count may differ from the old pin's. report_status
+        // dedups, so an unchanged layout costs nothing.
+        report_status(
+            app,
+            last_status,
+            OverlayState::Detected,
+            Some(fresh.row_centers.len() as u32),
+        );
         return;
     }
-    tracing::info!(
-        pinned_first_row = pinned.row_centers.first().copied().unwrap_or(0),
-        fresh_first_row = fresh.row_centers.first().copied().unwrap_or(0),
-        "panel layout shifted — replacing the pinned anchor"
-    );
-    // Re-key the pin to the CURRENT battle + window geometry: the fresh
-    // anchor was computed from THIS frame, so it belongs to this geometry.
-    *pinned_anchor = Some(PinnedAnchor {
-        battle: super::arena_info::last_arena_stamp(),
-        game_rect: rect_from_win32(g.rect),
-        anchor: fresh.clone(),
-    });
-    place_and_show(app, &fresh);
-    // The replacement anchor is always CONFIRMED (a fallback fresh anchor
-    // can never move past `anchor_meaningfully_moved` against a confirmed
-    // pin) — but its row count may differ from the old pin's. report_status
-    // dedups, so an unchanged layout costs nothing.
-    report_status(
-        app,
-        last_status,
-        OverlayState::Detected,
-        Some(fresh.row_centers.len() as u32),
-    );
+    // Geometry unchanged (sub-pitch jitter): only the row→name mapping may
+    // have caught up or been re-sorted. Transplant it — and re-emit the
+    // anchor so the overlay re-renders its chips — when fresh recognition
+    // disagrees with the pin; otherwise emit nothing.
+    if let Some(updated) = transplant_row_players(&pinned, &fresh) {
+        tracing::info!(
+            rows = updated.row_centers.len(),
+            matched = updated
+                .row_players
+                .as_ref()
+                .map(|r| r.iter().filter(|n| n.is_some()).count())
+                .unwrap_or(0),
+            "row recognition caught up — transplanting the mapping onto the pin"
+        );
+        if let Some(pin) = pinned_anchor.as_mut() {
+            pin.anchor = updated.clone();
+        }
+        place_and_show(app, &updated);
+    }
 }
 
 /// Whether the overlay window currently reports as visible (false when it is
@@ -1297,14 +1426,15 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
                 (r, rows, 0.5, false)
             },
         };
-    // Row → player-name recognition (PR 3a: architecture only). Runs on the
-    // DETECTED capture-relative geometry, before build_anchor re-bases it to
-    // the overlay origin; off by default (WOWSP_ROW_RECOGNIZER unset) and a
-    // no-op then — the anchor keeps row_players = None, which the frontend
-    // reads as the historical index mapping. Every failure inside degrades
-    // to None and must never disturb the anchor flow. `ally_rows` is the
-    // SAME team_sizes read the detection grid above was built from — the
-    // single source of truth for the pipeline's block split.
+    // Row → player-name recognition. Runs on the DETECTED capture-relative
+    // geometry, before build_anchor re-bases it to the overlay origin; ON by
+    // default (WOWSP_ROW_RECOGNIZER, engine `windows-ocr`) and a no-op then
+    // only when it fails — the anchor keeps row_players = None, which the
+    // frontend reads as the historical index mapping. Explicitly disabled
+    // with `off` / `null`. Every failure inside degrades to None and must
+    // never disturb the anchor flow. `ally_rows` is the SAME team_sizes read
+    // the detection grid above was built from — the single source of truth
+    // for the pipeline's block split.
     let row_players = if detected {
         row_recognize::recognize_row_players(&row_recognize::RowFrame {
             rgba: &rgba,
@@ -1326,6 +1456,16 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
         detected,
     );
     anchor.row_players = row_players;
+    // Pending flag: recognition is ENABLED but this anchor carries no
+    // trusted row→name mapping yet — the arena roster was not ready, OCR
+    // read nothing, or no row's text matched the roster (an all-`None` vec
+    // is honest silence, NOT a trusted mapping). The overlay shows its
+    // "recognizing roster" badge and the watcher keeps re-running
+    // recognition (catch-up) until something actually matches. Manual
+    // anchors never reach this code and keep the serde-default false; with
+    // recognition off the engine gate is false as well.
+    anchor.row_players_pending =
+        row_recognize::recognizer_enabled() && mapping_untrusted(&anchor.row_players);
     tracing::info!(
         detected,
         overlay = format!(
@@ -1706,6 +1846,148 @@ fn capture_game_rgba(rect: &windows::Win32::Foundation::RECT) -> Option<(Vec<u8>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hand-built anchor for the recognition catch-up / transplant tests:
+    /// only the fields those decisions read are varied.
+    fn anchor_with_players(
+        rows: usize,
+        detected: bool,
+        players: Option<Vec<Option<String>>>,
+        pending: bool,
+    ) -> OverlayAnchor {
+        OverlayAnchor {
+            game_rect: Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+            overlay_rect: Rect {
+                x: 100,
+                y: 100,
+                width: 1200,
+                height: 500,
+            },
+            roster_rect: Rect {
+                x: 150,
+                y: 24,
+                width: 900,
+                height: 400,
+            },
+            row_centers: vec![50; rows],
+            team_split: 0.5,
+            table_detected: detected,
+            row_players: players,
+            row_players_pending: pending,
+        }
+    }
+
+    #[test]
+    fn mapping_untrusted_needs_at_least_one_match() {
+        // Absent payload (recognition off / pipeline bailed) and an all-None
+        // read (text seen, nothing matched) are both "no trusted mapping";
+        // one matched row is enough to trust it.
+        assert!(mapping_untrusted(&None));
+        assert!(mapping_untrusted(&Some(vec![None, None])));
+        assert!(!mapping_untrusted(&Some(vec![Some("Alpha".into()), None])));
+    }
+
+    #[test]
+    fn transplant_needs_confirmed_equal_length_changed_mapping() {
+        let pinned = anchor_with_players(2, true, None, true);
+        // First recognition landing on an unchanged grid → transplant.
+        let fresh = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
+        let updated = transplant_row_players(&pinned, &fresh).expect("catch-up maps");
+        assert_eq!(
+            updated.row_players,
+            Some(vec![Some("Alpha".into()), None]),
+            "the mapping is copied verbatim"
+        );
+        assert!(!updated.row_players_pending, "a mapping clears pending");
+        // Geometry is untouched — only the mapping fields move.
+        assert_eq!(updated.row_centers, pinned.row_centers);
+        assert_eq!(updated.roster_rect, pinned.roster_rect);
+        assert_eq!(updated.overlay_rect, pinned.overlay_rect);
+        assert_eq!(updated.game_rect, pinned.game_rect);
+        assert_eq!(updated.team_split, pinned.team_split);
+        assert!(updated.table_detected);
+        // Identical mapping → nothing to re-emit.
+        let fresh_same =
+            anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
+        let pinned_mapped = transplant_row_players(&pinned, &fresh).unwrap();
+        assert!(transplant_row_players(&pinned_mapped, &fresh_same).is_none());
+        // A re-sort (different mapping, same length) DOES transplant.
+        let re_sorted = anchor_with_players(2, true, Some(vec![None, Some("Alpha".into())]), false);
+        assert!(transplant_row_players(&pinned_mapped, &re_sorted).is_some());
+        // Length mismatch (grids disagree) → dropped, never mis-pinned.
+        let wrong_len =
+            anchor_with_players(3, true, Some(vec![Some("Alpha".into()), None, None]), false);
+        assert!(transplant_row_players(&pinned, &wrong_len).is_none());
+        // Fallback detection never touches the pin.
+        let fallback = anchor_with_players(2, false, Some(vec![None, None]), false);
+        assert!(transplant_row_players(&pinned, &fallback).is_none());
+        // A fresh pass that recognized nothing carries no mapping either.
+        let no_mapping = anchor_with_players(2, true, None, true);
+        assert!(transplant_row_players(&pinned, &no_mapping).is_none());
+        assert!(should_transplant_rows(&fresh, &pinned));
+        assert!(!should_transplant_rows(&no_mapping, &pinned));
+
+        // An all-None read (text seen, nothing matched) transplants onto a
+        // mapping-less pin — honest silence replaces the index guess — but
+        // the result is still NOT a trusted mapping: pending stays true.
+        let all_none = anchor_with_players(2, true, Some(vec![None, None]), false);
+        let silenced =
+            transplant_row_players(&pinned, &all_none).expect("an all-None read still lands");
+        assert_eq!(silenced.row_players, Some(vec![None, None]));
+        assert!(
+            silenced.row_players_pending,
+            "an all-None mapping is not trusted"
+        );
+        // A deterministic all-None re-read compares equal → no transplant,
+        // no re-emit: keeping catch-up armed on an all-None pin cannot
+        // oscillate.
+        assert!(transplant_row_players(&silenced, &all_none).is_none());
+        // A later read that matches something transplants…
+        let recovered_pin =
+            anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
+        let recovered = transplant_row_players(&silenced, &recovered_pin)
+            .expect("a partial match improves an all-None mapping");
+        // …and a mapping with at least one match clears pending.
+        assert!(!recovered.row_players_pending);
+    }
+
+    #[test]
+    fn catch_up_gate_needs_pin_pending_engine_and_throttle() {
+        let pending_pin = anchor_with_players(2, true, None, true);
+        // An all-None mapping (text read, nothing matched) is NOT ready —
+        // catch-up stays armed for it too.
+        let all_none_pin = anchor_with_players(2, true, Some(vec![None, None]), false);
+        let ready_pin = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
+        let fallback_pin = anchor_with_players(2, false, None, false);
+        // Pending (absent or all-None mapping) + engine on + throttle
+        // elapsed → run the catch-up pass.
+        assert!(should_catch_up_recognition(Some(&pending_pin), true, true));
+        assert!(should_catch_up_recognition(Some(&all_none_pin), true, true));
+        // …but not without the engine, the throttle, a pin, a confirmed
+        // table, or once a trusted mapping has landed.
+        assert!(!should_catch_up_recognition(
+            Some(&pending_pin),
+            false,
+            true
+        ));
+        assert!(!should_catch_up_recognition(
+            Some(&pending_pin),
+            true,
+            false
+        ));
+        assert!(!should_catch_up_recognition(None, true, true));
+        assert!(!should_catch_up_recognition(Some(&ready_pin), true, true));
+        assert!(!should_catch_up_recognition(
+            Some(&fallback_pin),
+            true,
+            true
+        ));
+    }
 
     #[test]
     fn manual_row_centers_split_two_even_blocks() {
