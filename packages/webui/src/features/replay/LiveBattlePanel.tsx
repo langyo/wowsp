@@ -17,9 +17,10 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { modeColor, modeKey } from "@/utils/modeColors";
-import { prTier, winrateColor } from "@/utils/winrate";
+import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { useRosterStats, isAiName } from "@/composables/useRosterStats";
 import { useBattleClock } from "./useBattleClock";
+import RatingStamp from "@/components/base/RatingStamp";
 import { HSpinner } from "@celestia-island/hikari";
 import mapNamesRaw from "@/data/map_names.json";
 import "./LiveBattlePanel.scss";
@@ -199,13 +200,22 @@ export default defineComponent({
           );
         }
         if (st.winrate != null) {
+          const tier = prTier(st.pr);
+          const stamp = careerStamp(st.pr, st.battles);
           return (
             <span>
               <b style={{ color: winrateColor(st.winrate) }}>
                 {st.winrate.toFixed(1)}%
               </b>{" "}
               WR ·{" "}
-              <b style={{ color: prTier(st.pr).color }}>{st.pr ?? "—"}</b> PR
+              <b
+                class={tier.rainbow ? "rainbow-text" : undefined}
+                style={tier.rainbow ? undefined : { color: tier.color }}
+              >
+                {st.pr ?? "—"}
+              </b>{" "}
+              PR
+              {stamp ? <RatingStamp kind={stamp} size={13} variant="mini" /> : null}
             </span>
           );
         }
