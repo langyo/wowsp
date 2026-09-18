@@ -1,18 +1,9 @@
 import { computed, defineComponent } from "vue";
 import type { DogTag } from "@/api";
-import dogtagsMapRaw from "@/data/dogtags_map.json";
 
 import { AssetImage } from "@/components/base/AssetImage";
+import { dogtagAssetUrl, dogtagEntry } from "@/utils/dogtagAssets";
 import "./PlayerBadge.scss";
-
-/** dogtags_map.json: vortex dogTag id -> [index, species, colorHEX?]. */
-type MapEntry = [string, string] | [string, string, string];
-const MAP = dogtagsMapRaw as unknown as Record<string, MapEntry>;
-
-function entryFor(id: number | undefined | null): MapEntry | null {
-  if (id == null) return null;
-  return MAP[String(id)] ?? null;
-}
 
 function hex(hexWithPrefix: string): string {
   return hexWithPrefix.replace("0x", "#");
@@ -38,9 +29,9 @@ function isOutlineShape(index: string): boolean {
   return n >= 1 && n <= 9;
 }
 
-/** Image URL for a dog tag part (symbol/texture). */
+/** Image URL for a dog tag part (symbol/texture), pack-aware. */
 function partUrl(index: string): string {
-  return "/dogtags/" + index + ".png";
+  return dogtagAssetUrl(index + ".png");
 }
 
 /** Patch (PCNP) and unique-emblem (PCNU) species ship as complete medals on
@@ -81,12 +72,13 @@ export default defineComponent({
       const dt = props.dogTag;
       // When Vortex returns no dog tag (accounts that never customised), fall
       // back to the default symbol + shield so the badge renders a dog tag
-      // instead of the service-record tier.
-      const bgColor = entryFor(dt?.backgroundColor);
-      const borderColor = entryFor(dt?.borderColor);
-      const shape = entryFor(dt?.backgroundId) ?? entryFor(DEFAULT_SHAPE_ID);
-      const texture = entryFor(dt?.textureId);
-      const symbol = entryFor(dt?.symbolId) ?? entryFor(DEFAULT_SYMBOL_ID);
+      // instead of the service-record tier. Lookups go through the
+      // pack-overlay store so medals added after this build was cut resolve.
+      const bgColor = dogtagEntry(dt?.backgroundColor);
+      const borderColor = dogtagEntry(dt?.borderColor);
+      const shape = dogtagEntry(dt?.backgroundId) ?? dogtagEntry(DEFAULT_SHAPE_ID);
+      const texture = dogtagEntry(dt?.textureId);
+      const symbol = dogtagEntry(dt?.symbolId) ?? dogtagEntry(DEFAULT_SYMBOL_ID);
 
       // Standalone medal: one full-bleed image, nothing else stacks.
       if (symbol && STANDALONE_SPECIES.has(symbol[1])) {
@@ -110,14 +102,14 @@ export default defineComponent({
         border: borderColor?.[2] ? hex(borderColor[2]) : null,
         // Flat shapes are the plate (bottom layer); directory shapes only
         // contribute a border outline (top layer).
-        plateUrl: shape && !outline ? "/dogtags/" + shapeIndex + ".png" : null,
-        frameUrl: shape && outline ? "/dogtags/" + shapeIndex + "/border.png" : null,
+        plateUrl: shape && !outline ? dogtagAssetUrl(shapeIndex + ".png") : null,
+        frameUrl: shape && outline ? dogtagAssetUrl(shapeIndex + "/border.png") : null,
         // Clip mask = the plate filled shape: the flat plate alpha, or the
         // filled shield shipped next to the outline for directory shapes.
         maskUrl: shape
           ? outline
-            ? "/dogtags/" + shapeIndex + "/PCNT001.png"
-            : "/dogtags/" + shapeIndex + ".png"
+            ? dogtagAssetUrl(shapeIndex + "/PCNT001.png")
+            : dogtagAssetUrl(shapeIndex + ".png")
           : null,
         textureUrl: texture ? partUrl(texture[0]) : null,
         symbolUrl: symbol ? partUrl(symbol[0]) : null,
