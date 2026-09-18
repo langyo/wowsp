@@ -77,13 +77,14 @@ function replaysDir(installPath: string): string {
 }
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
- *  eventType) with a generic fallback. */
+ *  eventType / roster bots) with a generic fallback. */
 function modeLabel(
   group?: string | null,
   scenario?: string | null,
   eventType?: string | null,
+  botCount = 0,
 ): string {
-  const key = modeKey(group, scenario, eventType);
+  const key = modeKey(group, scenario, eventType, botCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = `replay.mode.${key}`;
   const lbl = t(i18nKey);
@@ -181,7 +182,7 @@ function rosterStatCols(
     return (
       <span
         class={`replay-view__postbattle-cell-stat ${mod}`}
-        title={tip}
+        data-hint={tip}
       >
         {body}
       </span>
@@ -467,7 +468,7 @@ const PostBattlePanel = defineComponent({
                       {sel.accountId !== pb.selfId ? (
                         <em
                           class="replay-view__postbattle-damage-unknown"
-                          title={t("replay.postbattle.damageUnknownNote")}
+                          data-hint={t("replay.postbattle.damageUnknownNote")}
                         >
                           *
                         </em>
@@ -487,7 +488,7 @@ const PostBattlePanel = defineComponent({
                         <span
                           key={x.key}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={`${name} ×${x.value}`}
+                          data-hint={`${name} ×${x.value}`}
                         >
                           <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
                           <em>{x.value}</em>
@@ -817,7 +818,7 @@ const PostBattleFallbackPanel = defineComponent({
                         <span
                           key={x.key}
                           class="replay-view__postbattle-detail-ribbon"
-                          title={`${name} ×${x.value}`}
+                          data-hint={`${name} ×${x.value}`}
                         >
                           <AssetImage
                             src={bundledRibbonUrl(x.key)}
@@ -1357,9 +1358,19 @@ export default defineComponent({
                         {overlay.arenaInfo?.matchGroup ? (
                           <span
                             class="replay-card__pill"
-                            style={modeColor(overlay.arenaInfo.matchGroup, null, null) as CSSProperties}
+                            style={modeColor(
+                              overlay.arenaInfo.matchGroup,
+                              overlay.arenaInfo.scenario,
+                              null,
+                              overlay.arenaInfo.botCount ?? 0,
+                            ) as CSSProperties}
                           >
-                            {modeLabel(overlay.arenaInfo.matchGroup, null, null)}
+                            {modeLabel(
+                              overlay.arenaInfo.matchGroup,
+                              overlay.arenaInfo.scenario,
+                              null,
+                              overlay.arenaInfo.botCount ?? 0,
+                            )}
                           </span>
                         ) : null}
                         {livePhase.value === "settling" ? (
@@ -1413,8 +1424,11 @@ export default defineComponent({
                           {r.ownShipName ?? t("replay.ownShip")}
                         </span>
                         {r.matchGroup ? (
-                          <span class="replay-card__pill" style={modeColor(r.matchGroup, r.scenario, r.eventType) as CSSProperties}>
-                            {modeLabel(r.matchGroup, r.scenario, r.eventType)}
+                          <span
+                            class="replay-card__pill"
+                            style={modeColor(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0) as CSSProperties}
+                          >
+                            {modeLabel(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0)}
                           </span>
                         ) : null}
                       </div>
@@ -1468,6 +1482,7 @@ export default defineComponent({
                         parser.current.value.matchGroup,
                         parser.current.value.scenario,
                         parser.current.value.eventType,
+                        parser.current.value.botCount ?? 0,
                       ) as CSSProperties
                     }
                   >
@@ -1475,6 +1490,7 @@ export default defineComponent({
                       parser.current.value.matchGroup,
                       parser.current.value.scenario,
                       parser.current.value.eventType,
+                      parser.current.value.botCount ?? 0,
                     )}
                   </span>
                 ) : null}

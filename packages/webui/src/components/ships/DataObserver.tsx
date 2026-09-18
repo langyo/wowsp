@@ -150,7 +150,7 @@ export default defineComponent({
                       <dt class="do-group__label">
                         {t(`ships.spec.${row.key}`)}
                         {row.hint ? (
-                          <span class="do-group__hint" title={t(`ships.spec.${row.hint}`)}>
+                          <span class="do-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
                             <HelpCircle size={10} />
                           </span>
                         ) : null}

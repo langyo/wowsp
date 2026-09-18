@@ -147,7 +147,7 @@
    grid. Each group has an icon + title header and a label/value row list.
    Rows align labels left, values right, with a consistent line height so
    values line up vertically within a group. The help icon next to a label
-   reveals a tooltip (native title attr) explaining the stat. */
+   reveals the global data-hint tooltip explaining the stat. */
 .specs-panel {
   columns: 220px;
   column-gap: 0.6rem;

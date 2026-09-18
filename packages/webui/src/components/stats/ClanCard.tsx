@@ -242,7 +242,7 @@ export default defineComponent({
                 m.stats.hidden ? "clan-card__member--hidden" : "",
               ]}
               onClick={() => props.onMemberClick?.(m)}
-              title={
+              data-hint={
                 props.onMemberClick
                   ? `${t("account.nickname")}: ${m.name}`
                   : undefined

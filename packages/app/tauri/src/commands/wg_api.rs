@@ -11,6 +11,9 @@
 //! API root and answers METHOD_NOT_FOUND for every method):
 //!   list    GET https://<api_host>/wows/account/list/?application_id=..&search=<name>
 //!   stats   GET https://<api_host>/wows/account/info/?application_id=..&account_id=<id>
+//!           &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3
+//!           (the division splits are extra-gated — unrequested nodes are
+//!           omitted from the response entirely)
 //!   clan    GET https://<api_host>/wows/clans/accountinfo/?application_id=..&account_id=<id>
 //!   clans   GET https://<api_host>/wows/clans/list/?application_id=..&search=<tag|name>
 //!   claninfo GET https://<api_host>/wows/clans/info/?application_id=..&clan_id=<id>&extra=members
@@ -73,8 +76,11 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
     // 2-4. account/info, clan tag and Vortex dog tag only need the account
     //    id — run the three requests concurrently instead of serially.
     let info_fut = async {
+        // pvp_solo/div2/div3 are extra-gated: without the `extra` param the
+        // API omits them entirely and the division winrates render as "—".
         let url = format!(
-            "https://{host}/wows/account/info/?application_id={app_id}&account_id={}",
+            "https://{host}/wows/account/info/?application_id={app_id}&account_id={}\
+             &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3",
             entry.account_id
         );
         let resp = client
@@ -206,9 +212,11 @@ pub async fn lookup_players_stats_batch(
         .collect::<Vec<_>>()
         .join(",");
     let info_fut = async {
+        // Same extra-gated division splits as the single lookup.
         let resp = client
             .get(format!(
-                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
+                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
+                 &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
             ))
             .send()
             .await

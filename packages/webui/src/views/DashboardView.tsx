@@ -193,7 +193,7 @@ export default defineComponent({
                         <div class="dash-ranked__card" key={rs.seasonId}>
                           <div class="dash-ranked__season">{rs.seasonName}</div>
                           {rs.bestRankDisplay ? (
-                            <div class="dash-ranked__rank" title={t("dashboard.bestRank")}>
+                            <div class="dash-ranked__rank" data-hint={t("dashboard.bestRank")}>
                               {rs.bestRankDisplay}
                             </div>
                           ) : null}

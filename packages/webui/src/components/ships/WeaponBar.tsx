@@ -225,7 +225,7 @@ export default defineComponent({
       return (
         <div class="weapon-bar">
           {weapons.value.map((w) => (
-            <button key={w.key} class="weapon-bar__btn" title={w.label}
+            <button key={w.key} class="weapon-bar__btn" data-hint={w.label}
               onClick={() => emit("focus", w.zone, w.count)}>
               <w.icon size={14} />
               <span class="weapon-bar__label">{w.label}</span>

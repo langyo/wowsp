@@ -139,7 +139,7 @@ export default defineComponent({
                     <div class="skill-tier-v__label">
                       <span>{t("ships.skills.tier", { n: tier })}</span>
                       {!unlocked ? (
-                        <span class="skill-tier-v__lock" title={t("ships.skills.locked", { n: need })}>
+                        <span class="skill-tier-v__lock" data-hint={t("ships.skills.locked", { n: need })}>
                           <Lock size={10} />
                         </span>
                       ) : null}
@@ -160,7 +160,7 @@ export default defineComponent({
                               class="skill-tile-v__btn"
                               disabled={!unlocked}
                               onClick={() => (unlocked ? inc(skill) : null)}
-                              title={displayName}
+                              data-hint={displayName}
                             >
                               <span class="skill-tile-v__icon">
                                 <AssetImage

@@ -403,7 +403,7 @@ export default defineComponent({
                       "ships-view__nation-btn",
                       treeNation.value === n ? "ships-view__nation-btn--on" : "",
                     ]}
-                    title={nationLabel(n)}
+                    data-hint={nationLabel(n)}
                     onClick={() => (treeNation.value = n)}
                   >
                     <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />

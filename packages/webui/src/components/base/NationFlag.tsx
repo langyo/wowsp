@@ -45,7 +45,7 @@ export default defineComponent({
       const sz = props.size;
       const showImg = img.status.value === "loading" || img.status.value === "loaded";
       return (
-        <span class={["nation-flag", `nation-flag--${sz}`, `nation-flag--${props.variant}`]} title={title.value} key={img.key.value}>
+        <span class={["nation-flag", `nation-flag--${sz}`, `nation-flag--${props.variant}`]} data-hint={title.value} key={img.key.value}>
           {showImg ? (
             <img
               class={["nation-flag__img", "image-asset__img", img.status.value === "loaded" ? "is-loaded" : ""].join(" ")}
