@@ -1,38 +1,116 @@
-import { defineComponent } from "vue";
+import { defineComponent, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
-  HardDriveDownload, Usb, Zap, Download, ExternalLink, FileDown, Monitor, Apple, Terminal, Check, Clock3,
+  HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check,
 } from "@lucide/vue";
-import { HTag } from "@celestia-island/hikari";
 import { LinkButton, Reveal } from "@/components/ui";
 import "./DownloadView.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
 const RELEASES = `${GITHUB}/releases/latest`;
+const API_LATEST = "https://api.github.com/repos/langyo/wowsp/releases/latest";
+const API_LIST = "https://api.github.com/repos/langyo/wowsp/releases?per_page=10";
+
+interface ReleaseAsset {
+  name: string;
+  size: number;
+  url: string;
+}
+
+interface LatestRelease {
+  tag: string;
+  assets: ReleaseAsset[];
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+/* Installers only. The `releases/latest` endpoint is shared with the
+ * res-latest / mod-hub rolling releases (model packs, mod zips): when one
+ * of those was published more recently it takes over the endpoint, so the
+ * tag is verified to be a versioned app tag (v…) and the list endpoint is
+ * the fallback for finding the newest v-tagged release. */
+function pickRelease(v: unknown): LatestRelease | null {
+  if (!isRecord(v)) return null;
+  const tag = str(v.tag_name);
+  if (!tag || !/^v\d/.test(tag) || !Array.isArray(v.assets)) return null;
+  const assets: ReleaseAsset[] = [];
+  for (const raw of v.assets) {
+    if (!isRecord(raw)) continue;
+    const name = str(raw.name);
+    const url = str(raw.browser_download_url);
+    if (!name || !url || !/\.(exe|msi)$/.test(name)) continue;
+    assets.push({ name, size: typeof raw.size === "number" ? raw.size : 0, url });
+  }
+  return assets.length ? { tag, assets } : null;
+}
+
+async function ghJson(url: string): Promise<unknown> {
+  const res = await fetch(url, {
+    headers: { Accept: "application/vnd.github+json" },
+    signal: AbortSignal.timeout(8000),
+  });
+  return res.ok ? (res.json() as Promise<unknown>) : null;
+}
+
+async function fetchLatestRelease(): Promise<LatestRelease | null> {
+  try {
+    const latest = pickRelease(await ghJson(API_LATEST));
+    if (latest) return latest;
+    const list = await ghJson(API_LIST);
+    if (Array.isArray(list)) {
+      for (const rel of list) {
+        const hit = pickRelease(rel);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const mb = bytes / 1024 / 1024;
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+}
 
 export default defineComponent({
   name: "DownloadView",
   setup() {
     const { t } = useI18n();
 
+    // Latest release — fetched live so version numbers never go stale.
+    // `phase` keeps the pending fetch (placeholder row) apart from a real
+    // failure (fallback link to the Releases page).
+    const release = ref<LatestRelease | null>(null);
+    const phase = ref<"loading" | "ready" | "failed">("loading");
+    onMounted(async () => {
+      const hit = await fetchLatestRelease();
+      if (hit) {
+        release.value = hit;
+        phase.value = "ready";
+      } else {
+        phase.value = "failed";
+      }
+    });
+
+    function assetLabel(name: string): string {
+      if (/\.msi$/.test(name)) return "MSI";
+      return /webview2/.test(name) ? t("download.assetInstallerWv2") : t("download.assetInstaller");
+    }
+
     const modes = [
       { icon: HardDriveDownload, key: "modeInstall" },
       { icon: Usb, key: "modeUsb" },
-      { icon: Zap, key: "modeGreen" },
     ] as const;
-
-    const platforms = [
-      { icon: Monitor, key: "win", ready: true },
-      { icon: Apple, key: "mac", ready: false },
-      { icon: Terminal, key: "linux", ready: false },
-    ] as const;
-
-    const assets = [
-      { file: "WoWSP-0.1.0-x64-setup.exe", label: t("download.install") },
-      { file: "WoWSP-0.1.0-x64-portable.exe", label: t("download.portable") },
-      { file: "WoWSP-0.1.0-x64.msi", label: "MSI" },
-      { file: "latest.json", label: "Update manifest" },
-    ];
 
     return () => (
       <div class="download">
@@ -53,45 +131,16 @@ export default defineComponent({
                 <ExternalLink size={13} />
               </LinkButton>
             </Reveal>
-          </div>
-        </section>
-
-        {/* ── platforms ── */}
-        <section class="download__platforms container">
-          <div class="download__grid">
-            {platforms.map((p, i) => {
-              const Icon = p.icon;
-              return (
-                <Reveal delay={i * 80} key={p.key}>
-                  <article class={["platform-card glass-panel", !p.ready ? "is-soon" : ""].join(" ")}>
-                    <div class="platform-card__icon">
-                      <Icon size={22} />
-                    </div>
-                    <h3>{t(`download.platform.${p.key}.name`)}</h3>
-                    <p>{t(`download.platform.${p.key}.desc`)}</p>
-                    {p.ready ? (
-                      <span class="platform-card__status">
-                        <HTag variant="success">
-                          <Check size={11} />
-                          {t("download.platform.ready")}
-                        </HTag>
-                        <a href={RELEASES} target="_blank" rel="noopener" class="platform-card__link">
-                          {t("download.platform.get")}
-                          <ExternalLink size={12} />
-                        </a>
-                      </span>
-                    ) : (
-                      <span class="platform-card__status">
-                        <HTag variant="warning">
-                          <Clock3 size={11} />
-                          {t("download.platform.soon")}
-                        </HTag>
-                      </span>
-                    )}
-                  </article>
-                </Reveal>
-              );
-            })}
+            {/* Below the CTA on purpose: arriving late, the badge only
+             * grows the section's bottom edge — the button never moves. */}
+            {release.value && (
+              <Reveal delay={260}>
+                <span class="accent-pill download__version">
+                  <Check size={12} />
+                  {t("download.latest")} · {release.value.tag}
+                </span>
+              </Reveal>
+            )}
           </div>
         </section>
 
@@ -125,17 +174,34 @@ export default defineComponent({
           </Reveal>
           <Reveal delay={80}>
             <ul class="download__list glass-panel">
-              {assets.map((a) => (
-                <li key={a.file}>
-                  <a href={RELEASES} target="_blank" rel="noopener">
-                    <span class="download__file">
-                      <FileDown size={14} />
-                      {a.file}
-                    </span>
-                    <span class="download__label">{a.label}</span>
-                  </a>
-                </li>
-              ))}
+              {phase.value === "ready" && release.value
+                ? release.value.assets.map((a) => (
+                  <li key={a.name}>
+                    <a href={a.url} target="_blank" rel="noopener">
+                      <span class="download__file">
+                        <FileDown size={14} />
+                        {a.name}
+                      </span>
+                      <span class="download__label">
+                        {assetLabel(a.name)}
+                        {a.size ? ` · ${formatSize(a.size)}` : ""}
+                      </span>
+                    </a>
+                  </li>
+                ))
+                : phase.value === "loading" ? (
+                  <li class="download__placeholder">{t("download.loading")}</li>
+                ) : (
+                  <li>
+                    <a href={RELEASES} target="_blank" rel="noopener">
+                      <span class="download__file">
+                        <FileDown size={14} />
+                        GitHub Releases
+                      </span>
+                      <span class="download__label">{t("download.loadFailed")}</span>
+                    </a>
+                  </li>
+                )}
             </ul>
           </Reveal>
           <p class="download__notes">{t("download.notes")}</p>

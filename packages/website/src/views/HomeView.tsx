@@ -2,7 +2,7 @@ import { defineAsyncComponent, defineComponent, onBeforeUnmount, onMounted } fro
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import {
-  MonitorPlay, Eye, BarChart3, Ship, ChevronDown, ChevronRight, Download,
+  MonitorPlay, Eye, BarChart3, ChevronDown, ChevronRight, Download,
 } from "@lucide/vue";
 import { HButton } from "@celestia-island/hikari";
 import GithubMark from "@/components/GithubMark";
@@ -81,7 +81,6 @@ export default defineComponent({
       { icon: MonitorPlay, key: "replay" },
       { icon: Eye, key: "overlay" },
       { icon: BarChart3, key: "stats" },
-      { icon: Ship, key: "viewer" },
     ] as const;
 
     const stats = [
