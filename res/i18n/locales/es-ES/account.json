@@ -12,5 +12,8 @@
   "notFound": "No se encontró ninguna cuenta",
   "bound": "Vinculada",
   "selectRealm": "Selecciona un servidor",
-  "noAccounts": "Aún no hay cuentas vinculadas. Busca un apodo arriba para vincular una."
+  "noAccounts": "Aún no hay cuentas vinculadas. Busca un apodo arriba para vincular una.",
+  "preferred": "Preferida",
+  "setPreferred": "Marcar como preferida",
+  "autoSwitched": "Cambiado a {name}"
 }

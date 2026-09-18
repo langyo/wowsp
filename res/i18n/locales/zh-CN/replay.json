@@ -3,7 +3,12 @@
     "title": "录像列表",
     "empty": "所选客户端目录下没有找到录像文件。",
     "count": "{n} 个录像",
-    "noClient": "未检测到游戏客户端，请先在首页扫描或手动指定路径。"
+    "noClient": "未检测到游戏客户端，请先在首页扫描或手动指定路径。",
+    "openExternal": "打开外部录像…"
+  },
+  "external": {
+    "tag": "外部",
+    "close": "关闭查看"
   },
   "client": "游戏客户端",
   "refresh": "刷新",
@@ -149,5 +154,6 @@
   "selfHits": "命中",
   "selfFrags": "击沉",
   "selfDamage": "伤害",
-  "selfTaken": "承伤"
+  "selfTaken": "承伤",
+  "selfPlane": "航空"
 }

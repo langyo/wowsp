@@ -3,7 +3,12 @@
     "title": "Replays",
     "empty": "No replays found in the selected client's folder.",
     "count": "{n} replays",
-    "noClient": "No game client detected. Run a scan on the dashboard, or set a path manually."
+    "noClient": "No game client detected. Run a scan on the dashboard, or set a path manually.",
+    "openExternal": "Open external replays…"
+  },
+  "external": {
+    "tag": "External",
+    "close": "Close this replay"
   },
   "client": "Client",
   "refresh": "Refresh",
@@ -149,5 +154,6 @@
   "selfHits": "Hits",
   "selfFrags": "Frags",
   "selfDamage": "Damage",
-  "selfTaken": "Taken"
+  "selfTaken": "Taken",
+  "selfPlane": "Aircraft"
 }

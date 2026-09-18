@@ -218,6 +218,7 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         wards,
         ward_removes,
         shot_kills,
+        damage_stats,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -343,7 +344,33 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         wards,
         ward_removes,
         shot_kills,
+        damage_stats,
     }
+}
+
+/// Open a native multi-select file dialog for `.wowsreplay` files anywhere on
+/// disk (replays shared from other players live outside the game's replays
+/// folder). Returns the picked absolute paths; an empty vec means the user
+/// cancelled. Picked files are opened through the same
+/// [`read_replay_header`] / [`read_replay_positions`] commands as regular
+/// replays — both accept arbitrary paths.
+#[tauri::command]
+pub async fn pick_replay_files() -> Result<Vec<String>, String> {
+    // rfd pumps its own message loop — run it on a blocking thread, never
+    // the async runtime workers or the app's UI thread.
+    let picked = tokio::task::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Select World of Warships replays")
+            .add_filter("World of Warships replay", &["wowsreplay"])
+            .pick_files()
+    })
+    .await
+    .map_err(|e| format!("replay file picker task failed: {e}"))?;
+    Ok(picked
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect())
 }
 
 /// List `.wowsreplay` files under a directory (defaults to the detected game's
@@ -996,6 +1023,7 @@ mod tests {
             "wards": stream.wards,
             "wardRemoves": stream.ward_removes,
             "shotKills": stream.shot_kills,
+            "damageStats": stream.damage_stats,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());

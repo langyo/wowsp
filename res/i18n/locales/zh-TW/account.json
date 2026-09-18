@@ -12,5 +12,8 @@
   "notFound": "找不到帳號",
   "bound": "已綁定",
   "selectRealm": "選擇伺服器",
-  "noAccounts": "尚未綁定帳號。在上方搜尋暱稱即可綁定。"
+  "noAccounts": "尚未綁定帳號。在上方搜尋暱稱即可綁定。",
+  "preferred": "首選",
+  "setPreferred": "設為首選",
+  "autoSwitched": "已切換到 {name}"
 }

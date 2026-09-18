@@ -40,6 +40,7 @@
     "unset": "未設定",
     "detected": "檢測到的安裝",
     "browse": "瀏覽資料夾…",
+    "pick": "選擇遊戲路徑…",
     "redetect": "重新檢測",
     "runningHint": "檢測到正在執行的遊戲：{path}",
     "useRunning": "使用此路徑",

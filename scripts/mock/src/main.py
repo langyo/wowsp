@@ -129,6 +129,13 @@ async def cmd_pick_game_folder() -> dict | None:
     return None
 
 
+@app.post("/api/pick_replay_files")
+async def cmd_pick_replay_files() -> list[str]:
+    # No native dialog in the browser mock — behave like a cancelled pick so
+    # the external-replay button is a no-op there.
+    return []
+
+
 @app.post("/api/ribbon_skin_dir")
 async def cmd_ribbon_skin_dir(request: Request):
     body = await request.json()

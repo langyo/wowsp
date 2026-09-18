@@ -12,5 +12,8 @@
   "notFound": "未找到账户",
   "bound": "已绑定",
   "selectRealm": "选择区服",
-  "noAccounts": "尚未绑定账户。在上方搜索昵称以绑定。"
+  "noAccounts": "尚未绑定账户。在上方搜索昵称以绑定。",
+  "preferred": "首选",
+  "setPreferred": "设为首选",
+  "autoSwitched": "已切换到 {name}"
 }

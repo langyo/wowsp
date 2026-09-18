@@ -3,7 +3,12 @@
     "title": "錄影列表",
     "empty": "所選用戶端目錄下找不到錄影檔案。",
     "count": "{n} 個錄影",
-    "noClient": "未偵測到遊戲用戶端，請先在首頁掃描或手動指定路徑。"
+    "noClient": "未偵測到遊戲用戶端，請先在首頁掃描或手動指定路徑。",
+    "openExternal": "開啟外部錄影…"
+  },
+  "external": {
+    "tag": "外部",
+    "close": "關閉查看"
   },
   "client": "遊戲用戶端",
   "refresh": "重新整理",
@@ -149,5 +154,6 @@
   "selfHits": "命中",
   "selfFrags": "擊沉",
   "selfDamage": "傷害",
-  "selfTaken": "承受傷害"
+  "selfTaken": "承受傷害",
+  "selfPlane": "航空"
 }

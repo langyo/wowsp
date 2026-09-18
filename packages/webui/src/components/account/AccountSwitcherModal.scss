@@ -126,6 +126,15 @@
     white-space: nowrap;
   }
 
+  /* Preferred-account star beside the nickname (server switches land on the
+     preferred account of the matching realm). */
+  &__preferred {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: rgb(var(--color-warning));
+  }
+
   &__meta {
     display: flex;
     align-items: center;
@@ -163,6 +172,27 @@
     &:hover {
       color: rgb(var(--color-error));
       background: rgb(var(--color-error) / 10%);
+    }
+  }
+
+  /* Promote-to-preferred star (offered only when the realm has several
+     bound accounts and this one isn't the preferred). */
+  &__promote {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: rgb(var(--color-muted));
+    padding: 0.35rem;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--duration-short), background var(--duration-short);
+
+    &:hover {
+      color: rgb(var(--color-warning));
+      background: rgb(var(--color-warning) / 12%);
     }
   }
 }
