@@ -130,6 +130,9 @@ export default defineComponent({
               {props.stats.battles != null ? `${props.stats.battles.toLocaleString()} ${t("stats.battles")}` : "—"}
             </span>
           </div>
+          {stamp.value ? (
+            <RatingStamp class="stats-card__stamp" kind={stamp.value} size={58} />
+          ) : null}
           <div
             class={["stats-card__pr-block", pr.value.rainbow ? "rainbow-text" : null]}
             style={pr.value.rainbow ? undefined : { color: pr.value.color }}
@@ -140,9 +143,6 @@ export default defineComponent({
               {props.stats.pr != null ? props.stats.pr.toLocaleString() : "—"}
             </span>
             <span class="stats-card__pr-label">{prLabel.value}</span>
-            {stamp.value ? (
-              <RatingStamp class="stats-card__stamp" kind={stamp.value} size={58} />
-            ) : null}
           </div>
         </div>
 
