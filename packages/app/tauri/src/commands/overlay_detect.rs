@@ -200,14 +200,15 @@ pub(crate) fn detect_roster(
                 if in_band && band_start.is_none() {
                     band_start = Some(dy);
                 }
-                if !in_band && band_start.is_some() {
-                    let s = band_start.take().unwrap();
-                    if dy - s >= ROW_BAND_MIN_H {
-                        let b = prof_top as f32 + (s + dy - 1) as f32 / 2.0;
-                        let k = ((b - first) / pitch).round();
-                        let center = first + pitch * k;
-                        if (b - center).abs() <= pitch / 3.0 {
-                            offsets.push(b - center);
+                if !in_band {
+                    if let Some(s) = band_start.take() {
+                        if dy - s >= ROW_BAND_MIN_H {
+                            let b = prof_top as f32 + (s + dy - 1) as f32 / 2.0;
+                            let k = ((b - first) / pitch).round();
+                            let center = first + pitch * k;
+                            if (b - center).abs() <= pitch / 3.0 {
+                                offsets.push(b - center);
+                            }
                         }
                     }
                 }

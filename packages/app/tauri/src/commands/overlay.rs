@@ -450,11 +450,11 @@ fn watch_tab_tick(
                         }
                         *last_capture_attempt = Some(Instant::now());
                         let computed = compute_anchor(&g);
-                        if computed.as_ref().is_some_and(|a| a.table_detected) {
+                        if let Some(anchor) = computed.as_ref().filter(|a| a.table_detected) {
                             *pinned_anchor = Some(PinnedAnchor {
                                 battle,
                                 game_rect: rect_from_win32(g.rect),
-                                anchor: computed.clone().unwrap(),
+                                anchor: anchor.clone(),
                             });
                         }
                         computed
