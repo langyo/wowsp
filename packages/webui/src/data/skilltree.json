@@ -1,0 +1,1746 @@
+{
+ "BB": [
+  {
+   "code": "GmShellReload",
+   "tier": 1,
+   "column": 0,
+   "name": {
+    "en": "Gun Feeder",
+    "ja": "装填手",
+    "zh": "火炮装填手",
+    "tw": "火炮裝填手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "HeFireProbability",
+   "tier": 1,
+   "column": 1,
+   "name": {
+    "en": "Demolition Expert",
+    "ja": "爆発物専門家",
+    "zh": "破坏专家",
+    "tw": "破壞專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesReload",
+   "tier": 1,
+   "column": 2,
+   "name": {
+    "en": "Consumable Specialist",
+    "ja": "消耗品技術者",
+    "zh": "消耗品专员",
+    "tw": "消耗品專員"
+   },
+   "desc": {
+    "en": "Enhances the efficiency of consumables, except for Damage Control Party and Repair Party.",
+    "ja": "「応急工作班」と「修理班」を除く消耗品の効率を向上させる。",
+    "zh": "提高消耗品的效率，伤害控制小组和维修小组除外。",
+    "tw": "強化消耗品效率；「傷害控制小組」和「維修小組」消耗品除外。"
+   }
+  },
+  {
+   "code": "ConsumablesCrashcrewRegencrewReload",
+   "tier": 1,
+   "column": 3,
+   "name": {
+    "en": "Emergency Repair Specialist",
+    "ja": "緊急修理技術者",
+    "zh": "紧急维修专员",
+    "tw": "緊急維修專員"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionAlert",
+   "tier": 1,
+   "column": 4,
+   "name": {
+    "en": "Incoming Fire Alert",
+    "ja": "敵弾接近警報",
+    "zh": "敌袭预警",
+    "tw": "敵襲預警"
+   },
+   "desc": {
+    "en": "A warning about a salvo fired at your ship from a distance of more than 4.5 km.",
+    "ja": "4.5 km を超える距離から斉射を受けた際に警告を表示。",
+    "zh": "提供从4.5公里以外向您战舰开火齐射的警告。",
+    "tw": "有火炮齊射從 4.5 公里外朝您艦艇射來時示警。"
+   }
+  },
+  {
+   "code": "DefenseCritProbability",
+   "tier": 1,
+   "column": 5,
+   "name": {
+    "en": "Preventive Maintenance",
+    "ja": "予防整備",
+    "zh": "预防性维护",
+    "tw": "預防性維護"
+   },
+   "desc": {
+    "en": "Reduces the risk of the main turrets, sonar, torpedo tubes, steering gears, and engine becoming incapacitated.",
+    "ja": "主砲、ソナー、魚雷発射管、操舵装置、主機の機能停止の発生率を低減。",
+    "zh": "降低主炮塔、声呐、鱼雷发射管、操舵装置和引擎瘫痪的风险。",
+    "tw": "降低主炮、聲納、魚雷發射管、操舵裝置和引擎失去作用的風險。"
+   }
+  },
+  {
+   "code": "GmTurn",
+   "tier": 2,
+   "column": 0,
+   "name": {
+    "en": "Grease the Gears",
+    "ja": "歯車のグリスアップ",
+    "zh": "齿轮润滑",
+    "tw": "齒輪潤滑"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "HePenetration",
+   "tier": 2,
+   "column": 1,
+   "name": {
+    "en": "Inertia Fuse for HE Shells",
+    "ja": "榴弾用慣性信管",
+    "zh": "高爆弹的惯性引信",
+    "tw": "HE 彈的慣性引信"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionTorpedoRange",
+   "tier": 2,
+   "column": 3,
+   "name": {
+    "en": "Vigilance",
+    "ja": "警戒",
+    "zh": "警觉性",
+    "tw": "警覺性"
+   },
+   "desc": {
+    "en": "Extends the torpedo acquisition range, even while the Hydroacoustic Search consumable is active.",
+    "ja": "消耗品「水中聴音」を発動中の場合を含め、魚雷捕捉範囲を延伸する。",
+    "zh": "延长鱼雷捕获范围，包含“对海搜索”消耗品激活时。",
+    "tw": "擴大魚雷捕獲範圍，包含當「水底搜索」消耗品啟動的時候。"
+   }
+  },
+  {
+   "code": "DetectionAiming",
+   "tier": 2,
+   "column": 4,
+   "name": {
+    "en": "Priority Target",
+    "ja": "危険察知",
+    "zh": "优先目标",
+    "tw": "優先目標"
+   },
+   "desc": {
+    "en": "The detection indicator additionally shows the number of opponents on the enemy team that are currently aiming at your ship with their main battery guns.",
+    "ja": "「発見された」インジケータに、その時点において主砲で自艦を狙っている敵艦艇数が表示されるようになる。",
+    "zh": "被侦察指示器还会显示正在用主炮瞄准您战舰的敌人数量。",
+    "tw": "被偵測指示器將會額外顯示正以主炮瞄準您艦艇的敵艦數量。"
+   }
+  },
+  {
+   "code": "AaDamageConstantBubbles",
+   "tier": 2,
+   "column": 5,
+   "name": {
+    "en": "AA Defense and ASW Expert",
+    "ja": "対空・対潜専門家",
+    "zh": "对空防御和反潜作战专家",
+    "tw": "對空防禦與反潛戰專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ApDamageBb",
+   "tier": 3,
+   "column": 0,
+   "name": {
+    "en": "Super-Heavy AP Shells",
+    "ja": "超重徹甲弾",
+    "zh": "超重型穿甲弹",
+    "tw": "超重型 AP 彈"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "AtbaRange",
+   "tier": 3,
+   "column": 1,
+   "name": {
+    "en": "Long-Range Secondary Battery Shells",
+    "ja": "長射程副砲弾",
+    "zh": "远程副炮组炮弹",
+    "tw": "長程副炮砲彈"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ArmamentReloadAaDamage",
+   "tier": 3,
+   "column": 2,
+   "name": {
+    "en": "Adrenaline Rush",
+    "ja": "アドレナリン・ラッシュ",
+    "zh": "肾上腺素飙升",
+    "tw": "腎上腺素激升"
+   },
+   "desc": {
+    "en": "Enhances ship parameters for each 1% of HP lost.",
+    "ja": "HP を 1% 失う毎に艦艇パラメータを強化。",
+    "zh": "每失去1%生命值，都会强化战舰参数。",
+    "tw": "每損失 1% 血量將強化艦艇參數。"
+   }
+  },
+  {
+   "code": "DefenceCritFireFlooding",
+   "tier": 3,
+   "column": 3,
+   "name": {
+    "en": "Basics of Survivability",
+    "ja": "応急対応の基本",
+    "zh": "基本存活性",
+    "tw": "基本存活性"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DefenceUw",
+   "tier": 3,
+   "column": 4,
+   "name": {
+    "en": "Improved Repair Party Readiness",
+    "ja": "改良型修理班準備",
+    "zh": "改进型维修小组整备",
+    "tw": "改良型維修小組整備"
+   },
+   "desc": {
+    "en": "Activates every time your ship receives potential damage equal to 100% of the ship's base HP.",
+    "ja": "自艦が基本 HP の 100% と同量の潜在ダメージを被る毎に発動する。",
+    "zh": "在您战舰每次受到相等于战舰基础生命值100%的潜在伤害时激活。",
+    "tw": "每次您的艦艇受到相當於艦艇基本血量 100% 的潛在傷害時，都會啟動此技能。"
+   }
+  },
+  {
+   "code": "AaPrioritysectorDamageConstant",
+   "tier": 3,
+   "column": 5,
+   "name": {
+    "en": "Focus Fire Training",
+    "ja": "集中砲火訓練",
+    "zh": "集火训练",
+    "tw": "集火訓練"
+   },
+   "desc": {
+    "en": "AA Defense Priority is activated by pressing [CMD_SET_PRIORITY_SECTOR].",
+    "ja": "対空防御優先は [CMD_SET_PRIORITY_SECTOR] を押すことで有効化されます。",
+    "zh": "按下[CMD_SET_PRIORITY_SECTOR]以激活“对空防御优先”。",
+    "tw": "按下 [CMD_SET_PRIORITY_SECTOR] 以啟動「對空防禦優先」。"
+   }
+  },
+  {
+   "code": "AtbaAccuracy",
+   "tier": 4,
+   "column": 1,
+   "name": {
+    "en": "Manual Secondary Battery Aiming",
+    "ja": "副砲の手動照準",
+    "zh": "手动副炮组瞄准",
+    "tw": "手動副炮瞄準"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesCrashcrewRegencrewUpgrade",
+   "tier": 4,
+   "column": 3,
+   "name": {
+    "en": "Emergency Repair Expert",
+    "ja": "緊急修理専門家",
+    "zh": "紧急维修专家",
+    "tw": "緊急維修專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionVisibilityRange",
+   "tier": 4,
+   "column": 4,
+   "name": {
+    "en": "Concealment Expert",
+    "ja": "隠蔽処理専門家",
+    "zh": "隐蔽专家",
+    "tw": "隱蔽專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DefenceFireProbability",
+   "tier": 4,
+   "column": 5,
+   "name": {
+    "en": "Fire Prevention Expert",
+    "ja": "防火処理専門家",
+    "zh": "防火专家",
+    "tw": "防火專家"
+   },
+   "desc": {
+    "en": "Reduces the risk of catching fire. The maximum number of fires on a ship is reduced to three.",
+    "ja": "火災発生率を低減。艦艇の火災発生箇所を最大 3 ヶ所までに抑制。",
+    "zh": "降低起火的风险。战舰上的最大火源数降低为3个。",
+    "tw": "降低火災風險。艦艇上的最高火源數降低為 3。"
+   }
+  }
+ ],
+ "CA": [
+  {
+   "code": "GmTurn",
+   "tier": 1,
+   "column": 0,
+   "name": {
+    "en": "Grease the Gears",
+    "ja": "歯車のグリスアップ",
+    "zh": "齿轮润滑",
+    "tw": "齒輪潤滑"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TorpedoSpeed",
+   "tier": 1,
+   "column": 1,
+   "name": {
+    "en": "Swift Fish",
+    "ja": "高速魚雷",
+    "zh": "鱼雷加速",
+    "tw": "魚雷加速"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesReload",
+   "tier": 1,
+   "column": 2,
+   "name": {
+    "en": "Consumable Specialist",
+    "ja": "消耗品技術者",
+    "zh": "消耗品专员",
+    "tw": "消耗品專員"
+   },
+   "desc": {
+    "en": "Enhances the efficiency of consumables, except for Damage Control Party and Repair Party.",
+    "ja": "「応急工作班」と「修理班」を除く消耗品の効率を向上させる。",
+    "zh": "提高消耗品的效率，伤害控制小组和维修小组除外。",
+    "tw": "強化消耗品效率；「傷害控制小組」和「維修小組」消耗品除外。"
+   }
+  },
+  {
+   "code": "GmShellReload",
+   "tier": 1,
+   "column": 3,
+   "name": {
+    "en": "Gun Feeder",
+    "ja": "装填手",
+    "zh": "火炮装填手",
+    "tw": "火炮裝填手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionAlert",
+   "tier": 1,
+   "column": 4,
+   "name": {
+    "en": "Incoming Fire Alert",
+    "ja": "敵弾接近警報",
+    "zh": "敌袭预警",
+    "tw": "敵襲預警"
+   },
+   "desc": {
+    "en": "A warning about a salvo fired at your ship from a distance of more than 4.5 km.",
+    "ja": "4.5 km を超える距離から斉射を受けた際に警告を表示。",
+    "zh": "提供从4.5公里以外向您战舰开火齐射的警告。",
+    "tw": "有火炮齊射從 4.5 公里外朝您艦艇射來時示警。"
+   }
+  },
+  {
+   "code": "Maneuverability",
+   "tier": 1,
+   "column": 5,
+   "name": {
+    "en": "Last Stand",
+    "ja": "最後の抵抗",
+    "zh": "背水一战",
+    "tw": "最後的抵抗"
+   },
+   "desc": {
+    "en": "The ship remains partially able to sustain speed and maneuverability with the engine and steering gears incapacitated.",
+    "ja": "主機および操舵装置が機能停止した場合であっても、速度と機動性を部分的に維持できるようになる。",
+    "zh": "在引擎和操舵装置瘫痪后，战舰还能保持部分航速和机动性。",
+    "tw": "引擎和操舵裝置失去作用時，艦艇仍能有限度地保持航速和機動性。"
+   }
+  },
+  {
+   "code": "HeFireProbability",
+   "tier": 2,
+   "column": 0,
+   "name": {
+    "en": "Demolition Expert",
+    "ja": "爆発物専門家",
+    "zh": "破坏专家",
+    "tw": "破壞專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TorpedoReload",
+   "tier": 2,
+   "column": 1,
+   "name": {
+    "en": "Fill the Tubes",
+    "ja": "魚雷装填手",
+    "zh": "发射管装填手",
+    "tw": "發射管裝填手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesDuration",
+   "tier": 2,
+   "column": 2,
+   "name": {
+    "en": "Consumable Enhancements",
+    "ja": "消耗品強化",
+    "zh": "消耗品强化",
+    "tw": "消耗品強化"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesSpotterUpgrade",
+   "tier": 2,
+   "column": 3,
+   "name": {
+    "en": "Eye in the Sky",
+    "ja": "上空の眼",
+    "zh": "空中之眼",
+    "tw": "空中之眼"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionAiming",
+   "tier": 2,
+   "column": 4,
+   "name": {
+    "en": "Priority Target",
+    "ja": "危険察知",
+    "zh": "优先目标",
+    "tw": "優先目標"
+   },
+   "desc": {
+    "en": "The detection indicator additionally shows the number of opponents on the enemy team that are currently aiming at your ship with their main battery guns.",
+    "ja": "「発見された」インジケータに、その時点において主砲で自艦を狙っている敵艦艇数が表示されるようになる。",
+    "zh": "被侦察指示器还会显示正在用主炮瞄准您战舰的敌人数量。",
+    "tw": "被偵測指示器將會額外顯示正以主炮瞄準您艦艇的敵艦數量。"
+   }
+  },
+  {
+   "code": "AaPrioritysectorDamageConstant",
+   "tier": 2,
+   "column": 5,
+   "name": {
+    "en": "Focus Fire Training",
+    "ja": "集中砲火訓練",
+    "zh": "集火训练",
+    "tw": "集火訓練"
+   },
+   "desc": {
+    "en": "AA Defense Priority is activated by pressing [CMD_SET_PRIORITY_SECTOR].",
+    "ja": "対空防御優先は [CMD_SET_PRIORITY_SECTOR] を押すことで有効化されます。",
+    "zh": "按下[CMD_SET_PRIORITY_SECTOR]以激活“对空防御优先”。",
+    "tw": "按下 [CMD_SET_PRIORITY_SECTOR] 以啟動「對空防禦優先」。"
+   }
+  },
+  {
+   "code": "HeSapDamage",
+   "tier": 3,
+   "column": 0,
+   "name": {
+    "en": "Heavy HE and SAP Shells",
+    "ja": "重榴弾・半徹甲弾",
+    "zh": "重型高爆弹和半穿甲弹",
+    "tw": "重型 HE 和 SAP 彈"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TorpedoDamage",
+   "tier": 3,
+   "column": 1,
+   "name": {
+    "en": "Pack a Punch",
+    "ja": "強烈な打撃力",
+    "zh": "猛烈出击",
+    "tw": "猛烈出擊"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ArmamentReloadAaDamage",
+   "tier": 3,
+   "column": 2,
+   "name": {
+    "en": "Adrenaline Rush",
+    "ja": "アドレナリン・ラッシュ",
+    "zh": "肾上腺素飙升",
+    "tw": "腎上腺素激升"
+   },
+   "desc": {
+    "en": "Enhances ship parameters for each 1% of HP lost.",
+    "ja": "HP を 1% 失う毎に艦艇パラメータを強化。",
+    "zh": "每失去1%生命值，都会强化战舰参数。",
+    "tw": "每損失 1% 血量將強化艦艇參數。"
+   }
+  },
+  {
+   "code": "ApDamageCa",
+   "tier": 3,
+   "column": 3,
+   "name": {
+    "en": "Heavy AP Shells",
+    "ja": "重徹甲弾",
+    "zh": "重型穿甲弹",
+    "tw": "重型 AP 彈"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesAdditional",
+   "tier": 3,
+   "column": 4,
+   "name": {
+    "en": "Superintendent",
+    "ja": "管理",
+    "zh": "监督者",
+    "tw": "監督者"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DefenseHp",
+   "tier": 3,
+   "column": 5,
+   "name": {
+    "en": "Survivability Expert",
+    "ja": "抗堪専門家",
+    "zh": "生存专家",
+    "tw": "生存專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionDirection",
+   "tier": 4,
+   "column": 2,
+   "name": {
+    "en": "Radio Location",
+    "ja": "無線方向探知",
+    "zh": "无线电定位",
+    "tw": "無線電定位"
+   },
+   "desc": {
+    "en": "After this skill is mastered, the player will have the direction to the nearest enemy ship indicated to them. \n\nThe enemy player will be alerted that a bearing was taken on their ship.",
+    "ja": "このスキルを習得すると、最も近い敵艦艇の方位が表示されるようになる。\n\n対象の敵艦艇側では、方位を探知されたことが警告される。",
+    "zh": "学习此技能之后，会显示离玩家最近的敌方战舰的方向。\n\n敌方玩家会收到方位被记录的警告。",
+    "tw": "學習此技能後，玩家將獲知最靠近之敵艦的方位。\n\n敵方玩家將收到其艦艇已被取得方位的警報。"
+   }
+  },
+  {
+   "code": "HePenetration",
+   "tier": 4,
+   "column": 3,
+   "name": {
+    "en": "Inertia Fuse for HE Shells",
+    "ja": "榴弾用慣性信管",
+    "zh": "高爆弹的惯性引信",
+    "tw": "HE 彈的慣性引信"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionVisibilityRange",
+   "tier": 4,
+   "column": 4,
+   "name": {
+    "en": "Concealment Expert",
+    "ja": "隠蔽処理専門家",
+    "zh": "隐蔽专家",
+    "tw": "隱蔽專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "AaDamageConstantBubbles",
+   "tier": 4,
+   "column": 5,
+   "name": {
+    "en": "AA Defense and ASW Expert",
+    "ja": "対空・対潜専門家",
+    "zh": "对空防御和反潜作战专家",
+    "tw": "對空防禦與反潛戰專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  }
+ ],
+ "DD": [
+  {
+   "code": "GmTurn",
+   "tier": 1,
+   "column": 0,
+   "name": {
+    "en": "Grease the Gears",
+    "ja": "歯車のグリスアップ",
+    "zh": "齿轮润滑",
+    "tw": "齒輪潤滑"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TorpedoFloodingProbability",
+   "tier": 1,
+   "column": 1,
+   "name": {
+    "en": "Liquidator",
+    "ja": "水浸し",
+    "zh": "进水专家",
+    "tw": "進水專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesReload",
+   "tier": 1,
+   "column": 2,
+   "name": {
+    "en": "Consumable Specialist",
+    "ja": "消耗品技術者",
+    "zh": "消耗品专员",
+    "tw": "消耗品專員"
+   },
+   "desc": {
+    "en": "Enhances the efficiency of consumables, except for Damage Control Party and Repair Party.",
+    "ja": "「応急工作班」と「修理班」を除く消耗品の効率を向上させる。",
+    "zh": "提高消耗品的效率，伤害控制小组和维修小组除外。",
+    "tw": "強化消耗品效率；「傷害控制小組」和「維修小組」消耗品除外。"
+   }
+  },
+  {
+   "code": "GmShellReload",
+   "tier": 1,
+   "column": 3,
+   "name": {
+    "en": "Gun Feeder",
+    "ja": "装填手",
+    "zh": "火炮装填手",
+    "tw": "火炮裝填手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionAlert",
+   "tier": 1,
+   "column": 4,
+   "name": {
+    "en": "Incoming Fire Alert",
+    "ja": "敵弾接近警報",
+    "zh": "敌袭预警",
+    "tw": "敵襲預警"
+   },
+   "desc": {
+    "en": "A warning about a salvo fired at your ship from a distance of more than 4.5 km.",
+    "ja": "4.5 km を超える距離から斉射を受けた際に警告を表示。",
+    "zh": "提供从4.5公里以外向您战舰开火齐射的警告。",
+    "tw": "有火炮齊射從 4.5 公里外朝您艦艇射來時示警。"
+   }
+  },
+  {
+   "code": "DefenseCritProbability",
+   "tier": 1,
+   "column": 5,
+   "name": {
+    "en": "Preventive Maintenance",
+    "ja": "予防整備",
+    "zh": "预防性维护",
+    "tw": "預防性維護"
+   },
+   "desc": {
+    "en": "Reduces the risk of the main turrets, sonar, torpedo tubes, steering gears, and engine becoming incapacitated.",
+    "ja": "主砲、ソナー、魚雷発射管、操舵装置、主機の機能停止の発生率を低減。",
+    "zh": "降低主炮塔、声呐、鱼雷发射管、操舵装置和引擎瘫痪的风险。",
+    "tw": "降低主炮、聲納、魚雷發射管、操舵裝置和引擎失去作用的風險。"
+   }
+  },
+  {
+   "code": "HeFireProbability",
+   "tier": 2,
+   "column": 0,
+   "name": {
+    "en": "Demolition Expert",
+    "ja": "爆発物専門家",
+    "zh": "破坏专家",
+    "tw": "破壞專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TorpedoSpeed",
+   "tier": 2,
+   "column": 1,
+   "name": {
+    "en": "Swift Fish",
+    "ja": "高速魚雷",
+    "zh": "鱼雷加速",
+    "tw": "魚雷加速"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesDuration",
+   "tier": 2,
+   "column": 2,
+   "name": {
+    "en": "Consumable Enhancements",
+    "ja": "消耗品強化",
+    "zh": "消耗品强化",
+    "tw": "消耗品強化"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ApDamageDd",
+   "tier": 2,
+   "column": 3,
+   "name": {
+    "en": "Extra-Heavy Ammunition",
+    "ja": "特重弾薬",
+    "zh": "特重型弹药",
+    "tw": "特重型彈藥"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionAiming",
+   "tier": 2,
+   "column": 4,
+   "name": {
+    "en": "Priority Target",
+    "ja": "危険察知",
+    "zh": "优先目标",
+    "tw": "優先目標"
+   },
+   "desc": {
+    "en": "The detection indicator additionally shows the number of opponents on the enemy team that are currently aiming at your ship with their main battery guns.",
+    "ja": "「発見された」インジケータに、その時点において主砲で自艦を狙っている敵艦艇数が表示されるようになる。",
+    "zh": "被侦察指示器还会显示正在用主炮瞄准您战舰的敌人数量。",
+    "tw": "被偵測指示器將會額外顯示正以主炮瞄準您艦艇的敵艦數量。"
+   }
+  },
+  {
+   "code": "Maneuverability",
+   "tier": 2,
+   "column": 5,
+   "name": {
+    "en": "Last Stand",
+    "ja": "最後の抵抗",
+    "zh": "背水一战",
+    "tw": "最後的抵抗"
+   },
+   "desc": {
+    "en": "The ship remains partially able to sustain speed and maneuverability with the engine and steering gears incapacitated.",
+    "ja": "主機および操舵装置が機能停止した場合であっても、速度と機動性を部分的に維持できるようになる。",
+    "zh": "在引擎和操舵装置瘫痪后，战舰还能保持部分航速和机动性。",
+    "tw": "引擎和操舵裝置失去作用時，艦艇仍能有限度地保持航速和機動性。"
+   }
+  },
+  {
+   "code": "GmReloadAaDamageConstant",
+   "tier": 3,
+   "column": 0,
+   "name": {
+    "en": "Main Battery and AA Specialist",
+    "ja": "主砲・対空兵装技術者",
+    "zh": "主炮组与防空专员",
+    "tw": "主炮與防空專員"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TorpedoReload",
+   "tier": 3,
+   "column": 1,
+   "name": {
+    "en": "Fill the Tubes",
+    "ja": "魚雷装填手",
+    "zh": "发射管装填手",
+    "tw": "發射管裝填手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ArmamentReloadAaDamage",
+   "tier": 3,
+   "column": 2,
+   "name": {
+    "en": "Adrenaline Rush",
+    "ja": "アドレナリン・ラッシュ",
+    "zh": "肾上腺素飙升",
+    "tw": "腎上腺素激升"
+   },
+   "desc": {
+    "en": "Enhances ship parameters for each 1% of HP lost.",
+    "ja": "HP を 1% 失う毎に艦艇パラメータを強化。",
+    "zh": "每失去1%生命值，都会强化战舰参数。",
+    "tw": "每損失 1% 血量將強化艦艇參數。"
+   }
+  },
+  {
+   "code": "HePenetration",
+   "tier": 3,
+   "column": 3,
+   "name": {
+    "en": "Inertia Fuse for HE Shells",
+    "ja": "榴弾用慣性信管",
+    "zh": "高爆弹的惯性引信",
+    "tw": "HE 彈的慣性引信"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesAdditional",
+   "tier": 3,
+   "column": 4,
+   "name": {
+    "en": "Superintendent",
+    "ja": "管理",
+    "zh": "监督者",
+    "tw": "監督者"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DefenseHp",
+   "tier": 3,
+   "column": 5,
+   "name": {
+    "en": "Survivability Expert",
+    "ja": "抗堪専門家",
+    "zh": "生存专家",
+    "tw": "生存專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "GmRangeAaDamageBubbles",
+   "tier": 4,
+   "column": 0,
+   "name": {
+    "en": "Main Battery and AA Expert",
+    "ja": "主砲・対空兵装専門家",
+    "zh": "主炮组与防空专家",
+    "tw": "主炮與防空專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionDirection",
+   "tier": 4,
+   "column": 2,
+   "name": {
+    "en": "Radio Location",
+    "ja": "無線方向探知",
+    "zh": "无线电定位",
+    "tw": "無線電定位"
+   },
+   "desc": {
+    "en": "After this skill is mastered, the player will have the direction to the nearest enemy ship indicated to them. \n\nThe enemy player will be alerted that a bearing was taken on their ship.",
+    "ja": "このスキルを習得すると、最も近い敵艦艇の方位が表示されるようになる。\n\n対象の敵艦艇側では、方位を探知されたことが警告される。",
+    "zh": "学习此技能之后，会显示离玩家最近的敌方战舰的方向。\n\n敌方玩家会收到方位被记录的警告。",
+    "tw": "學習此技能後，玩家將獲知最靠近之敵艦的方位。\n\n敵方玩家將收到其艦艇已被取得方位的警報。"
+   }
+  },
+  {
+   "code": "DetectionVisibilityRange",
+   "tier": 4,
+   "column": 4,
+   "name": {
+    "en": "Concealment Expert",
+    "ja": "隠蔽処理専門家",
+    "zh": "隐蔽专家",
+    "tw": "隱蔽專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  }
+ ],
+ "CV": [
+  {
+   "code": "PlanesForsageRenewal",
+   "tier": 1,
+   "column": 0,
+   "name": {
+    "en": "Last Gasp",
+    "ja": "最後の奮闘",
+    "zh": "最后一搏",
+    "tw": "最後一搏"
+   },
+   "desc": {
+    "en": "Completely restores engine boost for the last attack flight of the aircraft carrier's planes.",
+    "ja": "空母艦載機の最後の攻撃小隊のエンジンブーストを完全に復旧。",
+    "zh": "为航空母舰飞机的最后一次攻击序列完全恢复引擎增压。",
+    "tw": "為航空母艦最後一支攻擊中隊的飛機完全恢復引擎加速。"
+   }
+  },
+  {
+   "code": "PlanesForsageDuration",
+   "tier": 1,
+   "column": 1,
+   "name": {
+    "en": "Improved Engine Boost",
+    "ja": "エンジンブースト改良",
+    "zh": "改进型引擎增压",
+    "tw": "改良型引擎加速"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesConsumablesSpeedboosterReload",
+   "tier": 1,
+   "column": 2,
+   "name": {
+    "en": "Engine Techie",
+    "ja": "エンジン技師",
+    "zh": "引擎技师",
+    "tw": "引擎技師"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesReload",
+   "tier": 1,
+   "column": 3,
+   "name": {
+    "en": "Air Supremacy",
+    "ja": "制空権",
+    "zh": "制空权",
+    "tw": "制空權"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesFighterAdditional",
+   "tier": 1,
+   "column": 4,
+   "name": {
+    "en": "Direction Center for Fighters",
+    "ja": "戦闘機指揮所",
+    "zh": "战斗机指挥中心",
+    "tw": "戰鬥機指揮中心"
+   },
+   "desc": {
+    "en": "When an aircraft carrier's Fighters consumable is activated, an additional aircraft is launched.",
+    "ja": "航空母艦の消耗品「戦闘機」を使用した際、追加でもう 1 機が発艦する。",
+    "zh": "当航空母舰的战斗机消耗品激活时，会额外起飞一架飞机。",
+    "tw": "航空母艦啟動「戰鬥機」消耗品時，將會額外升空一架飛機。"
+   }
+  },
+  {
+   "code": "PlanesConsumablesCallfightersRange",
+   "tier": 1,
+   "column": 5,
+   "name": {
+    "en": "Search and Destroy",
+    "ja": "索敵掃討",
+    "zh": "寻之击之",
+    "tw": "尋之擊之"
+   },
+   "desc": {
+    "en": "Extends the patrol radius of the Patrol Fighters and Interceptors consumables.",
+    "ja": "消耗品「哨戒戦闘機」および「迎撃機」の哨戒半径を拡大。",
+    "zh": "扩大巡逻战斗机和截击机消耗品巡逻半径。",
+    "tw": "擴大「巡邏戰鬥機」和「攔截機」消耗品的巡邏半徑。"
+   }
+  },
+  {
+   "code": "PlanesTorpedoArmingrange",
+   "tier": 2,
+   "column": 0,
+   "name": {
+    "en": "Torpedo Bomber",
+    "ja": "雷撃機",
+    "zh": "鱼雷轰炸机",
+    "tw": "魚雷轟炸機"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesTorpedoSpeed",
+   "tier": 2,
+   "column": 1,
+   "name": {
+    "en": "Swift Flying Fish",
+    "ja": "高速航空魚雷",
+    "zh": "空投鱼雷加速",
+    "tw": "航空魚雷加速"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesSpeed",
+   "tier": 2,
+   "column": 2,
+   "name": {
+    "en": "Improved Engines",
+    "ja": "エンジン改良",
+    "zh": "改进型引擎",
+    "tw": "改良型引擎"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "AaDamageConstantBubblesCv",
+   "tier": 2,
+   "column": 4,
+   "name": {
+    "en": "Secondary Armament Expert",
+    "ja": "副砲専門家",
+    "zh": "副武器专家",
+    "tw": "次要武器專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesConsumablesCallfightersAdditional",
+   "tier": 2,
+   "column": 5,
+   "name": {
+    "en": "Patrol Group Leader",
+    "ja": "偵察隊リーダー",
+    "zh": "巡逻队长",
+    "tw": "巡邏隊長"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesAimingBoost",
+   "tier": 3,
+   "column": 0,
+   "name": {
+    "en": "Sight Stabilization",
+    "ja": "照準安定化",
+    "zh": "稳定瞄准",
+    "tw": "穩定瞄準"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesApDamage",
+   "tier": 3,
+   "column": 1,
+   "name": {
+    "en": "Enhanced Armor-Piercing Ammunition",
+    "ja": "強化型徹甲弾",
+    "zh": "增强型穿甲弹药",
+    "tw": "強化穿甲彈藥"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "HeFireProbabilityCv",
+   "tier": 3,
+   "column": 2,
+   "name": {
+    "en": "Pyrotechnician",
+    "ja": "火薬技術者",
+    "zh": "起火专家",
+    "tw": "起火專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesDefenseDamageConstant",
+   "tier": 3,
+   "column": 3,
+   "name": {
+    "en": "Aircraft Armor",
+    "ja": "航空機装甲",
+    "zh": "飞机装甲",
+    "tw": "飛機裝甲"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesHp",
+   "tier": 3,
+   "column": 4,
+   "name": {
+    "en": "Survivability Expert",
+    "ja": "抗堪専門家",
+    "zh": "生存专家",
+    "tw": "生存專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesConsumablesCallfightersUpgrade",
+   "tier": 3,
+   "column": 5,
+   "name": {
+    "en": "Interceptor",
+    "ja": "迎撃機",
+    "zh": "截击机",
+    "tw": "攔截機"
+   },
+   "desc": {
+    "en": "The Patrol Fighters consumable is replaced by Interceptors.",
+    "ja": "消耗品「哨戒戦闘機」を「迎撃機」に置き換える。",
+    "zh": "巡逻战斗机消耗品被截击机取代。",
+    "tw": "以「攔截機」消耗品替代「巡邏戰鬥機」。"
+   }
+  },
+  {
+   "code": "PlanesDivebomberSpeed",
+   "tier": 4,
+   "column": 0,
+   "name": {
+    "en": "Bomber Flight Control",
+    "ja": "爆撃機の飛行制御",
+    "zh": "轰炸机飞行控制",
+    "tw": "轟炸機飛航控制"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesTorpedoUwReduced",
+   "tier": 4,
+   "column": 1,
+   "name": {
+    "en": "Proximity Fuze",
+    "ja": "近接信管",
+    "zh": "近发引信",
+    "tw": "近發引信"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "AtbaUpgrade",
+   "tier": 4,
+   "column": 2,
+   "name": {
+    "en": "Defensive Fire Expert",
+    "ja": "防御砲火専門家",
+    "zh": "防御火力专家",
+    "tw": "防禦火力專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesDefenseDamageBubbles",
+   "tier": 4,
+   "column": 3,
+   "name": {
+    "en": "Enhanced Aircraft Armor",
+    "ja": "強化型航空機装甲",
+    "zh": "增强型飞机装甲",
+    "tw": "強化飛機裝甲"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DetectionVisibilityCrashcrew",
+   "tier": 4,
+   "column": 4,
+   "name": {
+    "en": "Hidden Menace",
+    "ja": "隠れた脅威",
+    "zh": "隐蔽威胁",
+    "tw": "隱蔽威脅"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "PlanesConsumablesCallfightersPreparationtime",
+   "tier": 4,
+   "column": 5,
+   "name": {
+    "en": "Enhanced Reactions",
+    "ja": "強化型反応速度",
+    "zh": "迅速反应",
+    "tw": "迅速反應"
+   },
+   "desc": {
+    "en": "With the Patrol Fighters or Interceptors consumables activated, the time it takes to start attacking hostile aircraft is reduced.",
+    "ja": "消耗品「哨戒戦闘機」または「迎撃機」を使用した際、敵機を攻撃開始するまでの時間を短縮。",
+    "zh": "在巡逻战斗机或截击机消耗品激活时，攻击敌方飞机所需时间缩短。",
+    "tw": "啟動「巡邏戰鬥機」或「攔截機」消耗品時，進入攻擊敵機前的等待時間將縮短。"
+   }
+  }
+ ],
+ "SS": [
+  {
+   "code": "PlanesConsumablesActiveManeuveringUpgrade",
+   "tier": 2,
+   "column": 1,
+   "name": {
+    "en": "Combat Maneuver Specialist",
+    "ja": "戦闘機動専門家",
+    "zh": "战斗机动专家",
+    "tw": "戰鬥機動專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "SubmarineBatteryCapacity",
+   "tier": 2,
+   "column": 3,
+   "name": {
+    "en": "Improved Battery Capacity",
+    "ja": "改良型バッテリー容量",
+    "zh": "改进型蓄电池容量",
+    "tw": "改良型電池容量"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "SubmarineConsumablesDuration",
+   "tier": 2,
+   "column": 4,
+   "name": {
+    "en": "Consumable Enhancements",
+    "ja": "消耗品強化",
+    "zh": "消耗品强化",
+    "tw": "消耗品強化"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "SubmarineConsumablesReload",
+   "tier": 3,
+   "column": 5,
+   "name": {
+    "en": "Consumable Specialist",
+    "ja": "消耗品技術者",
+    "zh": "消耗品专员",
+    "tw": "消耗品專員"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "SubmarineDangerAlert",
+   "tier": 3,
+   "column": 6,
+   "name": {
+    "en": "Watchful",
+    "ja": "用心",
+    "zh": "戒备",
+    "tw": "戒備"
+   },
+   "desc": {
+    "en": "For an undetected submarine, displays an indicator showing that the submarine is currently within the action range of activated enemy Hydroacoustic Search, Surveillance Radar, or Submarine Surveillance consumables.\nIf you change depth while the indicator is displayed, you may be detected.",
+    "ja": "非発見状態の潜水艦に対して、自艦が現在発動中の敵の消耗品「水中聴音」「警戒レーダー」または「潜水艦探知機」の有効範囲内に居ることを示すインジケーターを表示する。\nこのインジケーターが表示されている際に潜航深度を変更した場合、発見される可能性がある。",
+    "zh": "未被发现的潜艇在进入敌方已启用对海搜索、监视雷达或潜艇监视设备消耗品的作用范围时，将会显示指示器。\n如果您在指示器显示时改变下潜深度，那您有可能会被发现。",
+    "tw": "未被發現的潛水艦在進入敵方已啟用之「水底搜索」、「監視雷達」或「潛水艦監視設備」消耗品的作用範圍時，將會顯示指示器。\n如果您在指示器顯示時變換下潛深度，那您有可能會被發現。"
+   }
+  },
+  {
+   "code": "SubmarineHoldSectors",
+   "tier": 3,
+   "column": 7,
+   "name": {
+    "en": "Sonarman",
+    "ja": "ソナー操作員",
+    "zh": "声呐士官",
+    "tw": "聲納士官"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ConsumablesAdditional",
+   "tier": 3,
+   "column": 12,
+   "name": {
+    "en": "Superintendent",
+    "ja": "管理",
+    "zh": "监督者",
+    "tw": "監督者"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "DefenceCritFireFlooding",
+   "tier": 3,
+   "column": 13,
+   "name": {
+    "en": "Basics of Survivability",
+    "ja": "応急対応の基本",
+    "zh": "基本存活性",
+    "tw": "基本存活性"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "ArmamentReloadSubmarine",
+   "tier": 4,
+   "column": 0,
+   "name": {
+    "en": "Adrenaline Rush",
+    "ja": "アドレナリン・ラッシュ",
+    "zh": "肾上腺素飙升",
+    "tw": "腎上腺素激升"
+   },
+   "desc": {
+    "en": "Enhances ship parameters for each 1% of HP lost.",
+    "ja": "HP を 1% 失う毎に艦艇パラメータを強化。",
+    "zh": "每失去1%生命值，都会强化战舰参数。",
+    "tw": "每損失 1% 血量將強化艦艇參數。"
+   }
+  },
+  {
+   "code": "SubmarineBatteryBurnDown",
+   "tier": 4,
+   "column": 2,
+   "name": {
+    "en": "Improved Battery Efficiency",
+    "ja": "改良型バッテリー効率",
+    "zh": "改进型蓄电池效率",
+    "tw": "強化電池阻尼器"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "SubmarineSpeed",
+   "tier": 4,
+   "column": 8,
+   "name": {
+    "en": "Enlarged Propeller Shaft",
+    "ja": "大型プロペラ・シャフト",
+    "zh": "增大型螺旋桨轴",
+    "tw": "增大型螺旋槳軸"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "SubmarineTorpedoPingDamage",
+   "tier": 4,
+   "column": 9,
+   "name": {
+    "en": "Torpedo Aiming Master",
+    "ja": "魚雷誘導マスター",
+    "zh": "鱼雷瞄准大师",
+    "tw": "魚雷瞄準大師"
+   },
+   "desc": {
+    "en": "When launching acoustic homing torpedoes at a ship with a sector that was highlighted twice, torpedo damage is increased. The sector that was highlighted twice needs to remain active until the torpedoes hit the ship.",
+    "ja": "セクターが 2 回ハイライトされた艦艇に対して音響誘導魚雷を発射する際、魚雷のダメージが向上する。2 回ハイライトされたセクターが魚雷の命中時点まで有効であることが必要。",
+    "zh": "向有被高亮两次的区域的战舰发射声呐导向鱼雷时，鱼雷伤害将提高。被高亮两次的区域需要保持高亮状态，直到鱼雷命中战舰。",
+    "tw": "朝有部位被高亮突顯兩次的艦艇發射聲導魚雷時，魚雷傷害會提高。被突顯兩次的部位需保持高亮，直到魚雷命中艦艇為止。"
+   }
+  },
+  {
+   "code": "DetectionDirection",
+   "tier": 4,
+   "column": 10,
+   "name": {
+    "en": "Radio Location",
+    "ja": "無線方向探知",
+    "zh": "无线电定位",
+    "tw": "無線電定位"
+   },
+   "desc": {
+    "en": "After this skill is mastered, the player will have the direction to the nearest enemy ship indicated to them. \n\nThe enemy player will be alerted that a bearing was taken on their ship.",
+    "ja": "このスキルを習得すると、最も近い敵艦艇の方位が表示されるようになる。\n\n対象の敵艦艇側では、方位を探知されたことが警告される。",
+    "zh": "学习此技能之后，会显示离玩家最近的敌方战舰的方向。\n\n敌方玩家会收到方位被记录的警告。",
+    "tw": "學習此技能後，玩家將獲知最靠近之敵艦的方位。\n\n敵方玩家將收到其艦艇已被取得方位的警報。"
+   }
+  },
+  {
+   "code": "DefenceFireProbability",
+   "tier": 4,
+   "column": 11,
+   "name": {
+    "en": "Fire Prevention Expert",
+    "ja": "防火処理専門家",
+    "zh": "防火专家",
+    "tw": "防火專家"
+   },
+   "desc": {
+    "en": "Reduces the risk of catching fire. The maximum number of fires on a ship is reduced to three.",
+    "ja": "火災発生率を低減。艦艇の火災発生箇所を最大 3 ヶ所までに抑制。",
+    "zh": "降低起火的风险。战舰上的最大火源数降低为3个。",
+    "tw": "降低火災風險。艦艇上的最高火源數降低為 3。"
+   }
+  },
+  {
+   "code": "DetectionVisibilityRange",
+   "tier": 4,
+   "column": 14,
+   "name": {
+    "en": "Concealment Expert",
+    "ja": "隠蔽処理専門家",
+    "zh": "隐蔽专家",
+    "tw": "隱蔽專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  }
+ ]
+}

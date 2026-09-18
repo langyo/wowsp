@@ -1,0 +1,2093 @@
+[
+ {
+  "name": "PAW102_Halsey",
+  "person": "Halsey",
+  "nations": [
+   "USA"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerTorpedoDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 2,
+    "activator": {
+     "damageIncrement": 0.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "speedCoef": 1.0,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "speedCoef": 1.02,
+        "speedCoefUI": 1.02
+       },
+       "2": {
+        "speedCoef": 1.02941,
+        "speedCoefUI": 1.05
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerTorpedoDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 2,
+    "activator": {
+     "damageIncrement": 0.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "speedCoef": 1.0,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "speedCoef": 1.04,
+        "speedCoefUI": 1.04
+       },
+       "2": {
+        "speedCoef": 1.0384,
+        "speedCoefUI": 1.08
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerUniqueDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "TargetsDamagedActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "damageAmount": 0.0,
+     "damageAmountPerMaxHealth": 0.2,
+     "maxActivations": -1,
+     "numberOfTargets": 6,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.8,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.9,
+       "planeSpawnTime": 0.8,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerUniqueDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "TargetsDamagedActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "damageAmount": 0.0,
+     "damageAmountPerMaxHealth": 0.2,
+     "maxActivations": -1,
+     "numberOfTargets": 9,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.85,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.85,
+       "planeSpawnTime": 0.85,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "Halsey.webp"
+ },
+ {
+  "name": "PBW100_Cunningham",
+  "person": "CUNNINGHAM",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerFireFloodDamage",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "damageIncrement": 60000.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.9,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.9,
+       "planeSpawnTime": 0.9,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerFlood1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 2,
+    "activator": {
+     "maxActivations": 2,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "speedCoef": 1.0,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "speedCoef": 1.02,
+        "speedCoefUI": 1.02
+       },
+       "2": {
+        "speedCoef": 1.02941,
+        "speedCoefUI": 1.05
+       }
+      }
+     },
+     {
+      "base": {
+       "planeSpeed": 1.0,
+       "uniqueType": 15,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "planeSpeed": 1.0,
+        "planeSpeedUI": 1.0
+       },
+       "2": {
+        "planeSpeed": 1.05,
+        "planeSpeedUI": 1.05
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerFlood2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 2,
+    "activator": {
+     "maxActivations": 2,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "speedCoef": 1.0,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "speedCoef": 1.04,
+        "speedCoefUI": 1.04
+       },
+       "2": {
+        "speedCoef": 1.0384,
+        "speedCoefUI": 1.08
+       }
+      }
+     },
+     {
+      "base": {
+       "planeSpeed": 1.0,
+       "uniqueType": 15,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "planeSpeed": 1.0,
+        "planeSpeedUI": 1.0
+       },
+       "2": {
+        "planeSpeed": 1.05,
+        "planeSpeedUI": 1.05
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbonFrag1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 2,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "planeAdditionalConsumables": 0,
+       "uniqueType": 0,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbonFrag2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 4,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "planeAdditionalConsumables": 0,
+       "uniqueType": 0,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "CUNNINGHAM.webp"
+ },
+ {
+  "name": "PFW405_Auboyneau",
+  "person": "AUBOYNEAU",
+  "nations": [
+   "France"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerInstantKill1",
+    "triggerType": "ribbons",
+    "activatorType": "DamagePerTimePeriodActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "damageAmount": 0.0,
+     "damageAmountPerMaxHealth": 0.5,
+     "maxActivations": 3,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0,
+     "timeWindowSeconds": 5
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.95,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.95,
+       "planeSpawnTime": 0.95,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerInstantKill2",
+    "triggerType": "ribbons",
+    "activatorType": "DamagePerTimePeriodActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "damageAmount": 0.0,
+     "damageAmountPerMaxHealth": 0.33,
+     "maxActivations": 3,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0,
+     "timeWindowSeconds": 5
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.95,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.95,
+       "planeSpawnTime": 0.95,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerPotentialDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "PotentialDamageActivator",
+    "maxTriggerNum": 4,
+    "activator": {
+     "ignoreRageMode": true,
+     "maxActivations": 4,
+     "potentialDamageShift": 2000000,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "speedCoef": 1.08,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerPotentialDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "PotentialDamageActivator",
+    "maxTriggerNum": 4,
+    "activator": {
+     "ignoreRageMode": true,
+     "maxActivations": 4,
+     "potentialDamageShift": 500000,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "speedCoef": 1.04,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 10,
+    "activator": {
+     "maxActivations": 10,
+     "requiredCount": 1,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "burnChanceBonus": 0.01,
+       "burnChanceFactorBig": 0.0,
+       "floodChanceFactor": 1.1,
+       "uniqueType": 7,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 5,
+    "activator": {
+     "maxActivations": 5,
+     "requiredCount": 1,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "burnChanceBonus": 0.01,
+       "burnChanceFactorBig": 0.0,
+       "floodChanceFactor": 1.1,
+       "uniqueType": 7,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "AUBOYNEAU.webp"
+ },
+ {
+  "name": "PGW103_Lutjens",
+  "person": "LUTJENS",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 100,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GSShotDelay": 0.85,
+       "uniqueType": 14,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 140,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.925,
+       "uniqueType": 13,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons3",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 0,
+    "activator": {
+     "maxActivations": -1,
+     "requiredCount": 3,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.0,
+       "regenerationHPSpeedUnits": 300,
+       "scaleRegenWithShipTier": false,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": true,
+       "workTime": 0.0
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons4",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 30,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "planeSpawnTime": 0.9,
+       "uniqueType": 12,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "LUTJENS.webp"
+ },
+ {
+  "name": "PHW100_Helfrich",
+  "person": "Helfrich",
+  "nations": [
+   "Netherlands"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "damageIncrement": 50000.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerFireFloodDamage",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "damageIncrement": 60000.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.9,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 1.0,
+       "planeSpawnTime": 1.0,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbon",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 50,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "Helfrich.webp"
+ },
+ {
+  "name": "PIW101_Sansonetti",
+  "person": "SANSONETTI",
+  "nations": [
+   "Italy"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerRibbonFrag1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMMaxDist": 1.08,
+       "uniqueType": 9,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 100,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ConsumablesWorkTime": 1.1,
+       "uniqueType": 10,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerUniqueDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "TargetsDamagedActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "damageAmount": 0.0,
+     "damageAmountPerMaxHealth": 0.2,
+     "maxActivations": -1,
+     "numberOfTargets": 6,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.85,
+       "uniqueType": 13,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerUniqueDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "TargetsDamagedActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "damageAmount": 0.0,
+     "damageAmountPerMaxHealth": 0.2,
+     "maxActivations": -1,
+     "numberOfTargets": 9,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.85,
+       "uniqueType": 13,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "SANSONETTI.webp"
+ },
+ {
+  "name": "PJW018_Yamamoto",
+  "person": "Yamamoto",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerFirstKill",
+    "triggerType": "ribbons",
+    "activatorType": "FirstShipKillActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "planeAdditionalConsumables": 1,
+       "uniqueType": 0,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerKills1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "maxActivations": 3,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 1.0,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 1.0,
+       "planeSpawnTime": 1.0,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "GMShotDelay": 0.95,
+        "GMShotDelayUI": 0.95,
+        "GTShotDelay": 0.97,
+        "GTShotDelayUI": 0.97,
+        "planeSpawnTime": 0.97,
+        "planeSpawnTimeUI": 0.97
+       },
+       "2": {
+        "GMShotDelay": 0.78947,
+        "GMShotDelayUI": 0.75,
+        "GTShotDelay": 0.90206,
+        "GTShotDelayUI": 0.875,
+        "planeSpawnTime": 0.90206,
+        "planeSpawnTimeUI": 0.875
+       },
+       "3": {
+        "GMShotDelay": 0.8,
+        "GMShotDelayUI": 0.6,
+        "GTShotDelay": 0.91428,
+        "GTShotDelayUI": 0.8,
+        "planeSpawnTime": 0.91428,
+        "planeSpawnTimeUI": 0.8
+       }
+      }
+     },
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.0,
+       "regenerationHPSpeedUnits": 0.0,
+       "scaleRegenWithShipTier": false,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": false,
+       "workTime": 0.0
+      },
+      "levels": {
+       "1": {
+        "regenerationHPSpeed": 0.000417,
+        "workTime": 120.0
+       },
+       "2": {
+        "regenerationHPSpeed": 0.002083,
+        "workTime": 120.0
+       },
+       "3": {
+        "regenerationHPSpeed": 0.00333,
+        "workTime": 120.0
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerKills2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "maxActivations": 3,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 1.0,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 1.0,
+       "planeSpawnTime": 1.0,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {
+       "1": {
+        "GMShotDelay": 0.95,
+        "GMShotDelayUI": 0.95,
+        "GTShotDelay": 0.95,
+        "GTShotDelayUI": 0.95,
+        "planeSpawnTime": 0.95,
+        "planeSpawnTimeUI": 0.95
+       },
+       "2": {
+        "GMShotDelay": 0.94736,
+        "GMShotDelayUI": 0.9,
+        "GTShotDelay": 0.94736,
+        "GTShotDelayUI": 0.9,
+        "planeSpawnTime": 0.94736,
+        "planeSpawnTimeUI": 0.9
+       },
+       "3": {
+        "GMShotDelay": 0.94444,
+        "GMShotDelayUI": 0.85,
+        "GTShotDelay": 0.94444,
+        "GTShotDelayUI": 0.85,
+        "planeSpawnTime": 0.94444,
+        "planeSpawnTimeUI": 0.85
+       }
+      }
+     },
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.0,
+       "regenerationHPSpeedUnits": 0.0,
+       "scaleRegenWithShipTier": false,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": false,
+       "workTime": 0.0
+      },
+      "levels": {
+       "1": {
+        "regenerationHPSpeed": 0.000417,
+        "workTime": 120.0
+       },
+       "2": {
+        "regenerationHPSpeed": 0.000833,
+        "workTime": 120.0
+       },
+       "3": {
+        "regenerationHPSpeed": 0.00125,
+        "workTime": 120.0
+       }
+      }
+     }
+    ]
+   }
+  ],
+  "portrait": "Yamamoto.webp"
+ },
+ {
+  "name": "PRW406_Kuznetsov",
+  "person": "KUZNETSOV",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerFirstKill",
+    "triggerType": "ribbons",
+    "activatorType": "FirstShipKillActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "planeAdditionalConsumables": 1,
+       "uniqueType": 0,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerHealth1",
+    "triggerType": "ribbons",
+    "activatorType": "RemainingHealthActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "thresholdPerMaxHealth": 0.1,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "crashCrew": true,
+       "uniqueType": 5,
+       "useShipTierAsWorkTime": false,
+       "workTime": 15.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.0035,
+       "regenerationHPSpeedUnits": 0.0,
+       "scaleRegenWithShipTier": false,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": false,
+       "workTime": 15.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "shootShift": 1.2,
+       "uniqueType": 6,
+       "useShipTierAsWorkTime": false,
+       "workTime": 15.0
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerHealth2",
+    "triggerType": "ribbons",
+    "activatorType": "RemainingHealthActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "thresholdPerMaxHealth": 0.1,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "crashCrew": true,
+       "uniqueType": 5,
+       "useShipTierAsWorkTime": false,
+       "workTime": 15.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.01,
+       "regenerationHPSpeedUnits": 0.0,
+       "scaleRegenWithShipTier": false,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": false,
+       "workTime": 15.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "shootShift": 1.2,
+       "uniqueType": 6,
+       "useShipTierAsWorkTime": false,
+       "workTime": 15.0
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "KUZNETSOV.webp"
+ },
+ {
+  "name": "PSW100_Topete",
+  "person": "Topete",
+  "nations": [
+   "Spain"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerHealth1",
+    "triggerType": "ribbons",
+    "activatorType": "RemainingHealthActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "thresholdPerMaxHealth": 0.1,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "uniqueType": 23,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.0,
+       "regenerationHPSpeedUnits": 20.0,
+       "scaleRegenWithShipTier": true,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": false,
+       "workTime": 10.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 4,
+    "activator": {
+     "maxActivations": 4,
+     "requiredCount": 2,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.975,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.975,
+       "planeSpawnTime": 0.975,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 4,
+    "activator": {
+     "maxActivations": 4,
+     "requiredCount": 3,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.975,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.975,
+       "planeSpawnTime": 0.975,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "Topete.webp"
+ },
+ {
+  "name": "PUW100_Collins",
+  "person": "Collins",
+  "nations": [
+   "Commonwealth"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "damageIncrement": 60000.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ConsumablesWorkTime": 1.05,
+       "uniqueType": 10,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "speedCoef": 1.02,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "DamageDoneActivator",
+    "maxTriggerNum": 3,
+    "activator": {
+     "damageIncrement": 60000.0,
+     "damageIncrementPerTotalEnemyTeamHealth": 0.0,
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ConsumablesWorkTime": 1.05,
+       "uniqueType": 10,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "speedCoef": 1.03,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "uniqueType": 21,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerHealth1",
+    "triggerType": "ribbons",
+    "activatorType": "RemainingHealthActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": -1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "thresholdPerMaxHealth": 0.1,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ignoreRegenLimit": true,
+       "regenerationHPSpeed": 0.02,
+       "regenerationHPSpeedUnits": 0.0,
+       "scaleRegenWithShipTier": false,
+       "uniqueType": 1,
+       "useShipTierAsWorkTime": false,
+       "workTime": 5.0
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "Collins.webp"
+ },
+ {
+  "name": "PVW100_Lisboa",
+  "person": "Lisboa",
+  "nations": [
+   "Pan_America"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerRageMode1",
+    "triggerType": "ribbons",
+    "activatorType": "RageModeActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": -1,
+     "requiredCount": 2,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "rageModeFloorLevel": 20,
+       "uniqueType": 20,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "speedCoef": 1.05,
+       "uniqueType": 8,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbon1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 175,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.95,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 0.775,
+       "GTShotDelay": 0.9,
+       "planeSpawnTime": 1.0,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "Lisboa.webp"
+ },
+ {
+  "name": "PWW010_Swirski",
+  "person": "SWIRSKI",
+  "nations": [
+   "Europe"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerPlaneKills",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 20,
+     "separateTracking": false,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "uniqueType": 16,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerTorpedoHits",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 12,
+    "activator": {
+     "maxActivations": 12,
+     "requiredCount": 8,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GTShotDelay": 0.95,
+       "uniqueType": 11,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "SWIRSKI.webp"
+ },
+ {
+  "name": "PZW426_Sa_Zhenbing",
+  "person": "Sa_Zhenbing",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "AllInGroupActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.8,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 1.0,
+       "planeSpawnTime": 0.8,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "AllInGroupActivator",
+    "maxTriggerNum": 2,
+    "activator": {
+     "maxActivations": 2,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "GMShotDelay": 0.9,
+       "GSMShotDelay": 1.0,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 1.0,
+       "planeSpawnTime": 0.9,
+       "uniqueType": 2,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerPotentialDamage1",
+    "triggerType": "ribbons",
+    "activatorType": "PotentialDamageActivator",
+    "maxTriggerNum": 6,
+    "activator": {
+     "ignoreRageMode": true,
+     "maxActivations": 6,
+     "potentialDamageShift": 1500000,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ConsumableReloadTime": 0.935,
+       "uniqueType": 17,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerPotentialDamage2",
+    "triggerType": "ribbons",
+    "activatorType": "PotentialDamageActivator",
+    "maxTriggerNum": 6,
+    "activator": {
+     "ignoreRageMode": true,
+     "maxActivations": 6,
+     "potentialDamageShift": 1000000,
+     "requiredCount": 1,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "ConsumableReloadTime": 0.935,
+       "uniqueType": 17,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerTorpedoesHit1",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 6,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "torpedoReloaderAdditionalConsumables": 1,
+       "torpedoReloaderReloadCoeff": 0.75,
+       "uniqueType": 19,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "torpedoSpeedMultiplier": 1.05,
+       "uniqueType": 18,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerTorpedoesHit2",
+    "triggerType": "ribbons",
+    "activatorType": "RibbonActivator",
+    "maxTriggerNum": 1,
+    "activator": {
+     "maxActivations": 1,
+     "requiredCount": 9,
+     "separateTracking": true,
+     "timeLimit": 0.0
+    },
+    "actions": [
+     {
+      "base": {
+       "torpedoReloaderAdditionalConsumables": 1,
+       "torpedoReloaderReloadCoeff": 0.75,
+       "uniqueType": 19,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "torpedoSpeedMultiplier": 1.05,
+       "uniqueType": 18,
+       "useShipTierAsWorkTime": false
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ],
+  "portrait": "Sa_Zhenbing.webp"
+ },
+ {
+  "name": "PAW101_Seagal",
+  "person": "Seagal",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "Seagal.webp"
+ },
+ {
+  "name": "PAW103_UsaCap",
+  "person": "USACAP",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "USACAP.webp"
+ },
+ {
+  "name": "PAW400_John_Paul_Jones",
+  "person": "John_Paul_Jones",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "John_Paul_Jones.webp"
+ },
+ {
+  "name": "PAW404_Ovechkin",
+  "person": "USAOVECHKIN",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "USAOVECHKIN.webp"
+ },
+ {
+  "name": "PAW405_OvechkinPrem",
+  "person": "USAOVECHKINPREM",
+  "nations": [
+   "USA",
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "USAOVECHKINPREM.webp"
+ },
+ {
+  "name": "PAW406_OvechkinPremHell",
+  "person": "USAOVECHKINPREMHELL",
+  "nations": [
+   "USA",
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "USAOVECHKINPREMHELL.webp"
+ },
+ {
+  "name": "PAW410_Theodore_Chandler",
+  "person": "THEODORECHANDLER",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "THEODORECHANDLER.webp"
+ },
+ {
+  "name": "PAW464_Ernest_E_Evans",
+  "person": "Ernest_E_Evans",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "Ernest_E_Evans.webp"
+ },
+ {
+  "name": "PAW472_David_Farragut",
+  "person": "David_Farragut",
+  "nations": [
+   "USA"
+  ],
+  "talents": [],
+  "portrait": "David_Farragut.webp"
+ },
+ {
+  "name": "PBW101_Dunk_Capn",
+  "person": "Dunk_Capn",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [],
+  "portrait": "Dunk_Capn.webp"
+ },
+ {
+  "name": "PBW102_UKCap",
+  "person": "UKCAP",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [],
+  "portrait": "UKCAP.webp"
+ },
+ {
+  "name": "PBW406_Horace_Hood",
+  "person": "HORACEHOOD",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [],
+  "portrait": "HORACEHOOD.webp"
+ },
+ {
+  "name": "PBW424_Unsinkable_Sam",
+  "person": "Unsinkable_Sam_UK",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [],
+  "portrait": "Unsinkable_Sam_UK.webp"
+ },
+ {
+  "name": "PBW442_David_Beatty",
+  "person": "David_Beatty",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [],
+  "portrait": "David_Beatty.webp"
+ },
+ {
+  "name": "PFW101_France_Cap",
+  "person": "FRANCE_CAP",
+  "nations": [
+   "France"
+  ],
+  "talents": [],
+  "portrait": "FRANCE_CAP.webp"
+ },
+ {
+  "name": "PFW102_France_Cap_Prem",
+  "person": "FRANCECAPPREM",
+  "nations": [
+   "France"
+  ],
+  "talents": [],
+  "portrait": "FRANCECAPPREM.webp"
+ },
+ {
+  "name": "PGW101_GerCap",
+  "person": "GERCAP",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [],
+  "portrait": "GERCAP.webp"
+ },
+ {
+  "name": "PGW102_GerCapPrem",
+  "person": "GERCAPPREM",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [],
+  "portrait": "GERCAPPREM.webp"
+ },
+ {
+  "name": "PGW407_Friedrich_Bonte",
+  "person": "FRIEDRICHBONTE",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [],
+  "portrait": "FRIEDRICHBONTE.webp"
+ },
+ {
+  "name": "PGW420_HannoverCap",
+  "person": "HANNOVER_CAP",
+  "nations": [],
+  "talents": [],
+  "portrait": "HANNOVER_CAP.webp"
+ },
+ {
+  "name": "PGW430_Unsinkable_Sam",
+  "person": "Unsinkable_Sam_Ger",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [],
+  "portrait": "Unsinkable_Sam_Ger.webp"
+ },
+ {
+  "name": "PGW432_Ernst_Lindemann",
+  "person": "Ernst_Lindemann",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [],
+  "portrait": "Ernst_Lindemann.webp"
+ },
+ {
+  "name": "PGW447_Franz_von_Hipper",
+  "person": "Franz_von_Hipper",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [],
+  "portrait": "Franz_von_Hipper.webp"
+ },
+ {
+  "name": "PHW101_Ruyter_Cap",
+  "person": "De_Ruyter",
+  "nations": [
+   "Netherlands"
+  ],
+  "talents": [],
+  "portrait": "De_Ruyter.webp"
+ },
+ {
+  "name": "PHW102_Klaas_Cap",
+  "person": "De_Jong",
+  "nations": [
+   "Netherlands"
+  ],
+  "talents": [],
+  "portrait": "De_Jong.webp"
+ },
+ {
+  "name": "PIW430_Carlo_Bergamini",
+  "person": "Carlo_Bergamini",
+  "nations": [
+   "Italy"
+  ],
+  "talents": [],
+  "portrait": "Carlo_Bergamini.webp"
+ },
+ {
+  "name": "PJW019_GoldCap",
+  "person": "Raizo_Suzuki",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "Raizo_Suzuki.webp"
+ },
+ {
+  "name": "PJW020_JapCap",
+  "person": "Takeo_Suzuki",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "Takeo_Suzuki.webp"
+ },
+ {
+  "name": "PJW400_Keizo_Komura",
+  "person": "Keizo_Komura",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "Keizo_Komura.webp"
+ },
+ {
+  "name": "PJW408_Ijuin_Matsuji",
+  "person": "IJUINMATSUJI",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "IJUINMATSUJI.webp"
+ },
+ {
+  "name": "PJW415_Kaguya",
+  "person": "Kaguya",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "Kaguya.webp"
+ },
+ {
+  "name": "PJW424_SatsumaCap",
+  "person": "SATSUMA_CAP",
+  "nations": [],
+  "talents": [],
+  "portrait": "SATSUMA_CAP.webp"
+ },
+ {
+  "name": "PJW474_Seiichi_Ito",
+  "person": "Seiichi_Ito",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "Seiichi_Ito.webp"
+ },
+ {
+  "name": "PJW476_Kosaku_Aruga",
+  "person": "Kosaku_Aruga",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "Kosaku_Aruga.webp"
+ },
+ {
+  "name": "PRW002_MayCap",
+  "person": "MayCap",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "MayCap.webp"
+ },
+ {
+  "name": "PRW003_RusCap",
+  "person": "RUSCAP",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "RUSCAP.webp"
+ },
+ {
+  "name": "PRW404_Ovechkin",
+  "person": "USSROVECHKIN",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "USSROVECHKIN.webp"
+ },
+ {
+  "name": "PRW410_Trubetskoy_VV",
+  "person": "TRUBETSKOY",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "TRUBETSKOY.webp"
+ },
+ {
+  "name": "PRW422_WoWs_WoT_fan",
+  "person": "WoWs_WoT",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [],
+  "portrait": "WoWs_WoT.webp"
+ },
+ {
+  "name": "PVW101_Francisco_Ferreira",
+  "person": "FRANCISCO_FERREIRA",
+  "nations": [
+   "Pan_America"
+  ],
+  "talents": [],
+  "portrait": "FRANCISCO_FERREIRA.webp"
+ },
+ {
+  "name": "PVW102_Pedro_Max",
+  "person": "Pedro_Max",
+  "nations": [
+   "Pan_America"
+  ],
+  "talents": [],
+  "portrait": "Pedro_Max.webp"
+ },
+ {
+  "name": "PWW011_Grzegorz",
+  "person": "GRZEGORZ",
+  "nations": [
+   "Europe"
+  ],
+  "talents": [],
+  "portrait": "GRZEGORZ.webp"
+ },
+ {
+  "name": "PXW117_Dr_Frankenship_H18",
+  "person": "Dr_Frankenship_H18",
+  "nations": [],
+  "talents": [],
+  "portrait": "Dr_Frankenship_H18.webp"
+ },
+ {
+  "name": "PXW118_Mina_Ura_H18",
+  "person": "Mina_Ura_H18",
+  "nations": [],
+  "talents": [],
+  "portrait": "Mina_Ura_H18.webp"
+ },
+ {
+  "name": "PXW119_Sairus_Gerrero_H18",
+  "person": "Sairus_Gerrero_H18",
+  "nations": [],
+  "talents": [],
+  "portrait": "Sairus_Gerrero_H18.webp"
+ },
+ {
+  "name": "PXW120_Klaus_Teslau_H18",
+  "person": "Klaus_Teslau_H18",
+  "nations": [],
+  "talents": [],
+  "portrait": "Klaus_Teslau_H18.webp"
+ },
+ {
+  "name": "PXW121_Lazar_Kent_H18",
+  "person": "Lazar_Kent_H18",
+  "nations": [],
+  "talents": [],
+  "portrait": "Lazar_Kent_H18.webp"
+ },
+ {
+  "name": "PZW404_Da_Rong",
+  "person": "Da_Rong",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [],
+  "portrait": "Da_Rong.webp"
+ },
+ {
+  "name": "PZW405_Quan_Rong",
+  "person": "Quan_Rong",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [],
+  "portrait": "Quan_Rong.webp"
+ },
+ {
+  "name": "PZW409_ChangeDual",
+  "person": "ChangeDual",
+  "nations": [
+   "Pan_Asia",
+   "Japan"
+  ],
+  "talents": [],
+  "portrait": "ChangeDual.webp"
+ },
+ {
+  "name": "PZW410_Houyi",
+  "person": "Houyi",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [],
+  "portrait": "Houyi.webp"
+ },
+ {
+  "name": "PZW416_CnBanny",
+  "person": "CNBANNY",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [],
+  "portrait": "CNBANNY.webp"
+ },
+ {
+  "name": "PZW417_CnRabbit",
+  "person": "CNRABBIT",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [],
+  "portrait": "CNRABBIT.webp"
+ }
+]
