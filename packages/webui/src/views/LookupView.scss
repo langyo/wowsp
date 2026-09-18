@@ -17,7 +17,10 @@
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid rgb(var(--color-text) / 8%);
-  padding: 16px 14px 16px 0;
+  /* No right padding: __history is this column's scroller and its scrollbar
+     must hug the sidebar's right border (same edge-to-edge rule as __main).
+     Breathing room rides on the children instead. */
+  padding: 16px 0;
 }
 
 .lookup-view__search {
@@ -25,6 +28,7 @@
   flex-direction: column;
   gap: 8px;
   margin-bottom: 14px;
+  padding-right: 14px;
 }
 
 /* Row 2 — player/clan segmented group shares the row with the live-search
@@ -91,6 +95,9 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* Content clearance from the scrollbar; the scrollbar itself sits at this
+     scroller's border edge — flush with the sidebar's right border. */
+  padding-right: 14px;
 }
 
 .lookup-view__history-title {
