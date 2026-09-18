@@ -84,16 +84,23 @@ pub(crate) fn normalize(raw: &str) -> String {
     // indistinguishable, and the OCR engine swaps them freely (a real #372
     // read came back "rjOOOOOOO..." for the roster's
     // "rj0000000000000000000001"). Collapsing BOTH sides to the digit makes
-    // the confusion class vanish from scoring. Deliberately ONLY these two
-    // pairs: mapping 'i'→'1' would be equally self-consistent, but 'i' is
-    // common in genuine nicknames and every extra canonicalization widens
-    // the false-positive surface for cleanly-read names near the 0.75
+    // the confusion class vanish from scoring, as does folding '_' to a
+    // space (the engine reads the panel's underscores as spaces).
+    // Deliberately no more: mapping 'i'→'1' would be equally self-consistent,
+    // but 'i' is common in genuine nicknames and every extra canonicalization
+    // widens the false-positive surface for cleanly-read names near the 0.75
     // threshold.
     s = s
         .chars()
         .map(|c| match c {
             'o' => '0',
             'l' => '1',
+            // Underscores render as whitespace-width gaps at strip size, so
+            // the OCR engine reads them as spaces ("M_i_n_g_" came back as
+            // "M i n g"). Folding '_' to a space on BOTH sides lets the
+            // whitespace collapse below absorb the swap; like the glyph
+            // pairs, self-consistency is what matters, not the target.
+            '_' => ' ',
             other => other,
         })
         .collect();
@@ -336,6 +343,28 @@ mod tests {
         // 'i' is deliberately NOT mapped — it is common in genuine
         // nicknames and stays out of the confusion set.
         assert_eq!(normalize("iiii"), "iiii");
+    }
+
+    #[test]
+    fn normalize_folds_underscores_to_spaces() {
+        // The panel renders underscores as gap-width strokes the engine
+        // reads as spaces; folding '_' to a space on both sides absorbs the
+        // swap through the whitespace collapse (a real #372 read:
+        // "[VIPI]M i n g" for the roster's "M_i_n_g_").
+        assert_eq!(normalize("M_i_n_g_"), "m i n g");
+        assert_eq!(normalize("[VIPI]M i n g"), "m i n g");
+        // A verbatim read of an underscored name still matches itself
+        // (the o→0 canonicalization applies as everywhere).
+        assert_eq!(normalize("wocaonimaya_"), "w0ca0nimaya");
+    }
+
+    #[test]
+    fn underscore_folded_names_match_spaced_reads() {
+        // The scoring-level consequence: the spaced OCR read of an
+        // underscore-heavy nickname becomes a verbatim match.
+        let roster = vec![veh("M_i_n_g_"), veh("PlainName")];
+        let out = assign_rows(&lines(&[Some("[VIPI]M i n g"), Some("plainname")]), &roster);
+        assert_eq!(out, vec![Some("M_i_n_g_".into()), Some("PlainName".into())]);
     }
 
     // ── scoring (exercised through assign_rows) ──────────────────────────

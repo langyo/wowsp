@@ -74,8 +74,14 @@ impl RowRecognizer for WindowsOcrRecognizer {
     ///    gray-on-gray, and the engine reads zero lines for them at ANY
     ///    scale; stretching the strip's own min/max luminance onto the full
     ///    0–255 range restores ordinary near-black-on-near-white glyph
-    ///    contrast and the read succeeds (a flat strip — no luminance
-    ///    range — skips the stage);
+    ///    contrast for strips whose range the dim glyphs dominate (it
+    ///    measurably upgrades partial reads on such rows). Strips whose
+    ///    histogram is polluted by bright neighboring-UI pixels (a 2–5%
+    ///    bright skirt reaching 255) still binarize into nothing after the
+    ///    stretch — those fall through to stage 4 and may stay unread; a
+    ///    robust valley/Otsu threshold rule is the follow-up if more
+    ///    sunk-row fixtures demand it. A flat strip (no luminance range)
+    ///    skips the stage;
     /// 4. 4px border trim + 2x upscale — a sliver of the neighboring column
     ///    at the crop edge (the ship silhouette sits ~4px inside the ally
     ///    strip in some layouts) can break the engine's line segmentation
