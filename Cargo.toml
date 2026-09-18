@@ -87,7 +87,8 @@ malkuth = { version = "^0.2", default-features = false, features = ["signals"] }
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.56"
 
-# Windows screen capture for overlay roster positioning
+# Windows screen capture for overlay roster positioning; Media_Ocr and its
+# support namespaces power the on-device tab row OCR (row_ocr_windows).
 windows = { version = "^0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -97,6 +98,15 @@ windows = { version = "^0.61", features = [
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
     "Win32_Storage_Xps",
+    # Row OCR (Windows.Media.Ocr): pixel write access into a SoftwareBitmap
+    # (Win32_System_WinRT's IMemoryBufferByteAccess), the bitmap itself
+    # (Graphics_Imaging), recognizer-language selection (Globalization) and
+    # the user-language-list fallback (System_UserProfile).
+    "Win32_System_WinRT",
+    "Graphics_Imaging",
+    "Globalization",
+    "System_UserProfile",
+    "Media_Ocr",
 ] }
 
 # Image handling for capture analysis
