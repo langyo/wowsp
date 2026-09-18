@@ -144,6 +144,11 @@ export default defineComponent({
     // ones we know in the UI language and pass the rest through.
     const localizeStep = (step: string): string => {
       if (!zh) return step;
+      // Installer-shell steps beyond the payload verbs (main.rs): the
+      // pre-kill notice and the stale-file cleanup summary.
+      if (step === "Stopping wowsp.exe") return "正在停止运行中的 WoWSP";
+      const stale = /^Removed (\d+) stale file/.exec(step);
+      if (stale) return `已移除 ${stale[1]} 个旧版残留文件`;
       const m = /^(Extracting|Reusing|Downloading|Registering|Writing)\s+(.+)$/.exec(step);
       if (!m) return step;
       const verbs: Record<string, string> = {

@@ -41,10 +41,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use shun::config::{ShunConfig, TargetConfig};
-use shun::flow::{Flow, FlowEvent};
-use shun::payload::ArchivePayload;
+use shun::flow::{Flow, FlowEvent, FlowPhase};
+use shun::payload::{ArchivePayload, MANIFEST_PATH, PayloadEntry};
 use shun::targets::install::{
-    InstallContext, InstallFlow, WindowsRegistration, WizardAnswers, default_aumid,
+    InstallContext, InstallFlow, UNINSTALLER_NAME, WindowsRegistration, WizardAnswers,
+    default_aumid,
 };
 use tauri::Emitter;
 use winreg::RegKey;
@@ -674,6 +675,131 @@ async fn perform_uninstall(state: tauri::State<'_, AppState>) -> Result<(), Stri
     .map_err(|e| format!("卸载任务异常退出: {e}"))?
 }
 
+/// Stops a running WoWSP before an overwrite install replaces its
+/// payload: Windows locks a running executable, so extracting a new
+/// `wowsp.exe` under it fails with os error 5. An existing install is
+/// detected by the main exe sitting in the install dir; the kill goes by
+/// image name (every instance, across install dirs — the same contract
+/// the silent update path has always had). Returns whether a previous
+/// install was detected.
+fn stop_running_app(install_dir: &Path) -> bool {
+    if !install_dir.join("wowsp.exe").is_file() {
+        return false;
+    }
+    println!("shun: existing install detected — stopping the running application");
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/IM", "wowsp.exe"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .status();
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    true
+}
+
+/// The installer-owned files that live in the install dir but are never
+/// payload entries: the flow's on-disk manifest, the copied uninstaller,
+/// and the portable marker (pinned as `.portable` in the manifest and by
+/// the app's paths.rs). The stale-file pass must leave them alone even
+/// if a damaged old manifest happens to list them. Compared
+/// case-insensitively — Windows resolves paths that way, and an
+/// exact-case check would let `Shun-Manifest.json` dodge the guard.
+fn is_installer_artifact(path: &Path) -> bool {
+    let name = path.to_string_lossy().to_lowercase();
+    name == MANIFEST_PATH || name == UNINSTALLER_NAME || name == ".portable"
+}
+
+/// Whether a manifest entry path may be joined under the install dir
+/// for deletion: archive-relative (no drive/root component) and free of
+/// `..`. The old manifest is external input as far as this pass is
+/// concerned, and the pass deletes files.
+fn entry_path_is_unsafe(path: &Path) -> bool {
+    path.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+                | std::path::Component::ParentDir
+        )
+    })
+}
+
+/// Reads the on-disk payload manifest a previous InstallFlow run left
+/// behind. `None` when absent or unparsable — no previous install to
+/// diff against, or one too damaged to trust.
+fn read_installed_manifest(install_dir: &Path) -> Option<Vec<PayloadEntry>> {
+    let bytes = std::fs::read(install_dir.join(MANIFEST_PATH)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Deletes the files the PREVIOUS payload delivered that the new one no
+/// longer carries — the diff between a manifest captured before the flow
+/// ran and the manifest the flow just wrote. Without it, overwrite
+/// installs accumulate renamed/dropped files forever (uninstall deletes
+/// only what the CURRENT manifest lists). Runs only after a successful
+/// flow — a failed extract must not thin out the old install — and every
+/// removal is best-effort. Directories the pass empties are pruned
+/// afterwards. One known gap: the flow writes the new manifest before
+/// registering, so a flow that fails at registration leaves the NEW
+/// manifest on disk and a retried install loses the old baseline (the
+/// diff becomes new-vs-new). Returns how many files were removed.
+fn remove_stale_payload_files(install_dir: &Path, previous: &[PayloadEntry]) -> usize {
+    if previous.is_empty() {
+        return 0;
+    }
+    // The flow just wrote the new manifest; when it cannot be read back,
+    // skip the pass entirely rather than guess what is still current.
+    let Some(current) = read_installed_manifest(install_dir) else {
+        return 0;
+    };
+    // Keyed case-insensitively: Windows resolves paths that way, so a
+    // payload path that changes only casing between versions must count
+    // as kept — the old-case join would otherwise resolve to (and delete)
+    // the freshly extracted file.
+    let current: std::collections::HashSet<String> = current
+        .iter()
+        .map(|entry| entry.path.to_string_lossy().to_lowercase())
+        .collect();
+    let mut removed = 0usize;
+    for entry in previous {
+        let path = entry.path.as_path();
+        if current.contains(&path.to_string_lossy().to_lowercase())
+            || entry_path_is_unsafe(path)
+            || is_installer_artifact(path)
+        {
+            continue;
+        }
+        if std::fs::remove_file(install_dir.join(path)).is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        prune_empty_dirs_below(install_dir);
+    }
+    removed
+}
+
+/// Removes empty directories under `root`, deepest first — mirroring
+/// shun's own uninstall pass. `remove_dir` refuses non-empty dirs, so
+/// only dirs the stale pass emptied (plus pre-existing empty ones) go.
+fn prune_empty_dirs_below(root: &Path) {
+    fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                let path = entry.path();
+                collect(&path, out);
+                out.push(path);
+            }
+        }
+    }
+    let mut dirs = Vec::new();
+    collect(root, &mut dirs);
+    for dir in dirs {
+        let _ = std::fs::remove_dir(dir);
+    }
+}
+
 /// Runs the install flow for the wizard UI. Both launchers are deferred
 /// to the done step: the manifest's "never" shortcut knobs make the
 /// no-creation guarantee structural (the wizard also answers `false` to
@@ -707,6 +833,25 @@ async fn start_install(
     let portable = ctx.portable;
     let flow_ctx = ctx;
     tauri::async_runtime::spawn_blocking(move || {
+        // Capture what a previous install left behind before the flow
+        // replaces the on-disk manifest — the stale-file pass diffs
+        // against it after a successful extract.
+        let previous = read_installed_manifest(&install_dir).unwrap_or_default();
+        // An overwrite install must stop the running application first:
+        // its locked executable would fail the extraction (os error 5).
+        // The label is emitted BEFORE the blocking helper so it covers the
+        // taskkill + settle window too.
+        if install_dir.join("wowsp.exe").is_file() {
+            emit_progress(
+                &app,
+                &FlowEvent::Progress {
+                    phase: FlowPhase::Prepare,
+                    step: "Stopping wowsp.exe".into(),
+                    percent: None,
+                },
+            );
+        }
+        stop_running_app(&install_dir);
         let flow = InstallFlow {
             payload: &payload,
             registration: &WindowsRegistration,
@@ -714,6 +859,17 @@ async fn start_install(
         };
         flow.run(&mut |event| emit_progress(&app, &event))
             .map_err(|e| e.to_string())?;
+        let stale = remove_stale_payload_files(&install_dir, &previous);
+        if stale > 0 {
+            emit_progress(
+                &app,
+                &FlowEvent::Progress {
+                    phase: FlowPhase::Extract,
+                    step: format!("Removed {stale} stale file(s)"),
+                    percent: None,
+                },
+            );
+        }
         cleanup_bootstrap_payload(&install_dir);
         relocate_model_pack(&install_dir, portable);
         Ok(())
@@ -818,9 +974,9 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
 /// stable path and stay valid across updates, so explicit flags are
 /// honored (a flip removes the `.lnk`) while absent flags only re-apply
 /// launchers that already exist (a no-op refresh through
-/// `apply_shortcut`). The updated application is NOT relaunched — the
-/// prompted update flow announces the restart via the app closing, and
-/// the user starts the new build from the Start menu.
+/// `apply_shortcut`). The updated application is relaunched at the end:
+/// the shell killed the running build before extracting, so the update
+/// puts the app back where the user left it.
 fn run_headless(
     args: &[String],
     config: &ShunConfig,
@@ -888,20 +1044,12 @@ fn run_headless(
     let portable = ctx.portable;
 
     // Update semantics: a wowsp.exe already sitting in the install dir
-    // means this silent run is an in-place update. The running
-    // application locks its own executable, so it must be terminated
-    // before the payload lands. Nothing is relaunched here: the prompted
-    // update flow announces the restart via the app closing, and the
-    // user starts the new build from the Start menu.
-    let updating = install_dir.join("wowsp.exe").is_file();
-    if updating {
-        println!("shun: existing install detected — stopping the running application");
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "wowsp.exe"])
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-            .status();
-        std::thread::sleep(std::time::Duration::from_millis(800));
-    }
+    // means this silent run is an in-place update. The helper stops the
+    // running application (its locked executable would fail the
+    // extraction) and reports the update so the shortcut/relaunch policy
+    // below can act on it.
+    let updating = stop_running_app(&install_dir);
+    let previous = read_installed_manifest(&install_dir).unwrap_or_default();
 
     let flow = InstallFlow {
         payload,
@@ -914,6 +1062,10 @@ fn run_headless(
         _ => {},
     })
     .map_err(|e| e.to_string())?;
+    let stale = remove_stale_payload_files(&install_dir, &previous);
+    if stale > 0 {
+        println!("shun: removed {stale} stale file(s) from the previous install");
+    }
     cleanup_bootstrap_payload(&install_dir);
     relocate_model_pack(&install_dir, portable);
     // Shortcut policy on the silent path:
@@ -1046,4 +1198,194 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP installer shell");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scratch dir under the temp root, removed on drop.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scratch(name: &str) -> Scratch {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp-installer-tests-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Scratch(dir)
+    }
+
+    fn entry(path: &str) -> PayloadEntry {
+        PayloadEntry {
+            path: PathBuf::from(path),
+            size: 1,
+            sha256: "0".repeat(64),
+        }
+    }
+
+    fn write_manifest(dir: &Path, entries: &[PayloadEntry]) {
+        std::fs::write(
+            dir.join(MANIFEST_PATH),
+            serde_json::to_vec(entries).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn unsafe_entry_paths_are_rejected() {
+        assert!(!entry_path_is_unsafe(Path::new("wowsp.exe")));
+        assert!(!entry_path_is_unsafe(Path::new("models/pack/model.bin")));
+        assert!(entry_path_is_unsafe(Path::new("../escape.txt")));
+        assert!(entry_path_is_unsafe(Path::new("ok/../escape.txt")));
+        #[cfg(windows)]
+        {
+            assert!(entry_path_is_unsafe(Path::new("C:\\Windows\\evil.dll")));
+            assert!(entry_path_is_unsafe(Path::new("\\rooted.dll")));
+        }
+    }
+
+    #[test]
+    fn stale_files_from_the_previous_payload_are_removed() {
+        let guard = scratch("stale-cleanup");
+        let dir = guard.path();
+        // The previous install delivered a.txt, sub/old.bin and
+        // shared.txt; the flow has since extracted the new payload
+        // (shared.txt kept, new.txt added) and written its manifest.
+        std::fs::write(dir.join("a.txt"), b"old").unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/old.bin"), b"old").unwrap();
+        std::fs::write(dir.join("shared.txt"), b"same").unwrap();
+        let previous = vec![entry("a.txt"), entry("sub/old.bin"), entry("shared.txt")];
+        std::fs::write(dir.join("new.txt"), b"new").unwrap();
+        write_manifest(dir, &[entry("shared.txt"), entry("new.txt")]);
+
+        assert_eq!(remove_stale_payload_files(dir, &previous), 2);
+        assert!(!dir.join("a.txt").exists());
+        assert!(!dir.join("sub").exists(), "emptied payload dirs are pruned");
+        assert!(dir.join("shared.txt").is_file());
+        assert!(dir.join("new.txt").is_file());
+        assert!(dir.join(MANIFEST_PATH).is_file());
+    }
+
+    #[test]
+    fn partially_kept_directories_survive_the_prune() {
+        let guard = scratch("partial-keep");
+        let dir = guard.path();
+        // Old payload: sub/a + sub/b; new payload keeps sub/b only — the
+        // deletion of sub/a must not take the still-occupied dir with it.
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/a"), b"a").unwrap();
+        std::fs::write(dir.join("sub/b"), b"b").unwrap();
+        let previous = vec![entry("sub/a"), entry("sub/b")];
+        write_manifest(dir, &[entry("sub/b")]);
+
+        assert_eq!(remove_stale_payload_files(dir, &previous), 1);
+        assert!(dir.join("sub").is_dir());
+        assert!(dir.join("sub/b").is_file());
+    }
+
+    #[test]
+    fn installer_artifacts_and_unsafe_paths_survive_the_cleanup() {
+        let guard = scratch("artifact-guards");
+        let dir = guard.path();
+        // The `../evil.txt` entry is a real sibling file OUTSIDE the
+        // install dir — the pass must never reach it.
+        let outside = dir.parent().unwrap().join(format!(
+            "wowsp-installer-tests-{}-evil.txt",
+            std::process::id()
+        ));
+        std::fs::write(&outside, b"evil").unwrap();
+        std::fs::write(dir.join(UNINSTALLER_NAME), b"u").unwrap();
+        std::fs::write(dir.join(".portable"), b"").unwrap();
+        std::fs::write(dir.join(MANIFEST_PATH), b"[]").unwrap();
+        let previous = vec![
+            entry(UNINSTALLER_NAME),
+            entry(".portable"),
+            entry(MANIFEST_PATH),
+            entry("../evil.txt"),
+        ];
+
+        assert_eq!(remove_stale_payload_files(dir, &previous), 0);
+        assert!(dir.join(UNINSTALLER_NAME).is_file());
+        assert!(dir.join(".portable").is_file());
+        assert!(dir.join(MANIFEST_PATH).is_file());
+        assert!(
+            outside.is_file(),
+            "paths escaping the install dir are never touched"
+        );
+        let _ = std::fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn case_only_path_changes_count_as_kept() {
+        let guard = scratch("case-kept");
+        let dir = guard.path();
+        // The payload renamed `Locales/` to `locales/` between versions:
+        // on Windows the old-case join resolves to the freshly extracted
+        // file, so a case-sensitive diff would delete it.
+        std::fs::create_dir_all(dir.join("locales")).unwrap();
+        std::fs::write(dir.join("locales/zh.json"), b"{}").unwrap();
+        write_manifest(dir, &[entry("locales/zh.json")]);
+
+        assert_eq!(
+            remove_stale_payload_files(dir, &[entry("Locales/zh.json")]),
+            0
+        );
+        assert!(dir.join("locales/zh.json").is_file());
+    }
+
+    #[test]
+    fn artifact_guard_is_case_insensitive() {
+        let guard = scratch("case-artifact");
+        let dir = guard.path();
+        std::fs::write(dir.join(MANIFEST_PATH), b"[]").unwrap();
+
+        assert!(is_installer_artifact(Path::new("SHUN-MANIFEST.json")));
+        assert!(is_installer_artifact(Path::new("Uninstall.exe")));
+        assert_eq!(remove_stale_payload_files(dir, &[entry(MANIFEST_PATH)]), 0);
+    }
+
+    #[test]
+    fn cleanup_is_a_noop_without_a_previous_manifest() {
+        let guard = scratch("no-previous");
+        let dir = guard.path();
+        std::fs::write(dir.join("new.txt"), b"new").unwrap();
+        write_manifest(dir, &[entry("new.txt")]);
+
+        assert_eq!(remove_stale_payload_files(dir, &[]), 0);
+        assert!(dir.join("new.txt").is_file());
+    }
+
+    #[test]
+    fn unreadable_current_manifest_disables_the_pass() {
+        let guard = scratch("unreadable-current");
+        let dir = guard.path();
+        // A previous manifest exists, but the just-written one cannot be
+        // parsed back — the pass must bail out rather than delete the
+        // whole previous file set against an empty "current" view.
+        std::fs::write(dir.join("a.txt"), b"old").unwrap();
+        std::fs::write(dir.join(MANIFEST_PATH), b"not json").unwrap();
+
+        assert!(read_installed_manifest(dir).is_none());
+        assert_eq!(
+            remove_stale_payload_files(dir, &[entry("a.txt")]),
+            0,
+            "nothing is removed when the current manifest is unreadable"
+        );
+        assert!(dir.join("a.txt").is_file());
+    }
 }
