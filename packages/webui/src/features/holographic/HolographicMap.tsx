@@ -4804,7 +4804,8 @@ export default defineComponent({
           <button
               class="holo-map__lbltoggle"
               onClick={() => { showLabels.value = !showLabels.value; }}
-              title={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
+              data-hint={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
+              aria-label={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
             >
               {showLabels.value ? "◉" : "◎"}
             </button>
@@ -4816,7 +4817,8 @@ export default defineComponent({
                     e.stopPropagation();
                     cameraMenuOpen.value = !cameraMenuOpen.value;
                   }}
-                  title={i18nT("replay.camera.title")}
+                  data-hint={i18nT("replay.camera.title")}
+                  aria-label={i18nT("replay.camera.title")}
                 >
                   {cameraMode.value === "original" ? "🎥" : cameraMode.value === "follow" ? "◎" : "⛶"}
                 </button>
@@ -4905,7 +4907,7 @@ export default defineComponent({
               <button
                 class="holo-map__speed-btn"
                 onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
-                title={i18nT("replay.playbackSpeed")}
+                data-hint={i18nT("replay.playbackSpeed")}
               >
                 {playbackSpeed.value}×
               </button>

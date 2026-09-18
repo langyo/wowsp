@@ -417,7 +417,7 @@ export default defineComponent({
                                 <div class="catalog-card__sub">{entry.nameEn}</div>
                               )}
                               {text.desc && (
-                                <div class="catalog-card__desc" title={text.desc}>
+                                <div class="catalog-card__desc" data-hint={text.desc}>
                                   {text.desc}
                                 </div>
                               )}
@@ -457,7 +457,8 @@ export default defineComponent({
                                 {record && (
                                   <button
                                     class="catalog-card__uninstall"
-                                    title={t("resources.uninstall")}
+                                    data-hint={t("resources.uninstall")}
+                                    aria-label={t("resources.uninstall")}
                                     disabled={!!busyId.value}
                                     onClick={() => (confirmTarget.value = entry)}
                                   >
@@ -471,7 +472,7 @@ export default defineComponent({
                                     href={url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    title={t("resources.openDiscussion")}
+                                    data-hint={t("resources.openDiscussion")}
                                   >
                                     <ExternalLink size={13} />
                                     {t("resources.discuss")}

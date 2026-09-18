@@ -112,7 +112,7 @@ export default defineComponent({
               class="stats-card__wr"
               style={wrColor.value ? { color: wrColor.value } : undefined}
               onClick={() => copy(String(props.stats.winrate?.toFixed(1) ?? "—"), t("common.copied"))}
-              title={`${t("stats.winrate")} (click to copy)`}
+              data-hint={`${t("stats.winrate")} · ${t("common.clickToCopy")}`}
             >
               {props.stats.winrate != null ? `${props.stats.winrate.toFixed(1)}%` : "—"}
             </span>
@@ -120,7 +120,7 @@ export default defineComponent({
             <span
               class="stats-card__battles-total"
               onClick={() => copy(String(props.stats.battles ?? "—"), t("common.copied"))}
-              title={`${t("stats.battles")} (click to copy)`}
+              data-hint={`${t("stats.battles")} · ${t("common.clickToCopy")}`}
             >
               {props.stats.battles != null ? `${props.stats.battles.toLocaleString()} ${t("stats.battles")}` : "—"}
             </span>
@@ -129,7 +129,7 @@ export default defineComponent({
             class="stats-card__pr-block"
             style={{ color: pr.value.color }}
             onClick={() => copy(String(props.stats.pr ?? "—"), t("common.copied"))}
-            title={`PR: ${props.stats.pr ?? "—"} (${pr.value.label}) — click to copy`}
+            data-hint={`PR: ${props.stats.pr ?? "—"} (${pr.value.label}) · ${t("common.clickToCopy")}`}
           >
             <span class="stats-card__pr-num">
               {props.stats.pr != null ? props.stats.pr.toLocaleString() : "—"}
@@ -146,7 +146,7 @@ export default defineComponent({
                 <span
                   class="stats-card__division-wr"
                   style={d.wr != null ? { color: winrateColor(d.wr) } : undefined}
-                  title={d.hint}
+                  data-hint={d.hint}
                 >
                   {d.wr != null ? `${d.wr.toFixed(1)}%` : "—"}
                 </span>
@@ -163,7 +163,7 @@ export default defineComponent({
             <div
               class={["stats-card__kpi", "stats-card__kpi--copyable"]}
               onClick={() => copy(String(k.value), t("common.copied"))}
-              title={`${k.label}: ${k.value} (click to copy)`}
+              data-hint={`${k.label}: ${k.value} · ${t("common.clickToCopy")}`}
             >
               <span class="stats-card__kpi-label">{k.label}</span>
               <span class="stats-card__kpi-value">{k.value}</span>
