@@ -27,9 +27,13 @@
 //! dump. Those per-layout frames are exactly the ground truth the
 //! row-recognition engine needs: the same battle captured under different
 //! panel layouts (row-order sampling across survival states is the
-//! recognition PR's own work). Every IO failure is logged and swallowed —
-//! a broken dump directory must never panic the watcher thread nor disturb
-//! the overlay pipeline this hook sits inside.
+//! recognition PR's own work). FAILED detections (the centered-fallback
+//! anchor behind the "table not found" hint) dump once per battle as
+//! `.miss.` artifacts — a scenario where the detector cannot find the table
+//! leaves its frame behind for offline analysis instead of vanishing. Every
+//! IO failure is logged and swallowed — a broken dump directory must never
+//! panic the watcher thread nor disturb the overlay pipeline this hook sits
+//! inside.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -54,13 +58,20 @@ const TAB_DUMP_DIR_ENV: &str = "WOWSP_TAB_DUMP_DIR";
 /// the anchor's first-row bucket, not by wall clock.
 static LAST_DUMPED_BATTLE: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
+/// Battles whose FAILED detection (the centered-fallback anchor, `.miss.`
+/// artifacts) already dumped — its own set so a battle that first misses and
+/// later confirms still leaves BOTH frames. Miss signatures carry no layout
+/// bucket: the fallback grid is synthetic and its geometry is meaningless.
+static SEEN_MISS_BATTLES: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
 /// Dump the current Tab frame, the arena roster and the detector anchor into
-/// `WOWSP_TAB_DUMP_DIR`, at most once per battle layout. Called from the
-/// overlay watcher right after a CONFIRMED table detection
-/// (`table_detected == true`) with the exact RGBA frame the detector ran on —
-/// both from per-press acquisition passes and from the 5 s revalidation
-/// passes while the overlay stays shown. Does nothing when the env var is
-/// unset or empty.
+/// `WOWSP_TAB_DUMP_DIR`. Called from the overlay watcher with the exact RGBA
+/// frame the detector ran on — both from per-press acquisition passes and
+/// from the 5 s revalidation passes while the overlay stays shown. CONFIRMED
+/// detections (`table_detected == true`) dump once per (battle, layout);
+/// FAILED detections dump once per battle as `.miss.` artifacts, so a
+/// scenario where the table cannot be found leaves the frame behind for
+/// offline analysis. Does nothing when the env var is unset or empty.
 pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor: &OverlayAnchor) {
     // Env gate FIRST: with the feature off this is the whole function —
     // zero allocation, zero IO, zero locking on the overlay hot path.
@@ -77,20 +88,24 @@ pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor:
         tracing::debug!("tab dump skipped: no readable tempArenaInfo.json");
         return;
     };
-    let signature = battle_signature(&info, first_row_bucket(anchor));
-    {
-        let mut seen = match LAST_DUMPED_BATTLE.lock() {
-            Ok(g) => g,
-            // Poisoned by a panic elsewhere — stay silent and leave the
-            // overlay flow untouched.
-            Err(_) => return,
-        };
-        if !first_dump_for_battle(&mut seen, signature) {
-            return;
-        }
+    // Confirmed dumps key on (battle, layout); misses key on the battle only
+    // — the fallback grid is synthetic (centered rows), its geometry carries
+    // no layout information worth bucketing.
+    let (variant, signature) = if anchor.table_detected {
+        ("", battle_signature(&info, first_row_bucket(anchor)))
+    } else {
+        (".miss", battle_signature(&info, i64::MIN))
+    };
+    let claimed = if anchor.table_detected {
+        claim_signature(&LAST_DUMPED_BATTLE, signature)
+    } else {
+        claim_signature(&SEEN_MISS_BATTLES, signature)
+    };
+    if !claimed {
+        return;
     }
-    // The battle stays marked even when the write below fails: a broken dump
-    // directory must not turn every subsequent Tab capture into another
+    // The signature stays claimed even when the write below fails: a broken
+    // dump directory must not turn every subsequent Tab capture into another
     // failing write — the failure is logged once and that is enough.
     let png = encode_frame_png(rgba, width, height);
     if png.is_empty() {
@@ -98,10 +113,20 @@ pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor:
         return;
     }
     let stem = timestamp_stem();
-    match write_dump_files(&dir, &stem, &png, &arena_json, anchor) {
+    match write_dump_files(&dir, &stem, variant, &png, &arena_json, anchor) {
         Ok(()) => tracing::info!(dir = %dir.display(), "tab roster dump written"),
         Err(e) => tracing::warn!(error = %e, "tab roster dump write failed"),
     }
+}
+
+/// Record `signature` in the seen-set and report whether it was new (the
+/// caller should dump). Poisoned by a panic elsewhere — stay silent and
+/// leave the overlay flow untouched.
+fn claim_signature(set: &Mutex<Vec<u64>>, signature: u64) -> bool {
+    let Ok(mut seen) = set.lock() else {
+        return false;
+    };
+    first_dump_for_battle(&mut seen, signature)
 }
 
 /// Pure env gate: the raw `WOWSP_TAB_DUMP_DIR` value → dump directory. Unset
@@ -196,16 +221,20 @@ fn encode_frame_png(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 
 /// Write the three ground-truth artifacts for one detection:
 ///
-/// - `tab-<stem>.frame.png` — the game-window frame the detector ran on;
-/// - `tab-<stem>.arena.json` — tempArenaInfo.json's raw JSON text;
-/// - `tab-<stem>.anchor.json` — the serialized [`OverlayAnchor`].
+/// - `tab-<stem><variant>.frame.png` — the game-window frame the detector
+///   ran on;
+/// - `tab-<stem><variant>.arena.json` — tempArenaInfo.json's raw JSON text;
+/// - `tab-<stem><variant>.anchor.json` — the serialized [`OverlayAnchor`].
 ///
-/// All three share the timestamp stem. File names carry no player name, but
-/// the arena.json artifact IS the roster text and contains every player's
-/// nickname — a dump directory must be sanitized before it is shared.
+/// All three share the timestamp stem; `variant` is `""` for a confirmed
+/// detection and `".miss"` for a failed one. File names carry no player
+/// name, but the arena.json artifact IS the roster text and contains every
+/// player's nickname — a dump directory must be sanitized before it is
+/// shared.
 fn write_dump_files(
     dir: &Path,
     stem: &str,
+    variant: &str,
     frame_png: &[u8],
     arena_json: &str,
     anchor: &OverlayAnchor,
@@ -213,12 +242,21 @@ fn write_dump_files(
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     let anchor_json =
         serde_json::to_string_pretty(anchor).map_err(|e| format!("serialize anchor: {e}"))?;
-    std::fs::write(dir.join(format!("tab-{stem}.frame.png")), frame_png)
-        .map_err(|e| format!("write frame png: {e}"))?;
-    std::fs::write(dir.join(format!("tab-{stem}.arena.json")), arena_json)
-        .map_err(|e| format!("write arena json: {e}"))?;
-    std::fs::write(dir.join(format!("tab-{stem}.anchor.json")), anchor_json)
-        .map_err(|e| format!("write anchor json: {e}"))?;
+    std::fs::write(
+        dir.join(format!("tab-{stem}{variant}.frame.png")),
+        frame_png,
+    )
+    .map_err(|e| format!("write frame png: {e}"))?;
+    std::fs::write(
+        dir.join(format!("tab-{stem}{variant}.arena.json")),
+        arena_json,
+    )
+    .map_err(|e| format!("write arena json: {e}"))?;
+    std::fs::write(
+        dir.join(format!("tab-{stem}{variant}.anchor.json")),
+        anchor_json,
+    )
+    .map_err(|e| format!("write anchor json: {e}"))?;
     Ok(())
 }
 
@@ -433,7 +471,7 @@ mod tests {
             row_players: None,
         };
         let arena_text = r#"{"dateTime":"20260917T120000","vehicles":[{"id":11}]}"#;
-        write_dump_files(&dir, "20260917-120000", b"png", arena_text, &anchor)
+        write_dump_files(&dir, "20260917-120000", "", b"png", arena_text, &anchor)
             .expect("dump must write all files");
         let mut names: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
@@ -463,5 +501,53 @@ mod tests {
         assert!(back.table_detected);
         assert_eq!(back.row_centers, vec![50, 92, 134]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn miss_dump_files_carry_the_dot_miss_infix() {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp_tab_miss_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut anchor = anchor_with_first_row(500);
+        anchor.table_detected = false;
+        write_dump_files(&dir, "20260917-120000", ".miss", b"png", "{}", &anchor)
+            .expect("miss dump must write all files");
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "tab-20260917-120000.miss.anchor.json",
+                "tab-20260917-120000.miss.arena.json",
+                "tab-20260917-120000.miss.frame.png",
+            ],
+            "failed detections land under their own .miss. namespace"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn miss_and_confirmed_dumps_of_one_battle_are_independent() {
+        // The same battle may first produce a FAILED detection and later a
+        // confirmed one (or reconfirm after a layout shift): the `.miss.`
+        // dedup set is separate from the confirmed set, so both frames land.
+        let mut confirmed: Vec<u64> = Vec::new();
+        let mut misses: Vec<u64> = Vec::new();
+        assert!(first_dump_for_battle(&mut confirmed, 42), "confirmed dumps");
+        assert!(
+            first_dump_for_battle(&mut misses, 42),
+            "the miss set does not inherit the confirmed set's state"
+        );
+        assert!(
+            !first_dump_for_battle(&mut misses, 42),
+            "miss dedups per battle"
+        );
     }
 }
