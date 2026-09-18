@@ -61,7 +61,6 @@
   }
 
   &__pr-block {
-    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -77,13 +76,11 @@
     }
   }
 
-  /* Career-verdict seal (神了 / 海猴) rides the PR block's corner like an
-     inked stamp on paper — mostly on the corner, clipping the number only
-     slightly. */
+  /* Career-verdict seal (神了 / 海猴) sits in the open gap between the
+     winrate block and the PR block, like a stamp pressed onto the card. */
   &__stamp {
-    position: absolute;
-    top: -0.95rem;
-    right: -0.75rem;
+    align-self: center;
+    flex: none;
   }
 
   &__pr-num {

@@ -1,5 +1,6 @@
 import { defineComponent, type PropType } from "vue";
 
+import { useLanguage } from "@/i18n/useLanguage";
 import type { CareerStamp } from "@/utils/winrate";
 import "./RatingStamp.scss";
 
@@ -9,7 +10,10 @@ let stampSeq = 0;
  *  the moiré weave angles and the ink-rough displacement seeds are fixed, so
  *  the same player always sees the same stamp.
  *   - "miracle" (神了): long-term purple-tier+ career (PR ≥ 2100 over 500+ battles)
- *   - "ape" (海猴): red-tier career (PR < 750) */
+ *   - "ape" (海猴): red-tier career (PR < 750)
+ *
+ * The seal is a Chinese-community artifact — it renders nothing under any
+ * other UI language. */
 export default defineComponent({
   name: "RatingStamp",
   props: {
@@ -20,10 +24,12 @@ export default defineComponent({
     variant: { type: String as PropType<"full" | "mini">, default: "full" },
   },
   setup(props) {
+    const { uiLocale } = useLanguage();
     const uid = `stamp-${++stampSeq}`;
     const text = () => (props.kind === "miracle" ? "神了" : "海猴");
 
     return () => {
+      if (!uiLocale.value.startsWith("zh")) return null;
       const id = (part: string) => `${uid}-${part}`;
       const url = (part: string) => `url(#${id(part)})`;
       const mini = props.variant === "mini";
