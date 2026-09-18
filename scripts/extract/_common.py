@@ -138,7 +138,10 @@ def _registry_scan() -> list[str]:
         import winreg  # type: ignore
     except ImportError:
         return []
-    publishers = {"Wargaming.net", "Wargaming Group Limited", "360.cn", "Lesta Games"}
+    # Substring patterns (lower-cased), mirroring the app's game_detect.rs:
+    # publisher strings vary across installer generations — the legacy
+    # KongZhong (空中网) CN client registers its own name, not 360's.
+    patterns = ("wargaming", "lesta", "kongzhong", "空中网", "360")
     hits: list[str] = []
     for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
         for sub in (
@@ -158,8 +161,8 @@ def _registry_scan() -> list[str]:
                     break
                 try:
                     with winreg.OpenKey(key, child) as ck:
-                        pub = winreg.QueryValueEx(ck, "Publisher")[0]
-                        if pub not in publishers:
+                        pub = winreg.QueryValueEx(ck, "Publisher")[0].lower()
+                        if not any(p in pub for p in patterns):
                             continue
                         loc = winreg.QueryValueEx(ck, "InstallLocation")[0]
                         if loc and Path(loc, "WorldOfWarships.exe").is_file():

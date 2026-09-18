@@ -128,6 +128,13 @@ pub async fn get_game_process(
 /// The root is the segment above `bin\` (the 64-bit client lives in
 /// `bin/<build>/bin64/`), falling back to the exe's own directory for the
 /// root-level launcher stub.
+///
+/// The kind is inferred from path markers: every distribution channel keeps
+/// the same on-disk layout, but their install roots are telling — Steam lives
+/// under `steamapps`, the CN clients under a KongZhong/空中网/360 folder, the
+/// Lesta client under "Lesta Game Center". Anything else is treated as the
+/// Wargaming international client (the historical behavior that mislabeled
+/// the legacy CN clients — user-reported).
 #[cfg(target_os = "windows")]
 fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
     use wowsp_tauri_shared::{GameInstall, GameInstallKind};
@@ -146,12 +153,19 @@ fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> 
     let lower = norm.to_lowercase();
     let kind = if lower.contains("steamapps") {
         GameInstallKind::Steam
+    } else if lower.contains("kongzhong") || norm.contains("空中网") {
+        GameInstallKind::CnKongzhong
+    } else if lower.contains("lesta") {
+        GameInstallKind::Lesta
+    } else if lower.contains("360") {
+        GameInstallKind::Cn360
     } else {
         GameInstallKind::Wargaming
     };
     Some(GameInstall {
+        realm: super::game_detect::detect_realm(std::path::Path::new(&root))
+            .or_else(|| super::game_detect::kind_fallback_realm(&kind)),
         kind,
-        realm: super::game_detect::detect_realm(std::path::Path::new(&root)),
         path: root,
     })
 }
@@ -263,6 +277,74 @@ fn match_install<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The running-exe fallback infers the client kind from path markers so a
+    /// CN / Lesta client that no detected install claims is still labeled
+    /// correctly (user-reported: a KongZhong install used to fall through to
+    /// "Wargaming"). Realm falls back to the kind-implied region when the
+    /// install carries no clientrunner.log. Every fixture is rooted under the
+    /// session temp dir so a real install can never satisfy
+    /// `detect_realm` and break the expected fallback.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn infer_install_from_exe_recognizes_cn_and_lesta_roots() {
+        let base = std::env::temp_dir().join(format!(
+            "wowsp-test-infer-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let base = base.to_string_lossy().into_owned();
+        let wow = |marker: &str| {
+            format!(r"{base}\{marker}\World of Warships\bin\250107\bin64\WorldOfWarships64.exe")
+        };
+        let cases: Vec<(String, wowsp_tauri_shared::GameInstallKind, Option<&str>)> = vec![
+            (
+                wow("Lesta Game Center"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            (
+                wow("360游戏大厅"),
+                wowsp_tauri_shared::GameInstallKind::Cn360,
+                Some("cn"),
+            ),
+            (
+                format!(
+                    r"{base}\KongZhong Games\World of Warships\bin\250107\bin64\WorldOfWarships.exe"
+                ),
+                wowsp_tauri_shared::GameInstallKind::CnKongzhong,
+                Some("cn"),
+            ),
+            (
+                wow(r"SteamLibrary\steamapps\common"),
+                wowsp_tauri_shared::GameInstallKind::Steam,
+                None,
+            ),
+            (
+                wow("Games"),
+                wowsp_tauri_shared::GameInstallKind::Wargaming,
+                None,
+            ),
+        ];
+        for (exe, kind, realm) in &cases {
+            let install = infer_install_from_exe(exe).expect("root derivable");
+            assert_eq!(&install.kind, kind, "kind for {exe}");
+            assert_eq!(install.realm.as_deref(), *realm, "realm for {exe}");
+            assert!(
+                !install.path.ends_with("\\bin"),
+                "root stops above bin\\: {}",
+                install.path
+            );
+        }
+        // Forward-slash paths (webview-normalized) normalize before matching.
+        let install = infer_install_from_exe(&format!(
+            "{base}/Lesta Game Center/World of Warships/bin/250107/bin64/WorldOfWarships64.exe"
+        ))
+        .unwrap();
+        assert_eq!(install.kind, wowsp_tauri_shared::GameInstallKind::Lesta);
+    }
 
     /// Regression: appdata_write("stats-cache/x.json") used to fail silently
     /// because the `stats-cache/` subdirectory was never created. Now it

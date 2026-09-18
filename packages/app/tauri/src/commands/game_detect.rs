@@ -1,38 +1,49 @@
 //! Game-install detection.
 //!
 //! Principle (adapted from ApeRadar `ConfigWindow.AutoDetectGamePath`):
-//! scan the Windows Uninstall registry for known Wargaming publishers, read
-//! each entry's `InstallLocation`, and accept it when `WorldOfWarships.exe`
-//! exists there. WoWSP additionally walks Steam library folders for
-//! `appmanifest_552990.acf` (Steam appid 552990 = World of Warships) — the case
-//! ApeRadar does not cover. A user can also pin a manual path.
+//! scan the Windows Uninstall registry for known Wargaming-family publishers
+//! (see [`PUBLISHER_PATTERNS`] — substring matching so the legacy KongZhong
+//! CN client and publisher-string variants are covered too), read each
+//! entry's `InstallLocation`, and accept it when `WorldOfWarships.exe` exists
+//! there. WoWSP additionally walks Steam library folders for
+//! `appmanifest_552990.acf` (Steam appid 552990 = World of Warships) — the
+//! case ApeRadar does not cover. A user can also pin a manual path.
 //!
-//! Status: **skeleton**. The registry + Steam scans are stubbed to return an
-//! empty list with a TODO; milestone M1 in PLAN.md fills them in.
+//! All four distribution channels share the same on-disk layout
+//! (`WorldOfWarships.exe` stub at the root, `bin/<build>/bin64/` game
+//! binaries, `profile/`, `replays/`); only the launcher and the registry
+//! publisher differ, so kind/realm resolution below leans on those two
+//! signals plus the log-derived realm.
 
 use std::path::PathBuf;
 
 use wowsp_tauri_shared::{GameInstall, GameInstallKind};
 
-/// Known publisher strings on the Windows Uninstall keys, covering the four
-/// distribution channels. Sourced from ApeRadar's `ConfigWindow.xaml.cs`.
-const WG_PUBLISHERS: &[&str] = &[
-    "Wargaming.net",
-    "Wargaming Group Limited",
-    "360.cn",
-    "Lesta Games",
+/// Publisher substring patterns mapped to the install kind they identify.
+/// Matched case-insensitively against the Windows Uninstall key's `Publisher`
+/// value. Substring rather than exact equality (ApeRadar's approach): the
+/// four distribution channels spell their publisher differently across
+/// installer generations — the CN region registered "KongZhong …" / "空中网"
+/// before 360 took over, and 360's own entries vary ("360.cn"), so an exact
+/// list silently drops the legacy clients (user-reported: a KongZhong
+/// install fell through to the running-process heuristic and got mislabeled).
+const PUBLISHER_PATTERNS: &[(&str, GameInstallKind)] = &[
+    ("wargaming", GameInstallKind::Wargaming),
+    ("lesta", GameInstallKind::Lesta),
+    ("kongzhong", GameInstallKind::CnKongzhong),
+    ("空中网", GameInstallKind::CnKongzhong),
+    ("360", GameInstallKind::Cn360),
 ];
 
 /// Steam appid for World of Warships.
 const STEAM_APPID: &str = "552990";
 
-/// Auto-detect every World of Warships install on this machine.
-///
-/// TODO(M1): implement the registry walk (`HKCU` + `HKLM`
-/// `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`, filter by
-/// `WG_PUBLISHERS`, validate `WorldOfWarships.exe`) and the Steam
-/// `libraryfolders.vdf` + `appmanifest_<appid>.acf` parse. For now returns
-/// whatever is pinned in `WOWSP_GAME_PATH`, or an empty list.
+/// Auto-detect every World of Warships install on this machine: the
+/// `WOWSP_GAME_PATH` env pin, then the Uninstall-registry walk
+/// ([`scan_registry_uninstall_keys`], `HKCU` + `HKLM`
+/// `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*` filtered by
+/// [`PUBLISHER_PATTERNS`]), then the Steam `libraryfolders.vdf` +
+/// `appmanifest_<appid>.acf` parse ([`scan_steam_libraries`]).
 /// Sync scan core — also used by internal callers (replay/arena dir
 /// resolution) that cannot await.
 pub(crate) fn scan_game_installs() -> Vec<GameInstall> {
@@ -49,10 +60,10 @@ pub(crate) fn scan_game_installs() -> Vec<GameInstall> {
         }
     }
 
-    // 2. Registry scan (official / Lesta / 360). TODO(M1).
+    // 2. Registry scan (official / Lesta / 360 / legacy KongZhong).
     found.extend(scan_registry_uninstall_keys());
 
-    // 3. Steam scan. TODO(M1).
+    // 3. Steam scan.
     found.extend(scan_steam_libraries());
 
     found
@@ -117,8 +128,9 @@ fn is_game_dir(path: &str) -> bool {
     PathBuf::from(path).join("WorldOfWarships.exe").is_file()
 }
 
-/// Walk HKCU + HKLM `...\Uninstall\*`, filter by `WG_PUBLISHERS`, validate
-/// each `InstallLocation`. Mirrors ApeRadar's `ConfigWindow.AutoDetectGamePath`.
+/// Walk HKCU + HKLM `...\Uninstall\*`, filter by `PUBLISHER_PATTERNS`, validate
+/// each `InstallLocation`. Mirrors ApeRadar's `ConfigWindow.AutoDetectGamePath`
+/// but matches publishers as substrings (see [`PUBLISHER_PATTERNS`]).
 /// On Steam installs this yields nothing (Steam carries no WG publisher key) —
 /// `scan_steam_libraries` covers that case.
 fn scan_registry_uninstall_keys() -> Vec<GameInstall> {
@@ -143,34 +155,47 @@ fn scan_registry_uninstall_keys() -> Vec<GameInstall> {
                         continue;
                     };
                     let publisher: String = key.get_value("Publisher").unwrap_or_default();
-                    if !WG_PUBLISHERS.contains(&publisher.as_str()) {
+                    let Some(kind) = publisher_kind(&publisher) else {
                         continue;
-                    }
+                    };
                     let loc: String = key.get_value("InstallLocation").unwrap_or_default();
                     if is_game_dir(&loc) {
                         let root = PathBuf::from(&loc);
                         found.push(GameInstall {
-                            kind: publisher_kind(&publisher),
+                            kind: kind.clone(),
                             path: loc,
-                            realm: detect_realm(&root),
+                            realm: detect_realm(&root).or_else(|| kind_fallback_realm(&kind)),
                         });
                     }
                 }
             }
         }
     }
-    let _ = WG_PUBLISHERS;
     found
 }
 
-/// Map a registry publisher string to a [`GameInstallKind`].
-fn publisher_kind(publisher: &str) -> GameInstallKind {
-    if publisher.contains("360") {
-        GameInstallKind::Cn360
-    } else if publisher.contains("Lesta") {
-        GameInstallKind::Lesta
-    } else {
-        GameInstallKind::Wargaming
+/// Map a registry publisher string to a [`GameInstallKind`] (case-insensitive
+/// substring match against [`PUBLISHER_PATTERNS`]; `None` = not a WG-family
+/// publisher).
+fn publisher_kind(publisher: &str) -> Option<GameInstallKind> {
+    let lower = publisher.to_lowercase();
+    PUBLISHER_PATTERNS
+        .iter()
+        .find(|(pat, _)| lower.contains(pat))
+        .map(|(_, kind)| kind.clone())
+}
+
+/// Realm implied by the client kind alone, used when the install carries no
+/// readable `profile/clientrunner.log` (the CN clients ship their own
+/// launchers whose log spelling has never been verified against the
+/// international client; a missing log must not leave the region unknown —
+/// the CN/Lesta stat backends key on the realm). The log-derived realm always
+/// wins when present.
+pub(crate) fn kind_fallback_realm(kind: &GameInstallKind) -> Option<String> {
+    match kind {
+        GameInstallKind::Cn360 | GameInstallKind::CnKongzhong => Some("cn".to_string()),
+        GameInstallKind::Lesta => Some("ru".to_string()),
+        GameInstallKind::Wargaming | GameInstallKind::Steam | GameInstallKind::Manual => None,
     }
 }
 
@@ -269,8 +294,10 @@ fn resolve_steam_install() -> Option<PathBuf> {
 /// `profile/clientrunner.log` (same logic as ApeRadar's `Server.AutoDetectServer`).
 /// Lower-cased defensively: every realm consumer (WG host resolution, the CN
 /// vortex dispatch, encyclopedia cache keys) expects the canonical lowercase
-/// code, and the CN client's log spelling has not been verified against the
-/// international one.
+/// code. Returns `None` when the log is missing/unreadable — the CN clients
+/// (360 / legacy KongZhong) and Lesta ship their own launchers, so that log
+/// is not guaranteed to exist for them; [`kind_fallback_realm`] fills those
+/// gaps from the detected client kind.
 /// `pub(crate)`: the process watcher also reads realms for synthesized
 /// installs (running exe that no detected install claims).
 pub(crate) fn detect_realm(game_root: &std::path::Path) -> Option<String> {
@@ -342,5 +369,86 @@ mod tests {
             vdf_value(acf, "installdir").as_deref(),
             Some("World of Warships")
         );
+    }
+
+    #[test]
+    fn publisher_kind_covers_all_channels_and_variants() {
+        // Canonical strings (ApeRadar's exact list) still map.
+        assert_eq!(
+            publisher_kind("Wargaming.net"),
+            Some(GameInstallKind::Wargaming)
+        );
+        assert_eq!(
+            publisher_kind("Wargaming Group Limited"),
+            Some(GameInstallKind::Wargaming)
+        );
+        assert_eq!(publisher_kind("Lesta Games"), Some(GameInstallKind::Lesta));
+        assert_eq!(publisher_kind("360.cn"), Some(GameInstallKind::Cn360));
+        // Legacy / variant spellings the exact list used to drop.
+        assert_eq!(
+            publisher_kind("KongZhong Corporation"),
+            Some(GameInstallKind::CnKongzhong)
+        );
+        assert_eq!(
+            publisher_kind("kongzhong games"),
+            Some(GameInstallKind::CnKongzhong)
+        );
+        assert_eq!(publisher_kind("空中网"), Some(GameInstallKind::CnKongzhong));
+        // Case-insensitive on the ASCII forms.
+        assert_eq!(publisher_kind("lesta games"), Some(GameInstallKind::Lesta));
+        // Non-WG publishers are rejected (exact-match list had this for free).
+        assert_eq!(publisher_kind("Valve Corporation"), None);
+        assert_eq!(publisher_kind(""), None);
+    }
+
+    #[test]
+    fn kind_fallback_realm_fills_cn_and_lesta_only() {
+        assert_eq!(
+            kind_fallback_realm(&GameInstallKind::Cn360).as_deref(),
+            Some("cn")
+        );
+        assert_eq!(
+            kind_fallback_realm(&GameInstallKind::CnKongzhong).as_deref(),
+            Some("cn")
+        );
+        assert_eq!(
+            kind_fallback_realm(&GameInstallKind::Lesta).as_deref(),
+            Some("ru")
+        );
+        // International clients have no kind-implied realm: the log decides.
+        assert_eq!(kind_fallback_realm(&GameInstallKind::Wargaming), None);
+        assert_eq!(kind_fallback_realm(&GameInstallKind::Steam), None);
+        assert_eq!(kind_fallback_realm(&GameInstallKind::Manual), None);
+    }
+
+    /// `detect_realm` reads the last `Selected realm:` line, lower-cased, from
+    /// `<root>/profile/clientrunner.log`; missing log → None.
+    #[test]
+    fn detect_realm_reads_last_line_and_falls_back_to_none() {
+        let root = std::env::temp_dir().join(format!(
+            "wowsp-test-realm-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let profile = root.join("profile");
+        std::fs::create_dir_all(&profile).unwrap();
+
+        // No log yet.
+        assert_eq!(detect_realm(&root), None);
+
+        let log = profile.join("clientrunner.log");
+        std::fs::write(
+            &log,
+            "2026-09-18 10:00:00 [INFO] Starting\n\
+             Selected realm: ASIA\n\
+             2026-09-18 10:01:00 restarting\n\
+             Selected realm: CN\n",
+        )
+        .unwrap();
+        assert_eq!(detect_realm(&root).as_deref(), Some("cn"));
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
