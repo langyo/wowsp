@@ -61,6 +61,7 @@
   }
 
   &__pr-block {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -74,6 +75,15 @@
     &:hover {
       opacity: 0.7;
     }
+  }
+
+  /* Career-verdict seal (神了 / 海猴) rides the PR block's corner like an
+     inked stamp on paper — mostly on the corner, clipping the number only
+     slightly. */
+  &__stamp {
+    position: absolute;
+    top: -0.95rem;
+    right: -0.75rem;
   }
 
   &__pr-num {

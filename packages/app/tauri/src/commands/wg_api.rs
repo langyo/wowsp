@@ -999,9 +999,9 @@ pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared:
 
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
 /// All fields are optional — hidden profiles yield null, and casual accounts
-/// may lack division splits. PR (Personal Rating) uses a community proxy
-/// derived from avg_damage and winrate (not WG's internal hidden score).
-/// Also fed with vortex-normalized nodes by `wg_api_cn`.
+/// may lack division splits. PR is a career rating derived from an
+/// ApeRadar-style weighted winrate (see `compute_pr`), not WG's internal
+/// hidden score. Also fed with vortex-normalized nodes by `wg_api_cn`.
 pub(crate) struct PvpStats {
     pub(crate) battles: Option<i64>,
     pub(crate) winrate: Option<f32>,
@@ -1083,7 +1083,16 @@ impl PvpStats {
             None::<i64>
         });
 
-        let pr = compute_pr(avg_damage, winrate, battles);
+        // Career PR: ApeRadar-style weighted winrate over the division
+        // splits, falling back to the overall PvP winrate when the account
+        // carries no splits.
+        let solo = div_stats(statistics, "pvp_solo");
+        let div2 = div_stats(statistics, "pvp_div2");
+        let div3 = div_stats(statistics, "pvp_div3");
+        let pr = compute_pr(solo, div2, div3).or_else(|| match (winrate, battles) {
+            (Some(w), Some(b)) if b > 0 => compute_pr(Some((w, b)), None, None),
+            _ => None,
+        });
 
         Self {
             battles,
@@ -1095,9 +1104,9 @@ impl PvpStats {
             hit_rate,
             pr,
             ships_played,
-            solo_wr: div_wr(statistics, "pvp_solo"),
-            div2_wr: div_wr(statistics, "pvp_div2"),
-            div3_wr: div_wr(statistics, "pvp_div3"),
+            solo_wr: solo.map(|(wr, _)| wr),
+            div2_wr: div2.map(|(wr, _)| wr),
+            div3_wr: div3.map(|(wr, _)| wr),
         }
     }
 
@@ -1123,39 +1132,97 @@ fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
     v.get(key).and_then(|x| x.as_i64())
 }
 
-/// Extracts winrate from a per-division stats node (pvp_solo / pvp_div2 / pvp_div3).
-fn div_wr(pvp: &serde_json::Value, key: &str) -> Option<f32> {
-    let node = pvp.get(key)?;
+/// Extracts (winrate %, battles) from a per-division stats node
+/// (pvp_solo / pvp_div2 / pvp_div3).
+fn div_stats(statistics: &serde_json::Value, key: &str) -> Option<(f32, i64)> {
+    let node = statistics.get(key)?;
     if node.is_null() {
         return None;
     }
     let b = node.get("battles")?.as_i64()?;
     let w = node.get("wins")?.as_i64()?;
     if b > 0 {
-        Some(100.0 * w as f32 / b as f32)
+        Some((100.0 * w as f32 / b as f32, b))
     } else {
         None
     }
 }
 
-/// Community PR proxy (wows-numbers-style simplified). Returns None when the
-/// needed inputs are absent. The real PR weights expected-damage by ship tier
-/// — this is a coarse single-number approximation that's good enough for a
-/// tier badge.
+/// ApeRadar's weighted winrate (see the reference implementation in
+/// ApeRadar's ApiUtils.CalcWeightedWinrate): division winrates blended by
+/// battle count with fixed multipliers (solo ×5 / div2 ×2 / div3 ×1 —
+/// ApeRadar's defaults). Returns the blend in percent, or None when no
+/// bucket carries battles.
+pub(crate) fn weighted_winrate(
+    solo: Option<(f32, i64)>,
+    div2: Option<(f32, i64)>,
+    div3: Option<(f32, i64)>,
+) -> Option<f32> {
+    const SOLO_WEIGHT: f32 = 5.0;
+    const DIV2_WEIGHT: f32 = 2.0;
+    const DIV3_WEIGHT: f32 = 1.0;
+    let mut weighted_sum = 0.0;
+    let mut weight_total = 0.0;
+    for (wr, battles, mult) in [
+        solo.map(|(wr, b)| (wr, b, SOLO_WEIGHT)),
+        div2.map(|(wr, b)| (wr, b, DIV2_WEIGHT)),
+        div3.map(|(wr, b)| (wr, b, DIV3_WEIGHT)),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if battles <= 0 {
+            continue;
+        }
+        let weight = battles as f32 * mult;
+        weighted_sum += wr * weight;
+        weight_total += weight;
+    }
+    if weight_total > 0.0 {
+        Some(weighted_sum / weight_total)
+    } else {
+        None
+    }
+}
+
+/// Winrate (percent) → community PR scale. The anchors put ApeRadar's color
+/// lines (47/52/56/60/65%) exactly on the standard PR boundaries
+/// (750/1350/1750/2100/2450); piecewise-linear in between, clamped to 0
+/// below 35% and extrapolated along the top segment above 65%. Winrate-only
+/// by design: the previous damage-term formula saturated at ~40k avg damage
+/// and handed even all-red accounts a green ~1600.
+const WR_TO_PR_ANCHORS: [(f32, f32); 6] = [
+    (35.0, 0.0),
+    (47.0, 750.0),
+    (52.0, 1350.0),
+    (56.0, 1750.0),
+    (60.0, 2100.0),
+    (65.0, 2450.0),
+];
+
+pub(crate) fn rating_from_winrate(wr: f32) -> i64 {
+    let lerp = |(x0, y0): (f32, f32), (x1, y1): (f32, f32)| y0 + (wr - x0) / (x1 - x0) * (y1 - y0);
+    if wr <= WR_TO_PR_ANCHORS[0].0 {
+        return 0;
+    }
+    for pair in WR_TO_PR_ANCHORS.windows(2) {
+        if wr <= pair[1].0 {
+            return lerp(pair[0], pair[1]).round() as i64;
+        }
+    }
+    lerp(WR_TO_PR_ANCHORS[4], WR_TO_PR_ANCHORS[5]).round() as i64
+}
+
+/// Career PR proxy: ApeRadar's weighted winrate mapped onto the community PR
+/// scale (see `rating_from_winrate`). Returns None when no input bucket
+/// carries battles. This is a tier-badge score, not WG's hidden internal
+/// rating.
 pub(crate) fn compute_pr(
-    avg_damage: Option<f32>,
-    winrate: Option<f32>,
-    battles: Option<i64>,
+    solo: Option<(f32, i64)>,
+    div2: Option<(f32, i64)>,
+    div3: Option<(f32, i64)>,
 ) -> Option<i64> {
-    let dmg = avg_damage?;
-    let wr = winrate?;
-    let _ = battles?;
-    // Simplified weights (wows-numbers-inspired):
-    //   damage carries ~70%, winrate carries ~30%.
-    let damage_score = (dmg / 100.0).clamp(0.0, 40.0);
-    let wr_score = ((wr - 35.0) / 5.0).clamp(0.0, 12.0);
-    let pr = 200.0 + damage_score * 35.0 + wr_score * 30.0;
-    Some(pr.round() as i64)
+    Some(rating_from_winrate(weighted_winrate(solo, div2, div3)?))
 }
 
 #[derive(Deserialize)]
@@ -1300,9 +1367,39 @@ mod tests {
 
     #[test]
     fn compute_pr_returns_none_for_missing_inputs() {
-        assert_eq!(compute_pr(None, Some(55.0), Some(100)), None);
-        assert_eq!(compute_pr(Some(1500.0), None, Some(100)), None);
-        assert!(compute_pr(Some(1500.0), Some(55.0), Some(100)).is_some());
+        assert_eq!(compute_pr(None, None, None), None);
+        // A bucket with zero battles carries no weight.
+        assert_eq!(compute_pr(Some((55.0, 0)), None, None), None);
+        assert!(compute_pr(Some((55.0, 100)), None, None).is_some());
+    }
+
+    #[test]
+    fn rating_from_winrate_lands_on_aperadar_color_lines() {
+        assert_eq!(rating_from_winrate(30.0), 0);
+        assert_eq!(rating_from_winrate(35.0), 0);
+        assert_eq!(rating_from_winrate(47.0), 750);
+        assert_eq!(rating_from_winrate(52.0), 1350);
+        assert_eq!(rating_from_winrate(56.0), 1750);
+        assert_eq!(rating_from_winrate(60.0), 2100);
+        assert_eq!(rating_from_winrate(65.0), 2450);
+        // All-red accounts must stay red — the old damage-term formula
+        // scored them ~1600 (green).
+        assert_eq!(rating_from_winrate(40.0), 313);
+        assert!(rating_from_winrate(45.0) < 750);
+        // Monotonic, with extrapolation above the top anchor.
+        assert!(rating_from_winrate(66.0) > 2450);
+        assert!(rating_from_winrate(100.0) > rating_from_winrate(90.0));
+    }
+
+    #[test]
+    fn weighted_winrate_blends_divisions_by_battle_count() {
+        // ApeRadar defaults: solo ×5, div2 ×2, div3 ×1.
+        let wr = weighted_winrate(Some((50.0, 1000)), Some((60.0, 100)), None).unwrap();
+        assert!((wr - 50.3846).abs() < 0.001);
+        assert!(weighted_winrate(None, None, None).is_none());
+        // Zero-battle buckets carry no weight.
+        let wr = weighted_winrate(Some((50.0, 0)), Some((60.0, 10)), None).unwrap();
+        assert!((wr - 60.0).abs() < 1e-4);
     }
 
     #[test]
@@ -1425,15 +1522,16 @@ mod tests {
         assert!((info.winrate - 60.0).abs() < 0.01);
         assert!((info.avg_damage - 1500.0).abs() < 0.01);
         assert_eq!(info.hidden_count, 1);
-        // Deep stats: the fixture's 60% WR + 1500 avg damage → PR proxy
-        // (200 + 15*35 + 5*30 = 875); xp/frags/survival absent → None.
-        assert_eq!(info.avg_pr, Some(875));
+        // Deep stats: the fixture's 60% WR has no division splits, so the
+        // overall winrate maps through as the solo bucket → 2100 on the
+        // ApeRadar-aligned scale; xp/frags/survival absent → None.
+        assert_eq!(info.avg_pr, Some(2100));
         let commander = info.members.iter().find(|m| m.account_id == 11).unwrap();
         assert_eq!(commander.name, "alpha");
         assert_eq!(commander.role, "commander");
         assert_eq!(commander.joined_at, Some(1_600_000_001));
         assert_eq!(commander.stats.winrate, Some(60.0));
-        assert_eq!(commander.stats.pr, Some(875));
+        assert_eq!(commander.stats.pr, Some(2100));
         assert_eq!(commander.stats.avg_xp, None);
         assert_eq!(commander.stats.kd_ratio, None);
         assert_eq!(commander.stats.survival_rate, None);

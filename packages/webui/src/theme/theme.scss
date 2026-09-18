@@ -59,6 +59,18 @@ html.s-theme-transitioning *::after {
   /* Sizing */
   --s-header-height: 3rem;
 
+  /* Rainbow text — the 战舰仙人 (彩表) tier. Uses the full wows-numbers band
+     palette so every tier color of `utils/winrate.ts` appears in the sweep. */
+  --rainbow-sweep: linear-gradient(
+    100deg,
+    rgb(254 14 0),
+    rgb(255 199 31),
+    rgb(68 179 0),
+    rgb(2 201 179),
+    rgb(208 66 243),
+    rgb(160 13 197)
+  );
+
   /* Default color tokens (light) — overridden by presets/OS detection.
      Values are space-separated RGB channels for `rgb(var(--color-x) / a%)`. */
   --color-primary: 0 120 200;
@@ -103,6 +115,14 @@ html.s-theme-transitioning *::after {
   --motion-popup-scale: 0.98;
   --motion-popup-offset: 4px;
   --motion-drawer-offset: 0.5rem;
+}
+
+/* === Rainbow text (战舰仙人 彩表 tier) === */
+.rainbow-text {
+  background-image: var(--rainbow-sweep);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
 [data-mode="dark"] {

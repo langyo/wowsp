@@ -717,7 +717,13 @@ fn clan_info_from_cn(
                 .get("exp_per_battle")
                 .and_then(|v| v.as_f64())
                 .map(|v| v as f32);
-            let pr = compute_pr(avg_damage, winrate, battles);
+            // CN rosters expose only the overall winrate — feed it through
+            // as the solo bucket (no division splits to blend). `battles`
+            // is always Some in this branch (guarded above); zip keeps that
+            // invariant explicit instead of papering over it with a default.
+            let pr = winrate
+                .zip(battles)
+                .and_then(|(wr, b)| compute_pr(Some((wr, b)), None, None));
             if let Some(pr) = pr {
                 member_prs.push(pr);
             }

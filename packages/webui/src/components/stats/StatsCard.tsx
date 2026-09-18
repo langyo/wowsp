@@ -3,9 +3,10 @@ import { computed, defineComponent, type PropType } from "vue";
 import { HTag } from "@celestia-island/hikari";
 import IdentityHead from "@/components/stats/IdentityHead";
 import PlayerBadge from "@/components/base/PlayerBadge";
+import RatingStamp from "@/components/base/RatingStamp";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
-import { prTier, winrateColor, winrateTier } from "@/utils/winrate";
+import { careerStamp, prTier, winrateColor, winrateTier } from "@/utils/winrate";
 import { useClipboard } from "@/composables/useClipboard";
 import "./StatsCard.scss";
 
@@ -31,6 +32,10 @@ export default defineComponent({
   },
   setup(props) {
     const pr = computed(() => prTier(props.stats.pr));
+    const prLabel = computed(() =>
+      pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`),
+    );
+    const stamp = computed(() => careerStamp(props.stats.pr, props.stats.battles));
     const wrTier = computed(() => winrateTier(props.stats.winrate));
     const wrColor = computed(() => winrateColor(props.stats.winrate));
     const { copy } = useClipboard();
@@ -126,15 +131,18 @@ export default defineComponent({
             </span>
           </div>
           <div
-            class="stats-card__pr-block"
-            style={{ color: pr.value.color }}
+            class={["stats-card__pr-block", pr.value.rainbow ? "rainbow-text" : null]}
+            style={pr.value.rainbow ? undefined : { color: pr.value.color }}
             onClick={() => copy(String(props.stats.pr ?? "—"), t("common.copied"))}
-            data-hint={`PR: ${props.stats.pr ?? "—"} (${pr.value.label}) · ${t("common.clickToCopy")}`}
+            data-hint={`PR: ${props.stats.pr ?? "—"} (${prLabel.value}) · ${t("common.clickToCopy")}`}
           >
             <span class="stats-card__pr-num">
               {props.stats.pr != null ? props.stats.pr.toLocaleString() : "—"}
             </span>
-            <span class="stats-card__pr-label">{pr.value.label}</span>
+            <span class="stats-card__pr-label">{prLabel.value}</span>
+            {stamp.value ? (
+              <RatingStamp class="stats-card__stamp" kind={stamp.value} size={58} />
+            ) : null}
           </div>
         </div>
 
