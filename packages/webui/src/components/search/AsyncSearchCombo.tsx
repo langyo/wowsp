@@ -123,7 +123,7 @@ export default defineComponent({
             "async-search-combo__btn",
             open.value || query.value.trim() ? "async-search-combo__btn--on" : "",
           ]}
-          title={props.title || props.placeholder}
+          data-hint={props.title || props.placeholder}
           aria-label={props.title || props.placeholder}
           onClick={() => {
             open.value = !open.value;

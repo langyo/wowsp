@@ -168,7 +168,7 @@ export default defineComponent({
                         {s ? (
                           [
                             s.battles != null ? (
-                              <span class="acct-card__stat" title={t("stats.battles")}>
+                              <span class="acct-card__stat" data-hint={t("stats.battles")}>
                                 <Swords size={11} /> {s.battles.toLocaleString()}
                               </span>
                             ) : null,
@@ -176,7 +176,7 @@ export default defineComponent({
                               <span
                                 class="acct-card__stat"
                                 style={{ color: winrateColor(s.winrate) }}
-                                title={t("stats.winrate")}
+                                data-hint={t("stats.winrate")}
                               >
                                 <Trophy size={11} /> {s.winrate.toFixed(1)}%
                               </span>

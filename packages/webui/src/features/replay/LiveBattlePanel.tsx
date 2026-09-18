@@ -149,7 +149,7 @@ export default defineComponent({
             class="live-battle__player live-battle__player--link"
             key={v.id}
             type="button"
-            title={t("replay.live.viewProfile")}
+            data-hint={t("replay.live.viewProfile")}
             onClick={() => openLookup(v.name)}
           >
             {content}

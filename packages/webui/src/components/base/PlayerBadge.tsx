@@ -120,7 +120,7 @@ export default defineComponent({
             l ? "player-badge--dogtag" : tierClass.value,
           ]}
           style={{ width: props.size + "px", height: props.size + "px" }}
-          title={l ? "Player emblem (Tier " + props.tier + ")" : "Service record tier " + props.tier}
+          data-hint={l ? "Player emblem (Tier " + props.tier + ")" : "Service record tier " + props.tier}
         >
           {l ? (
             <span class="player-badge__dt">

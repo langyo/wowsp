@@ -601,7 +601,7 @@ export default defineComponent({
                 ]}
                 data-chip={key}
                 data-dragging={chipDragging.value === key || undefined}
-                title={chipTitle(key)}
+                data-hint={chipTitle(key)}
                 onPointerdown={(e: PointerEvent) => onChipPointerDown(e, key)}
                 onClick={() => onChipClick(key)}
               >
