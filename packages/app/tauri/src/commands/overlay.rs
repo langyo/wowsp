@@ -19,6 +19,13 @@
 //!   4. hides the window again on Tab release (or when the game loses the
 //!      foreground).
 //!
+//! While the overlay STAYS shown, the pinned anchor is additionally
+//! re-validated every [`ANCHOR_REVALIDATE_INTERVAL`] against a fresh
+//! detection and replaced when the table moved at row scale — the in-battle
+//! panel shifts as a whole when HUD phases change (countdown → combat), and
+//! a battle-pinned anchor would otherwise keep the countdown position for
+//! the entire battle.
+//!
 //! The overlay window is created lazily by `create_overlay_window` (called
 //! once when overlay mode starts, hidden) and destroyed by
 //! `destroy_overlay_window` (when the game exits or overlay mode is turned
@@ -71,6 +78,20 @@ const STATE_REFRESH: Duration = Duration::from_secs(2);
 /// this window and is refused a new capture until it elapses — so frantic
 /// tapping or a focus flicker while holding Tab caps at ~0.67 captures/s.
 const CAPTURE_MIN_INTERVAL: Duration = Duration::from_millis(1500);
+/// While the overlay is shown, the pinned anchor is re-validated at this
+/// cadence: a full BitBlt + detection pass re-runs and replaces the pin only
+/// when the table moved at row scale (`overlay_detect::
+/// anchor_meaningfully_moved`). The pin's two keys (arena stamp + window
+/// rect) cannot see the panel moving WITHIN one window: the in-battle Tab
+/// panel shifts as a whole when HUD phases change — the countdown "waiting
+/// players" layout sits ~190 px (≈ 3.7 row pitches at 3072x1920) above the
+/// combat layout once the score bar / quick-commands HUD appears — so
+/// without this check the chips stayed on the countdown position for the
+/// entire battle. Revalidation IS a capture attempt in cost, so it is
+/// throttled to the CAPTURE_MIN_INTERVAL order of magnitude; 5 s bounds the
+/// chip misplacement to seconds while adding no work when the overlay is
+/// hidden.
+const ANCHOR_REVALIDATE_INTERVAL: Duration = Duration::from_secs(5);
 /// A capture is only attempted while the most recent battle roster
 /// (tempArenaInfo.json mtime) is younger than this — Tab in port or long
 /// after a battle stays a no-op.
@@ -277,6 +298,11 @@ pub async fn stop_overlay_tab_watch() -> Result<(), String> {
 /// A table anchor pinned to ONE battle (arena stamp) and one game-window
 /// geometry: while both hold, every Tab press reuses this anchor verbatim —
 /// per-press re-detection drifted frame to frame and the chips wandered.
+/// The pin is not blind, though: while the overlay stays shown it is
+/// re-validated every [`ANCHOR_REVALIDATE_INTERVAL`] and replaced when the
+/// panel itself moved at row scale (HUD phase changes shift the whole table;
+/// see the constant's comment) — otherwise the countdown position would be
+/// kept all battle long.
 #[cfg(target_os = "windows")]
 struct PinnedAnchor {
     battle: i64,
@@ -303,6 +329,10 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     // When the last battle-state refresh ran — bounds the replay-tree walk
     // inside refresh_battle_state while Tab is held without a known battle.
     let mut last_state_refresh: Option<Instant> = None;
+    // When the last pinned-anchor revalidation ran — independent of
+    // last_capture_attempt: it throttles the periodic re-check of the pin
+    // while the overlay STAYS shown (see ANCHOR_REVALIDATE_INTERVAL).
+    let mut last_revalidate: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -321,6 +351,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
                 &mut last_capture_attempt,
                 &mut last_hide,
                 &mut last_state_refresh,
+                &mut last_revalidate,
             );
         }));
         if tick.is_err() {
@@ -347,6 +378,7 @@ fn watch_tab_tick(
     last_capture_attempt: &mut Option<Instant>,
     last_hide: &mut Option<Instant>,
     last_state_refresh: &mut Option<Instant>,
+    last_revalidate: &mut Option<Instant>,
 ) {
     {
         // Resolve the game window: cached while valid, rescanned at most
@@ -432,10 +464,24 @@ fn watch_tab_tick(
                     place_and_show(app, &anchor);
                     *overlay_shown = true;
                     *last_hide = None;
+                    // The anchor on screen is fresh as of NOW (a new pin, or
+                    // this battle's pin re-shown): start the revalidation
+                    // clock here so the first re-check waits a full interval
+                    // instead of firing on the next tick.
+                    *last_revalidate = Some(Instant::now());
                 }
                 // A failed acquisition while ALREADY shown keeps the old
                 // anchor on screen — the previous behavior of hiding here
                 // made a single failed re-capture blink the overlay off.
+            } else if pinned_anchor.is_some()
+                && last_revalidate.is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL)
+            {
+                // Shown AND pinned: periodically re-check the pin against a
+                // live detection — the panel moves as a whole when HUD
+                // phases change (countdown → combat) and neither pin key
+                // (arena stamp, window rect) can see it. A shown overlay
+                // WITHOUT a pin (fallback anchor) has nothing to re-check.
+                revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate);
             }
         } else if *overlay_shown {
             // Keep re-sending the hide while the overlay should be down:
@@ -451,6 +497,55 @@ fn watch_tab_tick(
             }
         }
     }
+}
+
+/// One revalidation pass over the pinned anchor while the overlay is shown:
+/// re-run the capture + detector against the live frame and replace the pin
+/// (re-emitting the anchor) only when the table MOVED at row scale
+/// (`overlay_detect::anchor_meaningfully_moved`). Every other outcome — a
+/// failed capture, a fallback detection, sub-pitch jitter — keeps the pin
+/// and emits nothing, so this pass can never make the chips wander.
+/// `last_revalidate` is bumped unconditionally: the pass costs a full
+/// capture attempt regardless of its outcome.
+///
+/// Note that `compute_anchor` already drops a tab dump on every CONFIRMED
+/// detection (`tab_dump`): the pass that discovers a NEW layout leaves a
+/// ground-truth artifact for it, deduped per (battle, layout) by the
+/// anchor's first row.
+#[cfg(target_os = "windows")]
+fn revalidate_pinned_anchor(
+    app: &AppHandle,
+    pinned_anchor: &mut Option<PinnedAnchor>,
+    game: Option<GameWindow>,
+    last_revalidate: &mut Option<Instant>,
+) {
+    *last_revalidate = Some(Instant::now());
+    let Some(g) = game else {
+        return;
+    };
+    let Some(pinned) = pinned_anchor.as_ref().map(|p| p.anchor.clone()) else {
+        return;
+    };
+    let Some(fresh) = compute_anchor(&g) else {
+        tracing::debug!("anchor revalidation: capture/detection failed — pin kept");
+        return;
+    };
+    if !overlay_detect::anchor_meaningfully_moved(&pinned, &fresh) {
+        return;
+    }
+    tracing::info!(
+        pinned_first_row = pinned.row_centers.first().copied().unwrap_or(0),
+        fresh_first_row = fresh.row_centers.first().copied().unwrap_or(0),
+        "panel layout shifted — replacing the pinned anchor"
+    );
+    // Re-key the pin to the CURRENT battle + window geometry: the fresh
+    // anchor was computed from THIS frame, so it belongs to this geometry.
+    *pinned_anchor = Some(PinnedAnchor {
+        battle: super::arena_info::last_arena_stamp(),
+        game_rect: rect_from_win32(g.rect),
+        anchor: fresh.clone(),
+    });
+    place_and_show(app, &fresh);
 }
 
 /// Whether the overlay window currently reports as visible (false when it is

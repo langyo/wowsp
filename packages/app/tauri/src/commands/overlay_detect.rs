@@ -1046,6 +1046,98 @@ mod tests {
             "enemy row 1 untouched"
         );
     }
+
+    /// Hand-built anchor for the revalidation move-decision tests (bypasses
+    /// the detector; grid pitch 42 in the full-grid fixtures).
+    fn anchor_with(rows: &[i32], detected: bool) -> wowsp_tauri_shared::OverlayAnchor {
+        wowsp_tauri_shared::OverlayAnchor {
+            game_rect: Rect {
+                x: 0,
+                y: 0,
+                width: 3072,
+                height: 1920,
+            },
+            overlay_rect: Rect {
+                x: 500,
+                y: 200,
+                width: 1500,
+                height: 720,
+            },
+            roster_rect: Rect {
+                x: 150,
+                y: 40,
+                width: 1200,
+                height: 620,
+            },
+            row_centers: rows.to_vec(),
+            team_split: 0.5,
+            table_detected: detected,
+            row_players: None,
+        }
+    }
+
+    #[test]
+    fn revalidate_keeps_pin_on_sub_pitch_jitter() {
+        let pinned = anchor_with(&[50, 92, 134], true);
+        // Half a pitch = 21 px: a 10 px phase-refinement shift is jitter and
+        // must keep the pin (the anti-wander guarantee).
+        let fresh = anchor_with(&[60, 102, 144], true);
+        assert!(!anchor_meaningfully_moved(&pinned, &fresh));
+    }
+
+    #[test]
+    fn revalidate_replaces_pin_on_row_scale_shift() {
+        let pinned = anchor_with(&[50, 92, 134], true);
+        // The countdown → combat HUD-phase shift spans several pitches; one
+        // full pitch must already trip the threshold.
+        let fresh = anchor_with(&[110, 152, 194], true);
+        assert!(anchor_meaningfully_moved(&pinned, &fresh));
+        // Exactly half a pitch does NOT move (strictly-greater threshold).
+        let half = anchor_with(&[71, 113, 155], true);
+        assert!(!anchor_meaningfully_moved(&pinned, &half));
+    }
+
+    #[test]
+    fn revalidate_fresh_fallback_never_replaces_confirmed_pin() {
+        let pinned = anchor_with(&[50, 92, 134], true);
+        // Detection failed this pass: even a far-away fallback geometry must
+        // not replace the confirmed pin.
+        let fresh = anchor_with(&[400, 442, 484], false);
+        assert!(!anchor_meaningfully_moved(&pinned, &fresh));
+    }
+
+    #[test]
+    fn revalidate_single_row_grid_uses_the_other_grids_pitch() {
+        // Fresh grid has one row but the pinned one has a proper grid: the
+        // pinned pitch (42) is the fallback, threshold 21.
+        let pinned = anchor_with(&[50, 92, 134], true);
+        let moved = anchor_with(&[80], true);
+        assert!(anchor_meaningfully_moved(&pinned, &moved), "dy 30 > 21");
+        let near = anchor_with(&[60], true);
+        assert!(!anchor_meaningfully_moved(&pinned, &near), "dy 10 < 21");
+    }
+
+    #[test]
+    fn revalidate_degenerate_single_row_grids_fall_back_to_roster_height() {
+        // Both grids carry a single row: no first gap anywhere, so the pitch
+        // falls back to roster height (620) ÷ row count (1) = 620, threshold
+        // 310.
+        let pinned = anchor_with(&[100], true);
+        let near = anchor_with(&[300], true);
+        assert!(!anchor_meaningfully_moved(&pinned, &near), "dy 300 ≤ 310");
+        let far = anchor_with(&[500], true);
+        assert!(anchor_meaningfully_moved(&pinned, &far), "dy 400 > 310");
+    }
+
+    #[test]
+    fn revalidate_empty_grids_never_move() {
+        let pinned_empty = anchor_with(&[], true);
+        let fresh = anchor_with(&[50, 92], true);
+        assert!(!anchor_meaningfully_moved(&pinned_empty, &fresh));
+        let pinned = anchor_with(&[50, 92], true);
+        let fresh_empty = anchor_with(&[], true);
+        assert!(!anchor_meaningfully_moved(&pinned, &fresh_empty));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1331,6 +1423,72 @@ pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (R
         },
         rows,
     )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pinned-anchor revalidation (pure decision — unit-testable)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Move threshold for replacing a pinned anchor: the fresh first row must sit
+/// more than HALF a row pitch away from the pinned one. Detector jitter (the
+/// per-side phase refinement shifts the grid by fractions of a pitch frame to
+/// frame) stays under it and keeps the pin — the whole point of the pin is
+/// that the chips never wander. A real layout switch crosses it: the panel
+/// moves as a WHOLE when HUD phases change (the countdown "waiting players"
+/// layout sits ~190 px ≈ 3.7 row pitches above the combat layout at
+/// 3072x1920) and sunk ships re-sort the rows.
+const ANCHOR_MOVE_HALF_PITCH: f32 = 0.5;
+
+/// Effective row pitch for the move test: the FRESH grid's first gap
+/// (`row_centers[1] − row_centers[0]`); grids with fewer than two rows fall
+/// back to the pinned grid's gap, then to roster height ÷ row count.
+/// Returns 0.0 when nothing yields a positive pitch (the caller then never
+/// reports movement).
+fn anchor_row_pitch(
+    fresh: &wowsp_tauri_shared::OverlayAnchor,
+    pinned: &wowsp_tauri_shared::OverlayAnchor,
+) -> f32 {
+    let first_gap =
+        |a: &wowsp_tauri_shared::OverlayAnchor| match (a.row_centers.first(), a.row_centers.get(1))
+        {
+            (Some(&r0), Some(&r1)) => (r1 - r0).abs() as f32,
+            _ => 0.0,
+        };
+    let pitch = match first_gap(fresh) {
+        p if p > 0.0 => p,
+        _ => match first_gap(pinned) {
+            p if p > 0.0 => p,
+            // Degenerate single-row grids on both sides: a coarse pitch from
+            // the taller roster rect over the longer row count.
+            _ => {
+                let rows = fresh.row_centers.len().max(pinned.row_centers.len()).max(1) as f32;
+                fresh.roster_rect.height.max(pinned.roster_rect.height) as f32 / rows
+            },
+        },
+    };
+    if pitch > 0.0 { pitch } else { 0.0 }
+}
+
+/// Whether a fresh detection of the SAME battle relocated the table enough to
+/// justify replacing the pinned anchor: the first row moved by more than half
+/// a row pitch (see [`ANCHOR_MOVE_HALF_PITCH`]). A fallback anchor
+/// (`table_detected == false`) never replaces a confirmed pin, and
+/// degenerate grids never count as movement.
+pub(crate) fn anchor_meaningfully_moved(
+    pinned: &wowsp_tauri_shared::OverlayAnchor,
+    fresh: &wowsp_tauri_shared::OverlayAnchor,
+) -> bool {
+    // A fallback anchor ("table not located" geometry) must never replace a
+    // pin that was itself a confirmed detection.
+    if !fresh.table_detected || pinned.row_centers.is_empty() || fresh.row_centers.is_empty() {
+        return false;
+    }
+    let pitch = anchor_row_pitch(fresh, pinned);
+    if pitch <= 0.0 {
+        return false;
+    }
+    let dy = (fresh.row_centers[0] - pinned.row_centers[0]).abs() as f32;
+    dy > pitch * ANCHOR_MOVE_HALF_PITCH
 }
 
 // ─────────────────────────────────────────────────────────────────────────
