@@ -185,6 +185,8 @@ mod tests {
             match_group: Some("pvp".into()),
             date_time: Some(date_time.into()),
             map_name: None,
+            scenario: None,
+            bot_count: 0,
             vehicles: ids
                 .iter()
                 .map(|&id| VehicleEntry {

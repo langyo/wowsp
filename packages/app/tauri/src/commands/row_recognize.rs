@@ -301,6 +301,8 @@ mod tests {
             match_group: None,
             date_time: None,
             map_name: None,
+            scenario: None,
+            bot_count: 0,
             vehicles: vec![
                 VehicleEntry {
                     id: 1,
@@ -357,6 +359,8 @@ mod tests {
             match_group: None,
             date_time: None,
             map_name: None,
+            scenario: None,
+            bot_count: 0,
             vehicles: vec![
                 VehicleEntry {
                     id: 1,
@@ -413,6 +417,8 @@ mod tests {
             match_group: None,
             date_time: None,
             map_name: None,
+            scenario: None,
+            bot_count: 0,
             vehicles: vec![],
             raw: serde_json::Value::Null,
         };
@@ -424,6 +430,8 @@ mod tests {
             match_group: None,
             date_time: None,
             map_name: None,
+            scenario: None,
+            bot_count: 0,
             vehicles: vec![VehicleEntry {
                 id: 1,
                 name: "Solo".into(),

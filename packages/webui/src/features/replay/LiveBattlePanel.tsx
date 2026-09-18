@@ -36,9 +36,14 @@ function displayMapName(spaceId?: string | null, lang?: string): string {
   return lbl === key ? clean : lbl;
 }
 
-/** Localize a battle mode from its layered identity. */
-function modeLabelOf(group?: string | null): string {
-  const key = modeKey(group, null, null);
+/** Localize a battle mode from its layered identity (matchGroup / scenario /
+ *  roster bots). */
+function modeLabelOf(
+  group?: string | null,
+  scenario?: string | null,
+  botCount = 0,
+): string {
+  const key = modeKey(group, scenario, null, botCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = "replay.mode." + key;
   const lbl = t(i18nKey);
@@ -97,9 +102,16 @@ export default defineComponent({
       const modePill = props.arena.matchGroup ? (
         <span
           class="live-battle__pill"
-          style={modeColor(props.arena.matchGroup, null, null) as CSSProperties}
+          style={
+            modeColor(
+              props.arena.matchGroup,
+              props.arena.scenario,
+              null,
+              props.arena.botCount ?? 0,
+            ) as CSSProperties
+          }
         >
-          {modeLabelOf(props.arena.matchGroup)}
+          {modeLabelOf(props.arena.matchGroup, props.arena.scenario, props.arena.botCount ?? 0)}
         </span>
       ) : null;
 
