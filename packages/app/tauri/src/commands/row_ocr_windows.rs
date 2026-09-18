@@ -62,14 +62,27 @@ impl RowRecognizer for WindowsOcrRecognizer {
     /// The engine is measured (on the #372 dumps) to return ZERO lines for
     /// strips a human reads effortlessly, and the fix differs by cause, so
     /// empty reads walk a small retry ladder — successful reads are never
-    /// re-read, and a hopeless row costs at most three engine calls:
+    /// re-read, and a hopeless row costs at most four engine calls:
     ///
     /// 1. native size — most rows read here;
     /// 2. 2x NEAREST-neighbour upscale — short or dim names ("YF1008",
     ///    "[W-C-E]hasnan_1") read at double size; nearest keeps glyph edges
     ///    sharp (no new gray levels to binarize) where a smoothing filter
     ///    blurs thin dimmed strokes further into nothing;
-    /// 3. 4px border trim + 2x upscale — a sliver of the neighboring column
+    /// 3. grayscale + contrast stretch, then 2x upscale — SUNK players'
+    ///    rows render the whole strip (name included) in low-contrast
+    ///    gray-on-gray, and the engine reads zero lines for them at ANY
+    ///    scale; stretching the strip's own min/max luminance onto the full
+    ///    0–255 range restores ordinary near-black-on-near-white glyph
+    ///    contrast for strips whose range the dim glyphs dominate (it
+    ///    measurably upgrades partial reads on such rows). Strips whose
+    ///    histogram is polluted by bright neighboring-UI pixels (a 2–5%
+    ///    bright skirt reaching 255) still binarize into nothing after the
+    ///    stretch — those fall through to stage 4 and may stay unread; a
+    ///    robust valley/Otsu threshold rule is the follow-up if more
+    ///    sunk-row fixtures demand it. A flat strip (no luminance range)
+    ///    skips the stage;
+    /// 4. 4px border trim + 2x upscale — a sliver of the neighboring column
     ///    at the crop edge (the ship silhouette sits ~4px inside the ally
     ///    strip in some layouts) can break the engine's line segmentation
     ///    for the WHOLE strip; trimming it restores the read ("Titanic_959").
@@ -88,13 +101,22 @@ impl RowRecognizer for WindowsOcrRecognizer {
         if let Some(text) = self.read_some(&upscaled, uw, uh) {
             return Some(text);
         }
+        // Stage 3 chains through `and_then` so a skipped stretch (flat
+        // strip) or an upscale overflow falls THROUGH to the trim stage
+        // instead of aborting the whole ladder.
+        if let Some(text) = stretch_gray_contrast(crop_rgba, width, height)
+            .and_then(|(buf, w, h)| upscale_2x_nearest(&buf, w, h))
+            .and_then(|(buf, w, h)| self.read_some(&buf, w, h))
+        {
+            return Some(text);
+        }
         let (trimmed, tw, th) = trim_border(crop_rgba, width, height, RETRY_TRIM_PX)?;
         let (upscaled, uw, uh) = upscale_2x_nearest(&trimmed, tw, th)?;
         self.read_some(&upscaled, uw, uh)
     }
 }
 
-/// Border width trimmed by retry stage 3 (see [`RowRecognizer::recognize`]).
+/// Border width trimmed by retry stage 4 (see [`RowRecognizer::recognize`]).
 const RETRY_TRIM_PX: u32 = 4;
 
 impl WindowsOcrRecognizer {
@@ -174,6 +196,42 @@ fn trim_border(rgba: &[u8], width: u32, height: u32, border: u32) -> Option<(Vec
         out.extend_from_slice(&rgba[start..start + nw as usize * 4]);
     }
     Some((out, nw, nh))
+}
+
+/// Grayscale + per-strip contrast stretch (retry stage 3): measure the
+/// strip's own luminance range ((r+g+b)/3 per pixel) and re-map it onto the
+/// full 0–255 scale, writing the stretched value into R, G and B alike
+/// (alpha preserved). A SUNK player's row renders its name in low-contrast
+/// gray-on-gray the engine binarizes into nothing; normalizing the strip's
+/// own range to near-black/near-white restores ordinary glyph contrast.
+/// Pure pixel arithmetic; `None` for a buffer that does not back the given
+/// dimensions or for a FLAT strip (min == max — nothing to stretch, the
+/// caller falls through to the next retry stage).
+fn stretch_gray_contrast(rgba: &[u8], width: u32, height: u32) -> Option<(Vec<u8>, u32, u32)> {
+    if rgba.len() < width as usize * height as usize * 4 {
+        return None;
+    }
+    let lum = |px: &[u8]| ((u16::from(px[0]) + u16::from(px[1]) + u16::from(px[2])) / 3) as u8;
+    let mut min = u8::MAX;
+    let mut max = u8::MIN;
+    for px in rgba.chunks_exact(4) {
+        let l = lum(px);
+        min = min.min(l);
+        max = max.max(l);
+    }
+    if max == min {
+        return None;
+    }
+    let range = u32::from(max - min);
+    let mut out = rgba.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let stretched = (255 * (u32::from(lum(px)) - u32::from(min)) / range) as u8;
+        px[0] = stretched;
+        px[1] = stretched;
+        px[2] = stretched;
+        // px[3] (alpha) is preserved by touching RGB only.
+    }
+    Some((out, width, height))
 }
 
 /// Copy RGBA crop pixels into a fresh BGRA8 [`SoftwareBitmap`] — the OCR
@@ -382,5 +440,37 @@ mod tests {
         assert_eq!(at(3, 1), 16, "source (4,2)");
         // A border that would consume the strip gives up instead.
         assert!(trim_border(&rgba, 2, 2, 1).is_none());
+    }
+
+    #[test]
+    fn stretch_gray_contrast_is_exact_pixel_arithmetic() {
+        // Luminances 40 / 120 / 200 over a 160-wide range: the stretch must
+        // map them to 0 / 127 / 255 (255*80/160 truncates to 127), write the
+        // SAME gray into R, G and B, and keep every alpha untouched.
+        let rgba = vec![
+            20, 40, 60, 255, //   lum  40 →   0
+            110, 120, 130, 255, // lum 120 → 127
+            190, 200, 210, 7, //   lum 200 → 255
+        ];
+        let (out, w, h) = stretch_gray_contrast(&rgba, 3, 1).unwrap();
+        assert_eq!((w, h), (3, 1));
+        assert_eq!(
+            out[0..4],
+            [0, 0, 0, 255],
+            "min luminance → black, alpha kept"
+        );
+        assert_eq!(out[4..8], [127, 127, 127, 255], "mid luminance truncates");
+        assert_eq!(
+            out[8..12],
+            [255, 255, 255, 7],
+            "max luminance → white, alpha kept"
+        );
+        // A flat strip has no luminance range to stretch — give up so the
+        // retry ladder falls through to the next stage.
+        let flat = vec![100u8; 16];
+        assert!(stretch_gray_contrast(&flat, 2, 2).is_none());
+        // A buffer that does not back the dimensions is rejected the same
+        // way as the other pixel helpers.
+        assert!(stretch_gray_contrast(&rgba, 4, 1).is_none());
     }
 }

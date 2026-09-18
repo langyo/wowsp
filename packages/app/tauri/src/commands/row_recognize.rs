@@ -603,6 +603,12 @@ mod tests {
     /// match (20 rows across the two #372 dumps carry ellipsized names and
     /// CJK ship-name noise; 60% is the realistic floor).
     ///
+    /// Fixtures whose stem contains `.miss` are pre-battle frames with NO
+    /// table on screen: for them the CORRECT outcome is `detect_roster`
+    /// returning None, which is ASSERTED here (a detection hit on a
+    /// tableless frame is a real detector bug worth failing on) — they never
+    /// enter the match-rate accounting.
+    ///
     /// `#[ignore]`d because CI has neither the local dump directory nor OCR
     /// language packs; even when run WITHOUT the env it returns early and
     /// stays green. Usage on a dev machine with the dumps:
@@ -677,6 +683,21 @@ mod tests {
             let allies = info.vehicles.iter().filter(|v| v.relation <= 1).count();
             let enemies = info.vehicles.iter().filter(|v| v.relation > 1).count();
             assert!((allies, enemies) != (0, 0), "{stem}: roster is empty");
+
+            // Expected NEGATIVES: `.miss` fixtures are pre-battle frames
+            // with no table on screen. Detection must return None for them
+            // (asserted — a hit on a tableless frame is a real bug worth
+            // failing on); they never reach the OCR/match accounting.
+            if stem.contains(".miss") {
+                match overlay_detect::detect_roster(&rgba, w, h, (allies, enemies)) {
+                    Some(det) => failures.push(format!(
+                        "{stem}: expected-negative frame produced a detection (rect {:?})",
+                        det.rect
+                    )),
+                    None => println!("== {stem}: table correctly NOT detected (pre-battle frame)"),
+                }
+                continue;
+            }
 
             let Some(det) = overlay_detect::detect_roster(&rgba, w, h, (allies, enemies)) else {
                 failures.push(format!("{stem}: table not detected"));

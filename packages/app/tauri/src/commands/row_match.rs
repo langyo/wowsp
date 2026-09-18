@@ -9,9 +9,11 @@
 //!
 //! Matching is deliberately tolerant of OCR noise:
 //!
-//! - both sides are NORMALIZED (clan tags stripped, case folded, whitespace
-//!   collapsed) — the panel renders `[CLAN] Nickname` while the roster stores
-//!   the bare nickname, and OCR spacing is unreliable;
+//! - both sides are NORMALIZED (clan tags stripped, case folded, the
+//!   visually-confusable O/0 and l/1 pairs canonicalized to the digit,
+//!   whitespace collapsed) — the panel renders `[CLAN] Nickname` while the
+//!   roster stores the bare nickname, OCR spacing is unreliable, and its
+//!   font renders O-vs-0 ambiguously enough that the engine swaps them;
 //! - a clean CONTAINMENT (the full normalized nickname appearing verbatim
 //!   inside the recognized line) scores 1.0 — the line usually carries extra
 //!   tokens (ship name, damage digits) around the nickname;
@@ -73,9 +75,35 @@ fn is_dot_ish(c: char) -> bool {
 
 /// Normalize a name or a recognized line for comparison: strip bracketed
 /// clan tags (anywhere — the panel renders them as prefix or suffix), fold
-/// case, collapse whitespace runs to single spaces and trim.
+/// case, canonicalize visually-confusable glyphs, collapse whitespace runs
+/// to single spaces and trim.
 pub(crate) fn normalize(raw: &str) -> String {
     let mut s = raw.trim().to_lowercase();
+    // Canonicalize visually-confusable glyphs: at the panel's render size
+    // the font's capital 'O' and digit '0' (likewise 'l' and '1') are near
+    // indistinguishable, and the OCR engine swaps them freely (a real #372
+    // read came back "rjOOOOOOO..." for the roster's
+    // "rj0000000000000000000001"). Collapsing BOTH sides to the digit makes
+    // the confusion class vanish from scoring, as does folding '_' to a
+    // space (the engine reads the panel's underscores as spaces).
+    // Deliberately no more: mapping 'i'→'1' would be equally self-consistent,
+    // but 'i' is common in genuine nicknames and every extra canonicalization
+    // widens the false-positive surface for cleanly-read names near the 0.75
+    // threshold.
+    s = s
+        .chars()
+        .map(|c| match c {
+            'o' => '0',
+            'l' => '1',
+            // Underscores render as whitespace-width gaps at strip size, so
+            // the OCR engine reads them as spaces ("M_i_n_g_" came back as
+            // "M i n g"). Folding '_' to a space on BOTH sides lets the
+            // whitespace collapse below absorb the swap; like the glyph
+            // pairs, self-consistency is what matters, not the target.
+            '_' => ' ',
+            other => other,
+        })
+        .collect();
     // Nicknames cannot contain brackets, so every balanced [...] group is a
     // tag; rescan until none remain (multiple / adjacent tags included).
     while let Some(open) = s.find('[') {
@@ -278,19 +306,21 @@ mod tests {
 
     #[test]
     fn normalize_strips_clan_tags_prefix_suffix_and_repeats() {
-        assert_eq!(normalize("[CLAN] Player"), "player");
-        assert_eq!(normalize("Player [CLAN]"), "player");
-        assert_eq!(normalize("[A][B] Player"), "player");
-        assert_eq!(normalize("[CLAN]Player"), "player");
-        assert_eq!(normalize("Player[CLAN]"), "player");
+        // Expected values carry the o→0 / l→1 glyph canonicalization.
+        assert_eq!(normalize("[CLAN] Player"), "p1ayer");
+        assert_eq!(normalize("Player [CLAN]"), "p1ayer");
+        assert_eq!(normalize("[A][B] Player"), "p1ayer");
+        assert_eq!(normalize("[CLAN]Player"), "p1ayer");
+        assert_eq!(normalize("Player[CLAN]"), "p1ayer");
     }
 
     #[test]
     fn normalize_folds_case_and_whitespace() {
-        assert_eq!(normalize("  Foo   BAR "), "foo bar");
-        assert_eq!(normalize("\tSpaced\tOut\n"), "spaced out");
+        assert_eq!(normalize("  Foo   BAR "), "f00 bar");
+        assert_eq!(normalize("\tSpaced\tOut\n"), "spaced 0ut");
         assert_eq!(normalize("   "), "");
-        // CJK passes through untouched (case folding is a no-op there).
+        // CJK passes through untouched (case folding and the o/l map are
+        // no-ops there).
         assert_eq!(normalize("苍蓝蔷薇"), "苍蓝蔷薇");
     }
 
@@ -298,8 +328,43 @@ mod tests {
     fn normalize_survives_a_lost_bracket() {
         // OCR read only one bracket of the pair: the leftovers are dropped
         // so the tag still separates from the nickname.
-        assert_eq!(normalize("[Clan Player"), "clan player");
-        assert_eq!(normalize("Clan] Player"), "clan player");
+        assert_eq!(normalize("[Clan Player"), "c1an p1ayer");
+        assert_eq!(normalize("Clan] Player"), "c1an p1ayer");
+    }
+
+    #[test]
+    fn normalize_canonicalizes_visually_confusable_glyphs() {
+        // The panel font renders O/0 and l/1 near-identically and the OCR
+        // engine swaps them freely; BOTH sides collapse to the digit.
+        assert_eq!(normalize("rjOOOOOOO"), "rj0000000");
+        assert_eq!(normalize("HelloWorld"), "he110w0r1d");
+        // Canonicalized clan tags still strip as bracketed groups.
+        assert_eq!(normalize("[WOLF] SeaWolf"), "seaw01f");
+        // 'i' is deliberately NOT mapped — it is common in genuine
+        // nicknames and stays out of the confusion set.
+        assert_eq!(normalize("iiii"), "iiii");
+    }
+
+    #[test]
+    fn normalize_folds_underscores_to_spaces() {
+        // The panel renders underscores as gap-width strokes the engine
+        // reads as spaces; folding '_' to a space on both sides absorbs the
+        // swap through the whitespace collapse (a real #372 read:
+        // "[VIPI]M i n g" for the roster's "M_i_n_g_").
+        assert_eq!(normalize("M_i_n_g_"), "m i n g");
+        assert_eq!(normalize("[VIPI]M i n g"), "m i n g");
+        // A verbatim read of an underscored name still matches itself
+        // (the o→0 canonicalization applies as everywhere).
+        assert_eq!(normalize("wocaonimaya_"), "w0ca0nimaya");
+    }
+
+    #[test]
+    fn underscore_folded_names_match_spaced_reads() {
+        // The scoring-level consequence: the spaced OCR read of an
+        // underscore-heavy nickname becomes a verbatim match.
+        let roster = vec![veh("M_i_n_g_"), veh("PlainName")];
+        let out = assign_rows(&lines(&[Some("[VIPI]M i n g"), Some("plainname")]), &roster);
+        assert_eq!(out, vec![Some("M_i_n_g_".into()), Some("PlainName".into())]);
     }
 
     // ── scoring (exercised through assign_rows) ──────────────────────────
@@ -318,6 +383,48 @@ mod tests {
         let roster = vec![veh("PlayerOne")];
         let out = assign_rows(&lines(&[Some("piayexone 120k")]), &roster);
         assert_eq!(out, vec![Some("PlayerOne".into())]);
+    }
+
+    // ── visually-confusable glyphs (O/0, l/1) ───────────────────────────
+
+    #[test]
+    fn o_for_zero_read_still_matches_a_digit_heavy_name() {
+        // Real #372-dump read: the roster name is "rj" + zeros, the OCR
+        // returned capital O's for every zero (raw score 0.111 — one shared
+        // 'r'). Canonicalization on both sides turns the ellipsized read
+        // back into a clean truncated-prefix hit.
+        let roster = vec![veh("rj0000000000000000000001")];
+        let out = assign_rows(&lines(&[Some("[SRSMC]rjOOOOOOO...")]), &roster);
+        assert_eq!(out, vec![Some("rj0000000000000000000001".into())]);
+        // Without the truncation marker the short read of the long name
+        // still pins nothing — canonicalization collapses the glyph
+        // confusion, it does not invent the unread characters.
+        let out = assign_rows(&lines(&[Some("[SRSMC]rjOOOOOOO")]), &roster);
+        assert_eq!(out, vec![None]);
+    }
+
+    #[test]
+    fn genuine_o_and_l_names_still_match_their_own_reads() {
+        // Canonicalization applies to BOTH sides, so names that really do
+        // contain o/l keep matching their verbatim reads...
+        let roster = vec![veh("SeaWolf"), veh("BlueLagoon"), veh("Kongo")];
+        let out = assign_rows(
+            &lines(&[Some("seawolf"), Some("bluelagoon"), Some("xivkongo123")]),
+            &roster,
+        );
+        assert_eq!(
+            out,
+            vec![
+                Some("SeaWolf".into()),
+                Some("BlueLagoon".into()),
+                Some("Kongo".into())
+            ]
+        );
+        // ...and the mirror image holds too: a genuine-'l' roster name is
+        // still reachable through a read that OCR'd the glyph as a '1'.
+        let roster = vec![veh("BlueLagoon")];
+        let out = assign_rows(&lines(&[Some("b1ue1agoon")]), &roster);
+        assert_eq!(out, vec![Some("BlueLagoon".into())]);
     }
 
     // ── truncated panel names (ellipsis) ─────────────────────────────────
