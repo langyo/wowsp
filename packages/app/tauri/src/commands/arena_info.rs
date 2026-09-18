@@ -180,6 +180,8 @@ fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), Strin
             match_group: meta.match_group,
             date_time: meta.date_time,
             map_name: meta.map_name,
+            scenario: meta.scenario,
+            bot_count: meta.bot_count,
             vehicles: meta.vehicles,
             raw,
         },

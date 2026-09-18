@@ -404,6 +404,7 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 map_id: None,
                 scenario: None,
                 event_type: None,
+                bot_count: 0,
                 own_ship_id: None,
                 own_ship_name: None,
                 player_count: 0,
@@ -421,6 +422,7 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 map_id: None,
                 scenario: None,
                 event_type: None,
+                bot_count: 0,
                 own_ship_id: None,
                 own_ship_name: None,
                 player_count: 0,
@@ -438,6 +440,7 @@ fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
                 map_id: None,
                 scenario: None,
                 event_type: None,
+                bot_count: 0,
                 own_ship_id: None,
                 own_ship_name: None,
                 player_count: 0,
@@ -479,6 +482,15 @@ fn lite_from_raw(
         .and_then(|o| o.get("vehicles"))
         .and_then(|v| v.as_array());
     let player_count = vehicles.map(|a| a.len()).unwrap_or(0);
+    let bot_count = vehicles
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_object())
+                .filter_map(|o| o.get("name").and_then(|x| x.as_str()))
+                .filter(|n| is_bot_nickname(n))
+                .count() as u32
+        })
+        .unwrap_or(0);
     let own = vehicles.and_then(|arr| {
         arr.iter()
             .filter_map(|v| v.as_object())
@@ -499,6 +511,7 @@ fn lite_from_raw(
         map_id,
         scenario,
         event_type,
+        bot_count,
         own_ship_id,
         own_ship_name,
         player_count,
@@ -587,6 +600,7 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let bot_count = vehicles.iter().filter(|v| is_bot_nickname(&v.name)).count() as u32;
 
     ReplayMeta {
         // Replay files carry no timestamp in the descriptor (filename wins);
@@ -603,9 +617,17 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         map_name,
         scenario,
         event_type,
+        bot_count,
         vehicles,
         raw,
     }
+}
+
+/// The client fills bot rosters with colon-wrapped nicknames (`:Sturdee:`) —
+/// the same marker the frontend's `isAiName` uses to skip WG API lookups.
+/// Mirrors that `^:.*:$` rule (so at least two characters, both colons).
+fn is_bot_nickname(name: &str) -> bool {
+    name.len() >= 2 && name.starts_with(':') && name.ends_with(':')
 }
 
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
@@ -815,6 +837,38 @@ mod tests {
         assert_eq!(lite.player_count, 3);
         assert_eq!(lite.own_ship_id, Some(4182828960));
         assert_eq!(lite.own_ship_name.as_deref(), Some("Alpha"));
+    }
+
+    /// Custom-room bot rosters (`:Name:` nicknames) are counted; plain PvP
+    /// rosters and nicknames that merely CONTAIN a colon are not. Shape mirrors
+    /// a real training-room descriptor (matchGroup stays "pvp" there — the
+    /// frontend relabels it from botCount + the tournament scenario).
+    #[test]
+    fn bot_count_fills_from_colon_nicknames() {
+        let room = r#"{"matchGroup":"pvp","scenario":"domination_tournament_3point","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":":Tirpitz:","relation":1,"shipId":2},
+            {"id":3,"name":":Pohl:","relation":1,"shipId":2},
+            {"id":4,"name":":Sturdee:","relation":1,"shipId":2},
+            {"id":5,"name":":Yegorov:","relation":2,"shipId":3},
+            {"id":6,"name":":Bouvet:","relation":2,"shipId":3},
+            {"id":7,"name":":Revel:","relation":2,"shipId":3}
+        ]}"#;
+        let raw: serde_json::Value = serde_json::from_str(room).unwrap();
+        let meta = meta_from_raw("x.wowsreplay".into(), raw.clone());
+        let lite = lite_from_raw("x.wowsreplay".into(), None, raw);
+        assert_eq!(meta.bot_count, 6);
+        assert_eq!(lite.bot_count, 6);
+        assert_eq!(lite.player_count, 7);
+
+        let plain = r#"{"matchGroup":"pvp","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"we:ird","relation":2,"shipId":2},
+            {"id":3,"name":":","relation":2,"shipId":2}
+        ]}"#;
+        let raw: serde_json::Value = serde_json::from_str(plain).unwrap();
+        let meta = meta_from_raw("x.wowsreplay".into(), raw);
+        assert_eq!(meta.bot_count, 0);
     }
 
     /// If a real replay is available on this machine, parse it end-to-end.
