@@ -148,6 +148,10 @@ const GP_NATION: Record<string, string> = {
   // WG mixes both spellings for the pan-European faction (tech tree ships
   // carry "pan_europe", GameParams mods/commanders say "Europe").
   pan_europe: "Europe",
+  // ship_names.json keeps the raw game-file spellings; synthetic ShipInfo
+  // entries (event ships outside the encyclopedia) carry them verbatim.
+  united_kingdom: "United_Kingdom",
+  russia: "Russia",
 };
 
 /** skilltree.json / signals.json / modernizations.json language key for the
