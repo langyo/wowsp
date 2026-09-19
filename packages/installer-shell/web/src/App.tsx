@@ -283,13 +283,25 @@ export default defineComponent({
       await refreshDefaults().catch((err) => { hint.value = String(err); });
     }
 
+    /** 裸盘符根目录（如选中的 D:\）不直接接收载荷：shun 0.3 的根盘
+        保护会在其下自动垫一层文件夹（默认取产品名 WoWSP），并让路径
+        框始终显示真实目标。 */
+    async function applyNestRootDir(raw: string) {
+      const nested = await invoke<string>("nest_root_dir", { dir: raw });
+      if (nested !== raw.trim()) showNote("已自动垫一层文件夹，避免直接安装到盘符根目录。");
+      dir.value = nested;
+    }
+
     async function browse() {
       if (step.value !== "mode") return;
       const picked = await openDirectory("选择安装位置");
-      if (picked) dir.value = picked;
+      if (picked) await applyNestRootDir(picked);
     }
 
     async function start() {
+      // 手动输入的裸盘根目录先垫好文件夹再开跑——完成页与后续的
+      // 快捷方式 / 启动命令用的都是改写后的真实路径。
+      await applyNestRootDir(dir.value).catch(() => {});
       go("install");
       try {
         await invoke("start_install", {
@@ -510,6 +522,12 @@ export default defineComponent({
                     spellcheck={false}
                     v-model={dir.value}
                     disabled={running.value}
+                    onBlur={() => {
+                      // 离开输入框即校平裸盘根目录，路径框保持真实目标。
+                      if (step.value === "mode" && !running.value) {
+                        void applyNestRootDir(dir.value).catch(() => {});
+                      }
+                    }}
                   />
                 </div>
                 <HButton variant="ghost" disabled={running.value} onClick={browse}>
