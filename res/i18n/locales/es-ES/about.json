@@ -17,5 +17,18 @@
   "issues": "Informar de un problema",
   "license": "Licencia",
   "qqGroupNotice": "Para comentarios de pruebas, únete a nuestro grupo de QQ:",
-  "qqGroupNumber": "1125770228"
+  "qqGroupNumber": "1125770228",
+  "attribution": {
+    "fontMaoRole": "Glifos del sello «神了»",
+    "fontLuxunRole": "Glifos de los sellos «海猴», «空中小人», «水下小人»",
+    "bitmapNote": "Se usan como mapas de bits (uso gráfico); los archivos de fuente no se distribuyen con la aplicación.",
+    "wallpaperRole": "Autor del fondo de pantalla predeterminado",
+    "wallpaperNote": "La obra del fondo de pantalla sigue siendo propiedad de su autor.",
+    "wallpaperMark": "Fondo",
+    "aperadarRole": "Fuente principal de la lógica de consulta y los criterios de valoración",
+    "wowsunpackRole": "Extracción de datos del juego (vendored)",
+    "wowscoreRole": "Modelo de datos del juego (vendored)",
+    "hikariRole": "Biblioteca de componentes de UI",
+    "devtoolsRole": "Infraestructura de disciplina para agentes (reglas de workspace y toolchain)"
+  }
 }

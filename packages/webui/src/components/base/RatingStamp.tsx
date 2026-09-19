@@ -101,9 +101,10 @@ export default defineComponent({
             )}
             <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
             <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
-            {/* Glyph bitmap covers the full 100-unit box (the PNG's text is
-                pre-centered, cinnabar, two-glyph stamps pre-stretched). */}
-            <image href={STAMP_GLYPHS[props.kind]} x="0" y="0" width="100" height="100" />
+            {/* Glyph bitmap (pre-centered, cinnabar, two-glyph stamps
+                pre-stretched), inset to sit well inside the inner frame —
+                full-bleed glyphs read too heavy at seal sizes. */}
+            <image href={STAMP_GLYPHS[props.kind]} x="17" y="17" width="66" height="66" />
           </g>
         </svg>
       );

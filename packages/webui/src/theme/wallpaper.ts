@@ -23,6 +23,11 @@ export type ImageSource = {
 
 export type WallpaperSource = SolidSource | ImageSource;
 
+export type WallpaperAuthor = {
+  name: string;
+  url: string;
+};
+
 export type WallpaperPreset = {
   id: string;
   name: string;
@@ -31,6 +36,9 @@ export type WallpaperPreset = {
   /** Force this wallpaper to only show in dark/light mode (e.g. a bright
    *  photo only suitable for light mode). null = no restriction. */
   modeRestriction?: "dark" | "light" | null;
+  /** Art credit — surfaced by the desktop corner mark and the settings
+   *  attributions section. */
+  author?: WallpaperAuthor | null;
 };
 
 export type CustomWallpaper = {
@@ -72,6 +80,7 @@ export const DEFAULT_PRESETS: WallpaperPreset[] = [
           name: "Naval",
           source: { type: "image" as const, url: bgUrl },
           modeRestriction: "light" as const,
+          author: { name: "正弦线", url: "https://space.bilibili.com/97738727" },
         },
       ]
     : []),
