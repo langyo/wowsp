@@ -225,7 +225,14 @@
     "airDetect": "Détectabilité aérienne",
     "airDetectHint": "Distance à laquelle les avions ennemis vous repèrent.",
     "subDetect": "Détectabilité par les sous-marins",
-    "heFireChance": "Chance d'incendie des obus HE"
+    "heFireChance": "Chance d'incendie des obus HE",
+    "torpBomberDamage": "Dégâts torpilles de bombardiers-torpilleurs",
+    "torpBomberRange": "Portée des torpilles (TB)",
+    "torpBomberSpeed": "Vitesse des torpilles (TB)",
+    "depthChargeDamage": "Dégâts des charges de profondeur",
+    "depthChargePacks": "Lots de charges",
+    "depthChargeBombs": "Bombes par lot",
+    "depthChargeReload": "Rechargement des charges"
   },
   "skills": {
     "title": "Planificateur de compétences de commandant",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "Coque"
+      "hull": "Coque",
+      "asw": "Lutte ASM",
+      "aircraft": "Aéronefs"
     },
     "addShips": "Ajouter des navires",
     "removeAll": "Tout retirer",
+    "remove": "Retirer",
     "addAll": "Tout ajouter",
     "addSelected": "Ajouter la sélection ({n})",
     "added": "Ajouté",
     "addedToast": "{n} navires ajoutés au comparateur",
     "empty": "Rien à comparer pour l'instant — ajoutez des navires.",
-    "cap": "Le comparateur est limité à {n} navires.",
+    "notApplicable": "N/A",
     "showing": "{shown} premiers affichés sur {total}",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "Arbre technologique",

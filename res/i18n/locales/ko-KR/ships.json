@@ -225,7 +225,14 @@
     "airDetect": "항공 발견 거리",
     "airDetectHint": "적 항공기가 당신을 발견하는 거리입니다.",
     "subDetect": "잠수함 발견 거리",
-    "heFireChance": "HE탄 화재 확률"
+    "heFireChance": "HE탄 화재 확률",
+    "torpBomberDamage": "뇌격기 어뢰 피해",
+    "torpBomberRange": "뇌격기 어뢰 사거리",
+    "torpBomberSpeed": "뇌격기 어뢰 속도",
+    "depthChargeDamage": "폭뢰 피해",
+    "depthChargePacks": "폭뢰 세트 수",
+    "depthChargeBombs": "세트당 폭뢰 수",
+    "depthChargeReload": "폭뢰 장전"
   },
   "skills": {
     "title": "함장 스킬 시뮬레이터",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "선체"
+      "hull": "선체",
+      "asw": "대잠",
+      "aircraft": "항공기"
     },
     "addShips": "함선 추가",
     "removeAll": "전체 삭제",
+    "remove": "삭제",
     "addAll": "전체 추가",
     "addSelected": "선택 추가 ({n})",
     "added": "추가됨",
     "addedToast": "{n}척을 비교에 추가했습니다",
     "empty": "아직 비교할 함선이 없습니다. 함선을 추가해 시작하세요.",
-    "cap": "비교 목록은 최대 {n}척입니다.",
+    "notApplicable": "없음",
     "showing": "처음 {shown}척 표시 / 총 {total}척",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "테크 트리",

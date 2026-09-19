@@ -1,7 +1,9 @@
 /**
  * ShipPickerModal — compact variant of the encyclopedia filter language:
- * same rounded chips / accent-active states as ShipsView's grid filters,
- * tightened paddings so several filter rows fit above the result list.
+ * hikari checkbox chips / labels replace the old hand-rolled ones, tightened
+ * so several filter rows fit above the result list. The action buttons are
+ * NOT styled here — they render in HModal's named footer slot
+ * (.hk-modal-footer), outside the scroll body.
  */
 .ship-picker {
   display: flex;
@@ -20,55 +22,22 @@
     gap: 0.4rem;
   }
 
+  // Sizing only — HLabel owns the typography. Fixed width keeps the chip
+  // rows aligned across filter groups.
   &__filter-label {
     flex-shrink: 0;
     width: 2.8rem;
-    font-size: var(--text-2xs);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: rgb(var(--color-muted));
+  }
+
+  // The caption-less search row stretches to the group's full width.
+  &__search {
+    flex: 1;
   }
 
   &__chips {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
-  }
-
-  &__chip {
-    background: transparent;
-    border: 1px solid rgb(var(--color-border) / 25%);
-    color: rgb(var(--color-muted));
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-    font-size: var(--text-2xs);
-    cursor: pointer;
-    transition: all var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      color: rgb(var(--color-text));
-      border-color: rgb(var(--color-border) / 45%);
-    }
-
-    &--on {
-      background: rgb(var(--color-primary) / 15%);
-      border-color: rgb(var(--color-primary) / 50%);
-      color: rgb(var(--color-primary));
-    }
-
-    /* Tier chips: square-ish with tabular numerals, one step smaller than
-     * the grid view's 30px chips. */
-    &--tier {
-      width: 24px;
-      height: 24px;
-      padding: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-sm);
-      font-variant-numeric: tabular-nums;
-      font-weight: 500;
-    }
   }
 
   // ── scrollable result list ───────────────────────────────────────────
@@ -102,17 +71,6 @@
     }
   }
 
-  &__tier {
-    flex-shrink: 0;
-    font-size: var(--text-2xs);
-    font-weight: 700;
-    color: rgb(var(--color-primary));
-    background: rgb(var(--color-primary) / 12%);
-    padding: 0.05rem 0.3rem;
-    border-radius: var(--radius-xs);
-    font-variant-numeric: tabular-nums;
-  }
-
   &__name {
     flex: 1;
     min-width: 0;
@@ -136,13 +94,5 @@
     text-align: center;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
-  }
-
-  &__footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgb(var(--color-border) / 15%);
   }
 }
