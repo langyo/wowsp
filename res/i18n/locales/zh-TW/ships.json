@@ -225,7 +225,14 @@
     "airDetect": "空中被偵測距離",
     "airDetectHint": "敵機偵測到你的距離。",
     "subDetect": "被潛艦偵測距離",
-    "heFireChance": "HE彈點火率"
+    "heFireChance": "HE彈點火率",
+    "torpBomberDamage": "魚雷機傷害",
+    "torpBomberRange": "魚雷機雷程",
+    "torpBomberSpeed": "魚雷機航速",
+    "depthChargeDamage": "深彈傷害",
+    "depthChargePacks": "深彈組數",
+    "depthChargeBombs": "每組深彈數",
+    "depthChargeReload": "深彈裝填"
   },
   "skills": {
     "title": "艦長技能模擬",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "船體"
+      "hull": "船體",
+      "asw": "反潛",
+      "aircraft": "飛機"
     },
     "addShips": "添加艦艇",
     "removeAll": "移除全部",
+    "remove": "移除",
     "addAll": "添加全部",
     "addSelected": "添加選中 ({n})",
     "added": "已添加",
     "addedToast": "已添加 {n} 艘艦艇到對比",
     "empty": "對比列表為空，點擊「添加艦艇」開始。",
-    "cap": "對比列表最多 {n} 艘。",
+    "notApplicable": "不適用",
     "showing": "顯示前 {shown} 艘 / 共 {total} 艘",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "科技樹",

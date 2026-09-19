@@ -225,7 +225,14 @@
     "airDetect": "Air Detectability",
     "airDetectHint": "Distance at which enemy aircraft spot you.",
     "subDetect": "Submarine Detectability",
-    "heFireChance": "HE shell fire chance"
+    "heFireChance": "HE shell fire chance",
+    "torpBomberDamage": "TB torpedo damage",
+    "torpBomberRange": "TB torpedo range",
+    "torpBomberSpeed": "TB torpedo speed",
+    "depthChargeDamage": "Depth charge damage",
+    "depthChargePacks": "Depth charge packs",
+    "depthChargeBombs": "Bombs per pack",
+    "depthChargeReload": "Depth charge reload"
   },
   "skills": {
     "title": "Captain Skill Builder",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "Hull"
+      "hull": "Hull",
+      "asw": "ASW",
+      "aircraft": "Aircraft"
     },
     "addShips": "Add Ships",
     "removeAll": "Remove All",
+    "remove": "Remove",
     "addAll": "Add All",
     "addSelected": "Add Selected ({n})",
     "added": "Added",
     "addedToast": "Added {n} ships to compare",
     "empty": "Nothing to compare yet — add ships to get started.",
-    "cap": "Compare list is capped at {n} ships.",
+    "notApplicable": "N/A",
     "showing": "Showing first {shown} of {total} ships",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "Tech Tree",

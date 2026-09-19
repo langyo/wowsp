@@ -225,7 +225,14 @@
     "airDetect": "Detección por aire",
     "airDetectHint": "Distancia a la que las aeronaves enemigas te detectan.",
     "subDetect": "Detección por submarino",
-    "heFireChance": "Probabilidad de incendio de HE"
+    "heFireChance": "Probabilidad de incendio de HE",
+    "torpBomberDamage": "Daño de torpedos de torpederos",
+    "torpBomberRange": "Alcance de torpedos (torpederos)",
+    "torpBomberSpeed": "Velocidad de torpedos (torpederos)",
+    "depthChargeDamage": "Daño de cargas de profundidad",
+    "depthChargePacks": "Lotes de cargas",
+    "depthChargeBombs": "Bombas por lote",
+    "depthChargeReload": "Recarga de cargas"
   },
   "skills": {
     "title": "Editor de habilidades del capitán",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "Casco"
+      "hull": "Casco",
+      "asw": "ASW",
+      "aircraft": "Aeronaves"
     },
     "addShips": "Añadir buques",
     "removeAll": "Quitar todos",
+    "remove": "Quitar",
     "addAll": "Añadir todos",
     "addSelected": "Añadir selección ({n})",
     "added": "Añadido",
     "addedToast": "{n} buques añadidos a la comparación",
     "empty": "Nada que comparar todavía: añade buques.",
-    "cap": "La comparación está limitada a {n} buques.",
+    "notApplicable": "N/D",
     "showing": "Mostrando los primeros {shown} de {total}",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "Árbol tecnológico",

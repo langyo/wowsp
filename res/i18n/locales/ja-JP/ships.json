@@ -225,7 +225,14 @@
     "airDetect": "空中被発見距離",
     "airDetectHint": "敵の航空機に発見される距離。",
     "subDetect": "潜水艦被発見距離",
-    "heFireChance": "HE弾の火災発生率"
+    "heFireChance": "HE弾の火災発生率",
+    "torpBomberDamage": "雷撃機魚雷ダメージ",
+    "torpBomberRange": "雷撃機魚雷射程",
+    "torpBomberSpeed": "雷撃機魚雷速度",
+    "depthChargeDamage": "爆雷ダメージ",
+    "depthChargePacks": "爆雷セット数",
+    "depthChargeBombs": "セットあたりの爆雷数",
+    "depthChargeReload": "爆雷装填"
   },
   "skills": {
     "title": "艦長スキルビルダー",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "船体"
+      "hull": "船体",
+      "asw": "対潜",
+      "aircraft": "航空機"
     },
     "addShips": "艦艇を追加",
     "removeAll": "すべて削除",
+    "remove": "削除",
     "addAll": "すべて追加",
     "addSelected": "選択を追加 ({n})",
     "added": "追加済み",
     "addedToast": "{n} 艘を比較に追加しました",
     "empty": "まだ何もありません。「艦艇を追加」から始めましょう。",
-    "cap": "比較は最大 {n} 艘です。",
+    "notApplicable": "なし",
     "showing": "先頭 {shown} 艘を表示 / 全 {total} 艘",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "テックツリー",

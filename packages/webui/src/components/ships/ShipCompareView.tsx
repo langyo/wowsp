@@ -1,11 +1,11 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { X } from "@lucide/vue";
 
-import { HButton, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HButton, HIconButton, HTag, HTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
-import { COMPARE_GROUPS, MAX_COMPARE_SHIPS } from "@/utils/shipCompare";
+import { COMPARE_GROUPS, groupApplies, tierLabel } from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -20,9 +20,11 @@ import "./ShipCompareView.scss";
  * (remove / tier / name) on the left and one stat group at a time — picked
  * via the segmented tab strip — across the top.
  *
- * Ships are added through ShipPickerModal; the list dedupes and caps at
- * MAX_COMPARE_SHIPS with toast feedback. Ids the encyclopedia can no longer
- * resolve (realm switch, retired ships) are dropped on the next persist.
+ * Ships are added through ShipPickerModal; the list dedupes and grows
+ * unbounded. Ids the encyclopedia can no longer resolve (realm switch,
+ * retired ships) are dropped on the next persist. Stat groups a hull can
+ * never carry (no tubes, no ASW, no aircraft) collapse into one gray
+ * "not applicable" cell instead of bare "—" gaps.
  */
 export default defineComponent({
   name: "ShipCompareView",
@@ -82,25 +84,18 @@ export default defineComponent({
       shipIds.value = shipIds.value.filter((id) => id !== shipId);
     }
 
-    /** Dedupe against the current list, append up to the cap, and toast the
-     *  outcome (cap hits warn, plain adds info, no-op stays silent). */
+    /** Dedupe against the current list and append everything new (no cap);
+     *  plain adds toast info, a no-op stays silent. */
     function addShips(list: ShipInfo[]) {
       const seen = new Set(shipIds.value);
       let addedCount = 0;
-      let droppedByCap = false;
       for (const s of list) {
         if (seen.has(s.shipId)) continue;
-        if (shipIds.value.length >= MAX_COMPARE_SHIPS) {
-          droppedByCap = true;
-          break;
-        }
         shipIds.value.push(s.shipId);
         seen.add(s.shipId);
         addedCount += 1;
       }
-      if (droppedByCap) {
-        toast.warning(t("ships.compare.cap", { n: MAX_COMPARE_SHIPS }));
-      } else if (addedCount > 0) {
+      if (addedCount > 0) {
         toast.info(t("ships.compare.addedToast", { n: addedCount }));
       }
     }
@@ -134,7 +129,7 @@ export default defineComponent({
                   {t("ships.compare.removeAll")}
                 </HButton>
                 <HTag variant="default" size="sm">
-                  {t("ships.compare.count", { n: shipIds.value.length, max: MAX_COMPARE_SHIPS })}
+                  {t("ships.compare.count", { n: shipIds.value.length })}
                 </HTag>
                 <HTabs
                   class="ship-compare__groups"
@@ -160,32 +155,46 @@ export default defineComponent({
                     </tr>
                   </thead>
                   <tbody>
-                    {ships.value.map((s) => (
-                      <tr key={s.shipId}>
-                        <td class="ship-compare__sticky ship-compare__sticky--remove">
-                          <button
-                            class="ship-compare__remove"
-                            onClick={() => removeShip(s.shipId)}
-                          >
-                            <X size={14} />
-                          </button>
-                        </td>
-                        <td class="ship-compare__sticky ship-compare__sticky--tier">
-                          <span class="ship-compare__tier">T{s.tier}</span>
-                        </td>
-                        <td class="ship-compare__sticky ship-compare__sticky--name">
-                          <NationFlag nation={s.nation} label={nationLabel(s.nation)} variant="flag" size="sm" />
-                          <span class="ship-compare__ship-name">{encyclopedia.shipDisplayName(s)}</span>
-                        </td>
-                        {group.columns.map((c) => {
-                          const value = c.get(
-                            s.defaultProfile as Record<string, any> | null,
-                            s.nation,
-                          );
-                          return <td key={c.key}>{value ?? "—"}</td>;
-                        })}
-                      </tr>
-                    ))}
+                    {ships.value.map((s) => {
+                      const profile = s.defaultProfile as Record<string, any> | null;
+                      return (
+                        <tr key={s.shipId}>
+                          <td class="ship-compare__sticky ship-compare__sticky--remove">
+                            {/* Slot content wins over the icon prop. */}
+                            <HIconButton
+                              size={24}
+                              variant="ghost"
+                              aria-label={t("ships.compare.remove")}
+                              onClick={() => removeShip(s.shipId)}
+                            >
+                              <X size={16} />
+                            </HIconButton>
+                          </td>
+                          <td class="ship-compare__sticky ship-compare__sticky--tier">
+                            <HTag variant="primary" size="sm">{tierLabel(s.tier)}</HTag>
+                          </td>
+                          {/* The td must stay a table-cell (a flex td breaks
+                              table layout → detached white block); the inner
+                              div carries the flex row instead. */}
+                          <td class="ship-compare__sticky ship-compare__sticky--name">
+                            <div class="ship-compare__name-inner">
+                              <NationFlag nation={s.nation} label={nationLabel(s.nation)} variant="flag" size="sm" />
+                              <span class="ship-compare__ship-name">{encyclopedia.shipDisplayName(s)}</span>
+                            </div>
+                          </td>
+                          {groupApplies(group, profile)
+                            ? group.columns.map((c) => {
+                                const value = c.get(profile, s.nation);
+                                return <td key={c.key}>{value ?? "—"}</td>;
+                              })
+                            : (
+                              <td key="na" class="ship-compare__na" colspan={group.columns.length}>
+                                <HTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HTag>
+                              </td>
+                            )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

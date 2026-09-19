@@ -1,8 +1,9 @@
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HButton, HCheckbox, HInput, HModal, HTag } from "@celestia-island/hikari";
+import { HButton, HCheckbox, HLabel, HModal, HSearchInput, HTag } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
+import { tierLabel } from "@/utils/shipCompare";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -26,6 +27,11 @@ const TIERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
  * `existingIds` marks ships already in the compare list: their rows render
  * an "Added" tag with a checked + disabled checkbox and are excluded from
  * both add actions.
+ *
+ * Clone hygiene is deliberately split in two: bracketed copy/event ships
+ * ("[TS] Yamato") are hidden store-wide by the encyclopedia store's
+ * `displayShips`, while "X2" WG data clones (蒙大拿2) whose base "X" also
+ * exists are filtered in THIS modal only — the grid keeps showing them.
  */
 export default defineComponent({
   name: "ShipPickerModal",
@@ -70,6 +76,15 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
+    /** Names that exist WITHOUT the trailing "2" — a "X2" ship whose base "X"
+     *  is also a ship is a WG data clone ("蒙大拿2"). Matching on the base's
+     *  existence keeps legitimate digit-suffixed names (T-22, Z-42) visible. */
+    const cloneBases = computed(() => {
+      const names = new Set<string>();
+      for (const s of encyclopedia.displayShips) names.add(encyclopedia.shipDisplayName(s));
+      return names;
+    });
+
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
       return encyclopedia.displayShips.filter((s) => {
@@ -77,6 +92,9 @@ export default defineComponent({
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
         if (q && !s.name.toLowerCase().includes(q) && !encyclopedia.shipDisplayName(s).toLowerCase().includes(q)) return false;
+        // Cheap checks first — the clone match only runs for survivors.
+        const bare = encyclopedia.shipDisplayName(s);
+        if (bare.endsWith("2") && cloneBases.value.has(bare.slice(0, -1))) return false;
         return true;
       });
     });
@@ -116,6 +134,9 @@ export default defineComponent({
       checked.value = new Set();
     }
 
+    // Buttons live in HModal's named footer slot (a right-aligned strip
+    // OUTSIDE the scroll body) — inside the default slot the footer used to
+    // get clipped by .hk-modal-body's overflow when the list grew tall.
     return () => (
       <HModal
         modelValue={props.modelValue}
@@ -123,136 +144,132 @@ export default defineComponent({
         title={t("ships.compare.addShips")}
         width="40rem"
       >
-        <div class="ship-picker">
-          <div class="ship-picker__filters">
-            <div class="ship-picker__filter-group">
-              <span class="ship-picker__filter-label">{t("ships.search")}</span>
-              <HInput
-                modelValue={searchText.value}
-                onUpdate:modelValue={(v: string) => (searchText.value = v)}
-                placeholder={t("ships.search")}
-              />
-            </div>
+        {{
+          default: () => (
+            <div class="ship-picker">
+              <div class="ship-picker__filters">
+                <div class="ship-picker__filter-group">
+                  <HSearchInput
+                    class="ship-picker__search"
+                    size="sm"
+                    modelValue={searchText.value}
+                    onUpdate:modelValue={(v: string) => (searchText.value = v)}
+                    placeholder={t("ships.search")}
+                  />
+                </div>
 
-            <div class="ship-picker__filter-group">
-              <span class="ship-picker__filter-label">{t("ships.tier")}</span>
-              <div class="ship-picker__chips">
-                {TIERS.map((tier) => (
-                  <button
-                    key={tier}
-                    class={[
-                      "ship-picker__chip",
-                      "ship-picker__chip--tier",
-                      selectedTiers.value.has(tier) ? "ship-picker__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
-                  >
-                    {tier}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div class="ship-picker__filter-group">
-              <span class="ship-picker__filter-label">{t("ships.filterType")}</span>
-              <div class="ship-picker__chips">
-                {encyclopedia.types.map((tp) => (
-                  <button
-                    key={tp}
-                    class={[
-                      "ship-picker__chip",
-                      selectedTypes.value.has(tp) ? "ship-picker__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
-                  >
-                    {typeLabel(tp)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div class="ship-picker__filter-group">
-              <span class="ship-picker__filter-label">{t("ships.filterNation")}</span>
-              <div class="ship-picker__chips">
-                {encyclopedia.nations.map((n) => (
-                  <button
-                    key={n}
-                    class={[
-                      "ship-picker__chip",
-                      selectedNations.value.has(n) ? "ship-picker__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
-                  >
-                    {nationLabel(n)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div class="ship-picker__list">
-            {filteredShips.value.length === 0 ? (
-              <p class="ship-picker__empty">{t("ships.empty")}</p>
-            ) : (
-              renderedShips.value.map((s) => {
-                const already = props.existingIds.has(s.shipId);
-                return (
-                  <div
-                    key={s.shipId}
-                    class={["ship-picker__row", already ? "ship-picker__row--added" : ""]}
-                    onClick={already ? undefined : (e) => {
-                      // Clicks landing on the checkbox toggle via its own
-                      // emit; the row handler skips them so they never
-                      // cancel each other out.
-                      if ((e.target as HTMLElement).closest(".hk-checkbox")) return;
-                      toggle(s.shipId);
-                    }}
-                  >
-                    <HCheckbox
-                      size="sm"
-                      modelValue={already || checked.value.has(s.shipId)}
-                      disabled={already}
-                      onUpdate:modelValue={() => toggle(s.shipId)}
-                    />
-                    <span class="ship-picker__tier">T{s.tier}</span>
-                    <span class="ship-picker__name">{encyclopedia.shipDisplayName(s)}</span>
-                    {already ? (
-                      <HTag variant="info" size="sm">{t("ships.compare.added")}</HTag>
-                    ) : null}
-                    <HTag variant="default" size="sm">{typeLabel(s.type)}</HTag>
-                    <NationFlag nation={s.nation} label={nationLabel(s.nation)} variant="flag" size="sm" />
+                <div class="ship-picker__filter-group">
+                  <HLabel class="ship-picker__filter-label" text={t("ships.tier")} size="sm" />
+                  <div class="ship-picker__chips">
+                    {TIERS.map((tier) => (
+                      <HCheckbox
+                        key={tier}
+                        size="sm"
+                        label={String(tier)}
+                        modelValue={selectedTiers.value.has(tier)}
+                        onUpdate:modelValue={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
+                      />
+                    ))}
                   </div>
-                );
-              })
-            )}
-          </div>
-          {isTruncated.value ? (
-            <p class="ship-picker__truncated">
-              {t("ships.compare.showing", {
-                shown: renderedShips.value.length,
-                total: filteredShips.value.length,
-              })}
-            </p>
-          ) : null}
+                </div>
 
-          <div class="ship-picker__footer">
-            <HButton
-              variant="secondary"
-              size="sm"
-              disabled={addableShips.value.length === 0}
-              onClick={() => emitAdd(addableShips.value)}
-            >
-              {t("ships.compare.addAll")}
-            </HButton>
-            <HButton
-              size="sm"
-              disabled={checkedShips.value.length === 0}
-              onClick={() => emitAdd(checkedShips.value)}
-            >
-              {t("ships.compare.addSelected", { n: checkedShips.value.length })}
-            </HButton>
-          </div>
-        </div>
+                <div class="ship-picker__filter-group">
+                  <HLabel class="ship-picker__filter-label" text={t("ships.filterType")} size="sm" />
+                  <div class="ship-picker__chips">
+                    {encyclopedia.types.map((tp) => (
+                      <HCheckbox
+                        key={tp}
+                        size="sm"
+                        label={typeLabel(tp)}
+                        modelValue={selectedTypes.value.has(tp)}
+                        onUpdate:modelValue={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div class="ship-picker__filter-group">
+                  <HLabel class="ship-picker__filter-label" text={t("ships.filterNation")} size="sm" />
+                  <div class="ship-picker__chips">
+                    {encyclopedia.nations.map((n) => (
+                      <HCheckbox
+                        key={n}
+                        size="sm"
+                        label={nationLabel(n)}
+                        modelValue={selectedNations.value.has(n)}
+                        onUpdate:modelValue={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div class="ship-picker__list">
+                {filteredShips.value.length === 0 ? (
+                  <p class="ship-picker__empty">{t("ships.empty")}</p>
+                ) : (
+                  renderedShips.value.map((s) => {
+                    const already = props.existingIds.has(s.shipId);
+                    return (
+                      <div
+                        key={s.shipId}
+                        class={["ship-picker__row", already ? "ship-picker__row--added" : ""]}
+                        onClick={already ? undefined : (e) => {
+                          // Clicks landing on the checkbox toggle via its own
+                          // emit; the row handler skips them so they never
+                          // cancel each other out.
+                          if ((e.target as HTMLElement).closest(".hk-checkbox")) return;
+                          toggle(s.shipId);
+                        }}
+                      >
+                        <HCheckbox
+                          size="sm"
+                          modelValue={already || checked.value.has(s.shipId)}
+                          disabled={already}
+                          onUpdate:modelValue={() => toggle(s.shipId)}
+                        />
+                        <HTag variant="primary" size="sm">{tierLabel(s.tier)}</HTag>
+                        <span class="ship-picker__name">{encyclopedia.shipDisplayName(s)}</span>
+                        {already ? (
+                          <HTag variant="info" size="sm">{t("ships.compare.added")}</HTag>
+                        ) : null}
+                        <HTag variant="default" size="sm">{typeLabel(s.type)}</HTag>
+                        <NationFlag nation={s.nation} label={nationLabel(s.nation)} variant="flag" size="sm" />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              {isTruncated.value ? (
+                <p class="ship-picker__truncated">
+                  {t("ships.compare.showing", {
+                    shown: renderedShips.value.length,
+                    total: filteredShips.value.length,
+                  })}
+                </p>
+              ) : null}
+            </div>
+          ),
+          footer: () => (
+            <>
+              <HButton
+                variant="secondary"
+                size="sm"
+                disabled={addableShips.value.length === 0}
+                onClick={() => emitAdd(addableShips.value)}
+              >
+                {t("ships.compare.addAll")}
+              </HButton>
+              <HButton
+                size="sm"
+                disabled={checkedShips.value.length === 0}
+                onClick={() => emitAdd(checkedShips.value)}
+              >
+                {t("ships.compare.addSelected", { n: checkedShips.value.length })}
+              </HButton>
+            </>
+          ),
+        }}
       </HModal>
     );
   },
