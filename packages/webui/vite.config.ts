@@ -1,6 +1,6 @@
 import vueSfc from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
-import { readdirSync, rmSync, readFileSync } from "fs";
+import { readdirSync, rmSync, rmdirSync, readFileSync, statSync } from "fs";
 import { dirname, resolve } from "path";
 import { defineConfig, type Plugin } from "vite";
 
@@ -67,9 +67,65 @@ function vendorChunks(id: string): string | undefined {
   return;
 }
 
+// The baked GLB pack (src/res/models/**/*.glb — untracked bake output, ~1.1 GB
+// on a machine holding a full bake) rides publicDir into outDir, and the Tauri
+// shell then embeds the whole dist into wowsp.exe: a second, dead copy of the
+// model pack that the installer already ships as its stage/models payload
+// (scripts/build_installers.py). Production serves models from the relocated
+// model-pack cache; publicDir paths are only the DEV fallback, where Vite
+// serves src/res directly and this plugin never runs. So the build prunes
+// every .glb from outDir and keeps the git-tracked 2D subset (~27 MB of
+// silhouettes/minimaps — the exact set a fresh CI checkout carries), making
+// local builds byte-equivalent to release CI's dist.
+function pruneBakedGlb(outDir: string): Plugin {
+  return {
+    name: 'prune-baked-glb',
+    apply: 'build',
+    // closeBundle: vite lays publicDir down early in the build (vite 8 does
+    // it in vite:prepare-out-dir's renderStart), so the copied files are
+    // guaranteed on disk by Rollup's final hook.
+    closeBundle() {
+      const modelsDir = resolve(outDir, 'models');
+      let removed = 0;
+      let freed = 0;
+      const visit = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = resolve(dir, entry.name);
+          if (entry.isDirectory()) {
+            visit(path);
+            // Bake-only kinds (planes/, props/) hold nothing tracked; drop
+            // them once emptied so the layout matches a fresh checkout.
+            try {
+              rmdirSync(path);
+            } catch {
+              // not empty — tracked content stays
+            }
+          } else if (entry.name.toLowerCase().endsWith('.glb')) {
+            freed += statSync(path).size;
+            rmSync(path);
+            removed += 1;
+          }
+        }
+      };
+      try {
+        visit(modelsDir);
+      } catch {
+        return; // no models directory was copied — nothing to prune
+      }
+      if (removed > 0) {
+        console.log(
+          `[prune-baked-glb] removed ${removed} baked .glb files ` +
+            `(${(freed / 1024 / 1024).toFixed(0)} MB) from ${modelsDir}`,
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     cleanOutDirContents(resolve(pkgDir, '../../dist/webui')),
+    pruneBakedGlb(resolve(pkgDir, '../../dist/webui')),
     vueSfc(),
     vueJsx(),
     UnoCSS(),
