@@ -10,6 +10,7 @@ export * from "./capTimer";
 export * from "./holoShader";
 export * from "./armorPlates";
 export * from "./shipStage";
+export * from "./shipScale";
 export * from "./tierRoman";
 export { drawHoloMinimap, setMinimapArtImage } from "./minimap";
 export { drawShipGlyph, SHIP_GLYPH_POLYS, glyphClassOf } from "./shipGlyph";

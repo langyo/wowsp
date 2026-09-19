@@ -7,7 +7,7 @@ Output: packages/website/src/res/replay/<slug>/battle.json  (+ prints the GLB
 
 The site renders the battle LIVE with three.js — this script is the offline
 half: roster resolution (entity -> player join, duplicate shipIds split by
-spawn side), 1 Hz uniformly-sampled tracks, torpedoes & explosions.
+        spawn side), 1 Hz uniformly-sampled tracks & torpedoes.
 
 Usage:
   python scripts/bake_site_replay.py <dump.json> <slug>
@@ -31,8 +31,15 @@ def lerp_yaw(a: float, b: float, t: float) -> float:
     return a + d * t
 
 
+UNSEEN_GAP_S = 4.0
+
+
 def sample_track(samples: list[dict], n: int) -> tuple[list, list, list]:
-    """Uniform 1 Hz resample with linear interp (yaw wrapped)."""
+    """Uniform 1 Hz resample with linear interp (yaw wrapped).
+
+    Gaps longer than UNSEEN_GAP_S mean the ship was un-spotted: hold the
+    last known pose (like the in-game minimap) instead of interpolating a
+    straight glide across islands. Mirrors the app's sampleAt freeze."""
     xs: list[float] = []
     zs: list[float] = []
     yaws: list[float] = []
@@ -44,7 +51,10 @@ def sample_track(samples: list[dict], n: int) -> tuple[list, list, list]:
         s0 = samples[j]
         s1 = samples[min(j + 1, len(samples) - 1)]
         span = s1["time"] - s0["time"]
-        f = 0.0 if span <= 1e-6 else min(1.0, max(0.0, (t - s0["time"]) / span))
+        if span > UNSEEN_GAP_S:
+            f = 0.0  # un-spotted: hold last known pose
+        else:
+            f = 0.0 if span <= 1e-6 else min(1.0, max(0.0, (t - s0["time"]) / span))
         xs.append(round(s0["x"] + (s1["x"] - s0["x"]) * f, 1))
         zs.append(round(s0["z"] + (s1["z"] - s0["z"]) * f, 1))
         yaws.append(round(lerp_yaw(s0["yaw"], s1["yaw"], f), 3))
@@ -169,7 +179,7 @@ def main() -> None:
             entry["die"] = round(dt, 1)
         tracks[str(eid)] = entry
 
-    # ── torpedoes / explosions (flavor) ──
+    # ── torpedoes (flavor) ──
     by_eid = {t["entityId"]: t for t in ships}
 
     def pos_at(t: dict, tm: float) -> tuple[float, float]:
@@ -187,9 +197,6 @@ def main() -> None:
         x, z = pos_at(src, tp["time"])
         torps.append([round(tp["time"], 1), round(x, 1), round(z, 1),
                       round(tp["dirX"], 3), round(tp["dirZ"], 3)])
-
-    expl = [[round(e["time"], 1), round(e["x"], 1), round(e["z"], 1)]
-            for e in (dump.get("explosions") or [])]
 
     # ── capture zones (entityType 14: controlPointIndex + ownership) ──
     caps = []
@@ -231,7 +238,6 @@ def main() -> None:
         "recorder": recorder_eid,
         "tracks": tracks,
         "torps": torps,
-        "explosions": expl,
         "caps": caps,
     }
 
@@ -241,7 +247,7 @@ def main() -> None:
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"), ensure_ascii=False)
     size_kb = os.path.getsize(out_path) / 1024
-    print(f"battle.json: {size_kb:.0f} KB, {n}s, {len(roster)} ships, {len(torps)} torps, {len(expl)} explosions")
+    print(f"battle.json: {size_kb:.0f} KB, {n}s, {len(roster)} ships, {len(torps)} torps")
     print("MAP_GLB", os.path.join(MAP_GLBS, map_name + ".glb"))
     for g in glbs:
         print("SHIP_GLB", os.path.join(SHIP_GLBS, g))
