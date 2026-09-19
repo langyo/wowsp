@@ -188,6 +188,32 @@ const LOWER_IS_BETTER_EFFECTS = new Set([
  *  multipliers — formatted (and signed) differently from coefficients. */
 const PP_EFFECTS = new Set(["burnChanceFactorBig", "burnChanceFactorSmall"]);
 
+/** Commander-talent modifier keys that are activation plumbing, never
+ *  player-visible stats — dropped from the talent rows entirely.
+ *  GSMShotDelay is data-dead too: 1.0 in every dict, duplicating the
+ *  GSShotDelay row's label as "±0%". */
+const TALENT_HIDDEN_KEYS = new Set([
+  "useShipTierAsWorkTime",
+  "scaleRegenWithShipTier",
+  "ignoreRegenLimit",
+  "rageModeFloorLevel",
+  "GSMShotDelay",
+]);
+/** +N consumable-charge keys (additive counts, not multipliers). */
+const TALENT_COUNT_KEYS = new Set([
+  "additionalConsumables",
+  "planeAdditionalConsumables",
+  "torpedoReloaderAdditionalConsumables",
+]);
+/** Percent-of-max-HP-per-second regen keys (0.000417 = 0.04%/s). */
+const TALENT_RATE_KEYS = new Set(["regenerationHPSpeed"]);
+/** Flat per-second HP keys (300 = 300 HP/s), rendered as a bare number. */
+const TALENT_UNIT_KEYS = new Set(["regenerationHPSpeedUnits"]);
+/** Duration keys, rendered in seconds. */
+const TALENT_SECOND_KEYS = new Set(["workTime"]);
+/** Additive percentage-point talent keys (0.01 = +1pp). */
+const TALENT_POINTS_KEYS = new Set(["burnChanceBonus"]);
+
 /** i18n key exists? (avoids vue-i18n fallback warnings for data-driven keys) */
 function hasMsg(key: string): boolean {
   // te() on the full message schema explodes type instantiation — go loose.
@@ -322,11 +348,23 @@ export default defineComponent({
         : null,
     );
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
-     *  when their *UI twin is present and internal enums dropped. */
+     *  when their *UI twin is present, internal enums and activation
+     *  plumbing (tier-scaling / regen-cap switches, the dead GSMShotDelay)
+     *  dropped, and zero-valued count / rate / duration plumbing (e.g. the
+     *  "0s" on a tier-scaled duration) skipped. */
     function kvOf(dict: Record<string, unknown>): Array<[string, number]> {
       const kv: Array<[string, number]> = [];
       for (const [k, v] of Object.entries(dict ?? {})) {
         if (typeof v !== "number" || k === "uniqueType") continue;
+        if (TALENT_HIDDEN_KEYS.has(k)) continue;
+        if (
+          v === 0 &&
+          (TALENT_COUNT_KEYS.has(k) ||
+            TALENT_RATE_KEYS.has(k) ||
+            TALENT_UNIT_KEYS.has(k) ||
+            TALENT_SECOND_KEYS.has(k))
+        )
+          continue;
         if (!k.endsWith("UI") && `${k}UI` in dict) continue; // UI twin wins
         kv.push([k, v]);
       }
@@ -348,8 +386,19 @@ export default defineComponent({
       }
       return rows;
     }
-    function fmtTalentNum(v: number): string {
-      return String(Math.round(v * 10000) / 10000);
+    /** Value text per key semantics: multipliers (the common case) read as
+     *  signed percent of (v−1); consumable-charge keys are additive counts;
+     *  regen rates are percent of max HP per second; durations are seconds. */
+    function fmtTalentValue(k: string, v: number): string {
+      if (TALENT_COUNT_KEYS.has(k)) return `+${v}`;
+      if (TALENT_SECOND_KEYS.has(k)) return `${v}s`;
+      if (TALENT_UNIT_KEYS.has(k)) return String(v);
+      if (TALENT_RATE_KEYS.has(k)) {
+        const pct = (v * 100).toFixed(2).replace(/\.?0+$/, "");
+        return `${pct}%`;
+      }
+      if (TALENT_POINTS_KEYS.has(k)) return signedPct(v * 100);
+      return signedPct((v - 1) * 100);
     }
     /** Catalog label for a talent modifier key (ships.talent.effect.*), or
      *  the raw key when the catalog has no entry for it. */
@@ -454,24 +503,33 @@ export default defineComponent({
     /** Ship-gating by GameParams `ships` (full ship names, matched by leading
      *  tech-tree index token). The semantics flip with the mod class:
      *  research-bureau unique mods WHITELIST their ships (Yamato's unique
-     *  upgrade lists Yamato); every regular mod's list is EXCLUSIONS —
-     *  Main Gun Mod 3 names the submarines it must not be mounted on, so
-     *  reading it as a whitelist would gut the whole upgrades tab. */
+     *  upgrade lists Yamato), and so does every entry with NO type
+     *  restriction — the low-tier Aiming Systems Mod 0 names exactly the
+     *  three ships that may mount it. Only broadly-typed regular mods carry
+     *  EXCLUSION lists (Main Gun Mod 3 names the submarines it must not be
+     *  mounted on), so reading those as whitelists would gut the tab. */
     function shipMatches(m: ModernizationEntry): boolean {
       if (!m.ships?.length) return true;
       const index = techTreeNode(props.ship.shipId)?.index ?? null;
       const hit = index != null && m.ships.some((s) => s.split("_")[0] === index);
-      return m.tags?.includes("unique") ? hit : !hit;
+      const whitelist = m.tags?.includes("unique") || m.shiptype.length === 0;
+      return whitelist ? hit : !hit;
     }
     function upgradesForSlot(slot: number): ModernizationEntry[] {
-      return MODERNIZATIONS.filter(
-        (m) =>
-          m.slot === slot &&
+      return MODERNIZATIONS.filter((m) => {
+        if (m.slot !== slot) return false;
+        // Dead catalog: an entry with no type restriction AND no ship binding
+        // is a legacy upgrade the current game sells nowhere — the unnamed
+        // PCM001_MainGun_Mod_I family plus the named-but-obsolete
+        // 防御型对空火力修改型1 (PCM040) and sub Steering Gear Mod 3 (PCM091).
+        if (m.shiptype.length === 0 && !m.ships?.length) return false;
+        return (
           (m.shiptype.length === 0 || m.shiptype.includes(props.ship.type)) &&
           (m.nation.length === 0 || m.nation.includes(gpNation.value)) &&
           (m.shiplevel.length === 0 || m.shiplevel.includes(props.ship.tier)) &&
-          shipMatches(m),
-      );
+          shipMatches(m)
+        );
+      });
     }
     function toggleUpgrade(slot: number, name: string): void {
       const upgrades = { ...props.build.upgrades };
@@ -661,7 +719,7 @@ export default defineComponent({
                       <span class="planner-v__talent-level">{row.level}</span>
                       {row.kv.map(([k, v]) => (
                         <span class="planner-v__talent-kv" key={k}>
-                          {talentEffectLabel(k)} {fmtTalentNum(v)}
+                          {talentEffectLabel(k)} {fmtTalentValue(k, v)}
                         </span>
                       ))}
                     </div>
