@@ -170,6 +170,12 @@ a.glass-panel:hover,
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  /* Trailing letter-spacing shrinks the inline box past the last glyph's
+     ink, leaving a sliver with no gradient behind it — on some GPU raster
+     paths that sliver renders as a notch in the glyph. Bleed the paint
+     area over the ink; the negative margin keeps layout width unchanged. */
+  padding-right: 0.06em;
+  margin-right: -0.06em;
 }
 
 /* ── Accent pill — soft badge ───────────────────────────── */
@@ -228,7 +234,10 @@ a.glass-panel:hover,
   &.is-visible {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
+    /* none, not blur(0): any settled non-none filter keeps the content on
+       a composited raster path, where clipped-gradient glyphs are prone to
+       stale-tile artifacts. */
+    filter: none;
   }
 }
 
