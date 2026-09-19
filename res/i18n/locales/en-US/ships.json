@@ -85,8 +85,8 @@
     "stage": {
       "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
       "holo": "Hologram",
-      "hide": "Hide hologram",
-      "show": "Show hologram"
+      "hide": "Hide preview",
+      "show": "Show preview"
     },
     "weapon": {
       "mainGun": "Main Battery",
