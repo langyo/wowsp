@@ -150,11 +150,30 @@
 
   &__player {
     display: flex;
-    flex-direction: column;
-    gap: 1px;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
     padding: 7px 9px;
     border-radius: 6px;
     background: rgb(var(--color-text) / 0.04);
+  }
+
+  /* Text stack (name / ship / stat line). `min-width: 0` lets it give way to
+     the career seal instead of pushing it out of the card. */
+  &__player-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  /* Career seal pinned to the card's right edge, vertically centered — the
+     same "pressed onto the card" look as the account card's stamp. A flex
+     sibling (not inline text) can never wrap onto its own line. */
+  &__player-stamp {
+    flex: none;
+    align-self: center;
   }
 
   /* Human players: the whole card jumps to the lookup view. */
@@ -209,7 +228,6 @@
   &__player-stat {
     display: flex;
     align-items: center;
-    gap: 6px;
     font-size: var(--text-2xs);
     color: rgb(var(--color-text) / 0.7);
 
@@ -217,11 +235,13 @@
     b {
       font-weight: 600;
     }
+  }
 
-    /* The career seal rides the row's right edge, clear of the numbers. */
-    .rating-stamp {
-      margin-left: auto;
-    }
+  &__player-statline {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Hidden profile: a red notice, not a bare "—" (the player could have

@@ -201,23 +201,19 @@ export default defineComponent({
         }
         if (st.winrate != null) {
           const tier = prTier(st.pr);
-          const stamp = careerStamp(st.pr, st.battles);
           return (
-            <span>
-              <span class="live-battle__player-statline">
-                <b style={{ color: winrateColor(st.winrate) }}>
-                  {st.winrate.toFixed(1)}%
-                </b>{" "}
-                WR ·{" "}
-                <b
-                  class={tier.rainbow ? "rainbow-text" : undefined}
-                  style={tier.rainbow ? undefined : { color: tier.color }}
-                >
-                  {st.pr ?? "—"}
-                </b>{" "}
-                PR
-              </span>
-              {stamp ? <RatingStamp kind={stamp} size={13} variant="mini" /> : null}
+            <span class="live-battle__player-statline">
+              <b style={{ color: winrateColor(st.winrate) }}>
+                {st.winrate.toFixed(1)}%
+              </b>{" "}
+              WR ·{" "}
+              <b
+                class={tier.rainbow ? "rainbow-text" : undefined}
+                style={tier.rainbow ? undefined : { color: tier.color }}
+              >
+                {st.pr ?? "—"}
+              </b>{" "}
+              PR
             </span>
           );
         }
@@ -228,16 +224,34 @@ export default defineComponent({
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
         const clickable = !isAiName(v.name);
+        // The career seal is a card-level element pinned to the card's right
+        // edge (same "pressed onto the card" look as the account card), so it
+        // needs its own copy of the career guard statLine uses above.
+        const st = clickable ? stats.get(v.id) : null;
+        const stamp =
+          st && !st.loading && !st.hidden && st.winrate != null
+            ? careerStamp(st.pr, st.battles)
+            : null;
         const content = (
           <>
-            <span class="live-battle__player-name">
-              {v.name}
-              {isAiName(v.name) ? (
-                <em class="live-battle__player-bot">{t("replay.bot")}</em>
-              ) : null}
+            <span class="live-battle__player-main">
+              <span class="live-battle__player-name">
+                {v.name}
+                {isAiName(v.name) ? (
+                  <em class="live-battle__player-bot">{t("replay.bot")}</em>
+                ) : null}
+              </span>
+              <span class="live-battle__player-ship">{shipName}</span>
+              <span class="live-battle__player-stat">{statLine(v)}</span>
             </span>
-            <span class="live-battle__player-ship">{shipName}</span>
-            <span class="live-battle__player-stat">{statLine(v)}</span>
+            {stamp ? (
+              <RatingStamp
+                kind={stamp}
+                size={26}
+                variant="mini"
+                class="live-battle__player-stamp"
+              />
+            ) : null}
           </>
         );
         return clickable ? (
