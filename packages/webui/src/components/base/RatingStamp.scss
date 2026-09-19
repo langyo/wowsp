@@ -9,8 +9,6 @@
   opacity: 0.9;
   pointer-events: none;
   flex: none;
-  /* Inline usage (live roster rows) sits on the text baseline. */
-  vertical-align: -0.15em;
   transform: rotate(-9deg);
 
   &--ape {
