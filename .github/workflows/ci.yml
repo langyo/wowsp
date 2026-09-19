@@ -46,7 +46,7 @@ jobs:
       - name: Website build
         run: pnpm --filter @wowsp/website build
       - name: i18n parity
-        run: python scripts/check_i18n.py --no-fail
+        run: python scripts/check_i18n.py
       - name: npm audit
         # Dev-toolchain advisories (e.g. brace-expansion chains) have
         # tripped `high` before; production deps stay gated at `critical`.
@@ -87,10 +87,10 @@ jobs:
         # vendored wows-toolkit sources that keep upstream formatting.
         run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
       - name: Clippy
-        # App crates only — vendored wowsunpack/wows-core are dependency-only
-        # (now inside wowsp_tauri's dep graph, so --no-deps keeps their
-        # upstream lint style out of this gate).
-        run: cargo clippy -p wowsp_tauri --bins --no-deps -- -D warnings
+        # Both app crates, lib + bins — vendored wowsunpack/wows-core are
+        # dependency-only (--no-deps keeps their upstream lint style out of
+        # this gate). Mirrors `just lint rust` / `just lint` exactly.
+        run: cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
       - name: Check
         run: cargo check -p wowsp_tauri
       - name: Test (backend)
