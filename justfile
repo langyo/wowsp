@@ -82,7 +82,7 @@ _build-app *FLAGS='--release':
 
 _build-webui:
     just gen-shaders
-    @python scripts/check_i18n.py --quiet || true
+    @python scripts/check_i18n.py --quiet
     {{PM}} --filter @wowsp/webui build
 
 _build-site:
@@ -128,17 +128,18 @@ test target *FLAGS='':
 #   just check          → cargo check (fast compile check)
 
 # Both recipes mirror the CI rust gate (ci.yml "Rustfmt"/"Clippy") exactly:
-# app crates only — the vendored wowsunpack/wows-core sources keep upstream
-# formatting and lint style, so repo-wide fmt would fail on dependency code.
+# the two app crates get fmt + clippy (--no-deps keeps the vendored
+# wowsunpack/wows-core upstream lint style out), while repo-wide fmt would
+# fail on the vendored dependency sources.
 _lint-full:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
-    cargo clippy -p wowsp_tauri --bins --no-deps -- -D warnings
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
     {{PM}} -r lint
-    @python scripts/check_i18n.py --no-fail
+    @python scripts/check_i18n.py
 
 _lint-rust:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
-    cargo clippy -p wowsp_tauri --bins --no-deps -- -D warnings
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
 
 _lint-webui:
     {{PM}} -r lint
@@ -165,11 +166,11 @@ lint-msg base='master':
 
 _fmt-fix:
     cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --all-targets --no-deps -- -D warnings
-    cargo fmt --all
+    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared
     {{PM}} -r lint --fix
 
 _fmt-check:
-    cargo fmt --all -- --check
+    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
 
 fmt target='fix':
     @just _fmt-{{target}}
@@ -265,12 +266,12 @@ bootstrap: init
 # ── ci ────────────────────────────────────────────────────────────────
 
 ci:
-    just fmt check
-    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    just lint rust
     cargo check --workspace
     cargo test --workspace
     {{PM}} -r typecheck
     {{PM}} -r lint
+    @python scripts/check_i18n.py --quiet
 
 # ── package ───────────────────────────────────────────────────────────
 
