@@ -3,11 +3,14 @@
  * ship viewer (`ShipStage`) and the replay's recorder-ship panel
  * (`ReplayShipStage`). Extracted here so both surfaces share one look.
  *
- * The baked GLBs ship without normals (they're merged + stripped during
- * baking), so the fragment shader derives face normals from screen-space
- * derivatives (dFdx/dFdy — WebGL2 default in three r150+). Fresnel uses that
- * normal vs. the view direction. Scanlines sweep vertically over time; a
- * separate wireframe overlay mesh is drawn by the caller.
+ * Normals: baked GLBs ship without normals (merged + stripped during baking),
+ * so callers that want smooth shading weld their geometries and add averaged
+ * vertex normals first (see ShipStage.loadModel). When the `normal` attribute
+ * is missing the attribute reads as (0,0,0) and the fragment shader falls back
+ * to face normals from screen-space derivatives (dFdx/dFdy — WebGL2 default in
+ * three r150+). Fresnel uses the normal vs. the view direction; scanlines
+ * sweep vertically over time; a separate wireframe overlay mesh is drawn by
+ * the caller.
  *
  * Usage:
  *   const mat = makeHoloMaterial();          // a ShaderMaterial (transparent)
@@ -16,9 +19,13 @@
  * the material when the mesh leaves the scene.
  *
  * The material writes no depth (transparent layering), so for correct
- * occlusion the caller should add a depth-only twin of each mesh (opaque
- * `MeshBasicMaterial({ colorWrite: false })`, which renders in the opaque
- * queue ahead of this transparent pass). See ShipStage.loadModel.
+ * occlusion the caller should add a depth-only twin of each mesh that shares
+ * the SAME vertex shader (makeHoloDepthMaterial — renders in the opaque queue
+ * ahead of this transparent pass). The twin must transform vertices through
+ * the identical GLSL path: a different vertex pipeline (e.g. a
+ * MeshBasicMaterial's CPU-premultiplied modelViewMatrix) rounds depth
+ * differently and the depth test then rejects arbitrary whole triangles.
+ * See ShipStage.loadModel.
  */
 import * as THREE from "three";
 
@@ -41,6 +48,8 @@ export const HOLO_VERT = /* glsl */ `
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
+  varying vec3 vNormal;
+  varying float vHasNormal;
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
     vWorldPos = wp.xyz;
@@ -48,6 +57,13 @@ export const HOLO_VERT = /* glsl */ `
     vec4 vp = viewMatrix * wp;
     vViewPos = vp.xyz;
     gl_Position = projectionMatrix * vp;
+    // World-space smooth normal. Assumes UNIFORM node scale (everything here
+    // scales via setScalar; a non-uniform scale would need the inverse
+    // transpose). Geometries without a normal attribute bind a constant
+    // (0,0,0) — flagged via vHasNormal so the fragment shader can fall back
+    // to derivative face normals.
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vHasNormal = step(0.001, length(normal));
   }
 `;
 
@@ -65,13 +81,20 @@ export const HOLO_FRAG = /* glsl */ `
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
+  varying vec3 vNormal;
+  varying float vHasNormal;
   void main() {
-    vec3 dx = dFdx(vWorldPos);
-    vec3 dy = dFdy(vWorldPos);
-    // Screen-space normals flip with winding: without this correction back
-    // faces evaluate dot(n, viewDir) < 0 and light up at full Fresnel — the
-    // "solid patches poking through the hull" artifact.
-    vec3 n = normalize(cross(dx, dy));
+    vec3 n;
+    if (vHasNormal > 0.5) {
+      n = normalize(vNormal);
+    } else {
+      vec3 dx = dFdx(vWorldPos);
+      vec3 dy = dFdy(vWorldPos);
+      n = normalize(cross(dx, dy));
+    }
+    // Double-sided: flip toward the viewer so back faces shade like the
+    // front (derivative normals flip with winding; smooth normals point
+    // outward and need the flip when seen from inside).
     if (!gl_FrontFacing) n = -n;
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
     float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
@@ -99,6 +122,26 @@ export const HOLO_FRAG = /* glsl */ `
     gl_FragColor = vec4(col, alpha * ghostAlpha);
   }
 `;
+
+/** Depth-only twin of the holo material for occlusion pre-passes. Renders in
+ *  the opaque queue (transparent: false) with colorWrite off, using the SAME
+ *  vertex shader so rasterized depth matches the transparent pass. The tiny
+ *  polygonOffset pushes the anchor ~1 depth LSB farther so depth-equal color
+ *  fragments reliably survive the LessEqual test — separate GL programs may
+ *  round gl_Position differently even with identical source, and without the
+ *  bias arbitrary whole triangles get rejected ("half the hull missing").
+ *  Real occlusion is unaffected at 1 LSB. */
+export function makeHoloDepthMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: HOLO_VERT,
+    fragmentShader: "void main() { gl_FragColor = vec4(0.0); }",
+    side: THREE.DoubleSide,
+    colorWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: 1.0,
+    polygonOffsetUnits: 1.0,
+  });
+}
 
 /** Create a fresh holographic ShaderMaterial with its own uniforms object.
  *  Returns the material; the uniforms are reachable via `mat.uniforms`. */
