@@ -225,7 +225,14 @@
     "airDetect": "空中被发现距离",
     "airDetectHint": "敌机发现你的距离。",
     "subDetect": "被潜艇发现距离",
-    "heFireChance": "HE弹点火率"
+    "heFireChance": "HE弹点火率",
+    "torpBomberDamage": "鱼雷机伤害",
+    "torpBomberRange": "鱼雷机雷程",
+    "torpBomberSpeed": "鱼雷机航速",
+    "depthChargeDamage": "深弹伤害",
+    "depthChargePacks": "深弹组数",
+    "depthChargeBombs": "每组深弹数",
+    "depthChargeReload": "深弹装填"
   },
   "skills": {
     "title": "舰长加点模拟",
@@ -308,18 +315,21 @@
   },
   "compare": {
     "group": {
-      "hull": "船体"
+      "hull": "船体",
+      "asw": "反潜",
+      "aircraft": "飞机"
     },
     "addShips": "添加舰艇",
     "removeAll": "移除全部",
+    "remove": "移除",
     "addAll": "添加全部",
     "addSelected": "添加选中 ({n})",
     "added": "已添加",
     "addedToast": "已添加 {n} 艘舰艇到对比",
     "empty": "对比列表为空，点击“添加舰艇”开始。",
-    "cap": "对比列表最多 {n} 艘。",
+    "notApplicable": "不适用",
     "showing": "显示前 {shown} 艘 / 共 {total} 艘",
-    "count": "{n}/{max}"
+    "count": "{n}"
   },
   "techTree": {
     "title": "科技树",

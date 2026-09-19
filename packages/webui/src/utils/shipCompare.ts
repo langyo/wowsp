@@ -3,11 +3,18 @@
  * (浩舰-style: pick a stat group, every ship contributes one column value).
  *
  * The WG `/encyclopedia/ships/` `default_profile` uses internal snake_case
- * field names; extraction idioms (the {max,min} armour helper, the HE-pen
- * estimate, the AA slot banding, unit formatting) mirror
- * `components/ships/shipSpecs.ts` — keep the two in sync conceptually, but
- * this module formats to plain display strings (no i18n here beyond the
- * label keys, resolved by the component via `t()`).
+ * field names; extraction idioms (the HE-pen estimate, unit formatting)
+ * mirror `components/ships/shipSpecs.ts` — keep the two in sync
+ * conceptually, but this module formats to plain display strings (no i18n
+ * here beyond the label keys, resolved by the component via `t()`).
+ *
+ * Data-shape notes verified against the live WG API (v15.5): AA slot
+ * `avg_damage` is always null and armour sub-objects are always {-1,-1}, so
+ * those dead columns were removed; `artillery` no longer carries a caliber
+ * field (parsed from the first gun-slot name instead); HE `burn_probability`
+ * is already a percentage. Groups the hull can never carry (torpedo tubes,
+ * ASW, aircraft) are collapsed into one gray "not applicable" cell by
+ * `groupApplies`.
  */
 export interface CompareColumn {
   /** Stable column key (React-style key + lookup). */
@@ -28,9 +35,6 @@ export interface CompareGroup {
   columns: CompareColumn[];
 }
 
-/** Hard cap on the compare list — keeps the sticky-column table readable. */
-export const MAX_COMPARE_SHIPS = 10;
-
 function num(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
@@ -46,16 +50,6 @@ function fmtNum(v: unknown, digits = 0): string | null {
   });
 }
 
-/** WG armour sub-objects use {max, min} where -1 / 0 means "not applicable".
- *  Return the meaningful value or null. */
-function armourThickness(v: unknown): number | null {
-  if (typeof v !== "object" || v === null) return null;
-  const o = v as { max?: number; min?: number };
-  const m = num(o.max);
-  if (m == null || m <= 0) return null;
-  return m;
-}
-
 /** Nation-aware HE pen estimate: germany caliber/4, everyone else caliber/6. */
 function hePenEstimate(caliberMm: number | null, nation: string | undefined): number | null {
   if (caliberMm == null || caliberMm <= 0) return null;
@@ -63,39 +57,24 @@ function hePenEstimate(caliberMm: number | null, nation: string | undefined): nu
   return Math.round(caliberMm / div);
 }
 
-/** Extract the main-gun caliber (mm) from the artillery sub-tree.
- *  WG stores barrel diameter under several keys depending on schema; try the
- *  common ones. */
+/** WG API dropped the caliber field — parse it from the first gun-slot
+ *  name ("406 mm/45 Mk.6 in a turret" → 406). Falls back to the legacy
+ *  barrelDiameter keys when present. */
 function mainGunCaliber(art: any): number | null {
   if (!art || typeof art !== "object") return null;
-  return num(art.barrelDiameter) ?? num(art.barrel_diameter) ?? num(art.caliber);
+  const direct = num(art.barrelDiameter) ?? num(art.barrel_diameter) ?? num(art.caliber);
+  if (direct != null) return direct;
+  const slots = art.slots as Record<string, any> | undefined;
+  const first = slots ? Object.values(slots)[0] as any : undefined;
+  const m = typeof first?.name === "string" ? first.name.match(/(\d+(?:\.\d+)?)\s*mm/i) : null;
+  return m ? Number(m[1]) : null;
 }
 
-/** WG AA slots are keyed by range bucket; band them into short/mid/long by
- *  distance (<3.0 short, 3.0–5.0 mid, >5.0 long — rough aura split). */
-function aaBands(p: Record<string, any> | null | undefined): Record<string, { dmg: number; dist: number }> | null {
-  const slots = p?.anti_aircraft?.slots;
-  if (!slots || typeof slots !== "object") return null;
-  const slotList = Object.values(slots)
-    .map((s) => ({
-      dist: num((s as any).distance),
-      dmg: num((s as any).avg_damage),
-    }))
-    .filter((s) => s.dist != null && s.dist > 0 && s.dmg != null);
-  if (slotList.length === 0) return null;
-  slotList.sort((a, b) => (a.dist ?? 0) - (b.dist ?? 0));
-  const bandOf = (d: number): "short" | "mid" | "long" =>
-    d <= 3.0 ? "short" : d <= 5.0 ? "mid" : "long";
-  const bands: Record<string, { dmg: number; dist: number }> = {};
-  for (const s of slotList) {
-    const b = bandOf(s.dist!);
-    if (!bands[b] || s.dist! > bands[b].dist) bands[b] = { dmg: s.dmg!, dist: s.dist! };
-  }
-  return bands;
+const TIER_ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+/** Standard tier notation — Roman numerals for I–X, a star for superships. */
+export function tierLabel(tier: number): string {
+  return tier >= 1 && tier <= 10 ? (TIER_ROMAN[tier - 1] ?? String(tier)) : "★";
 }
-
-const aaAura = (b: { dmg: number; dist: number } | undefined): string | null =>
-  b ? `${b.dmg.toFixed(0)} DPS · ${b.dist} km` : null;
 
 // ── hull ─────────────────────────────────────────────────────────────────
 const HULL_COLUMNS: CompareColumn[] = [
@@ -110,30 +89,6 @@ const HULL_COLUMNS: CompareColumn[] = [
     get: (p) => {
       const flood = num(p?.armour?.flood_damage);
       return flood != null ? `${flood}%` : null;
-    },
-  },
-  {
-    key: "citadelArmor",
-    labelKey: "ships.spec.citadelArmor",
-    get: (p) => {
-      const m = armourThickness(p?.armour?.citadel);
-      return m != null ? `${m} mm` : null;
-    },
-  },
-  {
-    key: "deckArmor",
-    labelKey: "ships.spec.deckArmor",
-    get: (p) => {
-      const m = armourThickness(p?.armour?.deck);
-      return m != null ? `${m} mm` : null;
-    },
-  },
-  {
-    key: "bowArmor",
-    labelKey: "ships.spec.bowArmor",
-    get: (p) => {
-      const m = armourThickness(p?.armour?.extremities);
-      return m != null ? `${m} mm` : null;
     },
   },
   {
@@ -220,14 +175,6 @@ const ARTILLERY_COLUMNS: CompareColumn[] = [
     },
   },
   {
-    key: "mainGunSigma",
-    labelKey: "ships.spec.mainGunSigma",
-    get: (p) => {
-      const v = num(p?.artillery?.sigma);
-      return v != null ? v.toFixed(1) : null;
-    },
-  },
-  {
     key: "turretTraverse",
     labelKey: "ships.spec.turretTraverse",
     get: (p) => {
@@ -241,6 +188,14 @@ const ARTILLERY_COLUMNS: CompareColumn[] = [
     get: (p) => {
       const v = num(p?.artillery?.max_dispersion);
       return v != null ? `${v} m` : null;
+    },
+  },
+  {
+    key: "shellSpeed",
+    labelKey: "ships.spec.shellSpeed",
+    get: (p) => {
+      const v = num(heShellOf(p)?.bullet_speed);
+      return v != null ? `${v} m/s` : null;
     },
   },
   {
@@ -264,10 +219,10 @@ const ARTILLERY_COLUMNS: CompareColumn[] = [
     get: (p) => {
       const he = heShellOf(p);
       if (!he) return null;
-      // WG stores the fire chance as a fraction (0..1) — shipSpecs formats
-      // the same stat (heFireChance) as a rounded percentage.
+      // WG's burn_probability is ALREADY a percentage (NC 406 mm HE = 36.0)
+      // — multiplying by 100 would render 3600%.
       const burn = num(he.burn_chance) ?? num(he.burn_probability);
-      return burn != null ? `${Math.round(burn * 100)}%` : null;
+      return burn != null ? `${Math.round(burn)}%` : null;
     },
   },
   {
@@ -354,6 +309,9 @@ const TORPEDO_COLUMNS: CompareColumn[] = [
 ];
 
 // ── anti-air ─────────────────────────────────────────────────────────────
+// Only the aggregate rating survives: the live API's AA slots always carry
+// avg_damage = null / distance = -1, so per-band aura columns could never
+// fill.
 const ANTI_AIR_COLUMNS: CompareColumn[] = [
   {
     key: "aaRating",
@@ -363,20 +321,63 @@ const ANTI_AIR_COLUMNS: CompareColumn[] = [
       return v != null && v > 0 ? String(v) : null;
     },
   },
+];
+
+// ── ASW (depth charges) ──────────────────────────────────────────────────
+const ASW_COLUMNS: CompareColumn[] = [
   {
-    key: "aaLongRange",
-    labelKey: "ships.spec.aaLongRange",
-    get: (p) => aaAura(aaBands(p)?.long),
+    key: "depthChargeDamage",
+    labelKey: "ships.spec.depthChargeDamage",
+    get: (p) => fmtNum(p?.depth_charge?.bomb_max_damage),
   },
   {
-    key: "aaMidRange",
-    labelKey: "ships.spec.aaMidRange",
-    get: (p) => aaAura(aaBands(p)?.mid),
+    key: "depthChargePacks",
+    labelKey: "ships.spec.depthChargePacks",
+    get: (p) => {
+      const v = num(p?.depth_charge?.max_packs);
+      return v != null ? String(v) : null;
+    },
   },
   {
-    key: "aaShortRange",
-    labelKey: "ships.spec.aaShortRange",
-    get: (p) => aaAura(aaBands(p)?.short),
+    key: "depthChargeBombs",
+    labelKey: "ships.spec.depthChargeBombs",
+    get: (p) => {
+      const v = num(p?.depth_charge?.num_bombs_in_pack);
+      return v != null ? String(v) : null;
+    },
+  },
+  {
+    key: "depthChargeReload",
+    labelKey: "ships.spec.depthChargeReload",
+    get: (p) => {
+      const v = num(p?.depth_charge?.reload_time);
+      return v != null ? `${v.toFixed(1)} s` : null;
+    },
+  },
+];
+
+// ── aircraft (torpedo bombers) ───────────────────────────────────────────
+const AIRCRAFT_COLUMNS: CompareColumn[] = [
+  {
+    key: "torpBomberDamage",
+    labelKey: "ships.spec.torpBomberDamage",
+    get: (p) => fmtNum(p?.torpedo_bomber?.torpedo_damage),
+  },
+  {
+    key: "torpBomberRange",
+    labelKey: "ships.spec.torpBomberRange",
+    get: (p) => {
+      const v = fmtNum(p?.torpedo_bomber?.torpedo_distance, 1);
+      return v ? `${v} km` : null;
+    },
+  },
+  {
+    key: "torpBomberSpeed",
+    labelKey: "ships.spec.torpBomberSpeed",
+    get: (p) => {
+      const v = num(p?.torpedo_bomber?.torpedo_max_speed);
+      return v != null ? `${v} kn` : null;
+    },
   },
 ];
 
@@ -385,4 +386,32 @@ export const COMPARE_GROUPS: CompareGroup[] = [
   { key: "artillery", labelKey: "ships.spec.group.artillery", columns: ARTILLERY_COLUMNS },
   { key: "torpedoes", labelKey: "ships.spec.group.torpedoes", columns: TORPEDO_COLUMNS },
   { key: "antiAir", labelKey: "ships.spec.group.antiAir", columns: ANTI_AIR_COLUMNS },
+  { key: "asw", labelKey: "ships.compare.group.asw", columns: ASW_COLUMNS },
+  { key: "aircraft", labelKey: "ships.compare.group.aircraft", columns: AIRCRAFT_COLUMNS },
 ];
+
+/** Whether the ship carries this weapon system at all — drives the merged
+ *  gray "not applicable" cell for groups the hull can never have. */
+export function groupApplies(group: CompareGroup, p: Record<string, any> | null | undefined): boolean {
+  const has = (v: unknown) => v != null && typeof v === "object";
+  switch (group.key) {
+    case "torpedoes":
+      return has(p?.torpedoes) || (num(p?.hull?.torpedoes_barrels) ?? 0) > 0;
+    case "antiAir":
+      return (num(p?.anti_aircraft?.defense) ?? 0) > 0;
+    case "artillery":
+      // Direct null check instead of has(): TS 5.5 infers `v is object` for
+      // that helper, which would narrow p?.artillery to plain `object` and
+      // hide distance/shot_delay from the follow-up reads.
+      return (
+        p?.artillery != null &&
+        (num(p.artillery.distance) != null || num(p.artillery.shot_delay) != null)
+      );
+    case "asw":
+      return has(p?.depth_charge);
+    case "aircraft":
+      return num(p?.torpedo_bomber?.torpedo_damage) != null;
+    default:
+      return true; // hull — every ship has one
+  }
+}

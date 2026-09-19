@@ -70,6 +70,15 @@
     tbody tr:nth-child(even) td {
       background: rgb(var(--color-bg));
     }
+
+    // "Not applicable" merged cell (groupApplies = false): one gray cell
+    // spanning the whole group. Must out-rank the zebra rules above to stay
+    // uniform across odd and even rows.
+    td.ship-compare__na {
+      text-align: center;
+      color: rgb(var(--color-muted));
+      background: rgb(var(--color-muted) / 6%);
+    }
   }
 
   // ── sticky identity columns ──────────────────────────────────────────
@@ -88,22 +97,22 @@
       text-align: center;
     }
 
+    // Roman-numeral tier tags are wider than the old "T10" text.
     &--tier {
       left: 2.75rem;
-      width: 2.5rem;
-      min-width: 2.5rem;
+      width: 3.5rem;
+      min-width: 3.5rem;
     }
 
     &--name {
-      // 5.25rem = remove (2.75) + tier (2.5) — flush against the tier column
+      // 6.25rem = remove (2.75) + tier (3.5) — flush against the tier column
       // so horizontally scrolled body cells never peek through the seam.
-      left: 5.25rem;
+      // The td stays a table-cell; the flex row lives in __name-inner (a
+      // flex td breaks table layout → detached white block).
+      left: 6.25rem;
       width: 11rem;
       min-width: 11rem;
       max-width: 11rem;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
     }
   }
 
@@ -111,33 +120,11 @@
     z-index: 4;
   }
 
-  &__remove {
-    display: inline-flex;
+  &__name-inner {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-sm);
-    color: rgb(var(--color-muted));
-    cursor: pointer;
-    transition: all var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      color: rgb(var(--color-error));
-      background: rgb(var(--color-error) / 10%);
-    }
-  }
-
-  &__tier {
-    font-size: var(--text-2xs);
-    font-weight: 700;
-    color: rgb(var(--color-primary));
-    background: rgb(var(--color-primary) / 12%);
-    padding: 0.05rem 0.3rem;
-    border-radius: var(--radius-xs);
-    font-variant-numeric: tabular-nums;
+    gap: 0.4rem;
+    min-width: 0;
   }
 
   &__ship-name {
