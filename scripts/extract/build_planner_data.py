@@ -10,9 +10,10 @@ Data sources:
     and descriptions — `IDS_SKILL_*` (skills), `IDS_TITLE_PCM*`/`IDS_DESC_PCM*`
     (modernizations), `IDS_PCEF*` (signal flags).
   - WoWSFT-Kotlin `skills.json`: per-class skill-tree layout (tier + column).
-  - WoWs-ShipBuilder repo assets: the real square skill icons + signal flag
-    icons (the live client stores unusable 122×22 silhouette strips at
-    gui/crew_commander/skills — the square art ships only inside the UI pak).
+  - WoWs-ShipBuilder repo assets: the square skill icons + signal flag icons
+    (upstream repo since went dark — cache first; for skills the ShipBuilder
+    set misses, the live client's own /gui/crew_commander/skills/*.png are
+    real 60x60 square art: slice them from gui_0001.pkg by size+crc32).
   - gui_0001.pkg PNG slicing (size+crc32 matched against wows_meta.json):
     unique-commander portraits from gui/crew_commander/base.
 
@@ -262,8 +263,8 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
 
     Surface classes use the WoWSFT in-game layout (tier + column); Submarine
     is absent there, so its layout derives from the Crew table's per-class
-    `tier` field (learnable, non-trigger skills only), columns assigned in
-    the crew table's own ordering.
+    `tier` field (learnable skills only), columns assigned in the crew
+    table's own ordering.
     """
     crew = None
     for _name, e in entries_of(txt, '"CrewPersonality"',
@@ -272,8 +273,11 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
         break
     gp_tiers: dict[str, dict[str, int]] = {}
     if crew is not None:
+        # NOTE: Trigger-prefixed codes are real learnable tree cells (隐蔽加速 /
+        # 怒火满腔 / 近距离作战 / DD 肾上腺素飙升 …), not just triggered talents —
+        # skipping them punched holes in the WoWSFT layout (BB rows 2 & 4).
         for code, sk in (crew.get("Skills") or {}).items():
-            if not sk.get("canBeLearned") or code.startswith("Trigger"):
+            if not sk.get("canBeLearned"):
                 continue
             tiers = {GP_CLASS_BY_CODE[gp]: t for gp, t in (sk.get("tier") or {}).items()
                      if gp in GP_CLASS_BY_CODE and isinstance(t, int) and 1 <= t <= 4}
@@ -410,8 +414,10 @@ def main() -> int:
 
     # ── icons ────────────────────────────────────────────────────────────────
     # Skill + signal-flag icons come from the WoWs-ShipBuilder assets (the
-    # live client ships unusable 122×22 silhouette strips at
-    # gui/crew_commander/skills — the square art is inside the UI pak).
+    # ShipBuilder repo is gone, so the fetch relies on the local cache).
+    # Skills missing there — the Trigger family (隐蔽加速 / 怒火满腔 / …) — have
+    # real 60x60 art in the live client at gui/crew_commander/skills/<stem>.png
+    # inside gui_0001.pkg: slice by (size, crc32) like the portraits below.
     # Commander portraits are sliced from the game pkg by (size, crc32).
     skills_out = OUT_IMG / "skills"
     signals_out = OUT_IMG / "signals"
