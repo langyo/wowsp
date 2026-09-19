@@ -663,9 +663,13 @@ pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, S
             .map(|i| i.to_string())
             .collect::<Vec<_>>()
             .join(",");
+        // Same extra-gated division splits as the single/batch lookups;
+        // without them roster PR degrades to the overall-WR fallback and
+        // disagrees with the player card for the same account.
         let resp = client
             .get(format!(
-                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}"
+                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
+                 &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
             ))
             .send()
             .await
@@ -1538,6 +1542,40 @@ mod tests {
         let ghost = info.members.iter().find(|m| m.account_id == 22).unwrap();
         assert!(ghost.stats.hidden);
         assert_eq!(ghost.stats.battles, None);
+    }
+
+    #[test]
+    fn clan_roster_pr_uses_weighted_division_splits() {
+        // Regression: the roster batch account/info must request the
+        // extra-gated division splits so roster PR blends them like the
+        // player card instead of degrading to the overall-WR fallback
+        // (which made the clan page disagree with the player's own page).
+        let clan_node = serde_json::json!({
+            "tag": "W",
+            "name": "Weighted",
+            "members_count": 1,
+            "members_ids": [11]
+        });
+        // solo 48%/5000, div2 58%/1000, div3 60%/500 → overall 50.54% but
+        // weighted (×5/×2/×1) ≈48.95% → PR 983, not the 1175 the overall
+        // fallback would print.
+        let roster = serde_json::json!({
+            "11": {
+                "nickname": "alpha",
+                "statistics": {
+                    "pvp": { "battles": 6500, "wins": 3285, "damage_dealt": 130_000_000 },
+                    "pvp_solo": { "battles": 5000, "wins": 2400 },
+                    "pvp_div2": { "battles": 1000, "wins": 580 },
+                    "pvp_div3": { "battles": 500, "wins": 300 }
+                }
+            }
+        });
+        let info = clan_info_from_response(9, "eu", &clan_node, &roster);
+        let member = &info.members[0];
+        assert!((member.stats.winrate.unwrap() - 50.538).abs() < 0.01);
+        assert_eq!(member.stats.pr, Some(983));
+        assert_ne!(member.stats.pr, Some(1175));
+        assert_eq!(info.avg_pr, Some(983));
     }
 
     #[test]
