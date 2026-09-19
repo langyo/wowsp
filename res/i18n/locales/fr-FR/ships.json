@@ -117,7 +117,15 @@
         "citadel": "Citadelle",
         "stern": "Poupe",
         "belt": "Ceinture",
-        "deck": "Pont"
+        "deck": "Pont",
+        "sternBelt": "Ceinture de poupe",
+        "forwardBelt": "Ceinture avant",
+        "mainBelt": "Ceinture principale",
+        "aftBelt": "Ceinture arrière",
+        "casemate": "Casemate",
+        "torpedoBelt": "Bulbe anti-torpilles",
+        "bowBelt": "Ceinture de proue",
+        "superstructure": "Superstructure"
       },
       "overmatchThreshold": "L'écrasement nécessite un calibre ≥{n}mm",
       "outcome": {
@@ -125,7 +133,9 @@
         "pen": "Pénétration",
         "overpen": "Sur-pénétration",
         "bounce": "Ricochet"
-      }
+      },
+      "restore": "Restaurer",
+      "pickHint": "Cliquez la coque pour masquer une classe"
     },
     "openHint": "Cliquez pour ouvrir les détails du navire",
     "my": {

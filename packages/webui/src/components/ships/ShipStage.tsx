@@ -1,5 +1,6 @@
 import {
   defineComponent,
+  computed,
   getCurrentInstance,
   onBeforeUnmount,
   onMounted,
@@ -9,6 +10,7 @@ import {
 } from "vue";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RotateCcw, X } from "@lucide/vue";
 
 import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
 import { createCycleTimer, useImage } from "@wowsp/holo";
@@ -17,7 +19,7 @@ import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
-import { t } from "@/i18n";
+import { t, i18n } from "@/i18n";
 import type { ShipInfo } from "@/api";
 import "./ShipStage.scss";
 
@@ -48,6 +50,165 @@ export interface ArmorZone {
 
 /** Ship regions the camera can focus on (relative to model bbox). */
 export type FocusZone = "default" | "bow" | "midship" | "stern" | "deck" | "waterline";
+
+// ── Armor thickness scale ────────────────────────────────────────────────
+// Mirrors the exporter's ARMOR_COLOR_SCALE (wowsunpack gltf_export.rs) —
+// the authoritative table baked into the *_armor.glb vertex colors. Each
+// entry: (maxThickness_mm, r, g, b); assignment uses bisect_left.
+const ARMOR_SCALE: [number, number, number, number][] = [
+  [14,  110, 209, 176], // teal
+  [16,  149, 210, 127], // light green
+  [24,  170, 201, 102], // yellow-green
+  [26,  192, 193,  80], // olive
+  [28,  226, 195,  62], // gold
+  [33,  225, 171,  54], // orange-gold
+  [75,  227, 144,  49], // orange
+  [160, 230, 115,  49], // dark orange
+  [399, 220,  78,  48], // red-orange
+  [999, 185,  47,  48], // dark red
+];
+const ARMOR_UNKNOWN_COLOR = 0xcccccc; // light grey for unknown thickness
+
+function armorColor(mm: number): number {
+  if (mm <= 0) return ARMOR_UNKNOWN_COLOR;
+  const [r, g, b] = ARMOR_SCALE.find(([bp]) => mm <= bp) ?? ARMOR_SCALE[ARMOR_SCALE.length - 1];
+  return (r << 16) | (g << 8) | b;
+}
+
+/** Legend rows for the color axis — one per bucket, evenly divided. */
+const ARMOR_LEGEND = ARMOR_SCALE.map(([max, r, g, b], i) => {
+  const min = i === 0 ? null : ARMOR_SCALE[i - 1][0];
+  const hex = (r << 16) | (g << 8) | b;
+  return {
+    hex,
+    css: legendCss(hex),
+    label: min == null ? `≤ ${max}` : i === ARMOR_SCALE.length - 1 ? `${min}+` : `${min} – ${max}`,
+    range: `${min ?? 1} – ${max} mm`,
+  };
+});
+
+/** CSS color matching how a baked vertex color RENDERS: three treats vertex
+ *  colors as linear-sRGB and the renderer encodes output to sRGB, so raw
+ *  palette values would read visibly darker than the plates on screen. */
+function legendCss(hex: number): string {
+  const ch = (c: number) => {
+    const v = c / 255;
+    const enc = v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+    return Math.round(255 * enc);
+  };
+  return `rgb(${ch((hex >> 16) & 255)} ${ch((hex >> 8) & 255)} ${ch(hex & 255)})`;
+}
+
+/** Bucket index (into ARMOR_SCALE) for a baked 0xRRGGBB vertex color. */
+const armorBucketByRgb = new Map<number, number>(ARMOR_LEGEND.map((s, i) => [s.hex, i]));
+/** Sentinel bucket for plates with no game thickness (exporter bakes them
+ *  light grey) — kept out of the legend and not class-hideable. */
+const ARMOR_BUCKET_UNKNOWN = 0xffff;
+function armorBucketForRgb(rgb: number): number {
+  if (rgb === ARMOR_UNKNOWN_COLOR) return ARMOR_BUCKET_UNKNOWN;
+  const hit = armorBucketByRgb.get(rgb);
+  if (hit != null) return hit;
+  // Off-palette color: nearest bucket by channel distance.
+  const r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+  let best = ARMOR_LEGEND.length - 1;
+  let bestD = Infinity;
+  ARMOR_LEGEND.forEach((s, i) => {
+    const d = (((s.hex >> 16) & 255) - r) ** 2 + (((s.hex >> 8) & 255) - g) ** 2 + ((s.hex & 255) - b) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+
+/** Invisible depth anchor shared by every holographic mesh: colorWrite off,
+ *  so it renders in the opaque queue first and only fills the depth buffer.
+ *  The transparent holo pass then depth-tests against it (see loadModel). */
+const ShipStageDepthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false });
+
+/** userData bookkeeping written onto armor overlay meshes. */
+interface ArmorMeshUserData {
+  /** Heuristic zone boxes: raw zone name ("deck"). */
+  zone?: string;
+  /** Heuristic zone boxes: zone thickness in mm (0 if unknown). */
+  thickness?: number;
+  /** Baked GLBs: draw-group slot → ARMOR_SCALE bucket index. */
+  armorBuckets?: number[];
+  /** Baked GLBs: triangle index → bucket index (raycast lookup). */
+  armorTriBucket?: Uint16Array;
+  /** Heuristic zone boxes: stable key ("z:deck"). */
+  armorZoneKey?: string;
+  /** Material(s) to restore on un-hide. */
+  armorBaseMat?: THREE.Material | THREE.Material[];
+}
+
+/** Shared "hidden" look for armor parts toggled off (grey ghost). */
+const armorHiddenMat = new THREE.MeshBasicMaterial({
+  color: 0x9aa3ae,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.22,
+  depthWrite: false,
+});
+
+/** Regroup a baked armor mesh's triangles by thickness bucket: the index
+ *  buffer is reordered bucket-ascending and one draw group (material slot)
+ *  is declared per bucket, so each thickness class can be swapped to the
+ *  hidden material independently. Returns the raycast/lookup tables. */
+function splitArmorMeshByBucket(
+  mesh: THREE.Mesh,
+): { triBucket: Uint16Array; buckets: number[] } | null {
+  const geo = mesh.geometry;
+  const color = geo.getAttribute("color");
+  const index = geo.getIndex();
+  if (!color || !index || index.count % 3 !== 0) return null;
+
+  const triCount = index.count / 3;
+  const triBucket = new Uint16Array(triCount);
+  const bucketSet = new Set<number>();
+  for (let f = 0; f < triCount; f++) {
+    const v = index.getX(f * 3);
+    const rgb =
+      (Math.round(color.getX(v) * 255) << 16) |
+      (Math.round(color.getY(v) * 255) << 8) |
+      Math.round(color.getZ(v) * 255);
+    const bucket = armorBucketForRgb(rgb);
+    triBucket[f] = bucket;
+    bucketSet.add(bucket);
+  }
+
+  const buckets = [...bucketSet].sort((a, b) => a - b);
+  const counts = new Map<number, number>();
+  for (const bucket of triBucket) counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+  const slotOf = new Map<number, number>(buckets.map((b, i) => [b, i]));
+  // Per-slot write cursors and group start offsets.
+  const cursor = buckets.map(() => 0);
+  const startAt: number[] = [];
+  let acc = 0;
+  for (const b of buckets) { startAt.push(acc); acc += counts.get(b) ?? 0; }
+
+  const srcIndex = index;
+  // Reorder the index buffer bucket-ascending; the per-triangle bucket table
+  // must be reordered alongside it so raycast faceIndex (which addresses the
+  // NEW triangle order) maps back to the right class.
+  const newTriBucket = new Uint16Array(triCount);
+  const newIndex = new (srcIndex.array.constructor as new (n: number) => typeof srcIndex.array)(srcIndex.count);
+  for (let f = 0; f < triCount; f++) {
+    const slot = slotOf.get(triBucket[f])!;
+    const w = startAt[slot] + cursor[slot]++;
+    newTriBucket[w] = triBucket[f];
+    newIndex[w * 3] = srcIndex.getX(f * 3);
+    newIndex[w * 3 + 1] = srcIndex.getX(f * 3 + 1);
+    newIndex[w * 3 + 2] = srcIndex.getX(f * 3 + 2);
+  }
+  // Release the replaced index's GPU buffer (geometry.dispose only frees the
+  // CURRENT index attribute, so the old one would leak across rebuilds).
+  srcIndex.dispose();
+  geo.setIndex(new THREE.BufferAttribute(newIndex, 1));
+  geo.clearGroups();
+  for (let i = 0; i < buckets.length; i++) {
+    geo.addGroup(startAt[i] * 3, (counts.get(buckets[i]) ?? 0) * 3, i);
+  }
+  return { triBucket: newTriBucket, buckets };
+}
 
 export default defineComponent({
   name: "ShipStage",
@@ -94,6 +255,9 @@ export default defineComponent({
     /** Armor-zone overlay group (visible when showArmor is true). */
     const armorGroup = shallowRef<THREE.Group | null>(null);
     const showArmor = ref(false);
+    /** Generation token for syncArmorOverlay: the async GLB load must not
+     *  commit state if a newer sync (or a teardown) superseded it. */
+    let armorSyncGen = 0;
     let gridRef: THREE.GridHelper | null = null;
     const _waterlinePlane: THREE.Mesh | null = null;
 
@@ -109,20 +273,27 @@ export default defineComponent({
     const onStageEnter = () => armorCycle.pause();
     const onStageLeave = () => armorCycle.resume();
 
+    /** Deep-dispose a detached group's geometries + materials. */
+    function disposeGroupDeep(g: THREE.Group) {
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+        else if (mat) mat.dispose();
+      });
+    }
+
     function disposeArmorScene() {
+      // Any in-flight sync is now stale — including the "armour off" path,
+      // where a late GLB load must not commit against showArmor=false.
+      armorSyncGen++;
       const g = armorGroup.value;
       const sc = scene.value;
       if (g && sc) sc.remove(g);
-      if (g) {
-        g.traverse((o) => {
-          const m = o as THREE.Mesh;
-          if (m.geometry) m.geometry.dispose();
-          const mat = m.material as THREE.Material | THREE.Material[];
-          if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-          else if (mat) mat.dispose();
-        });
-      }
+      if (g) disposeGroupDeep(g);
       armorGroup.value = null;
+      armorReady.value = false;
       // Restore main model visibility.
       const model = modelGroup.value;
       if (model) {
@@ -139,8 +310,11 @@ export default defineComponent({
         return;
       }
       // Build a fresh armour-scene group: uniform-dark hull clones,
-      // coloured armour boxes, and a waterline plane.
+      // coloured armour boxes, and a waterline plane. disposeArmorScene
+      // bumps the generation (invalidating any in-flight sync); claim the
+      // NEW generation after it.
       disposeArmorScene();
+      const gen = ++armorSyncGen;
 
       // Hide the main model — the armour group replaces it visually.
       model.visible = false;
@@ -154,6 +328,15 @@ export default defineComponent({
         if (armorUrl) {
           try {
             const armorModel = await loadGlbModel(armorUrl);
+            // Superseded mid-load (toggle / rebuild / teardown): the newer
+            // sync owns the scene — drop this load, touching nothing.
+            if (gen !== armorSyncGen) {
+              armorModel.traverse((child) => {
+                const mesh = child as THREE.Mesh;
+                if (mesh.isMesh) mesh.geometry?.dispose();
+              });
+              return;
+            }
             if (armorModel) {
               armorModel.traverse((child) => {
                 const mesh = child as THREE.Mesh;
@@ -163,11 +346,25 @@ export default defineComponent({
                     vertexColors: (geo.getAttribute('color') != null),
                     side: THREE.DoubleSide,
                     transparent: true,
-                    opacity: 0.75,
-                    depthWrite: false,
+                    opacity: 0.85,
+                    // Opaque-like compositing: nearer plates must occlude
+                    // farther ones (the game's own armor view does the same).
+                    // With depthWrite off, every interior face blends through
+                    // and the wash of summed layers hides the real thickness.
+                    depthWrite: true,
                   });
                   mesh.material = mat;
                   mesh.renderOrder = 1;
+                  // Split the mesh into thickness classes so each bucket can
+                  // be hidden independently (and hit-tested via raycast).
+                  const split = splitArmorMeshByBucket(mesh);
+                  if (split) {
+                    const ud = mesh.userData as ArmorMeshUserData;
+                    ud.armorBuckets = split.buckets;
+                    ud.armorTriBucket = split.triBucket;
+                    ud.armorBaseMat = mat;
+                    mesh.material = split.buckets.map(() => mat);
+                  }
                   // Armor GLBs come from wowsunpack in the game's own
                   // orientation (bow at -Z), while visual GLBs from
                   // wows-gltf-exporter face bow at +Z — rotate 180° about Y so
@@ -178,6 +375,15 @@ export default defineComponent({
                   armorSc.add(mesh);
                 }
               });
+              // Match the main model's normalized frame (200-unit box centred
+              // on the origin) so holo ↔ armor toggling doesn't rescale the
+              // camera subject.
+              const box = new THREE.Box3().setFromObject(armorSc);
+              const size = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z, 1);
+              const scale = 200 / maxDim;
+              armorSc.scale.setScalar(scale);
+              armorSc.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(scale));
             }
           } catch { /* fall back to heuristic */ }
         }
@@ -237,8 +443,27 @@ export default defineComponent({
       }
       } // end fallback block
 
+      if (armorSc.children.length === 0) {
+        // Nothing resolvable (no baked GLB, no zones): nothing to legend or pick.
+        for (const key of hiddenArmorKeys.value) if (key.startsWith("z:")) hiddenArmorKeys.value.delete(key);
+        armorReady.value = false;
+        // Keep the plain hologram visible instead of an empty stage.
+        model.visible = true;
+        return;
+      }
+
+      // Superseded while the fallback path built (or a newer rebuild started):
+      // drop this group untouched.
+      if (gen !== armorSyncGen) {
+        disposeGroupDeep(armorSc);
+        return;
+      }
+
       sc.add(armorSc);
       armorGroup.value = armorSc;
+      armorReady.value = true;
+      // Re-apply hidden classes after the rebuild (holo↔armor auto-cycle).
+      for (const key of hiddenArmorKeys.value) applyArmorHidden(key, true);
     }
 
     function toggleArmor() {
@@ -264,27 +489,166 @@ export default defineComponent({
       () => { if (showArmor.value) syncArmorOverlay(); },
     );
 
-    /** Exact 10-bucket colour scale from the game's ArmorConstants.py.
-     *  Each entry: (maxThickness_mm, r, g, b). bisect_left. */
-    const ARMOR_SCALE: [number, number, number, number][] = [
-      [14,  110, 209, 176], // teal
-      [16,  149, 210, 127], // light green
-      [24,  170, 201, 102], // yellow-green
-      [26,  192, 193,  80], // olive
-      [28,  226, 195,  62], // gold
-      [33,  225, 171,  54], // orange-gold
-      [75,  227, 144,  49], // orange
-      [160, 230, 115,  49], // dark orange
-      [399, 220,  78,  48], // red-orange
-      [999, 185,  47,  48], // dark red
-    ];
-    function armorColor(mm: number): number {
-      if (mm <= 0) return 0xcccccc; // light grey for unknown
-      const [r, g, b] = ARMOR_SCALE.find(([bp]) => mm <= bp) ?? ARMOR_SCALE[ARMOR_SCALE.length - 1];
-      return (r << 16) | (g << 8) | b;
+    // ── Armor color axis + click-to-hide ──────────────────────────────────
+    /** Whether the armor overlay actually has content to show (baked GLB or
+     *  heuristic zones) — gates the legend and the hidden-parts panel. */
+    const armorReady = ref(false);
+    /** Thickness classes / zone boxes currently toggled off. Keys: "b3"
+     *  (ARMOR_SCALE bucket) or "z:deck" (heuristic zone box). Survives the
+     *  holo↔armor auto-cycle (re-applied on rebuild); cleared on ship change
+     *  and scene teardown. */
+    const hiddenArmorKeys = ref<Set<string>>(new Set());
+    const hiddenArmorChips = computed(() => {
+      const chips: { key: string; label: string; css: string }[] = [];
+      for (const key of hiddenArmorKeys.value) {
+        const chip = resolveArmorChip(key);
+        if (chip) chips.push(chip);
+      }
+      return chips;
+    });
+
+    /** Chip metadata for a hidden-part key, derived from the legend table or
+     *  the zone boxes currently in the overlay. */
+    function resolveArmorChip(key: string): { key: string; label: string; css: string } | null {
+      if (key.startsWith("b")) {
+        const entry = ARMOR_LEGEND[Number(key.slice(1))];
+        return entry ? { key, label: entry.label, css: entry.css } : null;
+      }
+      if (key.startsWith("z:")) {
+        const zone = key.slice(2);
+        let thickness = 0;
+        armorGroup.value?.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.isMesh && (m.userData as ArmorMeshUserData).armorZoneKey === key) {
+            thickness = (m.userData as { thickness?: number }).thickness ?? 0;
+          }
+        });
+        const nameKey = `ships.detail.armor.zone.${zone}`;
+        // Dynamic key paths blow up vue-i18n's schema inference — go through
+        // plain signatures.
+        const hasZone = (i18n.global.te as (k: string) => boolean)(nameKey);
+        const label = hasZone ? (t as (k: string) => string)(nameKey) : zone;
+        return { key, label, css: legendCss(armorColor(thickness)) };
+      }
+      return null;
     }
 
+    /** Swap a key's materials to/from the grey hidden look. */
+    function applyArmorHidden(key: string, on: boolean) {
+      armorGroup.value?.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const ud = mesh.userData as ArmorMeshUserData;
+        if (ud.armorBuckets) {
+          const slot = ud.armorBuckets.indexOf(Number(key.slice(1)));
+          if (slot >= 0) {
+            const mats = mesh.material as THREE.MeshBasicMaterial[];
+            if (Array.isArray(mats) && mats[slot]) mats[slot] = on ? armorHiddenMat : (ud.armorBaseMat as THREE.MeshBasicMaterial);
+          }
+        } else if (ud.armorZoneKey && ud.armorZoneKey === key) {
+          mesh.material = on ? armorHiddenMat : (ud.armorBaseMat as THREE.Material);
+          // The highlight edges are children of the box — fade them with it.
+          for (const child of mesh.children) {
+            if ((child as THREE.LineSegments).isLineSegments) child.visible = !on;
+          }
+        }
+      });
+    }
 
+    function toggleArmorPart(key: string) {
+      const on = !hiddenArmorKeys.value.has(key);
+      if (on) hiddenArmorKeys.value.add(key);
+      else hiddenArmorKeys.value.delete(key);
+      // New Set identity so the computed chip list re-runs.
+      hiddenArmorKeys.value = new Set(hiddenArmorKeys.value);
+      applyArmorHidden(key, on);
+    }
+
+    function restoreArmorParts() {
+      for (const key of [...hiddenArmorKeys.value]) applyArmorHidden(key, false);
+      hiddenArmorKeys.value = new Set();
+    }
+
+    // ── Canvas picking (click to hide, hover cursor) ──────────────────────
+    const _raycaster = new THREE.Raycaster();
+    const _ndc = new THREE.Vector2();
+
+    /** Topmost armor part under the pointer, or null. */
+    function pickArmorPart(clientX: number, clientY: number): string | null {
+      const g = armorGroup.value;
+      const cam = camera.value;
+      const rnd = renderer.value;
+      if (!g || !cam || !rnd) return null;
+      const rect = rnd.domElement.getBoundingClientRect();
+      _ndc.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      _raycaster.setFromCamera(_ndc, cam);
+      const hits = _raycaster.intersectObjects(g.children, true);
+      for (const hit of hits) {
+        const mesh = hit.object as THREE.Mesh;
+        if (!mesh.isMesh) continue;
+        const ud = mesh.userData as ArmorMeshUserData;
+        if (ud.armorTriBucket && hit.faceIndex != null) {
+          const bucket = ud.armorTriBucket[hit.faceIndex];
+          // No-thickness plates carry no legend color — let the pick fall
+          // through to whatever is behind them.
+          if (bucket === ARMOR_BUCKET_UNKNOWN) continue;
+          return `b${bucket}`;
+        }
+        if (ud.armorZoneKey) return ud.armorZoneKey;
+      }
+      return null;
+    }
+
+    // Click-vs-drag: OrbitControls consumes drags, so only treat a press /
+    // release pair that stayed within a few pixels as a pick.
+    let downAt: { x: number; y: number } | null = null;
+    let hoverRaf = 0;
+
+    function onCanvasPointerDown(e: PointerEvent) {
+      downAt = { x: e.clientX, y: e.clientY };
+    }
+
+    function onCanvasPointerUp(e: PointerEvent) {
+      const down = downAt;
+      downAt = null;
+      if (!down || !showArmor.value || e.button !== 0) return;
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+      const key = pickArmorPart(e.clientX, e.clientY);
+      if (key) toggleArmorPart(key);
+    }
+
+    function onCanvasPointerMove(e: PointerEvent) {
+      const rnd = renderer.value;
+      if (!rnd) return;
+      const setCursor = (c: string) => {
+        if (rnd.domElement.style.cursor !== c) rnd.domElement.style.cursor = c;
+      };
+      if (!showArmor.value || e.buttons !== 0) {
+        setCursor("");
+        return;
+      }
+      if (hoverRaf) return;
+      const { clientX, clientY } = e;
+      hoverRaf = requestAnimationFrame(() => {
+        hoverRaf = 0;
+        setCursor(pickArmorPart(clientX, clientY) ? "pointer" : "");
+      });
+    }
+
+    function detachCanvasListeners() {
+      cancelAnimationFrame(hoverRaf);
+      hoverRaf = 0;
+      downAt = null;
+      const dom = renderer.value?.domElement;
+      if (dom) {
+        dom.removeEventListener("pointerdown", onCanvasPointerDown);
+        dom.removeEventListener("pointerup", onCanvasPointerUp);
+        dom.removeEventListener("pointermove", onCanvasPointerMove);
+      }
+    }
     function buildArmorOverlay(
       hullSectionBoxes: Map<string, THREE.Box3>,
       zones: ArmorZone[],
@@ -356,7 +720,7 @@ export default defineComponent({
         });
         const box = new THREE.Mesh(geo, mat);
         box.position.set(x1 + dx / 2, y1 + dy / 2, z1 + dz / 2);
-        box.userData = { zone: zoneName, thickness: mm };
+        box.userData = { zone: zoneName, thickness: mm, armorZoneKey: `z:${zoneName}`, armorBaseMat: mat } satisfies ArmorMeshUserData;
         group.add(box);
         const edge = new THREE.EdgesGeometry(geo);
         const line = new THREE.LineSegments(
@@ -387,7 +751,7 @@ export default defineComponent({
         const box = new THREE.Mesh(geo, mat);
         box.position.set(cx, cy, cz);
         box.rotation.y = rotY;
-        box.userData = { zone: zoneName, thickness: mm };
+        box.userData = { zone: zoneName, thickness: mm, armorZoneKey: `z:${zoneName}`, armorBaseMat: mat } satisfies ArmorMeshUserData;
         group.add(box);
         const edge = new THREE.EdgesGeometry(geo);
         const line = new THREE.LineSegments(
@@ -506,6 +870,10 @@ export default defineComponent({
       rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       rnd.setSize(w, h);
       el.appendChild(rnd.domElement);
+      // Armor-mode picking: click to toggle a thickness class, hover to hint.
+      rnd.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+      rnd.domElement.addEventListener("pointerup", onCanvasPointerUp);
+      rnd.domElement.addEventListener("pointermove", onCanvasPointerMove);
 
       // Lights — mostly for the wireframe overlay (the holo shader is unlit).
       sc.add(new THREE.AmbientLight(0x335577, 0.8));
@@ -701,6 +1069,20 @@ export default defineComponent({
           mesh.material = mat;
           mesh.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
 
+          // Depth anchor: the holo material is transparent and writes no
+          // depth, so without an opaque anchor every interior / far-side face
+          // paints over the near hull (draw order decides — the classic
+          // "faces poking through the hull" artifact). An invisible
+          // colorWrite-off twin renders in the opaque queue first, and the
+          // transparent pass depth-tests against it: nearer surfaces now
+          // occlude farther ones while the ghost layering is preserved.
+          const depthAnchor = new THREE.Mesh(
+            mesh.geometry,
+            ShipStageDepthMaterial,
+          );
+          depthAnchor.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
+          mesh.add(depthAnchor);
+
           // Faint structural-edge overlay — matches the part's hue.
           const c = colorForCategory(name);
           const edgeHex = new THREE.Color().setHSL(c.edge / 360, 0.5, 0.55).getHex();
@@ -746,7 +1128,9 @@ export default defineComponent({
       focusTween = null;
       resizeObs?.disconnect();
       resizeObs = null;
+      detachCanvasListeners();
       disposeArmorScene();
+      hiddenArmorKeys.value = new Set();
       const c = controls.value;
       const r = renderer.value;
       const sc = scene.value;
@@ -798,6 +1182,8 @@ export default defineComponent({
     watch(
       () => props.ship?.shipId,
       () => {
+        // Hidden thickness classes are per-ship — a new hull starts clean.
+        restoreArmorParts();
         if (viewMode.value === "3d" && !props.hidden) {
           // Remove the old model, then load the new one.
           if (modelGroup.value && scene.value) {
@@ -984,8 +1370,11 @@ export default defineComponent({
           modelPackDownloading.value = false;
         }
         viewMode.value = "3d";
-        // Wait for the container to render, then init.
-        requestAnimationFrame(() => {
+        // Wait for the container to render, then init. Routed through
+        // showRafId (cancelled by the hidden-watch) and guarded against
+        // re-entry so a double toggle can't create two GL contexts.
+        showRafId = requestAnimationFrame(() => {
+          if (props.hidden || viewMode.value !== "3d" || renderer.value) return;
           initScene();
           void loadModel();
         });
@@ -1030,6 +1419,56 @@ export default defineComponent({
               ) : null}
               {errorMsg.value ? (
                 <div class="ship-stage__overlay ship-stage__overlay--error">{errorMsg.value}</div>
+              ) : null}
+              {viewMode.value === "3d" && showArmor.value && armorReady.value ? (
+                <>
+                  {/* Armor thickness color axis — one evenly divided segment
+                      per game color bucket, ranges labelled underneath. */}
+                  <div class="ship-stage__armor-axis">
+                    <span class="ship-stage__armor-axis-title">
+                      {t("ships.detail.armor.legend")}
+                      <span class="ship-stage__armor-axis-hint"> · {t("ships.detail.armor.pickHint")}</span>
+                    </span>
+                    <div class="ship-stage__armor-axis-band">
+                      {ARMOR_LEGEND.map((s) => (
+                        <span key={s.label} title={s.range} style={{ background: s.css }} />
+                      ))}
+                    </div>
+                    <div class="ship-stage__armor-axis-ticks">
+                      {ARMOR_LEGEND.map((s, i) => (
+                        <span key={s.label} style={{ gridColumn: `${i + 1}`, gridRow: `${(i % 2) + 1}` }}>
+                          {s.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Hidden armor parts: chips (click to restore one) + a
+                      restore-all button, bottom right. */}
+                  {hiddenArmorChips.value.length > 0 ? (
+                    <div class="ship-stage__armor-hidden">
+                      <div class="ship-stage__armor-hidden-chips">
+                        {hiddenArmorChips.value.map((c) => (
+                          <button
+                            type="button"
+                            key={c.key}
+                            class="ship-stage__armor-chip"
+                            title={c.label}
+                            onClick={() => toggleArmorPart(c.key)}
+                          >
+                            <span class="ship-stage__armor-chip-swatch" style={{ background: c.css }} />
+                            <span>{c.label}</span>
+                            <X size={11} strokeWidth={2.4} />
+                          </button>
+                        ))}
+                      </div>
+                      <button type="button" class="ship-stage__armor-restore" onClick={restoreArmorParts}>
+                        <RotateCcw size={12} strokeWidth={2.2} />
+                        <span>{t("ships.detail.armor.restore")}</span>
+                        <span class="ship-stage__armor-restore-count">{hiddenArmorChips.value.length}</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               ) : null}
             </div>
           )}
