@@ -303,7 +303,23 @@
   },
   "viewMode": {
     "tree": "テックツリー",
-    "grid": "リスト"
+    "grid": "リスト",
+    "compare": "比較"
+  },
+  "compare": {
+    "group": {
+      "hull": "船体"
+    },
+    "addShips": "艦艇を追加",
+    "removeAll": "すべて削除",
+    "addAll": "すべて追加",
+    "addSelected": "選択を追加 ({n})",
+    "added": "追加済み",
+    "addedToast": "{n} 艘を比較に追加しました",
+    "empty": "まだ何もありません。「艦艇を追加」から始めましょう。",
+    "cap": "比較は最大 {n} 艘です。",
+    "showing": "先頭 {shown} 艘を表示 / 全 {total} 艘",
+    "count": "{n}/{max}"
   },
   "techTree": {
     "title": "テックツリー",

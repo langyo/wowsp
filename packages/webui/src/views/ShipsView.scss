@@ -29,35 +29,11 @@
     color: rgb(var(--color-text));
   }
 
+  // Holds the passive followed-realm badge + the manual reload button.
   &__realm {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-
-  &__realm-select {
-    background: rgb(var(--color-surface));
-    border: 1px solid rgb(var(--color-border) / 20%);
-    color: rgb(var(--color-text));
-    padding: 0.3rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-
-  &__reload {
-    background: rgb(var(--color-primary) / 12%);
-    border: 1px solid rgb(var(--color-primary) / 25%);
-    color: rgb(var(--color-primary));
-    padding: 0.3rem 0.6rem;
-    border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    cursor: pointer;
-    transition: background var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      background: rgb(var(--color-primary) / 20%);
-    }
   }
 
   &__meta {

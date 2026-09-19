@@ -303,7 +303,23 @@
   },
   "viewMode": {
     "tree": "Tech Tree",
-    "grid": "List"
+    "grid": "List",
+    "compare": "Compare"
+  },
+  "compare": {
+    "group": {
+      "hull": "Hull"
+    },
+    "addShips": "Add Ships",
+    "removeAll": "Remove All",
+    "addAll": "Add All",
+    "addSelected": "Add Selected ({n})",
+    "added": "Added",
+    "addedToast": "Added {n} ships to compare",
+    "empty": "Nothing to compare yet — add ships to get started.",
+    "cap": "Compare list is capped at {n} ships.",
+    "showing": "Showing first {shown} of {total} ships",
+    "count": "{n}/{max}"
   },
   "techTree": {
     "title": "Tech Tree",

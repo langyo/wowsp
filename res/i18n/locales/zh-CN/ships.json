@@ -303,7 +303,23 @@
   },
   "viewMode": {
     "tree": "科技树",
-    "grid": "列表"
+    "grid": "列表",
+    "compare": "对比"
+  },
+  "compare": {
+    "group": {
+      "hull": "船体"
+    },
+    "addShips": "添加舰艇",
+    "removeAll": "移除全部",
+    "addAll": "添加全部",
+    "addSelected": "添加选中 ({n})",
+    "added": "已添加",
+    "addedToast": "已添加 {n} 艘舰艇到对比",
+    "empty": "对比列表为空，点击“添加舰艇”开始。",
+    "cap": "对比列表最多 {n} 艘。",
+    "showing": "显示前 {shown} 艘 / 共 {total} 艘",
+    "count": "{n}/{max}"
   },
   "techTree": {
     "title": "科技树",

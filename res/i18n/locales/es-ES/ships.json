@@ -303,7 +303,23 @@
   },
   "viewMode": {
     "tree": "Árbol tecnológico",
-    "grid": "Lista"
+    "grid": "Lista",
+    "compare": "Comparar"
+  },
+  "compare": {
+    "group": {
+      "hull": "Casco"
+    },
+    "addShips": "Añadir buques",
+    "removeAll": "Quitar todos",
+    "addAll": "Añadir todos",
+    "addSelected": "Añadir selección ({n})",
+    "added": "Añadido",
+    "addedToast": "{n} buques añadidos a la comparación",
+    "empty": "Nada que comparar todavía: añade buques.",
+    "cap": "La comparación está limitada a {n} buques.",
+    "showing": "Mostrando los primeros {shown} de {total}",
+    "count": "{n}/{max}"
   },
   "techTree": {
     "title": "Árbol tecnológico",

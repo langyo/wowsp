@@ -2,11 +2,12 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
 
-import { HAlert, HButton, HInput, HSelect, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HButton, HInput, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
 import TechTreeView from "@/components/ships/TechTreeView";
+import ShipCompareView from "@/components/ships/ShipCompareView";
 import { resolveShipImage } from "@/utils/shipImages";
 import { recordShipImageFailure, shouldShowImageBanner } from "@/utils/shipImageFailures";
 import { useAccountStore } from "@/stores/account";
@@ -45,18 +46,16 @@ export default defineComponent({
     const gameStatus = useGameStatusStore();
     const toast = useToast();
 
-    // ── realm picker + load ────────────────────────────────────────────
-    const realm = ref(accounts.activeRealm || "asia");
-    const realms = ["ru", "eu", "na", "asia", "cn"];
-
-    // ── view mode (tech-tree vs list) ─────────────────────────────────
-    const viewMode = ref<"tree" | "grid">("tree");
+    // ── view mode (tech-tree vs list vs compare) ──────────────────────
+    const viewMode = ref<"tree" | "grid" | "compare">("tree");
     const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
 
+    // Realm is followed app-wide from the sidebar server selector; the
+    // encyclopedia store watches activeRealm and force-reloads itself.
     async function loadEncyclopedia(force = false) {
-      await encyclopedia.load(realm.value, force);
+      await encyclopedia.load(accounts.activeRealm, force);
       firstLoadDone.value = true;
       const acc = accounts.activeAccount;
       if (acc) {
@@ -83,8 +82,15 @@ export default defineComponent({
     if (encyclopedia.ships.length === 0) {
       void loadEncyclopedia();
     }
-    // Reload when realm changes.
-    watch(realm, () => void loadEncyclopedia());
+    // Per-ship card stats follow the sidebar realm switch — the encyclopedia
+    // reload itself is handled by the store's own activeRealm watcher.
+    watch(
+      () => accounts.activeRealm,
+      () => {
+        const acc = accounts.activeAccount;
+        if (acc) void shipStats.load(acc.accountId, acc.realm).catch(() => {});
+      },
+    );
 
     // When ships become available, mark first load done.
     watch(
@@ -190,19 +196,21 @@ export default defineComponent({
       return s?.winrate ?? null;
     }
 
+    // WG `default_profile` uses snake_case keys — camelCase reads always
+    // returned null, silently hiding the stats off the cards.
     function hp(ship: ShipInfo): number | null {
-      const dp = ship.defaultProfile as { hull?: { health?: number } } | null;
+      const dp = ship.defaultProfile as Record<string, any> | null;
       return dp?.hull?.health ?? null;
     }
 
     function concealment(ship: ShipInfo): number | null {
-      const dp = ship.defaultProfile as { concealment?: { detectDistanceByShip?: number } } | null;
-      return dp?.concealment?.detectDistanceByShip ?? null;
+      const dp = ship.defaultProfile as Record<string, any> | null;
+      return dp?.concealment?.detect_distance_by_ship ?? null;
     }
 
     function speed(ship: ShipInfo): number | null {
-      const dp = ship.defaultProfile as { mobility?: { maxSpeed?: number } } | null;
-      return dp?.mobility?.maxSpeed ?? null;
+      const dp = ship.defaultProfile as Record<string, any> | null;
+      return dp?.mobility?.max_speed ?? null;
     }
 
     function nationLabel(code: string): string {
@@ -227,18 +235,17 @@ export default defineComponent({
             <HTabs
               variant="segmented"
               modelValue={viewMode.value}
-              onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid")}
+              onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid" | "compare")}
               tabs={[
                 { key: "tree", label: t("ships.viewMode.tree") },
                 { key: "grid", label: t("ships.viewMode.grid") },
+                { key: "compare", label: t("ships.viewMode.compare") },
               ]}
             />
+            {/* Passive badge: the realm is followed from the sidebar's app-wide
+                server selector, so it's shown here read-only. */}
             <div class="ships-view__realm">
-              <HSelect
-                modelValue={realm.value}
-                onUpdate:modelValue={(v: string) => (realm.value = v)}
-                options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
-              />
+              <HTag variant="info" size="sm">{accounts.activeRealm.toUpperCase()}</HTag>
               <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
               </HButton>
@@ -299,7 +306,7 @@ export default defineComponent({
         ) : null}
 
         {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
-        {viewMode.value === "tree" ? null : (
+        {viewMode.value === "grid" ? (
           <div class="ships-view__filters">
             <div class="ships-view__filter-top">
               <HInput
@@ -384,9 +391,9 @@ export default defineComponent({
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* ── view body: tree or grid ── */}
+        {/* ── view body: tree, grid or compare ── */}
         <Transition name="s-fade-slide" mode="out-in">
           {encyclopedia.error && encyclopedia.ships.length === 0 ? (
             <div class="ships-view__status ships-view__status--error" key="error">
@@ -427,6 +434,8 @@ export default defineComponent({
                 )}
               </div>
             </div>
+          ) : viewMode.value === "compare" ? (
+            <ShipCompareView key="compare" />
           ) : filteredShips.value.length === 0 ? (
             <div class="ships-view__status" key="empty">{t("ships.empty")}</div>
           ) : (

@@ -1,0 +1,166 @@
+/**
+ * ShipCompareView — single scroll region hosting the compare table. The
+ * parent body supplies the page padding; the scroll region hugs the
+ * remaining height. Sticky identity columns (remove / tier / name) need
+ * OPAQUE backgrounds so overlapped columns never bleed through while
+ * scrolling horizontally — zebra striping therefore uses two opaque
+ * surface tones instead of translucent tints.
+ */
+.ship-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  height: 100%;
+  min-height: 0;
+
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  // Push the stat-group switcher to the toolbar's right edge.
+  &__groups {
+    margin-left: auto;
+  }
+
+  &__scroll {
+    flex: 1 1 0%;
+    min-height: 0;
+    max-height: 100%;
+    overflow: auto;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-md);
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--text-xs);
+
+    th,
+    td {
+      padding: 0 0.6rem;
+      height: 2.25rem;
+      text-align: left;
+      white-space: nowrap;
+      border-bottom: 1px solid rgb(var(--color-border) / 10%);
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: rgb(var(--color-bg));
+      color: rgb(var(--color-muted));
+      font-size: var(--text-2xs);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tbody td {
+      background: rgb(var(--color-surface));
+    }
+
+    tbody tr:nth-child(even) td {
+      background: rgb(var(--color-bg));
+    }
+  }
+
+  // ── sticky identity columns ──────────────────────────────────────────
+  // z-index: header cells (3) > sticky body cells (2) > plain cells.
+  &__sticky {
+    position: sticky;
+    border-right: 1px solid rgb(var(--color-border) / 15%);
+    z-index: 2;
+
+    &--remove {
+      left: 0;
+      width: 2.75rem;
+      min-width: 2.75rem;
+      max-width: 2.75rem;
+      padding: 0;
+      text-align: center;
+    }
+
+    &--tier {
+      left: 2.75rem;
+      width: 2.5rem;
+      min-width: 2.5rem;
+    }
+
+    &--name {
+      // 5.25rem = remove (2.75) + tier (2.5) — flush against the tier column
+      // so horizontally scrolled body cells never peek through the seam.
+      left: 5.25rem;
+      width: 11rem;
+      min-width: 11rem;
+      max-width: 11rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+  }
+
+  thead .ship-compare__sticky {
+    z-index: 4;
+  }
+
+  &__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: all var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-error));
+      background: rgb(var(--color-error) / 10%);
+    }
+  }
+
+  &__tier {
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 12%);
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__ship-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: rgb(var(--color-text));
+    font-weight: 600;
+  }
+
+  // ── empty state ──────────────────────────────────────────────────────
+  &__empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+
+    p {
+      margin: 0;
+    }
+  }
+}
