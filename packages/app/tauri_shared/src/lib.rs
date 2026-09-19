@@ -862,7 +862,9 @@ pub struct ClanMemberStats {
     /// Winrate, percent (0–100).
     pub winrate: Option<f32>,
     pub avg_damage: Option<f32>,
-    /// Community PR proxy (same formula as the player card).
+    /// Community PR proxy (same formula as the player card; CN rosters
+    /// expose no division splits, so there it falls back to the overall
+    /// winrate).
     pub pr: Option<i64>,
     pub avg_xp: Option<f32>,
     pub kd_ratio: Option<f32>,
