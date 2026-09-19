@@ -224,7 +224,8 @@
     "surfaceDetectHint": "敵水面艦艇偵測到你的距離。越短越隱蔽。",
     "airDetect": "空中被偵測距離",
     "airDetectHint": "敵機偵測到你的距離。",
-    "subDetect": "被潛艦偵測距離"
+    "subDetect": "被潛艦偵測距離",
+    "heFireChance": "HE彈點火率"
   },
   "skills": {
     "title": "艦長技能模擬",
@@ -243,7 +244,62 @@
     "CV": "航空母艦",
     "SS": "潛艦",
     "equipment": "裝備",
-    "flags": "信號旗"
+    "flags": "信號旗",
+    "tabSkills": "艦長技能",
+    "tabCaptains": "艦長選擇",
+    "tabFlags": "信號旗",
+    "tabUpgrades": "裝備槽位",
+    "statsTitle": "綜合屬性",
+    "health": "當前血量",
+    "slot": "槽位 {n}",
+    "noCommander": "無艦長",
+    "commanderInfoNote": "艦長天賦為觸發式效果，僅供參考，未計入右側屬性。",
+    "talentTrigger": "觸發",
+    "talentMax": "最多觸發 {n} 次",
+    "slotNone": "空",
+    "activator": {
+      "DamageDoneActivator": "造成損傷時",
+      "TargetsDamagedActivator": "命中目標時",
+      "RibbonActivator": "擊沉/勳章觸發",
+      "DamagePerTimePeriodActivator": "限時內持續造成損傷",
+      "PotentialDamageActivator": "承受潛在損傷時",
+      "FirstShipKillActivator": "首次擊沉",
+      "RemainingHealthActivator": "血量降低時",
+      "RageModeActivator": "狂暴模式",
+      "AllInGroupActivator": "全隊共同觸發"
+    },
+    "signals": {
+      "PCEF005": "Sierra Mike",
+      "PCEF006": "Hotel Yankee",
+      "PCEF007": "India Delta",
+      "PCEF008": "India Yankee",
+      "PCEF009": "Juliet Yankee Bissotwo",
+      "PCEF010": "Juliet Charlie",
+      "PCEF012": "Mike Yankee Soxisix",
+      "PCEF014": "November Foxtrot",
+      "PCEF016": "November Echo Setteseven",
+      "PCEF017": "Victor Lima",
+      "PCEF018": "India X-Ray",
+      "PCEF019": "Juliet Whiskey Unaone",
+      "PCEF028": "X-Ray Papa Unaone",
+      "PCEF029": "Sierra Bravo",
+      "PCEF030": "Charlie Kilo"
+    },
+    "commanders": {
+      "Yamamoto": "Yamamoto",
+      "Halsey": "Halsey",
+      "LUTJENS": "Lutjens",
+      "CUNNINGHAM": "Cunningham",
+      "KUZNETSOV": "Kuznetsov",
+      "SANSONETTI": "Sansonetti",
+      "AUBOYNEAU": "Auboyneau",
+      "Helfrich": "Helfrich",
+      "Topete": "Topete",
+      "Collins": "Collins",
+      "Lisboa": "Lisboa",
+      "SWIRSKI": "Swirski",
+      "Sa_Zhenbing": "Sa Zhenbing"
+    }
   },
   "viewMode": {
     "tree": "科技樹",

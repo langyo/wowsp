@@ -224,7 +224,8 @@
     "surfaceDetectHint": "Distance at which enemy surface ships spot you. Lower is better (stealthier).",
     "airDetect": "Air Detectability",
     "airDetectHint": "Distance at which enemy aircraft spot you.",
-    "subDetect": "Submarine Detectability"
+    "subDetect": "Submarine Detectability",
+    "heFireChance": "HE shell fire chance"
   },
   "skills": {
     "title": "Captain Skill Builder",
@@ -243,7 +244,62 @@
     "CV": "Aircraft Carrier",
     "SS": "Submarine",
     "equipment": "Equipment",
-    "flags": "Flags"
+    "flags": "Flags",
+    "tabSkills": "Skills",
+    "tabCaptains": "Commanders",
+    "tabFlags": "Signal Flags",
+    "tabUpgrades": "Upgrades",
+    "statsTitle": "Combined Stats",
+    "health": "Current HP",
+    "slot": "Slot {n}",
+    "noCommander": "No commander",
+    "commanderInfoNote": "Commander talents are triggered effects shown for reference only; they are not included in the stats panel.",
+    "talentTrigger": "Trigger",
+    "talentMax": "Up to {n} activations",
+    "slotNone": "Empty",
+    "activator": {
+      "DamageDoneActivator": "Damage dealt",
+      "TargetsDamagedActivator": "Targets damaged",
+      "RibbonActivator": "Kill / ribbon",
+      "DamagePerTimePeriodActivator": "Damage over time",
+      "PotentialDamageActivator": "Potential damage taken",
+      "FirstShipKillActivator": "First kill",
+      "RemainingHealthActivator": "Low HP",
+      "RageModeActivator": "Rage mode",
+      "AllInGroupActivator": "Whole division"
+    },
+    "signals": {
+      "PCEF005": "Sierra Mike",
+      "PCEF006": "Hotel Yankee",
+      "PCEF007": "India Delta",
+      "PCEF008": "India Yankee",
+      "PCEF009": "Juliet Yankee Bissotwo",
+      "PCEF010": "Juliet Charlie",
+      "PCEF012": "Mike Yankee Soxisix",
+      "PCEF014": "November Foxtrot",
+      "PCEF016": "November Echo Setteseven",
+      "PCEF017": "Victor Lima",
+      "PCEF018": "India X-Ray",
+      "PCEF019": "Juliet Whiskey Unaone",
+      "PCEF028": "X-Ray Papa Unaone",
+      "PCEF029": "Sierra Bravo",
+      "PCEF030": "Charlie Kilo"
+    },
+    "commanders": {
+      "Yamamoto": "Yamamoto",
+      "Halsey": "Halsey",
+      "LUTJENS": "Lutjens",
+      "CUNNINGHAM": "Cunningham",
+      "KUZNETSOV": "Kuznetsov",
+      "SANSONETTI": "Sansonetti",
+      "AUBOYNEAU": "Auboyneau",
+      "Helfrich": "Helfrich",
+      "Topete": "Topete",
+      "Collins": "Collins",
+      "Lisboa": "Lisboa",
+      "SWIRSKI": "Swirski",
+      "Sa_Zhenbing": "Sa Zhenbing"
+    }
   },
   "viewMode": {
     "tree": "Tech Tree",
