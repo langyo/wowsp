@@ -338,7 +338,23 @@
       "Lisboa": "里斯博阿",
       "SWIRSKI": "希维尔斯基",
       "Sa_Zhenbing": "萨镇冰"
-    }
+    },
+    "tabCosts": "成本计算",
+    "costCredits": "银币",
+    "costTotal": "总计（银币）",
+    "costUpgrades": "配件",
+    "costUpgradesSum": "配件合计",
+    "costNone": "尚未选择配件。",
+    "costNoPrice": "价格未知",
+    "costNoPrices": "未能从游戏数据解包价格；以上仅含已知项。",
+    "costCaptain": "舰长",
+    "costSkillPoints": "技能点",
+    "costPoints": "点",
+    "costCxP": "舰长经验（累计）",
+    "costRetrain": "重训费用（估算）",
+    "costRetrainHint": "估算口径：每技能点 100,000 银币；实际以游戏内为准。",
+    "costFlags": "信号旗",
+    "costFlagsNote": "装备信号旗不消耗货币"
   },
   "flags": {
     "effect": {

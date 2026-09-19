@@ -419,6 +419,7 @@ export default defineComponent({
                   <BuildPlanner
                     ship={props.ship}
                     build={build.value}
+                    gameRoot={props.gameRoot}
                     onUpdate:build={(b: PlannerBuild) => (build.value = b)}
                   />
                 </div>

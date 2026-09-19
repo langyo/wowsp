@@ -338,7 +338,23 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
-    }
+    },
+    "tabCosts": "成本計算",
+    "costCredits": "銀幣",
+    "costTotal": "總計（銀幣）",
+    "costUpgrades": "配件",
+    "costUpgradesSum": "配件合計",
+    "costNone": "尚未選擇配件。",
+    "costNoPrice": "價格未知",
+    "costNoPrices": "無法從遊戲資料解包價格；以上僅含已知項。",
+    "costCaptain": "艦長",
+    "costSkillPoints": "技能點",
+    "costPoints": "點",
+    "costCxP": "艦長經驗（累計）",
+    "costRetrain": "重訓費用（估算）",
+    "costRetrainHint": "估算口徑：每技能點 100,000 銀幣；實際以遊戲內為準。",
+    "costFlags": "訊號旗",
+    "costFlagsNote": "裝備訊號旗不消耗貨幣"
   },
   "flags": {
     "effect": {

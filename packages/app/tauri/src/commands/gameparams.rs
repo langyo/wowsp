@@ -18,6 +18,10 @@
 //! The cache is keyed to the game's current `bin/<build>` number: when the
 //! game updates, stale slices are dropped so armor data never lags the
 //! client.
+//!
+//! `get_upgrade_prices` walks the same decoded GameParams tree for the
+//! Modernization entities' credit prices — the build planner's cost panel
+//! sums the selected build's shopping list from them.
 
 use std::fs;
 use std::io::Read;
@@ -164,6 +168,29 @@ fn invalidate_cache_on_build_change(build: u32) {
     let _ = appdata_write("gameparams/source-build.txt".to_string(), build.to_string());
 }
 
+/// Normalize the decoded GameParams pickle root to the params dict. The raw
+/// root varies across game versions — modern builds wrap everything in a
+/// `{"": {…}}` namespace dict (alongside region keys like ASIA/EU), old
+/// builds use a flat `{name: entry}` dict, and some use a list/tuple whose
+/// first element holds the dict.
+fn params_root(pickle: &pickled::Value) -> Option<pickled::Value> {
+    match pickle {
+        pickled::Value::List(items) => items.inner().first().cloned(),
+        pickled::Value::Tuple(items) => items.inner().first().cloned(),
+        // Modern format: {"": {param_name: param_data, ...}}. Old format:
+        // flat {param_name: param_data, ...} (no wrapper key).
+        _ => Some(
+            dict_entries(pickle)?
+                .iter()
+                .find(
+                    |(k, _)| matches!(k, pickled::HashableValue::String(s) if s.inner().is_empty()),
+                )
+                .and_then(|(_, v)| dict_like_is_dict(v).then(|| v.clone()))
+                .unwrap_or_else(|| pickle.clone()),
+        ),
+    }
+}
+
 /// Pick the ship's entry out of a decoded GameParams pickle. The raw root
 /// varies across game versions — modern builds wrap everything in a
 /// `{"": {…}}` namespace dict (alongside region keys like ASIA/EU), old
@@ -175,20 +202,101 @@ fn invalidate_cache_on_build_change(build: u32) {
 /// then scan entries by their `id` field (the real format is keyed by
 /// internal name like `PJSB018_Yamato_1944`). When several entries share
 /// an id (CV hull + plane squadrons), the one carrying `A_Artillery` wins.
+/// Extract every Modernization entity's price data from the install's
+/// GameParams.data: `{ "<index>": { name, cost?, group? } }` keyed by the
+/// entity index (PCM027…) and also by full entity name — the planner's
+/// build state stores full names, so both keys point at the same record.
+/// Only entities carrying a numeric `cost` surface; everything else is
+/// skipped so the frontend can tell "price known" from "price missing".
+#[tauri::command]
+pub async fn get_upgrade_prices(game_root: String) -> Result<serde_json::Value, String> {
+    // Build-keyed cache, same lifecycle as the per-ship slices.
+    if let Some(build) = latest_build_with_idx(Path::new(&game_root)) {
+        invalidate_cache_on_build_change(build);
+    }
+    if let Ok(Some(raw)) = appdata_read("gameparams/upgrade-prices.json".into()) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+            return Ok(v);
+        }
+    }
+
+    let game_root2 = game_root.clone();
+    let prices = tokio::task::spawn_blocking(move || upgrade_prices_from_install(&game_root2))
+        .await
+        .map_err(|e| format!("配件价格解包任务异常退出：{e}"))??;
+
+    let _ = appdata_write(
+        "gameparams/upgrade-prices.json".into(),
+        serde_json::to_string(&prices).unwrap_or_default(),
+    );
+    Ok(prices)
+}
+
+fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value, String> {
+    let root = Path::new(game_root);
+    if !root.join("bin").is_dir() {
+        return Err(format!(
+            "游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。"
+        ));
+    }
+    let build = latest_build_with_idx(root).ok_or_else(|| {
+        format!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
+    })?;
+    let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
+        .map_err(|e| format!("读取游戏资源索引失败（build {build}）：{e}"))?;
+    let mut bytes = Vec::new();
+    vfs.join("content/GameParams.data")
+        .map_err(|e| format!("定位 content/GameParams.data 失败：{e}"))?
+        .open_file()
+        .map_err(|e| format!("打开 GameParams.data 失败（游戏可能正在更新）：{e}"))?
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("读取 GameParams.data 失败：{e}"))?;
+    let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
+        .map_err(|e| format!("解析 GameParams.data 失败：{e}"))?;
+
+    let params = params_root(&pickle).ok_or("GameParams 根结构无法识别")?;
+    let mut out = serde_json::Map::new();
+    let entries = dict_entries(&params).ok_or("GameParams 根不是字典")?;
+    for (k, v) in entries {
+        let pickled::HashableValue::String(key) = &k else {
+            continue;
+        };
+        let key = key.inner().clone();
+        // Upgrade entities: the PC-prefixed common family and/or an explicit
+        // Modernization group. Ships carry numeric id keys, so they never
+        // collide with the prefix filter.
+        let group = pickled_get(&v, "group")
+            .and_then(|g| to_json(&g).ok())
+            .and_then(|g| g.as_str().map(str::to_string));
+        if !key.starts_with("PC") && group.as_deref() != Some("Modernization") {
+            continue;
+        }
+        let Some(cost) = pickled_get(&v, "cost")
+            .and_then(|c| pickled_as_i64(&c))
+            .filter(|c| *c > 0)
+        else {
+            continue;
+        };
+        let index = pickled_get(&v, "index")
+            .and_then(|g| to_json(&g).ok())
+            .and_then(|g| g.as_str().map(str::to_string))
+            .unwrap_or_else(|| key.split('_').next().unwrap_or(&key).to_string());
+        let mut record = serde_json::Map::new();
+        record.insert("name".into(), serde_json::json!(key));
+        record.insert("cost".into(), serde_json::json!(cost));
+        if let Some(group) = group {
+            record.insert("group".into(), serde_json::json!(group));
+        }
+        // Key by index (PCM027) and mirror under the full entity name so the
+        // planner's stored full names hit without a split.
+        out.insert(index.clone(), serde_json::Value::Object(record.clone()));
+        out.insert(key, serde_json::Value::Object(record));
+    }
+    Ok(serde_json::Value::Object(out))
+}
+
 fn ship_slice_from_pickle(pickle: &pickled::Value, ship_id: i64) -> Option<serde_json::Value> {
-    // Normalize the root across game versions. List/tuple roots carry the
-    // params dict as their first element.
-    let params: pickled::Value = match pickle {
-        pickled::Value::List(items) => items.inner().first().cloned()?,
-        pickled::Value::Tuple(items) => items.inner().first().cloned()?,
-        // Modern format: {"": {param_name: param_data, ...}}. Old format:
-        // flat {param_name: param_data, ...} (no wrapper key).
-        _ => dict_entries(pickle)?
-            .iter()
-            .find(|(k, _)| matches!(k, pickled::HashableValue::String(s) if s.inner().is_empty()))
-            .and_then(|(_, v)| dict_like_is_dict(v).then(|| v.clone()))
-            .unwrap_or_else(|| pickle.clone()),
-    };
+    let params = params_root(pickle)?;
 
     let mut candidates: Vec<pickled::Value> = Vec::new();
     for (k, v) in dict_entries(&params)? {

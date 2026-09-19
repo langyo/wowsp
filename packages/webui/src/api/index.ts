@@ -58,6 +58,7 @@ export type {
   GameVersionInfo,
   ShipInfo,
   PlayerShipStats,
+  UpgradePrice,
   ShipModeStats,
   ShipModeBreakdown,
   ShipServerStats,

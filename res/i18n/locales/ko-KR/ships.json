@@ -338,7 +338,23 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
-    }
+    },
+    "tabCosts": "비용 계산",
+    "costCredits": "크레딧",
+    "costTotal": "총액 (크레딧)",
+    "costUpgrades": "업그레이드",
+    "costUpgradesSum": "업그레이드 소계",
+    "costNone": "선택한 업그레이드가 없습니다.",
+    "costNoPrice": "가격 미상",
+    "costNoPrices": "게임 데이터에서 가격을 가져올 수 없습니다. 알려진 항목만 표시됩니다.",
+    "costCaptain": "지휘관",
+    "costSkillPoints": "스킬 포인트",
+    "costPoints": "pt",
+    "costCxP": "지휘관 경험치 (누적)",
+    "costRetrain": "재훈련 비용 (추정)",
+    "costRetrainHint": "추정: 스킬 포인트당 100,000 크레딧. 실제는 게임 내 표기 기준.",
+    "costFlags": "신호기",
+    "costFlagsNote": "신호기 장착은 무료"
   },
   "flags": {
     "effect": {

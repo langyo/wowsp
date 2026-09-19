@@ -338,7 +338,23 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
-    }
+    },
+    "tabCosts": "コスト計算",
+    "costCredits": "クレジット",
+    "costTotal": "合計（クレジット）",
+    "costUpgrades": "改良品",
+    "costUpgradesSum": "改良品小計",
+    "costNone": "改良品が未選択です。",
+    "costNoPrice": "価格不明",
+    "costNoPrices": "ゲームデータから価格を取得できませんでした。既知の項目のみ表示しています。",
+    "costCaptain": "指揮官",
+    "costSkillPoints": "スキルポイント",
+    "costPoints": "pt",
+    "costCxP": "指揮官経験値（累計）",
+    "costRetrain": "再訓練費用（推定）",
+    "costRetrainHint": "推定：1スキルポイントにつき100,000クレジット。実際はゲーム内表記が優先。",
+    "costFlags": "シグナル",
+    "costFlagsNote": "シグナルの装備は無料"
   },
   "flags": {
     "effect": {

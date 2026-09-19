@@ -1,5 +1,5 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { Lock, RotateCcw } from "@lucide/vue";
+import { Coins, Lock, RotateCcw } from "@lucide/vue";
 
 import { HButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -16,6 +16,8 @@ import {
   type Skill,
 } from "./skillTree";
 import { type PlannerBuild } from "./modifierPipeline";
+import { cxpForPoints, priceOf, retrainCredits } from "./costs";
+import { api, type UpgradePrice } from "@/api";
 import DataObserver from "./DataObserver";
 import signalsData from "../../data/signals.json";
 import modernizationsData from "../../data/modernizations.json";
@@ -186,13 +188,15 @@ function hasMsg(key: string): boolean {
   return (i18n.global as { te: (k: string) => boolean }).te(key);
 }
 
-type Section = "skills" | "captains" | "flags" | "upgrades";
+type Section = "skills" | "captains" | "flags" | "upgrades" | "costs";
 
 export default defineComponent({
   name: "BuildPlanner",
   props: {
     ship: { type: Object as PropType<ShipInfo>, required: true },
     build: { type: Object as PropType<PlannerBuild>, required: true },
+    /** Install root — feeds the GameParams price walk for cost calc. */
+    gameRoot: { type: String, default: "" },
   },
   emits: {
     "update:build": (_v: PlannerBuild) => true,
@@ -428,7 +432,30 @@ export default defineComponent({
       setBuild({ upgrades });
     }
 
-    const RAIL: Array<{ key: Section; labelKey: string; icon: string }> = [
+    // ── Cost panel data: GameParams price walk (loaded per game root,
+    //    the first time the 成本计算 section opens) ──
+    const prices = ref<Record<string, UpgradePrice> | null>(null);
+    const pricesError = ref(false);
+    let pricesLoadedFor = "";
+    watch(
+      () => [props.gameRoot, section.value] as const,
+      ([root, sec]) => {
+        if (sec !== "costs" || !root || pricesLoadedFor === root) return;
+        pricesLoadedFor = root;
+        api
+          .getUpgradePrices(root)
+          .then((p) => {
+            prices.value = p;
+            pricesError.value = false;
+          })
+          .catch(() => {
+            pricesError.value = true;
+          });
+      },
+      { immediate: true },
+    );
+
+    const RAIL: Array<{ key: Section; labelKey: string; icon?: string }> = [
       { key: "skills", labelKey: "tabSkills", icon: "/images/skills/gm_turn.webp" },
       { key: "captains", labelKey: "tabCaptains", icon: "/images/commanders/Yamamoto.webp" },
       { key: "flags", labelKey: "tabFlags", icon: "/images/signals/PCEF030_CK_SignalFlag.webp" },
@@ -437,6 +464,9 @@ export default defineComponent({
         labelKey: "tabUpgrades",
         icon: "/images/modernization/icon_modernization_PCM027_ConcealmentMeasures_Mod_I.webp",
       },
+      // No game art exists for this pseudo-section — the rail renders a
+      // lucide glyph for it instead (see the nav markup below).
+      { key: "costs", labelKey: "tabCosts" },
     ];
 
     // ── Center-section renderers ───────────────────────────────────────────
@@ -689,6 +719,105 @@ export default defineComponent({
       );
     }
 
+    /** The selected build's shopping list with per-item credit prices. */
+    const costRows = computed(() =>
+      Object.entries(props.build.upgrades).map(([slot, name]) => {
+        const mod = MODERNIZATIONS.find((m) => m.name === name);
+        return {
+          slot,
+          name,
+          label: (mod?.names && dataText(mod.names, name)) || name,
+          price: priceOf(prices.value, name),
+        };
+      }),
+    );
+    const upgradesCredits = computed(() =>
+      costRows.value.reduce((sum, r) => sum + (r.price ?? 0), 0),
+    );
+    const totalCredits = computed(
+      () => upgradesCredits.value + retrainCredits(usedPoints.value),
+    );
+
+    function renderCosts() {
+      const fmt = (n: number) => n.toLocaleString();
+      const cr = t("ships.skills.costCredits");
+      return (
+        <div class="planner-v__costs">
+          <div class="planner-v__cost-total">
+            <span class="planner-v__cost-total-label">{t("ships.skills.costTotal")}</span>
+            <span class="planner-v__cost-total-value">
+              {fmt(totalCredits.value)} <em>{cr}</em>
+            </span>
+          </div>
+
+          <h4 class="planner-v__cost-head">{t("ships.skills.costUpgrades")}</h4>
+          {costRows.value.length === 0 ? (
+            <p class="planner-v__cost-empty">{t("ships.skills.costNone")}</p>
+          ) : (
+            <div class="planner-v__cost-rows">
+              {costRows.value.map((r) => (
+                <div class="planner-v__cost-row" key={`${r.slot}_${r.name}`}>
+                  <span class="planner-v__cost-slot">
+                    {t("ships.skills.slot", { n: Number(r.slot) + 1 })}
+                  </span>
+                  <span class="planner-v__cost-name">{r.label}</span>
+                  <span class="planner-v__cost-price">
+                    {r.price != null ? (
+                      <>
+                        {fmt(r.price)} <em>{cr}</em>
+                      </>
+                    ) : (
+                      <em>{t("ships.skills.costNoPrice")}</em>
+                    )}
+                  </span>
+                </div>
+              ))}
+              <div class="planner-v__cost-row planner-v__cost-row--sum">
+                <span />
+                <span class="planner-v__cost-name">{t("ships.skills.costUpgradesSum")}</span>
+                <span class="planner-v__cost-price">
+                  {fmt(upgradesCredits.value)} <em>{cr}</em>
+                </span>
+              </div>
+            </div>
+          )}
+
+          <h4 class="planner-v__cost-head">{t("ships.skills.costCaptain")}</h4>
+          <div class="planner-v__cost-rows">
+            <div class="planner-v__cost-row">
+              <span class="planner-v__cost-slot">{t("ships.skills.costSkillPoints")}</span>
+              <span class="planner-v__cost-name">
+                {usedPoints.value} {t("ships.skills.costPoints")}
+              </span>
+              <span class="planner-v__cost-price">
+                {fmt(cxpForPoints(usedPoints.value))} {t("ships.skills.costCxP")}
+              </span>
+            </div>
+            <div class="planner-v__cost-row" data-hint={t("ships.skills.costRetrainHint")}>
+              <span class="planner-v__cost-slot">{t("ships.skills.costRetrain")}</span>
+              <span class="planner-v__cost-name">{usedPoints.value} × 100,000</span>
+              <span class="planner-v__cost-price">
+                {fmt(retrainCredits(usedPoints.value))} <em>{cr}</em>
+              </span>
+            </div>
+          </div>
+
+          <h4 class="planner-v__cost-head">{t("ships.skills.costFlags")}</h4>
+          <div class="planner-v__cost-rows">
+            <div class="planner-v__cost-row">
+              <span class="planner-v__cost-slot">{props.build.signals.length}</span>
+              <span class="planner-v__cost-name">{t("ships.skills.costFlagsNote")}</span>
+              <span class="planner-v__cost-price">—</span>
+            </div>
+          </div>
+
+          {pricesError.value ? (
+            <p class="planner-v__cost-note">{t("ships.skills.costNoPrices")}</p>
+          ) : null}
+        </div>
+      );
+    }
+
     function renderSection() {
       switch (section.value) {
         case "captains":
@@ -697,6 +826,8 @@ export default defineComponent({
           return renderFlags();
         case "upgrades":
           return renderUpgrades();
+        case "costs":
+          return renderCosts();
         default:
           return renderSkills();
       }
@@ -740,12 +871,18 @@ export default defineComponent({
                   key={item.key}
                   onClick={() => (section.value = item.key)}
                 >
-                  <AssetImage
-                    class="planner-v__rail-icon"
-                    src={item.icon}
-                    alt={t(`ships.skills.${item.labelKey}`)}
-                    fallback={<span>{t(`ships.skills.${item.labelKey}`).charAt(0)}</span>}
-                  />
+                  {item.icon ? (
+                    <AssetImage
+                      class="planner-v__rail-icon"
+                      src={item.icon}
+                      alt={t(`ships.skills.${item.labelKey}`)}
+                      fallback={<span>{t(`ships.skills.${item.labelKey}`).charAt(0)}</span>}
+                    />
+                  ) : (
+                    <span class="planner-v__rail-icon planner-v__rail-icon--glyph">
+                      <Coins size={18} />
+                    </span>
+                  )}
                   <span class="planner-v__rail-label">{t(`ships.skills.${item.labelKey}`)}</span>
                 </button>
               ))}
