@@ -1,5 +1,5 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { Coins, Lock, RotateCcw } from "@lucide/vue";
+import { Ban, Coins, Lock, RotateCcw } from "@lucide/vue";
 
 import { HButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -13,7 +13,9 @@ import {
   TIER_UNLOCK,
   skillClassFor,
   skillIconUrl,
+  skillUnavailable,
   type Skill,
+  type SkillRequirement,
 } from "./skillTree";
 import { type PlannerBuild } from "./modifierPipeline";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
@@ -235,6 +237,38 @@ export default defineComponent({
       return out;
     });
 
+    /** Column count of this class's tree = max(column) + 1 (BB/CA/DD/CV → 6,
+     *  SS → 15). Fixed per class — not per tier — so tier rows stay aligned
+     *  even where a tier has fewer skills (gaps render as placeholders). */
+    const skillColumns = computed(() => {
+      let n = 0;
+      for (const s of tree.value) n = Math.max(n, s.column + 1);
+      return n;
+    });
+
+    function skillBan(skill: Skill): SkillRequirement | null {
+      return skillUnavailable(skill.code, props.ship.defaultProfile as Record<string, any> | null);
+    }
+
+    // A build restored against another hull may carry skills this ship can
+    // no longer pick (no torpedo tubes, no AA…) — prune them out of the
+    // build object itself so the points counter refunds them.
+    watch(
+      () => props.ship,
+      () => {
+        const skills = { ...props.build.skills };
+        let pruned = false;
+        for (const code of Object.keys(skills)) {
+          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, any> | null)) {
+            delete skills[code];
+            pruned = true;
+          }
+        }
+        if (pruned) setBuild({ skills });
+      },
+      { immediate: true },
+    );
+
     function pointsBelowTier(tier: number): number {
       return tree.value.filter((s) => s.tier < tier && props.build.skills[s.code]).length;
     }
@@ -247,7 +281,11 @@ export default defineComponent({
         const skills = { ...props.build.skills };
         delete skills[skill.code];
         setBuild({ skills });
-      } else if (remaining.value > 0 && tierUnlocked(skill.tier)) {
+      } else if (
+        !skillBan(skill) &&
+        remaining.value > 0 &&
+        tierUnlocked(skill.tier)
+      ) {
         setBuild({ skills: { ...props.build.skills, [skill.code]: 1 } });
       }
     }
@@ -312,6 +350,12 @@ export default defineComponent({
     }
     function fmtTalentNum(v: number): string {
       return String(Math.round(v * 10000) / 10000);
+    }
+    /** Catalog label for a talent modifier key (ships.talent.effect.*), or
+     *  the raw key when the catalog has no entry for it. */
+    function talentEffectLabel(k: string): string {
+      const key = `ships.talent.effect.${k}`;
+      return hasMsg(key) ? t(key) : k;
     }
 
     // ── Signals section ────────────────────────────────────────────────────
@@ -478,9 +522,59 @@ export default defineComponent({
       if (tree.value.length === 0) {
         return <p class="planner-v__empty">{t("ships.skills.noTree")}</p>;
       }
+      const columns = skillColumns.value;
       return [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
+        // Dense column map — sparse tiers (DD tier-4, the SS tree) carry
+        // intentional gaps that must hold their column position.
+        const byColumn = new Map(tiers.value[tier].map((s) => [s.column, s]));
+        const cells = [];
+        for (let col = 0; col < columns; col++) {
+          const skill = byColumn.get(col);
+          if (!skill) {
+            cells.push(
+              <div class="skill-tile-v skill-tile-v--empty" key={`empty-${tier}-${col}`} />,
+            );
+            continue;
+          }
+          const picked = !!props.build.skills[skill.code];
+          const banned = skillBan(skill);
+          const name = skillName(skill);
+          cells.push(
+            <div
+              class={[
+                "skill-tile-v",
+                picked ? "skill-tile-v--active" : "",
+                banned ? "skill-tile-v--banned" : "",
+              ]}
+              key={skill.code}
+            >
+              <button
+                type="button"
+                class="skill-tile-v__btn"
+                disabled={!unlocked || !!banned}
+                onClick={() => (unlocked && !banned ? toggleSkill(skill) : null)}
+                data-hint={banned ? t("ships.skills.notApplicable") : skillHint(skill)}
+              >
+                <span class="skill-tile-v__icon">
+                  <AssetImage
+                    class="skill-tile-v__icon-img"
+                    src={skillIconUrl(skill.code, cls.value)}
+                    alt={name}
+                    fallback={<span>{name.charAt(0)}</span>}
+                  />
+                </span>
+              </button>
+              {banned ? (
+                <span class="skill-tile-v__ban">
+                  <Ban size={18} />
+                </span>
+              ) : null}
+              <span class="skill-tile-v__name">{name}</span>
+            </div>,
+          );
+        }
         return (
           <div class={["skill-tier-v", unlocked ? "" : "skill-tier-v--locked"]} key={tier}>
             <div class="skill-tier-v__label">
@@ -491,32 +585,13 @@ export default defineComponent({
                 </span>
               ) : null}
             </div>
-            <div class="skill-tier-v__row">
-              {tiers.value[tier].map((skill) => {
-                const picked = !!props.build.skills[skill.code];
-                const name = skillName(skill);
-                return (
-                  <div class={["skill-tile-v", picked ? "skill-tile-v--active" : ""]} key={skill.code}>
-                    <button
-                      type="button"
-                      class="skill-tile-v__btn"
-                      disabled={!unlocked}
-                      onClick={() => (unlocked ? toggleSkill(skill) : null)}
-                      data-hint={skillHint(skill)}
-                    >
-                      <span class="skill-tile-v__icon">
-                        <AssetImage
-                          class="skill-tile-v__icon-img"
-                          src={skillIconUrl(skill.code)}
-                          alt={name}
-                          fallback={<span>{name.charAt(0)}</span>}
-                        />
-                      </span>
-                    </button>
-                    <span class="skill-tile-v__name">{name}</span>
-                  </div>
-                );
-              })}
+            {/* Fixed column template per class — auto-fill let short rows
+                drift out of alignment with the tier above. */}
+            <div
+              class="skill-tier-v__row"
+              style={{ gridTemplateColumns: `repeat(${columns}, 56px)` }}
+            >
+              {cells}
             </div>
           </div>
         );
@@ -586,7 +661,7 @@ export default defineComponent({
                       <span class="planner-v__talent-level">{row.level}</span>
                       {row.kv.map(([k, v]) => (
                         <span class="planner-v__talent-kv" key={k}>
-                          {k} {fmtTalentNum(v)}
+                          {talentEffectLabel(k)} {fmtTalentNum(v)}
                         </span>
                       ))}
                     </div>

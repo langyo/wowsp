@@ -278,6 +278,7 @@
     "reset": "重置",
     "tier": "第 {n} 層",
     "locked": "未解鎖 — 需在低層投入 {n} 點",
+    "notApplicable": "該艦不適用",
     "maxed": "滿級",
     "noTree": "此艦種尚無技能樹。",
     "rank": "階級 {n}",
@@ -396,6 +397,38 @@
       "submarineLocatorReloadCoeff": "潛艦定位器裝填時間",
       "burnChanceFactorBig": "HE彈起火率",
       "burnChanceFactorSmall": "HE彈起火率"
+    }
+  },
+  "talent": {
+    "effect": {
+      "GMShotDelay": "主砲裝填係數",
+      "GMShotDelayUI": "主砲裝填係數",
+      "GTShotDelay": "魚雷裝填係數",
+      "GTShotDelayUI": "魚雷裝填係數",
+      "GSShotDelay": "副砲裝填係數",
+      "GSMShotDelay": "副砲裝填係數",
+      "planeSpawnTime": "艦載機起飛時間係數",
+      "planeSpawnTimeUI": "艦載機起飛時間係數",
+      "planeSpeed": "艦載機航速係數",
+      "planeSpeedUI": "艦載機航速係數",
+      "workTime": "作用持續時間（秒）",
+      "speedCoef": "航速係數",
+      "regenerationHPSpeed": "每秒回復係數",
+      "regenerationHPSpeedUnits": "每秒回復量",
+      "ignoreRegenLimit": "無視回復上限次數",
+      "scaleRegenWithShipTier": "回復隨艦等級縮放",
+      "additionalConsumables": "額外消耗品數量",
+      "planeAdditionalConsumables": "艦載機額外消耗品數量",
+      "ConsumablesWorkTime": "消耗品作用時間（秒）",
+      "burnChanceBonus": "點火率加成",
+      "burnChanceFactorBig": "大火點火係數",
+      "floodChanceFactor": "進水係數",
+      "crashCrew": "損管小組加成",
+      "shootShift": "射擊散布偏移",
+      "ConsumableReloadTime": "消耗品裝填時間（秒）",
+      "torpedoReloaderAdditionalConsumables": "魚雷裝填手額外消耗品",
+      "torpedoReloaderReloadCoeff": "魚雷裝填手裝填係數",
+      "torpedoSpeedMultiplier": "魚雷航速乘數"
     }
   },
   "viewMode": {

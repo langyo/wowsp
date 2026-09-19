@@ -278,6 +278,7 @@
     "reset": "Сбросить",
     "tier": "Уровень {n}",
     "locked": "Заблокировано — требуется {n} очков на нижних уровнях",
+    "notApplicable": "Недоступно на этом корабле",
     "maxed": "Макс.",
     "noTree": "Для этого класса кораблей дерево навыков пока не задано.",
     "rank": "Ранг {n}",
@@ -396,6 +397,38 @@
       "submarineLocatorReloadCoeff": "Перезарядка локатора подлодок",
       "burnChanceFactorBig": "Шанс пожара от ОФ",
       "burnChanceFactorSmall": "Шанс пожара от ОФ"
+    }
+  },
+  "talent": {
+    "effect": {
+      "GMShotDelay": "Коэфф. перезарядки ГК",
+      "GMShotDelayUI": "Коэфф. перезарядки ГК",
+      "GTShotDelay": "Коэфф. перезарядки торпед",
+      "GTShotDelayUI": "Коэфф. перезарядки торпед",
+      "GSShotDelay": "Коэфф. перезарядки ПМК",
+      "GSMShotDelay": "Коэфф. перезарядки ПМК",
+      "planeSpawnTime": "Время взлёта самолётов",
+      "planeSpawnTimeUI": "Время взлёта самолётов",
+      "planeSpeed": "Коэфф. скорости самолётов",
+      "planeSpeedUI": "Коэфф. скорости самолётов",
+      "workTime": "Длительность действия (с)",
+      "speedCoef": "Коэфф. скорости",
+      "regenerationHPSpeed": "Коэфф. регенерации HP в сек.",
+      "regenerationHPSpeedUnits": "Восстановление HP в сек.",
+      "ignoreRegenLimit": "Игнорирования лимита реген.",
+      "scaleRegenWithShipTier": "Реген. по уровню корабля",
+      "additionalConsumables": "Доп. заряды снаряжения",
+      "planeAdditionalConsumables": "Доп. заряды самолётов",
+      "ConsumablesWorkTime": "Время действия снаряжения (с)",
+      "burnChanceBonus": "Бонус к пожару",
+      "burnChanceFactorBig": "Коэфф. двойного пожара",
+      "floodChanceFactor": "Коэфф. затопления",
+      "crashCrew": "Бонус аварийной партии",
+      "shootShift": "Сдвиг разброса",
+      "ConsumableReloadTime": "Время перезарядки снаряжения (с)",
+      "torpedoReloaderAdditionalConsumables": "Доп. заряды торпедного загрузчика",
+      "torpedoReloaderReloadCoeff": "Коэфф. перезарядки торпедного загрузчика",
+      "torpedoSpeedMultiplier": "Множитель скорости торпед"
     }
   },
   "viewMode": {

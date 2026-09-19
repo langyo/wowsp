@@ -278,6 +278,7 @@
     "reset": "Restablecer",
     "tier": "Nivel {n}",
     "locked": "Bloqueado — requiere {n} puntos en niveles inferiores",
+    "notApplicable": "No disponible en este buque",
     "maxed": "Máx.",
     "noTree": "Aún no hay árbol de habilidades para este tipo de buque.",
     "rank": "Rango {n}",
@@ -396,6 +397,38 @@
       "submarineLocatorReloadCoeff": "Recarga del localizador de submarinos",
       "burnChanceFactorBig": "Probabilidad de incendio de los obuses HE",
       "burnChanceFactorSmall": "Probabilidad de incendio de los obuses HE"
+    }
+  },
+  "talent": {
+    "effect": {
+      "GMShotDelay": "Coef. recarga artillería",
+      "GMShotDelayUI": "Coef. recarga artillería",
+      "GTShotDelay": "Coef. recarga torpedos",
+      "GTShotDelayUI": "Coef. recarga torpedos",
+      "GSShotDelay": "Coef. recarga baterías secundarias",
+      "GSMShotDelay": "Coef. recarga baterías secundarias",
+      "planeSpawnTime": "Tiempo de despegue de aviones",
+      "planeSpawnTimeUI": "Tiempo de despegue de aviones",
+      "planeSpeed": "Coef. velocidad de aviones",
+      "planeSpeedUI": "Coef. velocidad de aviones",
+      "workTime": "Duración del efecto (s)",
+      "speedCoef": "Coeficiente de velocidad",
+      "regenerationHPSpeed": "Coef. de regeneración de PV por segundo",
+      "regenerationHPSpeedUnits": "PV restaurados por segundo",
+      "ignoreRegenLimit": "Ignorar límite de regeneración",
+      "scaleRegenWithShipTier": "Regeneración según nivel",
+      "additionalConsumables": "Cargas de consumible extra",
+      "planeAdditionalConsumables": "Cargas extra de aviones",
+      "ConsumablesWorkTime": "Tiempo de acción del consumible (s)",
+      "burnChanceBonus": "Bonificación de incendio",
+      "burnChanceFactorBig": "Factor de incendio doble",
+      "floodChanceFactor": "Factor de inundación",
+      "crashCrew": "Bonificación de control de daños",
+      "shootShift": "Desplazamiento de dispersión",
+      "ConsumableReloadTime": "Tiempo de recarga del consumible (s)",
+      "torpedoReloaderAdditionalConsumables": "Cargas extra del recargador de torpedos",
+      "torpedoReloaderReloadCoeff": "Coef. recarga del recargador de torpedos",
+      "torpedoSpeedMultiplier": "Multiplicador de velocidad de torpedos"
     }
   },
   "viewMode": {
