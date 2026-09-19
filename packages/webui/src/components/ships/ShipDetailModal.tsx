@@ -8,6 +8,7 @@ import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useRankedStore } from "@/stores/ranked";
 import { useTrendsStore } from "@/stores/trends";
 import { api, type ShipInfo } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -61,6 +62,7 @@ export default defineComponent({
   setup(props, { emit }) {
     const accounts = useAccountStore();
     const shipStats = useShipStatsStore();
+    const ranked = useRankedStore();
     const trends = useTrendsStore();
     const toast = useToast();
 
@@ -150,6 +152,7 @@ export default defineComponent({
       if (!acc || !props.ship) return;
       myStatsLoaded.value = true;
       void shipStats.load(acc.accountId, acc.realm).catch(() => {});
+      void ranked.load(acc.accountId, acc.realm, 5).catch(() => {});
       void trends.loadPlayer(acc.accountId, acc.realm).catch(() => {});
     }
 

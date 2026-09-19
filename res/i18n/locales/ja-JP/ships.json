@@ -135,7 +135,8 @@
       "range7d": "過去7日",
       "range30d": "過去30日",
       "avgFrags": "平均撃沈",
-      "noBaseline": "基準となる履歴がまだありません"
+      "noBaseline": "基準となる履歴がまだありません",
+      "divisionsHint": "アカウント全体のモード別勝率（艦艇単位ではない）"
     },
     "server": {
       "title": "サーバー平均レポート",

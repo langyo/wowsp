@@ -44,6 +44,13 @@ export function prTier(pr: number | null | undefined): PrTier {
 
 export type CareerStamp = "miracle" | "ape";
 
+/** Composition stamps (ApeRadar's 成分 tags): 空中小人 marks CV mains, 水下小人
+ *  marks submarine mains. Independent of the PR verdicts — a player can carry
+ *  both a career stamp and a composition stamp. */
+export type CompositionStamp = "air" | "sub";
+
+export type StampKind = CareerStamp | CompositionStamp;
+
 /** ApeRadar's 成分 tags as career verdict stamps: a red-tier career earns the
  *  海猴 mark; a sustained purple-tier+ career earns 神了 — gated on 500+
  *  battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
@@ -56,6 +63,35 @@ export function careerStamp(
   if (pr >= 2100) return battles != null && battles >= 500 ? "miracle" : null;
   if (pr < 750) return "ape";
   return null;
+}
+
+export interface CompositionStamps {
+  air: boolean;
+  sub: boolean;
+}
+
+/** 空中小人 / 水下小人 criteria (user-defined): CV (resp. SS) battles must
+ *  exceed 20% of the player's career battles, with a career total above 200
+ *  battles so a fresh account's first CV foray doesn't earn the mark.
+ *  `ships` is the player's full per-ship stat list; `typeOf` resolves the
+ *  ship type (encyclopedia first, offline DB fallback). */
+export function compositionStamps(
+  ships: { shipId: number; battles: number }[],
+  typeOf: (shipId: number) => string | null | undefined,
+  minBattles = 200,
+  minShare = 0.2,
+): CompositionStamps {
+  let career = 0;
+  let air = 0;
+  let sub = 0;
+  for (const s of ships) {
+    career += s.battles;
+    const t = typeOf(s.shipId);
+    if (t === "AirCarrier") air += s.battles;
+    else if (t === "Submarine") sub += s.battles;
+  }
+  if (career <= minBattles) return { air: false, sub: false };
+  return { air: air / career > minShare, sub: sub / career > minShare };
 }
 
 /** Average-damage color tiers — rough absolute buckets for overall account

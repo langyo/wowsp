@@ -135,7 +135,8 @@
       "range7d": "최근 7일",
       "range30d": "최근 30일",
       "avgFrags": "평균 격침",
-      "noBaseline": "기준 데이터가 아직 없음"
+      "noBaseline": "기준 데이터가 아직 없음",
+      "divisionsHint": "계정 전체 모드별 승률 (함선 단위 아님)"
     },
     "server": {
       "title": "서버 평균 리포트",

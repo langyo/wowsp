@@ -135,7 +135,8 @@
       "range7d": "Last 7 days",
       "range30d": "Last 30 days",
       "avgFrags": "Avg. kills",
-      "noBaseline": "No history baseline yet"
+      "noBaseline": "No history baseline yet",
+      "divisionsHint": "Account-wide mode split, not this ship's own record"
     },
     "server": {
       "title": "Server averages",

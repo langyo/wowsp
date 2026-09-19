@@ -135,7 +135,8 @@
       "range7d": "Últ. 7 días",
       "range30d": "Últ. 30 días",
       "avgFrags": "Bajas medias",
-      "noBaseline": "Aún no hay base histórica"
+      "noBaseline": "Aún no hay base histórica",
+      "divisionsHint": "Datos de toda la cuenta, no de este barco"
     },
     "server": {
       "title": "Promedios del servidor",
