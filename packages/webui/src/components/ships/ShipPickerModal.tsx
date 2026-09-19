@@ -1,8 +1,9 @@
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HButton, HCheckbox, HLabel, HModal, HSearchInput, HTag } from "@celestia-island/hikari";
+import { HButton, HCheckbox, HModal, HSearchInput, HTag } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
+import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
 import { tierLabel } from "@/utils/shipCompare";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -51,11 +52,16 @@ export default defineComponent({
     const encyclopedia = useEncyclopediaStore();
 
     // ── filters (same matching semantics as the grid view) ────────────
+    // Tier/type/nation selections are string sets so they feed the
+    // FilterCategoryChip props unchanged.
     const searchText = ref("");
-    const selectedTiers = ref<Set<number>>(new Set());
+    const selectedTiers = ref<Set<string>>(new Set());
     const selectedTypes = ref<Set<string>>(new Set());
     const selectedNations = ref<Set<string>>(new Set());
     const checked = ref<Set<number>>(new Set());
+    // Which category's popup is open — one at a time, owned here so opening
+    // one chip closes the others (mirrors ShipFilterBar's single-open row).
+    const openCat = ref<string | null>(null);
 
     function toggleSet<T>(set: Set<T>, value: T): Set<T> {
       const next = new Set(set);
@@ -76,6 +82,12 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
+    // Chip option lists — derived from the store so a realm switch re-derives
+    // them; canonical order matches the old checkbox rows (tiers I–★).
+    const tierOptions = computed(() => TIERS.map((n) => ({ value: String(n), label: tierLabel(n) })));
+    const typeOptions = computed(() => encyclopedia.types.map((tp) => ({ value: tp, label: typeLabel(tp) })));
+    const nationOptions = computed(() => encyclopedia.nations.map((n) => ({ value: n, label: nationLabel(n) })));
+
     /** Names that exist WITHOUT the trailing "2" — a "X2" ship whose base "X"
      *  is also a ship is a WG data clone ("蒙大拿2"). Matching on the base's
      *  existence keeps legitimate digit-suffixed names (T-22, Z-42) visible. */
@@ -88,7 +100,7 @@ export default defineComponent({
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
       return encyclopedia.displayShips.filter((s) => {
-        if (selectedTiers.value.size > 0 && !selectedTiers.value.has(s.tier)) return false;
+        if (selectedTiers.value.size > 0 && !selectedTiers.value.has(String(s.tier))) return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
         if (q && !s.name.toLowerCase().includes(q) && !encyclopedia.shipDisplayName(s).toLowerCase().includes(q)) return false;
@@ -122,7 +134,11 @@ export default defineComponent({
     watch(
       () => props.modelValue,
       (open) => {
-        if (open) checked.value = new Set();
+        if (open) {
+          checked.value = new Set();
+          // No popup should survive a close/reopen either.
+          openCat.value = null;
+        }
       },
     );
 
@@ -147,61 +163,49 @@ export default defineComponent({
         {{
           default: () => (
             <div class="ship-picker">
-              <div class="ship-picker__filters">
-                <div class="ship-picker__filter-group">
-                  <HSearchInput
-                    class="ship-picker__search"
-                    size="sm"
-                    modelValue={searchText.value}
-                    onUpdate:modelValue={(v: string) => (searchText.value = v)}
-                    placeholder={t("ships.search")}
-                  />
-                </div>
-
-                <div class="ship-picker__filter-group">
-                  <HLabel class="ship-picker__filter-label" text={t("ships.tier")} size="sm" />
-                  <div class="ship-picker__chips">
-                    {TIERS.map((tier) => (
-                      <HCheckbox
-                        key={tier}
-                        size="sm"
-                        label={String(tier)}
-                        modelValue={selectedTiers.value.has(tier)}
-                        onUpdate:modelValue={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div class="ship-picker__filter-group">
-                  <HLabel class="ship-picker__filter-label" text={t("ships.filterType")} size="sm" />
-                  <div class="ship-picker__chips">
-                    {encyclopedia.types.map((tp) => (
-                      <HCheckbox
-                        key={tp}
-                        size="sm"
-                        label={typeLabel(tp)}
-                        modelValue={selectedTypes.value.has(tp)}
-                        onUpdate:modelValue={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div class="ship-picker__filter-group">
-                  <HLabel class="ship-picker__filter-label" text={t("ships.filterNation")} size="sm" />
-                  <div class="ship-picker__chips">
-                    {encyclopedia.nations.map((n) => (
-                      <HCheckbox
-                        key={n}
-                        size="sm"
-                        label={nationLabel(n)}
-                        modelValue={selectedNations.value.has(n)}
-                        onUpdate:modelValue={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
-                      />
-                    ))}
-                  </div>
-                </div>
+              {/* Filter toolbar mirrors the 水表查询 bar: collapsed category
+                  chips (single-open, state owned here) + a stretching search
+                  on the same row. The last chip opens leftwards so its popup
+                  never escapes the modal edge. */}
+              <div class="ship-picker__toolbar">
+                <FilterCategoryChip
+                  title={t("ships.filter.tierTitle")}
+                  allLabel={t("ships.filter.tierAll")}
+                  options={tierOptions.value}
+                  selected={selectedTiers.value}
+                  open={openCat.value === "tier"}
+                  onUpdate:open={(v: boolean) => (openCat.value = v ? "tier" : null)}
+                  onToggle={(v: string) => (selectedTiers.value = toggleSet(selectedTiers.value, v))}
+                  onClear={() => (selectedTiers.value = new Set())}
+                />
+                <FilterCategoryChip
+                  title={t("ships.filter.typeTitle")}
+                  allLabel={t("ships.filter.typeAll")}
+                  options={typeOptions.value}
+                  selected={selectedTypes.value}
+                  open={openCat.value === "type"}
+                  onUpdate:open={(v: boolean) => (openCat.value = v ? "type" : null)}
+                  onToggle={(v: string) => (selectedTypes.value = toggleSet(selectedTypes.value, v))}
+                  onClear={() => (selectedTypes.value = new Set())}
+                />
+                <FilterCategoryChip
+                  title={t("ships.filter.nationTitle")}
+                  allLabel={t("ships.filter.nationAll")}
+                  options={nationOptions.value}
+                  selected={selectedNations.value}
+                  open={openCat.value === "nation"}
+                  onUpdate:open={(v: boolean) => (openCat.value = v ? "nation" : null)}
+                  onToggle={(v: string) => (selectedNations.value = toggleSet(selectedNations.value, v))}
+                  onClear={() => (selectedNations.value = new Set())}
+                  edge
+                />
+                <HSearchInput
+                  class="ship-picker__search"
+                  size="sm"
+                  modelValue={searchText.value}
+                  onUpdate:modelValue={(v: string) => (searchText.value = v)}
+                  placeholder={t("ships.search")}
+                />
               </div>
 
               <div class="ship-picker__list">
