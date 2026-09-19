@@ -1,8 +1,9 @@
 /**
  * ShipPickerModal — compact variant of the encyclopedia filter language:
- * hikari checkbox chips / labels replace the old hand-rolled ones, tightened
- * so several filter rows fit above the result list. The action buttons are
- * NOT styled here — they render in HModal's named footer slot
+ * the filter row reuses ShipFilterBar's global chip/popup classes (the
+ * FilterCategoryChip component imports that SCSS), so only the toolbar
+ * layout and the result list are styled here. The action buttons are NOT
+ * styled in this file — they render in HModal's named footer slot
  * (.hk-modal-footer), outside the scroll body.
  */
 .ship-picker {
@@ -10,34 +11,20 @@
   flex-direction: column;
   gap: 0.5rem;
 
-  &__filters {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  &__filter-group {
+  // Single filter row: category chips left, search stretching right; wraps
+  // rather than overflowing when the modal gets narrow.
+  &__toolbar {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-  }
-
-  // Sizing only — HLabel owns the typography. Fixed width keeps the chip
-  // rows aligned across filter groups.
-  &__filter-label {
-    flex-shrink: 0;
-    width: 2.8rem;
-  }
-
-  // The caption-less search row stretches to the group's full width.
-  &__search {
-    flex: 1;
-  }
-
-  &__chips {
-    display: flex;
+    gap: 0.5rem;
     flex-wrap: wrap;
-    gap: 0.25rem;
+  }
+
+  // Search takes the remaining row width but never squeezes below a usable
+  // box — below 10rem it wraps to its own line instead.
+  &__toolbar .ship-picker__search {
+    flex: 1 1 12rem;
+    min-width: 10rem;
   }
 
   // ── scrollable result list ───────────────────────────────────────────
