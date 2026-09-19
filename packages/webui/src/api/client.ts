@@ -477,7 +477,9 @@ function isPlaneWeapon(weapon: number): boolean {
 
 /** Fold cumulative damage-stat samples into the totals at (or before) `t`.
  *  Keeps the latest sample per (weapon, category) pair — the values are
- *  running totals, so summing across samples would multi-count. */
+ *  running totals, so summing across samples would multi-count. The game
+ *  stream carries fractional totals (f64 damage), but damage displays as an
+ *  integer everywhere, so round at the shared fold instead of per view. */
 export function foldDamageStats(
   samples: DamageStatSample[] | null | undefined,
   t: number,
@@ -496,7 +498,7 @@ export function foldDamageStats(
     hits += s.count;
     if (isPlaneWeapon(s.weapon)) planeDamage += s.total;
   }
-  return { damage, planeDamage, hits };
+  return { damage: Math.round(damage), planeDamage: Math.round(planeDamage), hits };
 }
 
 /** Decoded packet stream: entity trajectories plus battle-effect events.
