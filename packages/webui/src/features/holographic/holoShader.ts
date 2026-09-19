@@ -14,6 +14,11 @@
  *   tickHoloUniforms(mat.uniforms, dt);      // drive it each frame
  * Both the material and its uniforms object are owned by the caller; dispose
  * the material when the mesh leaves the scene.
+ *
+ * The material writes no depth (transparent layering), so for correct
+ * occlusion the caller should add a depth-only twin of each mesh (opaque
+ * `MeshBasicMaterial({ colorWrite: false })`, which renders in the opaque
+ * queue ahead of this transparent pass). See ShipStage.loadModel.
  */
 import * as THREE from "three";
 
@@ -63,7 +68,11 @@ export const HOLO_FRAG = /* glsl */ `
   void main() {
     vec3 dx = dFdx(vWorldPos);
     vec3 dy = dFdy(vWorldPos);
+    // Screen-space normals flip with winding: without this correction back
+    // faces evaluate dot(n, viewDir) < 0 and light up at full Fresnel — the
+    // "solid patches poking through the hull" artifact.
     vec3 n = normalize(cross(dx, dy));
+    if (!gl_FrontFacing) n = -n;
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
     float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
     float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
@@ -71,7 +80,11 @@ export const HOLO_FRAG = /* glsl */ `
     vec3 col = baseColor * (0.35 + 0.25 * fres);
     col += fresnelColor * fres * 1.4;
     col += fresnelColor * scan * 0.6;
-    float alpha = 0.95 + 0.05 * fres;
+    // Interior surfaces seen through the hull read fainter than the near
+    // shell so the silhouette stays dominant (the depth anchor the caller
+    // renders does the occlusion; this keeps the layering legible).
+    float backFade = gl_FrontFacing ? 1.0 : 0.45;
+    float alpha = (0.62 + 0.28 * fres) * backFade;
     // Focus highlight: brighten fragments near any focus point.
     for (int i = 0; i < 8; i++) {
       if (float(i) >= focusCount) break;
