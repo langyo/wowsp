@@ -1,17 +1,7 @@
-/* Inked career-verdict seals (神了 / 海猴) — geometry lives in RatingStamp.tsx;
- * this file carries the ink color, the stamp font and the tilt. */
-
-/* 4-glyph subset of Zhuque Fangsong (OFL 1.1) — see src/res/fonts/README.md.
- * Bundled so the seal renders identically on every platform. */
-@font-face {
-  font-family: "Wowsp Stamp";
-  src: url("/fonts/WowspStamp-Regular.ttf") format("truetype");
-  font-display: block;
-}
-
-:root {
-  --font-stamp: "Wowsp Stamp", "FZYaoti", "方正姚体", serif;
-}
+/* Inked career-verdict seals (神了 / 海猴 / 空中小人 / 水下小人) — geometry
+   lives in RatingStamp.tsx; the glyphs are bitmap assets (see
+   scripts/gen_stamp_bitmaps.py), so this file only carries the ink color
+   and the tilt. */
 
 .rating-stamp {
   /* Cinnabar seal ink. */
@@ -36,11 +26,9 @@
     opacity: 0.18;
   }
 
-  &__text {
-    fill: currentColor;
-    font-family: var(--font-stamp);
-    font-size: 34px;
-    letter-spacing: 2px;
-    font-weight: 400;
+  &__ink image {
+    /* The glyph bitmaps are pre-inked cinnabar; blend their alpha the same
+       way the old stroked text sat on the weave. */
+    opacity: 0.92;
   }
 }

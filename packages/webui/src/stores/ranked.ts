@@ -9,6 +9,10 @@ export const useRankedStore = defineStore("ranked", () => {
   const seasons = ref<RankedSeasonStats[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  /** Whose seasons these are — the store is a single slot shared across
+   *  views, so consumers (e.g. the ship-detail tab) must check this before
+   *  presenting `winrate` as "the ranked WR of player X". */
+  const accountId = ref<number | null>(null);
 
   /** Combined winrate across the loaded seasons (null = no ranked battles). */
   const winrate = computed(() => aggregateRankedWinrate(seasons.value));
@@ -18,18 +22,20 @@ export const useRankedStore = defineStore("ranked", () => {
    *  for a previous player must never clobber the current one's data. */
   let token = 0;
 
-  async function load(accountId: number, realm: string, seasonCount = 5) {
+  async function load(id: number, realm: string, seasonCount = 5) {
     const current = ++token;
     loading.value = true;
     error.value = null;
     try {
-      const data = await api.getRankedStats(accountId, realm, seasonCount);
+      const data = await api.getRankedStats(id, realm, seasonCount);
       if (current !== token) return;
       seasons.value = data;
+      accountId.value = id;
     } catch (e) {
       if (current !== token) return;
       error.value = (e as Error).message;
       seasons.value = [];
+      accountId.value = null;
     } finally {
       if (current === token) loading.value = false;
     }
@@ -40,7 +46,8 @@ export const useRankedStore = defineStore("ranked", () => {
     token++;
     seasons.value = [];
     error.value = null;
+    accountId.value = null;
   }
 
-  return { seasons, loading, error, winrate, load, reset };
+  return { seasons, loading, error, accountId, winrate, load, reset };
 });
