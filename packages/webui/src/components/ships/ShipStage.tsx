@@ -55,12 +55,21 @@ export default defineComponent({
     ship: { type: Object as () => ShipInfo | null, required: true },
     armorZones: { type: Array as () => ArmorZone[], default: () => [] },
     waterlineDraft: { type: Number as () => number | null, default: null },
+    /** Collapse the stage (water-table contexts open the modal with the
+     *  hologram hidden): the canvas unmounts and only the control row —
+     *  3D/2D toggle + this visibility switch — remains. */
+    hidden: { type: Boolean, default: false },
+  },
+  emits: {
+    // Underscore param keeps the payload type in Vue's TSX inference while
+    // satisfying the unused-param lint.
+    "update:hidden": (_v: boolean) => true,
   },
   // `focusZone` is stashed on the instance from inside setup() and surfaced
   // here via `exposed` so parents can call stageRef.value?.focusZone(...).
   // (setup() returns a render fn, not a state object, so this is the route.)
   exposed: {} as { focusZone?: (zone: FocusZone) => void },
-  setup(props) {
+  setup(props, { emit }) {
     const inst = getCurrentInstance();
     const toast = useToast();
     const containerRef = ref<HTMLElement | null>(null);
@@ -765,20 +774,23 @@ export default defineComponent({
     }
 
     onMounted(() => {
-      // 3D is the default; init immediately. (2D needs no scene.)
-      if (viewMode.value === "3d") {
+      // 3D is the default; init immediately. (2D needs no scene.) A hidden
+      // stage skips the scene entirely — it initializes on re-show.
+      if (!props.hidden && viewMode.value === "3d") {
         initScene();
         void loadModel();
       }
-      armorCycle.start();
-      containerRef.value?.addEventListener("mouseenter", onStageEnter);
-      containerRef.value?.addEventListener("mouseleave", onStageLeave);
+      if (!props.hidden) armorCycle.start();
     });
 
+    // Re-show initialization frame handle — cancelled on unmount/re-hide so a
+    // late callback can't init a scene (or start a model download) against a
+    // dead or re-hidden stage.
+    let showRafId = 0;
+
     onBeforeUnmount(() => {
+      cancelAnimationFrame(showRafId);
       armorCycle.stop();
-      containerRef.value?.removeEventListener("mouseenter", onStageEnter);
-      containerRef.value?.removeEventListener("mouseleave", onStageLeave);
       disposeScene();
     });
 
@@ -786,13 +798,34 @@ export default defineComponent({
     watch(
       () => props.ship?.shipId,
       () => {
-        if (viewMode.value === "3d") {
+        if (viewMode.value === "3d" && !props.hidden) {
           // Remove the old model, then load the new one.
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
           }
           void loadModel();
+        }
+      },
+    );
+
+    // Collapse/expand: hiding tears the WebGL scene down (no hidden RAF loop,
+    // no GPU cost); re-showing re-creates it. The 2D portrait needs nothing —
+    // it lives in the template.
+    watch(
+      () => props.hidden,
+      (hidden) => {
+        cancelAnimationFrame(showRafId);
+        if (hidden) {
+          armorCycle.stop();
+          disposeScene();
+        } else if (viewMode.value === "3d") {
+          showRafId = requestAnimationFrame(() => {
+            if (props.hidden || viewMode.value !== "3d") return;
+            initScene();
+            void loadModel();
+          });
+          armorCycle.start();
         }
       },
     );
@@ -928,6 +961,12 @@ export default defineComponent({
     async function setViewMode(mode: "2d" | "3d") {
       if (mode === viewMode.value) return;
       if (mode === "3d") {
+        // Hidden stage: just record the mode — the scene (and any on-demand
+        // model-pack download) initializes when the stage is re-shown.
+        if (props.hidden) {
+          viewMode.value = "3d";
+          return;
+        }
         // Lite installs ship without the model pack: fetch it on demand
         // (the installer's done pane offers the same download up front).
         if (!isModelPackReady()) {
@@ -964,38 +1003,42 @@ export default defineComponent({
     return () => {
       const ship = props.ship;
       return (
-        <div class="ship-stage">
-          <div
-            class={["ship-stage__canvas", viewMode.value === "2d" ? "ship-stage__canvas--2d" : ""]}
-            ref={containerRef}
-          >
-            {viewMode.value === "2d" && img2d.src.value && img2d.status.value !== "error" ? (
-              <img
-                class={["ship-stage__2d-img", "image-asset__img", img2d.status.value === "loaded" ? "is-loaded" : ""].join(" ")}
-                key={img2d.key.value}
-                src={img2d.src.value}
-                alt={ship?.name ?? ""}
-                onLoad={img2d.onLoad}
-                onError={img2d.onError}
-              />
-            ) : viewMode.value === "2d" ? (
-              <div class="ship-stage__noimg">{t("ships.detail.noImage")}</div>
-            ) : null}
-            {loading.value ? (
-              <div class="ship-stage__overlay">
-                <HSpinner center size="md" />
-              </div>
-            ) : null}
-            {errorMsg.value ? (
-              <div class="ship-stage__overlay ship-stage__overlay--error">{errorMsg.value}</div>
-            ) : null}
-          </div>
+        <div class={["ship-stage", props.hidden ? "ship-stage--hidden" : ""]}>
+          {props.hidden ? null : (
+            <div
+              class={["ship-stage__canvas", viewMode.value === "2d" ? "ship-stage__canvas--2d" : ""]}
+              ref={containerRef}
+              onMouseenter={onStageEnter}
+              onMouseleave={onStageLeave}
+            >
+              {viewMode.value === "2d" && img2d.src.value && img2d.status.value !== "error" ? (
+                <img
+                  class={["ship-stage__2d-img", "image-asset__img", img2d.status.value === "loaded" ? "is-loaded" : ""].join(" ")}
+                  key={img2d.key.value}
+                  src={img2d.src.value}
+                  alt={ship?.name ?? ""}
+                  onLoad={img2d.onLoad}
+                  onError={img2d.onError}
+                />
+              ) : viewMode.value === "2d" ? (
+                <div class="ship-stage__noimg">{t("ships.detail.noImage")}</div>
+              ) : null}
+              {loading.value ? (
+                <div class="ship-stage__overlay">
+                  <HSpinner center size="md" />
+                </div>
+              ) : null}
+              {errorMsg.value ? (
+                <div class="ship-stage__overlay ship-stage__overlay--error">{errorMsg.value}</div>
+              ) : null}
+            </div>
+          )}
 
           <div class="ship-stage__controls">
-            {viewMode.value === "3d" ? (
+            {!props.hidden && viewMode.value === "3d" ? (
               <span class="ship-stage__hint">{t("ships.detail.stage.hint3d")}</span>
             ) : null}
-            {viewMode.value === "3d" ? (
+            {!props.hidden && viewMode.value === "3d" ? (
               <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
                 <button
                   type="button"
@@ -1022,6 +1065,18 @@ export default defineComponent({
                 { key: "2d", label: "2D" },
               ]}
             />
+            {/* Stage visibility switch — stays available even while hidden so
+                the hologram can be brought back from the collapsed bar. */}
+            <div class="ship-stage__vis" role="group">
+              <button
+                type="button"
+                class={["ship-stage__vis-btn", props.hidden ? "" : "is-active"].join(" ")}
+                onClick={() => emit("update:hidden", !props.hidden)}
+                aria-pressed={!props.hidden}
+              >
+                {props.hidden ? t("ships.detail.stage.show") : t("ships.detail.stage.hide")}
+              </button>
+            </div>
           </div>
         </div>
       );

@@ -14,7 +14,7 @@
  *  `computeRecentDelta`). The plain lastBattleTime filter is kept only as the
  *  labeled career fallback for when no old-enough baseline exists yet.
  */
-import type { PlayerShipStats, ShipStatsHistoryPoint } from "@/api";
+import type { PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint } from "@/api";
 import type { ShipInfo } from "@/api";
 
 export type DateRange = "1d" | "7d" | "30d" | "all";
@@ -70,6 +70,58 @@ export interface RecentDelta {
   ships: PlayerShipStats[];
   /** Baseline point timestamp — the deltas actually cover [sinceTs, now]. */
   sinceTs: number;
+}
+
+/** Per-ship recent-window delta — the single-ship slice of `RecentDelta`
+ *  (career totals minus the totals at the latest baseline point at or before
+ *  the cutoff). Null when no old-enough baseline exists yet. */
+export interface ShipRecentDelta {
+  battles: number;
+  wins: number;
+  frags: number;
+  winrate: number;
+  avgDamage: number;
+  avgFrags: number;
+  /** Baseline point timestamp — the window actually covers [sinceTs, now]. */
+  sinceTs: number;
+}
+
+/** Compute one ship's real recent stats: current career totals minus the
+ *  latest history point at or before `cutoffSec` (single-ship counterpart of
+ *  `computeRecentDelta`). Deltas are clamped at 0 to tolerate WG-side data
+ *  corrections; a zero/negative battle delta yields null (not played in the
+ *  window is indistinguishable from no baseline coverage per ship). */
+export function shipRecentDelta(
+  current: PlayerShipStats,
+  history: ShipStatsHistoryPoint[],
+  cutoffSec: number,
+): ShipRecentDelta | null {
+  let base: ShipCareerTotals | undefined;
+  let sinceTs = 0;
+  for (const point of history) {
+    if (point.timestamp <= cutoffSec) {
+      sinceTs = point.timestamp;
+      base = point.ships.find((s) => s.shipId === current.shipId);
+    }
+  }
+  // No baseline point at all → unknown window (same semantics as the
+  // account-level view). A baseline point that simply lacks this ship means
+  // the ship was unplayed then — a full-career window, deltas = career.
+  if (sinceTs === 0) return null;
+  const battles = current.battles - (base?.battles ?? 0);
+  if (battles <= 0) return null;
+  const wins = Math.max(0, current.wins - (base?.wins ?? 0));
+  const frags = Math.max(0, current.frags - (base?.frags ?? 0));
+  const damage = Math.max(0, current.damageCaused - (base?.damageCaused ?? 0));
+  return {
+    battles,
+    wins,
+    frags,
+    winrate: (wins / battles) * 100,
+    avgDamage: damage / battles,
+    avgFrags: frags / battles,
+    sinceTs,
+  };
 }
 
 /** Compute real recent stats as current career totals minus the latest

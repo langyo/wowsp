@@ -12,7 +12,8 @@ use std::fs;
 
 use serde::Deserialize;
 use wowsp_tauri_shared::{
-    GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint, StatsSnapshot,
+    GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipModeBreakdown, ShipModeStats,
+    ShipStatsHistoryPoint, StatsSnapshot,
 };
 
 /// Fetch (and cache) a player's per-ship PvP stats. `ship_name_map` is built
@@ -201,7 +202,9 @@ async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipSta
     let host = super::wg_realm::api_host(realm)?;
     let client = wg_client()?;
     let url = format!(
-        "https://{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}&fields=ship_id,last_battle_time,pvp"
+        "https://{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}\
+         &fields=ship_id,last_battle_time,pvp,pvp_solo,pvp_div2,pvp_div3,pve,\
+         rank_solo,rank_div2,rank_div3"
     );
     let resp: WgResponse<serde_json::Value> = client
         .get(&url)
@@ -273,7 +276,7 @@ async fn fetch_ship_stats_cn(account_id: i64) -> Result<Vec<RawShipStats>, Strin
             let Some(id) = ship_id.parse::<i64>().ok() else {
                 continue;
             };
-            if let Some(raw) = RawShipStats::from_vortex(id, node.get("pvp")) {
+            if let Some(raw) = RawShipStats::from_vortex(id, node) {
                 out.push(raw);
             }
         }
@@ -292,6 +295,67 @@ struct RawShipStats {
     frags: i64,
     survived_battles: i64,
     last_battle_time: i64,
+    /// Total XP in randoms (WG name `xp`); 0 when not served.
+    xp: i64,
+    /// Per-mode breakdown. None when no battle-type node is served at all.
+    modes: Option<ShipModeBreakdown>,
+}
+
+/// How a battle-type node spells its counter fields.
+#[derive(Clone, Copy)]
+enum ModeDialect {
+    /// WG `/wows/ships/stats/`: `battles` / `survived_battles`.
+    Wg,
+    /// CN vortex: `battles_count` / `survived`.
+    Vortex,
+}
+
+fn mode_from_node(node: Option<&serde_json::Value>, dialect: ModeDialect) -> Option<ShipModeStats> {
+    let v = node.filter(|v| !v.is_null())?;
+    let (battles_key, survived_key) = match dialect {
+        ModeDialect::Wg => ("battles", "survived_battles"),
+        ModeDialect::Vortex => ("battles_count", "survived"),
+    };
+    let battles = v.get(battles_key).and_then(|x| x.as_i64())?;
+    if battles <= 0 {
+        return None;
+    }
+    let field = |key: &str| v.get(key).and_then(|x| x.as_i64()).unwrap_or(0);
+    let wins = field("wins");
+    let damage = field("damage_dealt");
+    Some(ShipModeStats {
+        battles,
+        wins,
+        damage_caused: damage,
+        frags: field("frags"),
+        survived_battles: field(survived_key),
+        winrate: 100.0 * wins as f32 / battles as f32,
+        avg_damage: damage as f32 / battles as f32,
+    })
+}
+
+/// Combine the three ranked division nodes (rank_solo/div2/div3) into one
+/// ranked bucket. None when the ship has no ranked battles on any node.
+fn combine_modes(parts: [Option<ShipModeStats>; 3]) -> Option<ShipModeStats> {
+    let present: Vec<ShipModeStats> = parts.into_iter().flatten().collect();
+    if present.is_empty() {
+        return None;
+    }
+    let battles = present.iter().map(|m| m.battles).sum::<i64>();
+    if battles <= 0 {
+        return None;
+    }
+    let wins = present.iter().map(|m| m.wins).sum::<i64>();
+    let damage = present.iter().map(|m| m.damage_caused).sum::<i64>();
+    Some(ShipModeStats {
+        battles,
+        wins,
+        damage_caused: damage,
+        frags: present.iter().map(|m| m.frags).sum(),
+        survived_battles: present.iter().map(|m| m.survived_battles).sum(),
+        winrate: 100.0 * wins as f32 / battles as f32,
+        avg_damage: damage as f32 / battles as f32,
+    })
 }
 
 impl RawShipStats {
@@ -304,6 +368,22 @@ impl RawShipStats {
         if battles == 0 {
             return None;
         }
+        let solo = mode_from_node(entry.get("pvp_solo"), ModeDialect::Wg);
+        let div2 = mode_from_node(entry.get("pvp_div2"), ModeDialect::Wg);
+        let div3 = mode_from_node(entry.get("pvp_div3"), ModeDialect::Wg);
+        let coop = mode_from_node(entry.get("pve"), ModeDialect::Wg);
+        let ranked = combine_modes([
+            mode_from_node(entry.get("rank_solo"), ModeDialect::Wg),
+            mode_from_node(entry.get("rank_div2"), ModeDialect::Wg),
+            mode_from_node(entry.get("rank_div3"), ModeDialect::Wg),
+        ]);
+        let has_modes = [
+            solo.is_some(),
+            div2.is_some(),
+            div3.is_some(),
+            coop.is_some(),
+            ranked.is_some(),
+        ];
         Some(Self {
             ship_id: entry.get("ship_id")?.as_i64()?,
             battles,
@@ -322,31 +402,71 @@ impl RawShipStats {
                 .get("last_battle_time")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
+            xp: pvp.get("xp").and_then(|v| v.as_i64()).unwrap_or(0),
+            modes: if has_modes.iter().any(|&b| b) {
+                Some(ShipModeBreakdown {
+                    solo,
+                    div2,
+                    div3,
+                    coop,
+                    ranked,
+                })
+            } else {
+                None
+            },
         })
     }
 
-    /// CN vortex per-ship node: `pvp` carries vortex field names and the ship
-    /// id comes from the enclosing map key. Several counters (damage, frags,
-    /// survival) are served as null on ships the player barely touched — they
-    /// degrade to 0, same tolerance as the WG path. No last_battle_time is
-    /// served at all.
-    fn from_vortex(ship_id: i64, pvp: Option<&serde_json::Value>) -> Option<Self> {
-        let pvp = pvp.filter(|v| !v.is_null())?;
+    /// CN vortex per-ship node: a battle-type map whose `pvp` entry carries
+    /// vortex field names and the ship id comes from the enclosing map key.
+    /// Several counters (damage, frags, survival) are served as null on ships
+    /// the player barely touched — they degrade to 0, same tolerance as the
+    /// WG path. No last_battle_time is served at all.
+    fn from_vortex(ship_id: i64, node: &serde_json::Value) -> Option<Self> {
+        let pvp = node.get("pvp").filter(|v| !v.is_null())?;
         let battles = pvp.get("battles_count")?.as_i64()?;
         if battles == 0 {
             return None;
         }
+        let field = |node: &serde_json::Value, key: &str| {
+            node.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+        };
+        let solo = mode_from_node(node.get("pvp_solo"), ModeDialect::Vortex);
+        let div2 = mode_from_node(node.get("pvp_div2"), ModeDialect::Vortex);
+        let div3 = mode_from_node(node.get("pvp_div3"), ModeDialect::Vortex);
+        let coop = mode_from_node(node.get("pve"), ModeDialect::Vortex);
+        let ranked = combine_modes([
+            mode_from_node(node.get("rank_solo"), ModeDialect::Vortex),
+            mode_from_node(node.get("rank_div2"), ModeDialect::Vortex),
+            mode_from_node(node.get("rank_div3"), ModeDialect::Vortex),
+        ]);
+        let has_modes = [
+            solo.is_some(),
+            div2.is_some(),
+            div3.is_some(),
+            coop.is_some(),
+            ranked.is_some(),
+        ];
         Some(Self {
             ship_id,
             battles,
-            wins: pvp.get("wins").and_then(|v| v.as_i64()).unwrap_or(0),
-            damage_caused: pvp
-                .get("damage_dealt")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0),
-            frags: pvp.get("frags").and_then(|v| v.as_i64()).unwrap_or(0),
-            survived_battles: pvp.get("survived").and_then(|v| v.as_i64()).unwrap_or(0),
+            wins: field(pvp, "wins"),
+            damage_caused: field(pvp, "damage_dealt"),
+            frags: field(pvp, "frags"),
+            survived_battles: field(pvp, "survived"),
             last_battle_time: 0,
+            xp: field(pvp, "xp"),
+            modes: if has_modes.iter().any(|&b| b) {
+                Some(ShipModeBreakdown {
+                    solo,
+                    div2,
+                    div3,
+                    coop,
+                    ranked,
+                })
+            } else {
+                None
+            },
         })
     }
 }
@@ -374,6 +494,15 @@ impl From<&RawShipStats> for PlayerShipStats {
             winrate,
             avg_damage,
             last_battle_time: r.last_battle_time,
+            // Same winrate→PR anchors as the account-level card, applied to
+            // this ship's randoms winrate.
+            pr: Some(super::wg_api::rating_from_winrate(winrate)),
+            avg_xp: if r.xp > 0 && r.battles > 0 {
+                Some(r.xp as f32 / r.battles as f32)
+            } else {
+                None
+            },
+            modes: r.modes.clone(),
         }
     }
 }
@@ -493,7 +622,7 @@ mod tests {
 
     #[test]
     fn raw_ship_stats_from_wg_parses() {
-        // Shape from /wows/ships/stats/ — note pvp subtree.
+        // Shape from /wows/ships/stats/ — note pvp subtree + mode splits.
         let entry = serde_json::json!({
             "ship_id": 4282948544_i64,
             "last_battle_time": 1700000000,
@@ -502,8 +631,16 @@ mod tests {
                 "wins": 55,
                 "damage_dealt": 2500000,
                 "frags": 80,
-                "survived_battles": 30
-            }
+                "survived_battles": 30,
+                "xp": 900000
+            },
+            "pvp_solo": { "battles": 60, "wins": 30, "damage_dealt": 1500000, "frags": 45, "survived_battles": 18 },
+            "pvp_div2": { "battles": 30, "wins": 18, "damage_dealt": 750000, "frags": 25, "survived_battles": 9 },
+            "pvp_div3": { "battles": 10, "wins": 7, "damage_dealt": 250000, "frags": 10, "survived_battles": 3 },
+            "pve": { "battles": 5, "wins": 4, "damage_dealt": 100000, "frags": 6, "survived_battles": 2 },
+            "rank_solo": { "battles": 12, "wins": 6, "damage_dealt": 300000, "frags": 10, "survived_battles": 4 },
+            "rank_div2": { "battles": 8, "wins": 5, "damage_dealt": 200000, "frags": 7, "survived_battles": 3 },
+            "rank_div3": null
         });
         let raw = RawShipStats::from_wg(&entry).unwrap();
         assert_eq!(raw.ship_id, 4282948544);
@@ -512,10 +649,38 @@ mod tests {
         assert_eq!(raw.damage_caused, 2500000);
         assert_eq!(raw.frags, 80);
         assert_eq!(raw.survived_battles, 30);
+        assert_eq!(raw.xp, 900000);
 
         let stats = PlayerShipStats::from(&raw);
         assert!((stats.winrate - 55.0).abs() < 0.01);
         assert!((stats.avg_damage - 25000.0).abs() < 0.1);
+        assert!((stats.avg_xp.unwrap() - 9000.0).abs() < 0.1);
+        // Same anchors as the account PR: 55% falls between 52%→1350 and
+        // 56%→1750, i.e. 1350 + 3/4*400 = 1650.
+        assert_eq!(stats.pr, Some(1650));
+
+        let modes = stats.modes.as_ref().expect("modes present");
+        let solo = modes.solo.as_ref().unwrap();
+        assert_eq!(solo.battles, 60);
+        assert!((solo.winrate - 50.0).abs() < 0.01);
+        let ranked = modes.ranked.as_ref().unwrap();
+        assert_eq!(ranked.battles, 20, "rank_solo + rank_div2 merged");
+        assert_eq!(ranked.wins, 11);
+        assert!((ranked.winrate - 55.0).abs() < 0.01);
+        assert_eq!(modes.coop.as_ref().unwrap().battles, 5);
+    }
+
+    #[test]
+    fn raw_ship_stats_without_modes_yields_none_breakdown() {
+        let entry = serde_json::json!({
+            "ship_id": 1,
+            "pvp": { "battles": 10, "wins": 5, "damage_dealt": 100000, "frags": 5, "survived_battles": 2 }
+        });
+        let raw = RawShipStats::from_wg(&entry).unwrap();
+        assert!(raw.modes.is_none());
+        let stats = PlayerShipStats::from(&raw);
+        assert!(stats.modes.is_none());
+        assert_eq!(stats.avg_xp, None, "no xp served → None");
     }
 
     #[test]
@@ -536,12 +701,14 @@ mod tests {
     #[test]
     fn raw_ship_stats_from_vortex_parses_cn_shape() {
         // Live-response shape: the ship id comes from the map key and pvp
-        // carries vortex names; sparse counters arrive as null.
+        // carries vortex names; sparse counters arrive as null. Mode splits
+        // use the same battle-type keys with vortex counter names.
         let node = serde_json::json!({
-            "pvp": { "battles_count": 91, "wins": 31, "damage_dealt": null, "frags": null },
-            "pve": { "battles_count": 2, "wins": 1 }
+            "pvp": { "battles_count": 91, "wins": 31, "damage_dealt": null, "frags": null, "xp": 400000 },
+            "pve": { "battles_count": 2, "wins": 1 },
+            "pvp_solo": { "battles_count": 50, "wins": 17, "damage_dealt": 1000000 }
         });
-        let raw = RawShipStats::from_vortex(4285445840, node.get("pvp")).unwrap();
+        let raw = RawShipStats::from_vortex(4285445840, &node).unwrap();
         assert_eq!(raw.ship_id, 4285445840);
         assert_eq!(raw.battles, 91);
         assert_eq!(raw.wins, 31);
@@ -549,11 +716,17 @@ mod tests {
         assert_eq!(raw.frags, 0);
         assert_eq!(raw.survived_battles, 0);
         assert_eq!(raw.last_battle_time, 0);
+        assert_eq!(raw.xp, 400000);
+        let modes = raw.modes.as_ref().expect("modes present");
+        assert_eq!(modes.solo.as_ref().unwrap().battles, 50);
+        assert!((modes.solo.as_ref().unwrap().winrate - 34.0).abs() < 0.01);
+        assert_eq!(modes.coop.as_ref().unwrap().battles, 2);
+        assert!(modes.ranked.is_none(), "no ranked nodes served");
         // Missing / null / zero-battle nodes are skipped like the WG path.
-        assert!(RawShipStats::from_vortex(1, None).is_none());
-        assert!(RawShipStats::from_vortex(1, Some(&serde_json::Value::Null)).is_none());
-        let zero = serde_json::json!({ "battles_count": 0, "wins": 0 });
-        assert!(RawShipStats::from_vortex(1, Some(&zero)).is_none());
+        assert!(RawShipStats::from_vortex(1, &serde_json::json!({})).is_none());
+        assert!(RawShipStats::from_vortex(1, &serde_json::json!({ "pvp": null })).is_none());
+        let zero = serde_json::json!({ "pvp": { "battles_count": 0, "wins": 0 } });
+        assert!(RawShipStats::from_vortex(1, &zero).is_none());
     }
 
     fn mk_stats(ship_id: i64, battles: i64) -> PlayerShipStats {
@@ -568,6 +741,9 @@ mod tests {
             winrate: 50.0,
             avg_damage: 10_000.0,
             last_battle_time: 1_700_000_000,
+            pr: None,
+            avg_xp: None,
+            modes: None,
         }
     }
 

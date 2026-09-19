@@ -286,6 +286,7 @@ fn main() {
             commands::trends::get_player_trend,
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,
+            commands::trends::get_ship_server_stats,
             commands::screenshot::capture_main_window,
             commands::mod_hub::mod_hub_scan_installed,
             commands::mod_hub::mod_hub_classify_path,

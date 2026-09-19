@@ -224,6 +224,11 @@
     }
   }
 
+  /* Rows open the ship detail modal — pointer affordance. */
+  &__row--link {
+    cursor: pointer;
+  }
+
   &__col-name {
     display: flex;
     align-items: center;
