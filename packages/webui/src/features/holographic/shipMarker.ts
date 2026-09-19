@@ -18,15 +18,16 @@
  */
 import * as THREE from "three";
 
+import { SHIP_CLASS_LEN, shipClassTargetLen } from "@wowsp/holo";
+
 import { loadGlbModel } from "./modelLoader";
 import { makeHoloMaterial } from "./holoShader";
 import { holoColorsFor, type TeamRole } from "./teamColors";
 
-/** Uniform scale factor applied to all ship models. Raw GLBs from the
- *  exporter preserve the ship's actual game-world proportions (BB ≈ 18u,
- *  DD ≈ 7u). A uniform multiplier keeps relative sizes correct whereas
- *  per-ship normalization to a fixed target makes all ships equal length. */
-const SHIP_SCALE = 5.0;
+/** True-engine-scale class lengths live in the shared holo package (one
+ *  source of truth for the app viewer AND the site demo). Re-exported so
+ *  HolographicMap keeps a single local import point. */
+export { SHIP_CLASS_LEN, shipClassTargetLen };
 
 /** Cache of decoded GLB root groups, keyed by resolved model URL. Cloning a
  *  cached group is far cheaper than re-parsing the GLB; identical ships in a
@@ -36,12 +37,38 @@ const glbCache = new Map<string, THREE.Group>();
 interface BuildShipMarkerOpts {
   url: string;
   role: TeamRole;
+  /** WG ship-type string — picks the class target length the model is scaled to. */
+  type?: string | null;
+}
+
+/** Scale `model` so its longest hull axis — the exporter lays bow-to-stern
+ *  along Z — matches the ship class's true engine length, then centre it in
+ *  XZ and drop the keel to y=0. */
+function applyTrueScale(model: THREE.Group, type: string | null | undefined): void {
+  // Pool sources arrive ALREADY normalized (a finished marker) — unwind that
+  // transform so the hull is measured and re-scaled in raw GLB units. For the
+  // fresh-clone path in buildShipMarker this is a no-op.
+  model.position.set(0, 0, 0);
+  model.scale.setScalar(1);
+  model.rotation.set(0, 0, 0);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  // Hull axis is Z; the horizontal-axis fallback keeps the division finite
+  // for degenerate/empty exports instead of producing NaN/Infinity.
+  const hull = Math.max(size.z, size.x, 1e-6);
+  const scale = shipClassTargetLen(type) / hull;
+  model.scale.setScalar(scale);
+  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
+  model.position.sub(center);
+  // Raise so the model's keel sits at y=0 (water surface).
+  model.position.y += -box.min.y * scale;
 }
 
 /** Build a holographic ship marker for the map. Loads (or clones from cache)
- *  the GLB at `url`, applies uniform scale and role-tinted holographic shader. */
+ *  the GLB at `url`, applies class-scaled true-size and role-tinted holographic
+ *  shader. */
 export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.Group> {
-  const { url, role } = opts;
+  const { url, role, type } = opts;
 
   // Load (or reuse) the decoded scene graph.
   let source = glbCache.get(url);
@@ -71,13 +98,8 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
     }
   });
 
-  // Apply uniform scale to preserve relative ship sizes (BB > DD).
-  const box = new THREE.Box3().setFromObject(model);
-  model.scale.setScalar(SHIP_SCALE);
-  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(SHIP_SCALE);
-  model.position.sub(center);
-  // Raise so the model's keel sits at y=0 (water surface).
-  model.position.y += -box.min.y * SHIP_SCALE;
+  // Scale to the class's true engine length (see applyTrueScale).
+  applyTrueScale(model, type);
 
   // Apply the role-tinted holographic shader to every mesh. Collect first so
   // the wireframe overlay (added as a child) doesn't recurse during traverse.
@@ -119,10 +141,13 @@ function cloneWithSharedGeometry(source: THREE.Group): THREE.Group {
 /** Build a marker from an ALREADY-LOADED model (e.g. a substitute hull for a
  *  ship whose own GLB is missing or failed to load). Re-applies the same
  *  normalization + role tint as `buildShipMarker`, so the swap looks exactly
- *  like a real model load. The source model is not mutated. */
+ *  like a real model load — scaled to `type`'s class length so a substitute
+ *  hull can never tower over the marker it replaces. The source model is not
+ *  mutated. */
 export function buildMarkerFromSource(
   source: THREE.Group,
   role: TeamRole,
+  type?: string | null,
 ): THREE.Group {
   const model = cloneWithSharedGeometry(source);
 
@@ -135,13 +160,8 @@ export function buildMarkerFromSource(
     }
   });
 
-  // Apply uniform scale to preserve relative ship sizes (BB > DD).
-  const box = new THREE.Box3().setFromObject(model);
-  model.scale.setScalar(SHIP_SCALE);
-  const center = box.getCenter(new THREE.Vector3()).multiplyScalar(SHIP_SCALE);
-  model.position.sub(center);
-  // Raise so the model's keel sits at y=0 (water surface).
-  model.position.y += -box.min.y * SHIP_SCALE;
+  // Scale to the class's true engine length (see applyTrueScale).
+  applyTrueScale(model, type);
 
   // Apply the role-tinted holographic shader to every mesh. Collect first so
   // the wireframe overlay (added as a child) doesn't recurse during traverse.
