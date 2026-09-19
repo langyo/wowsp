@@ -41,6 +41,7 @@ import { HButton, HSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { shipClassRank } from "@/utils/shipClass";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
@@ -864,21 +865,10 @@ const PostBattleFallbackPanel = defineComponent({
 });
 
 /** Best-effort ship class for the icon (offline DB only — the modal lives
- *  outside the encyclopedia store). */
+ *  outside the encyclopedia store). Shared with the live-battle panel —
+ *  see `utils/shipClass.ts`. */
 function shipTypeOf(shipId: number): string {
   return shipOfflineEntry(shipId)?.type ?? "";
-}
-
-/** Sort weight for a ship class: carrier > battleship > cruiser > destroyer
- *  > submarine, then everything else. */
-function shipClassRank(shipId: number): number {
-  const t = (shipOfflineEntry(shipId)?.type ?? "").toLowerCase();
-  if (t.includes("aircarrier") || t.includes("aircar")) return 0;
-  if (t.includes("battleship")) return 1;
-  if (t.includes("cruiser")) return 2;
-  if (t.includes("destroyer")) return 3;
-  if (t.includes("submarine")) return 4;
-  return 5;
 }
 
 /** Total HP lost across a ship's HP timeline (damage taken). */

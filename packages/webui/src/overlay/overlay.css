@@ -53,6 +53,13 @@ html.overlay-hidden body {
   opacity: 0.45;
 }
 
+/* Sunk mid-battle (the row's name strip read dim gray): fade the chip the
+   same way the in-game Tab table grays the row. */
+.overlay-chip--sunk {
+  opacity: 0.45;
+  filter: grayscale(0.9);
+}
+
 .overlay-hint {
   position: absolute;
   top: 50%;

@@ -73,7 +73,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use wowsp_tauri_shared::{CaptureResult, OverlayAnchor, OverlayState, OverlayStatus, Rect};
+use wowsp_tauri_shared::{
+    CaptureResult, OverlayAnchor, OverlayState, OverlayStatus, Rect, TabRowOrder, TabRowPlayer,
+};
 
 use super::{overlay_detect, row_recognize};
 
@@ -102,6 +104,15 @@ pub const OVERLAY_VISIBILITY_EVENT: &str = "wowsp://overlay-visibility";
 /// Tauri event carrying the DETECTION-STATE machine to all windows (main
 /// window's live-battle panel badge). Transition-only — see `report_status`.
 pub const OVERLAY_STATUS_EVENT: &str = "wowsp://overlay-status";
+
+/// Tauri event carrying the in-game Tab panel's CURRENT row order (names in
+/// on-screen order + per-row alive flags) to ALL windows. Emitted from
+/// `place_and_show` whenever the placed anchor carries a TRUSTED row→name
+/// mapping — the initial pin, a layout-move replacement, or a mapping
+/// transplant after sunk ships re-sorted the rows. The main window's
+/// live-battle panel reorders its roster columns from it, so the software's
+/// list mirrors exactly what the player sees while holding Tab.
+pub const TAB_ORDER_EVENT: &str = "wowsp://tab-order";
 
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
@@ -1150,28 +1161,70 @@ fn should_catch_up_recognition(
 /// - the mapping actually DIFFERS (absent→present catch-up, an all-`None`
 ///   read landing for the first time, or a re-sort after sinks) — identical
 ///   mappings are dropped so a pass that found nothing new never re-emits
-///   the anchor.
+///   the anchor. The comparison includes `row_alive`: a ship can sink
+///   WITHOUT moving rows (it already sat at its group's tail), and that
+///   alive flip must still reach the overlay and the tab-order event.
 fn should_transplant_rows(fresh: &OverlayAnchor, pinned: &OverlayAnchor) -> bool {
     fresh.table_detected
         && fresh.row_players.as_ref().map(Vec::len) == Some(pinned.row_centers.len())
-        && fresh.row_players != pinned.row_players
+        && (fresh.row_players != pinned.row_players || fresh.row_alive != pinned.row_alive)
 }
 
 /// Pure transplant: the pinned anchor with `fresh`'s row→name mapping and
-/// pending flag copied in — every geometry field untouched (the mapping is
-/// indexed by row, and the rows themselves did not move). `None` when
-/// [`should_transplant_rows`] says there is nothing to transplant.
+/// alive flags (and pending flag) copied in — every geometry field untouched
+/// (the mapping is indexed by row, and the rows themselves did not move).
+/// `None` when [`should_transplant_rows`] says there is nothing to
+/// transplant.
 fn transplant_row_players(pinned: &OverlayAnchor, fresh: &OverlayAnchor) -> Option<OverlayAnchor> {
     if !should_transplant_rows(fresh, pinned) {
         return None;
     }
     let mut updated = pinned.clone();
     updated.row_players = fresh.row_players.clone();
+    updated.row_alive = fresh.row_alive.clone();
     // Pending survives an all-`None` transplant (honest silence is not a
     // trusted mapping — the badge and the catch-up stay on); only a
     // mapping that matched at least one row clears it.
     updated.row_players_pending = mapping_untrusted(&updated.row_players);
     Some(updated)
+}
+
+/// Build the [`TAB_ORDER_EVENT`] payload from a placed anchor: the rows'
+/// matched names in on-screen order plus their alive flags, split into the
+/// ally/enemy blocks at the ROSTER's relation count. `None` when the anchor
+/// carries no trusted mapping (fewer than one matched row) — the event then
+/// has nothing honest to say and is not emitted at all.
+///
+/// The split uses the roster's own relation counts rather than the detection
+/// grid's `ally_rows`: tempArenaInfo.json is STATIC for the whole battle, so
+/// the relation count cannot drift mid-battle — it is exactly the block
+/// boundary the panel's own two sub-tables draw. Rows beyond the roster's
+/// ally count belong to the enemy block; unmatched rows are inert for the
+/// consumer (it matches by name).
+fn tab_order_from_anchor(
+    anchor: &OverlayAnchor,
+    info: &wowsp_tauri_shared::ArenaInfo,
+) -> Option<TabRowOrder> {
+    let names = anchor.row_players.as_ref()?;
+    if mapping_untrusted(&anchor.row_players) {
+        return None;
+    }
+    let alive = anchor.row_alive.as_ref();
+    let row = |i: usize| TabRowPlayer {
+        name: names.get(i).cloned().flatten(),
+        alive: alive.and_then(|a| a.get(i).copied()).unwrap_or(true),
+    };
+    let allies_n = info.vehicles.iter().filter(|v| v.relation <= 1).count();
+    // Slice bounds: the ally block is the roster count capped at the
+    // mapping length (a shorter mapping truncates the block rather than
+    // spilling), the enemy block is everything after it up to the mapping.
+    let ally_end = allies_n.min(names.len());
+    Some(TabRowOrder {
+        date_time: info.date_time.clone(),
+        battle: super::arena_info::last_arena_stamp(),
+        allies: (0..ally_end).map(row).collect(),
+        enemies: (ally_end..names.len()).map(row).collect(),
+    })
 }
 
 /// One revalidation pass over the pinned anchor while the overlay is shown:
@@ -1314,6 +1367,26 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, anchor) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
+    // Mirror the on-screen row order to ALL windows (main window's
+    // live-battle panel) whenever this anchor carries a TRUSTED mapping —
+    // absent or all-unmatched mappings have nothing honest to say, and
+    // skipping them also skips the arena read. The read is one small file
+    // on the watcher thread, at most once per placed anchor — the same
+    // cadence `row_recognize` already reads it at; without a roster there
+    // is no battle identity to stamp the order with, so the event is
+    // simply skipped.
+    if !mapping_untrusted(&anchor.row_players) {
+        match super::arena_info::read_arena_snapshot() {
+            Some((info, _)) => {
+                if let Some(order) = tab_order_from_anchor(anchor, &info)
+                    && let Err(e) = app.emit(TAB_ORDER_EVENT, &order)
+                {
+                    tracing::warn!(error = %e, "emit tab-order failed");
+                }
+            },
+            None => tracing::debug!("tab-order skipped: no readable tempArenaInfo.json"),
+        }
+    }
     // Reveal the page content AFTER the anchor is in (the page repaints
     // while still invisible, then flips visible in one step).
     if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, true) {
@@ -1447,8 +1520,10 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     // the env (`off` / `null`). Every failure inside degrades to None and
     // must never disturb the anchor flow. `ally_rows` is the SAME
     // team_sizes read the detection grid above was built from — the single
-    // source of truth for the pipeline's block split.
-    let row_players = if detected {
+    // source of truth for the pipeline's block split. The payload carries
+    // BOTH the matched names and the per-row alive/sunk classification read
+    // off the same name strips (sunk rows render dim gray).
+    let row_state = if detected {
         row_recognize::recognize_row_players(&row_recognize::RowFrame {
             rgba: &rgba,
             width: w,
@@ -1468,7 +1543,8 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
         split,
         detected,
     );
-    anchor.row_players = row_players;
+    anchor.row_players = row_state.as_ref().map(|s| s.names.clone());
+    anchor.row_alive = row_state.map(|s| s.alive);
     // Pending flag: recognition is ENABLED but this anchor carries no
     // trusted row→name mapping yet — the arena roster was not ready, OCR
     // read nothing, or no row's text matched the roster (an all-`None` vec
@@ -1891,6 +1967,7 @@ mod tests {
             team_split: 0.5,
             table_detected: detected,
             row_players: players,
+            row_alive: None,
             row_players_pending: pending,
         }
     }
@@ -1903,6 +1980,169 @@ mod tests {
         assert!(mapping_untrusted(&None));
         assert!(mapping_untrusted(&Some(vec![None, None])));
         assert!(!mapping_untrusted(&Some(vec![Some("Alpha".into()), None])));
+    }
+
+    /// Anchor with BOTH a name mapping and an alive vector — the shape
+    /// `compute_anchor` now produces and `tab_order_from_anchor` consumes.
+    fn anchor_with_state(
+        rows: usize,
+        players: Option<Vec<Option<String>>>,
+        alive: Option<Vec<bool>>,
+    ) -> OverlayAnchor {
+        let mut a = anchor_with_players(rows, true, players, false);
+        a.row_alive = alive;
+        a
+    }
+
+    /// Minimal roster: relation ≤ 1 = allies, > 1 = enemies — the split
+    /// `tab_order_from_anchor` keys on.
+    fn arena_roster(names: &[(&str, i64)]) -> wowsp_tauri_shared::ArenaInfo {
+        wowsp_tauri_shared::ArenaInfo {
+            match_group: Some("pvp".into()),
+            date_time: Some("18.09.2026 16:17:19".into()),
+            map_name: None,
+            scenario: None,
+            bot_count: 0,
+            vehicles: names
+                .iter()
+                .map(|&(name, relation)| wowsp_tauri_shared::VehicleEntry {
+                    id: name.len() as i64,
+                    name: name.into(),
+                    relation,
+                    ship_id: 0,
+                    ship_name: None,
+                })
+                .collect(),
+            raw: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn tab_order_splits_blocks_at_the_roster_relation_count() {
+        // 3 allies + 2 enemies in the roster; the mapping's rows are split at
+        // the SAME boundary, keeping on-screen order inside each block.
+        let info = arena_roster(&[
+            ("Alpha", 0),
+            ("Bravo", 1),
+            ("Charlie", 1),
+            ("Delta", 2),
+            ("Echo", 2),
+        ]);
+        let anchor = anchor_with_state(
+            5,
+            Some(vec![
+                Some("Charlie".into()),
+                Some("Alpha".into()),
+                None,
+                Some("Echo".into()),
+                Some("Delta".into()),
+            ]),
+            Some(vec![true, false, true, false, true]),
+        );
+        let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
+        assert_eq!(order.date_time.as_deref(), Some("18.09.2026 16:17:19"));
+        let ally_names: Vec<_> = order.allies.iter().map(|r| r.name.clone()).collect();
+        let enemy_names: Vec<_> = order.enemies.iter().map(|r| r.name.clone()).collect();
+        assert_eq!(
+            ally_names,
+            [Some("Charlie".into()), Some("Alpha".into()), None]
+        );
+        assert_eq!(enemy_names, [Some("Echo".into()), Some("Delta".into())]);
+        // Alive flags ride along per row — sunk Alpha (row 1) and sunk Echo
+        // (row 3) carry false.
+        assert_eq!(
+            order.allies.iter().map(|r| r.alive).collect::<Vec<_>>(),
+            [true, false, true]
+        );
+        assert_eq!(
+            order.enemies.iter().map(|r| r.alive).collect::<Vec<_>>(),
+            [false, true]
+        );
+    }
+
+    #[test]
+    fn tab_order_requires_a_trusted_mapping() {
+        let info = arena_roster(&[("Alpha", 0), ("Delta", 2)]);
+        // No mapping at all (recognition off / manual anchor): nothing to say.
+        assert!(tab_order_from_anchor(&anchor_with_state(2, None, None), &info).is_none());
+        // All-None mapping (honest silence): still nothing to say.
+        assert!(
+            tab_order_from_anchor(
+                &anchor_with_state(2, Some(vec![None, None]), Some(vec![true, true])),
+                &info
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn tab_order_defaults_missing_alive_flags_to_alive() {
+        // A mapping without an alive vector (older payload shape) must never
+        // mark players sunk by accident.
+        let info = arena_roster(&[("Alpha", 0), ("Delta", 2)]);
+        let anchor = anchor_with_state(
+            2,
+            Some(vec![Some("Alpha".into()), Some("Delta".into())]),
+            None,
+        );
+        let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
+        assert!(order.allies[0].alive && order.enemies[0].alive);
+    }
+
+    #[test]
+    fn tab_order_drops_rows_beyond_the_roster_blocks() {
+        // A detector overcount (mapping longer than the roster) must not
+        // shrink or misplace the ALLY block: it stays exactly the roster's
+        // relation ≤ 1 count, and every further row belongs to the enemy
+        // block (the frontend matches by name, so unmatched rows are inert).
+        let info = arena_roster(&[("Alpha", 0), ("Delta", 2)]);
+        let anchor = anchor_with_state(
+            4,
+            Some(vec![
+                Some("Alpha".into()),
+                None,
+                Some("Delta".into()),
+                Some("Ghost".into()),
+            ]),
+            Some(vec![true, true, true, true]),
+        );
+        let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
+        assert_eq!(
+            order.allies.len(),
+            1,
+            "ally block is exactly the roster count"
+        );
+        assert_eq!(order.allies[0].name, Some("Alpha".into()));
+        assert_eq!(
+            order.enemies.len(),
+            3,
+            "remaining rows land in the enemy block"
+        );
+        assert_eq!(order.enemies[0].name, None);
+        assert_eq!(order.enemies[1].name, Some("Delta".into()));
+        assert_eq!(order.enemies[2].name, Some("Ghost".into()));
+    }
+
+    #[test]
+    fn transplant_copies_alive_flags_and_re_emits_on_alive_flip() {
+        // A ship sinking WITHOUT re-sorting the rows (it already sat at its
+        // group tail) changes only row_alive — that flip alone must count as
+        // a transplant-worthy difference so the overlay and the tab-order
+        // event both hear about it.
+        let pinned = anchor_with_state(
+            2,
+            Some(vec![Some("Alpha".into()), Some("Delta".into())]),
+            Some(vec![true, true]),
+        );
+        let fresh = anchor_with_state(
+            2,
+            Some(vec![Some("Alpha".into()), Some("Delta".into())]),
+            Some(vec![true, false]),
+        );
+        let updated = transplant_row_players(&pinned, &fresh).expect("alive flip transplants");
+        assert_eq!(updated.row_alive, Some(vec![true, false]));
+        // Identical names AND identical alive flags → nothing to transplant.
+        assert!(transplant_row_players(&updated, &fresh).is_none());
     }
 
     #[test]

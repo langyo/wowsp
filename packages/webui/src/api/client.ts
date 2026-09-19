@@ -128,6 +128,11 @@ export interface OverlayAnchor {
    *  player was not recognized (render a silent placeholder, never guess
    *  by index). Names are the roster's own nicknames (stats-cache keys). */
   rowPlayers?: (string | null)[] | null;
+  /** Per-row alive classification read off the same name strips the
+   *  recognizer crops (sunk rows render dim gray in-game). Same length/order
+   *  as `rowCenters`; `true` = alive; null/absent = recognition did not run
+   *  (treat every row as alive). */
+  rowAlive?: boolean[] | null;
   /** True when recognition is enabled but this anchor has no trusted
    *  row→name mapping yet (arena roster not ready, OCR read nothing, or
    *  no row's text matched the roster): the overlay shows its "recognizing
@@ -157,6 +162,28 @@ export interface OverlayStatus {
   state: OverlayState;
   rows?: number | null;
   manual: boolean;
+}
+
+/** One row of the in-game Tab panel as recognized off the live frame
+ *  (mirrors `wowsp_tauri_shared::TabRowPlayer`): the player sitting in that
+ *  row (null when the row's text was not matched) and whether their ship
+ *  was still afloat at capture time. */
+export interface TabRowPlayer {
+  name?: string | null;
+  alive: boolean;
+}
+
+/** Payload of the `wowsp://tab-order` event (mirrors
+ *  `wowsp_tauri_shared::TabRowOrder`): the in-game Tab panel's CURRENT row
+ *  order per side — [alive by ship class] ++ [sunk by ship class], re-sorted
+ *  live as ships sink — an order tempArenaInfo.json never carries. Match it
+ *  to the live roster via `dateTime`. */
+export interface TabRowOrder {
+  dateTime?: string | null;
+  /** Arena-file mtime stamp (battle identity on the Rust side). */
+  battle: number;
+  allies: TabRowPlayer[];
+  enemies: TabRowPlayer[];
 }
 
 /** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
@@ -1002,6 +1029,12 @@ export const api = {
   /** Detection-state push from the Tab watcher (transition-only). */
   listenOverlayStatus: (handler: (status: OverlayStatus) => void) =>
     transport.listen?.<OverlayStatus>("wowsp://overlay-status", handler),
+  /** In-game Tab row-order push from the Tab watcher: fired whenever a
+   *  recognition pass over a held Tab frame produced a trusted row→name
+   *  mapping (initial pin, layout shift, or a re-sort after sinks). The
+   *  main window's live panel reorders its columns to mirror it. */
+  listenTabOrder: (handler: (order: TabRowOrder) => void) =>
+    transport.listen?.<TabRowOrder>("wowsp://tab-order", handler),
   lookupPlayerStats: (name: string, realm: string) =>
     transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
   /** Batch roster lookup: one entry per input name, in order; null = not

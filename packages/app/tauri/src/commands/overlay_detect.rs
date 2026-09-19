@@ -1054,6 +1054,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn strip_luma_separates_alive_from_sunk() {
+        // Glyph-core luma is the alive/sunk signal: alive rows peak at
+        // near-white (≥ ~186 on the 3072x1920 dumps, own-player highlight
+        // included), sunk rows at dim gray (≤ ~137). The max statistic must
+        // read the glyph cores regardless of the dark strip background.
+        let alive = vec![255, 255, 255, 255, 10, 10, 10, 255, 0, 0, 0, 255];
+        let sunk = vec![128, 128, 128, 255, 90, 90, 90, 255, 20, 20, 20, 255];
+        let dark = vec![10, 10, 10, 255, 0, 0, 0, 255];
+        assert!(strip_max_luma(&alive) > 250.0);
+        assert!(!row_strip_alive(strip_max_luma(&sunk)), "dim gray → sunk");
+        assert!(!row_strip_alive(strip_max_luma(&dark)), "black → sunk");
+        assert!(
+            row_strip_alive(strip_max_luma(&alive)),
+            "near-white → alive"
+        );
+        // A row reading just under the threshold but well above the sunk
+        // population (own-player highlight-dimmed names) stays alive.
+        assert!(row_strip_alive(186.0));
+        assert!(!row_strip_alive(137.0));
+        // An unreadable (empty) strip yields luma 0 — the caller's
+        // missing-strip default (alive) is what keeps that honest.
+        assert_eq!(strip_max_luma(&[]), 0.0);
+    }
+
     /// Hand-built anchor for the revalidation move-decision tests (bypasses
     /// the detector; grid pitch 42 in the full-grid fixtures).
     fn anchor_with(rows: &[i32], detected: bool) -> wowsp_tauri_shared::OverlayAnchor {
@@ -1080,6 +1105,7 @@ mod tests {
             team_split: 0.5,
             table_detected: detected,
             row_players: None,
+            row_alive: None,
             row_players_pending: false,
         }
     }
@@ -1396,10 +1422,11 @@ pub(crate) fn build_anchor(
         team_split,
         table_detected,
         // Anchors are built without recognition; the row→name pipeline in
-        // `row_recognize` fills `row_players` afterwards when it ran (and
-        // flips `row_players_pending` with it — manual/automatic alike,
-        // pending never starts as true).
+        // `row_recognize` fills `row_players` / `row_alive` afterwards when
+        // it ran (and flips `row_players_pending` with it — manual/automatic
+        // alike, pending never starts as true).
         row_players: None,
+        row_alive: None,
         row_players_pending: false,
     };
     (overlay, anchor)
@@ -1642,6 +1669,34 @@ pub(crate) fn crop_rgba(
         out[dst..dst + cw * 4].copy_from_slice(&rgba[src..src + cw * 4]);
     }
     Some((out, cw as u32, ch as u32))
+}
+
+/// Brightest-pixel luma of an RGBA name-strip crop — the "is this row
+/// alive?" signal. The Tab panel renders alive players' nicknames in
+/// near-white glyphs and sunk players' in dim gray, so the strip's MAXIMUM
+/// luma (the glyph cores, immune to the dark background) separates the two
+/// states cleanly: measured on the #372 tab dumps at 3072x1920, sunk rows
+/// peak at ≤ ~137 while every alive row — including the player's own
+/// highlight-dimmed row — reaches ≥ ~186. The 95th percentile behaves the
+/// same but adds nothing; the max is the cheaper and better-separated
+/// statistic.
+pub(crate) fn strip_max_luma(crop_rgba: &[u8]) -> f32 {
+    crop_rgba
+        .chunks_exact(4)
+        .map(|p| 0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2]))
+        .fold(0.0f32, f32::max)
+}
+
+/// Luma midpoint between the measured populations (sunk ≤ ~137, alive
+/// ≥ ~186 on 3072x1920 dumps; a half-resolution capture halves neither —
+/// glyphs saturate at 255 either way). Rows at or above it read as alive.
+pub(crate) const SUNK_ROW_MAX_LUMA: f32 = 160.0;
+
+/// Classify one row's strip: alive unless the brightest glyph core stayed
+/// clearly under the near-white alive population. Pure companion of
+/// [`strip_max_luma`] so the threshold decision is unit-testable alone.
+pub(crate) fn row_strip_alive(max_luma: f32) -> bool {
+    max_luma >= SUNK_ROW_MAX_LUMA
 }
 
 /// Name-strip crops for every row of a detected table, in `row_centers`

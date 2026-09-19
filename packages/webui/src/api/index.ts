@@ -27,6 +27,8 @@ export type {
   OverlayAnchor,
   OverlayState,
   OverlayStatus,
+  TabRowPlayer,
+  TabRowOrder,
   PositionSample,
   EntityKind,
   EntityTrajectory,

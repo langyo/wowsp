@@ -12,7 +12,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { api, type ArenaInfo, type VehicleEntry } from "@/api";
+import { api, type ArenaInfo, type TabRowOrder, type VehicleEntry } from "@/api";
 
 export const useOverlayStore = defineStore("arenaOverlay", () => {
   const arenaInfo = ref<ArenaInfo | null>(null);
@@ -21,6 +21,11 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
   const realm = ref("");
   const watching = ref(false);
   const error = ref<string | null>(null);
+  /** Latest recognized in-game Tab row order (`wowsp://tab-order` events,
+   *  written by LiveBattlePanel's listener). Matched to the live roster by
+   *  `dateTime`; kept in the STORE (not the panel) so it survives panel
+   *  unmounts — the live pane closes and reopens while a battle runs. */
+  const tabOrder = ref<TabRowOrder | null>(null);
 
   let arenaUnlisten: (() => void) | null = null;
 
@@ -65,9 +70,17 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
   }
 
   /** Force-drop the cached roster (hard battle-duration cap — see
-   *  ReplayView's battleCap watcher). */
+   *  ReplayView's battleCap watcher). Also drops the Tab row order: it
+   *  belongs to that battle only. */
   function clearArenaInfo() {
     arenaInfo.value = null;
+    tabOrder.value = null;
+  }
+
+  /** Store the latest recognized in-game Tab row order (written by
+   *  LiveBattlePanel's `wowsp://tab-order` listener). */
+  function applyTabOrder(order: TabRowOrder) {
+    tabOrder.value = order;
   }
 
   /** Start the file watcher; incoming arena-info events update `arenaInfo`,
@@ -102,11 +115,13 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
     realm,
     allies,
     enemies,
+    tabOrder,
     watching,
     error,
     initRealm,
     refreshArenaInfo,
     clearArenaInfo,
+    applyTabOrder,
     startWatching,
     stopWatching,
   };
