@@ -17,6 +17,9 @@
     display: flex;
     align-items: stretch;
     gap: 1rem;
+    /* A full three-seal cluster (~163px, flex: none) needs room; past the
+       hero's width it wraps to its own row instead of overflowing. */
+    flex-wrap: wrap;
     padding: 0.75rem;
     background: rgb(var(--color-bg));
     border-radius: var(--radius-sm);
@@ -76,8 +79,16 @@
     }
   }
 
-  /* Career-verdict seal (神了 / 海猴) sits in the open gap between the
-     winrate block and the PR block, like a stamp pressed onto the card. */
+  /* Seal cluster between the winrate block and the PR block: the career
+     verdict (神了 / 海猴) first, then the 成分 tags (空中小人 / 水下小人)
+     at the ship panel's grid size — all pressed onto the card. */
+  &__stamps {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: none;
+  }
+
   &__stamp {
     align-self: center;
     flex: none;
