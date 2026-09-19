@@ -290,6 +290,12 @@
     "talentTrigger": "触发",
     "talentMax": "最多触发 {n} 次",
     "slotNone": "空",
+    "legendaryCmd": "传奇",
+    "eliteCmd": "精英",
+    "uniqueMod": "研发局",
+    "noCommandersForNation": "该国别暂无可用特殊舰长。",
+    "slotEmpty": "无可选升级",
+    "commanderLegend": "「传奇」徽章 = 拥有专属天赋的传奇舰长；「精英」徽章 = 精英/特种舰长。",
     "activator": {
       "DamageDoneActivator": "造成损伤时",
       "TargetsDamagedActivator": "命中目标时",
@@ -332,6 +338,38 @@
       "Lisboa": "里斯博阿",
       "SWIRSKI": "希维尔斯基",
       "Sa_Zhenbing": "萨镇冰"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "防空持续伤害",
+      "AABubbleDamage": "防空弹幕伤害",
+      "activeManeuveringWorkTimeCoeff": "主动机动时间",
+      "batteryCapacityCoeff": "潜艇电池容量",
+      "collisionDamageApply": "撞击造成的伤害",
+      "floodChanceFactor": "进水几率",
+      "floodChanceFactorPlane": "航空进水几率",
+      "healthHullCoeff": "舰体血量",
+      "planeHealthCoeff": "舰载机血量",
+      "planeSmokeGeneratorWorkTimeCoeff": "舰载机烟雾时间",
+      "regenerationHPSpeed": "血量恢复速度",
+      "smokeGeneratorCapacityCoeff": "烟雾发生器容量",
+      "smokeGeneratorWorkTimeCoeff": "烟雾持续时间",
+      "sonarWorkTimeCoeff": "声呐持续时间",
+      "speedCoef": "战舰航速",
+      "ConsumableReloadTime": "消耗品装填时间",
+      "auxTorpBoosterReloadCoeff": "鱼雷增速器装填时间",
+      "GSIdealRadius": "副炮散布",
+      "GSMaxDist": "副炮射程",
+      "GSShotDelay": "副炮装填时间",
+      "burnTime": "火灾持续时间",
+      "collisionDamageNerf": "撞击承受的伤害",
+      "floodTime": "进水持续时间",
+      "hydrophoneReloadCoeff": "水听器装填时间",
+      "planeConsumableReloadTime": "舰载机消耗品装填时间",
+      "submarineLocatorReloadCoeff": "潜艇定位器装填时间",
+      "burnChanceFactorBig": "HE弹起火率",
+      "burnChanceFactorSmall": "HE弹起火率"
     }
   },
   "viewMode": {

@@ -11,7 +11,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM002",
@@ -25,7 +27,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM003",
@@ -76,6 +80,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PXSA005_Hellcarrier"
   ]
  },
  {
@@ -96,7 +104,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM005",
@@ -116,7 +126,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM007",
@@ -130,7 +142,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM010",
@@ -143,7 +157,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM011",
@@ -171,7 +187,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM019",
@@ -184,7 +202,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM030",
@@ -243,7 +263,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM031",
@@ -312,7 +334,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM034",
@@ -346,7 +370,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": [
+   "PJSC503_Katori",
+   "PJSC004_Yubari_1944",
+   "PJSC026_Iwaki_1944"
+  ]
  },
  {
   "index": "PCM038",
@@ -370,7 +400,253 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PUSC506_Perth_1942",
+   "PFSB506_Dunkerque_1940",
+   "PFSB596_Black_Dunkerque",
+   "PFSB508_Gascogne",
+   "PFSC109_Saint_Louis",
+   "PGSB002_Tirpiz_1942",
+   "PGSB818_BA_Tirpitz",
+   "PGSB105_Koenig",
+   "PGSB106_Bayern",
+   "PGSB107_Gneisenau",
+   "PGSB108_Bismarck",
+   "PGSB898_Azur_Bismarck",
+   "PGSB109_Friedrich_der_Grosse",
+   "PGSB110_Grossdeutschland",
+   "PGSB507_Scharnhorst",
+   "PGSB508_Odin",
+   "PGSB597_Black_Scharnhorst",
+   "PGSB598_Black_Tirpitz",
+   "PGSB910_Grossdeutschland",
+   "PGSC109_Roon",
+   "PGSC809_Colorful_Roon",
+   "PGSC110_Hindenburg",
+   "PGSC890_Azur_Hindenburg",
+   "PGSC509_Siegfried",
+   "PGSC910_Hindenburg",
+   "PISB508_Roma",
+   "PISB908_FBO_Roma",
+   "PISB708_Impero",
+   "PISC105_Raimondo_Montecuccoli",
+   "PISC106_Trento",
+   "PISC107_Zara",
+   "PISC108_Amalfi",
+   "PISC109_Brindisi",
+   "PISC110_Venezia",
+   "PISC990_Ravenna",
+   "PISC505_Genova",
+   "PISC506_DucadAosta",
+   "PISC507_Duca_degli_Abruzzi",
+   "PISC517_Francesco_Ferruccio",
+   "PISC707_Olympian_Francesco_Ferruccio",
+   "PISC607_Gorizia",
+   "PISC717_Fiume",
+   "PISC897_Azur_Gorizia",
+   "PJSB003_Myogi_1912",
+   "PJSB006_Fuso_1943",
+   "PJSB007_Kongo_1942",
+   "PJSB715_HSF_Hiei",
+   "PJSB010_Nagato_1944",
+   "PJSB013_Amagi_1942",
+   "PJSB018_Yamato_1944",
+   "PJSB710_FBO_Yamato",
+   "PJSB700_ARP_Yamato",
+   "PJSB021_Izumo_1938",
+   "PJSB506_Mutsu",
+   "PJSB508_Kii",
+   "PJSB509_Musashi",
+   "PJSB705_Kongou",
+   "PJSB706_Kirishima",
+   "PJSB707_Haruna",
+   "PJSB708_Hiei_Arpeggio",
+   "PJSB918_Yamato_1944",
+   "PJSC012_Ibuki_1944",
+   "PJSC034_Zao_1944",
+   "PJSC890_CLR_Zao",
+   "PJSC510_Azumaya",
+   "PJSC829_Black_Azumaya",
+   "PJSC519_AZUR_Azuma",
+   "PJSC520_Yoshino",
+   "PJSC590_Black_Yoshino",
+   "PJSC810_TST_ZAO",
+   "PJSC934_Zao_1944",
+   "PZSB509_Izumo_Bajie",
+   "PZSC518_Martel_Wukong",
+   "PZSC717_Lanzhou",
+   "PRSC003_Murmansk_1944",
+   "PRSC105_Kirov",
+   "PRSC525_Kirov",
+   "PRSC106_Pr_94_Budeny",
+   "PRSC107_Schors",
+   "PRSC506_Molotov_1943",
+   "PRSC509_Kronshtadt",
+   "PRSC518_Lazo",
+   "PRSC568_Black_Lazo",
+   "PBSB002_Warspite_1941",
+   "PBSB105_Iron_Duke",
+   "PBSB106_Queen_Elizabeth",
+   "PBSB107_King_George_V",
+   "PBSB108_Monarch",
+   "PBSB109_Lion",
+   "PZSB539_Louchuan",
+   "PBSC105_Emerald",
+   "PBSC106_Leander",
+   "PBSC107_Fiji",
+   "PBSC108_Edinburgh",
+   "PBSC888_Edinburgh_PR",
+   "PBSC207_Surrey",
+   "PBSC208_Albemarle",
+   "PBSC209_Drake",
+   "PASB004_Arkansas_1912",
+   "PASB006_New_York_1934",
+   "PASB008_Colorado_1945",
+   "PASB997_Colorado_2",
+   "PASB012_North_Carolina_1945",
+   "PASB998_North_Carolina_2",
+   "PASB808_Colorful_North_Carolina",
+   "PASB017_Montana_1945",
+   "PASB920_Montana_2",
+   "PASB820_BA_Montana",
+   "PASB018_Iowa_1944",
+   "PASB919_Iowa_2",
+   "PZSB708_Xuan_Wu",
+   "PASB034_New_Mexico_1941",
+   "PASB506_Arizona_1941",
+   "PASB507_West_Virginia",
+   "PASB508_Alabama",
+   "PASB510_Ohio",
+   "PASB518_Massachusetts",
+   "PASB598_Black_Massachusetts",
+   "PASB705_Texas_1944",
+   "PASB707_California",
+   "PASB708_Alabama",
+   "PASB818_Black_Alabama",
+   "PASB729_Georgia",
+   "PASB720_Rhode_Island",
+   "PASB930_Black_Rhode_Island",
+   "PASB810_TST_MONTANA",
+   "PASB917_Montana_1945",
+   "PASC019_Burlington_1944",
+   "PASC020_Des_Moines_1948",
+   "PASC109_Buffalo",
+   "PASC208_Cleveland",
+   "PASC998_Cleveland",
+   "PASC209_Seattle",
+   "PASC210_Worcester",
+   "PASC508_Wichita",
+   "PASC510_Alaska",
+   "PASC599_Black_Alaska",
+   "PASC610_Puerto_Rico",
+   "PASC910_Black_Puerto_Rico",
+   "PASC718_AZUR_Montpelier",
+   "PJSB510_Yashima",
+   "PRSC215_Kotovsky",
+   "PRSC209_Riga",
+   "PZSC719_Tianjin",
+   "PRSC515_Mikoyan",
+   "PFSB528_Champagne",
+   "PJSB878_Ignis_Purgatio",
+   "PJSB888_Ragnarok",
+   "PJSB510_Shikishima",
+   "PJSB730_Togasa",
+   "PASC518_Anchorage",
+   "PISB708_AZUR_Littorio",
+   "PASB108_Kansas",
+   "PASB109_Minnesota",
+   "PASB110_Vermont",
+   "PASB990_Utah",
+   "PASB910_Connecticut",
+   "PASB517_Florida",
+   "PASB505_Oklahoma",
+   "PJSB519_Hizen",
+   "PFSB507_Strasbourg",
+   "PISB990_Amerigo_Vespucci",
+   "PISB509_Marco_Polo",
+   "PISB709_Olympian_Marco_Polo",
+   "PASB528_Alabama_VL",
+   "PASB538_Constellation",
+   "PUSB507_Yukon",
+   "PASC528_Congress",
+   "PHSC104_De_Ruyter",
+   "PHSC105_Celebes",
+   "PHSC106_Kijkduin",
+   "PHSC107_Eendracht",
+   "PGSC517_Weimar",
+   "PBSB526_Repulse",
+   "PBSB536_Black_Repulse",
+   "PGSB111_Hannover",
+   "PJSB111_Satsuma",
+   "PJSB891_Satsuma_PLUS",
+   "PFSC509_Carnot",
+   "PGSB518_Brandenburg",
+   "PGSB538_Black_Brandenburg",
+   "PBSB610_Incomparable",
+   "PGSB310_Preussen",
+   "PISB519_Giuseppe_Verdi",
+   "PISB719_Olympian_Giuseppe_Verdi",
+   "PGSB610_Mecklenburg",
+   "PGSB708_Bismarck_1941",
+   "PGSC111_Clausewitz",
+   "PGSC891_Clausewitz_PLUS",
+   "PBSC538_Hampshire",
+   "PGSB528_Anhalt",
+   "PASC509_Vallejo",
+   "PJSB539_Daisen",
+   "PVSC110_San_Martin",
+   "PVSC109_Santander",
+   "PVSC108_Ignacio_Allende",
+   "PASB527_West_Virginia_1944",
+   "PSSC110_Castilla",
+   "PSSC109_Andalucia",
+   "PSSC719_Almirante_Oquendo",
+   "PSSC108_Cataluna",
+   "PSSC107_Asturias",
+   "PISB510_Ruggiero_di_Lauria",
+   "PISB720_Conte_Verde",
+   "PISB810_Cyber_Ruggiero_di_Lauria",
+   "PGSC528_Schill",
+   "PGSC908_Black_Schill",
+   "PJSB209_Adatara",
+   "PJSB210_Bungo",
+   "PJSB208_Yumihari",
+   "PISB710_Sicilia",
+   "PSSB719_Victoria",
+   "PASB730_Wisconsin",
+   "PASB899_Volunteer_State",
+   "PASB718_Tennessee",
+   "PZSB707_Teng_She",
+   "PGSC729_Blucher",
+   "PJSC710_Yari",
+   "PJSC720_Kushiro",
+   "PASB719_Indiana",
+   "PGSC720_Bremen",
+   "PGSC920_Gold_Bremen",
+   "PFSB709_Roussillon",
+   "PISC510_Napoli",
+   "PISC590_Black_Napoli",
+   "PGSB918_Pirate_Brandenburg",
+   "PGSB928_Hunt_Bismarck_1941",
+   "PISC908_East_Amalfi",
+   "PASB908_East_North_Carolina_1945",
+   "PWSC718_Regele_Carol_I",
+   "PVSB710_Sete_de_Setembro",
+   "PASC729_Fort_Worth",
+   "PISB909_Azur_Marco_Polo",
+   "PASB918_Azur_Massachusetts",
+   "PBSB708_Prince_of_Wales",
+   "PFSS710_Surcouf",
+   "PASB940_250TH_Wisconsin",
+   "PASC909_250TH_Fort_Worth",
+   "PSSC729_Aragon",
+   "PASB740_New_Jersey",
+   "PJSC021_Kurama"
+  ]
  },
  {
   "index": "PCM039",
@@ -425,6 +701,12 @@
    9,
    10,
    11
+  ],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PASB013_Arkansas_1912"
   ]
  },
  {
@@ -472,7 +754,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM088",
@@ -493,7 +777,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM107",
@@ -517,7 +803,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM108",
@@ -543,7 +840,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM109",
@@ -569,7 +877,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM110",
@@ -594,7 +913,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM020",
@@ -647,7 +977,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM021",
@@ -661,7 +993,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM022",
@@ -675,7 +1009,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM036",
@@ -725,6 +1061,113 @@
    9,
    10,
    11
+  ],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PFSB108_Richelieu",
+   "PFSB898_Richelieu_coop",
+   "PFSB109_Alsace",
+   "PFSB110_France",
+   "PFSB508_Gascogne",
+   "PFSB510_Bourgogne",
+   "PFSB518_Jean_Bart",
+   "PFSB599_Black_Jean_Bart",
+   "PFSB909_Pirate_Jean_Bart",
+   "PFSB709_Roussillon",
+   "PFSC106_La_Galissonniere",
+   "PFSC896_La_Galissonniere_coop",
+   "PFSC107_Algerie",
+   "PFSC516_Dupleix",
+   "PFSC108_Charles_Martel",
+   "PFSC109_Saint_Louis",
+   "PFSC110_Henri_IV",
+   "PFSC710_Brennus",
+   "PFSC720_Latouche_Treville",
+   "PFSC506_De_Grasse",
+   "PFSC508_Bayard",
+   "PFSC510_Colbert",
+   "PFSC810_Henri_IV",
+   "PJSC610_Kitakami",
+   "PJSC505_Yahagi",
+   "PASB729_Georgia",
+   "PFSB528_Champagne",
+   "PZSB519_Alsace_Wujing",
+   "PGSC517_Weimar",
+   "PHSC508_De_Zeven_Provincien",
+   "PHSC988_Admiraal",
+   "PHSC998_Statenland",
+   "PBSB526_Repulse",
+   "PBSB536_Black_Repulse",
+   "PFSC509_Carnot",
+   "PBSB610_Incomparable",
+   "PSSC506_Canarias",
+   "PFSC111_Conde",
+   "PFSC208_Cherbourg",
+   "PFSC209_Brest",
+   "PFSC210_Marseille",
+   "PFSC719_Le_Havre",
+   "PFSC819_BA_Le_Havre",
+   "PFSB111_Patrie",
+   "PRSC710_Sevastopol",
+   "PFSC507_Toulon",
+   "PBSB205_Tiger",
+   "PBSB207_Rooke",
+   "PBSB209_Duncan",
+   "PBSB210_St_Vincent",
+   "PBSB998_St_Lawrence",
+   "PUSD517_Huron",
+   "PBSB206_Renown",
+   "PBSB208_Hawke",
+   "PGSC529_Admiral_Schroder",
+   "PBSB547_Renown_1944",
+   "PASB720_Rhode_Island",
+   "PASB930_Black_Rhode_Island",
+   "PGSB717_Scharnhorst_1943",
+   "PBSC716_Orion_1944",
+   "PBSB727_Duke_of_Bronte",
+   "PBSB717_Rodney",
+   "PRSC719_Kozma_Minin",
+   "PWSC710_Svea",
+   "PWSC718_Regele_Carol_I",
+   "PASS710_Archerfish",
+   "PHSC018_Jaarsveld",
+   "PHSC019_Menno_Van_Coehoorn",
+   "PHSC010_Utrecht",
+   "PHSC730_Unie",
+   "PHSC708_Vrijheid",
+   "PISC719_Ferrante_Gonzaga",
+   "PASB710_Oregon",
+   "PRSC709_Vyazma",
+   "PFSC708_Metz",
+   "PGSC729_Blucher",
+   "PHSB710_Willem_de_Eerste",
+   "PGSB828_Odin_TE",
+   "PFSC730_Amiral_Lartigue",
+   "PBSD719_Barfleur",
+   "PZSC718_Narai",
+   "PWSD719_Blyskawica_1952",
+   "PZSC720_Zhuge_Liang",
+   "PFSS710_Surcouf",
+   "PGSB708_Bismarck_1941",
+   "PFSB908_Azur_Richelieu",
+   "PGSB928_Hunt_Bismarck_1941",
+   "PWSB015_Tegetthoff",
+   "PWSB016_Laudon",
+   "PWSB017_Chios",
+   "PWSB018_Enigheten",
+   "PWSB019_Gustav_den_Store",
+   "PWSB010_Thor",
+   "PZSC730_Taejong",
+   "PGSB719_Friedrich_Carl",
+   "PSSC729_Aragon",
+   "PWSC016_Tre_Kronor",
+   "PWSC017_Hel",
+   "PWSC018_Kriti",
+   "PWSC019_Tirfing",
+   "PWSC010_Vanadis",
+   "PWSS710_Orzel"
   ]
  },
  {
@@ -749,7 +1192,11 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "special"
+  ],
+  "ships": []
  },
  {
   "index": "PCM041",
@@ -772,7 +1219,388 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PJSD528_Harekaze_2",
+   "PUSC506_Perth_1942",
+   "PUSD507_Haida",
+   "PWSD510_Friesland",
+   "PFSC104_Duguay_Trouin",
+   "PFSC105_Emile_Bertin",
+   "PFSC106_La_Galissonniere",
+   "PFSC896_La_Galissonniere_coop",
+   "PFSC716_Montcalm",
+   "PFSC107_Algerie",
+   "PFSC516_Dupleix",
+   "PFSC108_Charles_Martel",
+   "PFSC109_Saint_Louis",
+   "PFSC110_Henri_IV",
+   "PFSC506_De_Grasse",
+   "PFSC508_Bayard",
+   "PFSC510_Colbert",
+   "PFSC810_Henri_IV",
+   "PGSB108_Bismarck",
+   "PGSB898_Azur_Bismarck",
+   "PGSB109_Friedrich_der_Grosse",
+   "PGSB110_Grossdeutschland",
+   "PGSB508_Odin",
+   "PGSB828_Odin_TE",
+   "PGSB910_Grossdeutschland",
+   "PGSC104_Karlsruhe",
+   "PGSC105_Konigsberg",
+   "PGSC106_Nurnberg",
+   "PGSC516_Leipzig",
+   "PGSC107_Yorck",
+   "PGSC108_Hipper",
+   "PGSC109_Roon",
+   "PGSC809_Colorful_Roon",
+   "PGSC110_Hindenburg",
+   "PGSC890_Azur_Hindenburg",
+   "PGSC506_Admiral_Graf_Spee",
+   "PGSC017_Admiral_Scheer",
+   "PGSC996_Admiral_Reinhard",
+   "PGSC016_Deutschland",
+   "PGSC508_Prinz_Eugen",
+   "PGSC509_Siegfried",
+   "PGSC518_Mainz",
+   "PGSC598_Black_Mainz",
+   "PGSC718_Warhammer_Blacktemplar",
+   "PGSC706_HSF_Graf_Spee",
+   "PGSC910_Hindenburg",
+   "PGSD105_T_22",
+   "PGSD106_Ernst_Gaede",
+   "PGSD107_Leberecht_Maass",
+   "PGSD108_Z_23",
+   "PGSD109_Z_46",
+   "PGSD610_Z_42",
+   "PGSD110_Z_52",
+   "PGSD111_Z_57",
+   "PGSD506_T_61",
+   "PGSD508_Z_39",
+   "PISC506_DucadAosta",
+   "PISC507_Duca_degli_Abruzzi",
+   "PISC607_Gorizia",
+   "PISC897_Azur_Gorizia",
+   "PJSC005_Furutaka_1926",
+   "PJSC007_Aoba_1943",
+   "PJSC008_Myoko_1945",
+   "PJSC009_Mogami_1935",
+   "PJSC739_Suzuya",
+   "PJSC749_GM_Suzuya",
+   "PJSC759_VL_Suzuya",
+   "PJSC012_Ibuki_1944",
+   "PJSC013_Kuma_1938",
+   "PJSC018_Tone",
+   "PJSC918_Tone_Second",
+   "PJSC919_Tone_Third",
+   "PJSC021_Kurama",
+   "PJSC026_Iwaki_1944",
+   "PJSC034_Zao_1944",
+   "PJSC890_CLR_Zao",
+   "PJSC038_Atago_1944",
+   "PJSC505_Yahagi",
+   "PJSC510_Azumaya",
+   "PJSC829_Black_Azumaya",
+   "PJSC519_AZUR_Azuma",
+   "PJSC520_Yoshino",
+   "PJSC590_Black_Yoshino",
+   "PJSC598_Black_Atago",
+   "PJSC705_Myoko",
+   "PJSC707_Ashigara",
+   "PJSC708_ARP_Takao",
+   "PJSC718_ARP_Maya",
+   "PJSC709_Haguro",
+   "PJSC717_Yellow_Dragon",
+   "PJSC727_Blue_Dragon",
+   "PJSC737_Nachi",
+   "PJSC810_TST_ZAO",
+   "PJSC934_Zao_1944",
+   "PVSC507_Nueve_de_Julio_1951",
+   "PZSC506_Huang_he",
+   "PZSC508_Irian",
+   "PZSC908_Pinata_Irian",
+   "PZSD208_Siliwangi_1959",
+   "PZSD508_LoYang",
+   "PZSD598_Black_LoYang",
+   "PRSC003_Murmansk_1944",
+   "PRSC104_Svetlana",
+   "PRSC105_Kirov",
+   "PRSC525_Kirov",
+   "PRSC106_Pr_94_Budeny",
+   "PRSC107_Schors",
+   "PRSC108_Pr_68_Chapaev",
+   "PRSC109_Dmitry_Donskoy",
+   "PRSC719_Kozma_Minin",
+   "PRSC110_Pr_66_Moskva",
+   "PRSC505_KrasniKrym",
+   "PRSC506_Molotov_1943",
+   "PRSC508_Kutuzov_1952",
+   "PRSC558_Dmitry_Pozharsky",
+   "PRSC818_Cyber_Dmitry_Pozharsky",
+   "PRSC518_Lazo",
+   "PRSC568_Black_Lazo",
+   "PRSC606_Admiral_Makarov",
+   "PRSC610_Smolensk",
+   "PRSC530_Black_Smolensk",
+   "PRSC910_Pr_66_Moskva",
+   "PBSB527_Duke_of_York",
+   "PBSB747_STPatric_Duke_of_York",
+   "PBSC104_Danae",
+   "PBSC105_Emerald",
+   "PBSC106_Leander",
+   "PBSC107_Fiji",
+   "PBSC108_Edinburgh",
+   "PBSC888_Edinburgh_PR",
+   "PBSC109_Neptune",
+   "PBSC110_Minotaur",
+   "PUSC510_Brisbane",
+   "PUSC810_Black_Brisbane",
+   "PBSC205_Hawkins",
+   "PBSC206_Devonshire",
+   "PBSC207_Surrey",
+   "PBSC208_Albemarle",
+   "PBSC548_Nottingham",
+   "PBSC209_Drake",
+   "PBSC210_Goliath",
+   "PBSC910_Cyclops",
+   "PBSC505_Exeter",
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959",
+   "PBSC508_Cheshire",
+   "PBSC558_AZUR_Cheshire",
+   "PBSC516_London",
+   "PBSD106_Icarus",
+   "PBSD107_Jervis",
+   "PBSD108_Lightning",
+   "PBSD109_Jutland",
+   "PBSD519_Somme",
+   "PBSD110_Daring",
+   "PBSD517_Cossack",
+   "PBSD598_Black_Cossack",
+   "PASC005_Omaha_1923",
+   "PASC006_Atlanta_1942",
+   "PASC587_Black_Atlanta",
+   "PASC016_Worcester_1948",
+   "PASC019_Burlington_1944",
+   "PASC020_Des_Moines_1948",
+   "PASC024_Phoenix_1917",
+   "PASC044_Marblehead_1924",
+   "PASC045_Marblehead_1924_Asus",
+   "PASC505_Rattlehead",
+   "PASC106_Pensacola_1944",
+   "PASC107_New_Orlean_1944",
+   "PASC108_Baltimore_1944",
+   "PASC109_Buffalo",
+   "PASC206_Dallas",
+   "PASC207_Helena",
+   "PASC208_Cleveland",
+   "PASC998_Cleveland",
+   "PASC209_Seattle",
+   "PASC210_Worcester",
+   "PASC507_Indianapolis_1945",
+   "PASC508_Wichita",
+   "PASC510_Alaska",
+   "PASC597_Nueve_de_Julio_1951",
+   "PASC599_Black_Alaska",
+   "PASC610_Puerto_Rico",
+   "PASC910_Black_Puerto_Rico",
+   "PASC707_Flint",
+   "PASC708_Bridgeport",
+   "PASC710_Salem",
+   "PASC718_AZUR_Montpelier",
+   "PGSB108_Bismarck",
+   "PGSB109_Friedrich_der_Grosse",
+   "PGSB110_Grossdeutschland",
+   "PGSB508_Odin",
+   "PGSB828_Odin_TE",
+   "PGSB910_Grossdeutschland",
+   "PGSC519_Aegir",
+   "PGSC899_AZUR_Aegir",
+   "PZSC529_Mengchong",
+   "PRSC538_Petr_Bagration",
+   "PRSC548_Bagration",
+   "PRSC208_Tallin",
+   "PRSC210_Pr_84_Alexander_Nevsky",
+   "PRSC980_Vladimir_Monomakh",
+   "PRSC528_Ochakov",
+   "PRSC209_Riga",
+   "PRSC310_Petropavlovsk",
+   "PRSC920_PostApoc_Petropavlovsk",
+   "PRSC990_Petrozavodsk",
+   "PRSC215_Kotovsky",
+   "PRSC515_Mikoyan",
+   "PGSB509_Pommern",
+   "PGSB599_Black_Pommern",
+   "PGSD518_Z_35",
+   "PASC518_Anchorage",
+   "PGSC507_Munchen",
+   "PGSC817_Black_Munchen",
+   "PBSC528_Belfast_1943",
+   "PBSC708_STPatric_Belfast_1943",
+   "PBSC510_Plymouth",
+   "PUSC516_Mysore",
+   "PUSD510_Vampire_2",
+   "PASC810_Austin",
+   "PGSC517_Weimar",
+   "PBSD510_Druid",
+   "PASC528_Congress",
+   "PASC728_Protector",
+   "PHSC104_De_Ruyter",
+   "PHSC105_Celebes",
+   "PHSC106_Kijkduin",
+   "PHSC107_Eendracht",
+   "PHSC108_Haarlem",
+   "PHSC109_Johan_de_Witt",
+   "PHSC110_Gouden_Leeuw",
+   "PHSC990_Vrijheid",
+   "PGSB111_Hannover",
+   "PASC538_Rochester",
+   "PASC719_Cambridge",
+   "PFSC509_Carnot",
+   "PHSD509_Groningen",
+   "PGSB206_Mackensen",
+   "PGSB207_Prinz_Heinrich",
+   "PGSB208_Zieten",
+   "PGSB908_PostApoc_Zieten",
+   "PGSB209_Prinz_Rupprecht",
+   "PGSB210_Schlieffen",
+   "PGSB930_Pinata_Schliefen",
+   "PBSB610_Incomparable",
+   "PGSB206_Mackensen",
+   "PGSB517_AZUR_Prinz_Heinrich",
+   "PGSB208_Zieten",
+   "PGSB209_Prinz_Rupprecht",
+   "PGSB210_Schlieffen",
+   "PBSB610_Incomparable",
+   "PBSC610_Gibraltar",
+   "PASC519_Tulsa",
+   "PGSB310_Preussen",
+   "PASC111_Annapolis",
+   "PFSC111_Conde",
+   "PSSC506_Canarias",
+   "PRSC710_Sevastopol",
+   "PASD610_Forrest_Sherman",
+   "PJSC517_Maya",
+   "PFSC507_Toulon",
+   "PFSC208_Cherbourg",
+   "PFSC209_Brest",
+   "PFSC210_Marseille",
+   "PFSC719_Le_Havre",
+   "PFSC819_BA_Le_Havre",
+   "PBSC111_Edgar",
+   "PASC548_San_Diego",
+   "PGSC111_Clausewitz",
+   "PGSC891_Clausewitz_PLUS",
+   "PBSC538_Hampshire",
+   "PUSD517_Huron",
+   "PBSB537_Collingwood",
+   "PJSC210_Yodo",
+   "PJSC208_Shimanto",
+   "PJSC507_Tokachi",
+   "PJSC209_Takahashi",
+   "PJSC819_BA_Takahashi",
+   "PGSC529_Admiral_Schroder",
+   "PJSC207_Omono",
+   "PJSC206_Gokase",
+   "PJSC205_Agano",
+   "PBSB547_Renown_1944",
+   "PBSC020_Monmouth",
+   "PUSC509_Hector",
+   "PVSC110_San_Martin",
+   "PVSC109_Santander",
+   "PVSC107_Coronel_Bolognesi",
+   "PVSC108_Ignacio_Allende",
+   "PVSC106_Almirante_Cochrane",
+   "PVSC105_La_Argentina",
+   "PVSC104_Cordoba",
+   "PVSC508_Almirante_Grau",
+   "PWSC506_Elli",
+   "PRSC111_Novosibirsk",
+   "PSSC110_Castilla",
+   "PSSC109_Andalucia",
+   "PSSC719_Almirante_Oquendo",
+   "PSSC108_Cataluna",
+   "PSSC107_Asturias",
+   "PSSC105_Galicia",
+   "PSSC104_Almirante_Cervera",
+   "PSSC106_Baleares",
+   "PZSD510_Lushun",
+   "PZSD910_Black_Lushun",
+   "PGSC528_Schill",
+   "PGSC908_Black_Schill",
+   "PHSC509_Van_Speijk",
+   "PSSC508_Numancia",
+   "PBSC810_Defence",
+   "PWSB509_Karl_XIV_Johan",
+   "PWSB909_Black_Karl_XIV_Johan",
+   "PISC519_Michelangelo",
+   "PISC710_Varese",
+   "PRSC810_Komissar",
+   "PBSD717_Jupiter_1942",
+   "PZSC719_Tianjin",
+   "PZSC720_Zhuge_Liang",
+   "PGSC728_Wiesbaden",
+   "PUSC014_Dunedin",
+   "PUSC015_Delhi",
+   "PUSC016_Hobart",
+   "PUSC017_Uganda",
+   "PUSC018_Auckland",
+   "PUSC019_Encounter",
+   "PUSC010_Cerberus",
+   "PUSC025_Red_Fort",
+   "PUSC015_Delhi",
+   "PHSC710_Prins_Van_Oranje",
+   "PHSC720_Gold_Prins_Van_Oranje",
+   "PJSC719_Chikuma_2_Hyb",
+   "PJSC729_GW_Chikuma_2_Hyb",
+   "PBSC716_Orion_1944",
+   "PASC011_Jacksonville",
+   "PASC891_Jacksonville_PLUS",
+   "PGSD727_z34_EventDday_Support",
+   "PGSD710_Georg_Hoffmann",
+   "PGSD720_Gold_Georg_Hoffmann",
+   "PGSC710_Hildebrand",
+   "PJSC710_Yari",
+   "PRSC709_Vyazma",
+   "PFSC708_Metz",
+   "PUSC997_Gambra",
+   "PGSC729_Blucher",
+   "PWSD708_Blyskawica_1944",
+   "PUSC717_Gambia",
+   "PFSD820_Kleber_TE",
+   "PBSB737_Royal_Sovereign",
+   "PJSC720_Kushiro",
+   "PGSC018_Knesebeck",
+   "PGSC019_Manteuffel",
+   "PGSC017_Admiral_Scheer",
+   "PGSC010_Prinz_Adalbert",
+   "PASB719_Indiana",
+   "PZSC717_Lanzhou",
+   "PZSC718_Narai",
+   "PVSC708_Comandante_Aguirre",
+   "PGSC720_Bremen",
+   "PGSC920_Gold_Bremen",
+   "PASC720_Hawaii",
+   "PASC920_Gold_Hawaii",
+   "PGSC717_Nurnberg_1944",
+   "PISC729_Messina",
+   "PBSC920_Pirate_Plymouth",
+   "PBSC909_Pirate_Neptune",
+   "PGSD910_East_Z_52",
+   "PJSC905_East_Furutaka_1926",
+   "PGSD719_ZH_1",
+   "PWSC718_Regele_Carol_I",
+   "PASC729_Fort_Worth",
+   "PASC909_250TH_Fort_Worth",
+   "PVSC710_Almirante_Irizar",
+   "PGSB719_Friedrich_Carl",
+   "PFSC720_Latouche_Treville",
+   "PHSD708_Philips_van_Almonde",
+   "PJSC929_NL_Chikuma_2_Hyb"
+  ]
  },
  {
   "index": "PCM042",
@@ -795,7 +1623,106 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PBSC110_Minotaur",
+   "PBSC108_Edinburgh",
+   "PBSC888_Edinburgh_PR",
+   "PBSC109_Neptune",
+   "PASC017_Baltimore_1944",
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959",
+   "PASB509_Missouri",
+   "PASC006_Atlanta_1942",
+   "PASC587_Black_Atlanta",
+   "PRSC110_Pr_66_Moskva",
+   "PRSC509_Kronshtadt",
+   "PRSC510_Stalingrad",
+   "PRSC520_Stalingrad",
+   "PRSC910_Pr_66_Moskva",
+   "PRSC109_Dmitry_Donskoy",
+   "PRSC719_Kozma_Minin",
+   "PRSC108_Pr_68_Chapaev",
+   "PASC020_Des_Moines_1948",
+   "PASC710_Salem",
+   "PASC019_Burlington_1944",
+   "PRSC999_Seal",
+   "PASD709_Black",
+   "PASD529_Black_Black",
+   "PASC016_Worcester_1948",
+   "PZSD108_Hsien_Yang",
+   "PZSD109_Chung_Mu",
+   "PZSD110_Hsiang_Yang",
+   "PZSD111_Kunming",
+   "PASC109_Buffalo",
+   "PASC208_Cleveland",
+   "PASC998_Cleveland",
+   "PASC209_Seattle",
+   "PASC210_Worcester",
+   "PASC507_Indianapolis_1945",
+   "PASC508_Wichita",
+   "PASC510_Alaska",
+   "PASC610_Puerto_Rico",
+   "PASC910_Black_Puerto_Rico",
+   "PASC718_AZUR_Montpelier",
+   "PASC599_Black_Alaska",
+   "PWSD610_Smaland",
+   "PWSD920_PostApoc_Smaland",
+   "PASC108_Baltimore_1944",
+   "PWSD508_Orkan",
+   "PRSC208_Tallin",
+   "PRSC210_Pr_84_Alexander_Nevsky",
+   "PRSC980_Vladimir_Monomakh",
+   "PRSC528_Ochakov",
+   "PRSC209_Riga",
+   "PRSC310_Petropavlovsk",
+   "PRSC920_PostApoc_Petropavlovsk",
+   "PRSC990_Petrozavodsk",
+   "PRSB528_Borodino",
+   "PRSB818_Borodino_TE",
+   "PBSC528_Belfast_1943",
+   "PBSC708_STPatric_Belfast_1943",
+   "PBSC510_Plymouth",
+   "PBSC518_Tiger_1959",
+   "PBSC718_STPatric_Tiger_1959",
+   "PASB538_Constellation",
+   "PASC528_Congress",
+   "PWSD710_Ragnar",
+   "PASC519_Tulsa",
+   "PASC111_Annapolis",
+   "PBSC111_Edgar",
+   "PUSC510_Brisbane",
+   "PUSC810_Black_Brisbane",
+   "PVSC110_San_Martin",
+   "PVSC109_Santander",
+   "PVSC108_Ignacio_Allende",
+   "PWSD208_Split",
+   "PWSD209_Lambros_Katsonis",
+   "PWSD210_Gdansk",
+   "PRSC111_Novosibirsk",
+   "PASB720_Rhode_Island",
+   "PASB930_Black_Rhode_Island",
+   "PASC011_Jacksonville",
+   "PASC891_Jacksonville_PLUS",
+   "PWSC710_Svea",
+   "PWSD719_Blyskawica_1952",
+   "PASC720_Hawaii",
+   "PWSB018_Enigheten",
+   "PWSB019_Gustav_den_Store",
+   "PWSB010_Thor",
+   "PWSB718_Turgut_Reis",
+   "PUSC710_Pioneer",
+   "PASC920_Gold_Hawaii",
+   "PBSC719_Aberdeen",
+   "PBSC920_Pirate_Plymouth",
+   "PBSC909_Pirate_Neptune",
+   "PASC729_Fort_Worth",
+   "PASC909_250TH_Fort_Worth",
+   "PZSC730_Taejong"
+  ]
  },
  {
   "index": "PCM068",
@@ -844,7 +1771,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM069",
@@ -899,7 +1828,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM083",
@@ -940,7 +1871,9 @@
   ],
   "shiplevel": [
    7
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM085",
@@ -986,7 +1919,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM100",
@@ -1033,7 +1968,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM103",
@@ -1079,7 +2016,11 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [
+   "special"
+  ],
+  "ships": []
  },
  {
   "index": "PCM111",
@@ -1102,7 +2043,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM112",
@@ -1127,7 +2079,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM113",
@@ -1152,7 +2115,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM114",
@@ -1179,7 +2153,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM006",
@@ -1235,6 +2220,28 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PJSC026_Iwaki_1944",
+   "PJSS518_I56",
+   "PJSS720_I56_1944",
+   "PJSS820_BA_I56",
+   "PRSS106_S_1",
+   "PZSS716_Xing_Zhong_Guo_14",
+   "PRSS108_L20",
+   "PRSS110_K_type",
+   "PBSS110_Thrasher",
+   "PBSS910_Selkie",
+   "PBSS710_Seal",
+   "PJSS528_I54",
+   "PASS710_Archerfish",
+   "PFSS710_Surcouf",
+   "PISS106_Foca",
+   "PISS108_Pietro_Micca",
+   "PISS110_Calvi",
+   "PWSS710_Orzel"
   ]
  },
  {
@@ -1248,7 +2255,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM012",
@@ -1298,6 +2307,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912"
   ]
  },
  {
@@ -1347,6 +2360,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PJSC026_Iwaki_1944"
   ]
  },
  {
@@ -1384,6 +2401,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912"
   ]
  },
  {
@@ -1436,6 +2457,25 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PJSC026_Iwaki_1944",
+   "PJSS518_I56",
+   "PJSS720_I56_1944",
+   "PJSS820_BA_I56",
+   "PASS710_Archerfish",
+   "PRSS106_S_1",
+   "PRSS108_L20",
+   "PRSS110_K_type",
+   "PBSS110_Thrasher",
+   "PZSS716_Xing_Zhong_Guo_14",
+   "PBSS910_Selkie",
+   "PBSS710_Seal",
+   "PFSS710_Surcouf",
+   "PISS106_Foca",
+   "PISS108_Pietro_Micca",
+   "PISS110_Calvi"
   ]
  },
  {
@@ -1485,6 +2525,124 @@
    9,
    10,
    11
+  ],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PUSC506_Perth_1942",
+   "PJSC610_Kitakami",
+   "PZSC506_Huang_he",
+   "PRSC508_Kutuzov_1952",
+   "PRSC558_Dmitry_Pozharsky",
+   "PRSC818_Cyber_Dmitry_Pozharsky",
+   "PRSC610_Smolensk",
+   "PRSC530_Black_Smolensk",
+   "PBSC105_Emerald",
+   "PBSC106_Leander",
+   "PBSC107_Fiji",
+   "PBSC108_Edinburgh",
+   "PBSC888_Edinburgh_PR",
+   "PBSC109_Neptune",
+   "PBSC110_Minotaur",
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959",
+   "PBSC516_London",
+   "PASC707_Flint",
+   "PJSC026_Iwaki_1944",
+   "PASC518_Anchorage",
+   "PZSC710_Incheon",
+   "PBSC528_Belfast_1943",
+   "PBSC708_STPatric_Belfast_1943",
+   "PUSC516_Mysore",
+   "PGSD519_Z_44",
+   "PBSC510_Plymouth",
+   "PBSC518_Tiger_1959",
+   "PBSC718_STPatric_Tiger_1959",
+   "PASC538_Rochester",
+   "PBSC610_Gibraltar",
+   "PZSC110_Jinan",
+   "PZSC109_Sejong",
+   "PZSC108_Harbin",
+   "PZSC107_Chumphon",
+   "PZSC106_Rahmat",
+   "PZSC105_Chung_King",
+   "PZSC509_Dalian",
+   "PBSC526_Dido",
+   "PISD506_Leone",
+   "PBSC111_Edgar",
+   "PUSC509_Hector",
+   "PBSC548_Nottingham",
+   "PASD519_Halford",
+   "PISB108_Vittorio_Veneto",
+   "PISB109_Lepanto",
+   "PISB110_Cristoforo_Colombo",
+   "PISB710_Sicilia",
+   "PISB990_Amerigo_Vespucci",
+   "PISB519_Giuseppe_Verdi",
+   "PISB719_Olympian_Giuseppe_Verdi",
+   "PISC105_Raimondo_Montecuccoli",
+   "PISC106_Trento",
+   "PISC107_Zara",
+   "PISC108_Amalfi",
+   "PISC109_Brindisi",
+   "PISC110_Venezia",
+   "PISC990_Ravenna",
+   "PISC510_Napoli",
+   "PISC590_Black_Napoli",
+   "PISC607_Gorizia",
+   "PISC897_Azur_Gorizia",
+   "PBSC810_Defence",
+   "PISC519_Michelangelo",
+   "PISC111_Piemonte",
+   "PISC517_Francesco_Ferruccio",
+   "PISC707_Olympian_Francesco_Ferruccio",
+   "PASA028_Yorktown",
+   "PASA020_Essex",
+   "PASA920_Pinata_Essex",
+   "PGSC728_Wiesbaden",
+   "PUSC015_Delhi",
+   "PUSC016_Hobart",
+   "PUSC017_Uganda",
+   "PUSC018_Auckland",
+   "PUSC019_Encounter",
+   "PUSC010_Cerberus",
+   "PUSC025_Red_Fort",
+   "PUSC015_Delhi",
+   "PJSC719_Chikuma_2_Hyb",
+   "PJSC729_GW_Chikuma_2_Hyb",
+   "PWSC710_Svea",
+   "PHSC998_Statenland",
+   "PJSA710_Shinano",
+   "PHSC708_Vrijheid",
+   "PHSC730_Unie",
+   "PISC719_Ferrante_Gonzaga",
+   "PUSC997_Gambra",
+   "PUSB710_Irresistible",
+   "PUSC717_Gambia",
+   "PISB718_Marcantonio_Colonna",
+   "PBSD719_Barfleur",
+   "PJSC720_Kushiro",
+   "PISB011_Affondatore",
+   "PISB818_BA_Marcantonio_Colonna",
+   "PBSA710_Ocean",
+   "PZSC718_Narai",
+   "PGSC717_Nurnberg_1944",
+   "PISC729_Messina",
+   "PUSC710_Pioneer",
+   "PBSC719_Aberdeen",
+   "PISC717_Fiume",
+   "PBSC920_Pirate_Plymouth",
+   "PBSC909_Pirate_Neptune",
+   "PISC908_East_Amalfi",
+   "PISS106_Foca",
+   "PISS108_Pietro_Micca",
+   "PISS110_Calvi",
+   "PJSA920_Azur_Shinano",
+   "PZSC918_Azur_Harbin",
+   "PVSC710_Almirante_Irizar",
+   "PISB720_Conte_Verde",
+   "PJSC929_NL_Chikuma_2_Hyb"
   ]
  },
  {
@@ -1532,7 +2690,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM067",
@@ -1579,7 +2739,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM070",
@@ -1630,6 +2792,64 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PGSB002_Tirpiz_1942",
+   "PGSB818_BA_Tirpitz",
+   "PGSB107_Gneisenau",
+   "PGSB507_Scharnhorst",
+   "PGSB717_Scharnhorst_1943",
+   "PGSB508_Odin",
+   "PGSB828_Odin_TE",
+   "PGSB597_Black_Scharnhorst",
+   "PGSB598_Black_Tirpitz",
+   "PJSB506_Mutsu",
+   "PJSB508_Kii",
+   "PJSB529_Iwami",
+   "PJSB730_Togasa",
+   "PJSB559_Black_Iwami",
+   "PJSC026_Iwaki_1944",
+   "PGSB509_Pommern",
+   "PGSB599_Black_Pommern",
+   "PASB538_Constellation",
+   "PGSB518_Brandenburg",
+   "PGSB538_Black_Brandenburg",
+   "PGSB207_Prinz_Heinrich",
+   "PGSB989_Prinz_Sigismund",
+   "PGSB517_AZUR_Prinz_Heinrich",
+   "PGSB208_Zieten",
+   "PGSB908_PostApoc_Zieten",
+   "PGSB209_Prinz_Rupprecht",
+   "PGSB210_Schlieffen",
+   "PGSB930_Pinata_Schliefen",
+   "PBSB610_Incomparable",
+   "PGSB610_Mecklenburg",
+   "PBSB205_Tiger",
+   "PBSB207_Rooke",
+   "PBSB209_Duncan",
+   "PBSB717_Rodney",
+   "PBSB210_St_Vincent",
+   "PBSB998_St_Lawrence",
+   "PBSB208_Hawke",
+   "PBSB206_Renown",
+   "PBSB547_Renown_1944",
+   "PGSB528_Anhalt",
+   "PJSB539_Daisen",
+   "PWSB509_Karl_XIV_Johan",
+   "PWSB909_Black_Karl_XIV_Johan",
+   "PJSB549_Tsurugi",
+   "PBSB727_Duke_of_Bronte",
+   "PWSB719_Niord",
+   "PZSB709_Taihang",
+   "PWSB015_Tegetthoff",
+   "PWSB016_Laudon",
+   "PWSB017_Chios",
+   "PWSB018_Enigheten",
+   "PWSB019_Gustav_den_Store",
+   "PWSB010_Thor",
+   "PWSB718_Turgut_Reis",
+   "PGSB918_Pirate_Brandenburg"
   ]
  },
  {
@@ -1677,7 +2897,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM082",
@@ -1723,7 +2945,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM092",
@@ -1754,6 +2978,15 @@
    6,
    8,
    10
+  ],
+  "tags": [],
+  "ships": [
+   "PGSA510_Werner_Voss",
+   "PGSA610_Max_Immelmann",
+   "PFSA506_Bearn",
+   "PBSA718_Theseus",
+   "PJSA710_Shinano",
+   "PJSA920_Azur_Shinano"
   ]
  },
  {
@@ -1800,6 +3033,54 @@
    9,
    10,
    11
+  ],
+  "tags": [
+   "special"
+  ],
+  "ships": [
+   "PJSC205_Agano",
+   "PJSC206_Gokase",
+   "PJSC207_Omono",
+   "PJSC208_Shimanto",
+   "PJSC209_Takahashi",
+   "PJSC819_BA_Takahashi",
+   "PJSC210_Yodo",
+   "PJSC005_Furutaka_1926",
+   "PJSC007_Aoba_1943",
+   "PJSC008_Myoko_1945",
+   "PJSC009_Mogami_1935",
+   "PJSC012_Ibuki_1944",
+   "PJSC021_Kurama",
+   "PJSC034_Zao_1944",
+   "PJSC890_CLR_Zao",
+   "PJSC810_TST_ZAO",
+   "PJSC934_Zao_1944",
+   "PISC105_Raimondo_Montecuccoli",
+   "PISC106_Trento",
+   "PISC107_Zara",
+   "PISC108_Amalfi",
+   "PISC109_Brindisi",
+   "PISC110_Venezia",
+   "PISC990_Ravenna",
+   "PISC111_Piemonte",
+   "PISC507_Duca_degli_Abruzzi",
+   "PJSC705_Myoko",
+   "PJSC707_Ashigara",
+   "PJSC709_Haguro",
+   "PJSC717_Yellow_Dragon",
+   "PJSC727_Blue_Dragon",
+   "PJSC737_Nachi",
+   "PUSC015_Delhi",
+   "PUSC025_Red_Fort",
+   "PUSC016_Hobart",
+   "PUSC017_Uganda",
+   "PUSC018_Auckland",
+   "PUSC019_Encounter",
+   "PUSC010_Cerberus",
+   "PBSB737_Royal_Sovereign",
+   "PUSC710_Pioneer",
+   "PISC908_East_Amalfi",
+   "PJSC905_East_Furutaka_1926"
   ]
  },
  {
@@ -1823,7 +3104,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM116",
@@ -1847,7 +3139,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM117",
@@ -1871,7 +3174,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM118",
@@ -1896,7 +3210,18 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSB053_Aegir_modern",
+   "PXSC051_Dalian_modern",
+   "PXSC050_Austin_modern",
+   "PXSD042_Grozovoy_modern",
+   "PXSD041_Marceau_modern",
+   "PXSB054_Yoshino_modern"
+  ]
  },
  {
   "index": "PCM023",
@@ -1947,6 +3272,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912"
   ]
  },
  {
@@ -2001,6 +3330,11 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PJSC026_Iwaki_1944"
   ]
  },
  {
@@ -2049,6 +3383,11 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PJSC026_Iwaki_1944"
   ]
  },
  {
@@ -2095,7 +3434,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM064",
@@ -2141,7 +3482,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM065",
@@ -2187,7 +3530,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM081",
@@ -2219,6 +3564,15 @@
    8,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PGSA510_Werner_Voss",
+   "PGSA610_Max_Immelmann",
+   "PFSA506_Bearn",
+   "PBSA718_Theseus",
+   "PJSA710_Shinano",
+   "PJSA920_Azur_Shinano"
   ]
  },
  {
@@ -2276,6 +3630,14 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PHSD610_Tromp",
+   "PFSS710_Surcouf",
+   "PHSS710_Tonijn",
+   "PGSD719_ZH_1",
+   "PHSD708_Philips_van_Almonde"
   ]
  },
  {
@@ -2322,6 +3684,84 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PUSC506_Perth_1942",
+   "PGSC507_Munchen",
+   "PGSC817_Black_Munchen",
+   "PGSC518_Mainz",
+   "PGSC598_Black_Mainz",
+   "PGSC718_Warhammer_Blacktemplar",
+   "PISC506_DucadAosta",
+   "PISC507_Duca_degli_Abruzzi",
+   "PISC517_Francesco_Ferruccio",
+   "PISC707_Olympian_Francesco_Ferruccio",
+   "PJSC610_Kitakami",
+   "PRSC106_Pr_94_Budeny",
+   "PRSC107_Schors",
+   "PRSC108_Pr_68_Chapaev",
+   "PRSC109_Dmitry_Donskoy",
+   "PRSC210_Pr_84_Alexander_Nevsky",
+   "PRSC980_Vladimir_Monomakh",
+   "PRSC506_Molotov_1943",
+   "PRSC518_Lazo",
+   "PRSC568_Black_Lazo",
+   "PRSC528_Ochakov",
+   "PRSC538_Petr_Bagration",
+   "PRSC548_Bagration",
+   "PRSC610_Smolensk",
+   "PRSC530_Black_Smolensk",
+   "PBSC106_Leander",
+   "PBSC107_Fiji",
+   "PBSC108_Edinburgh",
+   "PBSC888_Edinburgh_PR",
+   "PBSC109_Neptune",
+   "PBSC110_Minotaur",
+   "PBSC510_Plymouth",
+   "PASC006_Atlanta_1942",
+   "PASC587_Black_Atlanta",
+   "PASC707_Flint",
+   "PASC810_Austin",
+   "PHSC508_De_Zeven_Provincien",
+   "PHSC018_Jaarsveld",
+   "PHSC019_Menno_Van_Coehoorn",
+   "PHSC010_Utrecht",
+   "PHSC730_Unie",
+   "PHSC988_Admiraal",
+   "PHSC998_Statenland",
+   "PBSC528_Belfast_1943",
+   "PBSC708_STPatric_Belfast_1943",
+   "PZSC506_Huang_he",
+   "PZSC110_Jinan",
+   "PZSC109_Sejong",
+   "PZSC108_Harbin",
+   "PZSC107_Chumphon",
+   "PZSC106_Rahmat",
+   "PZSC509_Dalian",
+   "PZSC729_Baotou",
+   "PBSC526_Dido",
+   "PBSC111_Edgar",
+   "PUSC509_Hector",
+   "PHSC990_Vrijheid",
+   "PHSC110_Gouden_Leeuw",
+   "PHSC109_Johan_de_Witt",
+   "PHSC108_Haarlem",
+   "PHSC107_Eendracht",
+   "PHSC106_Kijkduin",
+   "PVSC508_Almirante_Grau",
+   "PWSC506_Elli",
+   "PHSC509_Van_Speijk",
+   "PGSC728_Wiesbaden",
+   "PHSC710_Prins_Van_Oranje",
+   "PHSC720_Gold_Prins_Van_Oranje",
+   "PBSC716_Orion_1944",
+   "PHSC708_Vrijheid",
+   "PISC719_Ferrante_Gonzaga",
+   "PBSC920_Pirate_Plymouth",
+   "PBSC909_Pirate_Neptune",
+   "PZSC918_Azur_Harbin",
+   "PZSC730_Taejong"
   ]
  },
  {
@@ -2370,7 +3810,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM093",
@@ -2395,7 +3837,29 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": [
+   "PJSC018_Tone",
+   "PJSB526_Ise",
+   "PASB519_Kearsarge",
+   "PASB889_Azur_Kearsarge",
+   "PASB208_Nebraska",
+   "PASB209_Delaware",
+   "PASB210_Louisiana",
+   "PASB599_Black_Kearsarge",
+   "PASD519_Halford",
+   "PRSC810_Komissar",
+   "PJSS528_I54",
+   "PJSC719_Chikuma_2_Hyb",
+   "PJSC729_GW_Chikuma_2_Hyb",
+   "PGSC710_Hildebrand",
+   "PFSC730_Amiral_Lartigue",
+   "PJSB720_Aki",
+   "PJSB920_Gold_Aki",
+   "PASB909_Pirate_Delaware",
+   "PJSC929_NL_Chikuma_2_Hyb"
+  ]
  },
  {
   "index": "PCM009",
@@ -2440,7 +3904,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM026",
@@ -2486,6 +3952,13 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959",
+   "PGSD508_Z_39"
   ]
  },
  {
@@ -2543,6 +4016,13 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959",
+   "PGSD508_Z_39"
   ]
  },
  {
@@ -2589,6 +4069,12 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959",
+   "PGSD508_Z_39"
   ]
  },
  {
@@ -2621,7 +4107,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PBSB110_Conqueror",
+   "PBSB920_MC_Conqueror"
+  ]
  },
  {
   "index": "PCM047",
@@ -2647,7 +4140,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PASB017_Montana_1945",
+   "PASB820_BA_Montana"
+  ]
  },
  {
   "index": "PCM049",
@@ -2673,7 +4173,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PGSC110_Hindenburg",
+   "PGSC890_Azur_Hindenburg"
+  ]
  },
  {
   "index": "PCM050",
@@ -2707,7 +4214,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PFSC110_Henri_IV",
+   "PFSC810_Henri_IV"
+  ]
  },
  {
   "index": "PCM051",
@@ -2748,7 +4262,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PBSC110_Minotaur"
+  ]
  },
  {
   "index": "PCM055",
@@ -2773,7 +4293,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PRSD110_Pr_24_Khabarovsk"
+  ]
  },
  {
   "index": "PCM056",
@@ -2807,7 +4333,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PGSD110_Z_52",
+   "PGSD910_East_Z_52"
+  ]
  },
  {
   "index": "PCM058",
@@ -2841,7 +4374,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PASD013_Gearing_1945"
+  ]
  },
  {
   "index": "PCM059",
@@ -2867,7 +4406,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PZSD110_Hsiang_Yang"
+  ]
  },
  {
   "index": "PCM072",
@@ -2915,6 +4460,13 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PGSD508_Z_39",
+   "PBSC507_Belfast_1959",
+   "PBSC707_STPatric_Belfast_1959"
   ]
  },
  {
@@ -2959,7 +4511,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM075",
@@ -2993,7 +4547,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PBSD110_Daring"
+  ]
  },
  {
   "index": "PCM077",
@@ -3019,7 +4579,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PJSD210_Harugumo"
+  ]
  },
  {
   "index": "PCM091",
@@ -3045,7 +4611,9 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM095",
@@ -3069,7 +4637,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PISC110_Venezia"
+  ]
  },
  {
   "index": "PCM101",
@@ -3113,7 +4687,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM102",
@@ -3157,7 +4733,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM105",
@@ -3189,7 +4767,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PASB110_Vermont"
+  ]
  },
  {
   "index": "PCM013",
@@ -3242,6 +4826,20 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912",
+   "PRSS110_K_type",
+   "PBSS110_Thrasher",
+   "PBSS910_Selkie",
+   "PBSS710_Seal",
+   "PASS710_Archerfish",
+   "PJSS720_I56_1944",
+   "PJSS820_BA_I56",
+   "PFSS710_Surcouf",
+   "PISS110_Calvi",
+   "PWSS710_Orzel"
   ]
  },
  {
@@ -3288,6 +4886,31 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PGSB509_Pommern",
+   "PGSB599_Black_Pommern",
+   "PGSB209_Prinz_Rupprecht",
+   "PGSB210_Schlieffen",
+   "PGSB930_Pinata_Schliefen",
+   "PJSB529_Iwami",
+   "PJSB559_Black_Iwami",
+   "PJSB730_Togasa",
+   "PBSB610_Incomparable",
+   "PGSB610_Mecklenburg",
+   "PBSB209_Duncan",
+   "PBSB210_St_Vincent",
+   "PBSB998_St_Lawrence",
+   "PJSB539_Daisen",
+   "PWSB509_Karl_XIV_Johan",
+   "PWSB909_Black_Karl_XIV_Johan",
+   "PJSB549_Tsurugi",
+   "PGSB989_Prinz_Sigismund",
+   "PWSB719_Niord",
+   "PZSB709_Taihang",
+   "PWSB019_Gustav_den_Store",
+   "PWSB010_Thor"
   ]
  },
  {
@@ -3333,6 +4956,19 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PRSS110_K_type",
+   "PBSS110_Thrasher",
+   "PBSS910_Selkie",
+   "PBSS710_Seal",
+   "PASS710_Archerfish",
+   "PJSS720_I56_1944",
+   "PJSS820_BA_I56",
+   "PFSS710_Surcouf",
+   "PISS110_Calvi",
+   "PWSS710_Orzel"
   ]
  },
  {
@@ -3376,6 +5012,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASA508_Enterprise"
   ]
  },
  {
@@ -3419,6 +5059,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASA508_Enterprise"
   ]
  },
  {
@@ -3450,6 +5094,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912"
   ]
  },
  {
@@ -3475,7 +5123,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PFSB110_France"
+  ]
  },
  {
   "index": "PCM045",
@@ -3500,7 +5154,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PGSB110_Grossdeutschland"
+  ]
  },
  {
   "index": "PCM046",
@@ -3531,7 +5191,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PJSB018_Yamato_1944",
+   "PJSB710_FBO_Yamato"
+  ]
  },
  {
   "index": "PCM048",
@@ -3555,7 +5222,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PJSC034_Zao_1944",
+   "PJSC890_CLR_Zao"
+  ]
  },
  {
   "index": "PCM052",
@@ -3584,7 +5258,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PASC020_Des_Moines_1948"
+  ]
  },
  {
   "index": "PCM053",
@@ -3616,7 +5296,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PASC210_Worcester"
+  ]
  },
  {
   "index": "PCM054",
@@ -3648,7 +5334,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PRSC110_Pr_66_Moskva"
+  ]
  },
  {
   "index": "PCM057",
@@ -3673,7 +5365,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PJSD012_Shimakaze_1943",
+   "PJSD890_AZUR_Shimakaze"
+  ]
  },
  {
   "index": "PCM060",
@@ -3713,7 +5412,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PRSD210_Grozovoy_pr_40N"
+  ]
  },
  {
   "index": "PCM061",
@@ -3739,7 +5444,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PASA110_Midway"
+  ]
  },
  {
   "index": "PCM062",
@@ -3763,7 +5474,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PJSA110_Hakuryu"
+  ]
  },
  {
   "index": "PCM074",
@@ -3826,6 +5543,10 @@
    9,
    10,
    11
+  ],
+  "tags": [],
+  "ships": [
+   "PASB013_Arkansas_1912"
   ]
  },
  {
@@ -3858,7 +5579,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PFSD110_Kleber",
+   "PFSD810_Colorful_Kleber"
+  ]
  },
  {
   "index": "PCM078",
@@ -3883,7 +5611,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PRSB110_Sovetskaya_Rossiya"
+  ]
  },
  {
   "index": "PCM079",
@@ -3922,7 +5656,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PBSA210_Audacious"
+  ]
  },
  {
   "index": "PCM080",
@@ -3953,7 +5693,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PJSB700_ARP_Yamato"
+  ]
  },
  {
   "index": "PCM086",
@@ -3996,7 +5742,9 @@
    9,
    10,
    11
-  ]
+  ],
+  "tags": [],
+  "ships": []
  },
  {
   "index": "PCM094",
@@ -4021,7 +5769,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PWSD110_Halland"
+  ]
  },
  {
   "index": "PCM096",
@@ -4046,7 +5800,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PRSC310_Petropavlovsk",
+   "PRSC920_PostApoc_Petropavlovsk"
+  ]
  },
  {
   "index": "PCM097",
@@ -4071,7 +5832,14 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PGSA110_Manfred_Richthofen",
+   "PGSA910_Pinata_Richthofen"
+  ]
  },
  {
   "index": "PCM098",
@@ -4104,7 +5872,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PGSD210_Elbing"
+  ]
  },
  {
   "index": "PCM099",
@@ -4129,7 +5903,13 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PHSC110_Gouden_Leeuw"
+  ]
  },
  {
   "index": "PCM106",
@@ -4154,6 +5934,12 @@
   },
   "shiptype": [],
   "nation": [],
-  "shiplevel": []
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PISB110_Cristoforo_Colombo"
+  ]
  }
 ]

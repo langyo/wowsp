@@ -290,6 +290,12 @@
     "talentTrigger": "発動",
     "talentMax": "最大 {n} 回発動",
     "slotNone": "空",
+    "legendaryCmd": "伝説",
+    "eliteCmd": "精鋭",
+    "uniqueMod": "研究局",
+    "noCommandersForNation": "この国の特殊艦長はまだありません。",
+    "slotEmpty": "選択できる改装はありません",
+    "commanderLegend": "「伝説」バッジ = 固有の才能を持つ伝説の艦長、「精鋭」バッジ = 精鋭/特殊艦長。",
     "activator": {
       "DamageDoneActivator": "ダメージを与えたとき",
       "TargetsDamagedActivator": "目標に命中したとき",
@@ -332,6 +338,38 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "継続対空ダメージ",
+      "AABubbleDamage": "対空弾幕ダメージ",
+      "activeManeuveringWorkTimeCoeff": "能動機動時間",
+      "batteryCapacityCoeff": "潜航電池容量",
+      "collisionDamageApply": "体当たりで与えるダメージ",
+      "floodChanceFactor": "浸水確率",
+      "floodChanceFactorPlane": "航空機の浸水確率",
+      "healthHullCoeff": "艦体耐久",
+      "planeHealthCoeff": "艦載機の耐久",
+      "planeSmokeGeneratorWorkTimeCoeff": "艦載機の煙幕時間",
+      "regenerationHPSpeed": "耐久回復速度",
+      "smokeGeneratorCapacityCoeff": "煙幕発生器容量",
+      "smokeGeneratorWorkTimeCoeff": "煙幕継続時間",
+      "sonarWorkTimeCoeff": "ソナー持続時間",
+      "speedCoef": "艦艇速度",
+      "ConsumableReloadTime": "消耗品装填時間",
+      "auxTorpBoosterReloadCoeff": "魚雷ブースター装填時間",
+      "GSIdealRadius": "副砲散布",
+      "GSMaxDist": "副砲射程",
+      "GSShotDelay": "副砲装填時間",
+      "burnTime": "火災継続時間",
+      "collisionDamageNerf": "体当たりで受けるダメージ",
+      "floodTime": "浸水継続時間",
+      "hydrophoneReloadCoeff": "ハイドロフォン装填時間",
+      "planeConsumableReloadTime": "艦載機消耗品装填時間",
+      "submarineLocatorReloadCoeff": "潜水艦探知機装填時間",
+      "burnChanceFactorBig": "HE弾の火災発生率",
+      "burnChanceFactorSmall": "HE弾の火災発生率"
     }
   },
   "viewMode": {
