@@ -137,6 +137,23 @@
    }
   },
   {
+   "code": "TriggerSpeedBb",
+   "tier": 2,
+   "column": 2,
+   "name": {
+    "en": "Brisk",
+    "ja": "活発",
+    "zh": "隐蔽加速",
+    "tw": "隱蔽加速"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "DetectionTorpedoRange",
    "tier": 2,
    "column": 3,
@@ -290,6 +307,23 @@
    }
   },
   {
+   "code": "TriggerBurnGmReload",
+   "tier": 4,
+   "column": 0,
+   "name": {
+    "en": "Furious",
+    "ja": "猛烈",
+    "zh": "怒火满腔",
+    "tw": "怒火滿腔"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "AtbaAccuracy",
    "tier": 4,
    "column": 1,
@@ -298,6 +332,23 @@
     "ja": "副砲の手動照準",
     "zh": "手动副炮组瞄准",
     "tw": "手動副炮瞄準"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TriggerGmAtbaReloadBb",
+   "tier": 4,
+   "column": 2,
+   "name": {
+    "en": "Close Quarters Combat",
+    "ja": "接近戦",
+    "zh": "近距离作战",
+    "tw": "近距離作戰"
    },
    "desc": {
     "en": " ",
@@ -657,6 +708,40 @@
     "ja": "抗堪専門家",
     "zh": "生存专家",
     "tw": "生存專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TriggerGmAtbaReloadCa",
+   "tier": 4,
+   "column": 0,
+   "name": {
+    "en": "Top Grade Gunner",
+    "ja": "最上級砲手",
+    "zh": "顶尖炮手",
+    "tw": "頂尖炮手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TriggerSpeedAccuracy",
+   "tier": 4,
+   "column": 1,
+   "name": {
+    "en": "Outnumbered",
+    "ja": "数的劣勢",
+    "zh": "敌众我寡",
+    "tw": "敵眾我寡"
    },
    "desc": {
     "en": " ",
@@ -1059,6 +1144,23 @@
    }
   },
   {
+   "code": "TriggerSpeed",
+   "tier": 4,
+   "column": 1,
+   "name": {
+    "en": "Swift in Silence",
+    "ja": "素早く静かに",
+    "zh": "默默速行",
+    "tw": "默默速行"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "DetectionDirection",
    "tier": 4,
    "column": 2,
@@ -1076,6 +1178,23 @@
    }
   },
   {
+   "code": "TriggerGmReload",
+   "tier": 4,
+   "column": 3,
+   "name": {
+    "en": "Fearless Brawler",
+    "ja": "恐れ知らずの喧嘩屋",
+    "zh": "无畏斗士",
+    "tw": "無畏鬥士"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "DetectionVisibilityRange",
    "tier": 4,
    "column": 4,
@@ -1084,6 +1203,23 @@
     "ja": "隠蔽処理専門家",
     "zh": "隐蔽专家",
     "tw": "隱蔽專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TriggerSpreading",
+   "tier": 4,
+   "column": 5,
+   "name": {
+    "en": "Dazzle",
+    "ja": "幻惑",
+    "zh": "眼花缭乱",
+    "tw": "眼花繚亂"
    },
    "desc": {
     "en": " ",
@@ -1488,6 +1624,40 @@
  ],
  "SS": [
   {
+   "code": "TriggerConsRudderTimeCoeff",
+   "tier": 1,
+   "column": 10,
+   "name": {
+    "en": "Helmsman",
+    "ja": "操舵手",
+    "zh": "舵手",
+    "tw": "舵手"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TriggerPingerReloadBuff",
+   "tier": 1,
+   "column": 12,
+   "name": {
+    "en": "Enhanced Sonar",
+    "ja": "強化型ソナー",
+    "zh": "增强型声呐",
+    "tw": "強化聲納"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "PlanesConsumablesActiveManeuveringUpgrade",
    "tier": 2,
    "column": 1,
@@ -1530,6 +1700,23 @@
     "ja": "消耗品強化",
     "zh": "消耗品强化",
     "tw": "消耗品強化"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
+   "code": "TriggerSeenTorpedoReload",
+   "tier": 2,
+   "column": 14,
+   "name": {
+    "en": "Torpedo Crew Training",
+    "ja": "魚雷員訓練",
+    "zh": "鱼雷手训练",
+    "tw": "魚雷手訓練"
    },
    "desc": {
     "en": " ",
@@ -1590,9 +1777,26 @@
    }
   },
   {
+   "code": "TriggerPingerSpeedBuff",
+   "tier": 3,
+   "column": 13,
+   "name": {
+    "en": "Enhanced Impulse Generator",
+    "ja": "強化型インパルス発生器",
+    "zh": "增强型脉冲发生器",
+    "tw": "強化脈衝產生器"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "ConsumablesAdditional",
    "tier": 3,
-   "column": 12,
+   "column": 18,
    "name": {
     "en": "Superintendent",
     "ja": "管理",
@@ -1609,7 +1813,7 @@
   {
    "code": "DefenceCritFireFlooding",
    "tier": 3,
-   "column": 13,
+   "column": 19,
    "name": {
     "en": "Basics of Survivability",
     "ja": "応急対応の基本",
@@ -1692,9 +1896,26 @@
    }
   },
   {
+   "code": "TriggerConsSonarTimeCoeff",
+   "tier": 4,
+   "column": 11,
+   "name": {
+    "en": "Sonarman Expert",
+    "ja": "ソナー操作専門家",
+    "zh": "声呐专家",
+    "tw": "聲納專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "DetectionDirection",
    "tier": 4,
-   "column": 10,
+   "column": 15,
    "name": {
     "en": "Radio Location",
     "ja": "無線方向探知",
@@ -1711,7 +1932,7 @@
   {
    "code": "DefenceFireProbability",
    "tier": 4,
-   "column": 11,
+   "column": 16,
    "name": {
     "en": "Fire Prevention Expert",
     "ja": "防火処理専門家",
@@ -1726,9 +1947,26 @@
    }
   },
   {
+   "code": "TriggerGmReload",
+   "tier": 4,
+   "column": 17,
+   "name": {
+    "en": "Fearless Brawler",
+    "ja": "恐れ知らずの喧嘩屋",
+    "zh": "无畏斗士",
+    "tw": "無畏鬥士"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "DetectionVisibilityRange",
    "tier": 4,
-   "column": 14,
+   "column": 20,
    "name": {
     "en": "Concealment Expert",
     "ja": "隠蔽処理専門家",
