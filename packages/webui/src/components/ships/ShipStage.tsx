@@ -950,7 +950,12 @@ export default defineComponent({
           initScene();
           void loadModel();
         });
+        armorCycle.start();
       } else {
+        // 2D has no scene: park the holo↔armor auto-cycle so it neither
+        // spins against a disposed scene nor leaks armor state into the
+        // next 3D session (disposeScene already resets showArmor).
+        armorCycle.stop();
         disposeScene();
         viewMode.value = "2d";
       }
@@ -987,25 +992,27 @@ export default defineComponent({
           </div>
 
           <div class="ship-stage__controls">
-            <span class="ship-stage__hint">
-              {viewMode.value === "3d" ? t("ships.detail.stage.hint3d") : ""}
-            </span>
-            <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
-              <button
-                type="button"
-                class={["ship-stage__armor-mode", !showArmor.value ? "is-active" : ""].join(" ")}
-                onClick={() => setArmor(false)}
-              >
-                {t("ships.detail.stage.holo")}
-              </button>
-              <button
-                type="button"
-                class={["ship-stage__armor-mode", showArmor.value ? "is-active" : ""].join(" ")}
-                onClick={() => setArmor(true)}
-              >
-                {t("ships.detail.armor.short")}
-              </button>
-            </div>
+            {viewMode.value === "3d" ? (
+              <span class="ship-stage__hint">{t("ships.detail.stage.hint3d")}</span>
+            ) : null}
+            {viewMode.value === "3d" ? (
+              <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
+                <button
+                  type="button"
+                  class={["ship-stage__armor-mode", !showArmor.value ? "is-active" : ""].join(" ")}
+                  onClick={() => setArmor(false)}
+                >
+                  {t("ships.detail.stage.holo")}
+                </button>
+                <button
+                  type="button"
+                  class={["ship-stage__armor-mode", showArmor.value ? "is-active" : ""].join(" ")}
+                  onClick={() => setArmor(true)}
+                >
+                  {t("ships.detail.armor.short")}
+                </button>
+              </div>
+            ) : null}
             <HTabs
               variant="segmented"
               modelValue={viewMode.value}
