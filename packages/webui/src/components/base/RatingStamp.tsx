@@ -1,23 +1,48 @@
 import { defineComponent, type PropType } from "vue";
 
 import { useLanguage } from "@/i18n/useLanguage";
-import type { CareerStamp } from "@/utils/winrate";
+import type { StampKind } from "@/utils/winrate";
+import stampAir from "../../res/stamps/stamp-air.png";
+import stampApe from "../../res/stamps/stamp-ape.png";
+import stampMiracle from "../../res/stamps/stamp-miracle.png";
+import stampSub from "../../res/stamps/stamp-sub.png";
 import "./RatingStamp.scss";
 
 let stampSeq = 0;
 
-/** Inked career-verdict seal, drawn as pure SVG. Everything is deterministic:
- *  the moiré weave angles and the ink-rough displacement seeds are fixed, so
- *  the same player always sees the same stamp.
- *   - "miracle" (神了): long-term purple-tier+ career (PR ≥ 2100 over 500+ battles)
- *   - "ape" (海猴): red-tier career (PR < 750)
+/** Inked career-verdict seal: a procedural SVG frame (double border + moiré
+ *  weave + ink-rough displacement filter) around pre-rendered glyph bitmaps.
  *
- * The seal is a Chinese-community artifact — it renders nothing under any
+ *  The glyphs are baked to PNGs by `scripts/gen_stamp_bitmaps.py` (calligraphy
+ *  fonts: 神了 in 毛体, the rest in 鲁迅行书; two-glyph stamps pre-stretched to
+ *  the 2/3-height seal look). The fonts themselves are commercial / unclear-
+ *  license and are NOT bundled — bitmaps only, so the seals look identical
+ *  everywhere. Displacement seeds are fixed per kind → deterministic ink.
+ *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
+ *   - "ape" (海猴): PR < 750
+ *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
+ *     mains (career share > 20% over 200+ battles)
+ *
+ * The seals are a Chinese-community artifact — they render nothing under any
  * other UI language. */
+const STAMP_GLYPHS: Record<StampKind, string> = {
+  miracle: stampMiracle,
+  ape: stampApe,
+  air: stampAir,
+  sub: stampSub,
+};
+const STAMP_TEXT: Record<StampKind, string> = {
+  miracle: "神了",
+  ape: "海猴",
+  air: "空中小人",
+  sub: "水下小人",
+};
+const STAMP_SEED: Record<StampKind, number> = { miracle: 7, ape: 13, air: 21, sub: 5 };
+
 export default defineComponent({
   name: "RatingStamp",
   props: {
-    kind: { type: String as PropType<CareerStamp>, required: true },
+    kind: { type: String as PropType<StampKind>, required: true },
     /** Rendered edge length in px. */
     size: { type: Number, default: 64 },
     /** "mini" drops the moiré weave for tiny sizes (live roster rows). */
@@ -26,7 +51,6 @@ export default defineComponent({
   setup(props) {
     const { uiLocale } = useLanguage();
     const uid = `stamp-${++stampSeq}`;
-    const text = () => (props.kind === "miracle" ? "神了" : "海猴");
 
     return () => {
       if (!uiLocale.value.startsWith("zh")) return null;
@@ -40,7 +64,7 @@ export default defineComponent({
           height={props.size}
           viewBox="0 0 100 100"
           role="img"
-          aria-label={text()}
+          aria-label={STAMP_TEXT[props.kind]}
         >
           <defs>
             {/* Two line weaves a hair apart in angle — their interference
@@ -56,7 +80,7 @@ export default defineComponent({
                 type="fractalNoise"
                 baseFrequency="0.55"
                 numOctaves="2"
-                seed={props.kind === "miracle" ? 7 : 13}
+                seed={STAMP_SEED[props.kind]}
                 result="grain"
               />
               <feDisplacementMap
@@ -77,19 +101,9 @@ export default defineComponent({
             )}
             <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
             <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
-            <text
-              class="rating-stamp__text"
-              x="50"
-              y="51"
-              text-anchor="middle"
-              dominant-baseline="central"
-              stroke="currentColor"
-              stroke-width="1.1"
-              stroke-linejoin="round"
-              paint-order="stroke"
-            >
-              {text()}
-            </text>
+            {/* Glyph bitmap covers the full 100-unit box (the PNG's text is
+                pre-centered, cinnabar, two-glyph stamps pre-stretched). */}
+            <image href={STAMP_GLYPHS[props.kind]} x="0" y="0" width="100" height="100" />
           </g>
         </svg>
       );

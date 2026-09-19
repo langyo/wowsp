@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { careerStamp, prTier } from "./winrate";
+import { careerStamp, compositionStamps, prTier } from "./winrate";
 
 describe("prTier", () => {
   it("falls back to unknown for missing PR", () => {
@@ -50,5 +50,49 @@ describe("careerStamp", () => {
     expect(careerStamp(750, 10000)).toBeNull();
     expect(careerStamp(2099, 10000)).toBeNull();
     expect(careerStamp(null, 10000)).toBeNull();
+  });
+});
+
+describe("compositionStamps", () => {
+  const typeOf = new Map<number, string>([
+    [1, "AirCarrier"],
+    [2, "Submarine"],
+    [3, "Cruiser"],
+  ]);
+  const type = (id: number) => typeOf.get(id);
+
+  function rows(...pairs: [number, number][]) {
+    return pairs.map(([shipId, battles]) => ({ shipId, battles }));
+  }
+
+  it("marks a CV-dominant career above the 200-battle gate", () => {
+    // 350 total battles, 100 in CVs (>20%), no subs.
+    const st = compositionStamps(rows([1, 100], [3, 250]), type);
+    expect(st.air).toBe(true);
+    expect(st.sub).toBe(false);
+  });
+
+  it("marks sub mains independently", () => {
+    const st = compositionStamps(rows([2, 150], [3, 100]), type);
+    expect(st.air).toBe(false);
+    expect(st.sub).toBe(true);
+  });
+
+  it("requires strictly more than the 20% share", () => {
+    // 100/500 = exactly 20% → not over the line.
+    const st = compositionStamps(rows([1, 100], [3, 400]), type);
+    expect(st.air).toBe(false);
+  });
+
+  it("never marks careers at or below the 200-battle gate", () => {
+    expect(compositionStamps(rows([1, 150], [3, 50]), type)).toEqual({ air: false, sub: false });
+    expect(compositionStamps(rows([1, 200]), type).air).toBe(false);
+  });
+
+  it("handles empty rosters and unknown ship types", () => {
+    expect(compositionStamps([], type)).toEqual({ air: false, sub: false });
+    // A career of only untyped ships can never earn the marks.
+    const st = compositionStamps(rows([9, 500]), () => undefined);
+    expect(st).toEqual({ air: false, sub: false });
   });
 });

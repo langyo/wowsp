@@ -25,56 +25,120 @@
     color: rgb(var(--color-text));
   }
 
-  /* ── Hero: big winrate + career stamp + PR block ── */
+  /* ── Hero: centered big winrate, stamp grid, PR behind a divider ── */
   &__hero {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 1rem;
-    padding: 0.75rem 0.9rem;
+    padding: 0.75rem;
     background: rgb(var(--color-bg));
     border: 1px solid rgb(var(--color-border) / 12%);
     border-radius: var(--radius-md);
   }
 
   &__hero-main {
+    flex: 1;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
     gap: 0.1rem;
     min-width: 0;
-    flex: 1;
   }
 
   &__wr {
-    font-size: 2rem;
+    font-size: var(--text-2xl);
     font-weight: 800;
     line-height: 1.1;
     cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover { opacity: 0.7; }
   }
 
   &__wr-label {
     font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: rgb(var(--color-muted));
   }
 
   &__battles {
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
+    margin-top: 0.2rem;
+    cursor: pointer;
+
+    &:hover { color: rgb(var(--color-text)); }
+  }
+
+  /* 2x2 stamp grid — up to three seals (per-ship PR verdict + career
+     composition tags) flow in without ever overlapping. */
+  &__stamps {
+    align-self: center;
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 2px;
+    justify-items: center;
+    align-items: center;
   }
 
   &__pr {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+    padding-left: 1rem;
+    border-left: 1px solid rgb(var(--color-border) / 20%);
     cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover { opacity: 0.7; }
   }
 
   &__pr-num {
-    font-size: 1.4rem;
+    font-size: var(--text-xl);
     font-weight: 800;
     line-height: 1.1;
   }
 
   &__pr-label {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+  }
+
+  /* ── Four division tiles (account-wide context) ── */
+  &__divisions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+  }
+
+  &__division {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.15rem;
+    padding: 0.45rem 0.25rem;
+    background: rgb(var(--color-bg));
+    border: 1px solid rgb(var(--color-border) / 12%);
+    border-radius: var(--radius-sm);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  &__division-wr {
+    font-size: var(--text-md);
+    font-weight: 700;
+  }
+
+  &__division-label {
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
   }
@@ -113,31 +177,45 @@
     min-height: 12px;
   }
 
-  /* ── KPI grid ── */
+  /* ── KPI strip ── */
   &__kpis {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.5rem;
   }
 
   &__kpi {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    text-align: center;
     gap: 0.15rem;
-    padding: 0.5rem 0.6rem;
+    padding: 0.45rem 0.25rem;
     background: rgb(var(--color-bg));
     border: 1px solid rgb(var(--color-border) / 12%);
     border-radius: var(--radius-sm);
+    min-width: 0;
+    overflow: hidden;
   }
 
   &__kpi-label {
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   &__kpi-value {
-    font-size: var(--text-lg);
+    font-size: var(--text-md);
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 900px) {
+    &__kpis { grid-template-columns: repeat(3, 1fr); }
+    &__divisions { grid-template-columns: repeat(2, 1fr); }
   }
 
   /* ── Recent windows ── */

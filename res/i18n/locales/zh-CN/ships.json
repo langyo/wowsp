@@ -135,7 +135,8 @@
       "range7d": "近7天",
       "range30d": "近30天",
       "avgFrags": "场均击杀",
-      "noBaseline": "尚无足够历史基线"
+      "noBaseline": "尚无足够历史基线",
+      "divisionsHint": "账号整体分模式数据，非该舰单船成绩"
     },
     "server": {
       "title": "全服均值报告",
