@@ -18,6 +18,7 @@ import {
   computeRecentDelta,
   dateRangeCutoff,
   filterByDateRange,
+  shipRecentDelta,
 } from "./shipAggregation";
 
 function ship(partial: Partial<PlayerShipStats> & { shipId: number }): PlayerShipStats {
@@ -152,5 +153,56 @@ describe("computeRecentDelta", () => {
     expect(delta).not.toBeNull();
     expect(delta!.sinceTs).toBe(cutoff);
     expect(delta!.ships[0].battles).toBe(6);
+  });
+});
+
+describe("shipRecentDelta (single-ship slice)", () => {
+  const now = 1_700_000_000;
+  const cutoff = dateRangeCutoff("7d", now);
+
+  const current = ship({
+    shipId: 7,
+    battles: 320,
+    wins: 176,
+    damageCaused: 21_824_000,
+    frags: 412,
+    survivedBattles: 120,
+  });
+
+  it("subtracts the ship's totals at the latest baseline at or before the cutoff", () => {
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 7, battles: 300, wins: 160, damageCaused: 20_400_000, frags: 380, survivedBattles: 110, lastBattleTime: 0 },
+      ]),
+      // Newer than the cutoff — must not be picked as the baseline.
+      point(now - 1 * 86_400, [
+        { shipId: 7, battles: 315, wins: 172, damageCaused: 21_400_000, frags: 402, survivedBattles: 116, lastBattleTime: 0 },
+      ]),
+    ];
+    const d = shipRecentDelta(current, history, cutoff)!;
+    expect(d.battles).toBe(20);
+    expect(d.wins).toBe(16);
+    expect(d.frags).toBe(32);
+    expect(d.winrate).toBeCloseTo(80.0, 5);
+    expect(d.avgDamage).toBeCloseTo(71_200, 5);
+    expect(d.avgFrags).toBeCloseTo(1.6, 5);
+    expect(d.sinceTs).toBe(now - 40 * 86_400);
+  });
+
+  it("treats a baseline lacking the ship as a full-career window", () => {
+    const history = [point(now - 40 * 86_400, [])];
+    const d = shipRecentDelta(current, history, cutoff)!;
+    expect(d.battles).toBe(320);
+    expect(d.sinceTs).toBe(now - 40 * 86_400);
+  });
+
+  it("returns null with no baseline or when the ship was unplayed in the window", () => {
+    expect(shipRecentDelta(current, [], cutoff)).toBeNull();
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120, lastBattleTime: 0 },
+      ]),
+    ];
+    expect(shipRecentDelta(current, history, cutoff)).toBeNull();
   });
 });

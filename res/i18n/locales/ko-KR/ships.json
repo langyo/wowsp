@@ -80,12 +80,13 @@
     "noImage": "이미지가 없습니다.",
     "noModel": "이 함선은 아직 3D 모델이 베이크되지 않았습니다. `just convert-ship --name <model>` + `just bake-model`을 실행하여 생성하세요.",
     "noMyStats": "계정을 연동했지만 이 함선의 전투 기록이 아직 없습니다.",
-    "communityUnavailable": "서버 추이 데이터 소스가 아직 연결되지 않았습니다. 백엔드가 연결되면 버전별 서버 평균 승률이 표시됩니다.",
     "ballisticsApprox": "관통 곡선은 포탄 무게 / 공기 저항 / krupp를 기반으로 한 추정값이며, 게임 내 정확한 모델이 아닙니다.",
     "noBallistics": "GameParams에서 이 함선의 장갑 / 탄도 데이터를 추출할 수 없습니다.",
     "stage": {
       "hint3d": "드래그하여 회전 · 스크롤로 확대/축소 · 우클릭 드래그로 이동",
-      "holo": "홀로그램"
+      "holo": "홀로그램",
+      "hide": "홀로그램 숨기기",
+      "show": "홀로그램 보기"
     },
     "weapon": {
       "mainGun": "주포",
@@ -125,6 +126,30 @@
         "overpen": "과관통",
         "bounce": "튕김"
       }
+    },
+    "openHint": "클릭하여 함선 상세 보기",
+    "my": {
+      "career": "전체 전투",
+      "recent": "최근 성적",
+      "range1d": "최근 1일",
+      "range7d": "최근 7일",
+      "range30d": "최근 30일",
+      "avgFrags": "평균 격침",
+      "noBaseline": "기준 데이터가 아직 없음"
+    },
+    "server": {
+      "title": "서버 평균 리포트",
+      "winrate": "서버 평균 승률",
+      "avgDamage": "서버 평균 데미지",
+      "avgFrags": "서버 평균 격침",
+      "source": "출처: wows-numbers 서버 표본",
+      "updatedAt": "표본 생성일 {date}",
+      "cached": "캐시",
+      "notFound": "이 함선의 서버 표본이 아직 없습니다.",
+      "failed": "서버 데이터 가져오기 실패: {error}",
+      "compareTitle": "서버 대비 플레이어",
+      "colServer": "서버",
+      "colPlayer": "플레이어"
     }
   },
   "armor": {

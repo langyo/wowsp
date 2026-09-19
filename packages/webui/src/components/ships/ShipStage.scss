@@ -71,6 +71,19 @@
     z-index: 2;
   }
 
+  /* Collapsed (hologram hidden) mode: the canvas is unmounted, so the stage
+     becomes a slim bar holding only the 3D/2D group + the visibility switch. */
+  &--hidden {
+    background: transparent;
+    border-color: transparent;
+
+    .ship-stage__controls {
+      position: static;
+      justify-content: flex-end;
+      padding: 0.1rem 0;
+    }
+  }
+
   &__hint {
     font-size: var(--text-2xs);
     color: rgb(var(--color-text));
@@ -92,6 +105,36 @@
   }
 
   &__armor-mode {
+    padding: 0.22rem 0.65rem;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover { color: rgb(var(--color-text)); }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 14%);
+    }
+  }
+
+  /* Stage visibility switch (hide/show hologram) — same pill look as the
+     armor-modes group so the control row reads as one cluster. */
+  &__vis {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-surface) / 75%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+  }
+
+  &__vis-btn {
     padding: 0.22rem 0.65rem;
     border: 0;
     border-radius: var(--radius-full);

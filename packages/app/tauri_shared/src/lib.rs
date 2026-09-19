@@ -1053,6 +1053,51 @@ pub struct PlayerShipStats {
     pub winrate: f32,
     pub avg_damage: f32,
     pub last_battle_time: i64,
+    /// Winrate-only PR proxy for this ship (same anchors as the account PR).
+    /// `#[serde(default)]` keeps caches written before the field existed
+    /// deserializable.
+    #[serde(default)]
+    pub pr: Option<i64>,
+    /// Average XP per battle (None when the realm API doesn't serve xp).
+    #[serde(default)]
+    pub avg_xp: Option<f32>,
+    /// Per-mode breakdown (random solo/div2/div3, co-op, ranked). None on
+    /// realms whose per-ship API doesn't serve battle-type splits.
+    #[serde(default)]
+    pub modes: Option<ShipModeBreakdown>,
+}
+
+/// One battle-type bucket of a [`PlayerShipStats`] entry (random solo /
+/// division, co-op, ranked). Raw totals as served by WG plus the derived
+/// winrate / average damage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipModeStats {
+    pub battles: i64,
+    pub wins: i64,
+    pub damage_caused: i64,
+    pub frags: i64,
+    pub survived_battles: i64,
+    pub winrate: f32,
+    pub avg_damage: f32,
+}
+
+/// Per-mode breakdown of a ship's stats. Each field is None when the player
+/// never played that mode on the ship, or the realm API doesn't serve the
+/// battle-type split at all.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipModeBreakdown {
+    #[serde(default)]
+    pub solo: Option<ShipModeStats>,
+    #[serde(default)]
+    pub div2: Option<ShipModeStats>,
+    #[serde(default)]
+    pub div3: Option<ShipModeStats>,
+    #[serde(default)]
+    pub coop: Option<ShipModeStats>,
+    #[serde(default)]
+    pub ranked: Option<ShipModeStats>,
 }
 
 /// Per-ship career totals at one moment — the compact subset of
@@ -1146,16 +1191,36 @@ pub struct PatchNote {
 }
 
 /// Community-wide per-ship trend (the "server average winrate over versions"
-/// chart). Not available from WG's public API (they don't aggregate across
-/// players); wows-numbers has it but no API + blocks scraping. This struct is
-/// the placeholder contract — `available: false` until a backend partner is
-/// wired in. When available, `buckets` mirrors TrendBucket by version.
+/// chart). WG's public API doesn't aggregate across players, so version
+/// buckets come from a curated cache (`community/<ship_id>.json`, future:
+/// written by a server-side aggregator). When available, `buckets` mirrors
+/// TrendBucket by version; `available: false` renders the placeholder.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityTrend {
     pub available: bool,
     pub ship_id: i64,
     pub buckets: Vec<TrendBucket>,
+}
+
+/// Server-wide per-ship averages, from wows-numbers' public expected-values
+/// dataset (mean per-battle damage / frags / win rate across the population
+/// they track). Fetched live with a 7-day on-disk cache — this is the "全服
+/// 均值" report the ship-detail modal's community tab renders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipServerStats {
+    pub ship_id: i64,
+    /// Mean damage per battle across the server sample.
+    pub avg_damage: f64,
+    /// Mean frags per battle.
+    pub avg_frags: f64,
+    /// Mean win rate, in percent.
+    pub winrate: f64,
+    /// Unix seconds the source dataset was generated (wows-numbers `time`).
+    pub generated_at: i64,
+    /// True when served from the on-disk cache without a network fetch.
+    pub from_cache: bool,
 }
 
 // ── Mod Hub (M10 groundwork) ────────────────────────────────────────────────

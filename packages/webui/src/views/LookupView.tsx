@@ -9,6 +9,8 @@ import { HTabs, useToast } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
+import ShipDetailModal from "@/components/ships/ShipDetailModal";
+import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useClanStatsStore } from "@/stores/clanStats";
@@ -121,6 +123,10 @@ export default defineComponent({
     );
     const history = ref<HistoryEntry[]>(loadHistory());
     const encyclopedia = useEncyclopediaStore();
+
+    // Ship detail popup (opened from the per-ship table rows). The player
+    // context is the LOOKED-UP account, not the bound one.
+    const shipDetail = useShipDetail();
 
     /** Unified ship metadata: encyclopedia first, offline DB fallback. */
     const infoOf = (shipId: number) => {
@@ -487,7 +493,19 @@ export default defineComponent({
                         const icon = shipIcon(off?.type ?? "", "plain");
                         const typeKey = TYPE_ORDER.find((k) => k && (off?.type ?? "").startsWith(k)) ?? "";
                         return (
-                          <div class="lookup-view__ship" key={s.shipId}>
+                          <div
+                            class="lookup-view__ship lookup-view__ship--link"
+                            key={s.shipId}
+                            role="button"
+                            tabindex={0}
+                            data-hint={t("ships.detail.openHint")}
+                            onClick={() => shipDetail.openShip(s.shipId, displayName(s), realm.value)}
+                            onKeydown={(e: KeyboardEvent) => {
+                              if (e.key !== "Enter" && e.key !== " ") return;
+                              e.preventDefault();
+                              shipDetail.openShip(s.shipId, displayName(s), realm.value);
+                            }}
+                          >
                             <span class="lookup-view__ship-ico">
                               {icon && icon.complete && icon.naturalWidth > 0 ? (
                                 <img src={icon.src} width={22} height={22} alt="" />
@@ -526,6 +544,17 @@ export default defineComponent({
             ) : null}
           </Transition>
         </div>
+
+        {/* Ship detail popup — water-table context on the looked-up player:
+            defaults to the My Stats tab, holographic stage collapsed. */}
+        <ShipDetailModal
+          ship={shipDetail.selectedShip.value}
+          source="water"
+          accountId={result.value?.accountId ?? null}
+          realm={result.value ? realm.value : null}
+          gameRoot={shipDetail.gameRoot.value}
+          onClose={() => shipDetail.closeShip()}
+        />
       </div>
     );
   },

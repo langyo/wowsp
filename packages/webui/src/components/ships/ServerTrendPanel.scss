@@ -1,0 +1,115 @@
+/* "Server Trend" tab of the ship detail modal — the wows-numbers server-wide
+   averages report (winrate / avg damage / avg frags) + server-vs-player
+   comparison table. */
+.server-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  &__title {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
+  }
+
+  &__loading {
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.6rem;
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.7rem;
+    background: rgb(var(--color-bg));
+    border: 1px solid rgb(var(--color-border) / 12%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__card-label {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__card-value {
+    font-size: var(--text-xl);
+    font-weight: 800;
+  }
+
+  &__meta {
+    margin: 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted) / 75%);
+    line-height: 1.5;
+  }
+
+  &__compare {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__compare-title {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+
+  &__table {
+    display: flex;
+    flex-direction: column;
+    max-width: 420px;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 1.5rem;
+    padding: 0.35rem 0.6rem;
+    font-size: var(--text-xs);
+    border-bottom: 1px solid rgb(var(--color-border) / 10%);
+
+    &:last-child { border-bottom: none; }
+
+    &--head {
+      color: rgb(var(--color-muted));
+      font-size: var(--text-2xs);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+  }
+
+  &__row-label {
+    color: rgb(var(--color-muted));
+  }
+
+  &__error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgb(var(--color-danger, 240 80 80) / 10%);
+    border: 1px solid rgb(var(--color-danger, 240 80 80) / 30%);
+    border-radius: var(--radius-md);
+  }
+
+  &__error-msg {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-text));
+    word-break: break-all;
+  }
+}

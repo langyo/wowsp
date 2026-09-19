@@ -80,12 +80,13 @@
     "noImage": "画像はありません。",
     "noModel": "この艦艇の 3D モデルはまだベイクされていません。`just convert-ship --name <モデル名>` + `just bake-model` を実行して生成してください。",
     "noMyStats": "アカウントは連携済みですが、この艦での対戦はまだありません。",
-    "communityUnavailable": "サーバートレンドのデータソースにはまだ接続されていません。バックエンドとの連携後、バージョンごとのサーバー平均勝率を表示します。",
     "ballisticsApprox": "貫通力の曲線は弾重 / 空気抵抗 / krupp から算出した推定値であり、ゲーム内の正確なモデルではありません。",
     "noBallistics": "この艦艇の装甲 / 弾道データを GameParams から抽出できませんでした。",
     "stage": {
       "hint3d": "ドラッグで回転 · ホイールでズーム · 右ドラッグで移動",
-      "holo": "ホログラム"
+      "holo": "ホログラム",
+      "hide": "ホログラムを隠す",
+      "show": "ホログラムを表示"
     },
     "weapon": {
       "mainGun": "主砲",
@@ -125,6 +126,30 @@
         "overpen": "過貫通",
         "bounce": "跳弾"
       }
+    },
+    "openHint": "クリックで艦艇詳細を開く",
+    "my": {
+      "career": "全対戦",
+      "recent": "最近の成績",
+      "range1d": "過去1日",
+      "range7d": "過去7日",
+      "range30d": "過去30日",
+      "avgFrags": "平均撃沈",
+      "noBaseline": "基準となる履歴がまだありません"
+    },
+    "server": {
+      "title": "サーバー平均レポート",
+      "winrate": "サーバー平均勝率",
+      "avgDamage": "サーバー平均ダメージ",
+      "avgFrags": "サーバー平均撃沈",
+      "source": "出典：wows-numbers サーバー統計",
+      "updatedAt": "サンプル生成日 {date}",
+      "cached": "キャッシュ",
+      "notFound": "この艦艇にはサーバー統計がまだありません。",
+      "failed": "サーバーデータの取得に失敗：{error}",
+      "compareTitle": "サーバーと比較",
+      "colServer": "サーバー",
+      "colPlayer": "プレイヤー"
     }
   },
   "armor": {

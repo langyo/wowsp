@@ -277,6 +277,9 @@
   border-radius: 5px;
   font-size: var(--text-2xs);
   &:hover { background: rgb(var(--color-text) / 5%); }
+
+  /* Rows open the ship detail modal — pointer affordance. */
+  &--link { cursor: pointer; }
 }
 
 .lookup-view__ship-ico {

@@ -1,0 +1,216 @@
+import { computed, defineComponent } from "vue";
+
+import { HSpinner } from "@celestia-island/hikari";
+
+import RatingStamp from "@/components/base/RatingStamp";
+import { useShipStatsStore } from "@/stores/shipStats";
+import type { PlayerShipStats, ShipModeStats } from "@/api";
+import { t } from "@/i18n";
+import { careerStamp, damageColor, prTier, winrateColor } from "@/utils/winrate";
+import { dateRangeCutoff, shipRecentDelta, type DateRange } from "@/utils/shipAggregation";
+import { useClipboard } from "@/composables/useClipboard";
+import "./ShipMyStatsPanel.scss";
+
+/**
+ * "My Stats" tab of the ship detail modal — the water-table header (StatsCard)
+ * re-cut for a single ship: hero winrate/PR, per-mode winrates, KPI grid, and
+ * the 1/7/30-day recent windows against the locally recorded per-ship history
+ * baselines. Works for any viewed player (the modal passes the accountId of
+ * whoever's water table opened it), not just the bound account.
+ */
+export default defineComponent({
+  name: "ShipMyStatsPanel",
+  props: {
+    stats: { type: Object as () => PlayerShipStats | null, default: null },
+    /** Whose stats these are (history lookup key). Null = no player context. */
+    accountId: { type: Number as () => number | null, default: null },
+    realm: { type: String as () => string | null, default: null },
+    /** True while the per-ship fetch is in flight (spinner instead of the
+     *  "no stats" dead end). */
+    loading: { type: Boolean, default: false },
+  },
+  setup(props) {
+    const shipStats = useShipStatsStore();
+    const { copy } = useClipboard();
+
+    const history = computed(() => {
+      if (props.accountId == null || !props.realm) return [];
+      return shipStats.history.get(`${props.realm}_${props.accountId}`) ?? [];
+    });
+
+    const pr = computed(() => prTier(props.stats?.pr ?? null));
+    const stamp = computed(() => careerStamp(props.stats?.pr ?? null, props.stats?.battles ?? null));
+
+    /** Per-mode winrate row: randoms solo/div2/div3 + ranked + co-op. */
+    const modes = computed<{ label: string; mode: ShipModeStats | null }[]>(() => {
+      const m = props.stats?.modes;
+      if (!m) return [];
+      return [
+        { label: t("stats.solo"), mode: m.solo },
+        { label: t("stats.div2"), mode: m.div2 },
+        { label: t("stats.div3"), mode: m.div3 },
+        { label: t("stats.ranked"), mode: m.ranked },
+        { label: t("stats.coop"), mode: m.coop },
+      ];
+    });
+
+    /** Career KPIs — the per-ship slice of the StatsCard KPI grid. */
+    const kpis = computed(() => {
+      const s = props.stats;
+      if (!s) return [];
+      const kdr = s.battles - s.survivedBattles > 0
+        ? (s.frags / (s.battles - s.survivedBattles)).toFixed(2)
+        : "—";
+      return [
+        {
+          label: t("stats.avgDamage"),
+          value: Math.round(s.avgDamage).toLocaleString(),
+          color: damageColor(s.avgDamage),
+        },
+        {
+          label: t("stats.avgExp"),
+          value: s.avgXp != null ? Math.round(s.avgXp).toLocaleString() : "—",
+        },
+        { label: t("ships.detail.my.avgFrags"), value: (s.frags / Math.max(1, s.battles)).toFixed(2) },
+        { label: t("stats.kdRatio"), value: kdr },
+        {
+          label: t("stats.survivalRate"),
+          value: `${((s.survivedBattles / Math.max(1, s.battles)) * 100).toFixed(0)}%`,
+        },
+      ];
+    });
+
+    /** Recent windows: career totals minus the latest baseline at or before
+     *  each range cutoff (single-ship `computeRecentDelta`). */
+    const ranges = computed(() => {
+      const s = props.stats;
+      if (!s) return [];
+      return (["1d", "7d", "30d"] as const).map((r: DateRange) => ({
+        key: r,
+        label: t(`ships.detail.my.range${r}`),
+        delta: shipRecentDelta(s, history.value, dateRangeCutoff(r)),
+      }));
+    });
+
+    return () => {
+      const s = props.stats;
+      if (!s) {
+        return props.loading ? (
+          <div class="ship-my-stats ship-my-stats--loading">
+            <HSpinner center size="md" />
+          </div>
+        ) : (
+          <p class="ship-detail__empty">{t("ships.detail.noMyStats")}</p>
+        );
+      }
+      return (
+        <div class="ship-my-stats">
+          {/* ── Career (全体成绩): hero winrate + PR, like the water-table
+              header ── */}
+          <section class="ship-my-stats__section">
+            <h4 class="ship-my-stats__title">{t("ships.detail.my.career")}</h4>
+            <div class="ship-my-stats__hero">
+              <div class="ship-my-stats__hero-main">
+                <span
+                  class="ship-my-stats__wr"
+                  style={{ color: winrateColor(s.winrate) }}
+                  data-hint={`${t("stats.winrate")} · ${t("common.clickToCopy")}`}
+                  onClick={() => copy(s.winrate.toFixed(1), t("common.copied"))}
+                >
+                  {s.winrate.toFixed(1)}%
+                </span>
+                <span class="ship-my-stats__wr-label">{t("stats.overallWr")}</span>
+                <span class="ship-my-stats__battles">
+                  {s.battles.toLocaleString()} {t("stats.battles")}
+                </span>
+              </div>
+              {stamp.value ? <RatingStamp kind={stamp.value} size={50} /> : null}
+              <div
+                class={["ship-my-stats__pr", pr.value.rainbow ? "rainbow-text" : null]}
+                style={pr.value.rainbow ? undefined : { color: pr.value.color }}
+                data-hint={`PR: ${s.pr ?? "—"} · ${t("common.clickToCopy")}`}
+                onClick={() => copy(String(s.pr ?? "—"), t("common.copied"))}
+              >
+                <span class="ship-my-stats__pr-num">
+                  {s.pr != null ? s.pr.toLocaleString() : "—"}
+                </span>
+                <span class="ship-my-stats__pr-label">
+                  {pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`)}
+                </span>
+              </div>
+            </div>
+
+            {/* Per-mode winrates */}
+            {modes.value.length > 0 ? (
+              <div class="ship-my-stats__modes">
+                {modes.value.map((m) => (
+                  <div class="ship-my-stats__mode" key={m.label}>
+                    <span
+                      class="ship-my-stats__mode-wr"
+                      style={m.mode ? { color: winrateColor(m.mode.winrate) } : undefined}
+                    >
+                      {m.mode ? `${m.mode.winrate.toFixed(1)}%` : "—"}
+                    </span>
+                    <span class="ship-my-stats__mode-label">{m.label}</span>
+                    <span class="ship-my-stats__mode-battles">
+                      {m.mode ? `${m.mode.battles.toLocaleString()} ${t("stats.battles")}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* KPI grid */}
+            <div class="ship-my-stats__kpis">
+              {kpis.value.map((k) => (
+                <div class="ship-my-stats__kpi" key={k.label}>
+                  <span class="ship-my-stats__kpi-label">{k.label}</span>
+                  <span
+                    class="ship-my-stats__kpi-value"
+                    style={k.color ? { color: k.color } : undefined}
+                  >
+                    {k.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* ── Recent windows (近1/7/30天) ── */}
+          <section class="ship-my-stats__section">
+            <h4 class="ship-my-stats__title">{t("ships.detail.my.recent")}</h4>
+            <div class="ship-my-stats__ranges">
+              {ranges.value.map((r) => (
+                <div class="ship-my-stats__range" key={r.key}>
+                  <div class="ship-my-stats__range-head">
+                    <span class="ship-my-stats__range-label">{r.label}</span>
+                    {r.delta ? (
+                      <span
+                        class="ship-my-stats__range-wr"
+                        style={{ color: winrateColor(r.delta.winrate) }}
+                      >
+                        {r.delta.winrate.toFixed(1)}%
+                      </span>
+                    ) : null}
+                  </div>
+                  {r.delta ? (
+                    <div class="ship-my-stats__range-rows">
+                      <span>{`${r.delta.battles.toLocaleString()} ${t("stats.battles")}`}</span>
+                      <span>{`${t("stats.avgDamage")} ${Math.round(r.delta.avgDamage).toLocaleString()}`}</span>
+                      <span>{`${t("ships.detail.my.avgFrags")} ${r.delta.avgFrags.toFixed(2)}`}</span>
+                    </div>
+                  ) : (
+                    <div class="ship-my-stats__range-empty">
+                      {t("ships.detail.my.noBaseline")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p class="ship-my-stats__note">{t("dashboard.rangeNoHistory")}</p>
+          </section>
+        </div>
+      );
+    };
+  },
+});

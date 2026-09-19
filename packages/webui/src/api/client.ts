@@ -644,6 +644,52 @@ export interface PlayerShipStats {
   winrate: number;
   avgDamage: number;
   lastBattleTime: number;
+  /** Winrate-only PR proxy for this ship (same anchors as the account PR).
+   *  Absent on caches written before the field existed. */
+  pr?: number | null;
+  /** Average XP per battle (null when the realm API doesn't serve xp). */
+  avgXp?: number | null;
+  /** Per-mode breakdown (random solo/div2/div3, co-op, ranked). Null when
+   *  the realm API doesn't serve battle-type splits. */
+  modes?: ShipModeBreakdown | null;
+}
+
+/** One battle-type bucket of a per-ship mode breakdown. Mirrors
+ *  `wowsp_tauri_shared::ShipModeStats`. */
+export interface ShipModeStats {
+  battles: number;
+  wins: number;
+  damageCaused: number;
+  frags: number;
+  survivedBattles: number;
+  winrate: number;
+  avgDamage: number;
+}
+
+/** Per-mode breakdown of a ship's stats. Mirrors
+ *  `wowsp_tauri_shared::ShipModeBreakdown`. */
+export interface ShipModeBreakdown {
+  solo: ShipModeStats | null;
+  div2: ShipModeStats | null;
+  div3: ShipModeStats | null;
+  coop: ShipModeStats | null;
+  ranked: ShipModeStats | null;
+}
+
+/** Server-wide per-ship averages from the wows-numbers expected-values
+ *  dataset. Mirrors `wowsp_tauri_shared::ShipServerStats`. */
+export interface ShipServerStats {
+  shipId: number;
+  /** Mean damage per battle across the server sample. */
+  avgDamage: number;
+  /** Mean frags per battle. */
+  avgFrags: number;
+  /** Mean win rate, in percent. */
+  winrate: number;
+  /** Unix seconds the source dataset was generated. */
+  generatedAt: number;
+  /** True when served from the on-disk cache without a network fetch. */
+  fromCache: boolean;
 }
 
 /** Mirrors `wowsp_tauri_shared::ShipCareerTotals` — the monotonic subset of
@@ -1005,6 +1051,10 @@ export const api = {
   getPatches: () => transport.invoke<PatchNote[]>(RPC.get_patches),
   getCommunityShipTrend: (shipId: number) =>
     transport.invoke<CommunityTrend>(RPC.get_community_ship_trend, { shipId }),
+  /** Server-wide per-ship averages (wows-numbers expected values). Null =
+   *  the ship has no server sample; throws when no data can be fetched. */
+  getShipServerStats: (shipId: number) =>
+    transport.invoke<ShipServerStats | null>(RPC.get_ship_server_stats, { shipId }),
   captureMainWindow: (path: string) =>
     transport.invoke<string>(RPC.capture_main_window, { path }),
   installOverlayMod: (gameRoot: string) =>

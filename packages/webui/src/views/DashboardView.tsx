@@ -6,7 +6,9 @@ import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
 import { HTag, HTabs, HButton } from "@celestia-island/hikari";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
+import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import SScrollTop from "@/components/base/SScrollTop";
+import { useShipDetail } from "@/composables/useShipDetail";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -58,6 +60,9 @@ export default defineComponent({
 
     const showModal = ref(false);
     const dateRange = ref<DateRange>("all");
+
+    // Ship detail modal (opened by clicking a row in the per-ship table).
+    const shipDetail = useShipDetail();
 
     const activeAccount = computed(() => accounts.activeAccount);
     const currentStats = computed(() => {
@@ -275,7 +280,24 @@ export default defineComponent({
                 ) : (
                   <div class="dash-ship-table">
                     {filteredShips.value.map((s) => (
-                      <div class="dash-ship-table__row" key={s.shipId}>
+                      <div
+                        class="dash-ship-table__row dash-ship-table__row--link"
+                        key={s.shipId}
+                        role="button"
+                        tabindex={0}
+                        data-hint={t("ships.detail.openHint")}
+                        onClick={() =>
+                          activeAccount.value &&
+                          shipDetail.openShip(s.shipId, displayShipName(s), activeAccount.value.realm)
+                        }
+                        onKeydown={(e: KeyboardEvent) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          e.preventDefault();
+                          if (activeAccount.value) {
+                            shipDetail.openShip(s.shipId, displayShipName(s), activeAccount.value.realm);
+                          }
+                        }}
+                      >
                         <span class="dash-ship-table__col-name">
                           <HTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HTag>
                           <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
@@ -304,6 +326,17 @@ export default defineComponent({
         </Transition>
 
         {currentStats.value ? <SScrollTop /> : null}
+
+        {/* Ship detail popup — water-table context: defaults to the My Stats
+            tab with the holographic stage collapsed. */}
+        <ShipDetailModal
+          ship={shipDetail.selectedShip.value}
+          source="water"
+          accountId={activeAccount.value?.accountId ?? null}
+          realm={activeAccount.value?.realm ?? null}
+          gameRoot={shipDetail.gameRoot.value}
+          onClose={() => shipDetail.closeShip()}
+        />
 
         <AccountSwitcherModal
           modelValue={showModal.value}

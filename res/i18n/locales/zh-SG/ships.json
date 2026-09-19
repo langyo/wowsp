@@ -80,12 +80,13 @@
     "noImage": "无图片。",
     "noModel": "此舰艇尚未烘焙 3D 模型。运行 `just convert-ship --name <模型名>` + `just bake-model` 生成。",
     "noMyStats": "绑定账号后且你尚未在此舰上有对局。",
-    "communityUnavailable": "全服趋势数据源尚未接入。待后端合作方接入后，此处将按版本显示全服平均胜率。",
     "ballisticsApprox": "穿深曲线为基于弹重 / 空气阻力 / krupp 的估算值，非游戏精确公式。",
     "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。",
     "stage": {
       "hint3d": "拖动旋转 · 滚轮缩放 · 右键拖动平移",
-      "holo": "全息"
+      "holo": "全息",
+      "hide": "隐藏全息",
+      "show": "显示全息"
     },
     "weapon": {
       "mainGun": "主炮组",
@@ -125,6 +126,30 @@
         "overpen": "过穿",
         "bounce": "跳弹"
       }
+    },
+    "openHint": "点击查看舰艇详情",
+    "my": {
+      "career": "全部对局",
+      "recent": "近期表现",
+      "range1d": "近1天",
+      "range7d": "近7天",
+      "range30d": "近30天",
+      "avgFrags": "场均击杀",
+      "noBaseline": "尚无足够历史基线"
+    },
+    "server": {
+      "title": "全服均值报告",
+      "winrate": "全服平均胜率",
+      "avgDamage": "全服平均伤害",
+      "avgFrags": "全服平均击杀",
+      "source": "数据来源：wows-numbers 全服样本",
+      "updatedAt": "样本生成于 {date}",
+      "cached": "本地缓存",
+      "notFound": "该舰艇暂无全服统计样本。",
+      "failed": "拉取全服数据失败：{error}",
+      "compareTitle": "与玩家成绩对比",
+      "colServer": "全服",
+      "colPlayer": "玩家"
     }
   },
   "armor": {

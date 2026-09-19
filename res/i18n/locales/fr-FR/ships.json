@@ -80,12 +80,13 @@
     "noImage": "Aucune image disponible.",
     "noModel": "Aucun modèle 3D généré pour ce navire pour l'instant. Exécutez `just convert-ship --name <model>` + `just bake-model` pour en générer un.",
     "noMyStats": "Liez un compte ; vous n'avez pas encore de batailles sur ce navire.",
-    "communityUnavailable": "La source de données de tendance communautaire n'est pas encore connectée. Elle affichera le taux de victoire moyen du serveur par version une fois un partenaire backend raccordé.",
     "ballisticsApprox": "Les courbes de pénétration sont une estimation dérivée de la masse des obus / airDrag / krupp — pas le modèle exact du jeu.",
     "noBallistics": "Aucune donnée de blindage / balistique n'a pu être extraite de GameParams pour ce navire.",
     "stage": {
       "hint3d": "Glisser pour tourner · molette pour zoomer · clic droit glisser pour déplacer",
-      "holo": "Hologramme"
+      "holo": "Hologramme",
+      "hide": "Masquer l'hologramme",
+      "show": "Afficher l'hologramme"
     },
     "weapon": {
       "mainGun": "Artillerie principale",
@@ -125,6 +126,30 @@
         "overpen": "Sur-pénétration",
         "bounce": "Ricochet"
       }
+    },
+    "openHint": "Cliquez pour ouvrir les détails du navire",
+    "my": {
+      "career": "Toutes les batailles",
+      "recent": "Forme récente",
+      "range1d": "Sur 1 jour",
+      "range7d": "Sur 7 jours",
+      "range30d": "Sur 30 jours",
+      "avgFrags": "Frags moyens",
+      "noBaseline": "Pas encore d'historique de référence"
+    },
+    "server": {
+      "title": "Moyennes du serveur",
+      "winrate": "Taux de victoire moyen du serveur",
+      "avgDamage": "Dégâts moyens du serveur",
+      "avgFrags": "Frags moyens du serveur",
+      "source": "Source : échantillon serveur wows-numbers",
+      "updatedAt": "Échantillon généré le {date}",
+      "cached": "cache",
+      "notFound": "Pas encore d'échantillon serveur pour ce navire.",
+      "failed": "Échec de la récupération des données serveur : {error}",
+      "compareTitle": "Serveur vs. joueur",
+      "colServer": "Serveur",
+      "colPlayer": "Joueur"
     }
   },
   "armor": {
