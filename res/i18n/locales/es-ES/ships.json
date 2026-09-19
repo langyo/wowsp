@@ -85,8 +85,8 @@
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
       "holo": "Holograma",
-      "hide": "Ocultar holograma",
-      "show": "Mostrar holograma"
+      "hide": "Ocultar vista previa",
+      "show": "Mostrar vista previa"
     },
     "weapon": {
       "mainGun": "Batería principal",

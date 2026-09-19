@@ -85,8 +85,8 @@
     "stage": {
       "hint3d": "Glisser pour tourner · molette pour zoomer · clic droit glisser pour déplacer",
       "holo": "Hologramme",
-      "hide": "Masquer l'hologramme",
-      "show": "Afficher l'hologramme"
+      "hide": "Masquer l'aperçu",
+      "show": "Afficher l'aperçu"
     },
     "weapon": {
       "mainGun": "Artillerie principale",

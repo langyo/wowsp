@@ -1035,36 +1035,43 @@ export default defineComponent({
           )}
 
           <div class="ship-stage__controls">
-            {!props.hidden && viewMode.value === "3d" ? (
-              <span class="ship-stage__hint">{t("ships.detail.stage.hint3d")}</span>
+            {/* While collapsed, everything but the visibility switch hides:
+                with a dedicated show/hide button the 3D/2D group would just
+                be noise on the slim bar. */}
+            {!props.hidden ? (
+              <>
+                {viewMode.value === "3d" ? (
+                  <span class="ship-stage__hint">{t("ships.detail.stage.hint3d")}</span>
+                ) : null}
+                {viewMode.value === "3d" ? (
+                  <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
+                    <button
+                      type="button"
+                      class={["ship-stage__armor-mode", !showArmor.value ? "is-active" : ""].join(" ")}
+                      onClick={() => setArmor(false)}
+                    >
+                      {t("ships.detail.stage.holo")}
+                    </button>
+                    <button
+                      type="button"
+                      class={["ship-stage__armor-mode", showArmor.value ? "is-active" : ""].join(" ")}
+                      onClick={() => setArmor(true)}
+                    >
+                      {t("ships.detail.armor.short")}
+                    </button>
+                  </div>
+                ) : null}
+                <HTabs
+                  variant="segmented"
+                  modelValue={viewMode.value}
+                  onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}
+                  tabs={[
+                    { key: "3d", label: "3D" },
+                    { key: "2d", label: "2D" },
+                  ]}
+                />
+              </>
             ) : null}
-            {!props.hidden && viewMode.value === "3d" ? (
-              <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
-                <button
-                  type="button"
-                  class={["ship-stage__armor-mode", !showArmor.value ? "is-active" : ""].join(" ")}
-                  onClick={() => setArmor(false)}
-                >
-                  {t("ships.detail.stage.holo")}
-                </button>
-                <button
-                  type="button"
-                  class={["ship-stage__armor-mode", showArmor.value ? "is-active" : ""].join(" ")}
-                  onClick={() => setArmor(true)}
-                >
-                  {t("ships.detail.armor.short")}
-                </button>
-              </div>
-            ) : null}
-            <HTabs
-              variant="segmented"
-              modelValue={viewMode.value}
-              onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}
-              tabs={[
-                { key: "3d", label: "3D" },
-                { key: "2d", label: "2D" },
-              ]}
-            />
             {/* Stage visibility switch — stays available even while hidden so
                 the hologram can be brought back from the collapsed bar. */}
             <div class="ship-stage__vis" role="group">
