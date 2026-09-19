@@ -117,7 +117,15 @@
         "citadel": "バイタルパート",
         "stern": "艦尾",
         "belt": "装甲帯",
-        "deck": "甲板"
+        "deck": "甲板",
+        "sternBelt": "艦尾装甲帯",
+        "forwardBelt": "前部装甲帯",
+        "mainBelt": "主装甲帯",
+        "aftBelt": "後部装甲帯",
+        "casemate": "ケースメイト",
+        "torpedoBelt": "魚雷防御隔壁",
+        "bowBelt": "艦首装甲帯",
+        "superstructure": "上部構造物"
       },
       "overmatchThreshold": "オーバーマッチには {n}mm 以上の口径が必要",
       "outcome": {
@@ -125,7 +133,9 @@
         "pen": "貫通",
         "overpen": "過貫通",
         "bounce": "跳弾"
-      }
+      },
+      "restore": "元に戻す",
+      "pickHint": "同じ色の装甲をクリックで非表示"
     },
     "openHint": "クリックで艦艇詳細を開く",
     "my": {

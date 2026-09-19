@@ -117,7 +117,15 @@
         "citadel": "Citadel",
         "stern": "Stern",
         "belt": "Belt",
-        "deck": "Deck"
+        "deck": "Deck",
+        "sternBelt": "Stern belt",
+        "forwardBelt": "Forward belt",
+        "mainBelt": "Main belt",
+        "aftBelt": "Aft belt",
+        "casemate": "Casemate",
+        "torpedoBelt": "Torpedo bulkhead",
+        "bowBelt": "Bow belt",
+        "superstructure": "Superstructure"
       },
       "overmatchThreshold": "Overmatch needs ≥{n}mm caliber",
       "outcome": {
@@ -125,7 +133,9 @@
         "pen": "Pen",
         "overpen": "Overpen",
         "bounce": "Bounce"
-      }
+      },
+      "restore": "Restore",
+      "pickHint": "Click the hull to hide a color class"
     },
     "openHint": "Click to open the ship detail",
     "my": {

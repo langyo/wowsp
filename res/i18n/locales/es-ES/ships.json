@@ -117,7 +117,15 @@
         "citadel": "Ciudadela",
         "stern": "Popa",
         "belt": "Cinturón",
-        "deck": "Cubierta"
+        "deck": "Cubierta",
+        "sternBelt": "Cinturón de popa",
+        "forwardBelt": "Cinturón proel",
+        "mainBelt": "Cinturón principal",
+        "aftBelt": "Cinturón trasero",
+        "casemate": "Casamata",
+        "torpedoBelt": "Mamparo antitorpedas",
+        "bowBelt": "Cinturón de proa",
+        "superstructure": "Superestructura"
       },
       "overmatchThreshold": "El overmatch requiere un calibre de ≥{n} mm",
       "outcome": {
@@ -125,7 +133,9 @@
         "pen": "Penetración",
         "overpen": "Sobrepenetración",
         "bounce": "Rebote"
-      }
+      },
+      "restore": "Restaurar",
+      "pickHint": "Pulsa el casco para ocultar una clase"
     },
     "openHint": "Haz clic para ver los detalles del barco",
     "my": {

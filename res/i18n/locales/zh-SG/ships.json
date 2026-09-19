@@ -117,7 +117,15 @@
         "citadel": "核心舱",
         "stern": "舰尾",
         "belt": "装甲带",
-        "deck": "甲板"
+        "deck": "甲板",
+        "sternBelt": "舰尾装甲带",
+        "forwardBelt": "前段装甲带",
+        "mainBelt": "主装甲带",
+        "aftBelt": "后段装甲带",
+        "casemate": "炮廓",
+        "torpedoBelt": "防雷舱壁",
+        "bowBelt": "舰首装甲带",
+        "superstructure": "上层建筑"
       },
       "overmatchThreshold": "碾压需 ≥{n}mm 口径",
       "outcome": {
@@ -125,7 +133,9 @@
         "pen": "穿透",
         "overpen": "过穿",
         "bounce": "跳弹"
-      }
+      },
+      "restore": "还原",
+      "pickHint": "点击模型隐藏同色装甲"
     },
     "openHint": "点击查看舰艇详情",
     "my": {

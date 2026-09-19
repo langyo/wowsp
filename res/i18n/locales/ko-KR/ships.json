@@ -117,7 +117,15 @@
         "citadel": "시타델",
         "stern": "함미",
         "belt": "장갑대",
-        "deck": "갑판"
+        "deck": "갑판",
+        "sternBelt": "함미 장갑대",
+        "forwardBelt": "전방 장갑대",
+        "mainBelt": "주 장갑대",
+        "aftBelt": "후방 장갑대",
+        "casemate": "케이스메이트",
+        "torpedoBelt": "어뢰 방어격벽",
+        "bowBelt": "함수 장갑대",
+        "superstructure": "상부 구조물"
       },
       "overmatchThreshold": "오버매치에는 ≥{n}mm 구경 필요",
       "outcome": {
@@ -125,7 +133,9 @@
         "pen": "관통",
         "overpen": "과관통",
         "bounce": "튕김"
-      }
+      },
+      "restore": "복원",
+      "pickHint": "같은 색 장갑을 클릭해 숨기기"
     },
     "openHint": "클릭하여 함선 상세 보기",
     "my": {
