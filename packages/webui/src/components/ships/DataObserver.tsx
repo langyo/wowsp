@@ -1,6 +1,7 @@
-import { computed, defineComponent, type PropType } from "vue";
+import { computed, defineComponent, ref, type PropType } from "vue";
 import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
+import { HIconButtonGroup } from "@celestia-island/hikari";
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { t } from "@/i18n";
@@ -11,6 +12,11 @@ import "./DataObserver.scss";
  * Data Observer — the build planner's 综合属性 stats panel. Shows how the
  * ship's base specs change after applying the current build (skills + flags +
  * upgrades) at the selected HP level.
+ *
+ * One category is visible at a time, picked via an HIconButtonGroup strip —
+ * the panel is only 300px wide, so stacking every group made it an endless
+ * scroll. buildShipSpecs already omits empty groups (destroyers get no
+ * Anti-Air block), so the selector only ever offers what THIS ship has.
  *
  * Each stat is displayed as:
  *   基础值  ±Δ  =  最终值
@@ -86,41 +92,73 @@ export default defineComponent({
       }
     };
 
-    return () => (
-      <div class="data-observer">
-        <div class="data-observer__grid">
-          {observerGroups.value.map((g) => {
-            const Icon = iconFor(g.icon);
-            return (
-              <section class="do-group" key={g.group}>
-                <header class="do-group__head">
-                  <Icon size={13} />
-                  <h5 class="do-group__title">{t(`ships.spec.group.${g.group}`)}</h5>
-                </header>
-                <dl class="do-group__rows">
-                  {g.rows.map((row) => (
-                    <div
-                      class={["do-group__row", row.changed ? "do-group__row--changed" : ""]}
-                      key={row.key}
-                    >
-                      <dt class="do-group__label">
-                        {t(`ships.spec.${row.key}`)}
-                        {row.hint ? (
-                          <span class="do-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
-                            <HelpCircle size={10} />
-                          </span>
-                        ) : null}
-                      </dt>
-                      <dd class="do-group__value">{row.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </section>
-            );
-          })}
-        </div>
-      </div>
+    // ── Category selector ─────────────────────────────────────────────────
+    // The raw selection lives in a ref; the effective key guards against a
+    // stale value after the ship changed (category gone from the list →
+    // fall back to the first one, no warnings).
+    const activeGroup = ref<string | null>(null);
+    const activeKey = computed(() => {
+      const groups = observerGroups.value;
+      if (activeGroup.value != null && groups.some((g) => g.group === activeGroup.value)) {
+        return activeGroup.value;
+      }
+      return groups[0]?.group ?? null;
+    });
+    const visibleGroup = computed(
+      () => observerGroups.value.find((g) => g.group === activeKey.value) ?? null,
     );
+
+    return () => {
+      // The label doubles as the built-in tooltip; the icon is the same
+      // lucide glyph the group header uses.
+      const options = observerGroups.value.map((g) => {
+        const Icon = iconFor(g.icon);
+        return { key: g.group, label: t(`ships.spec.group.${g.group}`), icon: <Icon size={13} /> };
+      });
+      const visible = visibleGroup.value;
+      const VisibleIcon = visible ? iconFor(visible.icon) : null;
+      return (
+        <div class="data-observer">
+          {options.length > 0 ? (
+            <HIconButtonGroup
+              mode="single"
+              size="sm"
+              options={options}
+              modelValue={activeKey.value}
+              onUpdate:modelValue={(v: string | string[]) => {
+                activeGroup.value = v as string;
+              }}
+            />
+          ) : null}
+          {visible ? (
+            <section class="do-group" key={visible.group}>
+              <header class="do-group__head">
+                {VisibleIcon ? <VisibleIcon size={13} /> : null}
+                <h5 class="do-group__title">{t(`ships.spec.group.${visible.group}`)}</h5>
+              </header>
+              <dl class="do-group__rows">
+                {visible.rows.map((row) => (
+                  <div
+                    class={["do-group__row", row.changed ? "do-group__row--changed" : ""]}
+                    key={row.key}
+                  >
+                    <dt class="do-group__label">
+                      {t(`ships.spec.${row.key}`)}
+                      {row.hint ? (
+                        <span class="do-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
+                          <HelpCircle size={10} />
+                        </span>
+                      ) : null}
+                    </dt>
+                    <dd class="do-group__value">{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+        </div>
+      );
+    };
   },
 });
 

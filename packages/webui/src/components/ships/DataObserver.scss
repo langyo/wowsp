@@ -1,6 +1,10 @@
 /* Data Observer — compact stat recomputation panel replacing the holographic
-   stage in the captain skills tab. Shows base → delta → modified values. */
+   stage in the captain skills tab. One spec category shows at a time behind
+   the icon-button selector; rows show base → delta → modified values. */
 .data-observer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   background: rgb(var(--color-bg));
   border: 1px solid rgb(var(--color-border) / 12%);
   border-radius: var(--radius-md);
@@ -8,10 +12,9 @@
   max-height: 340px;
   overflow-y: auto;
 
-  &__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 0.5rem;
+  /* Left-align the category strip (hikari centers the track by default). */
+  .hk-icon-group {
+    justify-content: flex-start;
   }
 
   &__title {
