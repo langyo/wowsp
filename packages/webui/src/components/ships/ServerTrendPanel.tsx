@@ -124,21 +124,28 @@ export default defineComponent({
               {meta.value?.cached ? ` · ${t("ships.detail.server.cached")}` : ""}
             </p>
 
-            {/* Server vs the viewed player */}
+            {/* Server vs the viewed player — one full-width card per metric,
+                server and player values side by side. */}
             {compareRows.value.length > 0 ? (
               <div class="server-trend__compare">
                 <div class="server-trend__compare-title">{t("ships.detail.server.compareTitle")}</div>
-                <div class="server-trend__table">
-                  <div class="server-trend__row server-trend__row--head">
-                    <span />
-                    <span>{t("ships.detail.server.colServer")}</span>
-                    <span>{t("ships.detail.server.colPlayer")}</span>
-                  </div>
+                <div class="server-trend__vsgrid">
                   {compareRows.value.map((r) => (
-                    <div class="server-trend__row" key={r.label}>
-                      <span class="server-trend__row-label">{r.label}</span>
-                      <span>{r.server}</span>
-                      <span style={r.playerColor ? { color: r.playerColor } : undefined}>{r.player}</span>
+                    <div class="server-trend__vs" key={r.label}>
+                      <span class="server-trend__vs-label">{r.label}</span>
+                      <div class="server-trend__vs-row">
+                        <span class="server-trend__vs-side">{t("ships.detail.server.colServer")}</span>
+                        <span class="server-trend__vs-value">{r.server}</span>
+                      </div>
+                      <div class="server-trend__vs-row">
+                        <span class="server-trend__vs-side">{t("ships.detail.server.colPlayer")}</span>
+                        <span
+                          class="server-trend__vs-value"
+                          style={r.playerColor ? { color: r.playerColor } : undefined}
+                        >
+                          {r.player}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
