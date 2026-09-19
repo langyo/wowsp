@@ -335,6 +335,23 @@ fn default_dir(mode: String) -> DirDefaults {
     }
 }
 
+/// Pads one folder layer under a bare filesystem root target (a picked
+/// drive like `D:\`) so the payload never lands directly on the root —
+/// shun 0.3's root-drive guard. The wizard rewrites the path box with
+/// the result whenever a root is picked or typed; the install itself
+/// re-applies the same guard via shun's `apply_config`.
+#[tauri::command]
+fn nest_root_dir(state: tauri::State<'_, AppState>, dir: String) -> String {
+    let install = state.install_target().ok();
+    shun::targets::install::nest_root_dir(
+        Path::new(dir.trim()),
+        &state.config.product.name,
+        install.as_ref().and_then(|i| i.root_dir_folder.as_deref()),
+    )
+    .to_string_lossy()
+    .into_owned()
+}
+
 fn emit_progress(app: &tauri::AppHandle, event: &FlowEvent) {
     let _ = app.emit("install-progress", event);
 }
@@ -356,6 +373,16 @@ async fn set_shortcuts(
     mode: String,
 ) -> Result<(), String> {
     let aumid = shortcut_aumid_for(&state.config);
+    // Same root-drive guard as the install: the shortcuts point at the
+    // padded directory the flow delivered.
+    let install = state.install_target().ok();
+    let dir = shun::targets::install::nest_root_dir(
+        Path::new(dir.trim()),
+        &state.config.product.name,
+        install.as_ref().and_then(|i| i.root_dir_folder.as_deref()),
+    )
+    .to_string_lossy()
+    .into_owned();
     let portable = mode != "local";
     tauri::async_runtime::spawn_blocking(move || {
         apply_shortcut_choices(&aumid, desktop, menu, &dir, portable)
@@ -368,12 +395,18 @@ async fn set_shortcuts(
 /// through shun's launch helper.
 #[tauri::command]
 fn launch_app(state: tauri::State<'_, AppState>, dir: String) -> Result<(), String> {
-    let dir = dir.trim().trim_end_matches('\\');
     let install = state.install_target()?;
+    // Same root-drive guard as the install: the padded path is what the
+    // flow delivered, so the launch resolves the same directory.
+    let dir = shun::targets::install::nest_root_dir(
+        Path::new(dir.trim().trim_end_matches('\\')),
+        &state.config.product.name,
+        install.root_dir_folder.as_deref(),
+    );
     let mut ctx = InstallContext::new(
         state.config.product.name.clone(),
         state.config.product.version.clone(),
-        PathBuf::from(dir),
+        dir,
         false,
     );
     ctx.main_exe = install.main_exe.clone();
@@ -1186,6 +1219,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             default_dir,
+            nest_root_dir,
             get_identity,
             get_shell_prefs,
             get_license,
