@@ -17,5 +17,18 @@
   "issues": "問題を報告",
   "license": "ライセンス",
   "qqGroupNotice": "テストのフィードバックは QQ グループまで：",
-  "qqGroupNumber": "1125770228"
+  "qqGroupNumber": "1125770228",
+  "attribution": {
+    "fontMaoRole": "「神了」印章の文字",
+    "fontLuxunRole": "「海猴」「空中小人」「水下小人」印章の文字",
+    "bitmapNote": "ビットマップ（図形化）としてのみ使用し、フォントファイルはアプリに同梱していません。",
+    "wallpaperRole": "デフォルト壁紙の作者",
+    "wallpaperNote": "壁紙の著作権は作者に帰属します。",
+    "wallpaperMark": "壁紙",
+    "aperadarRole": "照会ロジックと評価基準の主な出典",
+    "wowsunpackRole": "ゲームデータの展開（vendored）",
+    "wowscoreRole": "ゲームデータモデル（vendored）",
+    "hikariRole": "UI コンポーネントライブラリ",
+    "devtoolsRole": "エージェント規律インフラ（ワークスペース規約とツールチェーン）"
+  }
 }

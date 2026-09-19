@@ -78,6 +78,9 @@ export function useWallpaper() {
     return activeWallpaper.value?.source ?? { type: "solid", color: "auto" };
   });
 
+  /** Art credit of the active wallpaper (null for solid backgrounds). */
+  const activeAuthor = computed(() => activeWallpaper.value?.author ?? null);
+
   const wallpaperType = computed<WallpaperType>(() => currentSource.value.type);
   const isImage = computed(() => wallpaperType.value === "image");
   const isSolid = computed(() => wallpaperType.value === "solid");
@@ -113,6 +116,7 @@ export function useWallpaper() {
   return {
     activeWallpaperId,
     activeWallpaper,
+    activeAuthor,
     allWallpapers,
     customWallpapers,
     currentSource,

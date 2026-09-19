@@ -2,11 +2,15 @@ import { computed, defineComponent, watchEffect } from "vue";
 
 import { getThemeTokens, useTheme } from "@celestia-island/hikari";
 
+import AuthorMark from "@/components/base/AuthorMark";
 import { useWallpaper } from "@/theme/useWallpaper";
+import { t } from "@/i18n";
 
 /**
- * Renderless component that applies the active wallpaper to <body> via CSS
- * custom properties. Returns null — it has no DOM output of its own.
+ * Applies the active wallpaper to <body> via CSS custom properties, and —
+ * when the active wallpaper carries an art credit — renders the desktop
+ * corner author mark (the same shared AuthorMark component the settings
+ * attributions list uses).
  *
  * Writes:
  *   --wallpaper-solid-color: #000 / #fff / transparent
@@ -52,6 +56,17 @@ export default defineComponent({
       }
     });
 
-    return () => null;
+    return () => {
+      const author = wp.activeAuthor.value;
+      if (!author || !wp.mediaUrl.value) return null;
+      return (
+        <AuthorMark
+          compact
+          name={author.name}
+          url={author.url}
+          prefix={t("about.attribution.wallpaperMark")}
+        />
+      );
+    };
   },
 });

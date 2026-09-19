@@ -41,5 +41,7 @@
   "overlayRosterOcr": "OCR 認識",
   "overlayRosterOff": "オフ（チーム順で表示）",
   "overlayFullscreenNote": "※ 排他的フルスクリーンでは表示できません：このモードでは GDI 画面キャプチャが黒いフレームしか取得できず、オーバーレイもフルスクリーンのスワップチェーンの上に重ねられないためです。ゲーム内の表示モードを「ボーダーレス」または「ウィンドウ」に設定してください。",
-  "gamePathChange": "変更…"
+  "gamePathChange": "変更…",
+  "attributions": "著作権表示",
+  "attributionsHint": "本アプリが使用しているパートナー素材・上流プロジェクト・謝辞の一覧。"
 }

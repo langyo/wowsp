@@ -41,5 +41,7 @@
   "overlayRosterOcr": "OCR 辨識",
   "overlayRosterOff": "關閉（按隊伍順序顯示）",
   "overlayFullscreenNote": "※ 獨占全螢幕下無法顯示：該模式下 Windows GDI 擷取畫面只能取得黑幀，覆蓋視窗也無法疊加在全螢幕交換鏈之上。請在遊戲設定中將顯示模式改為「無邊框」或「視窗化」。",
-  "gamePathChange": "變更…"
+  "gamePathChange": "變更…",
+  "attributions": "版權資訊",
+  "attributionsHint": "本應用使用的合作方素材、上游專案與致謝名單。"
 }
