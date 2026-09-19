@@ -338,7 +338,23 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
-    }
+    },
+    "tabCosts": "Costes",
+    "costCredits": "créditos",
+    "costTotal": "Total (créditos)",
+    "costUpgrades": "Mejoras",
+    "costUpgradesSum": "Subtotal de mejoras",
+    "costNone": "No hay mejoras seleccionadas.",
+    "costNoPrice": "precio desconocido",
+    "costNoPrices": "No se pudieron extraer los precios de los datos del juego; solo se muestran los elementos conocidos.",
+    "costCaptain": "Comandante",
+    "costSkillPoints": "Puntos de habilidad",
+    "costPoints": "pts",
+    "costCxP": "EXP de comandante (acumulada)",
+    "costRetrain": "Reciclado (est.)",
+    "costRetrainHint": "Estimado: 100.000 créditos por punto de habilidad; manda el precio del juego.",
+    "costFlags": "Señales",
+    "costFlagsNote": "Equipar señales no cuesta nada"
   },
   "flags": {
     "effect": {

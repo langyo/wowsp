@@ -466,6 +466,21 @@ async def cmd_get_ship_server_stats(request: Request) -> dict | None:
             "winrate": sample[2], "generatedAt": 1_700_000_000, "fromCache": False}
 
 
+@app.post("/api/get_upgrade_prices")
+async def cmd_get_upgrade_prices(request: Request) -> dict:
+    """Modernization prices (credits) as GameParams would serve them. The
+    planner's cost panel falls back to unknown-price rows for anything
+    missing here."""
+    return {
+        "PCM027": {"name": "PCM027_ConcealmentMeasures_Mod_I", "cost": 1_450_000,
+                   "group": "Modernization", "index": "PCM027"},
+        "PCM020": {"name": "PCM020_DamageControlSystem_Mod_I", "cost": 1_250_000,
+                   "group": "Modernization", "index": "PCM020"},
+        "PCY013": {"name": "PCY013_MainGun_Mod", "cost": 3_000_000,
+                   "group": "Modernization", "index": "PCY013"},
+    }
+
+
 @app.post("/api/get_ranked_stats")
 async def cmd_get_ranked_stats(request: Request) -> list[dict]:
     """Three fake ranked seasons (mirrors RankedSeasonStats) so the stats

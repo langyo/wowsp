@@ -99,6 +99,119 @@
   }
 }
 
+/* Text glyph fallback for rail buttons without game art (成本计算). */
+.planner-v__rail-icon--glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__rail-btn--active .planner-v__rail-icon--glyph {
+  color: rgb(var(--color-primary));
+}
+
+/* ── 成本计算 (cost) section ───────────────────────────────────────────── */
+.planner-v__costs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 560px;
+}
+
+.planner-v__cost-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  background: rgb(var(--color-primary) / 8%);
+  border: 1px solid rgb(var(--color-primary) / 25%);
+  border-radius: var(--radius-md);
+}
+
+.planner-v__cost-total-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: rgb(var(--color-text));
+}
+
+.planner-v__cost-total-value {
+  font-size: var(--text-lg);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+
+  em {
+    font-style: normal;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+}
+
+.planner-v__cost-head {
+  margin: 0.4rem 0 0;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__cost-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.planner-v__cost-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.3rem 0.4rem;
+  font-size: var(--text-xs);
+  border-bottom: 1px solid rgb(var(--color-border) / 8%);
+
+  &:last-child { border-bottom: none; }
+
+  &--sum {
+    font-weight: 700;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+  }
+}
+
+.planner-v__cost-slot {
+  color: rgb(var(--color-muted));
+  font-size: var(--text-2xs);
+}
+
+.planner-v__cost-name {
+  color: rgb(var(--color-text));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-v__cost-price {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+
+  em {
+    font-style: normal;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    margin-left: 0.15rem;
+  }
+}
+
+.planner-v__cost-empty,
+.planner-v__cost-note {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted) / 75%);
+}
+
 /* ── Center: skill tiers (kept from SkillBuilder) ──────────────────────── */
 .planner-v__center {
   display: flex;

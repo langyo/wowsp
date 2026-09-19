@@ -281,6 +281,7 @@ fn main() {
             commands::ship_stats::read_ship_stats_history,
             commands::ship_stats::snapshot_player_stats,
             commands::gameparams::get_ship_gameparams,
+            commands::gameparams::get_upgrade_prices,
             commands::model_pack::ensure_model_pack,
             commands::model_pack::ensure_dogtag_pack,
             commands::trends::get_player_trend,

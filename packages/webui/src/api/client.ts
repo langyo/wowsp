@@ -632,6 +632,15 @@ export interface ShipInfo {
   images: ShipImages;
 }
 
+/** One Modernization entity's price record (from GameParams via
+ *  get_upgrade_prices). `cost` is credits. */
+export interface UpgradePrice {
+  name: string;
+  cost?: number;
+  group?: string;
+  index?: string;
+}
+
 /** Mirrors `wowsp_tauri_shared::PlayerShipStats`. */
 export interface PlayerShipStats {
   shipId: number;
@@ -1046,6 +1055,10 @@ export const api = {
     }),
   getShipGameparams: (shipId: number, gameRoot: string) =>
     transport.invoke<unknown>(RPC.get_ship_gameparams, { shipId, gameRoot }),
+  /** Modernization price data walked from the install's GameParams.data:
+   *  keyed by index (PCM027) AND full entity name; `cost` is credits. */
+  getUpgradePrices: (gameRoot: string) =>
+    transport.invoke<Record<string, UpgradePrice>>(RPC.get_upgrade_prices, { gameRoot }),
   getPlayerTrend: (accountId: number, realm: string) =>
     transport.invoke<TrendResult>(RPC.get_player_trend, { accountId, realm }),
   getPatches: () => transport.invoke<PatchNote[]>(RPC.get_patches),

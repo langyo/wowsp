@@ -338,7 +338,23 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
-    }
+    },
+    "tabCosts": "Стоимость",
+    "costCredits": "кредитов",
+    "costTotal": "Итого (кредиты)",
+    "costUpgrades": "Модернизация",
+    "costUpgradesSum": "Итого модернизация",
+    "costNone": "Модернизация не выбраны.",
+    "costNoPrice": "цена неизвестна",
+    "costNoPrices": "Цены не удалось извлечь из данных игры; показаны только известные позиции.",
+    "costCaptain": "Командир",
+    "costSkillPoints": "Очки навыков",
+    "costPoints": "оч.",
+    "costCxP": "Опыт командира (всего)",
+    "costRetrain": "Переобучение (оценка)",
+    "costRetrainHint": "Оценка: 100 000 кредитов за очко навыка; в игре цена может отличаться.",
+    "costFlags": "Сигнальные флаги",
+    "costFlagsNote": "Флаги не расходуют валюту"
   },
   "flags": {
     "effect": {

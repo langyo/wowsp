@@ -338,7 +338,23 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
-    }
+    },
+    "tabCosts": "Costs",
+    "costCredits": "credits",
+    "costTotal": "Total (credits)",
+    "costUpgrades": "Upgrades",
+    "costUpgradesSum": "Upgrades subtotal",
+    "costNone": "No upgrades selected.",
+    "costNoPrice": "price unknown",
+    "costNoPrices": "Prices could not be unpacked from the game data; only known items are priced.",
+    "costCaptain": "Commander",
+    "costSkillPoints": "Skill points",
+    "costPoints": "pts",
+    "costCxP": "CXP (cumulative)",
+    "costRetrain": "Retraining (est.)",
+    "costRetrainHint": "Estimated at 100,000 credits per skill point; the in-game price wins.",
+    "costFlags": "Signals",
+    "costFlagsNote": "Signals cost nothing to equip"
   },
   "flags": {
     "effect": {
