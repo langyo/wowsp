@@ -74,7 +74,8 @@ export interface CompositionStamps {
  *  exceed 20% of the player's career battles, with a career total above 200
  *  battles so a fresh account's first CV foray doesn't earn the mark.
  *  `ships` is the player's full per-ship stat list; `typeOf` resolves the
- *  ship type (encyclopedia first, offline DB fallback). */
+ *  ship type (encyclopedia first, offline DB fallback). Career-level tags:
+ *  they render on the account card only, never on a single ship's page. */
 export function compositionStamps(
   ships: { shipId: number; battles: number }[],
   typeOf: (shipId: number) => string | null | undefined,
