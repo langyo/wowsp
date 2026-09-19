@@ -1,16 +1,16 @@
 /**
  * GLB model loading utilities for the holographic 3D scene.
  *
- * Ship and map models are pre-converted GLB files placed under
- * `src/res/models/ships/` and `src/res/models/maps/` (Vite's publicDir).
- * Model availability is discovered lazily: we only collect filenames from
- * glob keys without eagerly importing hundreds of binary assets.
- *
- * In production the Tauri shell downloads the latest model pack from GitHub
- * Releases (tag `res-latest`) on first launch and caches it under
- * `%LOCALAPPDATA%/WoWSP/models/`.  When the cache is available, models are
- * served via `convertFileSrc`; during development (or when the download hasn't
- * completed yet), publicDir paths are used as a fallback.
+ * Ship and map models are pre-converted GLB files. Availability is discovered
+ * two ways: the build-time glob over `src/res/models/{ships,maps,planes,
+ * props}/*.glb` (the tracked publicDir copies — the GLBs themselves are
+ * gitignored, so fresh checkouts glob EMPTY), and the runtime model pack the
+ * Tauri shell downloads from GitHub Releases (`res-latest`) into
+ * `%LOCALAPPDATA%/WoWSP/models/` on first launch. When the pack cache is
+ * wired, URLs are constructed OPTIMISTICALLY for any stem — a build without
+ * bundled GLBs must still serve models from the runtime cache; a stem the
+ * pack doesn't have 404s into the per-ship fallback chain (substitute hull →
+ * placeholder), exactly like any other load failure.
  *
  * ## Skin → base model dedup
  * `src/data/ship_models.json` maps each shipId to a `baseName`.
@@ -109,24 +109,46 @@ function toUrl(
   kind: "ships" | "maps" | "planes" | "props",
   cased: string,
 ): string {
-  // In dev mode Vite serves models via publicDir; convertFileSrc only works
-  // in production where the webview origin is tauri://localhost.
-  if (!import.meta.env.DEV && cacheRoot && _convertFileSrc) {
+  // The Tauri asset protocol also works under `tauri dev` (the vite origin
+  // runs inside the tauri webview), and `fetchModelResource` prefers the
+  // embedded copy first for asset URLs — so the cache only wins when the
+  // build has no bundled file, which is exactly the desired precedence.
+  if (cacheRoot && _convertFileSrc) {
     return _convertFileSrc(`${cacheRoot}/models/${kind}/${cased}.glb`);
   }
   return `/models/${kind}/${cased}.glb`;
 }
 
+/** Cache URL for a stem the build-time glob doesn't know, or null when the
+ *  pack cache isn't wired (plain-browser dev) or the asset protocol is
+ *  unavailable. The GLBs are gitignored, so builds from a fresh checkout glob
+ *  an EMPTY directory even though the runtime model pack (downloaded by the
+ *  shell, thousands of ships) sits fully populated — gating URL construction
+ *  on the glob alone made every ship render the placeholder hull in such
+ *  builds. Trusting the stem moves availability to runtime; a file the pack
+ *  lacks simply 404s into the normal per-ship fallback. */
+function optimisticCacheUrl(
+  kind: "ships" | "maps" | "planes" | "props",
+  stem: string,
+): string | null {
+  if (!_modelCacheRoot || !_convertFileSrc) return null;
+  try {
+    return toUrl(_modelCacheRoot, kind, stem);
+  } catch {
+    return null;
+  }
+}
+
 function shipModelUrl(stem: string): string | null {
   const key = stem.toLowerCase();
   const cased = shipCasedByLower.get(key);
-  return cased ? toUrl(_modelCacheRoot, "ships", cased) : null;
+  return cased ? toUrl(_modelCacheRoot, "ships", cased) : optimisticCacheUrl("ships", stem);
 }
 
 function mapModelUrl(stem: string): string | null {
   const key = stem.toLowerCase();
   const cased = mapCasedByLower.get(key);
-  return cased ? toUrl(_modelCacheRoot, "maps", cased) : null;
+  return cased ? toUrl(_modelCacheRoot, "maps", cased) : optimisticCacheUrl("maps", stem);
 }
 
 export function resolveShipModelUrl(
@@ -290,13 +312,13 @@ export function resolveMapModelUrl(spaceId: string | undefined): string | null {
 export function resolvePlaneModelUrl(index: string | undefined): string | null {
   if (!index) return null;
   const cased = planeCasedByLower.get(index.toLowerCase());
-  return cased ? toUrl(_modelCacheRoot, "planes", cased) : null;
+  return cased ? toUrl(_modelCacheRoot, "planes", cased) : optimisticCacheUrl("planes", index);
 }
 
 /** Shared projectile prop GLB ("shell" | "torpedo"), if baked. */
 export function resolvePropModelUrl(name: "shell" | "torpedo"): string | null {
   const cased = propCasedByLower.get(name);
-  return cased ? toUrl(_modelCacheRoot, "props", cased) : null;
+  return cased ? toUrl(_modelCacheRoot, "props", cased) : optimisticCacheUrl("props", name);
 }
 
 // ── Minimap base art (game minimap composite) + world bounds ────────────
