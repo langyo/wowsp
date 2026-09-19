@@ -14,8 +14,9 @@ let stampSeq = 0;
  *  weave + ink-rough displacement filter) around pre-rendered glyph bitmaps.
  *
  *  The glyphs are baked to PNGs by `scripts/gen_stamp_bitmaps.py` (calligraphy
- *  fonts: 神了 in 毛体, the rest in 鲁迅行书; two-glyph stamps pre-stretched to
- *  the 2/3-height seal look). The fonts themselves are commercial / unclear-
+ *  fonts: 神 in 毛体, the rest in 鲁迅行书; the four-char composition tags are
+ *  laid out as a 2x2 seal face — 空中 over 小人). The fonts themselves are
+ *  commercial / unclear-
  *  license and are NOT bundled — bitmaps only, so the seals look identical
  *  everywhere. Displacement seeds are fixed per kind → deterministic ink.
  *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
@@ -101,9 +102,9 @@ export default defineComponent({
             )}
             <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
             <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
-            {/* Glyph bitmap (pre-centered, cinnabar, two-glyph stamps
-                pre-stretched), inset to sit well inside the inner frame —
-                full-bleed glyphs read too heavy at seal sizes. */}
+            {/* Glyph bitmap (pre-centered cinnabar: single-glyph verdicts,
+                2x2 composition tags), inset to sit well inside the inner
+                frame — full-bleed glyphs read too heavy at seal sizes. */}
             <image href={STAMP_GLYPHS[props.kind]} x="17" y="17" width="66" height="66" />
           </g>
         </svg>

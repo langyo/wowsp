@@ -7,6 +7,8 @@ import RatingStamp from "@/components/base/RatingStamp";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import { careerStamp, prTier, winrateColor, winrateTier } from "@/utils/winrate";
+import { useLanguage } from "@/i18n/useLanguage";
+import { useCompositionStamps } from "@/composables/useCompositionStamps";
 import { useClipboard } from "@/composables/useClipboard";
 import "./StatsCard.scss";
 
@@ -36,6 +38,16 @@ export default defineComponent({
       pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`),
     );
     const stamp = computed(() => careerStamp(props.stats.pr, props.stats.battles));
+    /** 成分 tags (空中小人 / 水下小人) from the shared per-ship cache — the
+     *  same lookup flow that fills the ship distribution below this card. */
+    const composition = useCompositionStamps(
+      () => props.stats.accountId,
+      () => props.stats.realm,
+    );
+    // The seals render nothing outside zh locales (RatingStamp's own rule);
+    // gate the cluster too so non-zh heroes don't grow an empty flex slot.
+    const { uiLocale } = useLanguage();
+    const sealsVisible = computed(() => uiLocale.value.startsWith("zh"));
     const wrTier = computed(() => winrateTier(props.stats.winrate));
     const wrColor = computed(() => winrateColor(props.stats.winrate));
     const { copy } = useClipboard();
@@ -130,8 +142,19 @@ export default defineComponent({
               {props.stats.battles != null ? `${props.stats.battles.toLocaleString()} ${t("stats.battles")}` : "—"}
             </span>
           </div>
-          {stamp.value ? (
-            <RatingStamp class="stats-card__stamp" kind={stamp.value} size={58} />
+          {sealsVisible.value &&
+          (stamp.value || composition.value.air || composition.value.sub) ? (
+            <div class="stats-card__stamps">
+              {stamp.value ? (
+                <RatingStamp class="stats-card__stamp" kind={stamp.value} size={58} />
+              ) : null}
+              {composition.value.air ? (
+                <RatingStamp class="stats-card__stamp" kind="air" size={46} />
+              ) : null}
+              {composition.value.sub ? (
+                <RatingStamp class="stats-card__stamp" kind="sub" size={46} />
+              ) : null}
+            </div>
           ) : null}
           <div
             class={["stats-card__pr-block", pr.value.rainbow ? "rainbow-text" : null]}

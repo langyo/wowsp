@@ -6,13 +6,10 @@ import RatingStamp from "@/components/base/RatingStamp";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useStatsStore } from "@/stores/stats";
 import { useRankedStore } from "@/stores/ranked";
-import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { shipOfflineEntry } from "@/features/holographic/modelLoader";
 import type { PlayerShipStats } from "@/api";
 import { t } from "@/i18n";
 import {
   careerStamp,
-  compositionStamps,
   damageColor,
   prTier,
   winrateColor,
@@ -25,12 +22,11 @@ import "./ShipMyStatsPanel.scss";
 /**
  * "My Stats" tab of the ship detail modal — the water-table header (StatsCard)
  * re-cut for a single ship, mirroring the account card's layout: centered hero
- * winrate with the PR block behind a divider, the stamp grid (per-ship 神了/
- * 海猴 by PR + career 空中小人/水下小人 composition tags), the account-wide
- * four-division winrate row, the KPI strip, and the 1/7/30-day recent windows
- * against the locally recorded per-ship history baselines. Works for any
- * viewed player (the modal passes the accountId of whoever's water table
- * opened it), not just the bound account.
+ * winrate with the PR block behind a divider, the per-ship 神了/海猴 PR
+ * verdict stamp, the account-wide four-division winrate row, the KPI strip,
+ * and the 1/7/30-day recent windows against the locally recorded per-ship
+ * history baselines. Works for any viewed player (the modal passes the
+ * accountId of whoever's water table opened it), not just the bound account.
  */
 export default defineComponent({
   name: "ShipMyStatsPanel",
@@ -47,7 +43,6 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const stats = useStatsStore();
     const ranked = useRankedStore();
-    const encyclopedia = useEncyclopediaStore();
     const { copy } = useClipboard();
 
     const history = computed(() => {
@@ -67,27 +62,12 @@ export default defineComponent({
       ranked.accountId != null && ranked.accountId === props.accountId ? ranked.winrate : null,
     );
 
-    /** The player's full per-ship list (career composition stamps). */
-    const shipList = computed(() => {
-      if (props.accountId == null || !props.realm) return [];
-      return shipStats.cache.get(`${props.realm}_${props.accountId}`) ?? [];
-    });
-
-    /** Ship type: encyclopedia first, offline DB fallback. */
-    const typeOf = (shipId: number) =>
-      encyclopedia.byId.get(shipId)?.type ?? shipOfflineEntry(shipId)?.type;
-
-    /** Stamp grid: per-ship PR verdict (神了 / 海猴) first, then the career
-     *  composition tags (空中小人 / 水下小人: CV/SS battles >20% of a 200+
-     *  battle career). Independent criteria — up to three coexist. */
+    /** Stamp: the ship's own PR verdict (神了 / 海猴). The career composition
+     *  tags (空中小人 / 水下小人) stay on the account card — they describe the
+     *  player's career, not this ship, and read as a ship verdict here. */
     const stamps = computed<StampKind[]>(() => {
-      const out: StampKind[] = [];
       const career = careerStamp(props.stats?.pr ?? null, props.stats?.battles ?? null);
-      if (career) out.push(career);
-      const comp = compositionStamps(shipList.value, typeOf);
-      if (comp.air) out.push("air");
-      if (comp.sub) out.push("sub");
-      return out;
+      return career ? [career] : [];
     });
 
     const pr = computed(() => prTier(props.stats?.pr ?? null));
