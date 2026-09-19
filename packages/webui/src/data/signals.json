@@ -1,0 +1,382 @@
+[
+ {
+  "index": "PCEF016",
+  "name": "PCEF016_NE7_SignalFlag",
+  "names": {
+   "en": "November Echo Setteseven",
+   "ja": "November Echo Setteseven",
+   "zh": "November Echo Setteseven",
+   "tw": "November Echo Setteseven"
+  },
+  "desc": {
+   "en": "Proceed with great caution, hostile aircraft sighted.",
+   "ja": "敵機を確認した、慎重に進行せよ。",
+   "zh": "您应该保持警惕；已发现敌方飞机。",
+   "tw": "您應該更謹慎行事；已發現敵機。"
+  },
+  "flags": [
+   "november",
+   "echo",
+   "setteseven"
+  ],
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.05,
+    "Auxiliary": 1.05,
+    "Battleship": 1.05,
+    "Cruiser": 1.05,
+    "Destroyer": 1.05,
+    "Submarine": 1.05
+   },
+   "AABubbleDamage": {
+    "AirCarrier": 1.05,
+    "Auxiliary": 1.05,
+    "Battleship": 1.05,
+    "Cruiser": 1.05,
+    "Destroyer": 1.05,
+    "Submarine": 1.05
+   }
+  },
+  "sortOrder": 1
+ },
+ {
+  "index": "PCEF012",
+  "name": "PCEF012_MY6_SignalFlag",
+  "names": {
+   "en": "Mike Yankee Soxisix",
+   "ja": "Mike Yankee Soxisix",
+   "zh": "Mike Yankee Soxisix",
+   "tw": "Mike Yankee Soxisix"
+  },
+  "desc": {
+   "en": "It is dangerous to approach close to my vessel.",
+   "ja": "本艦への接近は危険である。",
+   "zh": "危险！别靠近我。",
+   "tw": "靠近我艦是很危險的。"
+  },
+  "flags": [
+   "mike",
+   "yankee",
+   "soxisix"
+  ],
+  "modifiers": {
+   "GSIdealRadius": 0.95,
+   "GSMaxDist": 1.05,
+   "GSShotDelay": 0.95
+  },
+  "sortOrder": 2
+ },
+ {
+  "index": "PCEF018",
+  "name": "PCEF018_IX_SignalFlag",
+  "names": {
+   "en": "India X-Ray",
+   "ja": "India X-Ray",
+   "zh": "India X-Ray",
+   "tw": "India X-Ray"
+  },
+  "desc": {
+   "en": "The fire is gaining.",
+   "ja": "火災は勢いを増している。",
+   "zh": "火势正在蔓延。",
+   "tw": "引發了火災。"
+  },
+  "flags": [
+   "india",
+   "xray"
+  ],
+  "modifiers": {
+   "burnChanceFactorBig": 0.01,
+   "burnChanceFactorSmall": 0.005
+  },
+  "sortOrder": 3
+ },
+ {
+  "index": "PCEF019",
+  "name": "PCEF019_JW1_SignalFlag",
+  "names": {
+   "en": "Juliet Whiskey Unaone",
+   "ja": "Juliet Whiskey Unaone",
+   "zh": "Juliet Whiskey Unaone",
+   "tw": "Juliet Whiskey Unaone"
+  },
+  "desc": {
+   "en": "Leak is dangerous.",
+   "ja": "浸水は危険な状態だ。",
+   "zh": "进水很危险。",
+   "tw": "進水是很危險的。"
+  },
+  "flags": [
+   "juliet",
+   "whiskey",
+   "unaone"
+  ],
+  "modifiers": {
+   "floodChanceFactor": 1.15,
+   "floodChanceFactorPlane": 1.15
+  },
+  "sortOrder": 4
+ },
+ {
+  "index": "PCEF017",
+  "name": "PCEF017_VL_SignalFlag",
+  "names": {
+   "en": "Victor Lima",
+   "ja": "Victor Lima",
+   "zh": "Victor Lima",
+   "tw": "Victor Lima"
+  },
+  "desc": {
+   "en": "Hurricane is approaching. You should take appropriate precautions.",
+   "ja": "ハリケーン接近中、然るべく備えよ。",
+   "zh": "暴风雨正在迫近。你应该做好应对措施。",
+   "tw": "暴風雨將至。您應採取適當的預防措施。"
+  },
+  "flags": [
+   "victor",
+   "lima"
+  ],
+  "modifiers": {
+   "burnChanceFactorBig": 0.01,
+   "burnChanceFactorSmall": 0.005,
+   "floodChanceFactor": 1.04,
+   "floodChanceFactorPlane": 1.04
+  },
+  "sortOrder": 5
+ },
+ {
+  "index": "PCEF006",
+  "name": "PCEF006_HY_SignalFlag",
+  "names": {
+   "en": "Hotel Yankee",
+   "ja": "Hotel Yankee",
+   "zh": "Hotel Yankee",
+   "tw": "Hotel Yankee"
+  },
+  "desc": {
+   "en": "The vessel I have collided with has sunk.",
+   "ja": "本艦と衝突した船は沈没した。",
+   "zh": "被我撞过的战舰都会沉没。",
+   "tw": "與我發生碰撞的艦艇已經沉沒"
+  },
+  "flags": [
+   "hotel",
+   "yankee"
+  ],
+  "modifiers": {
+   "collisionDamageApply": 1.5,
+   "collisionDamageNerf": 0.8
+  },
+  "sortOrder": 6
+ },
+ {
+  "index": "PCEF014",
+  "name": "PCEF014_NF_SignalFlag",
+  "names": {
+   "en": "November Foxtrot",
+   "ja": "November Foxtrot",
+   "zh": "November Foxtrot",
+   "tw": "November Foxtrot"
+  },
+  "desc": {
+   "en": "You are running into danger.",
+   "ja": "貴艦は危険に向かっている。",
+   "zh": "您的船正驶向危险。",
+   "tw": "您跑進了危險之中。"
+  },
+  "flags": [
+   "november",
+   "foxtrot"
+  ],
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.95,
+    "Auxiliary": 0.95,
+    "Battleship": 0.95,
+    "Cruiser": 0.95,
+    "Destroyer": 0.95,
+    "Submarine": 0.95
+   },
+   "planeConsumableReloadTime": 0.95
+  },
+  "sortOrder": 7
+ },
+ {
+  "index": "PCEF005",
+  "name": "PCEF005_SM_SignalFlag",
+  "names": {
+   "en": "Sierra Mike",
+   "ja": "Sierra Mike",
+   "zh": "Sierra Mike",
+   "tw": "Sierra Mike"
+  },
+  "desc": {
+   "en": "I am undergoing speed trials.",
+   "ja": "本艦は速力試験中。",
+   "zh": "我正在进行速度测试。",
+   "tw": "我正在進行速度測試。"
+  },
+  "flags": [
+   "sierra",
+   "mike"
+  ],
+  "modifiers": {
+   "speedCoef": 1.05
+  },
+  "sortOrder": 8
+ },
+ {
+  "index": "PCEF007",
+  "name": "PCEF007_ID_SignalFlag",
+  "names": {
+   "en": "India Delta",
+   "ja": "India Delta",
+   "zh": "India Delta",
+   "tw": "India Delta"
+  },
+  "desc": {
+   "en": "The damage can be repaired at sea.",
+   "ja": "損傷は海上で修理可能。",
+   "zh": "损伤是可以在海上修理的。",
+   "tw": "損傷是可以在海上修理的。"
+  },
+  "flags": [
+   "india",
+   "delta"
+  ],
+  "modifiers": {
+   "activeManeuveringWorkTimeCoeff": 1.1,
+   "regenerationHPSpeed": 1.2
+  },
+  "sortOrder": 9
+ },
+ {
+  "index": "PCEF009",
+  "name": "PCEF009_JY2_SignalFlag",
+  "names": {
+   "en": "Juliet Yankee Bissotwo",
+   "ja": "Juliet Yankee Bissotwo",
+   "zh": "Juliet Yankee Bissotwo",
+   "tw": "Juliet Yankee Bissotwo"
+  },
+  "desc": {
+   "en": "The leak is under control.",
+   "ja": "浸水は制御下にある。",
+   "zh": "进水已得到控制。",
+   "tw": "進水已受到控制。"
+  },
+  "flags": [
+   "juliet",
+   "yankee",
+   "bissotwo"
+  ],
+  "modifiers": {
+   "floodTime": 0.8
+  },
+  "sortOrder": 10
+ },
+ {
+  "index": "PCEF008",
+  "name": "PCEF008_IY_SignalFlag",
+  "names": {
+   "en": "India Yankee",
+   "ja": "India Yankee",
+   "zh": "India Yankee",
+   "tw": "India Yankee"
+  },
+  "desc": {
+   "en": "I can get the fire under control without assistance.",
+   "ja": "本艦の火災に対する援助は不要。",
+   "zh": "我能自行控制住火势。",
+   "tw": "我能控制住火勢而無需協助。"
+  },
+  "flags": [
+   "india",
+   "yankee"
+  ],
+  "modifiers": {
+   "burnTime": 0.8
+  },
+  "sortOrder": 11
+ },
+ {
+  "index": "PCEF030",
+  "name": "PCEF030_CK_SignalFlag",
+  "names": {
+   "en": "Charlie Kilo",
+   "ja": "Charlie Kilo",
+   "zh": "Charlie Kilo",
+   "tw": "Charlie Kilo"
+  },
+  "desc": {
+   "en": "I do not require assistance.",
+   "ja": "本艦に対する援助は不要である。",
+   "zh": "我不需要帮助。",
+   "tw": "我不需要協助。"
+  },
+  "flags": [
+   "charlie",
+   "kilo"
+  ],
+  "modifiers": {
+   "healthHullCoeff": 1.05,
+   "planeHealthCoeff": 1.025
+  },
+  "sortOrder": 12
+ },
+ {
+  "index": "PCEF028",
+  "name": "PCEF028_Smoke_SignalFlag",
+  "names": {
+   "en": "X-Ray Papa Unaone",
+   "ja": "X-Ray Papa Unaone",
+   "zh": "X-Ray Papa Unaone",
+   "tw": "X-Ray Papa Unaone"
+  },
+  "desc": {
+   "en": "I am entering a zone of restricted visibility.",
+   "ja": "本艦は視界が限られた地帯に進入中。",
+   "zh": "我正在进入能见度受限的区域。",
+   "tw": "我正在進入低能見度區域。"
+  },
+  "flags": [
+   "xray",
+   "papa",
+   "unaone"
+  ],
+  "modifiers": {
+   "batteryCapacityCoeff": 1.05,
+   "planeSmokeGeneratorWorkTimeCoeff": 1.05,
+   "smokeGeneratorCapacityCoeff": 1.025,
+   "smokeGeneratorWorkTimeCoeff": 1.1
+  },
+  "sortOrder": 13
+ },
+ {
+  "index": "PCEF029",
+  "name": "PCEF029_Sonar_AirDef_SignalFlag",
+  "names": {
+   "en": "Sierra Bravo",
+   "ja": "Sierra Bravo",
+   "zh": "Sierra Bravo",
+   "tw": "Sierra Bravo"
+  },
+  "desc": {
+   "en": "I am proceeding to the position of the accident.",
+   "ja": "本艦は事故の位置へ向け進行中。",
+   "zh": "正在前往事故地点。",
+   "tw": "我正前往事故地點。"
+  },
+  "flags": [
+   "sierra",
+   "bravo"
+  ],
+  "modifiers": {
+   "auxTorpBoosterReloadCoeff": 0.9,
+   "hydrophoneReloadCoeff": 0.9,
+   "sonarWorkTimeCoeff": 1.1,
+   "submarineLocatorReloadCoeff": 0.9
+  },
+  "sortOrder": 14
+ }
+]

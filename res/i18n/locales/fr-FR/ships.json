@@ -224,7 +224,8 @@
     "surfaceDetectHint": "Distance à laquelle les navires ennemis en surface vous repèrent. Plus courte, c'est mieux (plus discret).",
     "airDetect": "Détectabilité aérienne",
     "airDetectHint": "Distance à laquelle les avions ennemis vous repèrent.",
-    "subDetect": "Détectabilité par les sous-marins"
+    "subDetect": "Détectabilité par les sous-marins",
+    "heFireChance": "Chance d'incendie des obus HE"
   },
   "skills": {
     "title": "Planificateur de compétences de commandant",
@@ -243,7 +244,62 @@
     "CV": "Porte-avions",
     "SS": "Sous-marin",
     "equipment": "Équipement",
-    "flags": "Pavillons"
+    "flags": "Pavillons",
+    "tabSkills": "Compétences du commandant",
+    "tabCaptains": "Choix du commandant",
+    "tabFlags": "Signaux",
+    "tabUpgrades": "Améliorations",
+    "statsTitle": "Statistiques combinées",
+    "health": "PV actuels",
+    "slot": "Emplacement {n}",
+    "noCommander": "Aucun commandant",
+    "commanderInfoNote": "Les talents du commandant sont des effets déclenchés, affichés à titre indicatif ; ils ne sont pas inclus dans les statistiques.",
+    "talentTrigger": "Déclencheur",
+    "talentMax": "Jusqu'à {n} activations",
+    "slotNone": "Vide",
+    "activator": {
+      "DamageDoneActivator": "Dégâts infligés",
+      "TargetsDamagedActivator": "Cibles touchées",
+      "RibbonActivator": "Coulage / rubans",
+      "DamagePerTimePeriodActivator": "Dégâts sur une durée",
+      "PotentialDamageActivator": "Dégâts potentiels subis",
+      "FirstShipKillActivator": "Première destruction",
+      "RemainingHealthActivator": "PV bas",
+      "RageModeActivator": "Mode rage",
+      "AllInGroupActivator": "Toute la division"
+    },
+    "signals": {
+      "PCEF005": "Sierra Mike",
+      "PCEF006": "Hotel Yankee",
+      "PCEF007": "India Delta",
+      "PCEF008": "India Yankee",
+      "PCEF009": "Juliet Yankee Bissotwo",
+      "PCEF010": "Juliet Charlie",
+      "PCEF012": "Mike Yankee Soxisix",
+      "PCEF014": "November Foxtrot",
+      "PCEF016": "November Echo Setteseven",
+      "PCEF017": "Victor Lima",
+      "PCEF018": "India X-Ray",
+      "PCEF019": "Juliet Whiskey Unaone",
+      "PCEF028": "X-Ray Papa Unaone",
+      "PCEF029": "Sierra Bravo",
+      "PCEF030": "Charlie Kilo"
+    },
+    "commanders": {
+      "Yamamoto": "Yamamoto",
+      "Halsey": "Halsey",
+      "LUTJENS": "Lutjens",
+      "CUNNINGHAM": "Cunningham",
+      "KUZNETSOV": "Kuznetsov",
+      "SANSONETTI": "Sansonetti",
+      "AUBOYNEAU": "Auboyneau",
+      "Helfrich": "Helfrich",
+      "Topete": "Topete",
+      "Collins": "Collins",
+      "Lisboa": "Lisboa",
+      "SWIRSKI": "Swirski",
+      "Sa_Zhenbing": "Sa Zhenbing"
+    }
   },
   "viewMode": {
     "tree": "Arbre technologique",

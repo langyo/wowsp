@@ -1,0 +1,599 @@
+/* Build planner — 3-pane layout: icon rail | active section | stats panel.
+   The skill tiers/tiles keep the former SkillBuilder visual language. */
+.planner-v {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.45rem 0.65rem;
+    background: rgb(var(--color-bg));
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__points {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: rgb(var(--color-primary));
+    font-variant-numeric: tabular-nums;
+
+    &--over {
+      color: rgb(var(--color-error));
+    }
+  }
+
+  &__remaining {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    margin-right: auto;
+  }
+
+  &__body {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr) 300px;
+    gap: 0.75rem;
+    align-items: start;
+  }
+
+  &__empty,
+  &__note,
+  &__no-cmd {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    text-align: center;
+    padding: 0.4rem 0;
+    margin: 0;
+  }
+
+  &__note {
+    text-align: left;
+    opacity: 0.75;
+  }
+}
+
+/* ── Left rail ─────────────────────────────────────────────────────────── */
+.planner-v__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  &-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.3rem;
+    background: rgb(var(--color-bg));
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: rgb(var(--color-muted));
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 40%);
+      color: rgb(var(--color-text));
+    }
+
+    &--active {
+      border-color: rgb(var(--color-primary) / 60%);
+      background: rgb(var(--color-primary) / 8%);
+      color: rgb(var(--color-text));
+    }
+  }
+
+  &-icon {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    display: block;
+  }
+
+  &-label {
+    font-size: var(--text-2xs);
+    text-align: center;
+    line-height: 1.2;
+  }
+}
+
+/* ── Center: skill tiers (kept from SkillBuilder) ──────────────────────── */
+.planner-v__center {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.skill-tier-v {
+  display: flex;
+  gap: 0.5rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem;
+
+  &--locked {
+    opacity: 0.5;
+  }
+
+  &__label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    min-width: 42px;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-right: 1px solid rgb(var(--color-border) / 15%);
+    padding-right: 0.4rem;
+  }
+
+  &__lock {
+    color: rgb(var(--color-muted) / 60%);
+    display: inline-flex;
+  }
+
+  &__row {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+}
+
+.skill-tile-v {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.3rem 0.35rem;
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  min-width: 62px;
+  transition: border-color var(--duration-short) var(--ease-standard);
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 40%);
+    background: rgb(var(--color-primary) / 5%);
+  }
+
+  &__btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: 6px;
+    background: rgb(var(--color-surface));
+    cursor: pointer;
+    padding: 0;
+    transition: border-color var(--duration-short) var(--ease-standard);
+    /* Hexagonal shape approximation via clip-path */
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+
+    &:hover:not(:disabled) {
+      border-color: rgb(var(--color-primary) / 50%);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+  }
+
+  &__icon {
+    position: relative;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 8px;
+    font-weight: 700;
+    color: rgb(var(--color-muted));
+    border-radius: 3px;
+  }
+
+  &__icon-img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    display: block;
+  }
+
+  &__name {
+    font-size: 8px;
+    color: rgb(var(--color-text));
+    text-align: center;
+    line-height: 1.15;
+    max-width: 100%;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+}
+
+/* ── Center: commanders ────────────────────────────────────────────────── */
+.planner-v__captains {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.planner-v__cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 0.4rem;
+}
+
+.planner-v__cmd {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 0.3rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 50%);
+  }
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 8%);
+  }
+}
+
+.planner-v__cmd-portrait {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--color-border) / 30%);
+  background: rgb(var(--color-surface));
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__cmd-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.planner-v__cmd-name {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text));
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.planner-v__cmd-nation {
+  font-size: 9px;
+  color: rgb(var(--color-muted) / 70%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.planner-v__talents {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.planner-v__talent {
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.planner-v__talent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.planner-v__talent-trigger {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: rgb(var(--color-primary));
+}
+
+.planner-v__talent-max {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__talent-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-v__talent-level {
+  min-width: 16px;
+  text-align: center;
+  padding: 0 0.2rem;
+  border: 1px solid rgb(var(--color-border) / 30%);
+  border-radius: var(--radius-xs);
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__talent-kv {
+  color: rgb(var(--color-text) / 85%);
+  white-space: nowrap;
+}
+
+/* ── Center: signal flags ──────────────────────────────────────────────── */
+.planner-v__flags {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.4rem;
+}
+
+.planner-v__flag {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.35rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 50%);
+  }
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 8%);
+  }
+}
+
+.planner-v__flag-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__flag-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.planner-v__flag-name {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text));
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+}
+
+/* ── Center: modernization slots ───────────────────────────────────────── */
+.planner-v__slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.planner-v__slot {
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem;
+}
+
+.planner-v__slot-title {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(var(--color-muted));
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgb(var(--color-border) / 12%);
+  margin-bottom: 0.4rem;
+}
+
+.planner-v__slot-clear {
+  border: none;
+  background: transparent;
+  color: rgb(var(--color-muted) / 70%);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 0;
+
+  &:hover {
+    color: rgb(var(--color-error));
+  }
+}
+
+.planner-v__slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 0.35rem;
+}
+
+.planner-v__mod {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.35rem;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 50%);
+  }
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 8%);
+  }
+}
+
+.planner-v__mod-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 700;
+  color: rgb(var(--color-muted));
+}
+
+.planner-v__mod-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.planner-v__mod-name {
+  font-size: 9px;
+  color: rgb(var(--color-text));
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+/* ── Right: stats panel ────────────────────────────────────────────────── */
+.planner-v__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  position: sticky;
+  top: 0;
+}
+
+.planner-v__stats-title {
+  margin: 0;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: rgb(var(--color-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgb(var(--color-border) / 12%);
+}
+
+.planner-v__hp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.45rem 0.55rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-sm);
+}
+
+.planner-v__hp-label {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+
+  strong {
+    color: rgb(var(--color-primary));
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.planner-v__hp-input {
+  width: 100%;
+  accent-color: rgb(var(--color-primary));
+}
+
+/* The stats body reuses the DataObserver styles; loosen its fixed height
+   so the panel can stretch beside the planner. */
+.planner-v__stats .data-observer {
+  max-height: none;
+  flex: 1;
+}
+
+/* Narrow layout: stack panes */
+@media (max-width: 1080px) {
+  .planner-v__body {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .planner-v__stats {
+    grid-column: 1 / -1;
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .planner-v__body {
+    grid-template-columns: 1fr;
+  }
+
+  .planner-v__rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

@@ -1,0 +1,583 @@
+import { computed, defineComponent, ref, type PropType } from "vue";
+import { Lock, RotateCcw } from "@lucide/vue";
+
+import { HButton } from "@celestia-island/hikari";
+import { i18n, t } from "@/i18n";
+import { useLanguage } from "@/i18n/useLanguage";
+import { AssetImage } from "@/components/base/AssetImage";
+import type { ShipInfo } from "@/api";
+import {
+  classSkills,
+  SKILL_BUDGET,
+  TIER_UNLOCK,
+  skillClassFor,
+  skillIconUrl,
+  type Skill,
+} from "./skillTree";
+import { type PlannerBuild } from "./modifierPipeline";
+import DataObserver from "./DataObserver";
+import signalsData from "../../data/signals.json";
+import modernizationsData from "../../data/modernizations.json";
+import commandersData from "../../data/commanders.json";
+import "./BuildPlanner.scss";
+
+/**
+ * Ship build planner — the captain-skills tab, reworked as a 3-pane layout:
+ *   Left rail:  4 icon buttons (skills / commanders / signals / upgrades)
+ *               switching the center section.
+ *   Center:     the active section's content.
+ *   Right:      综合属性 stats panel (DataObserver) with the current-HP
+ *               slider pinned on top (drives Adrenaline-Rush-style triggers).
+ * The points bar spans above all three panes.
+ *
+ * Build state lives in the parent (ShipDetailModal) so it survives tab
+ * switches and resets when the ship changes.
+ */
+
+// ── Asset resolvers (real in-game art under src/res/images) ──────────────
+// import.meta.glob needs literal patterns, so each art class is globbed at
+// module scope and mapped lowercase-stem → real filename stem.
+function stemMapOf(paths: string[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const path of paths) {
+    const file = path.split("/").pop()!;
+    const stem = file.replace(/\.(webp|png)$/i, "");
+    map.set(stem.toLowerCase(), stem);
+  }
+  return map;
+}
+const COMMANDER_STEMS = stemMapOf(
+  Object.keys(import.meta.glob("../../res/images/commanders/*.{webp,png}")),
+);
+const SIGNAL_STEMS = stemMapOf(
+  Object.keys(import.meta.glob("../../res/images/signals/*.{webp,png}")),
+);
+const MODERNIZATION_STEMS = stemMapOf(
+  Object.keys(import.meta.glob("../../res/images/modernization/*.{webp,png}")),
+);
+
+function commanderIconUrl(portrait: string | undefined): string | null {
+  if (!portrait) return null;
+  const stem = portrait.replace(/\.(webp|png)$/i, "");
+  const real = COMMANDER_STEMS.get(stem.toLowerCase());
+  return real ? `/images/commanders/${real}.webp` : null;
+}
+function signalIconUrl(name: string): string | null {
+  const real = SIGNAL_STEMS.get(name.toLowerCase());
+  return real ? `/images/signals/${real}.webp` : null;
+}
+function modernizationIconUrl(name: string): string | null {
+  const real = MODERNIZATION_STEMS.get(`icon_modernization_${name}`.toLowerCase());
+  // The glob stems already carry the icon_modernization_ prefix.
+  return real ? `/images/modernization/${real}.webp` : null;
+}
+
+// ── Data shapes (subsets of the extracted JSONs) ──────────────────────────
+interface SignalEntry {
+  index: string;
+  name: string;
+  names: Record<string, string>;
+  desc: Record<string, string>;
+  sortOrder: number;
+}
+interface ModernizationEntry {
+  name: string;
+  names: Record<string, string>;
+  desc: Record<string, string>;
+  slot: number;
+  shiptype: string[];
+  nation: string[];
+  shiplevel: number[];
+}
+interface CommanderTalent {
+  activatorType: string;
+  maxTriggerNum: number;
+  actions: Array<{
+    base: Record<string, unknown>;
+    levels: Record<string, Record<string, unknown>>;
+  }>;
+}
+interface CommanderEntry {
+  name: string;
+  person: string;
+  nations: string[];
+  portrait?: string;
+  talents: CommanderTalent[];
+}
+
+const SIGNALS = (signalsData as SignalEntry[]).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+const MODERNIZATIONS = modernizationsData as ModernizationEntry[];
+const COMMANDERS = (commandersData as CommanderEntry[])
+  .slice()
+  .sort((a, b) => (b.talents.length > 0 ? 1 : 0) - (a.talents.length > 0 ? 1 : 0) || a.person.localeCompare(b.person));
+
+/** WG lowercase nation code → GameParams nation name used by modernizations. */
+const GP_NATION: Record<string, string> = {
+  usa: "USA",
+  japan: "Japan",
+  germany: "Germany",
+  uk: "United_Kingdom",
+  ussr: "Russia",
+  france: "France",
+  italy: "Italy",
+  netherlands: "Netherlands",
+  spain: "Spain",
+  pan_asia: "Pan_Asia",
+  pan_america: "Pan_America",
+  commonwealth: "Commonwealth",
+  europe: "Europe",
+};
+
+/** skilltree.json / signals.json / modernizations.json language key for the
+ *  current data-language setting (falls back to en). */
+const DATA_KEY_BY_LANG: Record<string, string> = {
+  "zh-CN": "zh",
+  "zh-SG": "zh",
+  "zh-TW": "tw",
+  "ja-JP": "ja",
+  "en-US": "en",
+};
+
+/** i18n key exists? (avoids vue-i18n fallback warnings for data-driven keys) */
+function hasMsg(key: string): boolean {
+  // te() on the full message schema explodes type instantiation — go loose.
+  return (i18n.global as { te: (k: string) => boolean }).te(key);
+}
+
+type Section = "skills" | "captains" | "flags" | "upgrades";
+
+export default defineComponent({
+  name: "BuildPlanner",
+  props: {
+    ship: { type: Object as PropType<ShipInfo>, required: true },
+    build: { type: Object as PropType<PlannerBuild>, required: true },
+  },
+  emits: {
+    "update:build": (_v: PlannerBuild) => true,
+  },
+  setup(props, { emit }) {
+    const { dataLanguage } = useLanguage();
+    const section = ref<Section>("skills");
+
+    const dataLangKey = computed(() => DATA_KEY_BY_LANG[dataLanguage.value] ?? "en");
+
+    function setBuild(patch: Partial<PlannerBuild>): void {
+      emit("update:build", { ...props.build, ...patch });
+    }
+
+    /** Localized name/desc out of a data record ({en,ja,zh,tw} dict). */
+    function dataText(dict: Record<string, string>, fallback: string): string {
+      return dict?.[dataLangKey.value] || dict?.en || fallback;
+    }
+
+    // ── Top bar ────────────────────────────────────────────────────────────
+    const usedPoints = computed(() => Object.keys(props.build.skills).length);
+    const remaining = computed(() => SKILL_BUDGET - usedPoints.value);
+
+    // ── Skills section ─────────────────────────────────────────────────────
+    const cls = computed(() => skillClassFor(props.ship.type));
+    const tree = computed(() => classSkills(cls.value));
+
+    const tiers = computed(() => {
+      const out: Record<number, Skill[]> = { 1: [], 2: [], 3: [], 4: [] };
+      for (const s of tree.value) out[s.tier]?.push(s);
+      for (const list of Object.values(out)) list.sort((a, b) => a.column - b.column);
+      return out;
+    });
+
+    function pointsBelowTier(tier: number): number {
+      return tree.value.filter((s) => s.tier < tier && props.build.skills[s.code]).length;
+    }
+    function tierUnlocked(tier: number): boolean {
+      if (tier === 1) return true;
+      return pointsBelowTier(tier) >= TIER_UNLOCK[tier as 2 | 3 | 4];
+    }
+    function toggleSkill(skill: Skill): void {
+      if (props.build.skills[skill.code]) {
+        const skills = { ...props.build.skills };
+        delete skills[skill.code];
+        setBuild({ skills });
+      } else if (remaining.value > 0 && tierUnlocked(skill.tier)) {
+        setBuild({ skills: { ...props.build.skills, [skill.code]: 1 } });
+      }
+    }
+    function skillName(skill: Skill): string {
+      return dataText(skill.name, skill.code);
+    }
+    function skillHint(skill: Skill): string {
+      const desc = skill.desc?.[dataLangKey.value] || skill.desc?.en || "";
+      return desc.trim() ? desc : skillName(skill);
+    }
+
+    // ── Commanders section ─────────────────────────────────────────────────
+    function commanderDisplayName(cmd: CommanderEntry): string {
+      const key = `ships.commanders.${cmd.person}`;
+      return hasMsg(key) ? t(key) : cmd.person.replace(/_/g, " ");
+    }
+    function activatorLabel(type: string): string {
+      const key = `ships.skills.activator.${type}`;
+      return hasMsg(key) ? t(key) : type.replace(/Activator$/, "");
+    }
+    function toggleCommander(name: string): void {
+      setBuild({ commander: props.build.commander === name ? null : name });
+    }
+    const selectedCommander = computed(() =>
+      props.build.commander
+        ? COMMANDERS.find((c) => c.name === props.build.commander) ?? null
+        : null,
+    );
+    /** Numeric key:value pairs of one modifier dict, with plain keys hidden
+     *  when their *UI twin is present and internal enums dropped. */
+    function kvOf(dict: Record<string, unknown>): Array<[string, number]> {
+      const kv: Array<[string, number]> = [];
+      for (const [k, v] of Object.entries(dict ?? {})) {
+        if (typeof v !== "number" || k === "uniqueType") continue;
+        if (!k.endsWith("UI") && `${k}UI` in dict) continue; // UI twin wins
+        kv.push([k, v]);
+      }
+      return kv.sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    /** One talent's level rows: level → numeric key:value pairs. Talents
+     *  without per-level data (most of them) fall back to their base block. */
+    function talentRows(talent: CommanderTalent): Array<{ level: string; kv: Array<[string, number]> }> {
+      const rows: Array<{ level: string; kv: Array<[string, number]> }> = [];
+      for (const action of talent.actions ?? []) {
+        for (const level of Object.keys(action.levels ?? {}).sort((a, b) => Number(a) - Number(b))) {
+          const kv = kvOf(action.levels[level]);
+          if (kv.length > 0) rows.push({ level, kv });
+        }
+      }
+      if (rows.length === 0) {
+        const base = kvOf(talent.actions?.[0]?.base ?? {});
+        if (base.length > 0) rows.push({ level: "·", kv: base });
+      }
+      return rows;
+    }
+    function fmtTalentNum(v: number): string {
+      return String(Math.round(v * 10000) / 10000);
+    }
+
+    // ── Signals section ────────────────────────────────────────────────────
+    function signalName(sig: SignalEntry): string {
+      const key = `ships.signals.${sig.index}`;
+      return hasMsg(key) ? t(key) : dataText(sig.names, sig.index);
+    }
+    function toggleSignal(index: string): void {
+      const cur = props.build.signals;
+      setBuild({
+        signals: cur.includes(index) ? cur.filter((s) => s !== index) : [...cur, index],
+      });
+    }
+
+    // ── Upgrades section ───────────────────────────────────────────────────
+    const gpNation = computed(() => GP_NATION[props.ship.nation] ?? props.ship.nation);
+    function upgradesForSlot(slot: number): ModernizationEntry[] {
+      return MODERNIZATIONS.filter(
+        (m) =>
+          m.slot === slot &&
+          (m.shiptype.length === 0 || m.shiptype.includes(props.ship.type)) &&
+          (m.nation.length === 0 || m.nation.includes(gpNation.value)) &&
+          (m.shiplevel.length === 0 || m.shiplevel.includes(props.ship.tier)),
+      );
+    }
+    function toggleUpgrade(slot: number, name: string): void {
+      const upgrades = { ...props.build.upgrades };
+      if (upgrades[slot] === name) delete upgrades[slot];
+      else upgrades[slot] = name;
+      setBuild({ upgrades });
+    }
+
+    const RAIL: Array<{ key: Section; labelKey: string; icon: string }> = [
+      { key: "skills", labelKey: "tabSkills", icon: "/images/skills/gm_turn.webp" },
+      { key: "captains", labelKey: "tabCaptains", icon: "/images/commanders/Yamamoto.webp" },
+      { key: "flags", labelKey: "tabFlags", icon: "/images/signals/PCEF030_CK_SignalFlag.webp" },
+      {
+        key: "upgrades",
+        labelKey: "tabUpgrades",
+        icon: "/images/modernization/icon_modernization_PCM027_ConcealmentMeasures_Mod_I.webp",
+      },
+    ];
+
+    // ── Center-section renderers ───────────────────────────────────────────
+    function renderSkills() {
+      if (tree.value.length === 0) {
+        return <p class="planner-v__empty">{t("ships.skills.noTree")}</p>;
+      }
+      return [1, 2, 3, 4].map((tier) => {
+        const unlocked = tierUnlocked(tier);
+        const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
+        return (
+          <div class={["skill-tier-v", unlocked ? "" : "skill-tier-v--locked"]} key={tier}>
+            <div class="skill-tier-v__label">
+              <span>{t("ships.skills.tier", { n: tier })}</span>
+              {!unlocked ? (
+                <span class="skill-tier-v__lock" data-hint={t("ships.skills.locked", { n: need })}>
+                  <Lock size={10} />
+                </span>
+              ) : null}
+            </div>
+            <div class="skill-tier-v__row">
+              {tiers.value[tier].map((skill) => {
+                const picked = !!props.build.skills[skill.code];
+                const name = skillName(skill);
+                return (
+                  <div class={["skill-tile-v", picked ? "skill-tile-v--active" : ""]} key={skill.code}>
+                    <button
+                      type="button"
+                      class="skill-tile-v__btn"
+                      disabled={!unlocked}
+                      onClick={() => (unlocked ? toggleSkill(skill) : null)}
+                      data-hint={skillHint(skill)}
+                    >
+                      <span class="skill-tile-v__icon">
+                        <AssetImage
+                          class="skill-tile-v__icon-img"
+                          src={skillIconUrl(skill.code)}
+                          alt={name}
+                          fallback={<span>{name.charAt(0)}</span>}
+                        />
+                      </span>
+                    </button>
+                    <span class="skill-tile-v__name">{name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      });
+    }
+
+    function renderCommanders() {
+      const selected = selectedCommander.value;
+      return (
+        <div class="planner-v__captains">
+          <p class="planner-v__note">{t("ships.skills.commanderInfoNote")}</p>
+          <div class="planner-v__cmd-grid">
+            {COMMANDERS.map((cmd) => {
+              const active = props.build.commander === cmd.name;
+              return (
+                <button
+                  type="button"
+                  class={["planner-v__cmd", active ? "planner-v__cmd--active" : ""]}
+                  key={cmd.name}
+                  onClick={() => toggleCommander(cmd.name)}
+                >
+                  <span class="planner-v__cmd-portrait">
+                    <AssetImage
+                      class="planner-v__cmd-img"
+                      src={commanderIconUrl(cmd.portrait)}
+                      alt={commanderDisplayName(cmd)}
+                      fallback={<span>{commanderDisplayName(cmd).charAt(0)}</span>}
+                    />
+                  </span>
+                  <span class="planner-v__cmd-name">{commanderDisplayName(cmd)}</span>
+                  <span class="planner-v__cmd-nation">{cmd.nations.join(" / ").replace(/_/g, " ")}</span>
+                </button>
+              );
+            })}
+          </div>
+          {selected ? (
+            <div class="planner-v__talents">
+              {selected.talents.map((talent, ti) => (
+                <div class="planner-v__talent" key={talent.activatorType + ti}>
+                  <div class="planner-v__talent-head">
+                    <span class="planner-v__talent-trigger">
+                      {t("ships.skills.talentTrigger")} · {activatorLabel(talent.activatorType)}
+                    </span>
+                    {talent.maxTriggerNum > 0 ? (
+                      <span class="planner-v__talent-max">
+                        {t("ships.skills.talentMax", { n: talent.maxTriggerNum })}
+                      </span>
+                    ) : null}
+                  </div>
+                  {talentRows(talent).map((row) => (
+                    <div class="planner-v__talent-row" key={row.level}>
+                      <span class="planner-v__talent-level">{row.level}</span>
+                      {row.kv.map(([k, v]) => (
+                        <span class="planner-v__talent-kv" key={k}>
+                          {k} {fmtTalentNum(v)}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p class="planner-v__no-cmd">{t("ships.skills.noCommander")}</p>
+          )}
+        </div>
+      );
+    }
+
+    function renderFlags() {
+      return (
+        <div class="planner-v__flags">
+          {SIGNALS.map((sig) => {
+            const active = props.build.signals.includes(sig.index);
+            const name = signalName(sig);
+            return (
+              <button
+                type="button"
+                class={["planner-v__flag", active ? "planner-v__flag--active" : ""]}
+                key={sig.index}
+                onClick={() => toggleSignal(sig.index)}
+                data-hint={dataText(sig.desc, "")}
+              >
+                <span class="planner-v__flag-icon">
+                  <AssetImage
+                    class="planner-v__flag-img"
+                    src={signalIconUrl(sig.name)}
+                    alt={name}
+                    fallback={<span>{name.charAt(0)}</span>}
+                  />
+                </span>
+                <span class="planner-v__flag-name">{name}</span>
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function renderUpgrades() {
+      return (
+        <div class="planner-v__slots">
+          {[0, 1, 2, 3, 4, 5].map((slot) => (
+            <div class="planner-v__slot" key={slot}>
+              <div class="planner-v__slot-title">
+                {t("ships.skills.slot", { n: slot + 1 })}
+                {props.build.upgrades[slot] ? (
+                  <button
+                    type="button"
+                    class="planner-v__slot-clear"
+                    onClick={() => toggleUpgrade(slot, props.build.upgrades[slot])}
+                  >
+                    {t("ships.skills.slotNone")}
+                  </button>
+                ) : null}
+              </div>
+              <div class="planner-v__slot-grid">
+                {upgradesForSlot(slot).map((mod) => {
+                  const active = props.build.upgrades[slot] === mod.name;
+                  const name = dataText(mod.names, mod.name);
+                  const desc = dataText(mod.desc, "");
+                  return (
+                    <button
+                      type="button"
+                      class={["planner-v__mod", active ? "planner-v__mod--active" : ""]}
+                      key={mod.name}
+                      onClick={() => toggleUpgrade(slot, mod.name)}
+                      data-hint={desc || name}
+                    >
+                      <span class="planner-v__mod-icon">
+                        <AssetImage
+                          class="planner-v__mod-img"
+                          src={modernizationIconUrl(mod.name)}
+                          alt={name}
+                          fallback={<span>{name.charAt(0)}</span>}
+                        />
+                      </span>
+                      <span class="planner-v__mod-name">{name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function renderSection() {
+      switch (section.value) {
+        case "captains":
+          return renderCommanders();
+        case "flags":
+          return renderFlags();
+        case "upgrades":
+          return renderUpgrades();
+        default:
+          return renderSkills();
+      }
+    }
+
+    return () => {
+      const b = props.build;
+      const hpPct = Math.round(b.healthPct * 100);
+      return (
+        <div class="planner-v">
+          {/* ── Top bar: point counter + reset ── */}
+          <div class="planner-v__bar">
+            <span
+              class={["planner-v__points", remaining.value < 0 ? "planner-v__points--over" : ""]}
+            >
+              {t("ships.skills.pointsUsed", { used: usedPoints.value, max: SKILL_BUDGET })}
+            </span>
+            <span class="planner-v__remaining">
+              {remaining.value >= 0
+                ? t("ships.skills.remaining", { n: remaining.value })
+                : t("ships.skills.overBudget")}
+            </span>
+            <HButton
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setBuild({ skills: {}, signals: [], upgrades: {}, commander: null })
+              }
+            >
+              <RotateCcw size={12} /> {t("ships.skills.reset")}
+            </HButton>
+          </div>
+
+          <div class="planner-v__body">
+            {/* ── Left rail: section switcher ── */}
+            <nav class="planner-v__rail">
+              {RAIL.map((item) => (
+                <button
+                  type="button"
+                  class={["planner-v__rail-btn", section.value === item.key ? "planner-v__rail-btn--active" : ""]}
+                  key={item.key}
+                  onClick={() => (section.value = item.key)}
+                >
+                  <AssetImage
+                    class="planner-v__rail-icon"
+                    src={item.icon}
+                    alt={t(`ships.skills.${item.labelKey}`)}
+                    fallback={<span>{t(`ships.skills.${item.labelKey}`).charAt(0)}</span>}
+                  />
+                  <span class="planner-v__rail-label">{t(`ships.skills.${item.labelKey}`)}</span>
+                </button>
+              ))}
+            </nav>
+
+            {/* ── Center: active section ── */}
+            <div class="planner-v__center">{renderSection()}</div>
+
+            {/* ── Right: combined stats + HP slider ── */}
+            <aside class="planner-v__stats">
+              <h4 class="planner-v__stats-title">{t("ships.skills.statsTitle")}</h4>
+              <div class="planner-v__hp">
+                <label class="planner-v__hp-label">
+                  {t("ships.skills.health")}:
+                  <strong>{hpPct}%</strong>
+                </label>
+                <input
+                  class="planner-v__hp-input"
+                  type="range"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={hpPct}
+                  onInput={(e) => setBuild({ healthPct: Number((e.target as HTMLInputElement).value) / 100 })}
+                />
+              </div>
+              <DataObserver ship={props.ship} build={b} />
+            </aside>
+          </div>
+        </div>
+      );
+    };
+  },
+});

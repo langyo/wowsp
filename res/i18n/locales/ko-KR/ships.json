@@ -224,7 +224,8 @@
     "surfaceDetectHint": "적 수상 함선이 당신을 발견하는 거리입니다. 짧을수록 (더 은밀하게) 좋습니다.",
     "airDetect": "항공 발견 거리",
     "airDetectHint": "적 항공기가 당신을 발견하는 거리입니다.",
-    "subDetect": "잠수함 발견 거리"
+    "subDetect": "잠수함 발견 거리",
+    "heFireChance": "HE탄 화재 확률"
   },
   "skills": {
     "title": "함장 스킬 시뮬레이터",
@@ -243,7 +244,62 @@
     "CV": "항공모함",
     "SS": "잠수함",
     "equipment": "장비",
-    "flags": "신호기"
+    "flags": "신호기",
+    "tabSkills": "함장 스킬",
+    "tabCaptains": "함장 선택",
+    "tabFlags": "신호기",
+    "tabUpgrades": "장비 슬롯",
+    "statsTitle": "종합 능력치",
+    "health": "현재 체력",
+    "slot": "슬롯 {n}",
+    "noCommander": "함장 없음",
+    "commanderInfoNote": "함장 특성은 발동형 효과로 참고용이며 우측 능력치에 포함되지 않습니다.",
+    "talentTrigger": "발동",
+    "talentMax": "최대 {n}회 발동",
+    "slotNone": "없음",
+    "activator": {
+      "DamageDoneActivator": "피해를 가할 때",
+      "TargetsDamagedActivator": "목표 명중 시",
+      "RibbonActivator": "격침/리본 획득 시",
+      "DamagePerTimePeriodActivator": "일정 시간 내 피해 가할 때",
+      "PotentialDamageActivator": "잠재 피해를 받을 때",
+      "FirstShipKillActivator": "첫 격침",
+      "RemainingHealthActivator": "체력이 낮을 때",
+      "RageModeActivator": "레이지 모드",
+      "AllInGroupActivator": "전 대원"
+    },
+    "signals": {
+      "PCEF005": "Sierra Mike",
+      "PCEF006": "Hotel Yankee",
+      "PCEF007": "India Delta",
+      "PCEF008": "India Yankee",
+      "PCEF009": "Juliet Yankee Bissotwo",
+      "PCEF010": "Juliet Charlie",
+      "PCEF012": "Mike Yankee Soxisix",
+      "PCEF014": "November Foxtrot",
+      "PCEF016": "November Echo Setteseven",
+      "PCEF017": "Victor Lima",
+      "PCEF018": "India X-Ray",
+      "PCEF019": "Juliet Whiskey Unaone",
+      "PCEF028": "X-Ray Papa Unaone",
+      "PCEF029": "Sierra Bravo",
+      "PCEF030": "Charlie Kilo"
+    },
+    "commanders": {
+      "Yamamoto": "Yamamoto",
+      "Halsey": "Halsey",
+      "LUTJENS": "Lutjens",
+      "CUNNINGHAM": "Cunningham",
+      "KUZNETSOV": "Kuznetsov",
+      "SANSONETTI": "Sansonetti",
+      "AUBOYNEAU": "Auboyneau",
+      "Helfrich": "Helfrich",
+      "Topete": "Topete",
+      "Collins": "Collins",
+      "Lisboa": "Lisboa",
+      "SWIRSKI": "Swirski",
+      "Sa_Zhenbing": "Sa Zhenbing"
+    }
   },
   "viewMode": {
     "tree": "테크 트리",

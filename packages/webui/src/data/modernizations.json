@@ -1,0 +1,4159 @@
+[
+ {
+  "index": "PCM001",
+  "name": "PCM001_MainGun_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GMCritProb": 0.8,
+   "GMRepairTime": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM002",
+  "name": "PCM002_Torpedo_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GTCritProb": 0.8,
+   "GTRepairTime": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM003",
+  "name": "PCM003_Airplanes_Mod_I",
+  "names": {
+   "en": "Air Groups Modification 1",
+   "ja": "飛行機隊改良 1",
+   "zh": "空军大队修改型1",
+   "tw": "航空大隊修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "planeReturnSpeedAfterEscape": 1.2
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM004",
+  "name": "PCM004_AirDefense_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "AAMaxHP": {
+    "AirCarrier": 1.2,
+    "Auxiliary": 1.2,
+    "Battleship": 1.2,
+    "Cruiser": 1.2,
+    "Destroyer": 1.2,
+    "Submarine": 1.2
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM005",
+  "name": "PCM005_SecondaryGun_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GSMaxHP": {
+    "AirCarrier": 1.2,
+    "Auxiliary": 1.2,
+    "Battleship": 1.2,
+    "Cruiser": 1.2,
+    "Destroyer": 1.2,
+    "Submarine": 1.2
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM007",
+  "name": "PCM007_Torpedo_Mod_II",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GTRepairTime": 0.9,
+   "GTRotationSpeed": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM010",
+  "name": "PCM010_Airplanes_Mod_II",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "fighterHealth": 1.04
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM011",
+  "name": "PCM011_AirDefense_Mod_II",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   },
+   "AABubbleDamage": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM019",
+  "name": "PCM019_SecondaryGun_Mod_III",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GSShotDelay": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM030",
+  "name": "PCM030_MainWeapon_Mod_I",
+  "names": {
+   "en": "Main Armaments Modification 1",
+   "ja": "主兵装改良 1",
+   "zh": "主要武器修改型1",
+   "tw": "主要軍備修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "GMCritProb": 0.8,
+   "GMMaxHP": 1.5,
+   "GMRepairTime": 0.8,
+   "GTCritProb": 0.8,
+   "GTMaxHP": 1.5,
+   "GTRepairTime": 0.8
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM031",
+  "name": "PCM031_SecondaryWeapon_Mod_I",
+  "names": {
+   "en": "Auxiliary Armaments Modification 1",
+   "ja": "副兵装改良 1",
+   "zh": "辅助武器修改型1",
+   "tw": "輔助軍備修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "AAMaxHP": {
+    "AirCarrier": 2.0,
+    "Auxiliary": 2.0,
+    "Battleship": 2.0,
+    "Cruiser": 2.0,
+    "Destroyer": 2.0,
+    "Submarine": 2.0
+   },
+   "GSMaxHP": {
+    "AirCarrier": 2.0,
+    "Auxiliary": 2.0,
+    "Battleship": 2.0,
+    "Cruiser": 2.0,
+    "Destroyer": 2.0,
+    "Submarine": 2.0
+   }
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM034",
+  "name": "PCM034_Guidance_Mod_0",
+  "names": {
+   "en": "Aiming Systems Modification 0",
+   "ja": "射撃システム改良 0",
+   "zh": "瞄准系统修改型0",
+   "tw": "瞄準系統修改型 0"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "GMIdealRadius": 0.6,
+   "GMRotationSpeed": {
+    "AirCarrier": 1.2,
+    "Auxiliary": 1.2,
+    "Battleship": 1.2,
+    "Cruiser": 1.2,
+    "Destroyer": 1.2,
+    "Submarine": 1.2
+   },
+   "GSIdealRadius": 0.6,
+   "GSMaxDist": 1.2,
+   "GTRotationSpeed": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM038",
+  "name": "PCM038_Spotter_Mod_I",
+  "names": {
+   "en": "Spotting Aircraft Modification 1",
+   "ja": "着弾観測機改良 1",
+   "zh": "侦察机修改型1",
+   "tw": "偵察機修改型 1"
+  },
+  "desc": {
+   "en": "Increases the action time of the Spotting Aircraft, Rapid Takeoff Spotter, and High-Precision Spotter consumables.",
+   "ja": "消耗品「着弾観測機」「急速発艦着弾観測機」および「高精度着弾観測機」の動作時間を延長",
+   "zh": "延长侦察机、快速起飞侦察机和高精度侦察机消耗品的作用时间。",
+   "tw": "延長「偵察機」、「快速起飛偵察機」和「高精度偵察機」消耗品的作用時間。"
+  },
+  "slot": 0,
+  "modifiers": {
+   "scoutCapacityCoeff": 1.05,
+   "scoutWorkTimeCoeff": 1.3
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM039",
+  "name": "PCM039_CrashCrew_Mod_I",
+  "names": {
+   "en": "Damage Control Party Modification 1",
+   "ja": "応急工作班改良 1",
+   "zh": "伤害控制小组修改型1",
+   "tw": "傷害控制小組修改型 1"
+  },
+  "desc": {
+   "en": "Increases the action time of the Damage Control Party and Fast Damage Control Team consumables.",
+   "ja": "消耗品「応急工作班」「高速応急工作班」の動作時間を延長",
+   "zh": "延长伤害控制小组和快速伤害控制小队消耗品的作用时间。",
+   "tw": "延長「傷害控制小組」和「快速傷害控制小隊」消耗品的作用時間。"
+  },
+  "slot": 0,
+  "modifiers": {
+   "crashCrewWorkTimeCoeff": 1.4
+  },
+  "shiptype": [
+   "Battleship",
+   "AirCarrier",
+   "Cruiser",
+   "Destroyer",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM084",
+  "name": "PCM084_Pinger_Mod_I",
+  "names": {
+   "en": "Sonar Modification 1",
+   "ja": "ソナー改良 1",
+   "zh": "声呐修改型1",
+   "tw": "聲納修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "pingerCritProb": 0.75,
+   "pingerRepairTime": 0.75
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM088",
+  "name": "PCM088_AirSupport_Mod_II",
+  "names": {},
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "asMaxHealthCoeff": 2.0,
+   "dcAlphaDamageMultiplier": {
+    "AirCarrier": 1.3,
+    "Auxiliary": 1.3,
+    "Battleship": 1.3,
+    "Cruiser": 1.3,
+    "Destroyer": 1.3,
+    "Submarine": 1.3
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM107",
+  "name": "PCM107_Modern_Arm_Mod_White1",
+  "names": {
+   "en": "Enhanced Ammunition Loading System",
+   "ja": "改良型弾薬装填システム",
+   "zh": "增强型弹药装填系统",
+   "tw": "強化彈藥裝填系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "GMShotDelay": 0.9,
+   "GSShotDelay": 0.95
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM108",
+  "name": "PCM108_Modern_Arm_Mod_White2",
+  "names": {
+   "en": "Enhanced Launch System",
+   "ja": "改良型発射システム",
+   "zh": "增强型发射系统",
+   "tw": "強化發射系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "missileRangeCoefficient": 1.15,
+   "missileSpeedMultiplier": 1.05,
+   "torpedoRangeCoefficient": 1.25,
+   "torpedoSpeedMultiplier": 1.1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM109",
+  "name": "PCM109_Modern_Arm_Mod_Red1",
+  "names": {
+   "en": "Modified Explosive Ammunition",
+   "ja": "改良型炸裂弾薬",
+   "zh": "修改型爆破弹药",
+   "tw": "修改型爆破彈藥"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "GMDamageCoeff": 0.7,
+   "burnChanceGMGSMultiplier": 4.0,
+   "missileDamageCoeffIfOnFire": 1.5,
+   "torpedoDamageCoeffIfOnFire": 1.5
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM110",
+  "name": "PCM110_Modern_Arm_Mod_Red2",
+  "names": {
+   "en": "Modified Ammunition Activation System",
+   "ja": "改良型弾薬アクティベーション・システム",
+   "zh": "修改型弹药启动系统",
+   "tw": "修改型彈藥啟動系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 0,
+  "modifiers": {
+   "citadelDamageMultiplierCSAP": 1.2,
+   "missileDamageCoeff": 1.1,
+   "missilesSearchRadiusCoeff": 0.6
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM020",
+  "name": "PCM020_DamageControl_Mod_I",
+  "names": {
+   "en": "Damage Control System Modification 1",
+   "ja": "ダメージコントロールシステム改良 1",
+   "zh": "伤害控制系统修改型1",
+   "tw": "損害控制系統修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "burnProb": 0.95,
+   "floodProb": 0.97
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM021",
+  "name": "PCM021_Engine_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 1,
+  "modifiers": {
+   "engineCritProb": 0.8,
+   "engineRepairTime": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM022",
+  "name": "PCM022_SteeringGear_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 1,
+  "modifiers": {
+   "SGCritProb": 0.8,
+   "SGRepairTime": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM036",
+  "name": "PCM036_SpeedBooster_Mod_I",
+  "names": {
+   "en": "Engine Boost Modification 1",
+   "ja": "エンジンブースト改良 1",
+   "zh": "引擎增压修改型1",
+   "tw": "引擎增壓修改型 1"
+  },
+  "desc": {
+   "en": "Increases the action time of the Engine Boost and Emergency Engine Power consumables.",
+   "ja": "消耗品「エンジンブースト」「緊急エンジン出力」の動作時間を延長",
+   "zh": "延长引擎增压和紧急引擎功率消耗品的作用时间。",
+   "tw": "延長「引擎增壓」和「緊急引擎功率」消耗品的作用時間。"
+  },
+  "slot": 1,
+  "modifiers": {
+   "speedBoostersCapacityCoeff": 1.05,
+   "speedBoostersWorkTimeCoeff": 1.3
+  },
+  "shiptype": [
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM040",
+  "name": "PCM040_AirDefenseDisp_Mod_I",
+  "names": {
+   "en": "Defensive AA Fire Modification 1",
+   "ja": "対空防御砲火改良 1",
+   "zh": "防御型对空火力修改型1",
+   "tw": "防禦用對空火力修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "airDefenseDispWorkTimeCoeff": 1.2,
+   "auxTorpBoosterReloadCoeff": 0.9
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM041",
+  "name": "PCM041_SonarSearch_Mod_I",
+  "names": {
+   "en": "Hydroacoustic Search Modification 1",
+   "ja": "水中聴音改良 1",
+   "zh": "对海搜索修改型1",
+   "tw": "水底搜索修改型 1"
+  },
+  "desc": {
+   "en": "Increases the action time of the Hydroacoustic Search and Short-Range Hydroacoustic Search consumables.",
+   "ja": "消耗品「水中聴音」「短距離水中聴音」の動作時間を延長",
+   "zh": "延长对海搜索和短程对海搜索消耗品的作用时间。",
+   "tw": "延長「水底搜索」和「短程水底搜索」消耗品的作用時間。"
+  },
+  "slot": 1,
+  "modifiers": {
+   "sonarWorkTimeCoeff": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM042",
+  "name": "PCM042_RLSSearch_Mod_I",
+  "names": {
+   "en": "Surveillance Radar Modification 1",
+   "ja": "警戒レーダー改良 1",
+   "zh": "监视雷达修改型1",
+   "tw": "監視雷達修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "rlsWorkTimeCoeff": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM068",
+  "name": "PCM068_PlaneEngine_Mod_I",
+  "names": {
+   "en": "Aircraft Engines Modification 1",
+   "ja": "航空機エンジン改良 1",
+   "zh": "飞机引擎修改型1",
+   "tw": "飛機引擎修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "planeForsageTimeCoeff": 1.1
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM069",
+  "name": "PCM069_Movement_Mod_I",
+  "names": {
+   "en": "Engine Room Protection",
+   "ja": "機関室防御",
+   "zh": "机舱防护",
+   "tw": "引擎室防護"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "SGCritProb": 0.8,
+   "SGRepairTime": 0.8,
+   "engineCritProb": 0.8,
+   "engineRepairTime": 0.8
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM083",
+  "name": "PCM083_Hydrophone_Mod_I",
+  "names": {
+   "en": "Hydrophone Modification 1",
+   "ja": "受波器改良 1",
+   "zh": "水听器修改型1",
+   "tw": "水聽器修改型 1"
+  },
+  "desc": {
+   "en": "Increases the ping emission frequency and enables sonar pings to travel further.",
+   "ja": "ピンガーの発振周波数を高め、ソナーピンガーの射程距離を延伸",
+   "zh": "提高脉冲的发射频率，同时使声呐脉冲传播更远。",
+   "tw": "提高音波發射頻率，使聲納音波能傳得更遠。"
+  },
+  "slot": 1,
+  "modifiers": {
+   "hydrophoneWaveSpeedCoeff": 1.0
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   7
+  ]
+ },
+ {
+  "index": "PCM085",
+  "name": "PCM085_Pinger_Mod_II",
+  "names": {
+   "en": "Sonar Modification 2",
+   "ja": "ソナー改良 2",
+   "zh": "声呐修改型2",
+   "tw": "聲納修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "pingerWaveSpeedCoeff": 1.1
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM100",
+  "name": "PCM100_DamageControl_Mod_III",
+  "names": {
+   "en": "Damage Control System Modification 3",
+   "ja": "ダメージコントロールシステム改良 3",
+   "zh": "伤害控制系统修改型3",
+   "tw": "損害控制系統修改型 3"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "vulnerabilityBurn": 0.95,
+   "vulnerabilityFlood": 0.95
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM103",
+  "name": "PCM103_SubsEnergyFreeze_Mod_I",
+  "names": {
+   "en": "Reserve Battery Unit Modification 1",
+   "ja": "改良型予備バッテリーユニット 1",
+   "zh": "储备蓄电池单位修改型1",
+   "tw": "儲備電池單位修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "subsEnergyFreezeWorkTimeCoeff": 1.2
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth",
+   "Italy"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM111",
+  "name": "PCM111_Modern_Def_Mod_White1",
+  "names": {
+   "en": "Reinforced Hull",
+   "ja": "強化型船体",
+   "zh": "强化舰体",
+   "tw": "強化艦身"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "healthHullCoeff": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM112",
+  "name": "PCM112_Modern_Def_Mod_White2",
+  "names": {
+   "en": "Enhanced Engine Power",
+   "ja": "機関出力強化",
+   "zh": "增强型引擎功率",
+   "tw": "強化引擎功率"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "engineBackwardForsagePower": 1.2,
+   "engineForwardForsagePower": 1.2,
+   "speedCoef": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM113",
+  "name": "PCM113_Modern_Def_Mod_Red1",
+  "names": {
+   "en": "Survivability System",
+   "ja": "抗堪性システム",
+   "zh": "存活性系统",
+   "tw": "存活性系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "ConsumablesWorkTime": 0.6,
+   "additionalConsumables": 2,
+   "healthRegenPercent": 0.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM114",
+  "name": "PCM114_Modern_Def_Mod_Red2",
+  "names": {
+   "en": "Modified Provision System",
+   "ja": "改良型供給システム",
+   "zh": "修改型补给系统",
+   "tw": "修改型補給系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 1,
+  "modifiers": {
+   "ConsumablesWorkTime": 1.5,
+   "additionalConsumables": -1,
+   "engineBackwardForsagePower": 1.1,
+   "engineForwardForsagePower": 1.1,
+   "speedCoef": 1.1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM006",
+  "name": "PCM006_MainGun_Mod_II",
+  "names": {
+   "en": "Main Battery Modification 2",
+   "ja": "主砲改良 2",
+   "zh": "主炮组修改型2",
+   "tw": "主炮組修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "GMRotationSpeed": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   }
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM008",
+  "name": "PCM008_FireControl_Mod_I",
+  "names": {},
+  "desc": {},
+  "slot": 2,
+  "modifiers": {
+   "GMIdealRadius": 0.93
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM012",
+  "name": "PCM012_SecondaryGun_Mod_II",
+  "names": {
+   "en": "Secondary Battery Modification 1",
+   "ja": "副砲改良 1",
+   "zh": "副炮组修改型1",
+   "tw": "副炮組修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "GSIdealRadius": 0.8,
+   "GSMaxDist": 1.2
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM018",
+  "name": "PCM018_AirDefense_Mod_III",
+  "names": {
+   "en": "AA Guns Modification 1",
+   "ja": "対空兵装改良 1",
+   "zh": "防空炮修改型1",
+   "tw": "防空炮修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "prioritySectorCooldownMultiplier": 0.8
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM028",
+  "name": "PCM028_FireControl_Mod_I_US",
+  "names": {
+   "en": "Artillery Plotting Room Modification 1",
+   "ja": "射撃管制室改良 1",
+   "zh": "火炮描绘室修改型1",
+   "tw": "火炮描繪室修改型 1"
+  },
+  "desc": {
+   "en": "Extends the firing range of the main battery and secondary battery",
+   "ja": "主砲と副砲の射程を向上",
+   "zh": "延长主炮和副炮的射程",
+   "tw": "延伸主炮和副炮的射程"
+  },
+  "slot": 2,
+  "modifiers": {
+   "GMMaxDist": 1.16,
+   "GSIdealRadius": 0.95,
+   "GSMaxDist": 1.05
+  },
+  "shiptype": [
+   "Battleship"
+  ],
+  "nation": [
+   "USA"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM033",
+  "name": "PCM033_Guidance_Mod_I",
+  "names": {
+   "en": "Aiming Systems Modification 1",
+   "ja": "射撃システム改良 1",
+   "zh": "瞄准系统修改型1",
+   "tw": "瞄準系統修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "GMIdealRadius": 0.93,
+   "GSIdealRadius": 0.95,
+   "GSMaxDist": 1.05,
+   "GTRotationSpeed": 1.2
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM037",
+  "name": "PCM037_SmokeGenerator_Mod_I",
+  "names": {
+   "en": "Smoke Generator Modification 1",
+   "ja": "発煙装置改良 1",
+   "zh": "发烟器修改型1",
+   "tw": "發煙機修改型 1"
+  },
+  "desc": {
+   "en": "Increases the action time of the Smoke Generator, Short-Burst Smoke Generator, Crawling Smoke Generator, Exhaust Smoke Generator, and Smoke Curtain Generator consumables.",
+   "ja": "消耗品「発煙装置」「ショートバースト発煙装置」「低速用発煙装置」「排気発煙装置」「スモークカーテン発生装置」の動作時間を延長",
+   "zh": "延长发烟器、短突发式发烟器、低速发烟器、高速发烟器和烟幕发生器消耗品的作用时间。",
+   "tw": "延長「發煙機」、「短發式發煙機」、「低速航行發煙機」、「全速航行發煙機」和「煙幕產生器」消耗品的作用時間。"
+  },
+  "slot": 2,
+  "modifiers": {
+   "planeSmokeGeneratorWorkTimeCoeff": 1.2,
+   "smokeGeneratorCapacityCoeff": 1.05,
+   "smokeGeneratorWorkTimeCoeff": 1.2
+  },
+  "shiptype": [
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth",
+   "Italy"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM066",
+  "name": "PCM066_TorpedoBomber_Mod_II",
+  "names": {
+   "en": "Torpedo Bombers Modification 1",
+   "ja": "雷撃機改良 1",
+   "zh": "鱼雷轰炸机修改型1",
+   "tw": "魚雷轟炸機修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "torpedoBomberAimingTime": 5
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM067",
+  "name": "PCM067_Fighter_Mod_II",
+  "names": {
+   "en": "Attack Aircraft Modification 1",
+   "ja": "攻撃機改良 1",
+   "zh": "攻击机修改型1",
+   "tw": "對艦攻擊機修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "fighterAimingTime": 2
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM070",
+  "name": "PCM070_Torpedo_Mod_IV",
+  "names": {
+   "en": "Torpedo Tubes Modification 1",
+   "ja": "魚雷発射管改良 1",
+   "zh": "鱼雷发射管修改型1",
+   "tw": "魚雷發射管修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "GTCritProb": 0.6,
+   "GTRotationSpeed": 1.2,
+   "torpedoSpeedMultiplier": 1.05
+  },
+  "shiptype": [
+   "Cruiser",
+   "Destroyer",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM071",
+  "name": "PCM071_TorpedoBombs_Mod_I",
+  "names": {
+   "en": "Aerial Torpedoes Modification 1",
+   "ja": "航空魚雷改良 1",
+   "zh": "空投鱼雷修改型1",
+   "tw": "航空魚雷修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "planeTorpedoSpeedMultiplier": 1.05
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM082",
+  "name": "PCM082_Autonomy_Mod_I",
+  "names": {
+   "en": "Dive Capacity Modification 1",
+   "ja": "潜行能力改良 1",
+   "zh": "下潜能力修改型1",
+   "tw": "下潛能力修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "batteryRegenCoeff": 1.1
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM092",
+  "name": "PCM092_SkipBomber_Mod_I",
+  "names": {
+   "en": "Skip Bomber Modification 1",
+   "ja": "反跳爆撃機改良 1",
+   "zh": "弹跳轰炸机修改型1",
+   "tw": "彈跳轟炸機修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "skipBomberAimingTime": 2.0
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "Russia"
+  ],
+  "shiplevel": [
+   6,
+   8,
+   10
+  ]
+ },
+ {
+  "index": "PCM104",
+  "name": "PCM104_SubmarineLocator_Mod_I",
+  "names": {
+   "en": "Submarine Surveillance Modification 1",
+   "ja": "改良型潜水艦探知機 1",
+   "zh": "潜艇监视设备修改型1",
+   "tw": "潛水艦監視設備修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "submarineLocatorReloadCoeff": 0.8
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth",
+   "Italy"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM115",
+  "name": "PCM115_Modern_Spec_Mod_White1",
+  "names": {
+   "en": "Radar-Absorbing Coating",
+   "ja": "レーダー吸収コーティング",
+   "zh": "雷达吸收涂层",
+   "tw": "雷達吸收塗層"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "visibilityFactor": 0.85
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM116",
+  "name": "PCM116_Modern_Spec_Mod_White2",
+  "names": {
+   "en": "Increased Steering Gear Power",
+   "ja": "操舵装置出力向上",
+   "zh": "增强型操舵装置功率",
+   "tw": "強化操舵裝置功率"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "SGRudderPower": 1.3,
+   "SGRudderTime": 0.7
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM117",
+  "name": "PCM117_Modern_Spec_Mod_Red1",
+  "names": {
+   "en": "Emergency Readiness System",
+   "ja": "緊急即応システム",
+   "zh": "紧急备战系统",
+   "tw": "緊急備戰系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "lastChanceReloadCoefficient": 0.45,
+   "vulnerabilityAll": 1.25
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM118",
+  "name": "PCM118_Modern_Spec_Mod_Red2",
+  "names": {
+   "en": "Strike Systems Priority",
+   "ja": "攻撃システム優先度",
+   "zh": "打击系统优先",
+   "tw": "打擊系統優先"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 2,
+  "modifiers": {
+   "GTShotDelay": 0.85,
+   "missileTimeBetweenShotsCoeff": 0.85,
+   "vulnerabilityMissile": 1.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM023",
+  "name": "PCM023_DamageControl_Mod_II",
+  "names": {
+   "en": "Damage Control System Modification 2",
+   "ja": "ダメージコントロールシステム改良 2",
+   "zh": "伤害控制系统修改型2",
+   "tw": "損害控制系統修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "burnTime": 0.85,
+   "floodTime": 0.85
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "AirCarrier",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM024",
+  "name": "PCM024_Engine_Mod_II",
+  "names": {
+   "en": "Propulsion Modification 1",
+   "ja": "推力改良 1",
+   "zh": "推进系统修改型1",
+   "tw": "推進系統修改型 1"
+  },
+  "desc": {
+   "en": "Reduces time to full speed",
+   "ja": "最大速への到達時間を短縮",
+   "zh": "缩短达到全速所需时间",
+   "tw": "縮短到達全速所需時間"
+  },
+  "slot": 3,
+  "modifiers": {
+   "engineBackwardForsageMaxSpeed": 2.4,
+   "engineBackwardForsagePower": 1.0,
+   "engineBackwardUpTime": 0.5,
+   "engineForwardForsageMaxSpeed": 2.4,
+   "engineForwardForsagePower": 1.0,
+   "engineForwardUpTime": 0.5
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM025",
+  "name": "PCM025_SteeringGear_Mod_II",
+  "names": {
+   "en": "Steering Gears Modification 1",
+   "ja": "操舵装置改良 1",
+   "zh": "操舵装置修改型1",
+   "tw": "操舵裝置修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "SGRudderTime": 0.8
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM063",
+  "name": "PCM063_Fighter_Mod_I",
+  "names": {
+   "en": "Attack Aircraft Modification 2",
+   "ja": "攻撃機改良 2",
+   "zh": "攻击机修改型2",
+   "tw": "對艦攻擊機修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "fighterHealth": 1.075
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM064",
+  "name": "PCM064_TorpedoBomber_Mod_I",
+  "names": {
+   "en": "Torpedo Bombers Modification 2",
+   "ja": "雷撃機改良 2",
+   "zh": "鱼雷轰炸机修改型2",
+   "tw": "魚雷轟炸機修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "torpedoBomberHealth": 1.075
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM065",
+  "name": "PCM065_DiveBomber_Mod_I",
+  "names": {
+   "en": "Bombers Modification 1",
+   "ja": "爆撃機改良 1",
+   "zh": "轰炸机修改型1",
+   "tw": "轟炸機修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "diveBomberHealth": 1.075
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM081",
+  "name": "PCM081_SkipBomber_Mod_I",
+  "names": {
+   "en": "Skip Bomber Modification 2",
+   "ja": "反跳爆撃機改良 2",
+   "zh": "弹跳轰炸机修改型2",
+   "tw": "彈跳轟炸機修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "skipBomberHealth": 1.075
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "Russia"
+  ],
+  "shiplevel": [
+   6,
+   8,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM087",
+  "name": "PCM087_AirSupport_Mod_I",
+  "names": {
+   "en": "Airstrike Modification 1",
+   "ja": "空襲改良 1",
+   "zh": "空袭修改型1",
+   "tw": "空襲修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "asMaxHealthCoeff": 1.25,
+   "asReloadTimeCoeff": 0.8,
+   "dcAlphaDamageMultiplier": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   }
+  },
+  "shiptype": [
+   "AirCarrier",
+   "Battleship",
+   "Cruiser"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM089",
+  "name": "PCM089_DepthCharges_Mod_I",
+  "names": {
+   "en": "Depth Charges Modification 1",
+   "ja": "爆雷改良 1",
+   "zh": "深水炸弹修改型1",
+   "tw": "深水炸彈修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "dcNumPacksBonus": 2
+  },
+  "shiptype": [
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM090",
+  "name": "PCM090_SteeringGearSubmarine_Mod_II",
+  "names": {
+   "en": "Submarine Steering Gears",
+   "ja": "潜水艦操舵装置",
+   "zh": "潜艇操舵装置",
+   "tw": "潛水艦操舵裝置"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "SGRudderTime": 0.5,
+   "buoyancyRudderResetTimeCoeff": 0.5,
+   "buoyancyRudderTimeCoeff": 0.5
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM093",
+  "name": "PCM093_Airplanes_Mod_IV",
+  "names": {
+   "en": "Air Groups Modification 3",
+   "ja": "飛行機隊改良 3",
+   "zh": "空军大队修改型3",
+   "tw": "航空大隊修改型 3"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 3,
+  "modifiers": {
+   "planeHealthCoeff": 1.15,
+   "planeSpawnTime": 0.95,
+   "planeSpeed": 1.05
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM009",
+  "name": "PCM009_FlightControl_Mod_I",
+  "names": {
+   "en": "Flight Control Modification 1",
+   "ja": "航空管制改良 1",
+   "zh": "飞行控制修改型1",
+   "tw": "飛航控制修改型 1"
+  },
+  "desc": {
+   "en": "Does not increase the maximum number of each type of tactical squadron aircraft on deck.",
+   "ja": "甲板上の各タイプの戦術飛行中隊の最大機数は増加しません",
+   "zh": "不会增加甲板上每种类型的战术中队飞机的最大数量",
+   "tw": "不會增加甲板上每種類型戰術航空中隊的最高飛機數量"
+  },
+  "slot": 4,
+  "modifiers": {
+   "planeExtraHangarSize": 2,
+   "planeSpawnTime": 0.95
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM026",
+  "name": "PCM026_LookoutStation_Mod_I",
+  "names": {
+   "en": "Torpedo Lookout System",
+   "ja": "魚雷発見システム",
+   "zh": "鱼雷监控系统",
+   "tw": "魚雷監視系統"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "visionXRayTorpedoDist": 1800
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM027",
+  "name": "PCM027_ConcealmentMeasures_Mod_I",
+  "names": {
+   "en": "Concealment System Modification 1",
+   "ja": "隠蔽システム改良 1",
+   "zh": "隐蔽系统修改型1",
+   "tw": "隱蔽系統修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "planeVisibilityFactor": 0.9,
+   "shootShift": 1.05,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.9,
+    "Auxiliary": 0.9,
+    "Battleship": 0.9,
+    "Cruiser": 0.9,
+    "Destroyer": 0.9,
+    "Submarine": 0.9
+   },
+   "visibilityForSubmarineCoeff": 0.9
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM035",
+  "name": "PCM035_SteeringGear_Mod_III",
+  "names": {
+   "en": "Steering Gears Modification 2",
+   "ja": "操舵装置改良 2",
+   "zh": "操舵装置修改型2",
+   "tw": "操舵裝置修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "SGRepairTime": 0.2,
+   "SGRudderTime": 0.6
+  },
+  "shiptype": [
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM043",
+  "name": "PCM043_Special_Mod_I_Conqueror",
+  "names": {
+   "en": "Enhanced Engineering Systems",
+   "ja": "改良型エンジニアリング・システム",
+   "zh": "增强型工程系统",
+   "tw": "強化工程系統"
+  },
+  "desc": {
+   "en": "Expands the ship's tactical role by allowing for a more dynamic combat style.",
+   "ja": "よりダイナミックな戦術的機能を可能とすることで艦艇の戦術的機能を拡張",
+   "zh": "使战舰能以更灵活多变的方式作战，从而发挥更多的战术作用。",
+   "tw": "透過更具動態的作戰方式，擴展艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GMRotationSpeed": {
+    "AirCarrier": 1.13,
+    "Auxiliary": 1.13,
+    "Battleship": 1.13,
+    "Cruiser": 1.13,
+    "Destroyer": 1.13,
+    "Submarine": 1.13
+   },
+   "SGRepairTime": 0.2,
+   "SGRudderTime": 0.6
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM047",
+  "name": "PCM047_Special_Mod_I_Montana",
+  "names": {
+   "en": "Reinforced Emergency Response",
+   "ja": "強化型緊急対応",
+   "zh": "强化紧急救援",
+   "tw": "強化緊急救援"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing survivability and maneuverability.",
+   "ja": "抗堪性と機動性を高めることで艦艇の戦術的役割を向上させる。",
+   "zh": "通过提高存活性和机动性，提高战舰的战术作用。",
+   "tw": "透過提高存活性和機動性，強化艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "SGRepairTime": 0.3,
+   "SGRudderTime": 0.7,
+   "burnTime": 0.9,
+   "floodTime": 0.9
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM049",
+  "name": "PCM049_Special_Mod_I_Hindenburg",
+  "names": {
+   "en": "Upgraded Damage Control Equipment",
+   "ja": "強化型ダメージコントロール設備",
+   "zh": "升级版伤害控制设备",
+   "tw": "升級版傷害控制設備"
+  },
+  "desc": {
+   "en": "Improves the ship's survivability and maneuverability.",
+   "ja": "艦艇の抗堪性と機動性を向上",
+   "zh": "提高战舰的存活性和机动性。",
+   "tw": "提升艦艇的存活性與機動性。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "SGRudderTime": 0.8,
+   "burnTime": 0.5,
+   "floodTime": 0.5,
+   "regenCrewWorkTimeCoeff": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM050",
+  "name": "PCM050_Special_Mod_I_Henri_IV",
+  "names": {
+   "en": "Improved Main Battery Loading Mechanisms",
+   "ja": "改良型主砲装填メカニズム",
+   "zh": "改进型主炮组装填机制",
+   "tw": "改良型主炮裝填機制"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of long-range engagements. Makes close-quarters engagements more challenging.",
+   "ja": "長距離交戦の有効性を高めることで艦艇の戦術的機能を向上。接近戦はより困難になる",
+   "zh": "通过提高在远距离的作战效率，强化战舰的战术角色。使近距离交战更具挑战性。",
+   "tw": "透過提高在遠距離的作戰效率，強化艦艇的戰術角色。使近距離交戰更具挑戰性。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GMMaxDist": 1.05,
+   "GMShotDelay": 0.9,
+   "SGRudderTime": 1.0,
+   "visibilityDistCoeff": {
+    "AirCarrier": 1.1,
+    "Auxiliary": 1.1,
+    "Battleship": 1.1,
+    "Cruiser": 1.1,
+    "Destroyer": 1.1,
+    "Submarine": 1.1
+   },
+   "visibilityForSubmarineCoeff": 1.1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM051",
+  "name": "PCM051_Special_Mod_I_Minotaur",
+  "names": {
+   "en": "Aerosol Smoke Curtain System",
+   "ja": "エアロゾル煙幕システム",
+   "zh": "气溶胶烟幕系统",
+   "tw": "氣溶膠煙幕系統"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by reducing the minimum effective engagement range thanks to the ability to maneuver in smoke areas at low speeds.",
+   "ja": "煙幕エリア内で低速で機動する能力によって有効な最短交戦距離を短縮し、艦艇の戦術的機能を向上",
+   "zh": "由于能够在烟幕区域中以低航速机动，因此能通过缩小最小有效作战范围，让战舰发挥更大的战术作用。",
+   "tw": "由於能夠在煙幕區域中以低速機動，因此能透過降低最小有效作戰範圍，強化艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.9,
+    "Auxiliary": 0.9,
+    "Battleship": 0.9,
+    "Cruiser": 0.9,
+    "Destroyer": 0.9,
+    "Submarine": 0.9
+   },
+   "smokeGeneratorLifeTime": 0.8,
+   "smokeGeneratorWorkTimeCoeff": 4.0,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.95,
+    "Auxiliary": 0.95,
+    "Battleship": 0.95,
+    "Cruiser": 0.95,
+    "Destroyer": 0.95,
+    "Submarine": 0.95
+   },
+   "visibilityForSubmarineCoeff": 0.95
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM055",
+  "name": "PCM055_Special_Mod_I_Khabarovsk",
+  "names": {
+   "en": "Master Fire Control Director",
+   "ja": "マスター射撃指揮装置",
+   "zh": "主射控指挥仪",
+   "tw": "主射控指揮儀"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of artillery. Demands higher alertness in close-quarters engagements due to a reduced margin for error.",
+   "ja": "火砲の有効性を高めることで艦艇の戦術的機能を向上。ミスが許されない状況となるため、近接戦闘ではより注意深い警戒が求められる",
+   "zh": "通过提高火炮效率，强化战舰的战术角色。由于容错率降低，近距离交战时需保持高度警觉。",
+   "tw": "透過提高火炮效率，強化艦艇的戰術角色。由於容錯率降低，近距離交戰時需保持高度警覺。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "ConsumablesWorkTime": 0.8,
+   "GMMaxDist": 1.1,
+   "GMShotDelay": 0.94
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM056",
+  "name": "PCM056_Special_Mod_I_Z_52",
+  "names": {
+   "en": "Torpedo Fire Control System",
+   "ja": "雷撃管制システム",
+   "zh": "鱼雷射控系统",
+   "tw": "魚雷射控系統"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of torpedo attacks.",
+   "ja": "雷撃の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高鱼雷攻击效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高魚雷攻擊效率，強化艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GTShotDelay": 0.85,
+   "shootShift": 1.05,
+   "torpedoSpeedMultiplier": 1.12,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.95,
+    "Auxiliary": 0.95,
+    "Battleship": 0.95,
+    "Cruiser": 0.95,
+    "Destroyer": 0.95,
+    "Submarine": 0.95
+   },
+   "visibilityForSubmarineCoeff": 0.95
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM058",
+  "name": "PCM058_Special_Mod_I_Gearing",
+  "names": {
+   "en": "Improved Hull Concealment",
+   "ja": "改良型船体隠蔽処理",
+   "zh": "改进型舰体隐蔽",
+   "tw": "改良型艦身隱蔽"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of sudden and stealth attacks.",
+   "ja": "身を潜めた奇襲攻撃の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高隐蔽突袭的效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高隱秘突襲的效率，強化艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GMShotDelay": 1.15,
+   "GTShotDelay": 1.05,
+   "shootShift": 1.05,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.85,
+    "Auxiliary": 0.85,
+    "Battleship": 0.85,
+    "Cruiser": 0.85,
+    "Destroyer": 0.85,
+    "Submarine": 0.85
+   },
+   "visibilityForSubmarineCoeff": 0.85
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM059",
+  "name": "PCM059_Special_Mod_I_Yueyang",
+  "names": {
+   "en": "Improved Main Artillery",
+   "ja": "強化型主砲",
+   "zh": "改进型主炮",
+   "tw": "改良型主炮"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of artillery at mid-range.",
+   "ja": "中距離での火砲の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高中距离的火炮效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在中距離的火炮效率，強化艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GMShotDelay": 0.82,
+   "healthHullCoeff": 1.1,
+   "rlsWorkTimeCoeff": 1.2,
+   "smokeGeneratorLifeTime": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM072",
+  "name": "PCM072_AbilityWorktimeBoost_Mod_I",
+  "names": {
+   "en": "Ship Consumable\nModification 1",
+   "ja": "艦艇消耗品改良 1",
+   "zh": "战舰消耗品修改型1",
+   "tw": "艦艇消耗品修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "ConsumablesWorkTime": 1.1,
+   "shipConsumableCapacityCoeff": 1.025
+  },
+  "shiptype": [
+   "Cruiser",
+   "Destroyer",
+   "Battleship",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM073",
+  "name": "PCM073_AbilityWorktimeBoostCV_Mod_I",
+  "names": {
+   "en": "Squadron Consumables Modification 1",
+   "ja": "飛行中隊消耗品改良 1",
+   "zh": "中队消耗品修改型1",
+   "tw": "航空中隊消耗品修改型 1"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "planeAdditionalConsumables": 1
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM075",
+  "name": "PCM075_Special_Mod_I_Daring",
+  "names": {
+   "en": "Enhanced Torpedo Loading Mechanism",
+   "ja": "改良型魚雷装填メカニズム",
+   "zh": "增强型鱼雷装填机制",
+   "tw": "強化魚雷裝填機制"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by enabling more effective use of torpedo attacks. Requires careful aiming and positioning, as reduced artillery efficiency increases the risks in direct engagements.",
+   "ja": "雷撃をより有効に活用できるようにすることで艦艇の戦術的機能を向上。火砲の有効性低下に伴い直接交戦でのリスクが増大するため、慎重な照準と位置取りが求められる",
+   "zh": "通过提高鱼雷攻击效率，强化战舰的战术角色。火炮效率降低导致正面交火风险升高，因此更需精准瞄准与谨慎走位。",
+   "tw": "透過提高魚雷攻擊效率，強化艦艇的戰術角色。火炮效率降低導致正面交火風險升高，因此更需精準瞄準與謹慎走位。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GMShotDelay": 1.12,
+   "GTShotDelay": 0.8,
+   "torpedoSpeedMultiplier": 1.15,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.9,
+    "Auxiliary": 0.9,
+    "Battleship": 0.9,
+    "Cruiser": 0.9,
+    "Destroyer": 0.9,
+    "Submarine": 0.9
+   },
+   "visibilityForSubmarineCoeff": 0.9
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM077",
+  "name": "PCM077_Special_Mod_I_Harugumo",
+  "names": {
+   "en": "Additional Smoke Generators",
+   "ja": "発煙装置増設",
+   "zh": "附加发烟器",
+   "tw": "附加發煙機"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by reducing the minimum effective engagement range thanks to the ability to maneuver in smoke areas at low speeds.",
+   "ja": "煙幕エリア内で低速で機動する能力によって有効な最短交戦距離を短縮し、艦艇の戦術的機能を向上",
+   "zh": "由于能够在烟幕区域中以低航速机动，因此能通过缩小最小有效作战范围，让战舰发挥更大的战术作用。",
+   "tw": "由於能夠在煙幕區域中以低速機動，因此能透過降低最小有效作戰範圍，強化艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "GMShotDelay": 0.94,
+   "additionalConsumables": 1,
+   "smokeGeneratorLifeTime": 1.3,
+   "smokeGeneratorWorkTimeCoeff": 2.0
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM091",
+  "name": "PCM091_SteeringGearSubmarine_Mod_III",
+  "names": {
+   "en": "Submarine Steering Gears Modification 3",
+   "ja": "潜水艦操舵装置改良 3",
+   "zh": "潜艇操舵装置修改型3",
+   "tw": "潛水艦操舵裝置修改型 3"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "SGRepairTime": 0.2,
+   "SGRudderTime": 0.6,
+   "buoyancyRudderResetTimeCoeff": 0.6,
+   "buoyancyRudderTimeCoeff": 0.6
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM095",
+  "name": "PCM095_Special_Mod_I_Venezia",
+  "names": {
+   "en": "Augmented Smoke Generators",
+   "ja": "増設済み発煙装置",
+   "zh": "扩增发烟器",
+   "tw": "擴增發煙機"
+  },
+  "desc": {
+   "en": "Strengthens the ship's tactical role, allowing for more frequent maneuvers under the cover of smoke.",
+   "ja": "煙幕に隠れながらより安全な移動を可能にすることで艦艇の戦術的役割を強化",
+   "zh": "强化战舰的战术作用，使战舰能更频繁地在烟幕掩护下进行机动。",
+   "tw": "強化戰艦的戰術角色，使其能更常在煙幕掩護下進行機動。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "smokeGeneratorAdditionalConsumables": 2,
+   "smokeGeneratorReloadCoeff": 0.45
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM101",
+  "name": "PCM101_Torpedo_Mod_V",
+  "names": {
+   "en": "Torpedo Tubes Modification 3",
+   "ja": "魚雷発射管改良 3",
+   "zh": "鱼雷发射管修改型3",
+   "tw": "魚雷發射管修改型 3"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "torpedoDamageCoeff": 1.07
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM102",
+  "name": "PCM102_DepthChargeResist_Mod_I",
+  "names": {
+   "en": "Reinforced Bulkheads",
+   "ja": "隔壁強化",
+   "zh": "强化舱壁",
+   "tw": "強化艙壁"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 4,
+  "modifiers": {
+   "vulnerabilityDc": 0.85
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM105",
+  "name": "PCM105_Special_Mod_I_Vermont",
+  "names": {
+   "en": "Improved Electrical Systems",
+   "ja": "改良型電気システム",
+   "zh": "改进型电力系统",
+   "tw": "改良型電力系統"
+  },
+  "desc": {
+   "en": "Changes the ship's tactical role by enhancing her firepower and allowing her to counter aircraft and submarines more efficiently.",
+   "ja": "火力を強化し、航空機や潜水艦にさらに効率的に対抗できるようにすることで、艦艇の戦術的役割を変更します。",
+   "zh": "增强战舰火力，并使其更有效地对抗飞机和潜艇，从而改变战舰的战术作用。",
+   "tw": "透過增強其火力使之更有效地對抗飛機和潛水艦，變更艦艇的戰術角色。"
+  },
+  "slot": 4,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   },
+   "GMShotDelay": 0.9,
+   "asReloadTimeCoeff": 0.85
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM013",
+  "name": "PCM013_MainGun_Mod_III",
+  "names": {
+   "en": "Main Battery Modification 3",
+   "ja": "主砲改良 3",
+   "zh": "主炮组修改型3",
+   "tw": "主炮組修改型 3"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMRotationSpeed": {
+    "AirCarrier": 0.87,
+    "Auxiliary": 0.87,
+    "Battleship": 0.87,
+    "Cruiser": 0.87,
+    "Destroyer": 0.87,
+    "Submarine": 0.87
+   },
+   "GMShotDelay": 0.88
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM014",
+  "name": "PCM014_Torpedo_Mod_III",
+  "names": {
+   "en": "Torpedo Tubes Modification 2",
+   "ja": "魚雷発射管改良 2",
+   "zh": "鱼雷发射管修改型2",
+   "tw": "魚雷發射管修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "GTCritProb": 1.5,
+   "GTShotDelay": 0.85
+  },
+  "shiptype": [
+   "Cruiser",
+   "Destroyer",
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM015",
+  "name": "PCM015_FireControl_Mod_II",
+  "names": {
+   "en": "Gun Fire Control System Modification 2",
+   "ja": "射撃管制装置改良 2",
+   "zh": "舰炮火控系统修改型2",
+   "tw": "艦炮射控系統修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMMaxDist": 1.16
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM016",
+  "name": "PCM016_FlightControl_Mod_II",
+  "names": {
+   "en": "Flight Control Modification 2",
+   "ja": "航空管制改良 2",
+   "zh": "飞行控制修改型2",
+   "tw": "飛航控制修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "planeSpeed": 1.05
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM017",
+  "name": "PCM017_Airplanes_Mod_III",
+  "names": {
+   "en": "Air Groups Modification 2",
+   "ja": "飛行機隊改良 2",
+   "zh": "空军大队修改型2",
+   "tw": "航空大隊修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "planeHealthCoeff": 1.075
+  },
+  "shiptype": [
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM029",
+  "name": "PCM029_FireControl_Mod_II_US",
+  "names": {
+   "en": "Artillery Plotting Room Modification 2",
+   "ja": "射撃管制室改良 2",
+   "zh": "火炮描绘室修改型2",
+   "tw": "火炮描繪室修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMIdealRadius": 0.89
+  },
+  "shiptype": [
+   "Battleship"
+  ],
+  "nation": [
+   "USA"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM044",
+  "name": "PCM044_Special_Mod_I_Republique",
+  "names": {
+   "en": "Main Battery Fire Control Station",
+   "ja": "主砲射撃管制ステーション",
+   "zh": "主炮组射控台",
+   "tw": "主炮射控台"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing efficiency at all ranges. Requires cautious positioning to avoid the heightened dangers of prolonged or close-quarters engagements.",
+   "ja": "あらゆる距離での有効性を高めることで艦艇の戦術的機能を向上。長時間の交戦や接近戦で危険が増大するため、慎重な位置取りが求められる",
+   "zh": "通过提高各距离的作战效率，强化战舰的战术角色。需谨慎走位，以规避长时间交火或近距离缠斗所带来的高风险。",
+   "tw": "透過提高各距離的作戰效率，強化艦艇的戰術角色。需謹慎走位，以規避長時間交火或近距離纏鬥所帶來的高風險。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMShotDelay": 0.82,
+   "burnTime": 1.15,
+   "floodTime": 1.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM045",
+  "name": "PCM045_Special_Mod_I_GKurfurst",
+  "names": {
+   "en": "Improved Ammunition Hoists",
+   "ja": "改良型揚弾システム",
+   "zh": "改进型弹药升降机",
+   "tw": "改良型彈藥升降機"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of short- and medium-range engagements.",
+   "ja": "短距離および中距離での交戦の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高中近距离的作战效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在中近距離的作戰效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMMaxDist": 0.92,
+   "GMShotDelay": 0.9,
+   "GSShotDelay": 0.85
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM046",
+  "name": "PCM046_Special_Mod_I_Yamato",
+  "names": {
+   "en": "Main Battery Director System",
+   "ja": "主砲射撃指揮システム",
+   "zh": "主炮组指挥仪系统",
+   "tw": "主炮指揮儀系統"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of long-range engagements.",
+   "ja": "長距離交戦の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高远距离的作战效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在遠距離的作戰效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMIdealRadius": 0.93,
+   "GMRotationSpeed": {
+    "AirCarrier": 0.87,
+    "Auxiliary": 0.87,
+    "Battleship": 0.87,
+    "Cruiser": 0.87,
+    "Destroyer": 0.87,
+    "Submarine": 0.87
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM048",
+  "name": "PCM048_Special_Mod_I_Zao",
+  "names": {
+   "en": "Improved Bridge",
+   "ja": "改良型艦橋",
+   "zh": "改进型舰桥",
+   "tw": "改良型艦橋"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of open-area engagements.",
+   "ja": "開けたエリアでの交戦の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高在开阔区域的作战效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在開闊地區的作戰效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMIdealRadius": 0.93,
+   "GMMaxDist": 1.08
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM052",
+  "name": "PCM052_Special_Mod_I_Des_Moines",
+  "names": {
+   "en": "Enhanced Propulsion Plant",
+   "ja": "改良型主機",
+   "zh": "增强型推进装置",
+   "tw": "強化推進裝置"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of dynamic short- and medium-range engagements.",
+   "ja": "ダイナミックな短距離および中距離交戦の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高中近距离的动态作战效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在中近距離的動態作戰效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "SGRudderTime": 0.8,
+   "engineBackwardForsageMaxSpeed": 2.0,
+   "engineBackwardForsagePower": 1.15,
+   "engineBackwardUpTime": 0.5,
+   "engineForwardForsageMaxSpeed": 3.75,
+   "engineForwardForsagePower": 1.1,
+   "engineForwardUpTime": 0.5
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM053",
+  "name": "PCM053_Special_Mod_I_Worcester",
+  "names": {
+   "en": "Enhanced Countermeasures",
+   "ja": "強化型対抗手段",
+   "zh": "增强型应对措施",
+   "tw": "強化反制措施"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of AA guns and consumables.",
+   "ja": "対空兵装と消耗品の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高防空炮和消耗品的效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高防空炮和消耗品的效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.8,
+    "Auxiliary": 0.8,
+    "Battleship": 0.8,
+    "Cruiser": 0.8,
+    "Destroyer": 0.8,
+    "Submarine": 0.8
+   },
+   "additionalConsumables": 1,
+   "prioritySectorCooldownMultiplier": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM054",
+  "name": "PCM054_Special_Mod_I_Moskva",
+  "names": {
+   "en": "Extended Main Battery Effective Range",
+   "ja": "主砲有効射程延伸",
+   "zh": "延长型主炮组有效射程",
+   "tw": "延伸型主炮組有效射程"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of long-range engagements.",
+   "ja": "長距離交戦の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高远距离的作战效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在遠距離的作戰效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMIdealRadius": 0.93,
+   "GMMaxDist": 1.08,
+   "GMRotationSpeed": {
+    "AirCarrier": 0.8,
+    "Auxiliary": 0.8,
+    "Battleship": 0.8,
+    "Cruiser": 0.8,
+    "Destroyer": 0.8,
+    "Submarine": 0.8
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM057",
+  "name": "PCM057_Special_Mod_I_Shimakaze",
+  "names": {
+   "en": "Torpedo Quick Reload System",
+   "ja": "魚雷高速装填システム",
+   "zh": "鱼雷快速装填系统",
+   "tw": "魚雷快速裝填系統"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of torpedo attacks. Makes careful positioning essential due to decreased attack angle adjustment at closer ranges.",
+   "ja": "雷撃の有効性を高めることで艦艇の戦術的機能を向上。近距離での攻撃角度の調整が難しくなるため、慎重な位置取りが不可欠になる",
+   "zh": "通过提高鱼雷攻击效率，强化战舰的战术角色。由于在近距离可调整攻击角度的幅度降低，必须谨慎走位。",
+   "tw": "透過提高魚雷攻擊效率，強化艦艇的戰術角色。由於在近距離可調整攻擊角度的幅度降低，必須謹慎走位。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GTCritProb": 1.5,
+   "GTRotationSpeed": 0.3,
+   "GTShotDelay": 0.75
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM060",
+  "name": "PCM060_Special_Mod_I_Grozovoi",
+  "names": {
+   "en": "Main Gun Automatic Loader",
+   "ja": "主砲自動装填装置",
+   "zh": "主炮自动装填机",
+   "tw": "主炮自動裝填機"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of artillery. Makes careful positioning and maneuvering essential due to increased risk of detection.",
+   "ja": "火砲の有効性を高めることで艦艇の戦術的機能を向上。被発見のリスクが増大するため、慎重な位置取りと機動が不可欠になる",
+   "zh": "通过提高火炮效率，强化战舰的战术角色。由于被侦察的风险提高，必须谨慎走位与机动。",
+   "tw": "透過提高火炮效率，強化艦艇的戰術角色。由於被偵測的風險提高，必須謹慎走位與機動。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMRotationSpeed": {
+    "AirCarrier": 0.93,
+    "Auxiliary": 0.93,
+    "Battleship": 0.93,
+    "Cruiser": 0.93,
+    "Destroyer": 0.93,
+    "Submarine": 0.93
+   },
+   "GMShotDelay": 0.82,
+   "visibilityDistCoeff": {
+    "AirCarrier": 1.05,
+    "Auxiliary": 1.05,
+    "Battleship": 1.05,
+    "Cruiser": 1.05,
+    "Destroyer": 1.05,
+    "Submarine": 1.05
+   },
+   "visibilityForSubmarineCoeff": 1.05
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM061",
+  "name": "PCM061_Special_Mod_I_Midway",
+  "names": {
+   "en": "Modified External Hardpoints",
+   "ja": "外部ハードポイント改良",
+   "zh": "改良型外部硬点",
+   "tw": "修改型外部硬點"
+  },
+  "desc": {
+   "en": "Expands the ship's tactical role by increasing the efficiency of bombers.",
+   "ja": "爆撃機の有効性を高めることで艦艇の戦術的機能を拡張",
+   "zh": "提高轰炸机效率，从而让战舰发挥更多的战术作用。",
+   "tw": "透過提高轟炸機的效率，擴展艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "bombAlphaDamageMultiplier": 1.1,
+   "diveBomberMaxSpeedMultiplier": 0.9899,
+   "diveBomberMinSpeedMultiplier": 1.0142,
+   "diveBomberSpeedMultiplier": 1.05
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM062",
+  "name": "PCM062_Special_Mod_I_Hakuryu",
+  "names": {
+   "en": "Fuel Injection System",
+   "ja": "燃料噴射システム",
+   "zh": "燃料喷射系统",
+   "tw": "燃料噴射系統"
+  },
+  "desc": {
+   "en": "Expands the ship's tactical role by allowing her to quickly attack enemy ships.",
+   "ja": "敵艦艇への素早い攻撃を可能にすることで艦艇の戦術的機能を拡張",
+   "zh": "使战舰能快速攻击敌方战舰，从而发挥更多的战术作用。",
+   "tw": "透過提升攻擊敵艦的速度，擴展艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "planeForsageTimeCoeff": 0.7,
+   "planeMaxSpeedMultiplier": 1.125
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM074",
+  "name": "PCM074_AuxiliaryArmament_Mod_I",
+  "names": {
+   "en": "Auxiliary Armaments Modification 2",
+   "ja": "副兵装改良 2",
+   "zh": "辅助武器修改型2",
+   "tw": "輔助軍備修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   },
+   "AABubbleDamage": {
+    "AirCarrier": 1.15,
+    "Auxiliary": 1.15,
+    "Battleship": 1.15,
+    "Cruiser": 1.15,
+    "Destroyer": 1.15,
+    "Submarine": 1.15
+   },
+   "AAExtraBubbles": 1,
+   "GSShotDelay": 0.8
+  },
+  "shiptype": [
+   "Battleship",
+   "Cruiser",
+   "Destroyer",
+   "AirCarrier"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM076",
+  "name": "PCM076_Special_Mod_I_Kleber",
+  "names": {
+   "en": "Improved Camouflage Patterns",
+   "ja": "改良型迷彩パターン",
+   "zh": "改进型涂装图案",
+   "tw": "改良型迷彩塗裝"
+  },
+  "desc": {
+   "en": "Changes the ship's tactical role by enabling sudden, stealthy torpedo attacks. Significantly restricts artillery capabilities, requiring rapid repositioning and a focus on torpedo armament.",
+   "ja": "身を潜めた奇襲雷撃を可能にすることで艦艇の戦術的機能を変更。砲撃能力が大幅に制限されるため、迅速な位置取りの変更と雷装への注力が求められる",
+   "zh": "通过隐秘突袭式鱼雷攻击，变更战舰的战术角色。大幅限制火炮能力，战斗中需迅速转移阵地，并以鱼雷为主要武器。",
+   "tw": "透過隱秘突襲式魚雷攻擊，變更艦艇的戰術角色。大幅限制火炮能力，戰鬥中需迅速轉移陣地，並以魚雷為主要武器。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMShotDelay": 1.6,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.8,
+    "Auxiliary": 0.8,
+    "Battleship": 0.8,
+    "Cruiser": 0.8,
+    "Destroyer": 0.8,
+    "Submarine": 0.8
+   },
+   "visibilityForSubmarineCoeff": 0.8
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM078",
+  "name": "PCM078_Special_Mod_I_Kremlin",
+  "names": {
+   "en": "Automated Main Battery Loading Mechanism",
+   "ja": "主砲自動装填メカニズム",
+   "zh": "自动化主炮组装填机制",
+   "tw": "自動化主炮組裝填機制"
+  },
+  "desc": {
+   "en": "Changes the ship's tactical role by shifting the effective engagement range from long to medium distance.",
+   "ja": "効果的な交戦距離を長距離から中距離にシフトすることで艦艇の戦術的機能を変更",
+   "zh": "将有效作战范围从远距离变为中距离，从而改变战舰的战术作用。",
+   "tw": "透過將有效作戰範圍從遠距離變為中距離，變更艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMMaxDist": 0.88,
+   "GMShotDelay": 0.82,
+   "additionalConsumables": 1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM079",
+  "name": "PCM079_Special_Mod_I_Audacious",
+  "names": {
+   "en": "Forced Takeoff and Landing Equipment",
+   "ja": "動力式発艦・着艦設備",
+   "zh": "强制起飞和降落设备",
+   "tw": "強制起飛和降落設備"
+  },
+  "desc": {
+   "en": "Expands the ship's tactical role by reducing the minimum effective engagement range.",
+   "ja": "有効な最短交戦距離を短縮することで艦艇の戦術的機能を拡張",
+   "zh": "缩小最小有效作战范围，从而让战舰发挥更大的战术作用。",
+   "tw": "透過降低最小有效作戰範圍，擴展艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "SGRudderTime": 0.7,
+   "engineBackwardForsageMaxSpeed": 2.0,
+   "engineBackwardForsagePower": 1.15,
+   "engineBackwardUpTime": 0.5,
+   "engineForwardForsageMaxSpeed": 3.75,
+   "engineForwardForsagePower": 1.1,
+   "engineForwardUpTime": 0.5,
+   "planeForsageTimeCoeff": 1.2,
+   "visibilityDistCoeff": {
+    "AirCarrier": 0.85,
+    "Auxiliary": 0.85,
+    "Battleship": 0.85,
+    "Cruiser": 0.85,
+    "Destroyer": 0.85,
+    "Submarine": 0.85
+   },
+   "visibilityForSubmarineCoeff": 0.85
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM080",
+  "name": "PCM080_Special_Mod_I_ARP_Yamato",
+  "names": {
+   "en": "ARP Main Battery Director System",
+   "ja": "ARP 主砲射撃指揮システム",
+   "zh": "ARP主炮组指挥仪系统",
+   "tw": "ARP 主炮指揮儀系統"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of long-range engagements.",
+   "ja": "長距離交戦の有効性を高めることで艦艇の戦術的機能を向上",
+   "zh": "提高远距离的作战效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高在遠距離的作戰效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMIdealRadius": 0.93,
+   "GMRotationSpeed": {
+    "AirCarrier": 0.87,
+    "Auxiliary": 0.87,
+    "Battleship": 0.87,
+    "Cruiser": 0.87,
+    "Destroyer": 0.87,
+    "Submarine": 0.87
+   }
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM086",
+  "name": "PCM086_Autonomy_Mod_II",
+  "names": {
+   "en": "Dive Capacity Modification 2",
+   "ja": "潜行能力改良 2",
+   "zh": "下潜能力修改型2",
+   "tw": "下潛能力修改型 2"
+  },
+  "desc": {
+   "en": " ",
+   "ja": " ",
+   "zh": " ",
+   "tw": " "
+  },
+  "slot": 5,
+  "modifiers": {
+   "batteryCapacityCoeff": 1.15
+  },
+  "shiptype": [
+   "Submarine"
+  ],
+  "nation": [
+   "France",
+   "USA",
+   "Russia",
+   "Japan",
+   "United_Kingdom",
+   "Germany",
+   "Italy",
+   "Europe",
+   "Netherlands",
+   "Spain",
+   "Pan_Asia",
+   "Pan_America",
+   "Commonwealth"
+  ],
+  "shiplevel": [
+   9,
+   10,
+   11
+  ]
+ },
+ {
+  "index": "PCM094",
+  "name": "PCM094_Special_Mod_I_Halland",
+  "names": {
+   "en": "Advanced Mechanical Maintenance",
+   "ja": "高度な機械整備",
+   "zh": "进阶机械维护",
+   "tw": "進階機械維護"
+  },
+  "desc": {
+   "en": "Expands the tactical role of a warship, allowing her to maintain survivability more effectively.",
+   "ja": "より効果的に抗堪性を維持することで艦艇の戦術的役割を拡張",
+   "zh": "扩大战舰的战术作用，使战舰能更有效地维持存活性。",
+   "tw": "擴展戰艦的戰術角色，使其能更有效地保持存活性。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "additionalConsumables": 1,
+   "boostCoeffForsage": 0.08,
+   "regeneratedHPPartCoef": 0.25
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM096",
+  "name": "PCM096_Special_Mod_I_Petropavlovsk",
+  "names": {
+   "en": "Ballistic Capped Armor-Piercing Shells",
+   "ja": "風帽付徹甲弾",
+   "zh": "风帽穿甲弹",
+   "tw": "風帽穿甲彈"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing artillery effectiveness, particularly against large targets. Requires more cautious positioning and engagement at range, with an emphasis on offense.",
+   "ja": "特に大型目標に対する火砲の有効性を高めることで艦艇の戦術的役割を向上。攻撃重視になるため、より慎重な位置取りと遠距離での交戦が求められる",
+   "zh": "通过提高火炮效率（尤其是针对大型目标的伤害），强化战舰的战术角色。需在远距离谨慎走位交战，并侧重于进攻。",
+   "tw": "透過提高火炮效率（尤其是針對大型目標的傷害），強化艦艇的戰術角色。需在遠距離謹慎走位交戰，並側重於進攻。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "ConsumablesWorkTime": 0.75,
+   "GMAPDamageCoeff": 1.075,
+   "GMIdealRadius": 0.9
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM097",
+  "name": "PCM097_Special_Mod_I_Manfred_Richthofen",
+  "names": {
+   "en": "Aerodynamic Torpedo Fin Stabilizers",
+   "ja": "空力魚雷フィン・スタビライザー",
+   "zh": "鱼雷抗风稳定鳍",
+   "tw": "魚雷抗風穩定鰭"
+  },
+  "desc": {
+   "en": "Enhances the ship's tactical role, increasing torpedo bomber efficiency.",
+   "ja": "艦艇の戦術的役割を強化し、雷撃機の効率を向上",
+   "zh": "强化战舰的战术作用，提高鱼雷轰炸机的效率。",
+   "tw": "強化戰艦的戰術角色，提高魚雷轟炸機的效率。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "planeTorpedoArmingTimeCoeff": 0.9,
+   "torpedoBomberHealth": 1.15,
+   "torpedoDamageCoeff": 1.1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM098",
+  "name": "PCM098_Special_Mod_I_Elbing",
+  "names": {
+   "en": "Automated Gun and Fuel Systems",
+   "ja": "自動化された砲・燃料システム",
+   "zh": "自动火炮和燃料系统",
+   "tw": "自動火炮和燃料系統"
+  },
+  "desc": {
+   "en": "Alters the ship's tactical role, boosting maneuverability and enabling swift target switching.",
+   "ja": "機動性をブーストし、迅速な目標切り替えを可能にすることで、艦艇の戦術的役割を変更します。",
+   "zh": "改变战舰的战术作用，提高机动性并使其能快速切换目标。",
+   "tw": "變更艦艇的戰術角色，提升機動性並使其能快速切換目標。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMMaxDist": 0.92,
+   "GMRotationSpeed": {
+    "AirCarrier": 1.0,
+    "Auxiliary": 1.0,
+    "Battleship": 1.0,
+    "Cruiser": 1.0,
+    "Destroyer": 2.0,
+    "Submarine": 1.0
+   },
+   "GMShotDelay": 0.94,
+   "boostCoeffForsage": 0.12
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM099",
+  "name": "PCM099_Special_Mod_I_Gouden_Leeuw",
+  "names": {
+   "en": "Ship-to-Shore Radio",
+   "ja": "艦艇と陸との無線",
+   "zh": "舰对岸无线电",
+   "tw": "艦對岸無線電"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing the efficiency of Airstrike attacks.",
+   "ja": "兵装「空襲」の攻撃効率を高めることで艦艇の戦術的役割を強化します。",
+   "zh": "提高空袭攻击效率，从而让战舰发挥更大的战术作用。",
+   "tw": "透過提高空襲效率，強化艦艇的戰術角色。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "asAdditionalChargesCombined": 1,
+   "asMaxDistCoeff": 1.08,
+   "bombHEAlphaDamageMultiplier": 1.1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ },
+ {
+  "index": "PCM106",
+  "name": "PCM106_Special_Mod_I_Colombo",
+  "names": {
+   "en": "Improved Rangefinders",
+   "ja": "改良型測距儀",
+   "zh": "改进型测距仪",
+   "tw": "改良型測距儀"
+  },
+  "desc": {
+   "en": "Improves the ship's tactical role by increasing efficiency at all ranges. Requires cautious positioning to avoid the heightened dangers of prolonged or close-quarters engagements.",
+   "ja": "あらゆる距離での有効性を高めることで艦艇の戦術的機能を向上。長時間の交戦や接近戦で危険が増大するため、慎重な位置取りが求められる",
+   "zh": "通过提高各距离的作战效率，强化战舰的战术角色。需谨慎走位，以规避长时间交火或近距离缠斗所带来的高风险。",
+   "tw": "透過提高各距離的作戰效率，強化艦艇的戰術角色。需謹慎走位，以規避長時間交火或近距離纏鬥所帶來的高風險。"
+  },
+  "slot": 5,
+  "modifiers": {
+   "GMIdealRadius": 0.94,
+   "GMShotDelay": 0.94,
+   "smokeGeneratorAdditionalConsumables": -2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": []
+ }
+]
