@@ -278,6 +278,7 @@
     "reset": "リセット",
     "tier": "ティア {n}",
     "locked": "ロック中 — 下位ティアに {n} ポイントの投入が必要",
+    "notApplicable": "この艦には使用不可",
     "maxed": "最大",
     "noTree": "この艦種のスキルツリーはまだありません。",
     "rank": "ランク {n}",
@@ -396,6 +397,38 @@
       "submarineLocatorReloadCoeff": "潜水艦探知機装填時間",
       "burnChanceFactorBig": "HE弾の火災発生率",
       "burnChanceFactorSmall": "HE弾の火災発生率"
+    }
+  },
+  "talent": {
+    "effect": {
+      "GMShotDelay": "主砲装填係数",
+      "GMShotDelayUI": "主砲装填係数",
+      "GTShotDelay": "魚雷装填係数",
+      "GTShotDelayUI": "魚雷装填係数",
+      "GSShotDelay": "副砲装填係数",
+      "GSMShotDelay": "副砲装填係数",
+      "planeSpawnTime": "艦載機発進時間係数",
+      "planeSpawnTimeUI": "艦載機発進時間係数",
+      "planeSpeed": "艦載機速度係数",
+      "planeSpeedUI": "艦載機速度係数",
+      "workTime": "効果時間（秒）",
+      "speedCoef": "速度係数",
+      "regenerationHPSpeed": "每秒回復係数",
+      "regenerationHPSpeedUnits": "每秒回復量",
+      "ignoreRegenLimit": "回復上限無視回数",
+      "scaleRegenWithShipTier": "回復は艦ティアでスケール",
+      "additionalConsumables": "追加消耗品数",
+      "planeAdditionalConsumables": "艦載機の追加消耗品数",
+      "ConsumablesWorkTime": "消耗品作用時間（秒）",
+      "burnChanceBonus": "火災発生率ボーナス",
+      "burnChanceFactorBig": "大火災発生係数",
+      "floodChanceFactor": "浸水係数",
+      "crashCrew": "損害管制ボーナス",
+      "shootShift": "射撃散布シフト",
+      "ConsumableReloadTime": "消耗品再装填時間（秒）",
+      "torpedoReloaderAdditionalConsumables": "魚雷装填手の追加消耗品",
+      "torpedoReloaderReloadCoeff": "魚雷装填手の装填係数",
+      "torpedoSpeedMultiplier": "魚雷速度倍率"
     }
   },
   "viewMode": {

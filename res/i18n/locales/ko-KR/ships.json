@@ -278,6 +278,7 @@
     "reset": "초기화",
     "tier": "티어 {n}",
     "locked": "잠김 — 하위 티어에 {n}포인트 필요",
+    "notApplicable": "이 함선에는 사용 불가",
     "maxed": "최대",
     "noTree": "이 함종에는 아직 스킬 트리가 없습니다.",
     "rank": "랭크 {n}",
@@ -396,6 +397,38 @@
       "submarineLocatorReloadCoeff": "잠수함 탐지기 재장전 시간",
       "burnChanceFactorBig": "HE탄 화재 확률",
       "burnChanceFactorSmall": "HE탄 화재 확률"
+    }
+  },
+  "talent": {
+    "effect": {
+      "GMShotDelay": "주포 재장전 계수",
+      "GMShotDelayUI": "주포 재장전 계수",
+      "GTShotDelay": "어뢰 재장전 계수",
+      "GTShotDelayUI": "어뢰 재장전 계수",
+      "GSShotDelay": "부포 재장전 계수",
+      "GSMShotDelay": "부포 재장전 계수",
+      "planeSpawnTime": "항공기 이륙 시간 계수",
+      "planeSpawnTimeUI": "항공기 이륙 시간 계수",
+      "planeSpeed": "항공기 속도 계수",
+      "planeSpeedUI": "항공기 속도 계수",
+      "workTime": "효과 지속 시간(초)",
+      "speedCoef": "속도 계수",
+      "regenerationHPSpeed": "초당 회복 계수",
+      "regenerationHPSpeedUnits": "초당 회복량",
+      "ignoreRegenLimit": "회복 한도 무시 횟수",
+      "scaleRegenWithShipTier": "함티어 비례 회복",
+      "additionalConsumables": "추가 소모품 수",
+      "planeAdditionalConsumables": "항공기 추가 소모품 수",
+      "ConsumablesWorkTime": "소모품 작용 시간(초)",
+      "burnChanceBonus": "화재율 보너스",
+      "burnChanceFactorBig": "대화재 발생 계수",
+      "floodChanceFactor": "침수 계수",
+      "crashCrew": "손상 관리 보너스",
+      "shootShift": "탄착군 산개 시프트",
+      "ConsumableReloadTime": "소모품 재장전 시간(초)",
+      "torpedoReloaderAdditionalConsumables": "어뢰 재장전수 추가 소모품",
+      "torpedoReloaderReloadCoeff": "어뢰 재장전수 장전 계수",
+      "torpedoSpeedMultiplier": "어뢰 속도 배율"
     }
   },
   "viewMode": {

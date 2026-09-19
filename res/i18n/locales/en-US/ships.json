@@ -278,6 +278,7 @@
     "reset": "Reset",
     "tier": "Tier {n}",
     "locked": "Locked — needs {n} points in lower tiers",
+    "notApplicable": "Not available on this ship",
     "maxed": "Max",
     "noTree": "No skill tree for this ship type yet.",
     "rank": "Rank {n}",
@@ -396,6 +397,38 @@
       "submarineLocatorReloadCoeff": "Submarine locator reload",
       "burnChanceFactorBig": "HE shell fire chance",
       "burnChanceFactorSmall": "HE shell fire chance"
+    }
+  },
+  "talent": {
+    "effect": {
+      "GMShotDelay": "Main battery reload coeff.",
+      "GMShotDelayUI": "Main battery reload coeff.",
+      "GTShotDelay": "Torpedo reload coeff.",
+      "GTShotDelayUI": "Torpedo reload coeff.",
+      "GSShotDelay": "Secondary battery reload coeff.",
+      "GSMShotDelay": "Secondary battery reload coeff.",
+      "planeSpawnTime": "Aircraft takeoff time coeff.",
+      "planeSpawnTimeUI": "Aircraft takeoff time coeff.",
+      "planeSpeed": "Aircraft speed coeff.",
+      "planeSpeedUI": "Aircraft speed coeff.",
+      "workTime": "Effect duration (s)",
+      "speedCoef": "Speed coefficient",
+      "regenerationHPSpeed": "HP regen coeff. per second",
+      "regenerationHPSpeedUnits": "HP restored per second",
+      "ignoreRegenLimit": "Regen-cap overrides",
+      "scaleRegenWithShipTier": "Scale regen with ship tier",
+      "additionalConsumables": "Extra consumable charges",
+      "planeAdditionalConsumables": "Extra aircraft consumable charges",
+      "ConsumablesWorkTime": "Consumable action time (s)",
+      "burnChanceBonus": "Fire chance bonus",
+      "burnChanceFactorBig": "Double-fire chance factor",
+      "floodChanceFactor": "Flooding chance factor",
+      "crashCrew": "Damage-control bonus",
+      "shootShift": "Firing spread shift",
+      "ConsumableReloadTime": "Consumable reload time (s)",
+      "torpedoReloaderAdditionalConsumables": "Torpedo reloader extra charges",
+      "torpedoReloaderReloadCoeff": "Torpedo reloader reload coeff.",
+      "torpedoSpeedMultiplier": "Torpedo speed multiplier"
     }
   },
   "viewMode": {
