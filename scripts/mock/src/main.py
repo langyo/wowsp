@@ -413,20 +413,57 @@ async def cmd_lookup_players_stats_batch(request: Request) -> list:
 @app.post("/api/lookup_player_ship_stats")
 async def cmd_lookup_player_ship_stats(request: Request) -> list:
     body = await request.json()
+    _ = body.get("accountId")
     return [
         {"shipId": 4265588720, "name": "Nagato", "battles": 320, "wins": 176,
-         "damageCaused": 0, "frags": 0, "survivedBattles": 120,
-         "winrate": 55.0, "avgDamage": 68200, "lastBattleTime": 0},
+         "damageCaused": 21_824_000, "frags": 412, "survivedBattles": 120,
+         "winrate": 55.0, "avgDamage": 68200, "lastBattleTime": 0,
+         "pr": 1750, "avgXp": 1650,
+         "modes": {
+             "solo": {"battles": 200, "wins": 106, "damageCaused": 13_600_000,
+                      "frags": 254, "survivedBattles": 76, "winrate": 53.0,
+                      "avgDamage": 68000},
+             "div2": {"battles": 80, "wins": 46, "damageCaused": 5_500_000,
+                      "frags": 104, "survivedBattles": 28, "winrate": 57.5,
+                      "avgDamage": 68750},
+             "div3": {"battles": 40, "wins": 24, "damageCaused": 2_724_000,
+                      "frags": 54, "survivedBattles": 16, "winrate": 60.0,
+                      "avgDamage": 68100},
+             "coop": {"battles": 12, "wins": 10, "damageCaused": 500_000,
+                      "frags": 18, "survivedBattles": 8, "winrate": 83.3,
+                      "avgDamage": 41666},
+             "ranked": None}},
         {"shipId": 4287542992, "name": "Zao", "battles": 210, "wins": 110,
-         "damageCaused": 0, "frags": 0, "survivedBattles": 80,
-         "winrate": 52.4, "avgDamage": 78500, "lastBattleTime": 0},
+         "damageCaused": 16_485_000, "frags": 301, "survivedBattles": 80,
+         "winrate": 52.4, "avgDamage": 78500, "lastBattleTime": 0,
+         "pr": 1510, "avgXp": 1780, "modes": None},
         {"shipId": 4078352176, "name": "U-69", "battles": 150, "wins": 68,
-         "damageCaused": 0, "frags": 0, "survivedBattles": 55,
-         "winrate": 45.3, "avgDamage": 21000, "lastBattleTime": 0},
+         "damageCaused": 3_150_000, "frags": 142, "survivedBattles": 55,
+         "winrate": 45.3, "avgDamage": 21000, "lastBattleTime": 0,
+         "pr": 940, "avgXp": 1120, "modes": None},
         {"shipId": 4267685872, "name": "Shinano", "battles": 40, "wins": 18,
          "damageCaused": 0, "frags": 0, "survivedBattles": 10,
-         "winrate": 45.0, "avgDamage": 0, "lastBattleTime": 0},
+         "winrate": 45.0, "avgDamage": 0, "lastBattleTime": 0,
+         "pr": 920, "avgXp": None, "modes": None},
     ]
+
+
+@app.post("/api/get_ship_server_stats")
+async def cmd_get_ship_server_stats(request: Request) -> dict | None:
+    """Mirror of the Rust command's happy path: a few well-known mock ships
+    have server samples (Nagato / Zao / U-69), anything else has none."""
+    body = await request.json()
+    ship_id = body.get("shipId")
+    samples = {
+        4265588720: (63_100, 0.94, 50.02),
+        4287542992: (89_400, 0.86, 49.55),
+        4078352176: (24_800, 0.71, 49.90),
+    }
+    sample = samples.get(ship_id)
+    if sample is None:
+        return None
+    return {"shipId": ship_id, "avgDamage": sample[0], "avgFrags": sample[1],
+            "winrate": sample[2], "generatedAt": 1_700_000_000, "fromCache": False}
 
 
 @app.post("/api/get_ranked_stats")

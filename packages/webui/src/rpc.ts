@@ -49,6 +49,7 @@ export const RPC = {
   get_player_trend: "get_player_trend",
   get_patches: "get_patches",
   get_community_ship_trend: "get_community_ship_trend",
+  get_ship_server_stats: "get_ship_server_stats",
   capture_main_window: "capture_main_window",
   install_overlay_mod: "install_overlay_mod",
   uninstall_overlay_mod: "uninstall_overlay_mod",

@@ -16,6 +16,8 @@ import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import BuildPlanner from "./BuildPlanner";
+import ShipMyStatsPanel from "./ShipMyStatsPanel";
+import ServerTrendPanel from "./ServerTrendPanel";
 import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
 import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
@@ -27,16 +29,31 @@ import "./ShipDetailModal.scss";
 /**
  * Ship detail modal with tabs:
  *  - Specs: WG default_profile fields (HP / artillery / mobility / etc.)
- *  - Armor & Ballistics: GameParams lazy-load (wowsunpack JSON)
- *  - My Stats: per-player per-ship stats + trend line
- *  - Server Trend: community trend
+ *  - My Stats: per-player per-ship stats + recent windows + trend line
+ *  - Server Trend: wows-numbers server-wide averages + community trend
  *  - Captain Skills: skill planner + data observer (replaces 2D/3D preview)
+ *
+ * Open contexts differ: the encyclopedia opens on "specs" with the
+ * holographic stage visible; water-table panels (`source: "water"`) open on
+ * "my stats" with the stage collapsed (one click brings it back). The
+ * accountId/realm props pin whose per-ship stats "My Stats" shows — the
+ * lookup view passes the searched player, otherwise the bound account.
  */
 export default defineComponent({
   name: "ShipDetailModal",
   props: {
     ship: { type: Object as () => ShipInfo | null, default: null },
     gameRoot: { type: String, default: "" },
+    /** Where the modal was opened from — decides the default tab and whether
+     *  the holographic stage starts expanded or collapsed. */
+    source: {
+      type: String as () => "encyclopedia" | "water",
+      default: "encyclopedia",
+    },
+    /** Player whose per-ship stats the "My Stats" tab shows. Falls back to
+     *  the bound account when omitted (encyclopedia context). */
+    accountId: { type: Number as () => number | null, default: null },
+    realm: { type: String as () => string | null, default: null },
   },
   emits: {
     close: () => true,
@@ -48,6 +65,10 @@ export default defineComponent({
     const toast = useToast();
 
     const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
+
+    /** Holographic stage collapsed (water-table opens hidden; the toggle in
+     *  the stage's control row brings it back). */
+    const stageHidden = ref(false);
 
     // ── Build-planner state (skills / commander / flags / upgrades / HP) ──
     const build = ref<PlannerBuild>(emptyBuild());
@@ -111,9 +132,21 @@ export default defineComponent({
 
     // ── My Stats tab: lazy player ship stats + trend ──────────────────────
     const myStatsLoaded = ref(false);
+
+    /** Whose stats the My Stats tab shows: the explicit player context
+     *  (water-table opens pass the viewed player) or the bound account. */
+    const playerCtx = computed(() => {
+      if (props.accountId != null && props.realm) {
+        return { accountId: props.accountId, realm: props.realm };
+      }
+      return accounts.activeAccount
+        ? { accountId: accounts.activeAccount.accountId, realm: accounts.activeAccount.realm }
+        : null;
+    });
+
     async function loadMyStats() {
       if (myStatsLoaded.value) return;
-      const acc = accounts.activeAccount;
+      const acc = playerCtx.value;
       if (!acc || !props.ship) return;
       myStatsLoaded.value = true;
       void shipStats.load(acc.accountId, acc.realm).catch(() => {});
@@ -123,7 +156,11 @@ export default defineComponent({
     watch(
       () => props.ship,
       (s) => {
-        tab.value = "specs";
+        // Water-table opens land straight on My Stats with the hologram
+        // collapsed; encyclopedia opens keep the specs-first full stage.
+        const water = props.source === "water";
+        tab.value = water ? "mystats" : "specs";
+        stageHidden.value = water;
         gameparams.value = null;
         gpFetched.value = false;
         gpError.value = null;
@@ -132,6 +169,7 @@ export default defineComponent({
         if (s) {
           void loadGameparams();
           void trends.loadCommunity(s.shipId);
+          if (water) void loadMyStats();
         }
       },
       { immediate: true },
@@ -145,9 +183,20 @@ export default defineComponent({
     const open = computed(() => props.ship !== null);
 
     const myShipStats = computed(() => {
-      const acc = accounts.activeAccount;
+      const acc = playerCtx.value;
       if (!acc || !props.ship) return null;
       return shipStats.getShip(acc.accountId, acc.realm, props.ship.shipId);
+    });
+
+    /** Player-side numbers feeding the server-trend comparison table. */
+    const serverCompare = computed(() => {
+      const s = myShipStats.value;
+      if (!s || s.battles <= 0) return null;
+      return {
+        winrate: s.winrate,
+        avgDamage: s.avgDamage,
+        avgFrags: s.frags / Math.max(1, s.battles),
+      };
     });
 
     const relevantPatches = computed(() => {
@@ -263,11 +312,22 @@ export default defineComponent({
         {!props.ship ? null : (
           <div class="ship-detail">
             {/* holographic stage: shown for all tabs except skill (where the
-                build planner replaces it) */}
+                build planner replaces it). Water-table opens start with the
+                stage collapsed — only its control row (3D/2D + visibility
+                toggle) remains, everything else is truly unmounted. */}
             {tab.value !== "skill" ? (
               <>
-                <ShipStage ref={stageRef} ship={props.ship} armorZones={armorZones.value} waterlineDraft={waterlineDraft.value} />
-                <WeaponBar gameparams={gameparams.value as Record<string, unknown> | null} onFocus={onWeaponFocus} />
+                <ShipStage
+                  ref={stageRef}
+                  ship={props.ship}
+                  armorZones={armorZones.value}
+                  waterlineDraft={waterlineDraft.value}
+                  hidden={stageHidden.value}
+                  onUpdate:hidden={(v: boolean) => (stageHidden.value = v)}
+                />
+                {!stageHidden.value ? (
+                  <WeaponBar gameparams={gameparams.value as Record<string, unknown> | null} onFocus={onWeaponFocus} />
+                ) : null}
               </>
             ) : null}
 
@@ -324,20 +384,12 @@ export default defineComponent({
                   <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
                 ) : tab.value === "mystats" ? (
                 <div class="ship-detail__mystats" key="mystats">
-                  {myShipStats.value ? (
-                    <div class="ship-detail__mystats-grid">
-                      <Stat label={t("stats.battles")} value={String(myShipStats.value.battles)} />
-                      <Stat
-                        label={t("stats.winrate")}
-                        value={`${myShipStats.value.winrate.toFixed(1)}%`}
-                        color={winrateColor(myShipStats.value.winrate)}
-                      />
-                      <Stat label={t("stats.avgDamage")} value={myShipStats.value.avgDamage.toFixed(0)} />
-                      <Stat label={t("stats.kdRatio")} value={(myShipStats.value.frags / Math.max(1, myShipStats.value.battles - myShipStats.value.survivedBattles)).toFixed(2)} />
-                    </div>
-                  ) : (
-                    <p>{t("ships.detail.noMyStats")}</p>
-                  )}
+                  <ShipMyStatsPanel
+                    stats={myShipStats.value}
+                    accountId={playerCtx.value?.accountId ?? null}
+                    realm={playerCtx.value?.realm ?? null}
+                    loading={shipStats.loading}
+                  />
 
                   {trends.playerTrend && trends.playerTrend.buckets.length > 0 ? (
                     <div class="ship-detail__trend">
@@ -351,11 +403,13 @@ export default defineComponent({
                 </div>
               ) : tab.value === "community" ? (
                 <div class="ship-detail__community" key="community">
+                  <ServerTrendPanel shipId={props.ship.shipId} compare={serverCompare.value} />
                   {trends.communityTrend?.available ? (
-                    <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
-                  ) : (
-                    <p>{t("ships.detail.communityUnavailable")}</p>
-                  )}
+                    <div class="ship-detail__trend">
+                      <h4>{t("trend.winrateOverTime")}</h4>
+                      <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div class="ship-detail__skill" key="skill">
@@ -448,25 +502,6 @@ const SpecsPanel = defineComponent({
 });
 
 
-
-const Stat = defineComponent({
-  name: "Stat",
-  props: {
-    label: { type: String, required: true },
-    value: { type: String, required: true },
-    color: { type: String, default: undefined },
-  },
-  setup(props) {
-    return () => (
-      <div class="stat">
-        <span class="stat__label">{props.label}</span>
-        <span class="stat__value" style={props.color ? { color: props.color } : undefined}>
-          {props.value}
-        </span>
-      </div>
-    );
-  },
-});
 
 const TrendBars = defineComponent({
   name: "TrendBars",

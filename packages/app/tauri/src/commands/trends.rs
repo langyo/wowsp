@@ -11,15 +11,19 @@
 //! summary. This module just reads + returns them; content curation is out of
 //! scope (future work: scrape WG devblogs / HaoJian patch notes).
 //!
-//! Community-wide per-ship trends (the "server average WR over versions"
-//! chart that wows-numbers shows) have no clean data source — WG's public API
-//! doesn't aggregate across players, and wows-numbers blocks scraping. We
-//! expose the `get_community_ship_trend` contract returning `available: false`
-//! so the frontend can render a clean "data source pending" placeholder.
+//! Community-wide per-ship data comes from two sources:
+//!  - `get_ship_server_stats`: wows-numbers' public expected-values JSON —
+//!    the server-wide average damage / frags / win rate per ship. Fetched
+//!    live with a 7-day on-disk cache (stale cache still answers offline).
+//!  - `get_community_ship_trend`: a curated `community/<shipId>.json`
+//!    version-bucket cache for the "server average WR over versions" chart
+//!    WG's public API can't provide (they don't aggregate across players).
 
 use std::fs;
 
-use wowsp_tauri_shared::{CommunityTrend, PatchNote, StatsSnapshot, TrendBucket, TrendResult};
+use wowsp_tauri_shared::{
+    CommunityTrend, PatchNote, ShipServerStats, StatsSnapshot, TrendBucket, TrendResult,
+};
 
 /// Compute the per-version trend for a player. Reads snapshots from
 /// `ship-stats`'s persisted history and overlays any applicable patch notes.
@@ -61,6 +65,122 @@ pub fn get_community_ship_trend(ship_id: i64) -> CommunityTrend {
         ship_id,
         buckets: Vec::new(),
     }
+}
+
+// ── Server-wide per-ship averages (wows-numbers expected values) ─────────
+
+/// URL of wows-numbers' public expected-values JSON: mean per-battle damage /
+/// frags / win rate per ship across the population they track. Entries can
+/// also be an empty array (ship with no sample), which must read as "no data".
+const EXPECTED_VALUES_URL: &str = "https://api.wows-numbers.com/personal/rating/expected/json/";
+/// On-disk cache file (under the appdata `community/` dir).
+const EXPECTED_VALUES_FILE: &str = "community/expected-values.json";
+/// Refresh cadence for the cache — the dataset only moves slowly.
+const EXPECTED_VALUES_TTL_SECS: u64 = 7 * 24 * 60 * 60;
+
+/// Server-wide averages for one ship, or None when the ship isn't in the
+/// dataset. `Err` means no usable data at all (network down and no cache).
+#[tauri::command]
+pub async fn get_ship_server_stats(ship_id: i64) -> Result<Option<ShipServerStats>, String> {
+    let cached = read_expected_values();
+    let (raw, from_cache) = if let Some(raw) = cached.filter(|_| expected_values_fresh()) {
+        (raw, true)
+    } else {
+        match fetch_and_cache_expected_values().await {
+            Ok(raw) => (raw, false),
+            Err(e) => {
+                // Offline (or wows-numbers hiccup): a stale cache still answers.
+                match read_expected_values() {
+                    Some(raw) => (raw, true),
+                    None => return Err(e),
+                }
+            },
+        }
+    };
+    Ok(lookup_ship_server_stats(&raw, ship_id, from_cache))
+}
+
+fn expected_values_path() -> Result<std::path::PathBuf, String> {
+    Ok(appdata_dir()?.join(EXPECTED_VALUES_FILE))
+}
+
+/// The cached expected-values document, any age. None when never fetched.
+fn read_expected_values() -> Option<String> {
+    appdata_read(EXPECTED_VALUES_FILE.into()).ok().flatten()
+}
+
+/// Whether the cache exists and was written within the TTL.
+fn expected_values_fresh() -> bool {
+    let Ok(path) = expected_values_path() else {
+        return false;
+    };
+    let Ok(meta) = fs::metadata(&path) else {
+        return false;
+    };
+    match meta.modified() {
+        Ok(written) => std::time::SystemTime::now()
+            .duration_since(written)
+            .map(|age| age.as_secs() <= EXPECTED_VALUES_TTL_SECS)
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+/// Validate a downloaded expected-values payload BEFORE it may overwrite good
+/// cached data — wows-numbers downtime has served HTML error pages with a 200
+/// status. The document must parse and its `data` object must be non-empty.
+fn validate_expected_values(raw: &str) -> Result<(), String> {
+    let v: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("expected-values JSON: {e}"))?;
+    let empty = v
+        .get("data")
+        .and_then(|d| d.as_object())
+        .map(|o| o.is_empty())
+        .unwrap_or(true);
+    if empty {
+        return Err("expected-values response contained no ship data".to_string());
+    }
+    Ok(())
+}
+
+/// Fetch the expected-values document, validate it, and cache it to disk.
+/// Returns the raw document on success.
+async fn fetch_and_cache_expected_values() -> Result<String, String> {
+    let client = crate::commands::network::http_client_builder()?
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    let bytes = client
+        .get(EXPECTED_VALUES_URL)
+        .send()
+        .await
+        .map_err(|e| format!("expected-values request: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("expected-values status: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("expected-values body: {e}"))?
+        .to_vec();
+    let raw = String::from_utf8(bytes).map_err(|_| "expected-values: non-UTF8 body".to_string())?;
+    validate_expected_values(&raw)?;
+    let _ = appdata_write(EXPECTED_VALUES_FILE.into(), raw.clone());
+    Ok(raw)
+}
+
+/// Pull one ship's server averages out of an expected-values document.
+/// Empty-array entries (no sample) and unknown ids yield None.
+fn lookup_ship_server_stats(raw: &str, ship_id: i64, from_cache: bool) -> Option<ShipServerStats> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let entry = v.get("data")?.get(ship_id.to_string())?;
+    let obj = entry.as_object()?;
+    Some(ShipServerStats {
+        ship_id,
+        avg_damage: obj.get("average_damage_dealt")?.as_f64()?,
+        avg_frags: obj.get("average_frags")?.as_f64()?,
+        winrate: obj.get("win_rate")?.as_f64()?,
+        generated_at: v.get("time").and_then(|t| t.as_i64()).unwrap_or(0),
+        from_cache,
+    })
 }
 
 /// Bucket a snapshot time series by `game_version`. Within each version
@@ -163,6 +283,18 @@ fn appdata_read(file: String) -> Result<Option<String>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("read {path:?}: {e}")),
     }
+}
+
+fn appdata_write(file: String, content: String) -> Result<(), String> {
+    let dir = appdata_dir()?;
+    let path = dir.join(&file);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
+    }
+    let tmp = dir.join(format!("{file}.tmp"));
+    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -277,5 +409,74 @@ mod tests {
         // Should not error and should be a vec (likely empty unless tests
         // in this run wrote one).
         assert!(patches.iter().all(|p| !p.version.is_empty()));
+    }
+
+    // ── server-wide averages (expected values) ───────────────────────────
+
+    /// Minimal real-shape expected-values document (values entry + `[]` entry).
+    fn expected_values_doc() -> String {
+        serde_json::json!({
+            "time": 1700000000_i64,
+            "data": {
+                "3374266064": {
+                    "average_damage_dealt": 61228.37,
+                    "average_frags": 0.769,
+                    "win_rate": 50.77
+                },
+                "3330258928": []
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn validate_accepts_real_shape() {
+        assert!(validate_expected_values(&expected_values_doc()).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_html_and_empty() {
+        let html = "<!DOCTYPE html><html><body>503 Service Unavailable</body></html>";
+        assert!(validate_expected_values(html).is_err());
+        let empty = r#"{"time":123,"data":{}}"#;
+        assert!(validate_expected_values(empty).is_err());
+        let no_data = r#"{"time":123}"#;
+        assert!(validate_expected_values(no_data).is_err());
+    }
+
+    #[test]
+    fn lookup_returns_values_for_sampled_ships_only() {
+        let raw = expected_values_doc();
+        let stats = lookup_ship_server_stats(&raw, 3374266064, false).unwrap();
+        assert_eq!(stats.ship_id, 3374266064);
+        assert!((stats.avg_damage - 61228.37).abs() < 0.01);
+        assert!((stats.avg_frags - 0.769).abs() < 0.001);
+        assert!((stats.winrate - 50.77).abs() < 0.01);
+        assert_eq!(stats.generated_at, 1700000000);
+        assert!(!stats.from_cache);
+        // `[]` entry = no sample for that ship.
+        assert!(lookup_ship_server_stats(&raw, 3330258928, true).is_none());
+        // Unknown ship id.
+        assert!(lookup_ship_server_stats(&raw, 9999999999, true).is_none());
+    }
+
+    #[test]
+    fn lookup_survives_garbage_document() {
+        assert!(lookup_ship_server_stats("not json", 1, true).is_none());
+    }
+
+    #[test]
+    fn expected_values_cache_roundtrip() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        // Write via the same path the fetcher caches to, then read back.
+        let file = format!("community/expected-values-test_{ts}.json");
+        appdata_write(file.clone(), expected_values_doc()).unwrap();
+        let read = appdata_read(file.clone()).unwrap().unwrap();
+        assert!(lookup_ship_server_stats(&read, 3374266064, true).is_some());
+        let path = appdata_dir().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
     }
 }

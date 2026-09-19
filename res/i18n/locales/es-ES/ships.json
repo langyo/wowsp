@@ -80,12 +80,13 @@
     "noImage": "No hay imagen disponible.",
     "noModel": "Este buque aún no tiene modelo 3D horneado. Ejecuta `just convert-ship --name <model>` + `just bake-model` para generar uno.",
     "noMyStats": "Vincula una cuenta: aún no tienes batallas en este buque.",
-    "communityUnavailable": "La fuente de datos de la tendencia de la comunidad aún no está conectada. Mostrará la tasa de victorias media del servidor por versión cuando se conecte un socio de backend.",
     "ballisticsApprox": "Las curvas de penetración son una estimación derivada de la masa del proyectil / airDrag / krupp — no el modelo exacto del juego.",
     "noBallistics": "No se pudo extraer datos de blindaje / balística de GameParams para este buque.",
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
-      "holo": "Holograma"
+      "holo": "Holograma",
+      "hide": "Ocultar holograma",
+      "show": "Mostrar holograma"
     },
     "weapon": {
       "mainGun": "Batería principal",
@@ -125,6 +126,30 @@
         "overpen": "Sobrepenetración",
         "bounce": "Rebote"
       }
+    },
+    "openHint": "Haz clic para ver los detalles del barco",
+    "my": {
+      "career": "Todas las batallas",
+      "recent": "Rendimiento reciente",
+      "range1d": "Últ. 1 día",
+      "range7d": "Últ. 7 días",
+      "range30d": "Últ. 30 días",
+      "avgFrags": "Bajas medias",
+      "noBaseline": "Aún no hay base histórica"
+    },
+    "server": {
+      "title": "Promedios del servidor",
+      "winrate": "Win rate medio del servidor",
+      "avgDamage": "Daño medio del servidor",
+      "avgFrags": "Bajas medias del servidor",
+      "source": "Fuente: muestra del servidor de wows-numbers",
+      "updatedAt": "Muestra generada el {date}",
+      "cached": "caché",
+      "notFound": "Aún no hay muestra del servidor para este barco.",
+      "failed": "Error al obtener datos del servidor: {error}",
+      "compareTitle": "Servidor vs. jugador",
+      "colServer": "Servidor",
+      "colPlayer": "Jugador"
     }
   },
   "armor": {

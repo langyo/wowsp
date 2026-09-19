@@ -80,12 +80,13 @@
     "noImage": "No image available.",
     "noModel": "No 3D model baked for this ship yet. Run `just convert-ship --name <model>` + `just bake-model` to generate one.",
     "noMyStats": "Bind an account and you have no battles in this ship yet.",
-    "communityUnavailable": "Community trend data source is not connected yet. This will show server-average winrate by version once a backend partner is wired in.",
     "ballisticsApprox": "Penetration curves are an estimate derived from shell mass / airDrag / krupp — not the exact in-game model.",
     "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
     "stage": {
       "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
-      "holo": "Hologram"
+      "holo": "Hologram",
+      "hide": "Hide hologram",
+      "show": "Show hologram"
     },
     "weapon": {
       "mainGun": "Main Battery",
@@ -125,6 +126,30 @@
         "overpen": "Overpen",
         "bounce": "Bounce"
       }
+    },
+    "openHint": "Click to open the ship detail",
+    "my": {
+      "career": "All battles",
+      "recent": "Recent form",
+      "range1d": "Last 1 day",
+      "range7d": "Last 7 days",
+      "range30d": "Last 30 days",
+      "avgFrags": "Avg. kills",
+      "noBaseline": "No history baseline yet"
+    },
+    "server": {
+      "title": "Server averages",
+      "winrate": "Server avg. win rate",
+      "avgDamage": "Server avg. damage",
+      "avgFrags": "Server avg. kills",
+      "source": "Source: wows-numbers server sample",
+      "updatedAt": "Sample generated {date}",
+      "cached": "cached",
+      "notFound": "No server sample for this ship yet.",
+      "failed": "Failed to fetch server data: {error}",
+      "compareTitle": "Server vs. player",
+      "colServer": "Server",
+      "colPlayer": "Player"
     }
   },
   "armor": {
