@@ -79,6 +79,10 @@ interface OverlayAnchor {
    *  in-game panel sorts rows its own way, which is what the matcher
    *  exists to fix. */
   rowPlayers?: (string | null)[] | null;
+  /** Per-row alive classification read off the same name strips (sunk rows
+   *  render dim gray in-game). Same length/order as rowCenters; true =
+   *  alive; null/absent = unknown (treat every row as alive). */
+  rowAlive?: boolean[] | null;
   /** True when recognition is enabled but this anchor has no trusted
    *  row→name mapping yet (absent, or an all-null read — nothing
    *  matched): a small "recognizing roster" badge renders over the table
@@ -107,6 +111,17 @@ const locale = new URLSearchParams(window.location.search).get("locale") || "en-
 
 let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
+// Last TRUSTED row→name mapping seen for the current battle (`dateTime`
+// keyed). A fresh anchor arrives before its recognition pass on the very
+// first press of a battle and whenever a re-read matched nothing; falling
+// back to the arena-index guess then would pin stats onto wrong players
+// (the panel re-sorts as ships sink), so the remembered mapping bridges
+// the gap instead. Cleared whenever a different battle's roster lands.
+let trustedRows: {
+  battle: string | null;
+  players: (string | null)[];
+  alive: boolean[] | null;
+} | null = null;
 // Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
 // the wire; null before the first event). Picks the two-level hint copy:
 // only `fallback` is a tried-and-failed state, everything else still reads
@@ -134,6 +149,13 @@ function chipContent(name: string): string {
       ? `<b style="color:${damageColor(st.avgDamage)}">${fmtDamage(st.avgDamage)}</b>`
       : `<b class="muted">—</b>`;
   return `${wr}<span class="sep">·</span>${dmg}`;
+}
+
+/** A row→name payload is usable only when at least one row matched —
+ *  mirrors the watcher's `mapping_untrusted` bar. An all-null read is
+ *  honest silence and must not shadow the remembered mapping. */
+function usableRowPlayers(p: (string | null)[] | null | undefined): (string | null)[] | null {
+  return p && p.some((n) => n != null) ? p : null;
 }
 
 /** Rebuild every chip from the current roster + anchor. */
@@ -167,9 +189,21 @@ function render() {
   const enemies = arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
-  // Row → name recognition payload (optional, PR 3a): present when the
-  // recognizer ran; block offsets mirror the row blocks above.
-  const rowPlayers = anchor.rowPlayers ?? null;
+  // Row → name recognition payload (optional, PR 3a): usable only when at
+  // least one row matched (the watcher's own trust bar — an all-null read
+  // is honest silence). A usable payload is remembered per battle and
+  // bridges the gap while a fresh anchor's recognition has not landed yet;
+  // only when neither exists do the chips fall back to the legacy index
+  // mapping. Alive flags ride along with whichever payload is in force.
+  const anchorPlayers = usableRowPlayers(anchor.rowPlayers);
+  const players =
+    anchorPlayers ??
+    (trustedRows && arena.dateTime != null && trustedRows.battle === arena.dateTime
+      ? usableRowPlayers(trustedRows.players)
+      : null);
+  const aliveArr = players
+    ? (anchorPlayers ? anchor.rowAlive : trustedRows?.alive) ?? null
+    : null;
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
   const fontSize = Math.min(15, Math.max(9, pitch * 0.42));
@@ -190,22 +224,14 @@ function render() {
     list.forEach((v, i) => {
       if (block[i] == null) return;
       const el = document.createElement("div");
-      el.className = `overlay-chip overlay-chip--${side}`;
-      el.style.top = `${block[i] / dpr}px`;
-      el.style.fontSize = `${fontSize.toFixed(1)}px`;
-      if (side === "ally") {
-        // Right edge of the chip just left of the table's left edge.
-        el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
-      } else {
-        // Left edge of the chip just right of the table's right edge.
-        el.style.left = `${tableRight + gap}px`;
-      }
-      if (rowPlayers) {
-        const mapped = rowPlayers[blockOffset + i] ?? null;
+      let sunk = false;
+      if (players) {
+        const mapped = players[blockOffset + i] ?? null;
         if (mapped != null) {
           // Recognized name — exactly a roster nickname, so the stats
           // cache lookup works unchanged.
           el.innerHTML = chipContent(mapped);
+          sunk = aliveArr?.[blockOffset + i] === false;
         } else {
           // This row's player was not recognized: stay silent rather
           // than pinning stats by index guess.
@@ -214,6 +240,17 @@ function render() {
       } else {
         // No recognition payload — legacy index mapping.
         el.innerHTML = chipContent(v.name);
+      }
+      el.className =
+        `overlay-chip overlay-chip--${side}` + (sunk ? " overlay-chip--sunk" : "");
+      el.style.top = `${block[i] / dpr}px`;
+      el.style.fontSize = `${fontSize.toFixed(1)}px`;
+      if (side === "ally") {
+        // Right edge of the chip just left of the table's left edge.
+        el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
+      } else {
+        // Left edge of the chip just right of the table's right edge.
+        el.style.left = `${tableRight + gap}px`;
       }
       root.appendChild(el);
     });
@@ -239,43 +276,71 @@ function render() {
   }
 }
 
+/** Backoff state for a FAILED batch. The backend fails the WHOLE batch on
+ *  any error (WG rate limit, transient network) and tempArenaInfo.json
+ *  never changes mid-battle — no arena-info event will ever re-queue the
+ *  names. Without this retry the affected chips stay "…" for the entire
+ *  battle even after the API recovers (the main window's roster pipeline
+ *  has its own retry; this is the same contract for the overlay page). */
+let inFlight = false;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelayMs = 2000;
+const RETRY_DELAY_MAX_MS = 30000;
+
 function scheduleBatch() {
   if (!arena || !tauri) return;
   // No detected realm → no lookups; chips stay muted ("…") rather than
   // showing numbers fetched from a guessed realm.
   if (!realm) return;
+  // A failed batch owns the retry cadence (backoff below) — a fresh event
+  // (new anchor, new roster read) must not bypass it and hammer the API.
+  if (retryTimer) return;
   for (const v of arena.vehicles) {
     if (AI_NAME.test(v.name)) continue;
     if (!stats.has(cacheKey(v.name))) pending.add(v.name);
   }
-  if (pending.size === 0 || batchTimer) return;
-  batchTimer = setTimeout(async () => {
-    batchTimer = null;
-    const names = [...pending];
-    pending.clear();
-    if (names.length === 0) return;
-    try {
-      const results = (await tauri.core.invoke("lookup_players_stats_batch", {
-        names,
-        realm,
-      })) as Array<Stat | null>;
-      names.forEach((name, i) => {
-        const r = results[i];
-        if (r) {
-          stats.set(cacheKey(name), {
-            winrate: r.winrate ?? null,
-            avgDamage: r.avgDamage ?? null,
-            hidden: r.hidden,
-          });
-        } else {
-          stats.set(cacheKey(name), { winrate: null, avgDamage: null, hidden: false });
-        }
-      });
-      render();
-    } catch {
-      // WG hiccup — chips show "—" until the next roster update re-queues.
-    }
-  }, 250);
+  if (pending.size === 0 || batchTimer || inFlight) return;
+  batchTimer = setTimeout(runBatch, 250);
+}
+
+async function runBatch() {
+  batchTimer = null;
+  if (!tauri || !arena || pending.size === 0 || inFlight) return;
+  const names = [...pending];
+  pending.clear();
+  inFlight = true;
+  try {
+    const results = (await tauri.core.invoke("lookup_players_stats_batch", {
+      names,
+      realm,
+    })) as Array<Stat | null>;
+    names.forEach((name, i) => {
+      const r = results[i];
+      if (r) {
+        stats.set(cacheKey(name), {
+          winrate: r.winrate ?? null,
+          avgDamage: r.avgDamage ?? null,
+          hidden: r.hidden,
+        });
+      } else {
+        stats.set(cacheKey(name), { winrate: null, avgDamage: null, hidden: false });
+      }
+    });
+    // Success: restore the initial cadence for any future failure.
+    retryDelayMs = 2000;
+    render();
+  } catch {
+    // Transient WG hiccup: retry the same (still-uncached) names after a
+    // capped, doubling pause. The chips honestly stay "…" until a retry
+    // lands — never a silently wrong "no data".
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      scheduleBatch();
+    }, retryDelayMs);
+    retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
+  } finally {
+    inFlight = false;
+  }
 }
 
 async function start() {
@@ -293,7 +358,19 @@ async function start() {
     document.documentElement.classList.toggle("overlay-hidden", e.payload !== true);
   });
   await listen("wowsp://arena-info", (e: { payload: unknown }) => {
-    arena = e.payload as ArenaInfo;
+    const next = e.payload as ArenaInfo;
+    // A different battle's roster: drop the remembered row mapping (its
+    // row order belongs to the old battle) and reset the retry cadence —
+    // the new battle's lookups start fresh.
+    if (next?.dateTime !== arena?.dateTime) {
+      trustedRows = null;
+      retryDelayMs = 2000;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    }
+    arena = next;
     scheduleBatch();
   });
   await listen("wowsp://overlay-status", (e: { payload: unknown }) => {
@@ -315,6 +392,19 @@ async function start() {
       } catch {
         // nothing to read — chips stay "…" until an arena event arrives
       }
+    }
+    // Remember every TRUSTED mapping for this battle (AFTER the arena
+    // fallback read above, so the battle key is the real dateTime): a
+    // later anchor that arrives before its own recognition lands (fresh
+    // press re-pinning, or an all-null re-read) renders from the memory
+    // instead of the known-wrong index guess.
+    const players = usableRowPlayers(anchor.rowPlayers);
+    if (players) {
+      trustedRows = {
+        battle: arena?.dateTime ?? null,
+        players,
+        alive: anchor.rowAlive ?? null,
+      };
     }
     render();
   });

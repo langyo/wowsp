@@ -1,16 +1,20 @@
 //! Row → player-name recognition pipeline for the overlay anchor.
 //!
-//! The in-game Tab panel sorts its rows with its own sort, so mapping roster
-//! entries onto detected rows BY INDEX can pin stats onto the wrong player.
-//! This module is the fix's backbone (PR 3a — architecture only):
+//! The in-game Tab panel sorts its rows with its own sort (each team reads
+//! [alive by ship class] ++ [sunk by ship class] and RE-SORTS as ships
+//! sink), so mapping roster entries onto detected rows BY INDEX can pin
+//! stats onto the wrong player. This module is the fix's backbone:
 //!
 //!   1. CROP each detected row's name strip out of the captured frame
 //!      (`overlay_detect::crop_row_name_strips` — pure geometry);
-//!   2. RECOGNIZE the raw text in each strip through a pluggable engine;
+//!   2. RECOGNIZE the raw text in each strip through a pluggable engine,
+//!      and classify each strip ALIVE/SUNK from its brightest-glyph luma
+//!      (sunk rows render dim gray — see `overlay_detect::strip_max_luma`);
 //!   3. MATCH the texts against the arena roster's closed set, per team
 //!      block (`row_match::assign_rows`);
-//!   4. attach the resulting `row_players` to the anchor, keeping the
-//!      `row_centers` order (allies block first, enemies after).
+//!   4. attach the resulting `row_players` + `row_alive` to the anchor,
+//!      keeping the `row_centers` order (allies block first, enemies
+//!      after).
 //!
 //! Every step degrades to `None` on failure — the pipeline must never block
 //! nor panic the Tab watcher, and when it yields nothing the anchor keeps
@@ -203,17 +207,31 @@ pub(crate) struct RowFrame<'a> {
     pub ally_rows: usize,
 }
 
+/// What one recognition pass learned about the detected table's rows:
+/// the matched roster name per row AND the row's alive/sunk classification
+/// (the in-game panel dims sunk rows' name strips to gray — see
+/// `overlay_detect::strip_max_luma`). Both vectors share the
+/// `row_centers` order (allies block first, enemies after) and its length.
+pub(crate) struct RowRecognition {
+    /// Roster nickname per row, `None` where nothing matched (same contract
+    /// as `OverlayAnchor::row_players`).
+    pub names: Vec<Option<String>>,
+    /// Alive flag per row (`true` = alive; unreadable strips default to
+    /// alive — a missing strip must never read as "sunk").
+    pub alive: Vec<bool>,
+}
+
 /// Run the full row → name pipeline for one capture and return the
-/// `row_players` payload for the anchor, or `None` when recognition is off
-/// or produced nothing. Called from `compute_anchor` with the DETECTED
-/// (capture-relative) geometry, BEFORE `build_anchor` re-bases it to the
-/// overlay origin.
+/// `row_players` + `row_alive` payload for the anchor, or `None` when
+/// recognition is off or produced nothing. Called from `compute_anchor`
+/// with the DETECTED (capture-relative) geometry, BEFORE `build_anchor`
+/// re-bases it to the overlay origin.
 ///
 /// Cost contract: with recognition disabled this is one cached settings
 /// read + one `var_os` read and nothing else; the arena-file IO happens
 /// only after at least one row produced text (i.e. never with the null
 /// engine).
-pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<Vec<Option<String>>> {
+pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<RowRecognition> {
     // Settings gate FIRST — roster recognition switched off in the app's
     // settings must skip the whole pipeline (no crops, no OCR): the anchor
     // then keeps `row_players = None`, which the frontend reads as the
@@ -223,8 +241,9 @@ pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<Vec<Option<Strin
     }
     // Env gate — with no engine configured this is the whole function.
     let engine = select_recognizer(std::env::var_os(RECOGNIZER_ENV))?;
-    let texts = recognize_texts(engine.as_ref(), frame);
-    // No row produced any text → recognition yielded nothing usable at all:
+    let (texts, alive) = recognize_row_state(engine.as_ref(), frame);
+    // No row produced any text → recognition yielded nothing usable at all
+    // (alive flags without names cannot be attributed to players either):
     // the anchor keeps row_players = None and the frontend falls back to
     // the historical index mapping.
     if texts.iter().all(Option::is_none) {
@@ -240,12 +259,20 @@ pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<Vec<Option<Strin
     // that vec back to None; instead `compute_anchor` reports the anchor as
     // `row_players_pending` and the Tab watcher's catch-up keeps re-running
     // this pipeline until some row actually matches the roster.
-    Some(row_match_blocks(&texts, &info, frame.ally_rows))
+    Some(RowRecognition {
+        names: row_match_blocks(&texts, &info, frame.ally_rows),
+        alive,
+    })
 }
 
-/// Crops + recognition only (steps 1–2): one raw text per row, `None` for
-/// rows whose strip left the frame or read as nothing. Pure memory work.
-fn recognize_texts(engine: &dyn RowRecognizer, frame: &RowFrame) -> Vec<Option<String>> {
+/// Crops + per-row classification only (steps 1–2): one raw text per row
+/// (`None` for rows whose strip left the frame or read as nothing) plus the
+/// row's alive flag from the same strip's brightest-glyph luma. Pure memory
+/// work — one crop per row feeds both the OCR engine and the luma probe.
+fn recognize_row_state(
+    engine: &dyn RowRecognizer,
+    frame: &RowFrame,
+) -> (Vec<Option<String>>, Vec<bool>) {
     overlay_detect::crop_row_name_strips(
         frame.rgba,
         frame.width,
@@ -255,10 +282,13 @@ fn recognize_texts(engine: &dyn RowRecognizer, frame: &RowFrame) -> Vec<Option<S
         frame.team_split,
         frame.ally_rows,
     )
-    .iter()
+    .into_iter()
     .map(|strip| match strip {
-        Some((buf, w, h)) => engine.recognize(buf, *w, *h),
-        None => None,
+        Some((buf, w, h)) => {
+            let alive = overlay_detect::row_strip_alive(overlay_detect::strip_max_luma(&buf));
+            (engine.recognize(&buf, w, h), alive)
+        },
+        None => (None, true),
     })
     .collect()
 }
@@ -478,12 +508,18 @@ mod tests {
             team_split: 0.5,
             ally_rows: 2,
         };
-        let texts = recognize_texts(&LumaStub, &frame);
+        let (texts, alive) = recognize_row_state(&LumaStub, &frame);
         assert_eq!(texts.len(), 4);
         assert_eq!(texts[0].as_deref(), Some("bright"), "ally row 0 painted");
         assert_eq!(texts[2].as_deref(), Some("bright"), "enemy row 0 painted");
         assert!(texts[1].is_none(), "untouched ally row");
         assert!(texts[3].is_none(), "untouched enemy row");
+        // The painted strips (mean-white glyph fill, luminance 240) classify
+        // alive; the untouched dark rows stay under the threshold — but a
+        // crop that READ nothing still only yields "no text", and the alive
+        // flag is the LUMA decision alone.
+        assert!(alive[0] && alive[2], "bright strips read alive");
+        assert!(!alive[1] && !alive[3], "dark strips read sunk");
     }
 
     #[test]
@@ -759,7 +795,7 @@ mod tests {
             };
 
             let started = std::time::Instant::now();
-            let texts = recognize_texts(engine.as_ref(), &frame);
+            let (texts, alive) = recognize_row_state(engine.as_ref(), &frame);
             let elapsed = started.elapsed();
             let matched = row_match_blocks(&texts, &info, allies);
 
@@ -795,20 +831,23 @@ mod tests {
             );
             println!("   row centers: {:?}", det.row_centers);
             for (i, (text, name)) in texts.iter().zip(&matched).enumerate() {
+                let alive_tag = if alive[i] { "alive" } else { "SUNK " };
                 match (text, name) {
                     (Some(t), Some(n)) => println!(
-                        "  row {i:2}  MATCH {:?} -> {:?} (score {:.3})",
+                        "  row {i:2}  MATCH [{alive_tag}] {:?} -> {:?} (score {:.3})",
                         t,
                         n,
                         score_of(n, t)
                     ),
                     (Some(t), None) => println!(
-                        "  row {i:2}  MISS  {:?} -> no roster name (best {:.3} < {:.2})",
+                        "  row {i:2}  MISS  [{alive_tag}] {:?} -> no roster name (best {:.3} < {:.2})",
                         t,
                         best_in_block(i, t),
                         row_match::MATCH_THRESHOLD
                     ),
-                    (None, _) => println!("  row {i:2}  MISS  (no text read from the strip)"),
+                    (None, _) => {
+                        println!("  row {i:2}  MISS  [{alive_tag}] (no text read from the strip)")
+                    },
                 }
             }
             let hits = matched.iter().filter(|m| m.is_some()).count();

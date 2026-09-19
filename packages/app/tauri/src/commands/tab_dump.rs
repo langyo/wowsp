@@ -343,6 +343,7 @@ mod tests {
             team_split: 0.5,
             table_detected: true,
             row_players: None,
+            row_alive: None,
             row_players_pending: false,
         }
     }
@@ -470,6 +471,7 @@ mod tests {
             team_split: 0.5,
             table_detected: true,
             row_players: None,
+            row_alive: None,
             row_players_pending: false,
         };
         let arena_text = r#"{"dateTime":"20260917T120000","vehicles":[{"id":11}]}"#;
