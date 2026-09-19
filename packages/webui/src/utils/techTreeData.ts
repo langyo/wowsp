@@ -36,9 +36,22 @@ export function techTreeNode(shipId: number): TechTreeNode | null {
   return TREE[String(shipId)] ?? null;
 }
 
+/**
+ * Aliases resolving to this file's (tech_tree.json) nation keys. WG's
+ * encyclopedia API says "europe" while the game files say "pan_europe";
+ * ship_names.json keeps the raw game-file spellings "united_kingdom" and
+ * "russia". The WG API codes uk/ussr are already the stored keys.
+ */
+const NATION_ALIASES: Record<string, string> = {
+  europe: "pan_europe",
+  united_kingdom: "uk",
+  russia: "ussr",
+};
+
 /** Every node belonging to a nation. */
 export function nationNodes(nation: string): TechTreeNode[] {
-  return Object.values(TREE).filter((n) => n.nation === nation);
+  const key = NATION_ALIASES[nation] ?? nation;
+  return Object.values(TREE).filter((n) => n.nation === key);
 }
 
 /**
