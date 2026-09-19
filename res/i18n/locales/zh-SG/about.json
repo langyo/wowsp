@@ -17,5 +17,18 @@
   "issues": "报告问题",
   "license": "许可证",
   "qqGroupNotice": "测试反馈请加 QQ 群：",
-  "qqGroupNumber": "1125770228"
+  "qqGroupNumber": "1125770228",
+  "attribution": {
+    "fontMaoRole": "「神了」印章字样",
+    "fontLuxunRole": "「海猴」「空中小人」「水下小人」印章字样",
+    "bitmapNote": "仅以位图（图形化）形式使用，未随应用分发字体文件。",
+    "wallpaperRole": "默认壁纸作者",
+    "wallpaperNote": "壁纸美术作品，版权归作者所有。",
+    "wallpaperMark": "壁纸",
+    "aperadarRole": "查询逻辑与评分口径的主要来源",
+    "wowsunpackRole": "游戏数据解包（vendored）",
+    "wowscoreRole": "游戏数据模型（vendored）",
+    "hikariRole": "UI 组件库",
+    "devtoolsRole": "Agent 纪律设施（工作区规范与工具链）"
+  }
 }

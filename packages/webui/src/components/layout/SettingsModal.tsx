@@ -1,5 +1,17 @@
 import { computed, defineComponent, onMounted, ref } from "vue";
-import { Check, Monitor, Moon, Sun } from "@lucide/vue";
+import {
+  Check,
+  Copyright,
+  FolderCog,
+  Globe,
+  Info,
+  Languages,
+  Layers,
+  Monitor,
+  Moon,
+  Palette,
+  Sun,
+} from "@lucide/vue";
 
 import { HButton, HInput, HModal, HSelect, HTabs, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 
@@ -13,7 +25,9 @@ import {
   type RosterRecognitionMode,
   type TableAnchorMode,
 } from "@/stores/overlayConfig";
-import AboutModal from "@/components/layout/AboutModal";
+import { AboutContent } from "@/components/layout/AboutModal";
+import AuthorMark from "@/components/base/AuthorMark";
+import { ATTRIBUTIONS } from "@/data/attributions";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import "./SettingsModal.scss";
 
@@ -45,8 +59,38 @@ export default defineComponent({
     const lang = useLanguage();
     const overlayCfg = useOverlayConfigStore();
     const configStore = useConfigStore();
-    const showAbout = ref(false);
     const showGamePath = ref(false);
+
+    // Section navigation — the left rail mirrors the main sidebar's nav look;
+    // only the active section's card renders in the content pane.
+    type SectionId =
+      | "language"
+      | "appearance"
+      | "gamePath"
+      | "network"
+      | "overlay"
+      | "about"
+      | "attributions";
+    const SECTION_ICONS = {
+      language: Languages,
+      appearance: Palette,
+      gamePath: FolderCog,
+      network: Globe,
+      overlay: Layers,
+      about: Info,
+      attributions: Copyright,
+    } as const;
+    const sectionLabels: Record<SectionId, string> = {
+      language: t("settings.language"),
+      appearance: t("settings.themeMode"),
+      gamePath: t("settings.gamePath"),
+      network: t("settings.network"),
+      overlay: t("settings.overlay"),
+      about: t("settings.about"),
+      attributions: t("settings.attributions"),
+    };
+    const sections = Object.keys(sectionLabels) as SectionId[];
+    const section = ref<SectionId>("language");
 
     onMounted(() => {
       void overlayCfg.load();
@@ -127,9 +171,32 @@ export default defineComponent({
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("settings.title")}
-        width="40rem"
+        width="58rem"
       >
         <div class="settings-modal">
+          {/* section rail — same visual language as the main sidebar's nav */}
+          <nav class="settings-modal__rail">
+            {sections.map((id) => {
+              const Icon = SECTION_ICONS[id];
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  class={["settings-modal__rail-item", section.value === id ? "is-active" : ""]}
+                  onClick={() => (section.value = id)}
+                >
+                  <span class="settings-modal__rail-icon">
+                    <Icon size={16} />
+                  </span>
+                  <span>{sectionLabels[id]}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div class="settings-modal__pane">
+          {section.value === "language" ? (
+          <>
           {/* language — two independent dropdowns: UI (app interface) vs data
               (game-asset names: ships/captains/maps). The same language can have
               different official translations across regions, e.g. 国服 simplified
@@ -157,6 +224,10 @@ export default defineComponent({
             <p class="settings-modal__hint">{t("settings.dataLanguageHint")}</p>
           </section>
 
+          </>
+          ) : null}
+          {section.value === "appearance" ? (
+          <>
           {/* appearance — mode, color preset, wallpaper, solar indicator */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.themeMode")}</h2>
@@ -256,6 +327,10 @@ export default defineComponent({
             <p class="settings-modal__hint">{t("settings.geolocationHint")}</p>
           </section>
 
+          </>
+          ) : null}
+          {section.value === "gamePath" ? (
+          <>
           {/* game path — where the armor/ballistics loader + replay list
               read from; opens the same setup modal the first-launch prompt
               uses (detected installs, running-game shortcut, manual pick) */}
@@ -273,6 +348,10 @@ export default defineComponent({
             </div>
           </section>
 
+          </>
+          ) : null}
+          {section.value === "network" ? (
+          <>
           {/* network proxy — applies to every outbound request (stats, model
               pack, updates); resource CDN mirrors remote resources
               independently of the proxy mode */}
@@ -317,6 +396,10 @@ export default defineComponent({
             <p class="settings-modal__hint">{t("settings.resourceCdnHint")}</p>
           </section>
 
+          </>
+          ) : null}
+          {section.value === "overlay" ? (
+          <>
           {/* in-game overlay (Mode 2) — pre-creates the transparent window
               + Tab watcher while the game runs; hold Tab in battle to see
               per-player WR / avg damage over the team list. TWO independent
@@ -361,21 +444,38 @@ export default defineComponent({
             </div>
           </section>
 
+          </>
+          ) : null}
+          {section.value === "about" ? (
+          <>
           {/* about */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.about")}</h2>
-            <div class="settings-modal__about">
-              <HButton variant="secondary" onClick={() => (showAbout.value = true)}>
-                WoWSP — World of WarShip Panel
-              </HButton>
+            <AboutContent />
+          </section>
+          </>
+          ) : null}
+          {/* attributions — partner + asset credits (seal calligraphy fonts,
+              wallpaper art). The same AuthorMark component annotates the
+              desktop wallpaper. */}
+          {section.value === "attributions" ? (
+          <>
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.attributions")}</h2>
+            <p class="settings-modal__hint">{t("settings.attributionsHint")}</p>
+            <div class="settings-modal__attributions">
+              {ATTRIBUTIONS.map((a) => (
+                <div key={a.id} class="settings-modal__attribution">
+                  <AuthorMark name={a.name} url={a.url} role={t(`about.attribution.${a.roleKey}`)} />
+                  {a.noteKey ? <p class="settings-modal__hint">{t(`about.attribution.${a.noteKey}`)}</p> : null}
+                </div>
+              ))}
             </div>
           </section>
+          </>
+          ) : null}
+          </div>
         </div>
-
-        <AboutModal
-          modelValue={showAbout.value}
-          onUpdate:modelValue={(v: boolean) => (showAbout.value = v)}
-        />
 
         <GamePathSetupModal
           modelValue={showGamePath.value}

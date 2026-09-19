@@ -17,5 +17,18 @@
   "issues": "Report an issue",
   "license": "License",
   "qqGroupNotice": "For testing feedback, join our QQ group:",
-  "qqGroupNumber": "1125770228"
+  "qqGroupNumber": "1125770228",
+  "attribution": {
+    "fontMaoRole": "Glyphs of the “神了” seal",
+    "fontLuxunRole": "Glyphs of the “海猴” / “空中小人” / “水下小人” seals",
+    "bitmapNote": "Used as rendered bitmaps (graphic use) — the font files are not distributed with the app.",
+    "wallpaperRole": "Default wallpaper artist",
+    "wallpaperNote": "The wallpaper artwork remains the property of its author.",
+    "wallpaperMark": "Wallpaper",
+    "aperadarRole": "Primary source of the lookup logic and rating conventions",
+    "wowsunpackRole": "Game-data unpacking (vendored)",
+    "wowscoreRole": "Game-data model (vendored)",
+    "hikariRole": "UI component library",
+    "devtoolsRole": "Agent-discipline infrastructure (workspace rules and toolchain)"
+  }
 }

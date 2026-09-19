@@ -17,5 +17,18 @@
   "issues": "문제 보고",
   "license": "라이선스",
   "qqGroupNotice": "테스트 피드백은 QQ 그룹에서:",
-  "qqGroupNumber": "1125770228"
+  "qqGroupNumber": "1125770228",
+  "attribution": {
+    "fontMaoRole": "「神了」인장 글리프",
+    "fontLuxunRole": "「海猴」「空中小人」「水下小人」인장 글리프",
+    "bitmapNote": "비트맵(그래픽) 형태로만 사용되며 폰트 파일은 앱에 포함되지 않습니다.",
+    "wallpaperRole": "기본 배경화면 작가",
+    "wallpaperNote": "배경화면 이미지의 저작권은 작가에게 있습니다.",
+    "wallpaperMark": "배경",
+    "aperadarRole": "조회 로직 및 평가 기준의 주요 출처",
+    "wowsunpackRole": "게임 데이터 언패킹 (vendored)",
+    "wowscoreRole": "게임 데이터 모델 (vendored)",
+    "hikariRole": "UI 컴포넌트 라이브러리",
+    "devtoolsRole": "에이전트 규율 인프라 (워크스페이스 규칙 및 툴체인)"
+  }
 }

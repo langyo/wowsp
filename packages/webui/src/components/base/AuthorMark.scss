@@ -1,0 +1,50 @@
+/* Shared author/attribution mark — one look for every credit (settings
+   attributions list + the desktop wallpaper corner mark). */
+.author-mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+
+  &__prefix {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__name {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-primary));
+    cursor: pointer;
+    transition: opacity var(--duration-short);
+
+    &:hover { opacity: 0.75; }
+  }
+
+  &__role {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* Corner-annotation variant (wallpaper credit over the desktop). */
+  &--compact {
+    position: fixed;
+    right: 0.6rem;
+    bottom: 0.5rem;
+    z-index: 40;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-surface) / 65%);
+    border: 1px solid rgb(var(--color-border) / 20%);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+
+    .author-mark__name {
+      font-size: var(--text-2xs);
+    }
+  }
+}

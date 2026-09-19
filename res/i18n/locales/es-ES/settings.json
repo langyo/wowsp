@@ -41,5 +41,7 @@
   "overlayRosterOcr": "Reconocimiento OCR",
   "overlayRosterOff": "Desactivado (orden de la lista)",
   "overlayFullscreenNote": "※ No disponible en pantalla completa exclusiva: en ese modo la captura de pantalla GDI solo devuelve fotogramas negros y la ventana de superposición no puede situarse sobre una cadena de intercambio a pantalla completa. Configura el modo de visualización del juego en sin bordes o en ventana.",
-  "gamePathChange": "Cambiar…"
+  "gamePathChange": "Cambiar…",
+  "attributions": "Atribuciones",
+  "attributionsHint": "Materiales de colaboradores, proyectos upstream y agradecimientos usados por esta aplicación."
 }

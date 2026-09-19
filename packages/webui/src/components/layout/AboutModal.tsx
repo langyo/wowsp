@@ -29,15 +29,12 @@ const TECH_LINKS = [
   { label: "UnoCSS", url: "https://unocss.dev" },
 ];
 
-export default defineComponent({
-  name: "AboutModal",
-  props: {
-    modelValue: { type: Boolean, default: false },
-  },
-  emits: {
-    "update:modelValue": (_v: boolean) => true,
-  },
-  setup(props, { emit }) {
+/** The About body — logo, version + updater, tech tags, links, the mandatory
+ *  free & open-source notice, license footer, QQ line. Rendered inside the
+ *  AboutModal and inline in the settings modal's 关于 section. */
+export const AboutContent = defineComponent({
+  name: "AboutContent",
+  setup() {
     const version = ref("0.1.0");
     const updater = useUpdaterStore();
 
@@ -53,13 +50,7 @@ export default defineComponent({
     });
 
     return () => (
-      <HModal
-        modelValue={props.modelValue}
-        onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
-        title={t("about.title")}
-        width="26rem"
-      >
-        <div class="about-modal">
+      <div class="about-modal">
           <div class="about-modal__logo">
             <img src="/logo.webp" alt="WoWSP" />
           </div>
@@ -150,6 +141,27 @@ export default defineComponent({
             <strong>{t("about.qqGroupNumber")}</strong>
           </p>
         </div>
+    );
+  },
+});
+
+export default defineComponent({
+  name: "AboutModal",
+  props: {
+    modelValue: { type: Boolean, default: false },
+  },
+  emits: {
+    "update:modelValue": (_v: boolean) => true,
+  },
+  setup(props, { emit }) {
+    return () => (
+      <HModal
+        modelValue={props.modelValue}
+        onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
+        title={t("about.title")}
+        width="26rem"
+      >
+        <AboutContent />
       </HModal>
     );
   },
