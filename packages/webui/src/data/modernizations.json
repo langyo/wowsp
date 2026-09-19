@@ -2,7 +2,12 @@
  {
   "index": "PCM001",
   "name": "PCM001_MainGun_Mod_I",
-  "names": {},
+  "names": {
+   "en": "Main Battery Modification 1",
+   "ja": "主砲改良 1",
+   "zh": "主炮组修改型1",
+   "tw": "主炮組修改型 1"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -18,7 +23,12 @@
  {
   "index": "PCM002",
   "name": "PCM002_Torpedo_Mod_I",
-  "names": {},
+  "names": {
+   "en": "Torpedoes Modification 1",
+   "ja": "魚雷改良 1",
+   "zh": "鱼雷修改型1",
+   "tw": "魚雷修改型 1"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -89,7 +99,12 @@
  {
   "index": "PCM004",
   "name": "PCM004_AirDefense_Mod_I",
-  "names": {},
+  "names": {
+   "en": "AA Guns Modification 1",
+   "ja": "対空兵装改良 1",
+   "zh": "防空炮修改型1",
+   "tw": "防空炮修改型 1"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -111,7 +126,12 @@
  {
   "index": "PCM005",
   "name": "PCM005_SecondaryGun_Mod_I",
-  "names": {},
+  "names": {
+   "en": "Secondary Battery Modification 1",
+   "ja": "副砲改良 1",
+   "zh": "副炮组修改型1",
+   "tw": "副炮組修改型 1"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -133,7 +153,12 @@
  {
   "index": "PCM007",
   "name": "PCM007_Torpedo_Mod_II",
-  "names": {},
+  "names": {
+   "en": "Torpedoes Modification 2",
+   "ja": "魚雷改良 2",
+   "zh": "鱼雷修改型2",
+   "tw": "魚雷修改型 2"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -149,7 +174,12 @@
  {
   "index": "PCM010",
   "name": "PCM010_Airplanes_Mod_II",
-  "names": {},
+  "names": {
+   "en": "Air Groups Modification 2",
+   "ja": "飛行機隊改良 2",
+   "zh": "空军大队修改型2",
+   "tw": "航空大隊修改型 2"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -164,7 +194,12 @@
  {
   "index": "PCM011",
   "name": "PCM011_AirDefense_Mod_II",
-  "names": {},
+  "names": {
+   "en": "AA Guns Modification 2",
+   "ja": "対空兵装改良 2",
+   "zh": "防空炮修改型2",
+   "tw": "防空炮修改型 2"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -194,7 +229,12 @@
  {
   "index": "PCM019",
   "name": "PCM019_SecondaryGun_Mod_III",
-  "names": {},
+  "names": {
+   "en": "Secondary Battery Modification 2",
+   "ja": "副砲改良 2",
+   "zh": "副炮组修改型2",
+   "tw": "副炮組修改型 2"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -761,7 +801,12 @@
  {
   "index": "PCM088",
   "name": "PCM088_AirSupport_Mod_II",
-  "names": {},
+  "names": {
+   "en": "Airstrike Modification 2",
+   "ja": "空襲改良 2",
+   "zh": "空袭修改型2",
+   "tw": "空襲修改型 2"
+  },
   "desc": {},
   "slot": 0,
   "modifiers": {
@@ -984,7 +1029,12 @@
  {
   "index": "PCM021",
   "name": "PCM021_Engine_Mod_I",
-  "names": {},
+  "names": {
+   "en": "Propulsion Modification 1",
+   "ja": "推力改良 1",
+   "zh": "推进系统修改型1",
+   "tw": "推進系統修改型 1"
+  },
   "desc": {},
   "slot": 1,
   "modifiers": {
@@ -1000,7 +1050,12 @@
  {
   "index": "PCM022",
   "name": "PCM022_SteeringGear_Mod_I",
-  "names": {},
+  "names": {
+   "en": "Steering Gears Modification 1",
+   "ja": "操舵装置改良 1",
+   "zh": "操舵装置修改型1",
+   "tw": "操舵裝置修改型 1"
+  },
   "desc": {},
   "slot": 1,
   "modifiers": {
@@ -2247,7 +2302,12 @@
  {
   "index": "PCM008",
   "name": "PCM008_FireControl_Mod_I",
-  "names": {},
+  "names": {
+   "en": "Gun Fire Control System Modification 1",
+   "ja": "射撃管制装置改良 1",
+   "zh": "舰炮火控系统修改型1",
+   "tw": "艦炮射控系統修改型 1"
+  },
   "desc": {},
   "slot": 2,
   "modifiers": {

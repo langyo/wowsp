@@ -154,8 +154,9 @@
   }
 
   /* Armor thickness color axis — bottom-left overlay in armor mode. One
-     evenly divided band segment per game color bucket; the tick labels
-     stagger across two rows so adjacent ranges never collide. */
+     evenly divided band segment per game color bucket; ruler-style numbers
+     sit at the swatch seams (each color spans the gap between its
+     neighbours' boundary values). */
   &__armor-axis {
     position: absolute;
     left: 0.6rem;
@@ -193,16 +194,20 @@
     span { flex: 1 1 0; }
   }
 
+  /* Ruler-style tick row: one boundary number centred under each swatch
+     seam (10 seams for 10 swatches, first and last edge unlabelled). */
   &__armor-axis-ticks {
-    display: grid;
-    grid-template-columns: repeat(10, 1fr);
+    position: relative;
     width: 264px;
+    height: 1.1em;
     font-size: var(--text-2xs);
-    line-height: 1.3;
+    line-height: 1.1;
     color: rgb(var(--color-text));
 
     span {
-      justify-self: center;
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
       white-space: nowrap;
     }
   }

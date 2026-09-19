@@ -1,5 +1,5 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { Coins, Lock, RotateCcw } from "@lucide/vue";
+import { Ban, Coins, Lock, RotateCcw } from "@lucide/vue";
 
 import { HButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -13,7 +13,9 @@ import {
   TIER_UNLOCK,
   skillClassFor,
   skillIconUrl,
+  skillUnavailable,
   type Skill,
+  type SkillRequirement,
 } from "./skillTree";
 import { type PlannerBuild } from "./modifierPipeline";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
@@ -186,32 +188,6 @@ const LOWER_IS_BETTER_EFFECTS = new Set([
  *  multipliers — formatted (and signed) differently from coefficients. */
 const PP_EFFECTS = new Set(["burnChanceFactorBig", "burnChanceFactorSmall"]);
 
-/** Commander-talent modifier keys that are activation plumbing, never
- *  player-visible stats — dropped from the talent rows entirely.
- *  GSMShotDelay is data-dead too: 1.0 in every dict, duplicating the
- *  GSShotDelay row's label as "±0%". */
-const TALENT_HIDDEN_KEYS = new Set([
-  "useShipTierAsWorkTime",
-  "scaleRegenWithShipTier",
-  "ignoreRegenLimit",
-  "rageModeFloorLevel",
-  "GSMShotDelay",
-]);
-/** +N consumable-charge keys (additive counts, not multipliers). */
-const TALENT_COUNT_KEYS = new Set([
-  "additionalConsumables",
-  "planeAdditionalConsumables",
-  "torpedoReloaderAdditionalConsumables",
-]);
-/** Percent-of-max-HP-per-second regen keys (0.000417 = 0.04%/s). */
-const TALENT_RATE_KEYS = new Set(["regenerationHPSpeed"]);
-/** Flat per-second HP keys (300 = 300 HP/s), rendered as a bare number. */
-const TALENT_UNIT_KEYS = new Set(["regenerationHPSpeedUnits"]);
-/** Duration keys, rendered in seconds. */
-const TALENT_SECOND_KEYS = new Set(["workTime"]);
-/** Additive percentage-point talent keys (0.01 = +1pp). */
-const TALENT_POINTS_KEYS = new Set(["burnChanceBonus"]);
-
 /** i18n key exists? (avoids vue-i18n fallback warnings for data-driven keys) */
 function hasMsg(key: string): boolean {
   // te() on the full message schema explodes type instantiation — go loose.
@@ -261,6 +237,38 @@ export default defineComponent({
       return out;
     });
 
+    /** Column count of this class's tree = max(column) + 1 (BB/CA/DD/CV → 6,
+     *  SS → 15). Fixed per class — not per tier — so tier rows stay aligned
+     *  even where a tier has fewer skills (gaps render as placeholders). */
+    const skillColumns = computed(() => {
+      let n = 0;
+      for (const s of tree.value) n = Math.max(n, s.column + 1);
+      return n;
+    });
+
+    function skillBan(skill: Skill): SkillRequirement | null {
+      return skillUnavailable(skill.code, props.ship.defaultProfile as Record<string, any> | null);
+    }
+
+    // A build restored against another hull may carry skills this ship can
+    // no longer pick (no torpedo tubes, no AA…) — prune them out of the
+    // build object itself so the points counter refunds them.
+    watch(
+      () => props.ship,
+      () => {
+        const skills = { ...props.build.skills };
+        let pruned = false;
+        for (const code of Object.keys(skills)) {
+          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, any> | null)) {
+            delete skills[code];
+            pruned = true;
+          }
+        }
+        if (pruned) setBuild({ skills });
+      },
+      { immediate: true },
+    );
+
     function pointsBelowTier(tier: number): number {
       return tree.value.filter((s) => s.tier < tier && props.build.skills[s.code]).length;
     }
@@ -273,7 +281,11 @@ export default defineComponent({
         const skills = { ...props.build.skills };
         delete skills[skill.code];
         setBuild({ skills });
-      } else if (remaining.value > 0 && tierUnlocked(skill.tier)) {
+      } else if (
+        !skillBan(skill) &&
+        remaining.value > 0 &&
+        tierUnlocked(skill.tier)
+      ) {
         setBuild({ skills: { ...props.build.skills, [skill.code]: 1 } });
       }
     }
@@ -310,23 +322,11 @@ export default defineComponent({
         : null,
     );
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
-     *  when their *UI twin is present, internal enums and activation
-     *  plumbing (tier-scaling / regen-cap switches) dropped, and zero-valued
-     *  count / rate / duration plumbing (e.g. "0s" on a tier-scaled duration
-     *  whose real length comes from the hidden switch) skipped. */
+     *  when their *UI twin is present and internal enums dropped. */
     function kvOf(dict: Record<string, unknown>): Array<[string, number]> {
       const kv: Array<[string, number]> = [];
       for (const [k, v] of Object.entries(dict ?? {})) {
         if (typeof v !== "number" || k === "uniqueType") continue;
-        if (TALENT_HIDDEN_KEYS.has(k)) continue;
-        if (
-          v === 0 &&
-          (TALENT_COUNT_KEYS.has(k) ||
-            TALENT_RATE_KEYS.has(k) ||
-            TALENT_UNIT_KEYS.has(k) ||
-            TALENT_SECOND_KEYS.has(k))
-        )
-          continue;
         if (!k.endsWith("UI") && `${k}UI` in dict) continue; // UI twin wins
         kv.push([k, v]);
       }
@@ -348,25 +348,13 @@ export default defineComponent({
       }
       return rows;
     }
-    /** Value text per key semantics: multipliers (the common case) read as
-     *  signed percent of (v−1) via signedPct; consumable-charge keys are
-     *  additive counts; regen rates are percent of max HP per second;
-     *  durations are seconds. */
-    function fmtTalentValue(k: string, v: number): string {
-      if (TALENT_COUNT_KEYS.has(k)) return `+${v}`;
-      if (TALENT_SECOND_KEYS.has(k)) return `${v}s`;
-      if (TALENT_UNIT_KEYS.has(k)) return String(v);
-      if (TALENT_RATE_KEYS.has(k)) {
-        const pct = (v * 100).toFixed(2).replace(/\.?0+$/, "");
-        return `${pct}%`;
-      }
-      if (TALENT_POINTS_KEYS.has(k)) return signedPct(v * 100);
-      return signedPct((v - 1) * 100);
+    function fmtTalentNum(v: number): string {
+      return String(Math.round(v * 10000) / 10000);
     }
-    /** Localized stat label for a talent modifier key, falling back to the
-     *  raw key when a locale misses it (same rule as signal names). */
-    function talentLabel(k: string): string {
-      const key = `ships.skills.talentEffect.${k}`;
+    /** Catalog label for a talent modifier key (ships.talent.effect.*), or
+     *  the raw key when the catalog has no entry for it. */
+    function talentEffectLabel(k: string): string {
+      const key = `ships.talent.effect.${k}`;
       return hasMsg(key) ? t(key) : k;
     }
 
@@ -466,33 +454,24 @@ export default defineComponent({
     /** Ship-gating by GameParams `ships` (full ship names, matched by leading
      *  tech-tree index token). The semantics flip with the mod class:
      *  research-bureau unique mods WHITELIST their ships (Yamato's unique
-     *  upgrade lists Yamato), and so does every entry with NO type
-     *  restriction — the low-tier Aiming Systems Mod 0 names exactly the
-     *  three ships that may mount it. Only broadly-typed regular mods carry
-     *  EXCLUSION lists (Main Gun Mod 3 names the submarines it must not be
-     *  mounted on), so reading those as whitelists would gut the tab. */
+     *  upgrade lists Yamato); every regular mod's list is EXCLUSIONS —
+     *  Main Gun Mod 3 names the submarines it must not be mounted on, so
+     *  reading it as a whitelist would gut the whole upgrades tab. */
     function shipMatches(m: ModernizationEntry): boolean {
       if (!m.ships?.length) return true;
       const index = techTreeNode(props.ship.shipId)?.index ?? null;
       const hit = index != null && m.ships.some((s) => s.split("_")[0] === index);
-      const whitelist = m.tags?.includes("unique") || m.shiptype.length === 0;
-      return whitelist ? hit : !hit;
+      return m.tags?.includes("unique") ? hit : !hit;
     }
     function upgradesForSlot(slot: number): ModernizationEntry[] {
-      return MODERNIZATIONS.filter((m) => {
-        if (m.slot !== slot) return false;
-        // Dead catalog: an entry with no type restriction AND no ship binding
-        // is a legacy upgrade the current game sells nowhere — the unnamed
-        // PCM001_MainGun_Mod_I family plus the named-but-obsolete
-        // 防御型对空火力修改型1 (PCM040) and sub Steering Gear Mod 3 (PCM091).
-        if (m.shiptype.length === 0 && !m.ships?.length) return false;
-        return (
+      return MODERNIZATIONS.filter(
+        (m) =>
+          m.slot === slot &&
           (m.shiptype.length === 0 || m.shiptype.includes(props.ship.type)) &&
           (m.nation.length === 0 || m.nation.includes(gpNation.value)) &&
           (m.shiplevel.length === 0 || m.shiplevel.includes(props.ship.tier)) &&
-          shipMatches(m)
-        );
-      });
+          shipMatches(m),
+      );
     }
     function toggleUpgrade(slot: number, name: string): void {
       const upgrades = { ...props.build.upgrades };
@@ -543,9 +522,59 @@ export default defineComponent({
       if (tree.value.length === 0) {
         return <p class="planner-v__empty">{t("ships.skills.noTree")}</p>;
       }
+      const columns = skillColumns.value;
       return [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
+        // Dense column map — sparse tiers (DD tier-4, the SS tree) carry
+        // intentional gaps that must hold their column position.
+        const byColumn = new Map(tiers.value[tier].map((s) => [s.column, s]));
+        const cells = [];
+        for (let col = 0; col < columns; col++) {
+          const skill = byColumn.get(col);
+          if (!skill) {
+            cells.push(
+              <div class="skill-tile-v skill-tile-v--empty" key={`empty-${tier}-${col}`} />,
+            );
+            continue;
+          }
+          const picked = !!props.build.skills[skill.code];
+          const banned = skillBan(skill);
+          const name = skillName(skill);
+          cells.push(
+            <div
+              class={[
+                "skill-tile-v",
+                picked ? "skill-tile-v--active" : "",
+                banned ? "skill-tile-v--banned" : "",
+              ]}
+              key={skill.code}
+            >
+              <button
+                type="button"
+                class="skill-tile-v__btn"
+                disabled={!unlocked || !!banned}
+                onClick={() => (unlocked && !banned ? toggleSkill(skill) : null)}
+                data-hint={banned ? t("ships.skills.notApplicable") : skillHint(skill)}
+              >
+                <span class="skill-tile-v__icon">
+                  <AssetImage
+                    class="skill-tile-v__icon-img"
+                    src={skillIconUrl(skill.code, cls.value)}
+                    alt={name}
+                    fallback={<span>{name.charAt(0)}</span>}
+                  />
+                </span>
+              </button>
+              {banned ? (
+                <span class="skill-tile-v__ban">
+                  <Ban size={18} />
+                </span>
+              ) : null}
+              <span class="skill-tile-v__name">{name}</span>
+            </div>,
+          );
+        }
         return (
           <div class={["skill-tier-v", unlocked ? "" : "skill-tier-v--locked"]} key={tier}>
             <div class="skill-tier-v__label">
@@ -556,32 +585,13 @@ export default defineComponent({
                 </span>
               ) : null}
             </div>
-            <div class="skill-tier-v__row">
-              {tiers.value[tier].map((skill) => {
-                const picked = !!props.build.skills[skill.code];
-                const name = skillName(skill);
-                return (
-                  <div class={["skill-tile-v", picked ? "skill-tile-v--active" : ""]} key={skill.code}>
-                    <button
-                      type="button"
-                      class="skill-tile-v__btn"
-                      disabled={!unlocked}
-                      onClick={() => (unlocked ? toggleSkill(skill) : null)}
-                      data-hint={skillHint(skill)}
-                    >
-                      <span class="skill-tile-v__icon">
-                        <AssetImage
-                          class="skill-tile-v__icon-img"
-                          src={skillIconUrl(skill.code)}
-                          alt={name}
-                          fallback={<span>{name.charAt(0)}</span>}
-                        />
-                      </span>
-                    </button>
-                    <span class="skill-tile-v__name">{name}</span>
-                  </div>
-                );
-              })}
+            {/* Fixed column template per class — auto-fill let short rows
+                drift out of alignment with the tier above. */}
+            <div
+              class="skill-tier-v__row"
+              style={{ gridTemplateColumns: `repeat(${columns}, 56px)` }}
+            >
+              {cells}
             </div>
           </div>
         );
@@ -651,7 +661,7 @@ export default defineComponent({
                       <span class="planner-v__talent-level">{row.level}</span>
                       {row.kv.map(([k, v]) => (
                         <span class="planner-v__talent-kv" key={k}>
-                          {talentLabel(k)} {fmtTalentValue(k, v)}
+                          {talentEffectLabel(k)} {fmtTalentNum(v)}
                         </span>
                       ))}
                     </div>

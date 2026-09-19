@@ -10,13 +10,15 @@ import {
 } from "vue";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { RotateCcw, X } from "@lucide/vue";
 
 import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
 import { createCycleTimer, useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
-import { makeHoloMaterial as sharedMakeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
+import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t, i18n } from "@/i18n";
@@ -121,8 +123,12 @@ function armorBucketForRgb(rgb: number): number {
 
 /** Invisible depth anchor shared by every holographic mesh: colorWrite off,
  *  so it renders in the opaque queue first and only fills the depth buffer.
- *  The transparent holo pass then depth-tests against it (see loadModel). */
-const ShipStageDepthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false });
+ *  The transparent holo pass then depth-tests against it. It MUST share the
+ *  holo material's vertex shader — a different vertex pipeline (e.g. a
+ *  MeshBasicMaterial's CPU-premultiplied modelViewMatrix) rounds depth
+ *  differently, and the depth test then rejects arbitrary whole triangles
+ *  ("half the hull missing"). See makeHoloDepthMaterial. */
+const ShipStageDepthMaterial = makeHoloDepthMaterial();
 
 /** userData bookkeeping written onto armor overlay meshes. */
 interface ArmorMeshUserData {
@@ -968,6 +974,19 @@ export default defineComponent({
         model.traverse((child) => {
           const mesh = child as THREE.Mesh;
           if (mesh.geometry && mesh.geometry.attributes.position) {
+            if (!mesh.geometry.attributes.normal) {
+              // Baked hulls are coarse collision meshes with POSITION only.
+              // Naively averaged normals turn chaotic where a vertex is shared
+              // across a hard crease, and flat derivative normals read as a
+              // faceted patchwork — smooth by angle instead: continuous panel
+              // runs share a normal, hard chines stay split.
+              const posOnly = mesh.geometry.clone();
+              for (const attr of Object.keys(posOnly.attributes)) {
+                if (attr !== "position") posOnly.deleteAttribute(attr);
+              }
+              posOnly.morphAttributes = {};
+              mesh.geometry = computeSmoothNormals(mergeVertices(posOnly, 1e-4));
+            }
             mesh.geometry.computeBoundingBox();
             mesh.geometry.computeBoundingSphere();
           }
@@ -1434,10 +1453,16 @@ export default defineComponent({
                         <span key={s.label} title={s.range} style={{ background: s.css }} />
                       ))}
                     </div>
+                    {/* Ruler-style: one number at each swatch boundary — a
+                        color spans the gap between its neighbours' numbers. */}
                     <div class="ship-stage__armor-axis-ticks">
-                      {ARMOR_LEGEND.map((s, i) => (
-                        <span key={s.label} style={{ gridColumn: `${i + 1}`, gridRow: `${(i % 2) + 1}` }}>
-                          {s.label}
+                      {ARMOR_SCALE.slice(0, -1).map(([bp], i) => (
+                        <span
+                          key={bp}
+                          title={String(bp)}
+                          style={{ left: `${(((i + 1) / ARMOR_SCALE.length) * 100).toFixed(2)}%` }}
+                        >
+                          {bp}
                         </span>
                       ))}
                     </div>

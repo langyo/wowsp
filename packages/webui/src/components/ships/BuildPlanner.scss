@@ -256,10 +256,10 @@
   }
 
   &__row {
-    /* Fixed 56px tracks on an identical template per tier row — content-
-       sized tiles made columns drift, the grid keeps them pinned. */
+    /* Fixed 56px tracks with one track per class-tree column — the template
+       is set inline by BuildPlanner (auto-fill let short rows drift out of
+       alignment with the tier above). */
     display: grid;
-    grid-template-columns: repeat(auto-fill, 56px);
     justify-content: start;
     gap: 0.45rem 0.35rem;
     align-content: start;
@@ -268,6 +268,7 @@
 }
 
 .skill-tile-v {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -280,6 +281,14 @@
     border-color: rgb(var(--color-primary));
     box-shadow: 0 0 0 2px rgb(var(--color-primary) / 55%);
     filter: brightness(1.15);
+  }
+
+  /* Column placeholder for tiers with fewer skills: same 56px track
+     footprint, deliberately no background/border, so every row of the class
+     tree shows the full column count and stays aligned across tiers. */
+  &--empty {
+    background: none;
+    border: none;
   }
 
   &__btn {
@@ -307,6 +316,32 @@
       cursor: not-allowed;
       opacity: 0.45;
     }
+  }
+
+  /* Hull-gated skill (no torpedo tubes / no AA on this hull): grey out the
+     plate regardless of the locked-tier dimming, and pin a round ban chip
+     over the icon's top-right corner (sibling of the button so the
+     button's filter does not grey the badge too). */
+  &--banned .skill-tile-v__btn {
+    filter: grayscale(1);
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  &__ban {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    color: rgb(var(--color-error));
+    background: rgb(var(--color-surface));
+    pointer-events: none;
   }
 
   &__icon {

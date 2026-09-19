@@ -84,8 +84,59 @@ function codeToStem(code: string): string {
   return code.split(/(?=[A-Z])/).join("_").toLowerCase();
 }
 
-/** Resolve a skill's real icon public URL, or null if the art is absent. */
-export function skillIconUrl(code: string): string | null {
+/** Resolve a skill's real icon public URL, or null if the art is absent.
+ *  Some skills share one art family across classes with a per-class variant
+ *  file (`<stem>_<bb|ca|dd|cv|ss>.webp`) instead of a base image — try the
+ *  base stem first, then the class variant. */
+export function skillIconUrl(code: string, cls?: SkillClass): string | null {
   const stem = codeToStem(code);
-  return skillIconStems.has(stem) ? `/images/skills/${stem}.webp` : null;
+  if (skillIconStems.has(stem)) return `/images/skills/${stem}.webp`;
+  if (cls) {
+    const variant = `${stem}_${cls.toLowerCase()}`;
+    if (skillIconStems.has(variant)) return `/images/skills/${variant}.webp`;
+  }
+  return null;
+}
+
+// ── Hull-gated skills ─────────────────────────────────────────────────────
+// A few skills only make sense on hulls that carry the matching armament;
+// picking them on a hull without it would be a wasted point. The table is
+// deliberately small: consumable-gated skills like ConsumablesSpotterUpgrade
+// (空中之眼) depend on catapult-aircraft loadouts the WG API does not expose,
+// so they stay enabled rather than being wrongly banned.
+export type SkillRequirement = "torpedoes" | "aa" | "aaOrAsw";
+
+const SKILL_REQUIREMENTS: Record<string, SkillRequirement> = {
+  TorpedoSpeed: "torpedoes",
+  TorpedoReload: "torpedoes",
+  TorpedoFloodingProbability: "torpedoes",
+  TorpedoDamage: "torpedoes",
+  AaPrioritysectorDamageConstant: "aa",
+  AaDamageConstantBubbles: "aaOrAsw",
+};
+
+/** Which hull capability a skill needs, or null when it is always pickable. */
+export function skillUnavailable(
+  skillCode: string,
+  profile: Record<string, any> | null | undefined,
+): SkillRequirement | null {
+  const req = SKILL_REQUIREMENTS[skillCode];
+  if (!req) return null;
+  // profile is the raw WG snake_case default_profile (same reads as
+  // shipCompare's groupApplies).
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+  const has = (v: unknown): boolean => v != null && typeof v === "object";
+  switch (req) {
+    case "torpedoes":
+      return (num(profile?.hull?.torpedoes_barrels) ?? 0) > 0 || has(profile?.torpedoes)
+        ? null
+        : "torpedoes";
+    case "aa":
+      return (num(profile?.anti_aircraft?.defense) ?? 0) > 0 ? null : "aa";
+    case "aaOrAsw":
+      return (num(profile?.anti_aircraft?.defense) ?? 0) > 0 || has(profile?.depth_charge)
+        ? null
+        : "aaOrAsw";
+  }
 }
