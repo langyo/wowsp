@@ -200,6 +200,8 @@ import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import { HSwitch } from "@celestia-island/hikari";
+import TacticalBoard from "./tactical/TacticalBoard";
+import { TACTICAL_SIZE } from "./tactical/render";
 import { t as i18nT } from "@/i18n";
 import "./HolographicMap.scss";
 
@@ -396,6 +398,9 @@ export default defineComponent({
     // 2D minimap enlarged overlay state.
     const minimapZoom = ref(props.initialMinimapZoom);
     const minimapShowTrails = ref(true);
+    /** Tactical board editing on the enlarged 2D map (annotations stay
+     *  rendered read-only when off, so a composed view survives toggling). */
+    const tacticalOn = ref(false);
     /** Roster assignment per ship entity — THE single source of truth for
      *  team roles, shared by 3D markers, minimap trails, shell-arc targets
      *  and self-stats. Rebuilt in rebuildActors; empty before first build. */
@@ -930,16 +935,52 @@ export default defineComponent({
       };
     }
 
-    function drawMinimap() {
-      // Effective bounds in WORLD coordinates: the map's minimap bounds when
-      // known (matches the base art), else the trajectory bounds converted
-      // back from scene space (scene z = -world z) so the dots at least fit
-      // the canvas.
-      const full: MapBounds | null =
+    /** Effective bounds in WORLD coordinates: the map's minimap bounds when
+     *  known (matches the base art), else the trajectory bounds converted
+     *  back from scene space (scene z = -world z) so the dots at least fit
+     *  the canvas. Shared by drawMinimap and the tactical board layer so
+     *  annotations and map art can never drift apart. */
+    function computeFullMapBounds(): MapBounds | null {
+      return (
         minimapBounds ??
         (bounds
           ? { minX: bounds.minX, maxX: bounds.maxX, minZ: -bounds.maxZ, maxZ: -bounds.minZ }
-          : null);
+          : null)
+      );
+    }
+
+    /** Nearest LIVE ship marker to a world point (tactical board path
+     *  pinning): scene markers store scene coords (z = -worldZ), live means
+     *  observed (past firstT) and not yet sunk. Radius in world units so the
+     *  hit box scales with the map. */
+    function pickShipAt(x: number, z: number): { entityId: number; label: string } | null {
+      const full = computeFullMapBounds();
+      const radiusWorld = full
+        ? (Math.abs(full.maxX - full.minX) / TACTICAL_SIZE) * 22
+        : 400;
+      const t = current.value;
+      let best: { entityId: number; label: string; d: number } | null = null;
+      for (const m of shipMarkers) {
+        const firstT = m.userData.firstT as number | undefined;
+        if (t < (firstT ?? Infinity)) continue;
+        const deathTime = m.userData.deathTime as number | null;
+        if (deathTime != null && t >= deathTime) continue;
+        const d = Math.hypot(m.position.x - x, m.position.z + z);
+        if (d <= radiusWorld && (!best || d < best.d)) {
+          const entityId = m.userData.entityId as number;
+          const vehicle = props.vehicles.find((v) => v.id === entityId);
+          best = {
+            entityId,
+            label: vehicle?.shipName ?? vehicle?.name ?? String(entityId),
+            d,
+          };
+        }
+      }
+      return best ? { entityId: best.entityId, label: best.label } : null;
+    }
+
+    function drawMinimap() {
+      const full: MapBounds | null = computeFullMapBounds();
       if (!full) return;
       // Crop to the active battle area when the match plays out in a small
       // region of the map (brawls/events with a restricted border): the
@@ -1190,8 +1231,8 @@ export default defineComponent({
           const dispZ = Math.round(Math.max(1, rectZ.width));
           const pxZ = Math.round(dispZ * dprZ);
           if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
-          zctx.setTransform(pxZ / 760, 0, 0, pxZ / 760, 0, 0);
-          const zw = 760;
+          zctx.setTransform(pxZ / TACTICAL_SIZE, 0, 0, pxZ / TACTICAL_SIZE, 0, 0);
+          const zw = TACTICAL_SIZE;
           // The 2D map art NEVER changes with the theme (the game's own
           // bitmap, shown as-is in both modes); only the overlay chrome —
           // scrim, head pill, frame — follows the app theme.
@@ -4732,8 +4773,43 @@ export default defineComponent({
                   {i18nT("replay.minimap.trails")}
                 </HSwitch>
               </span>
+              <span onClick={(e: MouseEvent) => e.stopPropagation()}>
+                <HSwitch
+                  modelValue={tacticalOn.value}
+                  onUpdate:modelValue={(v: boolean) => { tacticalOn.value = v; }}
+                >
+                  {i18nT("replay.tactical.toggle")}
+                </HSwitch>
+              </span>
             </div>
-            <canvas ref={zoomCanvas} width={760} height={760} class="holo-map__mmzoom-canvas" />
+            {/* Stage: base map canvas + tactical annotation layer. Clicks on
+                the map no longer close the overlay (drawing/selection needs
+                them); the scrim around it still does. */}
+            <div class="holo-map__mmzoom-stage" onClick={(e: MouseEvent) => e.stopPropagation()}>
+              <canvas
+                ref={zoomCanvas}
+                width={TACTICAL_SIZE}
+                height={TACTICAL_SIZE}
+                class={[
+                  "holo-map__mmzoom-canvas",
+                  tacticalOn.value ? "holo-map__mmzoom-canvas--tac" : "",
+                ]}
+              />
+              <TacticalBoard
+                replayPath={props.replayPath}
+                mapTag={(props.mapName || props.mapId || "map").replace(/[^\w-]+/g, "_")}
+                editMode={tacticalOn.value}
+                getBounds={() => computeFullMapBounds()}
+                getTime={() => current.value}
+                getDuration={() => duration.value}
+                getPlaying={() => playing.value}
+                play={() => { if (!playing.value) togglePlay(); }}
+                pause={() => { if (playing.value) togglePlay(); }}
+                trajectories={() => props.trajectories}
+                pickShipAt={pickShipAt}
+                baseCanvas={() => zoomCanvas.value}
+              />
+            </div>
           </div>
         ) : null}
         {props.replayPath ? (

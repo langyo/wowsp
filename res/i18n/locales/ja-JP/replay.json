@@ -155,5 +155,66 @@
   "selfFrags": "撃沈",
   "selfDamage": "与ダメージ",
   "selfTaken": "被ダメージ",
-  "selfPlane": "航空"
+  "selfPlane": "航空",
+  "tactical": {
+    "toggle": "タクティカルボード",
+    "tools": {
+      "select": "選択 / 移動",
+      "pen": "ペン（自動スムージング）",
+      "line": "直線",
+      "arrow": "矢印",
+      "rect": "矩形",
+      "ellipse": "楕円",
+      "text": "テキストメモ",
+      "markerShip": "艦艇マーカー",
+      "markerPlane": "航空機マーカー",
+      "pinPath": "実航跡をピン留め"
+    },
+    "style": {
+      "color": "色",
+      "width": "線幅",
+      "dash": {
+        "solid": "実線",
+        "dashed": "破線",
+        "dotted": "点線"
+      }
+    },
+    "time": {
+      "anchor": "再生位置にアンカー",
+      "ghost": "未出現を薄表示"
+    },
+    "action": {
+      "undo": "元に戻す",
+      "redo": "やり直す",
+      "delete": "選択を削除",
+      "clear": "すべて消去"
+    },
+    "hint": {
+      "pin": "艦艇をクリックして実航跡をピン留め",
+      "region": "ドラッグで書き出し範囲を選択（Esc でキャンセル）"
+    },
+    "text": {
+      "placeholder": "メモを入力し Enter"
+    },
+    "export": {
+      "format": "形式",
+      "scale": "解像度",
+      "timestamp": "タイムスタンプ",
+      "full": "全体マップのスナップショットを書き出す",
+      "region": "範囲を選択してスナップショット",
+      "regionRun": "選択範囲を書き出す"
+    },
+    "record": {
+      "start": "録画開始（リプレイを再生）",
+      "stop": "録画を停止して保存",
+      "recording": "録画中",
+      "unsupported": "この環境では録画できません"
+    },
+    "toast": {
+      "saved": "保存しました：{path}",
+      "pinned": "{name} の航跡をピン留めしました",
+      "empty": "保存するものがありません"
+    },
+    "count": "注釈 {n} 件"
+  }
 }

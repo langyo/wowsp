@@ -155,5 +155,66 @@
   "selfFrags": "擊沉",
   "selfDamage": "傷害",
   "selfTaken": "承受傷害",
-  "selfPlane": "航空"
+  "selfPlane": "航空",
+  "tactical": {
+    "toggle": "戰術板",
+    "tools": {
+      "select": "選取 / 移動",
+      "pen": "畫筆（自動平滑）",
+      "line": "直線",
+      "arrow": "箭頭",
+      "rect": "矩形",
+      "ellipse": "橢圓",
+      "text": "文字備註",
+      "markerShip": "艦船標記",
+      "markerPlane": "飛機標記",
+      "pinPath": "釘選真實航跡"
+    },
+    "style": {
+      "color": "顏色",
+      "width": "線寬",
+      "dash": {
+        "solid": "實線",
+        "dashed": "虛線",
+        "dotted": "點線"
+      }
+    },
+    "time": {
+      "anchor": "錨定目前時間",
+      "ghost": "顯示未出場虛影"
+    },
+    "action": {
+      "undo": "復原",
+      "redo": "重做",
+      "delete": "刪除所選",
+      "clear": "清空全部"
+    },
+    "hint": {
+      "pin": "點擊一艘艦船以釘選其真實航跡",
+      "region": "拖曳選擇匯出區域（Esc 取消）"
+    },
+    "text": {
+      "placeholder": "輸入備註，按 Enter 確認"
+    },
+    "export": {
+      "format": "格式",
+      "scale": "解析度",
+      "timestamp": "時間戳記",
+      "full": "匯出全圖截圖",
+      "region": "框選區域截圖",
+      "regionRun": "匯出所選區域"
+    },
+    "record": {
+      "start": "開始錄製（播放並錄製畫面）",
+      "stop": "停止並儲存錄製",
+      "recording": "錄製中",
+      "unsupported": "目前環境不支援錄製"
+    },
+    "toast": {
+      "saved": "已匯出：{path}",
+      "pinned": "已釘選 {name} 的航跡",
+      "empty": "沒有可儲存的內容"
+    },
+    "count": "{n} 項註解"
+  }
 }

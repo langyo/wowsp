@@ -155,5 +155,66 @@
   "selfFrags": "击沉",
   "selfDamage": "伤害",
   "selfTaken": "承伤",
-  "selfPlane": "航空"
+  "selfPlane": "航空",
+  "tactical": {
+    "toggle": "战术板",
+    "tools": {
+      "select": "选择 / 移动",
+      "pen": "画笔（自动平滑）",
+      "line": "直线",
+      "arrow": "箭头",
+      "rect": "矩形",
+      "ellipse": "椭圆",
+      "text": "文字备注",
+      "markerShip": "舰船标记",
+      "markerPlane": "飞机标记",
+      "pinPath": "钉取真实航迹"
+    },
+    "style": {
+      "color": "颜色",
+      "width": "线宽",
+      "dash": {
+        "solid": "实线",
+        "dashed": "虚线",
+        "dotted": "点线"
+      }
+    },
+    "time": {
+      "anchor": "锚定当前时间",
+      "ghost": "显示未出场虚影"
+    },
+    "action": {
+      "undo": "撤销",
+      "redo": "重做",
+      "delete": "删除所选",
+      "clear": "清空全部"
+    },
+    "hint": {
+      "pin": "点击一艘舰船以钉取其真实航迹",
+      "region": "拖拽选择导出区域（Esc 取消）"
+    },
+    "text": {
+      "placeholder": "输入备注，回车确认"
+    },
+    "export": {
+      "format": "格式",
+      "scale": "分辨率",
+      "timestamp": "时间戳",
+      "full": "导出全图截图",
+      "region": "框选区域截图",
+      "regionRun": "导出所选区域"
+    },
+    "record": {
+      "start": "开始录制（播放并录制画面）",
+      "stop": "停止并保存录制",
+      "recording": "录制中",
+      "unsupported": "当前环境不支持录制"
+    },
+    "toast": {
+      "saved": "已导出：{path}",
+      "pinned": "已钉取 {name} 的航迹",
+      "empty": "没有可保存的内容"
+    },
+    "count": "{n} 项注解"
+  }
 }

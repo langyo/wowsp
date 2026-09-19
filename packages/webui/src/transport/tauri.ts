@@ -8,7 +8,11 @@ import { RpcError } from "./types";
 
 interface TauriGlobal {
   core?: {
-    invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    invoke: (
+      cmd: string,
+      args?: Record<string, unknown> | Uint8Array,
+      options?: { headers?: Record<string, string> },
+    ) => Promise<unknown>;
   };
   event?: {
     listen: (event: string, handler: (e: { payload: unknown }) => void) => Promise<() => void>;
@@ -31,6 +35,16 @@ export class TauriTransport implements Transport {
       const msg = typeof e === "string" ? e : (e as { message?: string })?.message ?? String(e);
       throw new RpcError(msg, cmd);
     }
+  }
+
+  async invokeRaw<T = unknown>(
+    cmd: string,
+    body: Uint8Array,
+    headers: Record<string, string>,
+  ): Promise<T> {
+    // A Uint8Array args payload travels as the request's raw body (Tauri v2
+    // custom-protocol IPC), never JSON-encoded — see write_export_bytes.
+    return (await this.invokeFn(cmd, body, { headers })) as T;
   }
 
   async listen<T = unknown>(event: string, handler: (payload: T) => void): Promise<() => void> {

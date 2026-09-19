@@ -155,5 +155,66 @@
   "selfFrags": "Frags",
   "selfDamage": "Damage",
   "selfTaken": "Taken",
-  "selfPlane": "Aircraft"
+  "selfPlane": "Aircraft",
+  "tactical": {
+    "toggle": "Tactical board",
+    "tools": {
+      "select": "Select / move",
+      "pen": "Pen (auto-smooth)",
+      "line": "Line",
+      "arrow": "Arrow",
+      "rect": "Rectangle",
+      "ellipse": "Ellipse",
+      "text": "Text note",
+      "markerShip": "Ship marker",
+      "markerPlane": "Plane marker",
+      "pinPath": "Pin real track"
+    },
+    "style": {
+      "color": "Color",
+      "width": "Width",
+      "dash": {
+        "solid": "Solid",
+        "dashed": "Dashed",
+        "dotted": "Dotted"
+      }
+    },
+    "time": {
+      "anchor": "Anchor to playhead",
+      "ghost": "Ghost future items"
+    },
+    "action": {
+      "undo": "Undo",
+      "redo": "Redo",
+      "delete": "Delete selected",
+      "clear": "Clear all"
+    },
+    "hint": {
+      "pin": "Click a ship to pin its real track",
+      "region": "Drag to select the export region (Esc to cancel)"
+    },
+    "text": {
+      "placeholder": "Type a note, press Enter"
+    },
+    "export": {
+      "format": "Format",
+      "scale": "Resolution",
+      "timestamp": "Timestamp",
+      "full": "Export full-map snapshot",
+      "region": "Crop-region snapshot",
+      "regionRun": "Export selected region"
+    },
+    "record": {
+      "start": "Start recording (plays the replay)",
+      "stop": "Stop and save recording",
+      "recording": "REC",
+      "unsupported": "Recording is not supported in this environment"
+    },
+    "toast": {
+      "saved": "Saved: {path}",
+      "pinned": "Pinned the track of {name}",
+      "empty": "Nothing to save"
+    },
+    "count": "{n} annotations"
+  }
 }

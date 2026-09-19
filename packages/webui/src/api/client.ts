@@ -1105,6 +1105,21 @@ export const api = {
     transport.invoke<ShipServerStats | null>(RPC.get_ship_server_stats, { shipId }),
   captureMainWindow: (path: string) =>
     transport.invoke<string>(RPC.capture_main_window, { path }),
+  /** Native save dialog for tactical-board exports (screenshots/video).
+   *  Null = the user cancelled the dialog. */
+  pickExportPath: (defaultName: string, filterName: string, filterExts: string[]) =>
+    transport.invoke<string | null>(RPC.pick_export_path, {
+      defaultName,
+      filterName,
+      filterExts,
+    }),
+  /** Write export bytes (PNG/WebP image, MP4/WebM video) to an absolute path
+   *  from `pickExportPath` via a raw IPC body. Rejects outside the Tauri
+   *  shell — callers fall back to a browser download. */
+  saveExportBytes: (path: string, bytes: Uint8Array) =>
+    transport.invokeRaw?.<null>(RPC.write_export_bytes, bytes, {
+      "x-export-path": encodeURIComponent(path),
+    }) ?? Promise.reject(new Error("raw IPC unavailable in this host")),
   installOverlayMod: (gameRoot: string) =>
     transport.invoke<string>(RPC.install_overlay_mod, { gameRoot }),
   uninstallOverlayMod: (gameRoot: string) =>

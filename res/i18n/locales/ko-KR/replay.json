@@ -155,5 +155,66 @@
   "selfFrags": "격침",
   "selfDamage": "가한 피해",
   "selfTaken": "받은 피해",
-  "selfPlane": "항공"
+  "selfPlane": "항공",
+  "tactical": {
+    "toggle": "택티컬 보드",
+    "tools": {
+      "select": "선택 / 이동",
+      "pen": "펜(자동 스무딩)",
+      "line": "직선",
+      "arrow": "화살표",
+      "rect": "사각형",
+      "ellipse": "타원",
+      "text": "텍스트 메모",
+      "markerShip": "함선 마커",
+      "markerPlane": "항공기 마커",
+      "pinPath": "실제 항적 고정"
+    },
+    "style": {
+      "color": "색상",
+      "width": "선 두께",
+      "dash": {
+        "solid": "실선",
+        "dashed": "대시",
+        "dotted": "점선"
+      }
+    },
+    "time": {
+      "anchor": "재생 시점에 고정",
+      "ghost": "미등장 항목 흐리게"
+    },
+    "action": {
+      "undo": "실행 취소",
+      "redo": "다시 실행",
+      "delete": "선택 삭제",
+      "clear": "모두 지우기"
+    },
+    "hint": {
+      "pin": "함선을 클릭해 실제 항적을 고정",
+      "region": "드래그하여 내보낼 영역 선택(Esc 취소)"
+    },
+    "text": {
+      "placeholder": "메모 입력 후 Enter"
+    },
+    "export": {
+      "format": "형식",
+      "scale": "해상도",
+      "timestamp": "타임스탬프",
+      "full": "전체 지도 스냅샷 내보내기",
+      "region": "영역 지정 스냅샷",
+      "regionRun": "선택 영역 내보내기"
+    },
+    "record": {
+      "start": "녹화 시작(리플레이 재생)",
+      "stop": "녹화 중지 후 저장",
+      "recording": "녹화 중",
+      "unsupported": "이 환경에서는 녹화를 지원하지 않습니다"
+    },
+    "toast": {
+      "saved": "저장됨: {path}",
+      "pinned": "{name}의 항적을 고정했습니다",
+      "empty": "저장할 내용이 없습니다"
+    },
+    "count": "주석 {n}개"
+  }
 }

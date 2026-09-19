@@ -155,5 +155,66 @@
   "selfFrags": "Destructions",
   "selfDamage": "Dégâts",
   "selfTaken": "Subis",
-  "selfPlane": "Aérien"
+  "selfPlane": "Aérien",
+  "tactical": {
+    "toggle": "Tableau tactique",
+    "tools": {
+      "select": "Sélection / déplacement",
+      "pen": "Stylet (lissage auto)",
+      "line": "Ligne",
+      "arrow": "Flèche",
+      "rect": "Rectangle",
+      "ellipse": "Ellipse",
+      "text": "Note texte",
+      "markerShip": "Marqueur navire",
+      "markerPlane": "Marqueur avion",
+      "pinPath": "Épingler la trace réelle"
+    },
+    "style": {
+      "color": "Couleur",
+      "width": "Épaisseur",
+      "dash": {
+        "solid": "Continue",
+        "dashed": "Tirets",
+        "dotted": "Points"
+      }
+    },
+    "time": {
+      "anchor": "Ancrer à la lecture",
+      "ghost": "Afficher les futurs en fantôme"
+    },
+    "action": {
+      "undo": "Annuler",
+      "redo": "Rétablir",
+      "delete": "Supprimer la sélection",
+      "clear": "Tout effacer"
+    },
+    "hint": {
+      "pin": "Cliquez sur un navire pour épingler sa trace réelle",
+      "region": "Tracez la zone d'export (Échap pour annuler)"
+    },
+    "text": {
+      "placeholder": "Saisissez une note, Entrée pour valider"
+    },
+    "export": {
+      "format": "Format",
+      "scale": "Résolution",
+      "timestamp": "Horodatage",
+      "full": "Exporter la carte complète",
+      "region": "Capture d'une zone",
+      "regionRun": "Exporter la zone sélectionnée"
+    },
+    "record": {
+      "start": "Démarrer l'enregistrement (lecture)",
+      "stop": "Arrêter et enregistrer",
+      "recording": "ENREG",
+      "unsupported": "Enregistrement non pris en charge ici"
+    },
+    "toast": {
+      "saved": "Enregistré : {path}",
+      "pinned": "Trace de {name} épinglée",
+      "empty": "Rien à enregistrer"
+    },
+    "count": "{n} annotations"
+  }
 }
