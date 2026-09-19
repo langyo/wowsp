@@ -25,7 +25,7 @@ import {
   type ShipModelSpec,
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
-import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerCache } from "./shipMarker";
+import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerCache, SHIP_CLASS_LEN, shipClassTargetLen } from "./shipMarker";
 import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
@@ -238,9 +238,8 @@ interface ShellTraceState {
   joined: boolean;
 }
 
-/** A pooled trace's GPU objects; tinted per assignment. Impact moments are
- *  NOT drawn here — splashes come from the explosion-ring pool and hits from
- *  the red kill-burst pool, so a shell trace is just arc + in-flight cone. */
+/** A pooled trace's GPU objects; tinted per assignment. A shell trace is
+ *  just the arc + the in-flight shell (cone or GLB) — no impact markers. */
 interface ShellTraceSlot {
   line: THREE.Line;
   lineMat: THREE.LineBasicMaterial;
@@ -726,12 +725,6 @@ export default defineComponent({
       t0: number;
       t1: number | null;
     }[] = [];
-    /** Projectile-kill bursts (receiveShotKills) — pooled rings like the
-     *  splash FX, tinted red to read as hits that connected. */
-    let killFx: { ring: THREE.Mesh; born: number }[] = [];
-    /** Open-water landings of unjoined shells — the synthesized splash feed
-     *  for 15.7+ replays whose real receiveExplosions stream is empty. */
-    let waterSplashes: { x: number; z: number; time: number }[] = [];
     /** In-flight torpedoes: straight capsules from the launch point along
      *  the launch direction (swapped for the real torpedo GLB once loaded).
      *  Homing fish re-anchor at each receiveTorpedoDirection guidance
@@ -758,13 +751,10 @@ export default defineComponent({
        *  relative life — because steering rebases t0 forward. */
       endT: number;
     }[] = [];
-    /** Transient explosion rings (splash hits). */
-    let explosionFx: { ring: THREE.Mesh; born: number }[] = [];
     const _shellUp = new THREE.Vector3(0, 1, 0);
     const _shellDir = new THREE.Vector3();
     /** Recorder aim line to the currently locked target (SetWeaponLock). */
     let lockLine: THREE.Mesh | null = null;
-    /** Big ring over the locked target (same render path as splash rings). */
     /** Aircraft formation cloud (one point per plane, from the avatar's
      *  receive_updateSquadron stream) — fallback for planes without a baked
      *  model; modeled planes render as GLB meshes in `planeMeshes`. */
@@ -901,6 +891,43 @@ export default defineComponent({
           [...all.entries()].find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1] ??
           null;
       });
+    }
+
+    /** True playable-map rectangle in SCENE coordinates (x, z = -worldZ).
+     *  Projectile paths (shell arcs, torpedo runs) are clamped to it so they
+     *  can never streak across the endless sea plane beyond the map edge.
+     *  `minimaps.json` bounds are authoritative when loaded; until then (or
+     *  for unknown maps) the fitted battle bounds stand in — projectiles then
+     *  only leave the ships' active area, never empty space. */
+    function sceneMapRect(): {
+      minX: number;
+      maxX: number;
+      minZ: number;
+      maxZ: number;
+    } | null {
+      if (minimapBounds) {
+        // World bounds are NOT z-mirrored; the scene is.
+        return {
+          minX: minimapBounds.minX,
+          maxX: minimapBounds.maxX,
+          minZ: -minimapBounds.maxZ,
+          maxZ: -minimapBounds.minZ,
+        };
+      }
+      return bounds;
+    }
+
+    /** Clamp an XZ point into a rect (null rect = no clamp). */
+    function clampXZ(
+      x: number,
+      z: number,
+      rect: { minX: number; maxX: number; minZ: number; maxZ: number } | null,
+    ): { x: number; z: number } {
+      if (!rect) return { x, z };
+      return {
+        x: Math.min(rect.maxX, Math.max(rect.minX, x)),
+        z: Math.min(rect.maxZ, Math.max(rect.minZ, z)),
+      };
     }
 
     function drawMinimap() {
@@ -1354,15 +1381,10 @@ export default defineComponent({
       return corners;
     }
 
-    /** Class-scaled hull lengths for the 3D outline markers (world units —
-     *  roughly 1.5× real scale so outlines stay readable at tactical zoom). */
-    const HULL_LEN: Record<string, number> = {
-      battleship: 46,
-      aircarrier: 52,
-      cruiser: 38,
-      destroyer: 30,
-      submarine: 26,
-    };
+    /** Class hull lengths for the 3D outline markers — the SAME true-scale
+     *  table the ship GLBs are scaled to (SHIP_CLASS_LEN in @wowsp/holo,
+     *  ≈ 4.5 m per world unit), so outline and installed model always agree. */
+    const HULL_LEN: Record<string, number> = SHIP_CLASS_LEN;
 
     /** Build a ship-shaped LINE LOOP for the 3D scene: a pointed bow,
      *  parallel midbody and tapered stern, laid out on XZ with the bow along
@@ -1598,13 +1620,6 @@ export default defineComponent({
         (w.fill.material as THREE.Material).dispose();
       }
       wardRings = [];
-      for (const fx of killFx) {
-        scene.remove(fx.ring);
-        fx.ring.geometry.dispose();
-        (fx.ring.material as THREE.Material).dispose();
-      }
-      killFx = [];
-      waterSplashes = [];
       for (const tm of torpedoMeshes) {
         scene.remove(tm.mesh);
         disposeAny(tm.mesh);
@@ -1621,12 +1636,6 @@ export default defineComponent({
       }
       planeMeshes.clear();
       planeFormations.clear();
-      for (const fx of explosionFx) {
-        scene.remove(fx.ring);
-        fx.ring.geometry.dispose();
-        (fx.ring.material as THREE.Material).dispose();
-      }
-      explosionFx = [];
       if (lockLine) {
         scene.remove(lockLine);
         lockLine.geometry.dispose();
@@ -2225,22 +2234,17 @@ export default defineComponent({
         }
         return best;
       };
-      // Unjoined shells that end in OPEN WATER (no ship at the splash point)
-      // double as synthesized splash markers on 15.7+ replays, where WG no
-      // longer broadcasts receiveExplosions and the real splash feed is empty.
-      waterSplashes = [];
       for (const st of shellStates) {
         if (st.joined || !st.from) continue;
         const p = shipAt(st.to.x, -st.to.z, st.t1, st.ownerId);
         if (p) st.to.set(p.x, 0, -p.z);
-        else waterSplashes.push({ x: st.to.x, z: -st.to.z, time: st.t1 });
       }
       // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
       // at once even in heavy matches, so 220 slots cover the busiest frames;
       // overflow shells are simply not drawn that frame.
       // Shared cone geometry for in-flight shells (tip pointing +Y; oriented
       // along the trajectory tangent each frame for a smooth arc).
-      const shellGeom = new THREE.ConeGeometry(3, 12, 8);
+      const shellGeom = new THREE.ConeGeometry(0.9, 4, 8);
       shellTraceSlots = [];
       if (shellStates.length > 0) {
         for (let i = 0; i < 220; i++) {
@@ -2287,10 +2291,10 @@ export default defineComponent({
       }
 
       // Torpedoes: straight white capsules from the firing ship's position at
-      // launch time along the launch direction. Speed ~33 m/s (60 knots);
-      // visible until 8 km of travel (or match end). Each torpedo carries a
-      // long white wake line so it reads at full-map zoom.
-      const torpedoGeom = new THREE.CapsuleGeometry(3, 12, 2, 8);
+      // launch time along the launch direction, running at the true engine
+      // speed (~7 u/s ≈ 60 kn; see the per-frame loop). Each torpedo carries
+      // a white wake line so it reads at full-map zoom.
+      const torpedoGeom = new THREE.CapsuleGeometry(0.9, 4, 2, 8);
       const torpedoMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -2342,7 +2346,7 @@ export default defineComponent({
         });
       }
       // Torpedoes stop at their kill: a fish that connects detonates instead
-      // of running out its full 8 km lane. Absolute end time — steering
+      // of running out its full ~240 s lane. Absolute end time — steering
       // rebases t0 forward, so a relative life would extend the swim past
       // the detonation.
       for (const tm of torpedoMeshes) {
@@ -2356,7 +2360,7 @@ export default defineComponent({
       const shellPropUrl = resolvePropModelUrl("shell");
       if (shellPropUrl) {
         for (const slot of shellTraceSlots) {
-          buildPropMarker({ url: shellPropUrl, color: 0xffffff, axis: "y", targetLen: 9 })
+          buildPropMarker({ url: shellPropUrl, color: 0xffffff, axis: "y", targetLen: 4 })
             .then((g) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
               g.visible = slot.shell.visible;
@@ -2372,7 +2376,7 @@ export default defineComponent({
       const torpedoPropUrl = resolvePropModelUrl("torpedo");
       if (torpedoPropUrl) {
         for (const tm of torpedoMeshes) {
-          buildPropMarker({ url: torpedoPropUrl, color: 0xffffff, axis: "y", targetLen: 14, opacity: 1 })
+          buildPropMarker({ url: torpedoPropUrl, color: 0xffffff, axis: "y", targetLen: 5, opacity: 1 })
             .then((g) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
               g.visible = tm.mesh.visible;
@@ -2438,41 +2442,6 @@ export default defineComponent({
           }
           wardRings.push({ ring, fill, t0: w.time, t1: end });
         }
-      }
-      // Reusable kill bursts (receiveShotKills) — red rings like the splash
-      // FX, spawned at the hit instant.
-      {
-        const ringGeomKill = new THREE.RingGeometry(0.35, 1, 24);
-        const ringMatKill = new THREE.MeshBasicMaterial({
-          color: 0xff6a5f,
-          transparent: true,
-          opacity: 0.95,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-        for (let i = 0; i < 12; i++) {
-          const ring = new THREE.Mesh(ringGeomKill, ringMatKill);
-          ring.visible = false;
-          ring.rotation.x = -Math.PI / 2;
-          scene.add(ring);
-          killFx.push({ ring, born: -1 });
-        }
-      }
-      // Reusable explosion rings for shell impacts / splashes.
-      const ringGeomFx = new THREE.RingGeometry(0.35, 1, 24);
-      const ringMatFx = new THREE.MeshBasicMaterial({
-        color: 0xffe08a,
-        transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      for (let i = 0; i < 20; i++) {
-        const ring = new THREE.Mesh(ringGeomFx, ringMatFx);
-        ring.visible = false;
-        ring.rotation.x = -Math.PI / 2;
-        scene.add(ring);
-        explosionFx.push({ ring, born: -1 });
       }
 
       // Recorder aim line: thin line from the own ship to the locked target
@@ -2713,19 +2682,22 @@ export default defineComponent({
         // Marker: class-scaled HULL OUTLINE (vector line loop — reads at any
         // zoom and never depends on GLB availability) plus a small cone+dot
         // so the heading stays visible before/outside the outline. Cone
-        // points +Z (forward) at yaw 0.
+        // points +Z (forward) at yaw 0. Placeholder sizes track the class's
+        // true hull length so small classes (DD/SS) don't carry a BB-sized
+        // cone while their model loads.
         const marker = new THREE.Group();
         const hull = makeHullOutline(color, shipType);
         hull.userData.hullOutline = true;
         marker.add(hull);
         marker.userData.hull = hull;
-        const coneGeom = new THREE.ConeGeometry(7, 18, 6);
+        const clsLen = shipClassTargetLen(shipType);
+        const coneGeom = new THREE.ConeGeometry(clsLen * 0.14, clsLen * 0.36, 6);
         const coneMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7 });
         const cone = new THREE.Mesh(coneGeom, coneMat);
         cone.rotation.x = Math.PI / 2; // cone tip along +Z
-        cone.position.z = 6; // shift forward so sphere is behind the tip
+        cone.position.z = clsLen * 0.12; // shift forward so sphere is behind the tip
         marker.add(cone);
-        const dotGeom = new THREE.SphereGeometry(8, 10, 6);
+        const dotGeom = new THREE.SphereGeometry(clsLen * 0.16, 10, 6);
         const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
         const dot = new THREE.Mesh(dotGeom, dotMat);
         dot.position.z = 0;
@@ -2795,7 +2767,7 @@ export default defineComponent({
             loadedModelPool[0];
           if (!sub) return false;
           try {
-            const replacement = buildMarkerFromSource(sub.model, role);
+            const replacement = buildMarkerFromSource(sub.model, role, shipType);
             loadedModelPool.push({ model: replacement, role });
             installModel(marker, replacement);
             return true;
@@ -2816,7 +2788,11 @@ export default defineComponent({
               loadedModelPool[0];
             if (!sub) continue;
             try {
-              const replacement = buildMarkerFromSource(sub.model, w.marker.userData.role);
+              const replacement = buildMarkerFromSource(
+                sub.model,
+                w.marker.userData.role as TeamRole,
+                w.marker.userData.type as string | null,
+              );
               loadedModelPool.push({ model: replacement, role: w.marker.userData.role });
               installModel(w.marker, replacement);
               modelWaiters.splice(i, 1);
@@ -2830,7 +2806,7 @@ export default defineComponent({
             + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
           if (!buildFromLoadedPool()) modelWaiters.push({ marker, traj });
         } else {
-          buildShipMarker({ url: modelUrl, role })
+          buildShipMarker({ url: modelUrl, role, type: shipType })
             .then((shipModel) => {
               if (epoch !== markerEpoch || !api.value?.scene) return;
               loadedModelPool.push({ model: shipModel, role });
@@ -3578,10 +3554,10 @@ export default defineComponent({
       // Shell traces: ballistic arc from the firing ship to the impact
       // point, shown while the shell is airborne [t0, t1]. Pool slots are
       // assigned to whichever shells are airborne THIS frame (a match
-      // carries 10k+ shells; only a few dozen fly at once). Impact moments
-      // are drawn by the splash/kill ring pools, not here. Elements outside
+      // carries 10k+ shells; only a few dozen fly at once). Elements outside
       // the fitted battle bounds are stray data — hidden so they can't flash
       // out in empty space.
+      const mapRect = sceneMapRect();
       const inBounds = (x: number, z: number) =>
         !bounds || (x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ);
       const hideSlot = (slot: ShellTraceSlot) => {
@@ -3610,6 +3586,17 @@ export default defineComponent({
         }
         slotIdx++;
         const from = st.from;
+        // Drawn points are clamped to the true map rect so even an aim point
+        // beyond the edge (server aim overshoot, matched-splash noise) keeps
+        // the whole arc inside the playable map.
+        const arcPoint = (k: number) => {
+          const px = from.x + (st.to.x - from.x) * k;
+          const pz = from.z + (st.to.z - from.z) * k;
+          const kx = k * 2 - 1;
+          const py = Math.max(0, st.h * (1 - kx * kx));
+          const c = clampXZ(px, pz, mapRect);
+          return { x: c.x, y: py, z: c.z };
+        };
         slot.lineMat.color.setHex(st.color);
         slot.dotMat.color.setHex(st.color);
         // Cone or swapped GLB — tint whatever material it now wears.
@@ -3624,14 +3611,10 @@ export default defineComponent({
           const attr = slot.line.geometry.getAttribute("position") as THREE.BufferAttribute;
           const arr = attr.array as Float32Array;
           for (let i = 0; i < 28; i++) {
-            const k = i / 27;
-            const kx = k * 2 - 1;
-            const px = from.x + (st.to.x - from.x) * k;
-            const pz = from.z + (st.to.z - from.z) * k;
-            const py = Math.max(0, st.h * (1 - kx * kx));
-            arr[i * 3] = px;
-            arr[i * 3 + 1] = py;
-            arr[i * 3 + 2] = pz;
+            const p = arcPoint(i / 27);
+            arr[i * 3] = p.x;
+            arr[i * 3 + 1] = p.y;
+            arr[i * 3 + 2] = p.z;
           }
           attr.needsUpdate = true;
           const dotAttr = slot.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -3639,16 +3622,12 @@ export default defineComponent({
           // Shell position + orientation: interpolate k across the flight,
           // tip pointing along the local tangent.
           const k = Math.min(1, Math.max(0, (t - st.t0) / (st.t1 - st.t0)));
-          const kx = k * 2 - 1;
-          const px = from.x + (st.to.x - from.x) * k;
-          const py = Math.max(0, st.h * (1 - kx * kx));
-          const pz = from.z + (st.to.z - from.z) * k;
-          slot.shell.position.set(px, py, pz);
-          const k2 = Math.min(1, k + 0.03);
-          const kx2 = k2 * 2 - 1;
-          const tx = from.x + (st.to.x - from.x) * k2 - px;
-          const ty = Math.max(0, st.h * (1 - kx2 * kx2)) - py;
-          const tz = from.z + (st.to.z - from.z) * k2 - pz;
+          const p = arcPoint(k);
+          slot.shell.position.set(p.x, p.y, p.z);
+          const p2 = arcPoint(Math.min(1, k + 0.03));
+          const tx = p2.x - p.x;
+          const ty = p2.y - p.y;
+          const tz = p2.z - p.z;
           const len = Math.hypot(tx, ty, tz) || 1;
           _shellDir.set(tx / len, ty / len, tz / len);
           slot.shell.quaternion.setFromUnitVectors(_shellUp, _shellDir);
@@ -3661,6 +3640,19 @@ export default defineComponent({
       // geometry runs along +Y, so orient it flat along the travel direction
       // (a plain rotation.y would leave it standing upright). Homing fish
       // re-anchor at each guidance update as the playhead passes it.
+      // Speed 7 u/s ≈ 31 m/s ≈ 60 kn at the engine scale (1 u ≈ 4.5 m) — the
+      // old 33 u/s constant ran fish ~5× too fast and shot them clean off
+      // the map; the map-rect clamp below is the hard guarantee they stop at
+      // the edge regardless.
+      const torpedoPos = (
+        tm: { base: THREE.Vector3; dir: THREE.Vector3 },
+        age: number,
+      ) =>
+        clampXZ(
+          tm.base.x + tm.dir.x * 7 * age,
+          tm.base.z + tm.dir.z * 7 * age,
+          mapRect,
+        );
       for (const tm of torpedoMeshes) {
         // Backward scrub rewinds the guidance anchors so replays stay correct
         // in both directions; the while-loop then re-applies every past steer.
@@ -3682,75 +3674,21 @@ export default defineComponent({
         tm.mesh.visible = on;
         tm.wake.visible = on;
         if (on) {
-          const p = tm.base.clone().add(tm.dir.clone().multiplyScalar(33 * age));
+          const p = torpedoPos(tm, age);
           tm.mesh.position.set(p.x, 1.2, p.z);
           tm.mesh.quaternion.setFromUnitVectors(_shellUp, tm.dir);
           const wakeAttr = tm.wake.geometry.getAttribute("position") as THREE.BufferAttribute;
-          const tail = tm.dir.clone().multiplyScalar(160);
+          const tail = tm.dir.clone().multiplyScalar(40);
           wakeAttr.setXYZ(0, p.x - tail.x, 0.4, p.z - tail.z);
           wakeAttr.setXYZ(1, p.x, 0.4, p.z);
           wakeAttr.needsUpdate = true;
         }
-      }
-      // Splash rings: spawn on impacts, expand + fade over ~1.2s. Feed is the
-      // real receiveExplosions stream when the game broadcasts it (pre-15.7);
-      // on 15.7+ it is the synthesized open-water landings of unjoined shells.
-      // Impacts outside the fitted battle bounds are skipped so stray data
-      // points don't flash rings out in empty space.
-      const splashFeed = props.explosions.length
-        ? props.explosions.map((e) => ({ x: e.x, z: e.z, time: e.time }))
-        : waterSplashes;
-      let nextFx = explosionFx.find((f) => !f.ring.visible);
-      for (const e of splashFeed) {
-        if (e.time > t || t - e.time > 1.2) continue;
-        if (!inBounds(e.x, -e.z)) continue;
-        if (!nextFx) break;
-        nextFx.ring.visible = true;
-        nextFx.ring.position.set(e.x, 1, -e.z);
-        nextFx.born = e.time;
-        nextFx = explosionFx.find((f) => !f.ring.visible);
-      }
-      for (const fx of explosionFx) {
-        if (!fx.ring.visible) continue;
-        const age = t - fx.born;
-        if (age > 1.2) {
-          fx.ring.visible = false;
-          continue;
-        }
-        const k = age / 1.2;
-        fx.ring.scale.setScalar(40 + k * 240);
-        (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k);
       }
       // Fighter-patrol wards: alive between their add and remove events.
       for (const w of wardRings) {
         const on = t >= w.t0 && (w.t1 == null || t <= w.t1);
         w.ring.visible = on;
         w.fill.visible = on;
-      }
-      // Kill bursts (receiveShotKills): spawn on the hit instant, expand and
-      // fade over ~1.2s — a red counterpart to the yellow splash rings so
-      // hits that connected read differently from splashes.
-      let nextKill = killFx.find((f) => !f.ring.visible);
-      for (const k of props.shotKills) {
-        if (k.time > t || t - k.time > 1.2) continue;
-        // bounds carries three.js Z (negated world z), like the splash loop.
-        if (!inBounds(k.x, -k.z)) continue;
-        if (!nextKill) break;
-        nextKill.ring.visible = true;
-        nextKill.ring.position.set(k.x, 1.5, -k.z);
-        nextKill.born = k.time;
-        nextKill = killFx.find((f) => !f.ring.visible);
-      }
-      for (const fx of killFx) {
-        if (!fx.ring.visible) continue;
-        const age = t - fx.born;
-        if (age > 1.2) {
-          fx.ring.visible = false;
-          continue;
-        }
-        const k = age / 1.2;
-        fx.ring.scale.setScalar(30 + k * 170);
-        (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - k);
       }
       // Recorder aim line: from the own ship to the currently locked target.
       if (lockLine) {
@@ -4307,10 +4245,12 @@ export default defineComponent({
       if (!marker || !marker.visible) return;
       const pos = marker.position;
       const yaw = marker.rotation.y;
-      const dist = 90;
+      // Framing tracks the true hull scale (≈1.1 ship lengths behind, half a
+      // length up) so a followed BB fills the view about like in-game.
+      const dist = 55;
       const behind = new THREE.Vector3(
         pos.x - Math.sin(yaw) * dist,
-        35,
+        22,
         pos.z + Math.cos(yaw) * dist,
       );
       cam.position.copy(behind);
@@ -4446,6 +4386,14 @@ export default defineComponent({
       }
     }
 
+    /** Max sample gap still interpolated smoothly. Beyond it the entity was
+     *  un-spotted (gaps of 20 s to minutes occur for enemies) and the marker
+     *  HOLDS the last observed pose — like the in-game minimap — instead of
+     *  gliding on a straight line with a slowly rotating heading, which sailed
+     *  ships straight across islands at weird angles. Spotted ships stream
+     *  every 0.1–2 s, so 4 s cleanly separates the two regimes. */
+    const UNSEEN_GAP_S = 4;
+
     /** Interpolate a sample at time t (linear between neighbors). */
     function sampleAt(
       traj: { samples: { time: number; x: number; z: number; yaw: number }[] },
@@ -4465,6 +4413,8 @@ export default defineComponent({
       }
       const a = ss[lo];
       const b = ss[hi];
+      // Un-spotted gap: freeze at the last known pose until re-detection.
+      if (b.time - a.time > UNSEEN_GAP_S) return a;
       const f = (t - a.time) / (b.time - a.time || 1);
       return {
         ...a,

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import {
   HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, drawShipGlyph, registerHoloShipIcons,
   setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
-  makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo, useImage,
+  makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo, useImage, shipClassTargetLen,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
@@ -29,11 +29,9 @@ interface BattleBundle {
   roster: RosterEntry[]; recorder: number;
   tracks: Record<string, Track>;
   torps: [number, number, number, number, number][];
-  explosions: [number, number, number][];
   caps: CapZone[];
 }
 
-const SHIP_SCALE = 5.0;
 const PLAYBACK_SPEEDS = [1, 2, 4, 8, 16] as const;
 /** App team colors (webui teamColors): white self / green allies / red enemies. */
 const ROLE_COLOR = { self: 0xffffff, ally: 0x4ade80, enemy: 0xcc3333 } as const;
@@ -206,9 +204,6 @@ export default defineComponent({
       type: string; model: string; nameZh: string; nameEn: string; playerName: string; tier: number | null; key: number;
     }
     let ships: ShipNode[] = [];
-    let boomPool: { mesh: THREE.Mesh; t0: number }[] = [];
-    let boomCursor = 0;
-    let boomEvents: BattleBundle["explosions"] = [];
     let capZones: CapZone[] = [];
     /** Ring elevation: floats above the terrain so island points stay visible. */
     let capY = 2.2;
@@ -409,11 +404,6 @@ export default defineComponent({
 
     function scrubTo(v: number) {
       battleT = Math.min(Math.max(v, 0), currentDuration);
-      // one-shot explosion cursor: skip events that already faded, so a
-      // backward scrub does not refire the whole battle's blasts at once
-      boomCursor = 0;
-      while (boomCursor < boomEvents.length && boomEvents[boomCursor][0] <= battleT - 3) boomCursor++;
-      for (const b of boomPool) b.mesh.visible = false;
       currentT.value = battleT;
     }
 
@@ -492,8 +482,6 @@ export default defineComponent({
       if (!reduced && playing.value) battleT += dt * speed.value;
       if (battleT > currentDuration) {
         battleT = 0;
-        boomCursor = 0;
-        for (const b of boomPool) b.mesh.visible = false;
       }
       currentT.value = battleT;
       // Kill feed: factual sink notices, shown for 12 battle-seconds.
@@ -561,20 +549,6 @@ export default defineComponent({
         selfSilhouette.value = null;
       }
 
-      // explosions
-      while (boomCursor < boomEvents.length && boomEvents[boomCursor][0] <= battleT) {
-        const [, x, z] = boomEvents[boomCursor++];
-        const slot = boomPool.find((b) => !b.mesh.visible) ?? boomPool[0];
-        if (slot) { slot.t0 = battleT; slot.mesh.position.set(x, 1, -z); slot.mesh.visible = true; }
-      }
-      for (const b of boomPool) {
-        if (!b.mesh.visible) continue;
-        const age = battleT - b.t0;
-        if (age > 3) { b.mesh.visible = false; continue; }
-        b.mesh.scale.setScalar(4 + age * 22);
-        (b.mesh.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - age / 3);
-      }
-
       for (const m of materials) {
         if ((m as THREE.ShaderMaterial).uniforms?.time) tickHolo(m as THREE.ShaderMaterial, dt);
       }
@@ -638,7 +612,6 @@ export default defineComponent({
         return;
       }
       currentDuration = bundle.duration;
-      boomEvents = bundle.explosions;
       capZones = bundle.caps;
       deaths = bundle.roster
         .map((r) => ({ r, track: bundle.tracks[String(r.e)] }))
@@ -797,15 +770,21 @@ export default defineComponent({
         const root = new THREE.Group();
         root.add(clone);
         root.userData.ghostMat = holo;
+        // True engine scale (shared with the app viewer): the model's hull
+        // axis is scaled to its class's real length — 1 u ≈ 4.5 m — so
+        // ships sit right against the terrain instead of dwarfing it.
+        const type = shipTypeOf(r.model);
         const box = new THREE.Box3().setFromObject(clone);
-        clone.scale.setScalar(SHIP_SCALE);
-        const center = box.getCenter(new THREE.Vector3()).multiplyScalar(SHIP_SCALE);
+        const size = box.getSize(new THREE.Vector3());
+        const scale = shipClassTargetLen(type) / Math.max(size.z, size.x, 1e-6);
+        clone.scale.setScalar(scale);
+        const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
         clone.position.sub(center);
-        clone.position.y += -box.min.y * SHIP_SCALE;
+        clone.position.y += -box.min.y * scale;
 
         ships.push({
           root, rel: r.rel, track, die: track.die,
-          type: shipTypeOf(r.model),
+          type,
           model: r.model,
           nameZh: resolveShipName(r.model, r.shipZh, "zh-Hans"),
           nameEn: resolveShipName(r.model, r.shipEn, "en"),
@@ -814,21 +793,6 @@ export default defineComponent({
           key: r.e,
         });
         scene.add(root);
-      }
-
-      // explosion ring pool
-      const ringGeom = new THREE.RingGeometry(0.86, 1, 48);
-      geometries.push(ringGeom);
-      for (let i = 0; i < 12; i++) {
-        const mat = new THREE.MeshBasicMaterial({
-          color: 0xffc36b, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false,
-        });
-        const mesh = new THREE.Mesh(ringGeom, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.visible = false;
-        materials.push(mat);
-        scene.add(mesh);
-        boomPool.push({ mesh, t0: 0 });
       }
 
       loading.value = false;
@@ -859,7 +823,6 @@ export default defineComponent({
       renderer?.dispose();
       renderer?.domElement.remove();
       ships = [];
-      boomPool = [];
       capRingMats = [];
     });
 
