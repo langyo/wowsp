@@ -13,9 +13,11 @@ import { useRouter } from "vue-router";
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import { useAccountStore } from "@/stores/account";
+import { useOverlayStore } from "@/stores/overlay";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { useRosterStats, isAiName } from "@/composables/useRosterStats";
@@ -88,14 +90,26 @@ export default defineComponent({
     // (a panel that never used overlay mode stays badge-free).
     const overlayStatus = ref<OverlayStatus | null>(null);
     let unlistenStatus: (() => void) | null = null;
+    // In-game Tab row order, streamed by the same watcher whenever a
+    // recognition pass over a held Tab frame matched the roster. Held in
+    // the overlay store (survives this panel unmounting mid-battle); the
+    // columns below reorder to mirror the on-screen table exactly,
+    // sunk-ship grouping included.
+    const overlay = useOverlayStore();
+    let unlistenTabOrder: (() => void) | null = null;
     onMounted(async () => {
       unlistenStatus = (await api.listenOverlayStatus((s) => {
         overlayStatus.value = s;
+      })) as (() => void) | null;
+      unlistenTabOrder = (await api.listenTabOrder((o) => {
+        overlay.applyTabOrder(o);
       })) as (() => void) | null;
     });
     onBeforeUnmount(() => {
       unlistenStatus?.();
       unlistenStatus = null;
+      unlistenTabOrder?.();
+      unlistenTabOrder = null;
       if (shakeTimer) {
         clearTimeout(shakeTimer);
         shakeTimer = null;
@@ -152,11 +166,29 @@ export default defineComponent({
       }
     }
 
-    const allies = computed(
-      () => props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
+    // Column ordering mirrors the in-game Tab table: the recognized row
+    // order (when a Tab recognition pass exists for THIS battle) wins
+    // verbatim — sunk-ship regrouping included, with sunk players dimmed —
+    // and without one a predicted class-grouped order approximates the
+    // game's layout far better than tempArenaInfo.json's join order.
+    const tabRowsFor = (side: "allies" | "enemies") => {
+      const order = overlay.tabOrder;
+      if (!order || !props.arena?.dateTime || order.dateTime !== props.arena.dateTime) {
+        return null;
+      }
+      return side === "allies" ? order.allies : order.enemies;
+    };
+    const allies = computed(() =>
+      orderForTab(
+        props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
+        tabRowsFor("allies"),
+      ),
     );
-    const enemies = computed(
-      () => props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
+    const enemies = computed(() =>
+      orderForTab(
+        props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
+        tabRowsFor("enemies"),
+      ),
     );
 
     function openLookup(name: string) {
@@ -220,7 +252,8 @@ export default defineComponent({
         return "—";
       };
 
-      const cell = (v: VehicleEntry) => {
+      const cell = (entry: TabOrderedVehicle) => {
+        const v = entry.vehicle;
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
         const clickable = !isAiName(v.name);
@@ -232,6 +265,13 @@ export default defineComponent({
           st && !st.loading && !st.hidden && st.winrate != null
             ? careerStamp(st.pr, st.battles)
             : null;
+        const classes = [
+          "live-battle__player",
+          { "live-battle__player--link": clickable },
+          // Sunk mid-battle (recognized off the dim-gray Tab row): the card
+          // dims the same way the game grays the row.
+          { "live-battle__player--sunk": entry.sunk },
+        ];
         const content = (
           <>
             <span class="live-battle__player-main">
@@ -256,7 +296,7 @@ export default defineComponent({
         );
         return clickable ? (
           <button
-            class="live-battle__player live-battle__player--link"
+            class={classes}
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
@@ -265,7 +305,7 @@ export default defineComponent({
             {content}
           </button>
         ) : (
-          <div class="live-battle__player" key={v.id}>
+          <div class={classes} key={v.id}>
             {content}
           </div>
         );

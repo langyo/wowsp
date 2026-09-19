@@ -194,6 +194,14 @@
     }
   }
 
+  /* Sunk mid-battle (recognized off the dim-gray in-game Tab row): the card
+     fades and drains to gray, mirroring how the game's own Tab table grays
+     the row — same rule the replay roster's survivor-first sort uses. */
+  &__player--sunk {
+    opacity: 0.45;
+    filter: grayscale(0.9);
+  }
+
   &__player-name {
     display: flex;
     align-items: center;

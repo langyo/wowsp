@@ -250,6 +250,16 @@ pub struct OverlayAnchor {
     ///     keeps re-running recognition until something actually matches.
     #[serde(default)]
     pub row_players: Option<Vec<Option<String>>>,
+    /// Per-row ALIVE classification read off the same name strips the
+    /// recognizer crops: the in-game Tab panel renders sunk players' rows in
+    /// dim gray, so a strip whose brightest text pixel stays well under the
+    /// alive rows' near-white glyphs marks that row sunk (`false`). Same
+    /// length and order as `row_centers`; `true` = alive (also the default
+    /// for rows whose strip could not be read — a missing strip must never
+    /// read as "sunk"). `None` when recognition did not run (same gating as
+    /// `row_players`).
+    #[serde(default)]
+    pub row_alive: Option<Vec<bool>>,
     /// True when recognition is ENABLED but this anchor carries no trusted
     /// row→name mapping yet: `row_players` is `None` (the arena roster was
     /// not ready when the table was pinned, or OCR read nothing) OR an
@@ -316,6 +326,42 @@ pub struct OverlayStatus {
     /// the battle or the game-window geometry changes (or the user clears
     /// it). Every automatic state carries `false`.
     pub manual: bool,
+}
+
+/// One row of the in-game Tab panel, as recognized off the live frame:
+/// the player sitting in that row (if the row→name matcher resolved it)
+/// and whether their ship was still afloat at capture time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabRowPlayer {
+    /// Roster nickname of the player in this row; `None` when the row's text
+    /// was not recognized/matched (the row exists, its occupant is unknown).
+    pub name: Option<String>,
+    /// False when the row's name strip read as dim gray (sunk ship).
+    pub alive: bool,
+}
+
+/// Payload of the `wowsp://tab-order` event: the in-game Tab panel's CURRENT
+/// row order per side, pushed whenever a recognition pass over a held Tab
+/// frame produced a trusted mapping. The in-game panel orders each team as
+/// [alive ships sorted by ship class] ++ [sunk ships sorted by ship class]
+/// and RE-SORTS live as ships sink — an order tempArenaInfo.json never
+/// carries — so this event is the only exact mirror of what the player sees
+/// while holding Tab. `name: None` entries keep the row slot (unknown
+/// occupant) so consumers can still count positions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabRowOrder {
+    /// `ArenaInfo::date_time` of the battle the order belongs to — the same
+    /// battle identity the frontend's live roster carries, so consumers can
+    /// match order to roster.
+    pub date_time: Option<String>,
+    /// Arena-file mtime stamp (battle identity on the Rust side).
+    pub battle: i64,
+    /// Ally rows (relation ≤ 1), top to bottom, as shown in-game.
+    pub allies: Vec<TabRowPlayer>,
+    /// Enemy rows (relation > 1), top to bottom, as shown in-game.
+    pub enemies: Vec<TabRowPlayer>,
 }
 
 /// One position sample for one entity at one instant — the raw output of M3's
