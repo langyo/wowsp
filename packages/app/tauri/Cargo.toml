@@ -83,7 +83,7 @@ tauri = { workspace = true, features = ["protocol-asset"] }
 # Update watch: resolves the configured mirror sources, fetches the `latest`
 # version marker and (via the `online` feature) probes mirrors — the app-side
 # half of the shun delivery pipeline (the installer shell is the other half).
-shun = { version = "0.2.11", default-features = false, features = ["online"] }
+shun = { version = "0.3", default-features = false, features = ["online"] }
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
@@ -93,7 +93,7 @@ tauri-build.workspace = true
 serde_json.workspace = true
 # Parses `[package.metadata.shun.update]` out of this manifest at build time
 # (same pattern as the installer shell's build.rs).
-shun = { version = "0.2.11", default-features = false, features = ["online"] }
+shun = { version = "0.3", default-features = false, features = ["online"] }
 
 [features]
 # This feature is required by `cargo tauri build` and is injected by default.
