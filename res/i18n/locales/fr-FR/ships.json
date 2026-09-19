@@ -303,7 +303,23 @@
   },
   "viewMode": {
     "tree": "Arbre technologique",
-    "grid": "Liste"
+    "grid": "Liste",
+    "compare": "Comparer"
+  },
+  "compare": {
+    "group": {
+      "hull": "Coque"
+    },
+    "addShips": "Ajouter des navires",
+    "removeAll": "Tout retirer",
+    "addAll": "Tout ajouter",
+    "addSelected": "Ajouter la sélection ({n})",
+    "added": "Ajouté",
+    "addedToast": "{n} navires ajoutés au comparateur",
+    "empty": "Rien à comparer pour l'instant — ajoutez des navires.",
+    "cap": "Le comparateur est limité à {n} navires.",
+    "showing": "{shown} premiers affichés sur {total}",
+    "count": "{n}/{max}"
   },
   "techTree": {
     "title": "Arbre technologique",

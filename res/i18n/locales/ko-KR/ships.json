@@ -303,7 +303,23 @@
   },
   "viewMode": {
     "tree": "테크 트리",
-    "grid": "목록"
+    "grid": "목록",
+    "compare": "비교"
+  },
+  "compare": {
+    "group": {
+      "hull": "선체"
+    },
+    "addShips": "함선 추가",
+    "removeAll": "전체 삭제",
+    "addAll": "전체 추가",
+    "addSelected": "선택 추가 ({n})",
+    "added": "추가됨",
+    "addedToast": "{n}척을 비교에 추가했습니다",
+    "empty": "아직 비교할 함선이 없습니다. 함선을 추가해 시작하세요.",
+    "cap": "비교 목록은 최대 {n}척입니다.",
+    "showing": "처음 {shown}척 표시 / 총 {total}척",
+    "count": "{n}/{max}"
   },
   "techTree": {
     "title": "테크 트리",

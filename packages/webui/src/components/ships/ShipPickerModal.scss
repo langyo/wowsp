@@ -1,0 +1,148 @@
+/**
+ * ShipPickerModal — compact variant of the encyclopedia filter language:
+ * same rounded chips / accent-active states as ShipsView's grid filters,
+ * tightened paddings so several filter rows fit above the result list.
+ */
+.ship-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  &__filters {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__filter-group {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__filter-label {
+    flex-shrink: 0;
+    width: 2.8rem;
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  &__chip {
+    background: transparent;
+    border: 1px solid rgb(var(--color-border) / 25%);
+    color: rgb(var(--color-muted));
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    transition: all var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-text));
+      border-color: rgb(var(--color-border) / 45%);
+    }
+
+    &--on {
+      background: rgb(var(--color-primary) / 15%);
+      border-color: rgb(var(--color-primary) / 50%);
+      color: rgb(var(--color-primary));
+    }
+
+    /* Tier chips: square-ish with tabular numerals, one step smaller than
+     * the grid view's 30px chips. */
+    &--tier {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm);
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+  }
+
+  // ── scrollable result list ───────────────────────────────────────────
+  &__list {
+    display: flex;
+    flex-direction: column;
+    max-height: 40vh;
+    overflow-y: auto;
+    border: 1px solid rgb(var(--color-border) / 15%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.28rem 0.55rem;
+    cursor: pointer;
+    transition: background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 8%);
+    }
+
+    &--added {
+      cursor: default;
+
+      &:hover {
+        background: transparent;
+      }
+    }
+  }
+
+  &__tier {
+    flex-shrink: 0;
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 12%);
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 1.25rem;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+
+  &__truncated {
+    margin: 0;
+    text-align: center;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+  }
+}
