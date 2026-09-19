@@ -289,6 +289,12 @@
     "talentTrigger": "Activación",
     "talentMax": "Hasta {n} activaciones",
     "slotNone": "Vacío",
+    "legendaryCmd": "Legendario",
+    "eliteCmd": "Élite",
+    "uniqueMod": "Único",
+    "noCommandersForNation": "No hay comandantes especiales disponibles para esta nación.",
+    "slotEmpty": "No hay mejoras disponibles",
+    "commanderLegend": "Insignia \"Legendario\" = comandante legendario con talentos únicos; \"Élite\" = comandante de élite/especial.",
     "activator": {
       "DamageDoneActivator": "Daño infligido",
       "TargetsDamagedActivator": "Objetivos alcanzados",
@@ -331,6 +337,38 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "Daños AA continuos",
+      "AABubbleDamage": "Daños de nubes antiaéreas",
+      "activeManeuveringWorkTimeCoeff": "Tiempo de maniobra activa",
+      "batteryCapacityCoeff": "Capacidad de la batería (submarino)",
+      "collisionDamageApply": "Daños de embestida infligidos",
+      "floodChanceFactor": "Probabilidad de inundación",
+      "floodChanceFactorPlane": "Probabilidad de inundación aérea",
+      "healthHullCoeff": "PS del buque",
+      "planeHealthCoeff": "PS de las aeronaves",
+      "planeSmokeGeneratorWorkTimeCoeff": "Duración del humo de las aeronaves",
+      "regenerationHPSpeed": "Velocidad de regeneración de PS",
+      "smokeGeneratorCapacityCoeff": "Capacidad de humo",
+      "smokeGeneratorWorkTimeCoeff": "Duración del humo",
+      "sonarWorkTimeCoeff": "Duración del sonar",
+      "speedCoef": "Velocidad del buque",
+      "ConsumableReloadTime": "Tiempo de recarga de consumibles",
+      "auxTorpBoosterReloadCoeff": "Recarga del potenciador de torpedos",
+      "GSIdealRadius": "Dispersión de la artillería secundaria",
+      "GSMaxDist": "Alcance de la artillería secundaria",
+      "GSShotDelay": "Tiempo de recarga de la artillería secundaria",
+      "burnTime": "Duración del incendio",
+      "collisionDamageNerf": "Daños de embestida recibidos",
+      "floodTime": "Duración de la inundación",
+      "hydrophoneReloadCoeff": "Recarga del hidrófono",
+      "planeConsumableReloadTime": "Recarga de consumibles de aeronaves",
+      "submarineLocatorReloadCoeff": "Recarga del localizador de submarinos",
+      "burnChanceFactorBig": "Probabilidad de incendio de los obuses HE",
+      "burnChanceFactorSmall": "Probabilidad de incendio de los obuses HE"
     }
   },
   "viewMode": {

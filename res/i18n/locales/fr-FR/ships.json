@@ -289,6 +289,12 @@
     "talentTrigger": "Déclencheur",
     "talentMax": "Jusqu'à {n} activations",
     "slotNone": "Vide",
+    "legendaryCmd": "Légendaire",
+    "eliteCmd": "Élite",
+    "uniqueMod": "Unique",
+    "noCommandersForNation": "Aucun commandant spécial disponible pour cette nation.",
+    "slotEmpty": "Aucune amélioration disponible",
+    "commanderLegend": "Badge « Légendaire » = commandant légendaire avec des talents uniques ; « Élite » = commandant d'élite/spécial.",
     "activator": {
       "DamageDoneActivator": "Dégâts infligés",
       "TargetsDamagedActivator": "Cibles touchées",
@@ -331,6 +337,38 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "Dégâts AA continus",
+      "AABubbleDamage": "Dégâts des nuages AA",
+      "activeManeuveringWorkTimeCoeff": "Durée de manœuvre active",
+      "batteryCapacityCoeff": "Capacité de la batterie (sous-marin)",
+      "collisionDamageApply": "Dégâts d'éperonnage infligés",
+      "floodChanceFactor": "Chance d'inondation",
+      "floodChanceFactorPlane": "Chance d'inondation aérienne",
+      "healthHullCoeff": "PV du navire",
+      "planeHealthCoeff": "PV des avions",
+      "planeSmokeGeneratorWorkTimeCoeff": "Durée de fumée des avions",
+      "regenerationHPSpeed": "Vitesse de régénération des PV",
+      "smokeGeneratorCapacityCoeff": "Capacité de fumée",
+      "smokeGeneratorWorkTimeCoeff": "Durée de la fumée",
+      "sonarWorkTimeCoeff": "Durée du sonar",
+      "speedCoef": "Vitesse du navire",
+      "ConsumableReloadTime": "Temps de rechargement des consommables",
+      "auxTorpBoosterReloadCoeff": "Rechargement du boosteur de torpilles",
+      "GSIdealRadius": "Dispersion de l'artillerie secondaire",
+      "GSMaxDist": "Portée de l'artillerie secondaire",
+      "GSShotDelay": "Temps de rechargement de l'artillerie secondaire",
+      "burnTime": "Durée de l'incendie",
+      "collisionDamageNerf": "Dégâts d'éperonnage subis",
+      "floodTime": "Durée de l'inondation",
+      "hydrophoneReloadCoeff": "Rechargement de l'hydrophone",
+      "planeConsumableReloadTime": "Rechargement des consommables aériens",
+      "submarineLocatorReloadCoeff": "Rechargement du localisateur de sous-marins",
+      "burnChanceFactorBig": "Chance d'incendie des obus HE",
+      "burnChanceFactorSmall": "Chance d'incendie des obus HE"
     }
   },
   "viewMode": {

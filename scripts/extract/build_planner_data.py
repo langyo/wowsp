@@ -23,7 +23,7 @@ Outputs (under packages/webui/src/):
   res/images/commanders/    (downscaled portraits)
 
 Usage:
-    python build_planner_data.py [--game PATH] [--pkg FILE] [--no-icons] [--no-net]
+    python build_planner_data.py [--game PATH] [--pkg FILE] [--only NAME] [--no-icons] [--no-net]
 """
 from __future__ import annotations
 
@@ -194,6 +194,8 @@ def extract_modernizations(txt: str, lang: dict) -> list[dict]:
             "shiptype": e.get("shiptype", []),
             "nation": e.get("nation", []),
             "shiplevel": e.get("shiplevel", []),
+            "tags": e.get("tags", []),
+            "ships": e.get("ships", []),
         })
     rows.sort(key=lambda r: (r["slot"], r["index"]))
     return rows
@@ -358,6 +360,8 @@ def main() -> int:
     ap.add_argument("--portrait-size", type=int, default=256)
     ap.add_argument("--no-icons", action="store_true", help="data only, skip icon downloads/scan")
     ap.add_argument("--no-net", action="store_true", help="data only from GameParams (skip upstream names/layout)")
+    ap.add_argument("--only", choices=("signals", "modernizations", "commanders", "skilltree"),
+                    help="regenerate a single dataset (skip the rest and all icon work)")
     args = ap.parse_args()
 
     if not GAMEPARAMS_JSON.exists():
@@ -369,34 +373,39 @@ def main() -> int:
 
     lang: dict = {}
     wowsft: dict = {}
-    if not args.no_net:
+    if not args.no_net and args.only != "commanders":
         lang = load_lang()
-        wowsft = json.loads(
-            fetch_cached(WOWSFT_SKILLS_URL, "wowsft_skills.json").read_text(encoding="utf-8"))
+        if args.only in (None, "skilltree"):
+            wowsft = json.loads(
+                fetch_cached(WOWSFT_SKILLS_URL, "wowsft_skills.json").read_text(encoding="utf-8"))
 
     OUT_DATA.mkdir(parents=True, exist_ok=True)
 
-    signals = extract_signals(txt, lang)
-    (OUT_DATA / "signals.json").write_text(
-        json.dumps(signals, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"[planner] signals.json: {len(signals)} flags")
+    if args.only in (None, "signals"):
+        signals = extract_signals(txt, lang)
+        (OUT_DATA / "signals.json").write_text(
+            json.dumps(signals, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(f"[planner] signals.json: {len(signals)} flags")
 
-    modernizations = extract_modernizations(txt, lang)
-    (OUT_DATA / "modernizations.json").write_text(
-        json.dumps(modernizations, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"[planner] modernizations.json: {len(modernizations)} upgrades")
+    if args.only in (None, "modernizations"):
+        modernizations = extract_modernizations(txt, lang)
+        (OUT_DATA / "modernizations.json").write_text(
+            json.dumps(modernizations, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(f"[planner] modernizations.json: {len(modernizations)} upgrades")
 
-    commanders = extract_commanders(txt)
-    (OUT_DATA / "commanders.json").write_text(
-        json.dumps(commanders, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"[planner] commanders.json: {len(commanders)} unique commanders")
+    if args.only in (None, "commanders"):
+        commanders = extract_commanders(txt)
+        (OUT_DATA / "commanders.json").write_text(
+            json.dumps(commanders, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(f"[planner] commanders.json: {len(commanders)} unique commanders")
 
-    skilltree = extract_skilltree(txt, lang, wowsft)
-    (OUT_DATA / "skilltree.json").write_text(
-        json.dumps(skilltree, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"[planner] skilltree.json: " + ", ".join(f"{c}={len(v)}" for c, v in skilltree.items()))
+    if args.only in (None, "skilltree"):
+        skilltree = extract_skilltree(txt, lang, wowsft)
+        (OUT_DATA / "skilltree.json").write_text(
+            json.dumps(skilltree, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(f"[planner] skilltree.json: " + ", ".join(f"{c}={len(v)}" for c, v in skilltree.items()))
 
-    if args.no_icons:
+    if args.no_icons or args.only:
         return 0
 
     # ── icons ────────────────────────────────────────────────────────────────

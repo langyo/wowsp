@@ -289,6 +289,12 @@
     "talentTrigger": "觸發",
     "talentMax": "最多觸發 {n} 次",
     "slotNone": "空",
+    "legendaryCmd": "傳奇",
+    "eliteCmd": "精英",
+    "uniqueMod": "研發局",
+    "noCommandersForNation": "該國別暫無可用特殊艦長。",
+    "slotEmpty": "無可選升級",
+    "commanderLegend": "「傳奇」徽章 = 擁有專屬天賦的傳奇艦長；「精英」徽章 = 精英/特種艦長。",
     "activator": {
       "DamageDoneActivator": "造成損傷時",
       "TargetsDamagedActivator": "命中目標時",
@@ -331,6 +337,38 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "防空持續傷害",
+      "AABubbleDamage": "防空彈幕傷害",
+      "activeManeuveringWorkTimeCoeff": "主動機動時間",
+      "batteryCapacityCoeff": "潛艦電池容量",
+      "collisionDamageApply": "撞擊造成的傷害",
+      "floodChanceFactor": "進水機率",
+      "floodChanceFactorPlane": "航空進水機率",
+      "healthHullCoeff": "艦體血量",
+      "planeHealthCoeff": "艦載機血量",
+      "planeSmokeGeneratorWorkTimeCoeff": "艦載機煙霧時間",
+      "regenerationHPSpeed": "血量恢復速度",
+      "smokeGeneratorCapacityCoeff": "煙霧產生器容量",
+      "smokeGeneratorWorkTimeCoeff": "煙霧持續時間",
+      "sonarWorkTimeCoeff": "聲納持續時間",
+      "speedCoef": "戰艦航速",
+      "ConsumableReloadTime": "消耗品裝填時間",
+      "auxTorpBoosterReloadCoeff": "魚雷增速器裝填時間",
+      "GSIdealRadius": "副砲散布",
+      "GSMaxDist": "副砲射程",
+      "GSShotDelay": "副砲裝填時間",
+      "burnTime": "火災持續時間",
+      "collisionDamageNerf": "撞擊承受的傷害",
+      "floodTime": "進水持續時間",
+      "hydrophoneReloadCoeff": "水聽器裝填時間",
+      "planeConsumableReloadTime": "艦載機消耗品裝填時間",
+      "submarineLocatorReloadCoeff": "潛艦定位器裝填時間",
+      "burnChanceFactorBig": "HE彈起火率",
+      "burnChanceFactorSmall": "HE彈起火率"
     }
   },
   "viewMode": {

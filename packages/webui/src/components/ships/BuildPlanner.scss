@@ -40,8 +40,7 @@
   }
 
   &__empty,
-  &__note,
-  &__no-cmd {
+  &__note {
     color: rgb(var(--color-muted));
     font-size: var(--text-xs);
     text-align: center;
@@ -126,7 +125,9 @@
     align-items: center;
     justify-content: center;
     gap: 0.15rem;
-    min-width: 42px;
+    /* Fixed (not min-) width so every tier row offers the same content box —
+       that is what keeps the 56px skill columns aligned across tiers. */
+    width: 42px;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
     text-transform: uppercase;
@@ -142,9 +143,13 @@
   }
 
   &__row {
-    display: flex;
-    gap: 0.35rem;
-    flex-wrap: wrap;
+    /* Fixed 56px tracks on an identical template per tier row — content-
+       sized tiles made columns drift, the grid keeps them pinned. */
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 56px);
+    justify-content: start;
+    gap: 0.45rem 0.35rem;
+    align-content: start;
     flex: 1;
   }
 }
@@ -153,36 +158,36 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.3rem 0.35rem;
-  border: 1px solid rgb(var(--color-border) / 18%);
-  border-radius: var(--radius-xs);
-  background: transparent;
-  min-width: 62px;
-  transition: border-color var(--duration-short) var(--ease-standard);
+  gap: 0.25rem;
+  width: 56px;
 
-  &--active {
-    border-color: rgb(var(--color-primary) / 40%);
-    background: rgb(var(--color-primary) / 5%);
+  /* Pick state rides the tile button, not the cell — game-style primary
+     ring + a slight brightening of the grey plate. */
+  &--active .skill-tile-v__btn {
+    border-color: rgb(var(--color-primary));
+    box-shadow: 0 0 0 2px rgb(var(--color-primary) / 55%);
+    filter: brightness(1.15);
   }
 
   &__btn {
-    width: 34px;
-    height: 34px;
+    width: 56px;
+    height: 56px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgb(var(--color-border) / 30%);
-    border-radius: 6px;
-    background: rgb(var(--color-surface));
-    cursor: pointer;
     padding: 0;
-    transition: border-color var(--duration-short) var(--ease-standard);
-    /* Hexagonal shape approximation via clip-path */
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    border: 1px solid rgb(0 0 0 / 25%);
+    border-radius: 4px;
+    /* Flat neutral grey plate like the game's skill squares — reads on both
+       themes, and the white glyph art sits on it unfiltered. */
+    background: #7d8085;
+    cursor: pointer;
+    transition:
+      filter var(--duration-short) var(--ease-standard),
+      box-shadow var(--duration-short) var(--ease-standard);
 
     &:hover:not(:disabled) {
-      border-color: rgb(var(--color-primary) / 50%);
+      filter: brightness(1.1);
     }
 
     &:disabled {
@@ -192,23 +197,21 @@
   }
 
   &__icon {
-    position: relative;
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     font-size: 8px;
     font-weight: 700;
-    color: rgb(var(--color-muted));
-    border-radius: 3px;
+    color: #f2f3f4;
   }
 
   &__icon-img {
-    width: 28px;
-    height: 28px;
-    object-fit: cover;
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
     display: block;
   }
 
@@ -217,7 +220,9 @@
     color: rgb(var(--color-text));
     text-align: center;
     line-height: 1.15;
-    max-width: 100%;
+    width: 100%;
+    /* Reserve two lines so a 1-line name doesn't pull its row up. */
+    min-height: 19px;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -240,6 +245,7 @@
 }
 
 .planner-v__cmd {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -258,6 +264,30 @@
   &--active {
     border-color: rgb(var(--color-primary) / 60%);
     background: rgb(var(--color-primary) / 8%);
+  }
+}
+
+/* Rarity chip overlapping the portrait's top-right: gold = legendary (has
+   talents), silver = elite. Dark ink on both — the two fills stay light.
+   Right-anchored so long labels (en "Legendary") grow inward instead of
+   bleeding into the neighbouring grid cell. */
+.planner-v__cmd-rank {
+  position: absolute;
+  top: 3px;
+  right: calc(50% - 18px);
+  z-index: 1;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgb(0 0 0 / 75%);
+  background: rgb(var(--color-muted) / 90%);
+  border: 1px solid rgb(var(--color-bg) / 85%);
+  pointer-events: none;
+
+  &--legendary {
+    background: rgb(var(--color-warning) / 95%);
   }
 }
 
@@ -418,6 +448,69 @@
   max-width: 100%;
 }
 
+/* Rich flag hover card — the game's dark tooltip look (name + flavor + one
+   line per modifier). Fixed-position so it escapes the modal's scroll
+   containers; pointer-events none keeps it from flickering on re-hover. */
+.flag-card {
+  position: fixed;
+  /* Above the ship-detail modal (hikari modal band = 1000), below toasts. */
+  z-index: 1200;
+  width: 250px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: var(--radius-sm);
+  background: rgb(18 22 28 / 97%);
+  color: #e8eaed;
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
+  pointer-events: none;
+
+  &__name {
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 0.15rem;
+  }
+
+  &__flavor {
+    color: #cfd3d9;
+    font-style: italic;
+    margin-bottom: 0.35rem;
+  }
+
+  &__effects {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    border-top: 1px solid rgb(255 255 255 / 12%);
+    padding-top: 0.3rem;
+  }
+
+  &__effect {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  &__effect-label {
+    color: #aab0b8;
+  }
+
+  &__effect-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    &--good {
+      color: #6fd08c;
+    }
+
+    &--bad {
+      color: #e57373;
+    }
+  }
+}
+
 /* ── Center: modernization slots ───────────────────────────────────────── */
 .planner-v__slots {
   display: flex;
@@ -467,7 +560,15 @@
   gap: 0.35rem;
 }
 
+.planner-v__slot-empty {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+  opacity: 0.7;
+}
+
 .planner-v__mod {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -487,6 +588,28 @@
     border-color: rgb(var(--color-primary) / 60%);
     background: rgb(var(--color-primary) / 8%);
   }
+
+  /* Research-bureau (unique) gear: gold-tinted border so it reads apart. */
+  &--unique,
+  &--unique:hover,
+  &--unique.planner-v__mod--active {
+    border-color: rgb(var(--color-warning) / 65%);
+  }
+}
+
+/* Tiny gold chip on the tile corner marking unique gear. */
+.planner-v__mod-unique {
+  position: absolute;
+  top: -7px;
+  right: 4px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: rgb(0 0 0 / 75%);
+  background: rgb(var(--color-warning) / 95%);
+  pointer-events: none;
 }
 
 .planner-v__mod-icon {

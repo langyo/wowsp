@@ -289,6 +289,12 @@
     "talentTrigger": "Trigger",
     "talentMax": "Up to {n} activations",
     "slotNone": "Empty",
+    "legendaryCmd": "Legendary",
+    "eliteCmd": "Elite",
+    "uniqueMod": "Unique",
+    "noCommandersForNation": "No special commanders available for this nation.",
+    "slotEmpty": "No upgrades available",
+    "commanderLegend": "\"Legendary\" badge = legendary commander with unique talents; \"Elite\" badge = elite/special commander.",
     "activator": {
       "DamageDoneActivator": "Damage dealt",
       "TargetsDamagedActivator": "Targets damaged",
@@ -331,6 +337,38 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "Continuous AA damage",
+      "AABubbleDamage": "Flak cloud damage",
+      "activeManeuveringWorkTimeCoeff": "Active maneuvering time",
+      "batteryCapacityCoeff": "Submarine battery capacity",
+      "collisionDamageApply": "Ram damage dealt",
+      "floodChanceFactor": "Flooding chance",
+      "floodChanceFactorPlane": "Aerial flooding chance",
+      "healthHullCoeff": "Ship HP",
+      "planeHealthCoeff": "Aircraft HP",
+      "planeSmokeGeneratorWorkTimeCoeff": "Aircraft smoke time",
+      "regenerationHPSpeed": "HP restoration",
+      "smokeGeneratorCapacityCoeff": "Smoke capacity",
+      "smokeGeneratorWorkTimeCoeff": "Smoke duration",
+      "sonarWorkTimeCoeff": "Sonar duration",
+      "speedCoef": "Ship speed",
+      "ConsumableReloadTime": "Consumable reload time",
+      "auxTorpBoosterReloadCoeff": "Torpedo booster reload",
+      "GSIdealRadius": "Secondary battery dispersion",
+      "GSMaxDist": "Secondary battery range",
+      "GSShotDelay": "Secondary battery reload time",
+      "burnTime": "Fire duration",
+      "collisionDamageNerf": "Ram damage taken",
+      "floodTime": "Flooding duration",
+      "hydrophoneReloadCoeff": "Hydrophone reload",
+      "planeConsumableReloadTime": "Aircraft consumable reload",
+      "submarineLocatorReloadCoeff": "Submarine locator reload",
+      "burnChanceFactorBig": "HE shell fire chance",
+      "burnChanceFactorSmall": "HE shell fire chance"
     }
   },
   "viewMode": {

@@ -289,6 +289,12 @@
     "talentTrigger": "Триггер",
     "talentMax": "До {n} срабатываний",
     "slotNone": "Пусто",
+    "legendaryCmd": "Легенда",
+    "eliteCmd": "Элита",
+    "uniqueMod": "Уник.",
+    "noCommandersForNation": "Для этой нации нет доступных особых командиров.",
+    "slotEmpty": "Нет доступных модулей",
+    "commanderLegend": "Значок «Легенда» — легендарный командир с уникальными талантами; «Элита» — элитный/особый командир.",
     "activator": {
       "DamageDoneActivator": "При нанесении урона",
       "TargetsDamagedActivator": "При попаданиях",
@@ -331,6 +337,38 @@
       "Lisboa": "Lisboa",
       "SWIRSKI": "Swirski",
       "Sa_Zhenbing": "Sa Zhenbing"
+    }
+  },
+  "flags": {
+    "effect": {
+      "AAAuraDamage": "Непрерывный урон ПВО",
+      "AABubbleDamage": "Урон от разрывов ПВО",
+      "activeManeuveringWorkTimeCoeff": "Время активного маневрирования",
+      "batteryCapacityCoeff": "Ёмкость батареи подлодки",
+      "collisionDamageApply": "Урон от тарана (наносимый)",
+      "floodChanceFactor": "Шанс затопления",
+      "floodChanceFactorPlane": "Шанс затопления от авиаторпед",
+      "healthHullCoeff": "Прочность корпуса",
+      "planeHealthCoeff": "Прочность авиации",
+      "planeSmokeGeneratorWorkTimeCoeff": "Время дыма авиации",
+      "regenerationHPSpeed": "Скорость восстановления прочности",
+      "smokeGeneratorCapacityCoeff": "Запас дымов",
+      "smokeGeneratorWorkTimeCoeff": "Время действия дыма",
+      "sonarWorkTimeCoeff": "Время действия сонара",
+      "speedCoef": "Скорость хода",
+      "ConsumableReloadTime": "Время перезарядки снаряжения",
+      "auxTorpBoosterReloadCoeff": "Перезарядка форсажа торпед",
+      "GSIdealRadius": "Рассеивание ПМК",
+      "GSMaxDist": "Дальность ПМК",
+      "GSShotDelay": "Время перезарядки ПМК",
+      "burnTime": "Длительность пожара",
+      "collisionDamageNerf": "Урон от тарана (получаемый)",
+      "floodTime": "Длительность затопления",
+      "hydrophoneReloadCoeff": "Перезарядка гидрофона",
+      "planeConsumableReloadTime": "Перезарядка снаряжения авиации",
+      "submarineLocatorReloadCoeff": "Перезарядка локатора подлодок",
+      "burnChanceFactorBig": "Шанс пожара от ОФ",
+      "burnChanceFactorSmall": "Шанс пожара от ОФ"
     }
   },
   "viewMode": {
