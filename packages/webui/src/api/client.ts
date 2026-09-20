@@ -825,8 +825,54 @@ export interface NetworkConfig {
   /** Mirror base for remote resources (ship portraits etc.); empty → the
    *  official Wargaming CDN. See commands/media.rs. */
   resourceCdn?: string | null;
+  /** ghproxy-style mirror prefix for GitHub downloads (resource packs, mod
+   *  catalog); empty → direct GitHub with the built-in mirrors as fallback.
+   *  See commands/model_pack.rs. */
+  githubMirror?: string | null;
   /** OS proxy pre-resolved by the shell (read-only, for proxy-URL consumers). */
   effectiveProxy?: string | null;
+}
+
+// ── Resource packs (mirrors `wowsp_tauri_shared`, see commands/model_pack.rs)
+
+/** One resource pack's LOCAL state (Settings → cache management). */
+export interface PackStatus {
+  /** "models" | "dogtags". */
+  id: string;
+  present: boolean;
+  /** Cached sync version — the release asset's `updated_at` stamp. */
+  version?: string | null;
+  /** Recursive on-disk size in bytes. */
+  sizeBytes: number;
+  downloading: boolean;
+}
+
+/** Remote pack state after a `res-latest` lookup. */
+export interface PackUpdate {
+  /** "models" | "dogtags". */
+  id: string;
+  remoteVersion?: string | null;
+  /** Remote version known AND different from the cached stamp. */
+  updateAvailable: boolean;
+}
+
+/** Progress push for a pack download (`wowsp://pack-progress`). */
+export interface PackProgress {
+  /** "models" | "dogtags". */
+  id: string;
+  /** "download" | "extract" | "done" | "error". */
+  phase: string;
+  received: number;
+  /** Total bytes when the server reported Content-Length, else 0. */
+  total: number;
+  error?: string | null;
+}
+
+/** A clearable auxiliary cache directory. */
+export interface AuxCacheStatus {
+  /** "image-cache" | "gameparams" | "encyclopedia" | "community". */
+  scope: string;
+  sizeBytes: number;
 }
 
 // ── Mod Hub (mirrors `wowsp_tauri_shared`, see commands/mod_hub.rs) ────────
@@ -1118,6 +1164,24 @@ export const api = {
   ensureModelPack: () => transport.invoke<string>(RPC.ensure_model_pack),
   /** Dog-tag pack (map + part PNGs) overlaying the bundled snapshot. */
   ensureDogtagPack: () => transport.invoke<string>(RPC.ensure_dogtag_pack),
+  // ── Resource packs: cache management (Settings panel) ──
+  /** Local state of every pack (presence, version, size, in-flight). */
+  getPackStatus: () => transport.invoke<PackStatus[]>(RPC.get_pack_status),
+  /** Remote `res-latest` stamps + whether an update is available. */
+  checkPackUpdates: () => transport.invoke<PackUpdate[]>(RPC.check_pack_updates),
+  /** Explicit (initial/update) pack download with progress events. */
+  packDownload: (id: string) => transport.invoke<null>(RPC.pack_download, { id }),
+  /** Cancel the in-flight pack download. */
+  packCancel: () => transport.invoke<null>(RPC.pack_cancel),
+  /** Delete one pack's cache directory + version stamp. */
+  clearPack: (id: string) => transport.invoke<null>(RPC.clear_pack, { id }),
+  /** Sizes of the clearable auxiliary cache directories. */
+  auxCacheOverview: () => transport.invoke<AuxCacheStatus[]>(RPC.aux_cache_overview),
+  /** Wipe one auxiliary cache directory's contents. */
+  clearAuxCache: (scope: string) => transport.invoke<null>(RPC.clear_aux_cache, { scope }),
+  /** Pack-download progress stream (`wowsp://pack-progress`). */
+  listenPackProgress: (handler: (p: PackProgress) => void) =>
+    transport.listen?.<PackProgress>("wowsp://pack-progress", handler),
   /** Network proxy settings (system / none / manual), applied globally. */
   getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
   setNetworkConfig: (config: NetworkConfig) =>

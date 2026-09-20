@@ -1467,3 +1467,62 @@ pub struct CatalogProgress {
     pub received: u64,
     pub total: u64,
 }
+
+/// One resource pack's LOCAL state (Settings → cache management panel).
+/// Mirrored by `PackStatus` in the webui api client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackStatus {
+    /// `models` | `dogtags`.
+    pub id: String,
+    /// Whether the pack directory exists and holds at least one entry.
+    pub present: bool,
+    /// Cached sync version — the GitHub release asset's `updated_at` stamp
+    /// the pack was downloaded from. `None` when never downloaded (or an
+    /// installer-shipped pack whose version could not be stamped).
+    pub version: Option<String>,
+    /// Recursive on-disk size of the pack directory in bytes.
+    pub size_bytes: u64,
+    /// Whether a download for this pack is currently in flight.
+    pub downloading: bool,
+}
+
+/// Remote pack state after a `res-latest` lookup (cache-management panel).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackUpdate {
+    /// `models` | `dogtags`.
+    pub id: String,
+    /// The `res-latest` asset's `updated_at`, `None` when the release could
+    /// not be reached (offline / rate-limited / no mirror worked).
+    pub remote_version: Option<String>,
+    /// Remote version known AND different from the cached stamp. When the
+    /// pack is absent this is `true` (i.e. "available to download").
+    pub update_available: bool,
+}
+
+/// Progress push for a pack download (`wowsp://pack-progress`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackProgress {
+    /// `models` | `dogtags`.
+    pub id: String,
+    /// `download | extract | done | error`.
+    pub phase: String,
+    /// Bytes received so far (download phase only).
+    pub received: u64,
+    /// Total bytes when the server reported Content-Length, else 0.
+    pub total: u64,
+    /// Human-readable error on the `error` phase (empty otherwise).
+    pub error: Option<String>,
+}
+
+/// A clearable auxiliary cache directory (cache-management panel).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuxCacheStatus {
+    /// Machine scope key: `image-cache` | `gameparams` | `encyclopedia` | `community`.
+    pub scope: String,
+    /// Recursive on-disk size in bytes; 0 when the directory is absent.
+    pub size_bytes: u64,
+}

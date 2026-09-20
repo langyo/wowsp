@@ -29,6 +29,11 @@ pub struct NetworkConfig {
     /// the official Wargaming CDN. See commands/media.rs.
     #[serde(default)]
     pub resource_cdn: Option<String>,
+    /// ghproxy-style mirror prefix for GitHub downloads (resource packs,
+    /// mod catalog). Empty → direct GitHub, with the built-in mirror set as
+    /// fallback only. See commands/model_pack.rs.
+    #[serde(default)]
+    pub github_mirror: Option<String>,
 }
 
 impl Default for NetworkConfig {
@@ -37,6 +42,7 @@ impl Default for NetworkConfig {
             mode: "system".to_string(),
             proxy: None,
             resource_cdn: None,
+            github_mirror: None,
         }
     }
 }
@@ -60,6 +66,7 @@ pub struct NetworkConfigResponse {
     pub mode: String,
     pub proxy: Option<String>,
     pub resource_cdn: Option<String>,
+    pub github_mirror: Option<String>,
     pub effective_proxy: Option<String>,
 }
 
@@ -71,6 +78,7 @@ pub fn get_network_config() -> Result<NetworkConfigResponse, String> {
         mode: cfg.mode,
         proxy: cfg.proxy,
         resource_cdn: cfg.resource_cdn,
+        github_mirror: cfg.github_mirror,
         effective_proxy,
     })
 }

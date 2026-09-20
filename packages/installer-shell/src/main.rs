@@ -905,6 +905,7 @@ async fn start_install(
         }
         cleanup_bootstrap_payload(&install_dir);
         relocate_model_pack(&install_dir, portable);
+        write_flavor_marker(&install_dir);
         Ok(())
     })
     .await
@@ -968,6 +969,18 @@ fn relocate_model_pack(install_dir: &Path, portable: bool) {
             let _ = std::fs::write(cache.join(".version"), version);
         }
     }
+}
+
+/// Stages the install flavor (`full` / `full-webview2` / `lite`) next to the
+/// app as `wowsp-flavor.txt`. The app's updater reads it to pick its own
+/// update artifact — a lite install must keep updating with the `-lite`
+/// installer instead of silently ballooning to the full payload. Failures
+/// are ignored: the app then falls back to the full artifact name.
+fn write_flavor_marker(install_dir: &Path) {
+    let _ = std::fs::write(
+        install_dir.join("wowsp-flavor.txt"),
+        SHUN_FLAVOR.trim().to_string(),
+    );
 }
 
 /// Recursively copies `from` into `to` (creating directories as needed).
@@ -1101,6 +1114,7 @@ fn run_headless(
     }
     cleanup_bootstrap_payload(&install_dir);
     relocate_model_pack(&install_dir, portable);
+    write_flavor_marker(&install_dir);
     // Shortcut policy on the silent path:
     //
     // - Update (`wowsp.exe` already sat in the install dir): **nothing to
