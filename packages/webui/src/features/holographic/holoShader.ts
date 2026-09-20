@@ -4,13 +4,16 @@
  * (`ReplayShipStage`). Extracted here so both surfaces share one look.
  *
  * Normals: baked GLBs ship without normals (merged + stripped during baking),
- * so callers that want smooth shading weld their geometries and add averaged
- * vertex normals first (see ShipStage.loadModel). When the `normal` attribute
- * is missing the attribute reads as (0,0,0) and the fragment shader falls back
+ * so callers that want smooth shading add crease-aware vertex normals first
+ * (`computeSmoothNormals` — the hulls are coarse meshes whose vertices sit on
+ * hard chines, so plain averaging shades as shards). When the `normal`
+ * attribute is missing it reads as (0,0,0) and the fragment shader falls back
  * to face normals from screen-space derivatives (dFdx/dFdy — WebGL2 default in
- * three r150+). Fresnel uses the normal vs. the view direction; scanlines
- * sweep vertically over time; a separate wireframe overlay mesh is drawn by
- * the caller.
+ * three r150+), as the replay's markers still do. Fresnel uses the normal vs.
+ * the view direction; both paths orient it by dot(n, viewDir) instead of
+ * gl_FrontFacing, whose winding test is unreliable on the baked hulls.
+ * Scanlines sweep vertically over time; a separate wireframe overlay mesh is
+ * drawn by the caller.
  *
  * Usage:
  *   const mat = makeHoloMaterial();          // a ShaderMaterial (transparent)
@@ -92,22 +95,27 @@ export const HOLO_FRAG = /* glsl */ `
       vec3 dy = dFdy(vWorldPos);
       n = normalize(cross(dx, dy));
     }
-    // Double-sided: flip toward the viewer so back faces shade like the
-    // front (derivative normals flip with winding; smooth normals point
-    // outward and need the flip when seen from inside).
-    if (!gl_FrontFacing) n = -n;
+    // Orient the normal toward the viewer by the geometric test, NOT by
+    // gl_FrontFacing: the baked hull is a coarse mesh of LARGE flat plates, and
+    // at a low camera its side plates sit at grazing incidence where a winding
+    // test flips whole plates at a time — the hull then reads as a mosaic of
+    // wedge patches that crawls as the camera moves. dot(n, viewDir) comes from
+    // the (smooth) normal, so it varies continuously across a plate and is
+    // independent of the exporter's triangle winding.
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    float facing = dot(n, viewDir);
+    if (facing < 0.0) n = -n;
     float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
     float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
     scan = smoothstep(0.82, 1.0, scan);
-    vec3 col = baseColor * (0.35 + 0.25 * fres);
-    col += fresnelColor * fres * 1.4;
-    col += fresnelColor * scan * 0.6;
-    // Interior surfaces seen through the hull read fainter than the near
-    // shell so the silhouette stays dominant (the depth anchor the caller
-    // renders does the occlusion; this keeps the layering legible).
-    float backFade = gl_FrontFacing ? 1.0 : 0.45;
-    float alpha = (0.62 + 0.28 * fres) * backFade;
+    vec3 col = baseColor * (0.75 + 0.45 * fres);
+    col += fresnelColor * fres * 1.2;
+    col += fresnelColor * scan * 0.5;
+    // No interior alpha fade: it would be another dot(n, viewDir) sign test at
+    // the same grazing incidence the plate mosaic comes from. Occlusion is the
+    // depth test's job (the stage writes depth); every fragment keeps one
+    // opacity, and a back face simply fades out through the Fresnel term.
+    float alpha = 0.72 + 0.28 * fres;
     // Focus highlight: brighten fragments near any focus point.
     for (int i = 0; i < 8; i++) {
       if (float(i) >= focusCount) break;
