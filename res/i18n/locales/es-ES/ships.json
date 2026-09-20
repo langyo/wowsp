@@ -307,6 +307,8 @@
     "noCommandersForNation": "No hay comandantes especiales disponibles para esta nación.",
     "slotEmpty": "No hay mejoras disponibles",
     "commanderLegend": "Insignia \"Legendario\" = comandante legendario con talentos únicos; \"Élite\" = comandante de élite/especial.",
+    "epicRibbon": "Mejorada por el comandante legendario",
+    "epicLegend": "Cinta verde = habilidad que el comandante legendario seleccionado enseña con valores mejorados.",
     "activator": {
       "DamageDoneActivator": "Daño infligido",
       "TargetsDamagedActivator": "Objetivos alcanzados",

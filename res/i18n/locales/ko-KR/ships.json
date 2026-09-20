@@ -307,6 +307,8 @@
     "noCommandersForNation": "이 국가에서 사용 가능한 특수 함장이 없습니다.",
     "slotEmpty": "사용 가능한 장비 없음",
     "commanderLegend": "\"전설\" 배지 = 고유 특성을 가진 전설 함장, \"정예\" 배지 = 정예/특수 함장.",
+    "epicRibbon": "전설 함장의 강화 스킬",
+    "epicLegend": "녹색 리본 = 선택한 전설 함장이 강화된 수치로 가르치는 스킬입니다.",
     "activator": {
       "DamageDoneActivator": "피해를 가할 때",
       "TargetsDamagedActivator": "목표 명중 시",

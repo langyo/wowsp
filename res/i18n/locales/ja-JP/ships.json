@@ -307,6 +307,8 @@
     "noCommandersForNation": "この国の特殊艦長はまだありません。",
     "slotEmpty": "選択できる改装はありません",
     "commanderLegend": "「伝説」バッジ = 固有の才能を持つ伝説の艦長、「精鋭」バッジ = 精鋭/特殊艦長。",
+    "epicRibbon": "伝説の指揮官が強化したスキル",
+    "epicLegend": "緑の角リボン = 選択中の伝説の指揮官が強化値で教えるスキル。",
     "activator": {
       "DamageDoneActivator": "ダメージを与えたとき",
       "TargetsDamagedActivator": "目標に命中したとき",
