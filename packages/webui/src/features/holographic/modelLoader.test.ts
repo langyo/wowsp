@@ -17,7 +17,7 @@ beforeAll(async () => {
   (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
     convertFileSrc: (p: string) => `http://asset.localhost/${encodeURIComponent(p)}`,
   };
-  // Fake the shell's ensure_model_pack: cache root resolves immediately.
+  // Fake the shell's ensure_res_pack: cache root resolves immediately.
   await initModelPack(async () => "C:/cache-root");
 });
 

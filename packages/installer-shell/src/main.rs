@@ -944,15 +944,21 @@ fn relocate_res_pack(install_dir: &Path, portable: bool) {
     };
     let _ = std::fs::create_dir_all(&cache);
 
-    let mut relocated_any = false;
+    // The stamp may only be written when EVERY shipped sub-directory
+    // landed — a partial relocation (disk full / AV lock mid-copy) stamped
+    // as complete would leave the app believing it is current and never
+    // offering the repair download.
+    let mut shipped = 0usize;
+    let mut relocated = 0usize;
     for subdir in ["models", "dogtags"] {
         let from = install_dir.join(subdir);
         if !from.is_dir() {
             continue;
         }
+        shipped += 1;
         let to = cache.join(subdir);
         if to == from {
-            relocated_any = true;
+            relocated += 1;
             continue;
         }
         // Replace semantics: wipe the target first so no stale files from
@@ -969,9 +975,9 @@ fn relocate_res_pack(install_dir: &Path, portable: bool) {
             }
             copied
         };
-        relocated_any |= moved;
+        relocated += usize::from(moved);
     }
-    if !relocated_any {
+    if shipped == 0 || relocated != shipped {
         return;
     }
 

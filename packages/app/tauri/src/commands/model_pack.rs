@@ -525,19 +525,32 @@ async fn download_asset(
 // ── Staging / atomic swap ─────────────────────────────────────────────────
 
 /// Move every existing pack sub-directory into a fresh staging root. The
-/// renames are same-volume and instant; on failure the caller restores
-/// them with [`restore_staging`].
+/// renames are same-volume and instant; a half-done move is rolled back
+/// here (the caller's [`restore_staging`] only sees a complete staging).
 fn move_into_staging(cache: &Path) -> Result<PathBuf, String> {
     let staging = cache.join(STAGING_DIR);
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|e| format!("clean staging dir: {e}"))?;
     }
     fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
+    let mut moved: Vec<&str> = Vec::new();
     for subdir in SUBDIRS {
         let from = cache.join(subdir);
-        if from.exists() {
-            fs::rename(&from, staging.join(subdir))
-                .map_err(|e| format!("move {subdir} into staging: {e}"))?;
+        if !from.exists() {
+            continue;
+        }
+        match fs::rename(&from, staging.join(subdir)) {
+            Ok(()) => moved.push(subdir),
+            Err(e) => {
+                // Put the already-moved sub-directories back so a retry
+                // starts from an intact cache instead of the next pass's
+                // staging clean-up destroying the pack.
+                for done in moved {
+                    let _ = fs::rename(staging.join(done), cache.join(done));
+                }
+                let _ = fs::remove_dir_all(&staging);
+                return Err(format!("move {subdir} into staging: {e}"));
+            },
         }
     }
     Ok(staging)
@@ -801,7 +814,10 @@ async fn delta_install(
                     segment,
                     segments,
                     base_received: done_bytes,
-                    base_total: 0,
+                    // received accumulates over the whole chain, so the
+                    // total must too: chain total minus this segment (the
+                    // segment's own Content-Length completes it).
+                    base_total: base_total.saturating_sub(edge.size),
                 },
                 app,
             )
@@ -877,22 +893,43 @@ async fn install_latest(
     let local = read_local_version(&cache);
     if let Some(hash) = local.tree_sha256.as_deref() {
         if hash == manifest.tree_sha256 {
+            // Already current — the panel seeds a progress entry before
+            // invoking, so close it out (a silent Ok would strand the UI
+            // on a dead progress bar until restart).
+            emit_progress(
+                app,
+                &ResProgress {
+                    phase: "done".into(),
+                    received: 0,
+                    total: 0,
+                    segment: 1,
+                    segments: 1,
+                    error: None,
+                },
+            );
             return Ok(());
         }
     }
     // Chain patches require a known local hash AND a healthy staged tree —
     // a missing models/ directory means the stamp is stale and the chain
-    // would patch a ghost.
+    // would patch a ghost. A failed delta-tag lookup downgrades to the
+    // full archive (the manifest itself is clearly reachable here, so the
+    // full download is viable; rate-limited api.github.com must not block
+    // a download the mirrors could serve).
     if prefer_delta && local.tree_sha256.is_some() && dir_populated(&cache.join("models")) {
-        let edges = fetch_delta_edges(client).await?;
-        let chain = delta_chain(
-            &edges,
-            local.tree_sha256.as_deref().unwrap_or(""),
-            &manifest.tree_sha256,
-        );
-        if !chain.is_empty() {
-            tracing::info!(steps = chain.len(), "applying resource-pack chain patches");
-            return delta_install(&chain, &manifest, app, client).await;
+        match fetch_delta_edges(client).await {
+            Ok(edges) => {
+                let chain = delta_chain(
+                    &edges,
+                    local.tree_sha256.as_deref().unwrap_or(""),
+                    &manifest.tree_sha256,
+                );
+                if !chain.is_empty() {
+                    tracing::info!(steps = chain.len(), "applying resource-pack chain patches");
+                    return delta_install(&chain, &manifest, app, client).await;
+                }
+            },
+            Err(e) => tracing::warn!("delta discovery failed, falling back to full: {e}"),
         }
     }
     full_install(&manifest, app, client).await
@@ -1107,8 +1144,10 @@ pub async fn res_download(app: AppHandle) -> Result<(), String> {
     result
 }
 
-/// Cancel the in-flight pack pass (cooperative: checked between chunks and
-/// before the version stamp is written).
+/// Cancel the in-flight pack pass (cooperative: checked between download
+/// chunks; an apply phase that is already running finishes — the
+/// swap-based installer never leaves a partial pack, so aborting it
+/// locally would only discard completed work).
 #[tauri::command]
 pub fn res_cancel() -> Result<(), String> {
     DOWNLOAD_CANCEL.store(true, Ordering::Relaxed);

@@ -285,7 +285,7 @@ e2e-setup:
 
 # ── release-models ─────────────────────────────────────────────────────
 # Package baked GLB models as a GitHub Release asset and prune old releases
-# (keeps the 3 most recent model packs). Requires `gh` CLI.
+# (keeps the 3 most recent chain patches). Requires `gh` CLI.
 #   just release-models 0.14.1
 #   just release-models 0.14.1 --dry-run
 release-models *ARGS:

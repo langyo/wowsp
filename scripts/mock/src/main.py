@@ -876,63 +876,59 @@ async def cmd_set_network_config(payload: dict) -> None:
     return None
 
 
-# --- Resource packs / caches (Settings -> Cache management) ----------------
+# --- Resource pack / caches (Settings -> Updates) --------------------------
 # Static canned state: the browser mock has no pack downloads, but the panel
 # renders and its buttons round-trip like the desktop shell.
 
-_MOCK_PACKS: dict[str, dict[str, Any]] = {
-    "models": {
-        "id": "models",
-        "present": True,
-        "version": "2026-09-11T09:16:54Z",
-        "sizeBytes": 1_234_567_890,
-        "downloading": False,
-    },
-    "dogtags": {
-        "id": "dogtags",
-        "present": True,
-        "version": "2026-09-11T09:16:54Z",
-        "sizeBytes": 3_141_592,
-        "downloading": False,
-    },
+_MOCK_RES: dict[str, Any] = {
+    "present": True,
+    "treeSha256": "a1b2c3d4e5f6" + "0" * 58,
+    "version": "2026-09-11T09:16:54Z",
+    "legacyStamp": False,
+    "sizeBytes": 1_237_709_382,
+    "downloading": False,
 }
 
 
-@app.post("/api/get_pack_status")
-async def cmd_get_pack_status() -> list[dict]:
-    return list(_MOCK_PACKS.values())
+@app.post("/api/get_res_status")
+async def cmd_get_res_status() -> dict:
+    return dict(_MOCK_RES)
 
 
-@app.post("/api/check_pack_updates")
-async def cmd_check_pack_updates() -> list[dict]:
-    return [
-        {"id": pid, "remoteVersion": p["version"], "updateAvailable": False}
-        for pid, p in _MOCK_PACKS.items()
-    ]
+@app.post("/api/check_res_update")
+async def cmd_check_res_update() -> dict:
+    return {
+        "latestTreeSha256": _MOCK_RES["treeSha256"],
+        "latestVersion": _MOCK_RES["version"],
+        "updateAvailable": False,
+        "deltaSteps": None,
+    }
 
 
-@app.post("/api/pack_download")
-async def cmd_pack_download(payload: dict) -> None:
+@app.post("/api/res_download")
+async def cmd_res_download() -> None:
     # No real download in the mock; flip the flag briefly so the UI path runs.
-    pid = payload.get("id")
-    if pid in _MOCK_PACKS:
-        _MOCK_PACKS[pid]["present"] = True
+    _MOCK_RES["present"] = True
     return None
 
 
-@app.post("/api/pack_cancel")
-async def cmd_pack_cancel() -> None:
+@app.post("/api/res_cancel")
+async def cmd_res_cancel() -> None:
     return None
 
 
-@app.post("/api/clear_pack")
-async def cmd_clear_pack(payload: dict) -> None:
-    pid = payload.get("id")
-    if pid in _MOCK_PACKS:
-        _MOCK_PACKS[pid]["present"] = False
-        _MOCK_PACKS[pid]["version"] = None
-        _MOCK_PACKS[pid]["sizeBytes"] = 0
+@app.post("/api/clear_res")
+async def cmd_clear_res() -> None:
+    _MOCK_RES["present"] = False
+    _MOCK_RES["treeSha256"] = None
+    _MOCK_RES["version"] = None
+    _MOCK_RES["sizeBytes"] = 0
     return None
+
+
+@app.post("/api/ensure_res_pack")
+async def cmd_ensure_res_pack() -> str:
+    return "C:/Users/mock/AppData/Local/WoWSP"
 
 
 _MOCK_AUX_CACHES: dict[str, int] = {

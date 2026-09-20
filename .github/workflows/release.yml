@@ -80,6 +80,11 @@ jobs:
         # (observed on v0.3.0, which initially carried both 0.2.0 and 0.3.0
         # installers).
         shell: bash
+        # GH_TOKEN lets build_installers fetch the res-latest manifest via
+        # gh — without it the installers build with no res stamp AND the
+        # size/sha checks silently accept a stale cargo-cached pack.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           rm -rf target/release/bundle/installer
           python scripts/build_installers.py --models fetch --images fetch
