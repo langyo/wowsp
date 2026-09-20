@@ -6,8 +6,15 @@ import PlayerBadge from "@/components/base/PlayerBadge";
 import RatingStamp from "@/components/base/RatingStamp";
 import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
-import { careerStamp, prTier, winrateColor, winrateTier } from "@/utils/winrate";
+import {
+  careerStamp,
+  prTier,
+  prTierLabel,
+  winrateColor,
+  winrateTier,
+} from "@/utils/winrate";
 import { useLanguage } from "@/i18n/useLanguage";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useCompositionStamps } from "@/composables/useCompositionStamps";
 import { useClipboard } from "@/composables/useClipboard";
 import "./StatsCard.scss";
@@ -33,10 +40,11 @@ export default defineComponent({
     onClanClick: Function as PropType<() => void>,
   },
   setup(props) {
+    const prefs = useStatsPrefsStore();
     const pr = computed(() => prTier(props.stats.pr));
-    const prLabel = computed(() =>
-      pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`),
-    );
+    // Localized fun wording (夯/人上人…) or the standard English band word,
+    // per the stats prefs (see prTierLabel).
+    const prLabel = computed(() => prTierLabel(pr.value.key));
     const stamp = computed(() =>
       careerStamp(props.stats.pr, props.stats.battles, props.stats.winrate, props.stats.hidden),
     );
@@ -46,10 +54,13 @@ export default defineComponent({
       () => props.stats.accountId,
       () => props.stats.realm,
     );
-    // The seals render nothing outside zh locales (RatingStamp's own rule);
-    // gate the cluster too so non-zh heroes don't grow an empty flex slot.
+    // The seals render nothing outside zh locales (RatingStamp's own rule)
+    // nor when the user turned them off — two AND-composed gates; gating the
+    // cluster too keeps non-zh / no-seal heroes from growing an empty slot.
     const { uiLocale } = useLanguage();
-    const sealsVisible = computed(() => uiLocale.value.startsWith("zh"));
+    const sealsVisible = computed(
+      () => uiLocale.value.startsWith("zh") && prefs.prefs.sealsEnabled,
+    );
     const wrTier = computed(() => winrateTier(props.stats.winrate));
     const wrColor = computed(() => winrateColor(props.stats.winrate));
     const { copy } = useClipboard();
@@ -158,17 +169,21 @@ export default defineComponent({
               ) : null}
             </div>
           ) : null}
-          <div
-            class={["stats-card__pr-block", pr.value.rainbow ? "rainbow-text" : null]}
-            style={pr.value.rainbow ? undefined : { color: pr.value.color }}
-            onClick={() => copy(String(props.stats.pr ?? "—"), t("common.copied"))}
-            data-hint={`PR: ${props.stats.pr ?? "—"} (${prLabel.value}) · ${t("common.clickToCopy")}`}
-          >
-            <span class="stats-card__pr-num">
-              {props.stats.pr != null ? props.stats.pr.toLocaleString() : "—"}
-            </span>
-            <span class="stats-card__pr-label">{prLabel.value}</span>
-          </div>
+          {/* PR block — hidden entirely while the rating is off (opt-out
+              look); the hero keeps the winrate + seals layout. */}
+          {prefs.prefs.prEnabled ? (
+            <div
+              class={["stats-card__pr-block", pr.value.rainbow ? "rainbow-text" : null]}
+              style={pr.value.rainbow ? undefined : { color: pr.value.color }}
+              onClick={() => copy(String(props.stats.pr ?? "—"), t("common.copied"))}
+              data-hint={`PR: ${props.stats.pr ?? "—"} (${prLabel.value}) · ${t("common.clickToCopy")}`}
+            >
+              <span class="stats-card__pr-num">
+                {props.stats.pr != null ? props.stats.pr.toLocaleString() : "—"}
+              </span>
+              <span class="stats-card__pr-label">{prLabel.value}</span>
+            </div>
+          ) : null}
         </div>
 
         {/* Division splits: 4 columns centered (solo / div2 / div3 / ranked) */}

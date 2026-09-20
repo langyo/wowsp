@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { careerStamp, compositionStamps, prTier } from "./winrate";
+import { statsPrefsState } from "@/stores/statsPrefs";
+
+import {
+  PR_TIER_STANDARD_LABELS,
+  careerStamp,
+  compositionStamps,
+  prTier,
+  prTierLabel,
+} from "./winrate";
 
 describe("prTier", () => {
   it("falls back to unknown for missing PR", () => {
@@ -29,6 +37,48 @@ describe("prTier", () => {
       expect(prTier(pr).rainbow).toBeUndefined();
       expect(prTier(pr).color).toBeTruthy();
     }
+  });
+});
+
+describe("prTierLabel", () => {
+  // The prefs knob is module state — snapshot and restore around each case
+  // so the suite stays order-independent.
+  const initial = { ...statsPrefsState.value };
+
+  it("renders the localized wording while localizedTiers is on", () => {
+    statsPrefsState.value.localizedTiers = true;
+    // Any installed locale resolves to real message text, never the raw
+    // "stats.<key>" path.
+    expect(prTierLabel("tierBad")).not.toBe("stats.tierBad");
+  });
+
+  it("renders the unknown dash under both wordings", () => {
+    statsPrefsState.value.localizedTiers = true;
+    expect(prTierLabel("unknown")).toBe("—");
+    statsPrefsState.value.localizedTiers = false;
+    expect(prTierLabel("unknown")).toBe("—");
+  });
+
+  it("switches to the standard English bands when localizedTiers is off", () => {
+    statsPrefsState.value.localizedTiers = false;
+    for (const [key, label] of Object.entries(PR_TIER_STANDARD_LABELS)) {
+      if (key === "unknown") continue;
+      expect(prTierLabel(key)).toBe(label);
+    }
+    // An unrecognized key degrades to the unknown dash, never a raw path.
+    expect(prTierLabel("tierWhat")).toBe("—");
+  });
+
+  it("reads the live prefs state (a settings toggle flips the wording)", () => {
+    statsPrefsState.value.localizedTiers = false;
+    expect(prTierLabel("tierUnicum")).toBe("Unicum");
+    statsPrefsState.value.localizedTiers = true;
+    expect(prTierLabel("tierUnicum")).not.toBe("Unicum");
+  });
+
+  it("restores the prefs state it mutated", () => {
+    statsPrefsState.value.localizedTiers = initial.localizedTiers;
+    expect(typeof statsPrefsState.value.localizedTiers).toBe("boolean");
   });
 });
 

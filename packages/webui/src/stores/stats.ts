@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type PlayerStats } from "@/api";
+import { prAlgoForRequest } from "@/stores/statsPrefs";
 
 /** Persisted-cache envelope for one player's stats (AppData). Old caches
  *  written before this envelope existed are plain PlayerStats JSON — the
@@ -120,7 +121,7 @@ export const useStatsStore = defineStore("stats", () => {
         }
       }
 
-      const stats = await api.lookupPlayerStats(nickname, realm);
+      const stats = await api.lookupPlayerStats(nickname, realm, prAlgoForRequest());
       const key = cacheKey(realm, stats.accountId);
       cache.value.set(key, stats);
       fetchedAt.value.set(key, Date.now());

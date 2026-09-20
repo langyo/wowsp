@@ -124,6 +124,16 @@
   font-size: var(--text-2xs);
 }
 
+/* PR column hidden (rating off) — the name column re-absorbs its track
+   (every other column keeps its exact width, so toggling the pref does
+   not shift the surviving columns). */
+.clan-card__roster--no-pr {
+  .clan-card__roster-head,
+  .clan-card__member {
+    grid-template-columns: minmax(0, 1fr) 84px 64px 62px 74px;
+  }
+}
+
 .clan-card__roster-head {
   color: rgb(var(--color-muted));
   border-bottom: 1px solid rgb(var(--color-border) / 14%);

@@ -36,7 +36,7 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
-use super::wg_api::{PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
+use super::wg_api::{PrAlgo, PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
 /// Concurrency cap for the batch name→account resolution, mirroring the WG
@@ -425,21 +425,34 @@ async fn lookup_one(client: &reqwest::Client, name: &str) -> Result<Option<Playe
     Ok(Some(player_stats_of(entry, &node, clan, true)))
 }
 
-/// CN arm of `wg_api::lookup_player_stats`.
-pub(crate) async fn lookup_player_stats(name: String) -> Result<PlayerStats, String> {
+/// CN arm of `wg_api::lookup_player_stats`. The expected PR algorithm works
+/// here too: the vortex serves the per-ship endpoint
+/// (`fetch_expected_pr_rows` routes "cn" to it), so the CN card aggregates
+/// the wows-numbers PR exactly like the API realms — one transport-agnostic
+/// code path.
+pub(crate) async fn lookup_player_stats(name: String, algo: PrAlgo) -> Result<PlayerStats, String> {
     let client = vortex_client()?;
-    lookup_one(&client, &name)
+    let mut stats = lookup_one(&client, &name)
         .await?
-        .ok_or_else(|| format!("no account found for '{name}' on cn"))
+        .ok_or_else(|| format!("no account found for '{name}' on cn"))?;
+    // Unavailable inputs (expected table or ship rows) yield None — the card
+    // renders "--"; the lookup itself must not fail over a rating.
+    if algo == PrAlgo::Expected {
+        stats.pr = super::wg_api::account_expected_pr_for("cn", stats.account_id).await;
+    }
+    Ok(stats)
 }
 
 /// CN arm of `wg_api::lookup_players_stats_batch`. One full lookup per name
 /// with bounded parallelism (the vortex service has no multi-id batch
 /// endpoints). Any transport failure fails the whole batch — same contract
 /// as the WG path, so the frontend's retry backoff kicks in instead of
-/// caching "no data".
+/// caching "no data". Under the expected algorithm every entry answers
+/// PR=None for the same request-budget reason as the WG arm (see
+/// `wg_api::apply_batch_pr_algo`).
 pub(crate) async fn lookup_players_stats_batch(
     names: Vec<String>,
+    algo: PrAlgo,
 ) -> Result<Vec<Option<PlayerStats>>, String> {
     let client = vortex_client()?;
     let results: Vec<Result<Option<PlayerStats>, String>> = {
@@ -453,7 +466,15 @@ pub(crate) async fn lookup_players_stats_batch(
     if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
         return Err(e.clone());
     }
-    Ok(results.into_iter().map(|r| r.unwrap_or(None)).collect())
+    Ok(results
+        .into_iter()
+        .map(|r| {
+            r.unwrap_or(None).map(|mut stats| {
+                super::wg_api::apply_batch_pr_algo(&mut stats, algo);
+                stats
+            })
+        })
+        .collect())
 }
 
 /// CN arm of `wg_api::suggest_players`: prefix autocomplete over the vortex
@@ -604,7 +625,7 @@ async fn clan_info_node(
 /// per-member stats (battles/wr/avg damage/avg xp/frags per battle) instead
 /// of raw WG counters — survival and K/D inputs aren't served, so those stay
 /// `None` rather than being approximated.
-pub(crate) async fn lookup_clan_info(clan_id: i64) -> Result<ClanInfo, String> {
+pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanInfo, String> {
     let client = vortex_client()?;
     let clan_node = clan_info_node(&client, clan_id)
         .await?
@@ -622,7 +643,7 @@ pub(crate) async fn lookup_clan_info(clan_id: i64) -> Result<ClanInfo, String> {
         Err(_) => Vec::new(),
     };
 
-    Ok(clan_info_from_cn(clan_id, &clan_node, &members))
+    Ok(clan_info_from_cn(clan_id, &clan_node, &members, algo))
 }
 
 // ── ranked ────────────────────────────────────────────────────────────────
@@ -675,6 +696,7 @@ fn clan_info_from_cn(
     clan_id: i64,
     clan_node: &serde_json::Value,
     members: &[serde_json::Value],
+    pr_algo: PrAlgo,
 ) -> ClanInfo {
     let mut roster = Vec::with_capacity(members.len());
     let (mut total_battles, mut total_wins, mut total_damage) = (0i64, 0i64, 0f64);
@@ -721,9 +743,17 @@ fn clan_info_from_cn(
             // as the solo bucket (no division splits to blend). `battles`
             // is always Some in this branch (guarded above); zip keeps that
             // invariant explicit instead of papering over it with a default.
-            let pr = winrate
-                .zip(battles)
-                .and_then(|(wr, b)| compute_pr(Some((wr, b)), None, None));
+            // Under the expected algorithm the roster carries no per-ship
+            // rows to aggregate (the members endpoint serves pre-aggregated
+            // counters only; per-member expected PR would need one ships
+            // fetch per row) — PR stays None, mirroring the WG roster.
+            let pr = if pr_algo == PrAlgo::Expected {
+                None
+            } else {
+                winrate
+                    .zip(battles)
+                    .and_then(|(wr, b)| compute_pr(Some((wr, b)), None, None))
+            };
             if let Some(pr) = pr {
                 member_prs.push(pr);
             }
@@ -1007,7 +1037,12 @@ mod tests {
               "battles_count": null, "wins_percentage": null,
               "is_hidden_statistics": true }
         ]);
-        let info = clan_info_from_cn(7000008303, &clan_node, members.as_array().unwrap());
+        let info = clan_info_from_cn(
+            7000008303,
+            &clan_node,
+            members.as_array().unwrap(),
+            PrAlgo::Winrate,
+        );
         assert_eq!(info.clan_id, 7000008303);
         assert_eq!(info.tag, "海军");
         assert_eq!(info.name, "达州舰队");
@@ -1056,7 +1091,7 @@ mod tests {
               "battles_count": 100, "wins_percentage": 50.0,
               "damage_per_battle": 1000.0, "is_hidden_statistics": false }
         ]);
-        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap());
+        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Winrate);
         assert_eq!(info.hidden_count, 1);
         assert_eq!(info.total_battles, 100);
         let hidden = info.members.iter().find(|m| m.account_id == 1).unwrap();
@@ -1070,7 +1105,7 @@ mod tests {
         let clan_node = serde_json::json!({
             "tag": "CN", "name": "ChinaStar", "members_count": 1
         });
-        let info = clan_info_from_cn(7000004205, &clan_node, &[]);
+        let info = clan_info_from_cn(7000004205, &clan_node, &[], PrAlgo::Winrate);
         assert_eq!(info.members.len(), 0);
         assert_eq!(info.members_count, 1);
         assert_eq!(info.winrate, 0.0);
@@ -1086,5 +1121,23 @@ mod tests {
         );
         assert_eq!(parse_cn_timestamp("2020-10-21T03:45:18"), Some(1603251918));
         assert_eq!(parse_cn_timestamp("not-a-date"), None);
+    }
+
+    #[test]
+    fn clan_info_from_cn_expected_algo_yields_no_pr() {
+        // The members endpoint has no per-ship rows, so the expected
+        // algorithm answers None — same contract as the WG roster.
+        let clan_node = serde_json::json!({ "tag": "X", "name": "X", "members_count": 1 });
+        let members = serde_json::json!([
+            { "id": 1, "name": "a", "role": { "name": "private" },
+              "battles_count": 100, "wins_percentage": 50.0,
+              "damage_per_battle": 1000.0, "is_hidden_statistics": false }
+        ]);
+        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Expected);
+        assert_eq!(info.members[0].stats.pr, None);
+        assert_eq!(info.avg_pr, None);
+        // The default algorithm keeps the winrate-mapped PR.
+        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Winrate);
+        assert!(info.members[0].stats.pr.is_some());
     }
 }

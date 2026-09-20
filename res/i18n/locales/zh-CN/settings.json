@@ -8,9 +8,10 @@
   "gamePath": "游戏路径",
   "realm": "区服",
   "themeMode": "外观",
-  "themeModeSystem": "自动（跟随日照）",
-  "themeModeDark": "深色",
-  "themeModeLight": "浅色",
+  "themeModeSystem": "根据系统",
+  "themeModeDark": "常黑",
+  "themeModeLight": "常白",
+  "themeModeSolar": "根据时间（日照）",
   "themePreset": "配色方案",
   "geolocation": "位置",
   "geolocationHint": "用于基于日照的自动主题。壳层提供定位时优先使用，否则按 IP 解析，本次会话内缓存。",
@@ -79,5 +80,19 @@
   "attributions": "版权信息",
   "attributionsHint": "本应用使用的合作方素材、上游项目与致谢名单。",
   "account": "账户",
-  "accountHint": "当前账户用于「我的水表」与战绩查询。点击卡片切换，在上方搜索昵称以绑定新账户。"
+  "accountHint": "当前账户用于「我的水表」与战绩查询。点击卡片切换，在上方搜索昵称以绑定新账户。",
+  "statsSection": "战绩",
+  "statsSectionHint": "调整玩家战绩卡片与实时战斗名单的水表（PR 评价）显示偏好。",
+  "statsPrefs": {
+    "prToggle": "水表 PR 评价",
+    "prToggleDesc": "在玩家战绩卡片上显示 PR 评价分与档位，默认关闭。",
+    "prAlgo": "评价算法",
+    "prAlgoDesc": "选择计算 PR 分数的公式。",
+    "prAlgoWinrate": "ApeRadar 加权胜率",
+    "prAlgoExpected": "wows-numbers 期望值",
+    "sealsToggle": "评价印章",
+    "sealsToggleDesc": "盖印「神了/海猴/蛆」评价印章，仅中文界面显示。",
+    "localizedTiersToggle": "本土化档位文案",
+    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。"
+  }
 }

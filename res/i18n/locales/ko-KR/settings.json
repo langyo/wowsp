@@ -8,9 +8,10 @@
   "gamePath": "게임 경로",
   "realm": "서버",
   "themeMode": "화면 모드",
-  "themeModeSystem": "자동 (일조 기준)",
-  "themeModeDark": "다크",
-  "themeModeLight": "라이트",
+  "themeModeSystem": "시스템 따르기",
+  "themeModeDark": "항상 다크",
+  "themeModeLight": "항상 밝게",
+  "themeModeSolar": "일광에 따름",
   "themePreset": "색상 프리셋",
   "geolocation": "위치",
   "geolocationHint": "일조 기반 자동 테마에 사용됩니다. 셸이 위치를 제공하면 이를 우선 사용하고, 없으면 IP로 확인하며 세션 동안 캐시됩니다.",
@@ -79,5 +80,19 @@
   "attributions": "저작권 정보",
   "attributionsHint": "이 앱에서 사용하는 파트너 소재·업스트림 프로젝트·감사 인사 목록.",
   "account": "계정",
-  "accountHint": "현재 계정은 내 전적 및 전적 조회에 사용됩니다. 카드를 클릭하여 전환하고, 위에서 닉네임을 검색해 새 계정을 연동할 수 있습니다."
+  "accountHint": "현재 계정은 내 전적 및 전적 조회에 사용됩니다. 카드를 클릭하여 전환하고, 위에서 닉네임을 검색해 새 계정을 연동할 수 있습니다.",
+  "statsSection": "전적",
+  "statsSectionHint": "플레이어 전적 카드와 실시간 전투 명단의 PR 평가 표시 설정입니다.",
+  "statsPrefs": {
+    "prToggle": "PR 평가",
+    "prToggleDesc": "플레이어 전적 카드에 PR 평가 점수와 등급을 표시합니다. 기본값은 꺼짐입니다.",
+    "prAlgo": "평가 알고리즘",
+    "prAlgoDesc": "PR 점수를 계산하는 공식을 선택합니다.",
+    "prAlgoWinrate": "ApeRadar 가중 승률",
+    "prAlgoExpected": "wows-numbers 기댓값",
+    "sealsToggle": "평가 인장",
+    "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
+    "localizedTiersToggle": "현지화 등급 표기",
+    "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급(Bad/Good/Unicum 등)이 표시됩니다."
+  }
 }

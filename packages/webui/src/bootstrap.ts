@@ -18,6 +18,7 @@ import {
 
 import { registerBrandThemes } from "./theme/brandThemes";
 import { installGlobalTooltip } from "./composables/globalTooltip";
+import { initThemeModePreference } from "./theme/themeModePreference";
 import { i18n } from "./i18n";
 
 /** Canonical wowsp locale → hikari i18n dir. Hikari ships simplified-
@@ -39,6 +40,11 @@ export function bootstrap(): void {
   // stored-id resolver accepts "ocean" even before this line evaluates.
   registerBrandThemes();
   initTheme();
+  // WoWSP's own four-way mode preference (dark/light/solar/OS-system) sits
+  // on top of hikari's three-way mode and must run AFTER initTheme so the
+  // authoritative `wowsp-theme-mode` key wins over whatever hikari restored.
+  // The ?theme= deep link below still overrides both for this load only.
+  initThemeModePreference();
   initFontContext();
 
   // Delegated tooltip hook: everything that used to lean on native

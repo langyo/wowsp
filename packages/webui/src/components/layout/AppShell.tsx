@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import {
   HBlockingToast,
@@ -18,7 +18,7 @@ import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
-import AnnouncementDialog from "./AnnouncementDialog";
+import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
@@ -34,8 +34,9 @@ import "./AppShell.scss";
  * Root layout shell: sidebar (left) + main content (right). Loads accounts +
  * starts the game-status poller on mount. Listens for the Rust close-requested
  * event to show a quit-vs-minimize confirm dialog (HModal with a footer
- * action group). On first launch (until acknowledged) it also forces the
- * free & open-source notice dialog. Mounts the shared hikari service
+ * action group). On first launch (until completed) it also runs the
+ * four-step onboarding wizard, whose first step carries the mandatory
+ * free & open-source notice. Mounts the shared hikari service
  * containers: the toast host and an error boundary around the routed
  * content.
  */
@@ -51,15 +52,27 @@ export default defineComponent({
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
     const closing = ref<"quit" | "minimize" | null>(null);
-    // Mandatory free & open-source notice: pops until the user acknowledges
-    // it through the dialog's own (countdown-gated) button.
-    const showNotice = ref(false);
+    // First-launch setup wizard (notice ack → prefs → theme → wallpaper).
+    // Runs until completed — its absence includes pre-wizard installs, who
+    // walk it once to adopt the new preference system. The wizard itself
+    // also writes the legacy notice ack so older builds stay quiet.
+    const showOnboarding = ref(
+      localStorage.getItem("wowsp-onboarding-completed") === null,
+    );
     // Game-path setup: pops on any launch where detection ends without an
     // active install (first launch, moved/unplugged library) so the user is
     // asked to locate the game right away instead of discovering it through
-    // a failed armor load later.
+    // a failed armor load later — but never while the onboarding wizard is
+    // up (it would cover the wizard); completing the wizard releases it.
+    const gamePathMissing = ref(false);
     const showGamePathSetup = ref(false);
     let unlistenClose: UnlistenFn | null = null;
+
+    function syncGamePathSetup() {
+      showGamePathSetup.value = gamePathMissing.value && !showOnboarding.value;
+    }
+
+    watch(showOnboarding, () => syncGamePathSetup());
 
     async function handleCloseChoice(action: "quit" | "minimize") {
       if (rememberChoice.value) {
@@ -122,10 +135,10 @@ export default defineComponent({
       }
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].
-      // When detection completes WITHOUT an active install, immediately ask
-      // for a manual location (the armor/ballistics loader needs a game
-      // root). A transient detection failure does not pop the modal — only
-      // a resolved-but-empty scan does.
+      // When detection completes WITHOUT an active install, ask for a manual
+      // location once the onboarding wizard is out of the way (the armor /
+      // ballistics loader needs a game root). A transient detection failure
+      // does not pop the modal — only a resolved-but-empty scan does.
       void config
         .load()
         .then(async () => {
@@ -134,16 +147,12 @@ export default defineComponent({
             () => (detected = true),
             () => (detected = false),
           );
-          if (detected && !config.activeInstall) {
-            showGamePathSetup.value = true;
-          }
+          gamePathMissing.value = detected && !config.activeInstall;
+          syncGamePathSetup();
         })
         .catch(() => {});
       void accounts.load();
       gameStatus.start();
-
-      // Forced notice on first launch (or any launch without a prior ack).
-      showNotice.value = localStorage.getItem("wowsp-oss-notice-acked") === null;
 
       // Shun auto-update: probe portable mode, then a delayed version check.
       // The check itself is silent — failures live in the store for
@@ -238,11 +247,12 @@ export default defineComponent({
           }}
         </HModal>
 
-        {/* Free & open-source notice — the only dismissal is its own ack
-            button (closable={false}: no X, no Escape, no backdrop click). */}
-        <AnnouncementDialog
-          modelValue={showNotice.value}
-          onUpdate:modelValue={(v: boolean) => (showNotice.value = v)}
+        {/* First-launch setup wizard — covers the shell below the popup
+            bands; the only way forward is finishing it (its first step
+            carries the old notice's countdown-gated ack). */}
+        <OnboardingWizard
+          modelValue={showOnboarding.value}
+          onUpdate:modelValue={(v: boolean) => (showOnboarding.value = v)}
         />
 
         {/* Game-path first-launch prompt — fires whenever the detect pass
