@@ -822,6 +822,108 @@ pub struct SmokeScreenEvent {
     pub end_time: Option<f32>,
 }
 
+/// One minimap vision-info update (avatar `updateMinimapVisionInfo`, method id
+/// version-dependent — experiment E11). The server pushes one entry per
+/// vehicle whose minimap marker state changed: the entry identifies the
+/// vehicle and carries a packed 32-bit marker payload.
+///
+/// Evidence chain (15.8.0 reference replay, 1,821 calls / 12,096 entries over
+/// a 24-vehicle match): every >4 s gap in a vehicle's position-sample stream
+/// has an entry at its start (89/89, median within ~1 s) and at its end
+/// (89/89) — this stream IS the explicit spot/unspot signal E3 inferred from
+/// gaps. The opening packet carries all 12 allied vehicles (the always-visible
+/// set). 107 entries carry the sentinel `packedData == 0x80000000` (bit 31):
+/// the hidden-marker state the server sends when a vehicle becomes unspotted
+/// (84/89 gap-start sequences end on it). The low 31 bits of non-sentinel
+/// values encode the marker's minimap payload — position changes fire
+/// repeatedly while visible, but the exact packing resisted linear, halved
+/// and Morton (bit-interleave) fits and stays undocumented; the raw value is
+/// preserved for future analysis. `visible` is `false` exactly for the
+/// sentinel.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisionEvent {
+    /// Seconds since match start.
+    pub time: f32,
+    /// The vehicle entity the minimap marker belongs to (joins
+    /// `EntityTrajectory.entityId`).
+    pub entity_id: i32,
+    /// False when the entry is the hidden-marker sentinel (unspotted), true
+    /// for a live marker update.
+    pub visible: bool,
+    /// Raw 32-bit packed marker payload (`MINIMAP_USER_INFO.packedData`),
+    /// sentinel included — see the type docs.
+    pub packed_data: u32,
+}
+
+/// One consumable activation (Vehicle `onConsumableUsed`, method id
+/// version-dependent — experiment E11). Fires on the vehicle that used the
+/// consumable, for BOTH teams' vehicles visible to the recording client
+/// (reference capture: 104 uses across 22 of 24 vehicles).
+///
+/// Wire (15.2+): a length-prefixed blob `CONSUMABLE_USAGE_PARAMS` followed by
+/// the f32 `workTimeLeft`. The blob's first byte selects the usage variant
+/// (`ConsumableUsageType`): 0 = none (no id), 1 = default `<BB>`, 2 = position
+/// `<BBff>`, 3 = entity target `<BBbQ>`; its second byte is the raw
+/// consumable type id (GameParams enum — reference capture used ids
+/// {0,1,3,4,6,8,9,10,65}; several durations cluster near well-known
+/// consumables — 5 s (id 0, damage control immunity), 28 s (id 8, repair
+/// party) — but the id→name map is a GameParams concern and stays raw here).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumableUseEvent {
+    pub time: f32,
+    /// Vehicle entity that used the consumable.
+    pub entity_id: i32,
+    /// ConsumableUsageType of the params blob: 0 none, 1 default, 2 position,
+    /// 3 entity target.
+    pub usage_type: u8,
+    /// Raw consumable type id (0 for the `none` variant).
+    pub consumable_id: u8,
+    /// Remaining work time in seconds (the consumable's active duration).
+    pub duration: f32,
+    /// Map position for the `position` usage variant (tactical map pings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_x: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_z: Option<f32>,
+    /// Target entity id for the `entity` usage variant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<u64>,
+}
+
+/// One per-vehicle engine-state change (Vehicle entity properties
+/// `enginePower` idx 9 / `engineDir` idx 10, ALL_CLIENTS — experiment E11).
+/// Exactly one of `power` / `dir` is set per sample (whichever property
+/// changed); fold by entity for a step timeline.
+///
+/// Semantics (reverse-engineered on the 15.8.0 reference replay, 23 of 24
+/// vehicles carry samples): `enginePower` is the engine's current output
+/// level in tenths of maximum — NOT the raw telegraph intent. It ramps 2→10
+/// over ~20 s after the recorder commands full ahead (the engine spin-up,
+/// ahead of the ~55 s hull acceleration), settles around 5 under sustained
+/// half throttle, and holds 10 through turn-induced speed dips. `engineDir`
+/// is the sign of the applied force (+1 driving, -1 braking/astern) — on the
+/// recorder's own ship all 7 CruiseState throttle reductions flip it to -1
+/// within ~1 s, and 6 of its 7 flips back to +1 follow a throttle raise (the
+/// seventh returns at settled half power). Settled low power (≤2) windows
+/// coincide with near-standstill (median windowed speed ≤ 9% of the ship's
+/// p95 across qualifying vehicles).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineStateSample {
+    pub time: f32,
+    /// Vehicle entity the sample belongs to.
+    pub entity_id: i32,
+    /// enginePower level 0-10 when that property changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<u8>,
+    /// engineDir force sign (+1 ahead / -1 astern-braking) when that property
+    /// changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<i8>,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.

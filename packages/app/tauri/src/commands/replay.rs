@@ -226,6 +226,12 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         // literally by several experiment modules, so new fields cannot be
         // added to it without touching frozen files.
         smoke_screens: _,
+        // E11 research surfaces (minimap vision / consumable uses / engine
+        // state) are served off `DecodedReplay` directly by their own tests
+        // until the G1 wiring lands.
+        vision_events: _,
+        consumable_uses: _,
+        engine_states: _,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.

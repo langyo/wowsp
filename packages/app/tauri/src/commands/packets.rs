@@ -68,6 +68,9 @@ const PACKET_CELL_PLAYER_CREATE: u32 = 0x01;
 /// Avatar entity type id (spec index 1). Its method table drives the
 /// battle-effect events (shots, torpedoes, squadrons, explosions).
 const ENTITY_TYPE_AVATAR: i16 = 1;
+/// Vehicle entity type id (spec index 2) — ships. Its method table carries
+/// the per-vehicle client events (consumable uses, E11).
+const ENTITY_TYPE_VEHICLE: i16 = 2;
 /// SmokeScreen entity type id (spec index 4 in the ClientServerEntities
 /// order, confirmed against the 15.8.0 `entities.xml`). Smoke clouds are real
 /// entities: created when emission starts and despawned on dissipation.
@@ -122,6 +125,32 @@ const PACKET_GUN_MARKER: u32 = 0x18;
 /// [`method_ids_for_version`], never hardcoded.
 const PACKET_ENTITY_METHOD: u32 = 0x08;
 
+/// Experiment E11 method ids (see [`E11MethodIds`]): resolved per version.
+fn e11_method_ids(version_key: Option<(u32, u32, u32)>) -> Option<E11MethodIds> {
+    match version_key {
+        // Pinned against the 15.8.0 exposed tables (E10: def build 13187581,
+        // wire-validated on the reference capture). Promoting these into the
+        // generated `method_tables` (and its generator) is a follow-up that
+        // touches frozen files; until then other versions decode nothing.
+        Some((15, 8, _)) => Some(E11MethodIds {
+            avatar_update_minimap_vision_info: 155,
+            vehicle_on_consumable_used: 72,
+        }),
+        _ => None,
+    }
+}
+
+/// Experiment E11 method ids for the G1 candidate events that are not yet in
+/// the generated [`MethodIds`] tables: the avatar's minimap vision stream and
+/// the vehicle consumable-use stream. The engine-state projection needs no
+/// method ids (properties are index-addressed) but shares the same 15.8.0
+/// pin, so it rides on this being `Some`.
+#[derive(Debug, Clone, Copy)]
+struct E11MethodIds {
+    avatar_update_minimap_vision_info: i32,
+    vehicle_on_consumable_used: i32,
+}
+
 /// Version-dependent decoder inputs resolved once per replay: the method-id
 /// table and the InteractiveZone entity-type index (13 before 14.5.0, 14 after
 /// — `VehicleAppearance` was inserted into `entities.xml` ahead of it).
@@ -136,6 +165,9 @@ struct LayoutProfile {
     /// SHOTKILL entries carry a nullable TERMINAL_BALLISTICS_INFO from 12.7.0
     /// on (flag byte; 29 bytes when present).
     shotkill_has_ballistics: bool,
+    /// E11 experimental decoders (minimap vision, consumable uses, engine
+    /// state projection) — only for versions whose ids/indices are pinned.
+    e11: Option<E11MethodIds>,
 }
 
 /// A single property change sample — one field of an entity updated at a
@@ -235,6 +267,21 @@ pub struct DecodedReplay {
     /// (created by CellPlayerCreate) to the vehicle it occupies. `None` when
     /// no link was seen.
     pub recorder_vehicle: Option<i32>,
+    /// Minimap vision updates (avatar `updateMinimapVisionInfo`, experiment
+    /// E11): the explicit spot/unspot stream — one entry per vehicle whose
+    /// minimap marker state changed. Empty on versions without a pinned id.
+    #[allow(dead_code)]
+    pub vision_events: Vec<wowsp_tauri_shared::VisionEvent>,
+    /// Consumable activations (Vehicle `onConsumableUsed`, experiment E11) on
+    /// every vehicle the client observed, both teams. Empty on versions
+    /// without a pinned id.
+    #[allow(dead_code)]
+    pub consumable_uses: Vec<wowsp_tauri_shared::ConsumableUseEvent>,
+    /// Per-vehicle engine-state changes (enginePower idx 9 / engineDir idx 10
+    /// properties on type-2 entities, experiment E11). Empty on versions
+    /// without the pinned property indices.
+    #[allow(dead_code)]
+    pub engine_states: Vec<wowsp_tauri_shared::EngineStateSample>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -304,6 +351,7 @@ pub fn decode_replay(
         },
         ward_has_type: version_key.map(|k| k >= (13, 2, 0)).unwrap_or(true),
         shotkill_has_ballistics: version_key.map(|k| k >= (12, 7, 0)).unwrap_or(true),
+        e11: e11_method_ids(version_key),
     };
     Ok(walk_frames(&inflated, ship_id_candidates, legacy, &profile))
 }
@@ -428,6 +476,8 @@ fn walk_frames(
     let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
     let mut damage_stats: Vec<wowsp_tauri_shared::DamageStatSample> = Vec::new();
     let mut cruise: Vec<wowsp_tauri_shared::CruiseSample> = Vec::new();
+    let mut vision_events: Vec<wowsp_tauri_shared::VisionEvent> = Vec::new();
+    let mut consumable_uses: Vec<wowsp_tauri_shared::ConsumableUseEvent> = Vec::new();
     // SmokeScreen entities keyed by id while their lifecycle is assembled;
     // converted to the sorted event list after the walk (the dissipation end
     // only becomes known when the leave/destroy packet arrives later).
@@ -694,6 +744,17 @@ fn walk_frames(
             break;
         };
         if entity_type != Some(ENTITY_TYPE_AVATAR) {
+            // Vehicle-side method streams (E11): consumable uses fire on
+            // type-2 entities against the Vehicle exposed-id table.
+            if entity_type == Some(ENTITY_TYPE_VEHICLE)
+                && profile
+                    .e11
+                    .is_some_and(|e| e.vehicle_on_consumable_used == call.method_id)
+            {
+                if let Some(event) = decode_consumable_used(call.time, call.entity_id, &call.args) {
+                    consumable_uses.push(event);
+                }
+            }
             continue;
         }
         if call.method_id == m.avatar_receive_artillery_shots {
@@ -748,6 +809,11 @@ fn walk_frames(
             ));
         } else if m.avatar_receive_damage_stat == Some(call.method_id) {
             damage_stats.extend(decode_damage_stat(call.time, &call.args));
+        } else if profile
+            .e11
+            .is_some_and(|e| e.avatar_update_minimap_vision_info == call.method_id)
+        {
+            vision_events.extend(decode_minimap_vision(call.time, &call.args));
         }
     }
     for samples in positions.values_mut() {
@@ -786,6 +852,46 @@ fn walk_frames(
             .partial_cmp(&b.time)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    // Engine-state projection (experiment E11): enginePower (idx 9, UINT8) and
+    // engineDir (idx 10, INT8) ALL_CLIENTS properties on Vehicle entities.
+    // The raw property stream is already collected; this filters it to the
+    // pinned indices on type-2 entities only. The indices were pinned against
+    // the 15.8.0 Vehicle.def (E8) — other versions' property sorts are
+    // unverified, so the projection rides the E11 version gate.
+    let mut engine_states: Vec<wowsp_tauri_shared::EngineStateSample> = Vec::new();
+    if profile.e11.is_some() {
+        for (eid, changes) in &properties {
+            if kinds.get(eid).map(|k| k.entity_type) != Some(ENTITY_TYPE_VEHICLE) {
+                continue;
+            }
+            for c in changes {
+                if c.size != 1 {
+                    continue;
+                }
+                let sample = match c.property_index {
+                    9 => wowsp_tauri_shared::EngineStateSample {
+                        time: c.time,
+                        entity_id: *eid,
+                        power: Some(c.value as u8),
+                        dir: None,
+                    },
+                    10 => wowsp_tauri_shared::EngineStateSample {
+                        time: c.time,
+                        entity_id: *eid,
+                        power: None,
+                        dir: Some(c.value as u8 as i8),
+                    },
+                    _ => continue,
+                };
+                engine_states.push(sample);
+            }
+        }
+        engine_states.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
     DecodedReplay {
         positions,
         kinds,
@@ -819,6 +925,9 @@ fn walk_frames(
         cruise,
         recorder_vehicle,
         smoke_screens,
+        vision_events,
+        consumable_uses,
+        engine_states,
     }
 }
 
@@ -1226,6 +1335,111 @@ fn decode_damage_stat(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::DamageS
 /// [owner 32 | index 3 | purpose 3 | departures 1]).
 fn plane_owner_id(plane_id: u64) -> i32 {
     (plane_id & 0xFFFF_FFFF) as u32 as i32
+}
+
+/// The hidden-marker sentinel of `MINIMAP_USER_INFO.packedData` (experiment
+/// E11): bit 31 set, everything else zero — the unspotted state.
+const MINIMAP_HIDDEN_SENTINEL: u32 = 0x8000_0000;
+
+/// Decode `updateMinimapVisionInfo` args (experiment E11): two `MINIMAPINFO`
+/// arrays (`ARRAY<MINIMAP_USER_INFO>`, per the 15.8.0 `alias.xml`), each
+/// laid out as `[u8 count]{ [u32 vehicleID][u32 packedData] }`.
+///
+/// The first array carries the live marker updates — the opening packet of a
+/// battle contains the whole allied set, later packets only vehicles whose
+/// marker state changed (movement, or the hidden sentinel on unspot). The
+/// second array was empty in all 1,821 reference-capture calls; its entries
+/// are decoded with the same rules (the sentinel test is on the value itself)
+/// so a future firing is preserved as evidence rather than guessed at.
+///
+/// Any desync (truncated entry, trailing bytes) drops the whole packet's
+/// events — a misaligned walk would fabricate entity ids.
+fn decode_minimap_vision(time: f32, args: &[u8]) -> Vec<wowsp_tauri_shared::VisionEvent> {
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    for _ in 0..2 {
+        let Some(&count) = args.get(off) else {
+            return Vec::new();
+        };
+        off += 1;
+        for _ in 0..count {
+            let (Some(id), Some(packed)) = (
+                read_bytes(args, off).map(u32::from_le_bytes),
+                read_bytes(args, off + 4).map(u32::from_le_bytes),
+            ) else {
+                return Vec::new();
+            };
+            off += 8;
+            out.push(wowsp_tauri_shared::VisionEvent {
+                time,
+                entity_id: id as i32,
+                visible: packed != MINIMAP_HIDDEN_SENTINEL,
+                packed_data: packed,
+            });
+        }
+    }
+    if off != args.len() {
+        return Vec::new();
+    }
+    out
+}
+
+/// Decode Vehicle `onConsumableUsed` args (experiment E11):
+/// `[u8 blob_len][CONSUMABLE_USAGE_PARAMS blob][f32 workTimeLeft]`.
+///
+/// The params blob's first byte is the `ConsumableUsageType` (serialized by
+/// the game's `CommonConsumables.UsageConverter`, mirrored by the vendored
+/// wows-replays decoder): 0 = none (empty blob), 1 = default `<BB>`
+/// (usage + consumable id), 2 = position `<BBff>` (+ map x/z), 3 = entity
+/// target `<BBbQ>` (+ i8 target type + u64 target id). A blob whose length
+/// contradicts its declared variant is a desync — the call is skipped rather
+/// than half-decoded.
+fn decode_consumable_used(
+    time: f32,
+    entity_id: i32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::ConsumableUseEvent> {
+    let &blob_len = args.first()?;
+    let blob_len = blob_len as usize;
+    let blob = args.get(1..1 + blob_len)?;
+    let duration = f32::from_le_bytes(read_bytes(args, 1 + blob_len)?);
+    if !duration.is_finite() || duration < 0.0 {
+        return None;
+    }
+    let mut event = wowsp_tauri_shared::ConsumableUseEvent {
+        time,
+        entity_id,
+        usage_type: 0,
+        consumable_id: 0,
+        duration,
+        target_x: None,
+        target_z: None,
+        target_id: None,
+    };
+    match blob.first().copied() {
+        // NONE — empty blob (or a leading zero byte, as the reference accepts).
+        None | Some(0) => (),
+        // DEFAULT: <BB> = usage + consumable id.
+        Some(1) if blob_len == 2 => {
+            event.usage_type = 1;
+            event.consumable_id = blob[1];
+        },
+        // POSITION: <BBff> = usage + consumable id + map x + map z.
+        Some(2) if blob_len == 10 => {
+            event.usage_type = 2;
+            event.consumable_id = blob[1];
+            event.target_x = Some(f32::from_le_bytes(read_bytes(blob, 2)?));
+            event.target_z = Some(f32::from_le_bytes(read_bytes(blob, 6)?));
+        },
+        // ENTITY: <BBbQ> = usage + consumable id + target type + target id.
+        Some(3) if blob_len == 11 => {
+            event.usage_type = 3;
+            event.consumable_id = blob[1];
+            event.target_id = Some(u64::from_le_bytes(read_bytes(blob, 3)?));
+        },
+        _ => return None,
+    }
+    Some(event)
 }
 
 /// `receive_removeMinimapSquadron` guards its read with a length check.
@@ -3073,6 +3287,7 @@ mod tests {
             zone_entity_type: 14,
             ward_has_type: true,
             shotkill_has_ballistics: true,
+            e11: None,
         };
         let decoded = walk_frames(&stream, &std::collections::HashSet::new(), false, &profile);
         assert_eq!(
@@ -3183,5 +3398,548 @@ mod tests {
                 Some(ENTITY_TYPE_SMOKE_SCREEN)
             );
         }
+    }
+
+    /// updateMinimapVisionInfo: the exact wire bytes captured from the 15.8.0
+    /// reference replay — the t=30.3 packet (one live marker update for
+    /// vehicle 963613) and a synthetic batch echoing the t=0 opening packet's
+    /// shape (live entries + the hidden sentinel + empty second array).
+    #[test]
+    fn decodes_minimap_vision_packets() {
+        // Real t=30.3 payload: count=1, {963613, 0x37e4836f}, count=0.
+        let args: Vec<u8> = [0x01u8, 0x1d, 0xb4, 0x0e, 0x00, 0x6f, 0x83, 0xe4, 0x37, 0x00]
+            .into_iter()
+            .collect();
+        let events = decode_minimap_vision(30.3, &args);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].entity_id, 963613);
+        assert_eq!(events[0].packed_data, 0x37e4_836f);
+        assert!(events[0].visible);
+        assert!((events[0].time - 30.3).abs() < 1e-6);
+
+        // Opening-packet shape: live entries for the allied set, one sentinel
+        // (unspotted) entry, empty second array.
+        let mut batch: Vec<u8> = vec![0x04];
+        for (id, packed) in [
+            (963601u32, 0x37e6_9bce_u32),
+            (963603, 0x37e6_1383),
+            (963607, 0x37e7_6bcb),
+            (963617, MINIMAP_HIDDEN_SENTINEL),
+        ] {
+            batch.extend_from_slice(&id.to_le_bytes());
+            batch.extend_from_slice(&packed.to_le_bytes());
+        }
+        batch.push(0x00); // second array: empty
+        let events = decode_minimap_vision(0.0, &batch);
+        assert_eq!(events.len(), 4);
+        assert!(events[..3].iter().all(|e| e.visible));
+        let hidden = &events[3];
+        assert!(!hidden.visible);
+        assert_eq!(hidden.entity_id, 963617);
+        assert_eq!(hidden.packed_data, MINIMAP_HIDDEN_SENTINEL);
+
+        // Second-array entries decode under the same rules (never observed on
+        // the wire — preserved as evidence, not assigned new semantics).
+        let mut two_arrays: Vec<u8> = vec![0x00, 0x01];
+        two_arrays.extend_from_slice(&963621u32.to_le_bytes());
+        two_arrays.extend_from_slice(&0x37e2_6b2bu32.to_le_bytes());
+        let events = decode_minimap_vision(12.0, &two_arrays);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].entity_id, 963621);
+        assert!(events[0].visible);
+
+        // Desync discipline: truncated entry, or trailing garbage after the
+        // second array, drops the whole packet's events.
+        assert!(decode_minimap_vision(0.0, &batch[..8]).is_empty());
+        let mut trailing = batch.clone();
+        trailing.push(0xff);
+        assert!(decode_minimap_vision(0.0, &trailing).is_empty());
+        assert!(decode_minimap_vision(0.0, &[]).is_empty());
+    }
+
+    /// onConsumableUsed: every usage variant decodes; desyncs are skipped.
+    /// The DEFAULT bytes are the real t=74.9 capture (usage blob {1, 10},
+    /// workTimeLeft 120.5 s).
+    #[test]
+    fn decodes_consumable_used_variants() {
+        let real: Vec<u8> = [0x02u8, 0x01, 0x0a, 0x00, 0x00, 0xf2, 0x42]
+            .into_iter()
+            .collect();
+        let e = decode_consumable_used(74.9, 963623, &real).expect("must decode");
+        assert_eq!(e.usage_type, 1);
+        assert_eq!(e.consumable_id, 10);
+        assert!((e.duration - 121.0).abs() < 1e-3);
+        assert_eq!(e.entity_id, 963623);
+        assert!(e.target_x.is_none() && e.target_z.is_none() && e.target_id.is_none());
+
+        // POSITION variant: blob <BBff> plus f32 duration.
+        let mut pos: Vec<u8> = vec![0x0a, 0x02, 0x05];
+        pos.extend_from_slice(&123.5f32.to_le_bytes());
+        pos.extend_from_slice(&(-67.25f32).to_le_bytes());
+        pos.extend_from_slice(&30.0f32.to_le_bytes());
+        let e = decode_consumable_used(83.3, 951995, &pos).expect("must decode");
+        assert_eq!(e.usage_type, 2);
+        assert_eq!(e.consumable_id, 5);
+        assert!((e.target_x.unwrap() - 123.5).abs() < 1e-3);
+        assert!((e.target_z.unwrap() + 67.25).abs() < 1e-3);
+        assert_eq!(e.target_id, None);
+
+        // ENTITY variant: blob <BBbQ>.
+        let mut ent: Vec<u8> = vec![0x0b, 0x03, 0x07, 0x01];
+        ent.extend_from_slice(&963621u64.to_le_bytes());
+        ent.extend_from_slice(&45.0f32.to_le_bytes());
+        let e = decode_consumable_used(90.0, 951999, &ent).expect("must decode");
+        assert_eq!(e.usage_type, 3);
+        assert_eq!(e.consumable_id, 7);
+        assert_eq!(e.target_id, Some(963621));
+
+        // NONE variant: empty blob, duration only.
+        let mut none: Vec<u8> = vec![0x00];
+        none.extend_from_slice(&5.0f32.to_le_bytes());
+        let e = decode_consumable_used(101.0, 963619, &none).expect("must decode");
+        assert_eq!(e.usage_type, 0);
+        assert_eq!(e.consumable_id, 0);
+        assert!((e.duration - 5.0).abs() < 1e-4);
+
+        // Desyncs: variant/length contradiction, truncation, bad duration.
+        assert!(decode_consumable_used(0.0, 1, &[0x02, 0x02, 0x09, 0, 0, 0x16, 0x44]).is_none());
+        assert!(decode_consumable_used(0.0, 1, &real[..5]).is_none());
+        assert!(decode_consumable_used(0.0, 1, &[]).is_none());
+        let mut nan = real.clone();
+        nan[6] = 0xff; // duration exponent all-ones -> non-finite
+        nan[3] = 0x7f;
+        assert!(decode_consumable_used(0.0, 1, &nan).is_none());
+    }
+
+    /// The engine-state projection: type-2 entities' idx 9/10 property changes
+    /// become samples; other entities and other indices stay out; a version
+    /// without the E11 pin projects nothing.
+    #[test]
+    fn walk_frames_collects_engine_states() {
+        fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+            let mut f = Vec::with_capacity(12 + payload.len());
+            f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            f.extend_from_slice(&ptype.to_le_bytes());
+            f.extend_from_slice(&time.to_le_bytes());
+            f.extend_from_slice(payload);
+            f
+        }
+        fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+            let mut p = Vec::new();
+            p.extend_from_slice(&eid.to_le_bytes());
+            p.extend_from_slice(&etype.to_le_bytes());
+            p.extend_from_slice(&0i32.to_le_bytes());
+            p.extend_from_slice(&0i32.to_le_bytes());
+            p.extend_from_slice(&[0u8; 24]);
+            p
+        }
+        fn property(eid: i32, idx: u32, value: u8) -> Vec<u8> {
+            let mut p = Vec::new();
+            p.extend_from_slice(&eid.to_le_bytes());
+            p.extend_from_slice(&idx.to_le_bytes());
+            p.extend_from_slice(&1u32.to_le_bytes());
+            p.push(value);
+            p
+        }
+        let mut stream = Vec::new();
+        stream.extend(frame(
+            PACKET_ENTITY_CREATE,
+            0.0,
+            &entity_create(963613, ENTITY_TYPE_VEHICLE),
+        ));
+        stream.extend(frame(
+            PACKET_ENTITY_CREATE,
+            0.0,
+            &entity_create(963614, ENTITY_TYPE_AVATAR),
+        ));
+        stream.extend(frame(PACKET_ENTITY_PROPERTY, 29.0, &property(963613, 9, 2)));
+        stream.extend(frame(PACKET_ENTITY_PROPERTY, 31.0, &property(963613, 9, 5)));
+        stream.extend(frame(
+            PACKET_ENTITY_PROPERTY,
+            32.0,
+            &property(963613, 10, 0xff),
+        ));
+        // Avatar property at the same indices must not leak in.
+        stream.extend(frame(PACKET_ENTITY_PROPERTY, 33.0, &property(963614, 9, 7)));
+
+        let profile = |e11: Option<E11MethodIds>| LayoutProfile {
+            methods: None,
+            zone_entity_type: 14,
+            ward_has_type: true,
+            shotkill_has_ballistics: true,
+            e11,
+        };
+        let ids = e11_method_ids(Some((15, 8, 0)));
+        let decoded = walk_frames(
+            &stream,
+            &std::collections::HashSet::new(),
+            false,
+            &profile(ids),
+        );
+        assert_eq!(decoded.engine_states.len(), 3, "two power + one dir change");
+        let s0 = &decoded.engine_states[0];
+        assert_eq!(s0.entity_id, 963613);
+        assert_eq!(s0.power, Some(2));
+        assert_eq!(s0.dir, None);
+        assert!((s0.time - 29.0).abs() < 1e-6);
+        let dir = &decoded.engine_states[2];
+        assert_eq!(dir.dir, Some(-1), "0xff as i8 = -1 (braking)");
+        assert_eq!(dir.power, None);
+        // Without the E11 pin the projection stays empty.
+        let off = walk_frames(
+            &stream,
+            &std::collections::HashSet::new(),
+            false,
+            &profile(None),
+        );
+        assert!(off.engine_states.is_empty());
+    }
+
+    /// Shared helper for the E11 real-replay tests: decode the env-gated
+    /// replay (None when `WOWSP_TEST_REPLAY` is unset).
+    fn decoded_real_replay() -> Option<DecodedReplay> {
+        let path = std::env::var("WOWSP_TEST_REPLAY").ok()?;
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        let mut cur = 8;
+        let mut client_version: Option<String> = None;
+        for i in 0..block_count {
+            let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+            cur += 4;
+            if i == 0 {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[cur..cur + bl])
+                {
+                    client_version = json
+                        .get("clientVersionFromExe")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                }
+            }
+            cur += bl;
+        }
+        let decoded = decode_replay(
+            &bytes[cur..],
+            &std::collections::HashSet::new(),
+            client_version.as_deref(),
+        )
+        .expect("decode must succeed");
+        Some(decoded)
+    }
+
+    /// E11 against the real replay (skips without `WOWSP_TEST_REPLAY`): the
+    /// minimap vision stream is the explicit spot/unspot signal. Every >4 s
+    /// gap in a vehicle's position stream must be bracketed by vision events,
+    /// the last event before a gap must be the hidden sentinel in the strong
+    /// majority, and the first event after must be positional. This is the G1
+    /// core metric: the alignment rate of the explicit events against E3's
+    /// gap-inferred visibility.
+    #[test]
+    fn e11_vision_events_on_real_replay() {
+        let Some(decoded) = decoded_real_replay() else {
+            return;
+        };
+        if decoded.vision_events.is_empty() {
+            eprintln!("[e11] no vision events decoded (version without pin?) - skipping");
+            return;
+        }
+        let ships: std::collections::BTreeSet<i32> = decoded
+            .kinds
+            .iter()
+            .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+            .map(|(eid, _)| *eid)
+            .collect();
+        // Every referenced entity is a vehicle.
+        for e in &decoded.vision_events {
+            assert!(
+                ships.contains(&e.entity_id),
+                "non-vehicle id {}",
+                e.entity_id
+            );
+        }
+        let hidden = decoded.vision_events.iter().filter(|e| !e.visible).count();
+        eprintln!(
+            "[e11] {} vision events across {} vehicles; {} hidden-sentinel events ({:.1}%)",
+            decoded.vision_events.len(),
+            decoded
+                .vision_events
+                .iter()
+                .map(|e| e.entity_id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            hidden,
+            100.0 * hidden as f32 / decoded.vision_events.len() as f32
+        );
+        // Gap alignment over every vehicle's position stream.
+        let by_entity: std::collections::BTreeMap<i32, Vec<&wowsp_tauri_shared::VisionEvent>> =
+            decoded
+                .vision_events
+                .iter()
+                .fold(std::collections::BTreeMap::new(), |mut m, e| {
+                    m.entry(e.entity_id).or_default().push(e);
+                    m
+                });
+        let gap_threshold = 4.0f32;
+        let mut starts_total = 0usize;
+        let mut starts_hit = 0usize;
+        let mut starts_sentinel = 0usize;
+        let mut ends_total = 0usize;
+        let mut ends_hit = 0usize;
+        let mut ends_positional = 0usize;
+        for (eid, samples) in &decoded.positions {
+            if !ships.contains(eid) || samples.len() < 2 {
+                continue;
+            }
+            let Some(events) = by_entity.get(eid) else {
+                continue;
+            };
+            for w in samples.windows(2) {
+                let (a, b) = (w[0].time, w[1].time);
+                if b - a <= gap_threshold {
+                    continue;
+                }
+                starts_total += 1;
+                if let Some(last) = events
+                    .iter()
+                    .filter(|e| a - 3.5 <= e.time && e.time <= a + 1.5)
+                    .next_back()
+                {
+                    starts_hit += 1;
+                    if !last.visible {
+                        starts_sentinel += 1;
+                    }
+                }
+                ends_total += 1;
+                if let Some(first) = events
+                    .iter()
+                    .find(|e| b - 1.5 <= e.time && e.time <= b + 3.5)
+                {
+                    ends_hit += 1;
+                    if first.visible {
+                        ends_positional += 1;
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[e11] gap alignment: starts {starts_hit}/{starts_total} (sentinel {starts_sentinel}), ends {ends_hit}/{ends_total} (positional {ends_positional})"
+        );
+        assert!(starts_total > 0, "reference capture must contain gaps");
+        assert!(
+            starts_hit * 10 >= starts_total * 9,
+            "gap starts without vision event: {}",
+            starts_total - starts_hit
+        );
+        assert!(
+            ends_hit * 10 >= ends_total * 9,
+            "gap ends without vision event: {}",
+            ends_total - ends_hit
+        );
+        assert!(
+            starts_sentinel * 7 >= starts_hit * 5,
+            "too few hidden-sentinel terminations: {starts_sentinel}/{starts_hit}"
+        );
+        assert_eq!(
+            ends_positional, ends_hit,
+            "every gap-end resumption must be positional"
+        );
+    }
+
+    /// E11 against the real replay: consumable uses decode on vehicles of
+    /// both teams with sane durations.
+    #[test]
+    fn e11_consumables_on_real_replay() {
+        let Some(decoded) = decoded_real_replay() else {
+            return;
+        };
+        if decoded.consumable_uses.is_empty() {
+            eprintln!("[e11] no consumable uses decoded (version without pin?) - skipping");
+            return;
+        }
+        let ships: std::collections::BTreeSet<i32> = decoded
+            .kinds
+            .iter()
+            .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+            .map(|(eid, _)| *eid)
+            .collect();
+        let users: std::collections::BTreeSet<i32> = decoded
+            .consumable_uses
+            .iter()
+            .map(|e| e.entity_id)
+            .collect();
+        let ids: std::collections::BTreeSet<u8> = decoded
+            .consumable_uses
+            .iter()
+            .map(|e| e.consumable_id)
+            .collect();
+        eprintln!(
+            "[e11] {} consumable uses across {}/{} vehicles; ids {:?}",
+            decoded.consumable_uses.len(),
+            users.len(),
+            ships.len(),
+            ids
+        );
+        assert!(
+            decoded.consumable_uses.len() >= 40,
+            "reference capture carries 104 uses"
+        );
+        assert!(users.len() >= 10, "expected double-digit vehicle coverage");
+        assert!(
+            users.len() * 2 >= ships.len() - 4,
+            "uses must cover vehicles of both teams"
+        );
+        for e in &decoded.consumable_uses {
+            assert!(ships.contains(&e.entity_id), "non-vehicle consumer");
+            assert!(e.usage_type <= 3, "unknown usage variant {}", e.usage_type);
+            assert!(
+                e.duration > 0.0 && e.duration <= 700.0,
+                "implausible workTimeLeft {}",
+                e.duration
+            );
+        }
+    }
+
+    /// E11 against the real replay: every vehicle carries engine-state
+    /// samples; settled low power means near-standstill, full power tracks
+    /// the ship's top speed, and the recorder's own engine power follows its
+    /// CruiseState throttle (10 under sustained full-ahead).
+    #[test]
+    fn e11_engine_states_on_real_replay() {
+        let Some(decoded) = decoded_real_replay() else {
+            return;
+        };
+        if decoded.engine_states.is_empty() {
+            eprintln!("[e11] no engine states decoded (version without pin?) - skipping");
+            return;
+        }
+        let ships: std::collections::BTreeSet<i32> = decoded
+            .kinds
+            .iter()
+            .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+            .map(|(eid, _)| *eid)
+            .collect();
+        let covered: std::collections::BTreeSet<i32> =
+            decoded.engine_states.iter().map(|s| s.entity_id).collect();
+        // Reference capture: 23/24 vehicles carry engine-state samples — the
+        // 24th (951997) streams positions but no idx-9/10 property packets at
+        // all, so full coverage cannot be forced.
+        assert!(
+            covered.len() + 1 >= ships.len(),
+            "engine states must cover nearly every vehicle ({}/{})",
+            covered.len(),
+            ships.len()
+        );
+
+        // Windowed speed helper over one entity's (sorted) samples.
+        let speed_at = |eid: i32, t: f32, win: f32| -> Option<f32> {
+            let samples = decoded.positions.get(&eid)?;
+            let a = samples.iter().find(|s| s.time >= t - win)?;
+            let b = samples.iter().rev().find(|s| s.time <= t + win)?;
+            let dt = b.time - a.time;
+            if dt < 1.0 {
+                return None;
+            }
+            Some(((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt() / dt)
+        };
+        // p95 of windowed planar speed per ship.
+        let p95 = |eid: i32| -> f32 {
+            let mut speeds = Vec::new();
+            if let Some(ss) = decoded.positions.get(&eid) {
+                for w in ss.windows(2) {
+                    let dt = w[1].time - w[0].time;
+                    if (0.5..=4.0).contains(&dt) {
+                        speeds.push(
+                            ((w[1].x - w[0].x).powi(2) + (w[1].z - w[0].z).powi(2)).sqrt() / dt,
+                        );
+                    }
+                }
+            }
+            speeds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            speeds
+                .get(speeds.len() * 95 / 100)
+                .copied()
+                .unwrap_or(f32::MAX)
+                .max(1e-3)
+        };
+        let power_at = |eid: i32, t: f32| -> Option<u8> {
+            decoded
+                .engine_states
+                .iter()
+                .filter(|s| s.entity_id == eid && s.power.is_some() && s.time <= t)
+                .next_back()
+                .and_then(|s| s.power)
+        };
+        let stream_bounds = |eid: i32| -> Option<(f32, f32)> {
+            decoded
+                .positions
+                .get(&eid)
+                .and_then(|v| v.first().zip(v.last()))
+                .map(|(a, b)| (a.time, b.time))
+        };
+
+        let mut low_ratios = Vec::new();
+        let mut full_ratios = Vec::new();
+        for eid in &ships {
+            let Some((t0, t1)) = stream_bounds(*eid) else {
+                continue;
+            };
+            let top = p95(*eid);
+            let mut t = t0 + 20.0;
+            while t < t1 {
+                if let (Some(ep), Some(v)) = (power_at(*eid, t), speed_at(*eid, t, 8.0)) {
+                    if ep <= 2 {
+                        low_ratios.push(v / top);
+                    } else if ep == 10 {
+                        full_ratios.push(v / top);
+                    }
+                }
+                t += 10.0;
+            }
+        }
+        low_ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        full_ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let low_med = low_ratios[low_ratios.len() / 2];
+        let full_med = full_ratios[full_ratios.len() / 2];
+        eprintln!(
+            "[e11] engine anchors: low-power median speed ratio {low_med:.3} (n={}), full-power median {full_med:.3} (n={})",
+            low_ratios.len(),
+            full_ratios.len()
+        );
+        assert!(
+            low_med <= 0.25,
+            "settled low power must be near-standstill (median ratio {low_med:.3})"
+        );
+        assert!(
+            full_med >= 0.35,
+            "full power must track top speed (median ratio {full_med:.3})"
+        );
+
+        // Recorder anchor: sustained full-ahead CruiseState -> engine power 10.
+        let Some(rec) = decoded.recorder_vehicle else {
+            panic!("modern replay must carry the avatar->vehicle link");
+        };
+        let throttle_at = |t: f32| -> Option<i32> {
+            decoded
+                .cruise
+                .iter()
+                .filter(|c| c.controller == 0 && c.time <= t)
+                .next_back()
+                .map(|c| c.level)
+        };
+        let mut checked = 0;
+        let mut agreed = 0;
+        for t in [50.0f32, 100.0, 150.0, 200.0, 250.0] {
+            if throttle_at(t) == Some(4) {
+                checked += 1;
+                if power_at(rec, t) == Some(10) {
+                    agreed += 1;
+                }
+            }
+        }
+        eprintln!("[e11] recorder throttle->power agreement: {agreed}/{checked} probes");
+        assert!(checked > 0, "recorder must hold full-ahead long enough");
+        assert_eq!(
+            agreed, checked,
+            "sustained full throttle must read power 10"
+        );
     }
 }
