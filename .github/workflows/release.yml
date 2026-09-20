@@ -83,6 +83,10 @@ jobs:
       - name: Upload release artifacts (draft)
         # Only tag pushes publish: a workflow_dispatch on a branch has no
         # release to upload to (parity with the old tauri-action flow).
+        # The `latest` marker file rides along for pre-0.3.1 clients whose
+        # updater only reads the marker; clients that resolve the release
+        # tag from the `releases/latest` redirect no longer need it, and the
+        # marker upload can be dropped once those builds age out.
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,6 +95,7 @@ jobs:
           case "$ref" in
             v*)
               gh release create "$ref" --draft --title "WoWSP $ref" || true
+              printf '%s' "${ref#v}" > target/release/bundle/installer/latest
               gh release upload "$ref" target/release/bundle/installer/* --clobber
               ;;
             *) echo "not a tag push ($ref) — skipping release upload" ;;
