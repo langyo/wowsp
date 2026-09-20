@@ -305,6 +305,7 @@ lookup: {
     loadFailed: "Не удалось загрузить последний релиз — скачайте напрямую с GitHub Releases",
     assets: "Файлы релиза",
     notes: "Все файлы публикуются на GitHub Releases",
+    mirrorNote: "Загрузка будет выполнена через зеркало gh-proxy.com",
   },
   footer: {
     license: "По лицензии SySL-1.0",

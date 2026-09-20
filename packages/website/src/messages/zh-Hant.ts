@@ -305,6 +305,7 @@ lookup: {
     loadFailed: "暫時無法取得最新版本，請直接前往 GitHub Releases 下載",
     assets: "發佈資源",
     notes: "所有資源均發佈在 GitHub Releases",
+    mirrorNote: "接下來將從鏡像源 gh-proxy.com 下載",
   },
   footer: {
     license: "以 SySL-1.0 授權發佈",

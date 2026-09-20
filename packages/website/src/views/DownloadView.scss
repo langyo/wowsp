@@ -76,8 +76,24 @@
       font-size: var(--text-2xl);
       font-weight: 800;
       letter-spacing: -0.025em;
-      margin: 0 0 var(--space-24);
     }
+  }
+
+  /* Heading + optional mirror badge on one row. The badge is an
+   * inline-flex box whose baseline comes from its icon, so center it
+   * against the heading line instead of baseline-aligning. */
+  &__assets-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-12);
+    margin-bottom: var(--space-24);
+
+    h2 { margin: 0; }
+  }
+
+  &__mirror {
+    white-space: nowrap;
   }
 
   &__list {
