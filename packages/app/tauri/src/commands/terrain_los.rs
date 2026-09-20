@@ -62,10 +62,13 @@ impl LosGrid {
         max_z: f64,
         heights: Vec<f32>,
     ) -> Result<LosGrid, String> {
-        if res == 0 || heights.len() != res * res {
+        // Checked: a crafted header can declare a res whose square overflows.
+        let Some(expected) = res.checked_mul(res) else {
+            return Err(format!("grid res {res} overflows usize"));
+        };
+        if res == 0 || heights.len() != expected {
             return Err(format!(
-                "grid shape mismatch: res {res} needs {} heights, got {}",
-                res * res,
+                "grid shape mismatch: res {res} needs {expected} heights, got {}",
                 heights.len()
             ));
         }
@@ -106,13 +109,17 @@ impl LosGrid {
         if res != res1 || res == 0 {
             return Err(format!("height raster must be square, shape {shape:?}"));
         }
-        // params carries [res, obs_grid]; cross-check when it decodes.
-        if let Ok(params) = npy_to_i32("params", read_npz_array(&mut zip, "params")?) {
-            if params.first() != Some(&(res as i32)) {
-                return Err(format!(
-                    "params res {} disagrees with height shape {res}",
-                    params.first().unwrap_or(&0)
-                ));
+        // params carries [res, obs_grid]; cross-check only when the member
+        // decodes — height/bounds alone define the grid, so a missing or
+        // undecodable params member is tolerated.
+        if let Ok(arr) = read_npz_array(&mut zip, "params") {
+            if let Ok(params) = npy_to_i32("params", arr) {
+                if params.first() != Some(&(res as i32)) {
+                    return Err(format!(
+                        "params res {} disagrees with height shape {res}",
+                        params.first().unwrap_or(&0)
+                    ));
+                }
             }
         }
         LosGrid::from_parts(res, bounds[0], bounds[1], bounds[2], bounds[3], heights)
@@ -308,10 +315,18 @@ fn parse_npy(name: &str, bytes: &[u8]) -> Result<NpyArray, String> {
     }
     let (hlen, off) = match bytes[6] {
         1 => (u16::from_le_bytes([bytes[8], bytes[9]]) as usize, 10),
-        2 | 3 => (
-            u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize,
-            12,
-        ),
+        2 | 3 => {
+            if bytes.len() < 12 {
+                return Err(format!(
+                    "{name}: truncated npy v{} header (needs 12 bytes)",
+                    bytes[6]
+                ));
+            }
+            (
+                u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize,
+                12,
+            )
+        },
         v => return Err(format!("{name}: unsupported npy version {v}.0")),
     };
     if bytes.len() < off + hlen {
@@ -360,12 +375,24 @@ fn shape_header_value(header: &str) -> Option<Vec<usize>> {
         .collect()
 }
 
+/// Element count implied by an npy shape, rejecting overflow (crafted
+/// headers can declare dims whose product exceeds usize).
+fn npy_elems(name: &str, shape: &[usize]) -> Result<usize, String> {
+    shape
+        .iter()
+        .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+        .ok_or_else(|| format!("{name}: shape element count overflows"))
+}
+
 fn npy_to_f32(name: &str, arr: NpyArray) -> Result<Vec<f32>, String> {
     if arr.descr != "<f4" {
         return Err(format!("{name}: expected dtype <f4, got {}", arr.descr));
     }
-    let count: usize = arr.shape.iter().product();
-    if arr.data.len() < count * 4 {
+    let count = npy_elems(name, &arr.shape)?;
+    let need = count
+        .checked_mul(4)
+        .ok_or_else(|| format!("{name}: shape byte count overflows"))?;
+    if arr.data.len() < need {
         return Err(format!("{name}: truncated {count} f32 values"));
     }
     Ok(arr
@@ -379,8 +406,11 @@ fn npy_to_f64(name: &str, arr: NpyArray) -> Result<Vec<f64>, String> {
     if arr.descr != "<f8" {
         return Err(format!("{name}: expected dtype <f8, got {}", arr.descr));
     }
-    let count: usize = arr.shape.iter().product();
-    if arr.data.len() < count * 8 {
+    let count = npy_elems(name, &arr.shape)?;
+    let need = count
+        .checked_mul(8)
+        .ok_or_else(|| format!("{name}: shape byte count overflows"))?;
+    if arr.data.len() < need {
         return Err(format!("{name}: truncated {count} f64 values"));
     }
     Ok(arr
@@ -394,8 +424,11 @@ fn npy_to_i32(name: &str, arr: NpyArray) -> Result<Vec<i32>, String> {
     if arr.descr != "<i4" {
         return Err(format!("{name}: expected dtype <i4, got {}", arr.descr));
     }
-    let count: usize = arr.shape.iter().product();
-    if arr.data.len() < count * 4 {
+    let count = npy_elems(name, &arr.shape)?;
+    let need = count
+        .checked_mul(4)
+        .ok_or_else(|| format!("{name}: shape byte count overflows"))?;
+    if arr.data.len() < need {
         return Err(format!("{name}: truncated {count} i32 values"));
     }
     Ok(arr
