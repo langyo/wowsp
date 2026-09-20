@@ -4,6 +4,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import type { StampKind } from "@/utils/winrate";
 import stampAir from "../../res/stamps/stamp-air.png";
 import stampApe from "../../res/stamps/stamp-ape.png";
+import stampMaggot from "../../res/stamps/stamp-maggot.png";
 import stampMiracle from "../../res/stamps/stamp-miracle.png";
 import stampSub from "../../res/stamps/stamp-sub.png";
 import "./RatingStamp.scss";
@@ -20,7 +21,8 @@ let stampSeq = 0;
  *  license and are NOT bundled — bitmaps only, so the seals look identical
  *  everywhere. Displacement seeds are fixed per kind → deterministic ink.
  *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
- *   - "ape" (海猴): PR < 750
+ *   - "ape" (海猴): PR < 750 with winrate ≥ 40%
+ *   - "maggot" (蛆): PR < 750 with winrate < 40%
  *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
  *     mains (career share > 20% over 200+ battles)
  *
@@ -29,16 +31,24 @@ let stampSeq = 0;
 const STAMP_GLYPHS: Record<StampKind, string> = {
   miracle: stampMiracle,
   ape: stampApe,
+  maggot: stampMaggot,
   air: stampAir,
   sub: stampSub,
 };
 const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
   ape: "海猴",
+  maggot: "蛆",
   air: "空中小人",
   sub: "水下小人",
 };
-const STAMP_SEED: Record<StampKind, number> = { miracle: 7, ape: 13, air: 21, sub: 5 };
+const STAMP_SEED: Record<StampKind, number> = {
+  miracle: 7,
+  ape: 13,
+  maggot: 31,
+  air: 21,
+  sub: 5,
+};
 
 export default defineComponent({
   name: "RatingStamp",

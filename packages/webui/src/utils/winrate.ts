@@ -42,7 +42,7 @@ export function prTier(pr: number | null | undefined): PrTier {
   return { key: "tierBad", color: "rgb(254 14 0)" };
 }
 
-export type CareerStamp = "miracle" | "ape";
+export type CareerStamp = "miracle" | "ape" | "maggot";
 
 /** Composition stamps (ApeRadar's 成分 tags): 空中小人 marks CV mains, 水下小人
  *  marks submarine mains. Independent of the PR verdicts — a player can carry
@@ -51,17 +51,20 @@ export type CompositionStamp = "air" | "sub";
 
 export type StampKind = CareerStamp | CompositionStamp;
 
-/** ApeRadar's 成分 tags as career verdict stamps: a red-tier career earns the
- *  海猴 mark; a sustained purple-tier+ career earns 神了 — gated on 500+
- *  battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
- *  short hot streak). Null when no stamp applies. */
+/** Career verdict stamps: a red-tier career earns the 海猴 mark — or the 蛆
+ *  mark when the winrate is also sub-40% (a red-tier red-WR career is a
+ *  different beast); a sustained purple-tier+ career earns 神了 — gated on
+ *  500+ battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
+ *  short hot streak). An unknown winrate falls back to 海猴. Null when no
+ *  stamp applies. */
 export function careerStamp(
   pr: number | null | undefined,
   battles: number | null | undefined,
+  winrate: number | null | undefined,
 ): CareerStamp | null {
   if (pr == null) return null;
   if (pr >= 2100) return battles != null && battles >= 500 ? "miracle" : null;
-  if (pr < 750) return "ape";
+  if (pr < 750) return winrate != null && winrate < 40 ? "maggot" : "ape";
   return null;
 }
 
