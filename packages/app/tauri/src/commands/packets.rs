@@ -68,6 +68,10 @@ const PACKET_CELL_PLAYER_CREATE: u32 = 0x01;
 /// Avatar entity type id (spec index 1). Its method table drives the
 /// battle-effect events (shots, torpedoes, squadrons, explosions).
 const ENTITY_TYPE_AVATAR: i16 = 1;
+/// SmokeScreen entity type id (spec index 4 in the ClientServerEntities
+/// order, confirmed against the 15.8.0 `entities.xml`). Smoke clouds are real
+/// entities: created when emission starts and despawned on dissipation.
+const ENTITY_TYPE_SMOKE_SCREEN: i16 = 4;
 /// NestedPropertyUpdate (0x23): nested property blob updates, used by
 /// capture zones (InteractiveZone — type 13 pre-14.5.0, 14 after) to stream
 /// their live capture progress (0..1 fraction at the tail of the payload).
@@ -221,6 +225,11 @@ pub struct DecodedReplay {
     /// Recorder control-input timeline (CruiseState, 0x32) — engine telegraph
     /// and rudder presets (experiment E2). Recorder-scoped, like `camera`.
     pub cruise: Vec<wowsp_tauri_shared::CruiseSample>,
+    /// Smoke-screen lifecycles (entityType 4 entities, experiment E8):
+    /// creation time/position plus radius / height walked out of the create
+    /// state, with the observed dissipation time filled in from the entity's
+    /// leave/destroy. Empty on streams without smoke.
+    pub smoke_screens: Vec<wowsp_tauri_shared::SmokeScreenEvent>,
     /// Entity id of the recorder's own vehicle — recovered from the avatar's
     /// PlayerPosition (0x2c) packets: a subset of them link the avatar entity
     /// (created by CellPlayerCreate) to the vehicle it occupies. `None` when
@@ -419,6 +428,10 @@ fn walk_frames(
     let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
     let mut damage_stats: Vec<wowsp_tauri_shared::DamageStatSample> = Vec::new();
     let mut cruise: Vec<wowsp_tauri_shared::CruiseSample> = Vec::new();
+    // SmokeScreen entities keyed by id while their lifecycle is assembled;
+    // converted to the sorted event list after the walk (the dissipation end
+    // only becomes known when the leave/destroy packet arrives later).
+    let mut smokes: BTreeMap<i32, wowsp_tauri_shared::SmokeScreenEvent> = BTreeMap::new();
     // The recorder's avatar (CellPlayerCreate) and, once its 0x2c stream
     // links to the occupied vehicle, the recorder's own ship entity id.
     let mut avatar_id: Option<i32> = None;
@@ -477,8 +490,29 @@ fn walk_frames(
                 if let Some(created) = parse_entity_create(payload, time, profile.zone_entity_type)
                 {
                     let eid = created.entity_id;
+                    let entity_type = created.entity_type;
+                    let (x, y, z) = (created.x, created.y, created.z);
                     let mut kind = created.clone_into_kind();
                     kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
+                    // Smoke screens: walk the create state for the radius /
+                    // height properties (experiment E8). Only the event list
+                    // consumes them — the kind stays a plain entity so the
+                    // frontend's smoke rendering is untouched.
+                    if entity_type == ENTITY_TYPE_SMOKE_SCREEN {
+                        let (radius, height) = parse_smoke_state(&payload[38..]);
+                        smokes
+                            .entry(eid)
+                            .or_insert(wowsp_tauri_shared::SmokeScreenEvent {
+                                time,
+                                entity_id: eid,
+                                x,
+                                y,
+                                z,
+                                radius,
+                                height,
+                                end_time: None,
+                            });
+                    }
                     // Entities destroyed and re-created mid-match (leaving and
                     // re-entering the observed area) keep their FIRST creation
                     // time so the frontend doesn't hide them until re-creation.
@@ -735,6 +769,23 @@ fn walk_frames(
             .partial_cmp(&b.time)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    // Finish the smoke lifecycles: the observed dissipation end. A destroy is
+    // authoritative; otherwise the entity's leave time (the last one recorded
+    // — the map is overwritten per packet) is the despawn the server sent when
+    // the final puff faded.
+    let mut smoke_screens: Vec<wowsp_tauri_shared::SmokeScreenEvent> =
+        smokes.into_values().collect();
+    for s in &mut smoke_screens {
+        s.end_time = destroys
+            .get(&s.entity_id)
+            .copied()
+            .or_else(|| leaves.get(&s.entity_id).copied());
+    }
+    smoke_screens.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     DecodedReplay {
         positions,
         kinds,
@@ -767,6 +818,7 @@ fn walk_frames(
         damage_stats,
         cruise,
         recorder_vehicle,
+        smoke_screens,
     }
 }
 
@@ -1778,6 +1830,108 @@ fn scan_state_for_ship_id(
         }
     }
     None
+}
+
+/// Walk a SmokeScreen EntityCreate state stream and extract the `radius` and
+/// `height` properties (experiment E8).
+///
+/// Layout (ground truth: the 15.8.0 `SmokeScreen.def` plus BigWorld's exposed
+/// property indexing — client-visible properties sorted by wire size, equal
+/// sizes keeping def order, verified by the zone teamId walk):
+///
+/// ```text
+/// [u32 state_len][u8 n_props]{ [u8 prop_id][value] }×n
+///   id 0  activePointIndex  INT8
+///   id 1  bcRadius          FLOAT32   (collision radius — observed == radius)
+///   id 2  radius            FLOAT32   ← the smoke-cloud radius
+///   id 3  height            FLOAT32   ← column height (5=ship, 10=plane)
+///   id 4  points            ARRAY<VECTOR3> (u8 count + n×12 bytes)
+///   id 5  spawnPointEffect  STRING    ("particles/SmokeScreen_spawn.xml")
+///   id 6  livePointEffect   STRING    ("particles/SmokeScreen.xml")
+/// ```
+///
+/// Evidence chain (15.8.0 reference replay): walked radii {17.0, 17.5, 30.0}
+/// exactly match the GameParams `logic.radius` of the three smoke families
+/// actually present in the match — Italian exhaust smoke (Amalfi/Veneto,
+/// r=17), support-CV plane smoke (Yorktown US_SCV, r=17.5, height 10) and
+/// Italian BB oil smoke (Colonna, r=30) — and each smoke's create position
+/// sits within 1–4 scene units of the identified layer's hull. Wire values
+/// are in the GameParams distance unit (≈30 m; calibrated via radar
+/// `distShip`), not the 5.86 m/unit scene axis.
+///
+/// Any desync (unknown id, truncated value) yields `(None, None)` rather
+/// than a guessed mapping — a future def change shifts the ids and disables
+/// the fields instead of misreporting.
+fn parse_smoke_state(state: &[u8]) -> (Option<f32>, Option<f32>) {
+    // Skip the u32 state-length prefix; a blob shorter than the count byte
+    // plus one property header cannot carry the fields we want.
+    let Some(blob) = state.get(4..) else {
+        return (None, None);
+    };
+    let Some(&n_props) = blob.first() else {
+        return (None, None);
+    };
+    let mut radius = None;
+    let mut height = None;
+    let mut off = 1usize;
+    for _ in 0..n_props {
+        let Some(&id) = blob.get(off) else {
+            return (None, None);
+        };
+        off += 1;
+        match id {
+            0 => off += 1, // activePointIndex: INT8
+            1..=3 => {
+                // bcRadius / radius / height: FLOAT32.
+                let Some(bytes) = blob.get(off..off + 4) else {
+                    return (None, None);
+                };
+                off += 4;
+                let Some(v) = read_bytes::<4>(bytes, 0).map(f32::from_le_bytes) else {
+                    return (None, None);
+                };
+                if !v.is_finite() {
+                    return (None, None);
+                }
+                if id == 2 {
+                    radius = Some(v);
+                } else if id == 3 {
+                    height = Some(v);
+                }
+            },
+            4 => {
+                // points: u8 count + count × VECTOR3.
+                let Some(&count) = blob.get(off) else {
+                    return (None, None);
+                };
+                off += 1 + 12 * count as usize;
+            },
+            5 | 6 => {
+                // effect strings: u8 length + bytes.
+                let Some(&len) = blob.get(off) else {
+                    return (None, None);
+                };
+                off += 1 + len as usize;
+            },
+            _ => return (None, None),
+        }
+        if off > blob.len() {
+            return (None, None);
+        }
+    }
+    // Plausibility gates: every GameParams smoke radius observed so far is
+    // 13.3–40 and heights 5–10; anything else means the walk misaligned.
+    if let Some(r) = radius {
+        if !(1.0..=100.0).contains(&r) {
+            return (None, None);
+        }
+    }
+    if let Some(h) = height {
+        if !(0.5..=100.0).contains(&h) {
+            return (None, None);
+        }
+    }
+    (radius, height)
 }
 
 /// Scan an EntityCreate state stream for the capture-zone radius: a f32 with
@@ -2816,5 +2970,218 @@ mod tests {
         assert!(decode_damage_stat(0.0, &[64, 0x80]).is_empty());
         assert!(decode_damage_stat(0.0, &[2, 0x4b, 0x01]).is_empty());
         assert!(decode_damage_stat(0.0, &[]).is_empty());
+    }
+
+    /// The exact SmokeScreen create-state bytes captured from the 15.8.0
+    /// reference replay — one per smoke family present in that match.
+    /// eid 205831 (Amalfi exhaust smoke), 205853 (Yorktown plane smoke),
+    /// 205884 (Colonna BB oil smoke).
+    fn smoke_state_blob(family: u8) -> Vec<u8> {
+        match family {
+            // radius 17.0, height 5.0, one puff point at (483.50, 0, -96.24).
+            0 => "5c00000007000101000088410200008841030000a0400401baccf143000000001e9ac0c2051f7061727469636c65732f536d6f6b6553637265656e5f737061776e2e786d6c06197061727469636c65732f536d6f6b6553637265656e2e786d6c",
+            // radius 17.5, height 10.0.
+            1 => "5c0000000700010100008c410200008c4103000020410401353a3c4200000000883be343051f7061727469636c65732f536d6f6b6553637265656e5f737061776e2e786d6c06197061727469636c65732f536d6f6b6553637265656e2e786d6c",
+            // radius 30.0, height 5.0.
+            _ => "5c000000070001010000f041020000f041030000a04004013bf307c30000000045f06cc2051f7061727469636c65732f536d6f6b6553637265656e5f737061776e2e786d6c06197061727469636c65732f536d6f6b6553637265656e2e786d6c",
+        }
+        .chars()
+        .map(|c| c.to_digit(16).unwrap() as u8)
+        .collect::<Vec<u8>>()
+        .chunks(2)
+        .map(|c| (c[0] << 4) | c[1])
+        .collect()
+    }
+
+    /// parse_smoke_state walks the real captured state blobs and yields the
+    /// GameParams radius/height of each family: 17.0/5.0 (Italian exhaust
+    /// smoke), 17.5/10.0 (support-CV plane smoke), 30.0/5.0 (Italian BB oil
+    /// smoke).
+    #[test]
+    fn parses_smoke_state_from_reference_replay_bytes() {
+        let (r, h) = parse_smoke_state(&smoke_state_blob(0));
+        assert_eq!(r, Some(17.0));
+        assert_eq!(h, Some(5.0));
+        let (r, h) = parse_smoke_state(&smoke_state_blob(1));
+        assert_eq!(r, Some(17.5));
+        assert_eq!(h, Some(10.0));
+        let (r, h) = parse_smoke_state(&smoke_state_blob(2));
+        assert_eq!(r, Some(30.0));
+        assert_eq!(h, Some(5.0));
+        // The blob is passed with its u32 length prefix included (payload
+        // tail as the frame loop sees it); a bare prefix shorter than the
+        // count byte yields nothing.
+        assert_eq!(parse_smoke_state(&[0x5c, 0, 0, 0]), (None, None));
+        assert_eq!(parse_smoke_state(&[]), (None, None));
+    }
+
+    /// Any desync disables the fields instead of guessing: an unknown
+    /// property id (future def change) or a truncated value aborts the walk.
+    #[test]
+    fn smoke_state_walk_rejects_desync() {
+        let mut blob = smoke_state_blob(0);
+        // Corrupt the first property id (offset 4+1) to an id the smoke def
+        // does not define.
+        blob[5] = 0x63;
+        assert_eq!(parse_smoke_state(&blob), (None, None));
+        // Truncating mid-string also aborts.
+        let short = &smoke_state_blob(0)[..40];
+        assert_eq!(parse_smoke_state(short), (None, None));
+        // An out-of-plausibility radius (id 2) is rejected: flip the float to
+        // 1e9 (0x4e6e6b28) — walk succeeds but the gate zeroes both fields.
+        let mut hot = smoke_state_blob(0);
+        let off = 4 + 1 + 2 + 5 + 1; // prefix + nProps + id0/i8 + id1/f32 + id2
+        hot[off..off + 4].copy_from_slice(&1e9f32.to_le_bytes());
+        assert_eq!(parse_smoke_state(&hot), (None, None));
+    }
+
+    /// Frame-level lifecycle: a SmokeScreen EntityCreate followed by its
+    /// EntityLeave produces one event with the walked radius/height and the
+    /// leave time as the observed dissipation end.
+    #[test]
+    fn walk_frames_collects_smoke_lifecycle() {
+        fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+            let mut f = Vec::with_capacity(12 + payload.len());
+            f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            f.extend_from_slice(&ptype.to_le_bytes());
+            f.extend_from_slice(&time.to_le_bytes());
+            f.extend_from_slice(payload);
+            f
+        }
+        // EntityCreate payload: eid=205831, type=4, vehicle/space=0, pos,
+        // direction, then the real captured state blob.
+        let mut create = Vec::new();
+        create.extend_from_slice(&205831i32.to_le_bytes());
+        create.extend_from_slice(&4i16.to_le_bytes());
+        create.extend_from_slice(&0i32.to_le_bytes());
+        create.extend_from_slice(&0i32.to_le_bytes());
+        create.extend_from_slice(&484.0f32.to_le_bytes());
+        create.extend_from_slice(&0.0f32.to_le_bytes());
+        create.extend_from_slice(&(-96.0f32).to_le_bytes());
+        create.extend_from_slice(&[0u8; 12]);
+        create.extend_from_slice(&smoke_state_blob(0));
+        let mut stream = frame(PACKET_ENTITY_CREATE, 81.7, &create);
+        // A ship EntityCreate must NOT produce a smoke event.
+        let mut ship_create = create.clone();
+        ship_create[4..6].copy_from_slice(&2i16.to_le_bytes());
+        stream.extend(frame(PACKET_ENTITY_CREATE, 82.0, &ship_create));
+        // The entity leaves the observed area at 131.7 — dissipation.
+        stream.extend(frame(PACKET_ENTITY_LEAVE, 131.7, &205831i32.to_le_bytes()));
+
+        let profile = LayoutProfile {
+            methods: None,
+            zone_entity_type: 14,
+            ward_has_type: true,
+            shotkill_has_ballistics: true,
+        };
+        let decoded = walk_frames(&stream, &std::collections::HashSet::new(), false, &profile);
+        assert_eq!(
+            decoded.smoke_screens.len(),
+            1,
+            "only the type-4 create counts"
+        );
+        let s = &decoded.smoke_screens[0];
+        assert_eq!(s.entity_id, 205831);
+        assert!((s.time - 81.7).abs() < 1e-4);
+        assert!((s.x - 484.0).abs() < 1e-3);
+        assert!((s.z + 96.0).abs() < 1e-3);
+        assert_eq!(s.radius, Some(17.0));
+        assert_eq!(s.height, Some(5.0));
+        assert_eq!(s.end_time, Some(131.7));
+        // The entity kind is still recorded for the position-stream consumer.
+        assert_eq!(
+            decoded.kinds.get(&205831).map(|k| k.entity_type),
+            Some(ENTITY_TYPE_SMOKE_SCREEN)
+        );
+    }
+
+    /// E8 against the real replay (skips without `WOWSP_TEST_REPLAY`): every
+    /// smoke must decode a plausible radius/height, carry a dissipation end
+    /// after its creation, and spawn where its own position trail begins
+    /// (the create state's first puff point equals the header position, so
+    /// the trajectory's first sample must sit next to it).
+    #[test]
+    fn smoke_screens_on_real_replay() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            return;
+        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        let mut cur = 8;
+        let mut client_version: Option<String> = None;
+        for i in 0..block_count {
+            let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+            cur += 4;
+            if i == 0 {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[cur..cur + bl])
+                {
+                    client_version = json
+                        .get("clientVersionFromExe")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                }
+            }
+            cur += bl;
+        }
+        let decoded = decode_replay(
+            &bytes[cur..],
+            &std::collections::HashSet::new(),
+            client_version.as_deref(),
+        )
+        .expect("decode must succeed");
+        if decoded.smoke_screens.is_empty() {
+            eprintln!("[e8] no smoke screens in this replay - skipping");
+            return;
+        }
+        eprintln!(
+            "[e8] {} smoke screens (version {:?}):",
+            decoded.smoke_screens.len(),
+            client_version
+        );
+        for s in &decoded.smoke_screens {
+            eprintln!(
+                "  t={:>6.1} eid={} pos=({:>6.1},{:>6.1}) r={:?} h={:?} end={:?} dur={}",
+                s.time,
+                s.entity_id,
+                s.x,
+                s.z,
+                s.radius,
+                s.height,
+                s.end_time,
+                s.end_time.map(|e| e - s.time).unwrap_or(f32::NAN)
+            );
+        }
+        for s in &decoded.smoke_screens {
+            let (Some(r), Some(h), Some(end)) = (s.radius, s.height, s.end_time) else {
+                panic!("smoke {} must decode radius/height/end_time", s.entity_id);
+            };
+            assert!((1.0..=100.0).contains(&r), "implausible radius {r}");
+            assert!((0.5..=100.0).contains(&h), "implausible height {h}");
+            assert!(end > s.time, "dissipation before creation");
+            // Total smoke lifetimes in WoWS run ~20-140 s (emission + puff
+            // lifeTime); the observed entity lifetime must land there.
+            assert!(
+                (10.0..=180.0).contains(&(end - s.time)),
+                "implausible lifetime {:.1}",
+                end - s.time
+            );
+            // Positional anchor: the smoke entity's own trail starts at its
+            // spawn point (within the cloud radius in scene units, ~2x slack).
+            if let Some(first) = decoded.positions.get(&s.entity_id).and_then(|v| v.first()) {
+                let d = ((first.x - s.x).powi(2) + (first.z - s.z).powi(2)).sqrt();
+                let r_scene = r * 30.0 / 5.86; // GameParams units -> scene units
+                assert!(
+                    d <= 2.0 * r_scene,
+                    "trail starts {d:.0}u from spawn but radius is only {r_scene:.0}u scene"
+                );
+            }
+        }
+        // Every smoke entity is a type-4 kind.
+        for s in &decoded.smoke_screens {
+            assert_eq!(
+                decoded.kinds.get(&s.entity_id).map(|k| k.entity_type),
+                Some(ENTITY_TYPE_SMOKE_SCREEN)
+            );
+        }
     }
 }

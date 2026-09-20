@@ -221,6 +221,11 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         damage_stats,
         cruise,
         recorder_vehicle,
+        // The smoke lifecycles are served by their own command (see
+        // `read_replay_smoke_screens`) — `ReplayStream` is constructed
+        // literally by several experiment modules, so new fields cannot be
+        // added to it without touching frozen files.
+        smoke_screens: _,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -358,6 +363,40 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         shot_kills,
         damage_stats,
     }
+}
+
+/// Smoke-screen lifecycles of one `.wowsreplay` (experiment E8): every
+/// entityType-4 SmokeScreen entity with its spawn position, the radius /
+/// height walked out of the EntityCreate state, and the observed dissipation
+/// time (EntityLeave/Destroy). Served separately from
+/// [`read_replay_positions`] because `ReplayStream` cannot grow fields
+/// without touching files frozen by the decision-AI experiments.
+#[tauri::command]
+pub fn read_replay_smoke_screens(
+    path: String,
+) -> Result<Vec<wowsp_tauri_shared::SmokeScreenEvent>, String> {
+    let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+    let stream = packet_stream_after_blocks(&bytes)
+        .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
+    let mut candidates = std::collections::HashSet::new();
+    let mut client_version: Option<String> = None;
+    if let Some(json) = extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
+            if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
+                for v in arr {
+                    if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
+                        candidates.insert(id as u32);
+                    }
+                }
+            }
+        }
+    }
+    let decoded = super::packets::decode_replay(stream, &candidates, client_version.as_deref())?;
+    Ok(decoded.smoke_screens)
 }
 
 /// Open a native multi-select file dialog for `.wowsreplay` files anywhere on
@@ -1036,6 +1075,7 @@ mod tests {
             "wardRemoves": stream.ward_removes,
             "shotKills": stream.shot_kills,
             "damageStats": stream.damage_stats,
+            "smokeScreens": decoded.smoke_screens,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());

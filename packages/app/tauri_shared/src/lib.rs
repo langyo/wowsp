@@ -772,6 +772,56 @@ pub struct SquadronPlane {
     pub yaw: f32,
 }
 
+/// One smoke-screen entity lifecycle (entityType 4 = SmokeScreen, experiment
+/// E8). The smoke itself is a real entity: created when emission starts,
+/// streamed a position sample trail while it drifts, and despawned
+/// (EntityLeave 0x04) when the last puff dissipates.
+///
+/// Radius and height come from the EntityCreate state stream (the SmokeScreen
+/// entity's `radius` / `height` ALL_CLIENTS properties — see the decoder for
+/// the sorted-index layout evidence). The wire values are in the GameParams
+/// distance unit, empirically 30 m per unit (calibrated against radar
+/// consumable `distShip`: 333.33 ⇒ 10 km, 400 ⇒ 12 km, 250 ⇒ 7.5 km; the
+/// standard smoke radius 15.0 ⇒ the well-known ~450 m cloud). This is NOT the
+/// replay's scene-position axis (~5.86 m/unit) — convert explicitly when
+/// feeding geometry that uses world coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmokeScreenEvent {
+    /// Match time (seconds) when the smoke entity was created — the start of
+    /// emission.
+    pub time: f32,
+    /// The SmokeScreen entity id (its position samples live on the matching
+    /// EntityTrajectory).
+    pub entity_id: i32,
+    /// Spawn position of the first puff (scene units, same axis as the
+    /// position streams).
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Smoke-cloud radius (GameParams distance units, ≈30 m each — see the
+    /// struct docs). Observed families: 17.0/30.0 (Italian exhaust smoke),
+    /// 17.5 (support-CV plane smoke), 15.0/20.0/40.0 also exist in GameParams.
+    /// `None` when the create state could not be walked (version drift).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f32>,
+    /// Smoke column height in the same GameParams units — 5.0 = ship-laid,
+    /// 10.0 = plane-laid smoke (the two families observed on 15.8.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+    /// Observed dissipation end (EntityLeave, or EntityDestroy when the
+    /// server despawns the entity). The smoke's total lifetime is NOT carried
+    /// on the create-state wire — the entity's observed lifetime is the best
+    /// available duration signal (it matched GameParams workTime + lifeTime
+    /// within 0–10 s on every reference-replay smoke). `None` when the entity
+    /// never left the capture. Caveat: for a surface-ship recorder a smoke can
+    /// also leave the observed area without dissipating; the reference replay
+    /// (CV recorder, whole-map view) showed one leave per smoke, aligned with
+    /// dissipation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<f32>,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -1049,12 +1099,15 @@ pub struct ClanInfo {
 /// readable without the per-version entity DB; the trailing `state` BinaryStream
 /// (entity properties) is scanned for the roster shipId (see `ship_id`).
 ///
-/// `entity_type` semantics (empirically observed on WoWS 14.5):
-///   2 = vehicle (ships, planes, projectiles — ships have the most position
-///       updates, so the frontend filters by sample count to keep only ships)
-///   4 = aircraft / squadron
-///  11 = player avatar (the camera follower; position 0,0,0)
-///  14 = capture zone (static)
+/// `entity_type` semantics (ground truth from the 15.8.0 `entities.xml`
+/// ClientServerEntities order — index is 1-based over that list):
+///   1 = Avatar (the recorder's player entity)
+///   2 = Vehicle (ships — the type with the most position updates, so the
+///       frontend filters by sample count to keep only ships)
+///   4 = SmokeScreen (smoke cloud entities; see `SmokeScreenEvent` for the
+///       parsed radius/height — the earlier "aircraft/squadron" reading was
+///       wrong, squadrons arrive as avatar methods, not entities)
+///  14 = InteractiveZone (static capture zones)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityKind {

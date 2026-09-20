@@ -251,6 +251,7 @@ fn main() {
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
+            commands::replay::read_replay_smoke_screens,
             commands::replay::list_replays,
             commands::replay::list_replays_meta,
             commands::replay::pick_replay_files,
