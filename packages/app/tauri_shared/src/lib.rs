@@ -732,7 +732,9 @@ pub struct ChatEvent {
     pub time: f32,
     /// Sender's roster player id (descriptor `vehicles[].id`).
     pub player_id: i32,
-    /// Channel namespace, e.g. `battle_team` (team chat), `battle_all`….
+    /// Channel namespace. The audiences the client's BattleController knows:
+    /// `battle_common` (all chat), `battle_team` (team chat), `battle_prebattle`
+    /// (division chat); anything else is server-specific.
     pub namespace: String,
     /// Plaintext message body (UTF-8).
     pub message: String,

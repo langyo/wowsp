@@ -1,9 +1,9 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
-import { FolderOpen, Play, RefreshCw, X } from "@lucide/vue";
+import { Copy, FolderOpen, Play, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
-import HolographicMap from "@/features/holographic/HolographicMap";
+import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -44,6 +44,9 @@ import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { shipClassRank } from "@/utils/shipClass";
+import { shipTypeClass } from "@/features/holographic/shipIcons";
+import { tierToRoman } from "@/utils/tierRoman";
+import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
@@ -989,6 +992,431 @@ function computeSelfStats(
   return out;
 }
 
+/** Match-time stamp (M:SS) for chat rows and timeline dot hints. */
+function formatClock(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Chat channels as the UI colours them: team (家里) green, all white,
+ *  division yellow, private purple. The wire side only ever carries real
+ *  namespace strings — `battle_common` (all chat), `battle_team` (team chat)
+ *  and `battle_prebattle` (division chat) are the audiences the game client's
+ *  BattleController understands; anything else (server-specific whisper-ish
+ *  namespaces) is presented as private. */
+type ChatChannelKey = "team" | "all" | "division" | "private";
+
+const CHANNEL_BY_NAMESPACE: Record<string, ChatChannelKey> = {
+  battle_common: "all",
+  battle_team: "team",
+  battle_prebattle: "division",
+};
+
+function chatChannelOf(namespace: string): ChatChannelKey {
+  return CHANNEL_BY_NAMESPACE[namespace] ?? "private";
+}
+
+const CHANNEL_KEYS: ChatChannelKey[] = ["team", "all", "division", "private"];
+
+/** Vehicle-id → ship-trajectory join for the chat tooltips. shipId is NOT
+ *  unique per match (mirror picks, bot lines), so a naive shipId lookup can
+ *  read another player's HP. Mirrors HolographicMap's
+ *  `resolveRosterAssignments`: unique shipIds join directly; each ambiguous
+ *  trajectory takes the same-side (nearest ally/enemy spawn centroid)
+ *  unclaimed roster entry, never stealing a claimed one. */
+function assignTrajectoriesByVehicle(
+  vehicles: VehicleEntry[],
+  trajectories: EntityTrajectory[],
+): Map<number, EntityTrajectory> {
+  const shipTrajs = trajectories.filter((tr) => tr.kind?.entityType === 2);
+  const byShipId = new Map<number, VehicleEntry[]>();
+  for (const v of vehicles) {
+    const arr = byShipId.get(v.shipId) ?? [];
+    arr.push(v);
+    byShipId.set(v.shipId, arr);
+  }
+  const spawnOf = (t: EntityTrajectory) => ({
+    x: t.kind?.initialX ?? t.samples[0]?.x ?? 0,
+    z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
+  });
+  const out = new Map<number, EntityTrajectory>();
+  const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
+  for (const traj of shipTrajs) {
+    const sid = traj.kind?.shipId;
+    const entries = sid != null ? byShipId.get(sid) : undefined;
+    if (entries && entries.length === 1) {
+      out.set(entries[0].id, traj);
+    } else if (entries && entries.length > 1) {
+      ambiguous.push({ traj, entries });
+    }
+  }
+  if (ambiguous.length > 0) {
+    // Ally/enemy spawn centroids from the already-unambiguous joins.
+    let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
+    const claimed = new Set<number>();
+    for (const [vid, traj] of out) {
+      claimed.add(vid);
+      const v = vehicles.find((x) => x.id === vid);
+      if (!v) continue;
+      const s = spawnOf(traj);
+      if (v.relation <= 1) { ax += s.x; az += s.z; an++; }
+      else { ex += s.x; ez += s.z; en++; }
+    }
+    for (const { traj, entries } of ambiguous) {
+      const unclaimed = entries.filter((e) => !claimed.has(e.id));
+      let pick: VehicleEntry | undefined;
+      if (an > 0 && en > 0) {
+        const s = spawnOf(traj);
+        const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
+        const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
+        const wantAlly = dAlly < dEnemy;
+        pick =
+          unclaimed.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
+          unclaimed[0];
+      } else {
+        pick = unclaimed[0];
+      }
+      if (pick) {
+        out.set(pick.id, traj);
+        claimed.add(pick.id);
+      }
+    }
+  }
+  return out;
+}
+
+/** One chat row joined to the roster + the sender's trajectory: everything
+ *  the timeline, the copy button and the sender tooltip need. */
+interface ChatRow {
+  time: number;
+  /** Display name — falls back to `#<playerId>` when the roster can't join. */
+  sender: string;
+  /** Raw roster name; empty when unjoinable (no stats lookup possible). */
+  name: string;
+  message: string;
+  channel: ChatChannelKey;
+  enemy: boolean;
+  shipId: number;
+  shipType: string;
+  shipName: string;
+  tier: number;
+  /** HP at the message time (null when the HP timeline is missing). */
+  hp: number | null;
+  maxHp: number | null;
+  /** Already sunk when the message was sent. */
+  sunk: boolean;
+  bot: boolean;
+}
+
+/** The chat-log modal body: a mini timeline up top (one channel-tinted dot
+ *  per message; a playhead tracks the map's battle clock; click dot/track =
+ *  seek), then the message grid — time | right-aligned sender | left-aligned
+ *  message | hover copy button. Hovering the sender shows ship + HP at that
+ *  moment; clicking opens the player-stats modal. */
+const ChatLogPanel = defineComponent({
+  name: "ChatLogPanel",
+  props: {
+    events: { type: Array as () => ChatEvent[], required: true },
+    vehicles: { type: Array as () => VehicleEntry[], required: true },
+    trajectories: { type: Array as () => EntityTrajectory[], required: true },
+    /** Match duration (s) from the decoded stream — the timeline scale
+     *  before the map's own clock reports in. */
+    duration: { type: Number, default: 0 },
+    realm: { type: String, default: "asia" },
+    mapApi: { type: Object as () => HoloMapHandle | null, default: null },
+  },
+  setup(props) {
+    const { dataLanguage } = useLanguage();
+    const toast = useToast();
+    const router = useRouter();
+    const { copy } = useClipboard();
+    /** AI/bot players (":Name:") have no WG account. Same rule as the
+     *  post-battle panels. */
+    const AI_NAME = /^:.*:$/;
+
+    const rows = computed<ChatRow[]>(() => {
+      // Resolve once per recompute — the shipId join is ambiguous for mirror
+      // picks, so the vehicle→trajectory mapping must go through the
+      // spawn-side assignment, not a naive shipId find().
+      const trajByVehicle = assignTrajectoriesByVehicle(
+        props.vehicles,
+        props.trajectories,
+      );
+      return props.events
+        .filter((c) => c.playerId > 0)
+        .map((c) => {
+          const v = props.vehicles.find((x) => x.id === c.playerId);
+          const traj = v ? trajByVehicle.get(v.id) : undefined;
+          const sunk = traj?.deathTime != null && c.time >= traj.deathTime;
+          let maxHp: number | null = null;
+          if (traj?.hpSamples?.length) {
+            for (const s of traj.hpSamples) if (s.value > (maxHp ?? 0)) maxHp = s.value;
+          }
+          return {
+            time: c.time,
+            sender: v?.name ?? `#${c.playerId}`,
+            name: v?.name ?? "",
+            message: c.message,
+            channel: chatChannelOf(c.namespace),
+            enemy: (v?.relation ?? 0) >= 2,
+            shipId: v?.shipId ?? 0,
+            shipType: v ? shipOfflineEntry(v.shipId)?.type ?? "" : "",
+            shipName:
+              (v ? shipNameFromOfflineDb(v.shipId, dataLanguage.value) : null) ??
+              v?.shipName ??
+              "",
+            tier: v ? shipOfflineEntry(v.shipId)?.tier ?? 0 : 0,
+            hp: sunk ? 0 : hpAtTime(traj?.hpSamples, c.time),
+            maxHp,
+            sunk,
+            bot: v ? AI_NAME.test(v.name) : false,
+          };
+        });
+    });
+
+    /** Sender hover hint: ship + tier/class + HP at the message time. Single
+     *  line (the global tooltip popup doesn't preserve newlines). */
+    function senderHint(r: ChatRow): string {
+      const bits: string[] = [r.shipName || "—"];
+      const cls = r.shipType
+        ? t(`replay.classes.${shipTypeClass(r.shipType)}`)
+        : "";
+      const label = [r.tier ? tierToRoman(r.tier) : "", cls].filter(Boolean).join(" ");
+      if (label) bits.push(label);
+      if (r.hp != null) {
+        const hp = `${t("replay.hpRemaining")} ${Math.round(r.hp).toLocaleString()}${
+          r.maxHp ? ` / ${Math.round(r.maxHp).toLocaleString()}` : ""
+        }`;
+        bits.push(hp);
+      }
+      if (r.sunk) bits.push(t("replay.legend.dead"));
+      return bits.join(" · ");
+    }
+
+    // ── Player stats drill-down (same shape as the post-battle level-2
+    //    modal: head with ship icon, on-demand global stats, jump link). ──
+    const selected = ref<ChatRow | null>(null);
+    const globalStats = ref<PlayerStats | null>(null);
+    const globalLoading = ref(false);
+    const globalError = ref(false);
+
+    async function loadGlobal(name: string) {
+      globalStats.value = null;
+      globalLoading.value = false;
+      globalError.value = false;
+      globalLoading.value = true;
+      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name }));
+      try {
+        const stats = await api.lookupPlayerStats(name, props.realm || "asia", prAlgoForRequest());
+        toast.remove(tid);
+        // Drop late responses for a player that is no longer selected.
+        if (selected.value?.name !== name) return;
+        globalStats.value = stats;
+      } catch {
+        toast.remove(tid);
+        if (selected.value?.name !== name) return;
+        globalError.value = true;
+      } finally {
+        globalLoading.value = false;
+      }
+    }
+
+    function openDetail(r: ChatRow) {
+      selected.value = r;
+      globalStats.value = null;
+      globalError.value = false;
+      if (!r.bot) void loadGlobal(r.name);
+    }
+
+    /** Jump into the lookup screen for this player (the chat modal stays
+     *  open behind — the route change tears the whole view down). */
+    function jumpToLookup() {
+      const r = selected.value;
+      if (r) {
+        void router.push({
+          path: "/lookup",
+          query: { name: r.name, realm: props.realm || "asia" },
+        });
+      }
+    }
+
+    return () => {
+      const sel = selected.value;
+      return (
+        <>
+          <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
+          <ul class="replay-view__chat-list">
+            {rows.value.map((r, i) => (
+              <li key={i} class={["replay-view__chat-row", `replay-view__chat-row--${r.channel}`]}>
+                <span class="replay-view__chat-time">{formatClock(r.time)}</span>
+                {r.name ? (
+                  <button
+                    class="replay-view__chat-sender"
+                    data-hint={senderHint(r)}
+                    onClick={() => openDetail(r)}
+                  >
+                    {r.sender}
+                  </button>
+                ) : (
+                  <span class="replay-view__chat-sender replay-view__chat-sender--static">
+                    {r.sender}
+                  </span>
+                )}
+                <span class="replay-view__chat-text">{r.message}</span>
+                <button
+                  class="replay-view__chat-copy"
+                  data-hint={t("replay.chat.copy")}
+                  aria-label={t("replay.chat.copy")}
+                  onClick={() => void copy(r.message)}
+                >
+                  <Copy size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {/* Level-2 modal: the sender's stats (reuses the post-battle
+              modal chrome; sits fixed above the chat panel). */}
+          {sel ? (
+            <div class="replay-view__postbattle-modal" onClick={() => (selected.value = null)}>
+              <div
+                class="replay-view__postbattle-modal-panel"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div class="replay-view__postbattle-modal-head">
+                  <span class="replay-view__postbattle-detail-head">
+                    <span class="replay-view__postbattle-detail-ico">
+                      {sel.shipId ? (
+                        <BattleIcon
+                          type={sel.shipType}
+                          variant={sel.enemy ? "enemy" : "ally"}
+                          size={24}
+                        />
+                      ) : null}
+                    </span>
+                    <span class="replay-view__postbattle-detail-name">
+                      {sel.sender}
+                      {sel.bot ? (
+                        <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                      ) : null}
+                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
+                    </span>
+                  </span>
+                  <button onClick={() => (selected.value = null)}><X size={12} /></button>
+                </div>
+                <div class="replay-view__postbattle-modal-scroll">
+                  {sel.bot ? (
+                    <div class="replay-view__postbattle-global">
+                      <span class="replay-view__postbattle-global-note">
+                        {t("replay.botNote")}
+                      </span>
+                    </div>
+                  ) : (
+                    <div class="replay-view__postbattle-global">
+                      {globalLoading.value ? (
+                        <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
+                          <HSpinner size="md" tone="current" />
+                        </span>
+                      ) : globalStats.value ? (
+                        <StatsCard stats={globalStats.value} />
+                      ) : globalError.value ? (
+                        <span class="replay-view__postbattle-global-note">
+                          {t("replay.postbattle.globalFailedAi")}
+                        </span>
+                      ) : (
+                        <span class="replay-view__postbattle-global-note">
+                          {t("replay.postbattle.globalUnavailable")}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {!sel.bot ? (
+                  <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
+                    {t("replay.postbattle.fullStats")}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </>
+      );
+    };
+  },
+});
+
+/** The chat panel's mini timeline. Isolated in its own component so the
+ *  per-frame playhead updates re-render only this subtree, never the message
+ *  list. Clicking the track seeks proportionally; clicking a dot jumps to
+ *  that message's moment (both via the map's pausing seek). */
+const ChatTimeline = defineComponent({
+  name: "ChatTimeline",
+  props: {
+    rows: { type: Array as () => ChatRow[], required: true },
+    duration: { type: Number, default: 0 },
+    mapApi: { type: Object as () => HoloMapHandle | null, default: null },
+  },
+  setup(props) {
+    const track = ref<HTMLDivElement | null>(null);
+    // Prefer the map's own clock span (max−first sample) once it reports in —
+    // the playhead and the pausing seek both speak that clock; the stream-side
+    // duration prop (absolute last-sample time) is the pre-mount fallback.
+    const total = computed(() => props.mapApi?.duration || props.duration || 0);
+    const pctOf = (t: number) =>
+      total.value > 0 ? Math.min(100, Math.max(0, (t / total.value) * 100)) : 0;
+
+    function seekFromTrack(e: MouseEvent) {
+      const el = track.value;
+      const api = props.mapApi;
+      if (!el || !api || total.value <= 0) return;
+      const rect = el.getBoundingClientRect();
+      const f = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      api.seek(f * total.value);
+    }
+
+    return () => {
+      const api = props.mapApi;
+      return (
+        <div class="replay-view__chat-timeline">
+          <div
+            ref={track}
+            class={["replay-view__chat-track", api ? "" : "replay-view__chat-track--static"]}
+            onClick={seekFromTrack}
+          >
+            {props.rows.map((r, i) => (
+              <button
+                key={i}
+                class={["replay-view__chat-dot", `replay-view__chat-ch--${r.channel}`]}
+                style={{ left: `${pctOf(r.time)}%` }}
+                data-hint={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
+                aria-label={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
+                disabled={!api}
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  api?.seek(r.time);
+                }}
+              />
+            ))}
+            {api ? (
+              <span
+                class="replay-view__chat-playhead"
+                style={{ left: `${pctOf(api.current)}%` }}
+              />
+            ) : null}
+          </div>
+          <div class="replay-view__chat-legend">
+            {CHANNEL_KEYS.map((k) => (
+              <span key={k} class="replay-view__chat-legend-item">
+                <i class={["replay-view__chat-dot", `replay-view__chat-ch--${k}`]} />
+                {t(`replay.chat.${k}`)}
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    };
+  },
+});
+
 /**
  * Standalone review view (Mode 1). The left rail lists replays as info cards
  * indexed by match time / mode / own ship / map; picking one opens the detail
@@ -1255,6 +1683,11 @@ export default defineComponent({
     const achievements = ref<AchievementEvent[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
+    /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
+     *  chat panel reads its clock for the playhead and calls its pausing
+     *  seek when a timeline dot/track is clicked. Null while no map mounts
+     *  (decode error) — the panel then renders without the playhead. */
+    const mapRef = ref<HoloMapHandle | null>(null);
     /** True while the packet stream is decoding (post-battle results pending). */
     const resultsLoading = ref(false);
     const trajectoryError = ref<string | null>(null);
@@ -1343,26 +1776,11 @@ export default defineComponent({
       return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
     }
 
-    /** Match-time stamp (M:SS) for chat/achievement rows. */
-    function formatClock(sec: number): string {
-      const s = Math.max(0, Math.round(sec));
-      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-    }
-
-    /** Chat log rows joined to the roster (sender name + team relation),
-     *  oldest first. System rows (playerId ≤ 0 — the client itself ignores
-     *  those) and unjoinable ids fall back to a raw-id label. */
-    const chatLog = computed(() =>
-      chatMessages.value
-        .filter((c) => c.playerId > 0)
-        .map((c) => {
-          const roster = parser.current.value?.vehicles.find((v) => v.id === c.playerId);
-          return {
-            ...c,
-            sender: roster?.name ?? `#${c.playerId}`,
-            enemy: (roster?.relation ?? 0) >= 2,
-          };
-        }),
+    /** Human-sent chat count — gates the header pill. System rows
+     *  (playerId ≤ 0 — the client itself ignores those) don't count; the
+     *  row join itself lives in ChatLogPanel. */
+    const chatCount = computed(
+      () => chatMessages.value.filter((c) => c.playerId > 0).length,
     );
 
     const refreshing = ref(false);
@@ -1637,7 +2055,7 @@ export default defineComponent({
                     {t("replay.results")}
                   </button>
                 ) : null}
-                {chatLog.value.length > 0 ? (
+                {chatCount.value > 0 ? (
                   <button
                     class="replay-view__meta-item replay-view__pill"
                     onClick={() => (showChat.value = !showChat.value)}
@@ -1691,7 +2109,7 @@ export default defineComponent({
                 </div>
               ) : null}
 
-              {showChat.value && chatLog.value.length > 0 ? (
+              {showChat.value && chatCount.value > 0 ? (
                 <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
                   <div
                     class="replay-view__modal-panel replay-view__chat-panel"
@@ -1710,21 +2128,14 @@ export default defineComponent({
                       </button>
                     </div>
                     <div class="replay-view__modal-body">
-                      <ul class="replay-view__chat-list">
-                        {chatLog.value.map((c, i) => (
-                          <li
-                            key={i}
-                            class={[
-                              "replay-view__chat-row",
-                              c.enemy ? "replay-view__chat-row--enemy" : "replay-view__chat-row--ally",
-                            ]}
-                          >
-                            <span class="replay-view__chat-time">{formatClock(c.time)}</span>
-                            <span class="replay-view__chat-sender">{c.sender}</span>
-                            <span class="replay-view__chat-text">{c.message}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <ChatLogPanel
+                        events={chatMessages.value}
+                        vehicles={parser.current.value.vehicles}
+                        trajectories={trajectories.value}
+                        duration={duration.value}
+                        realm={realm.value}
+                        mapApi={mapRef.value}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1738,6 +2149,7 @@ export default defineComponent({
                     </div>
                   ) : (
                     <HolographicMap
+                      ref={mapRef}
                       replayPath={parser.current.value.path}
                       trajectories={trajectories.value}
                       shellLaunches={shellLaunches.value}

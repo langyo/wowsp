@@ -229,56 +229,188 @@
     padding: 0.6rem 1rem;
   }
 
-  /* Chat log modal — narrower than the results panel, timeline list */
+  /* Chat log modal — narrower than the results panel. Top: mini timeline
+     (one channel-tinted dot per message, playhead tracking the battle
+     clock, click = seek); below: a message grid whose sender column sits
+     flush RIGHT against the message column's LEFT edge, so names and texts
+     read off two shared axes. */
   &__chat-panel {
-    width: min(520px, 92vw);
+    width: min(560px, 92vw);
   }
-  &__chat-list {
+  &__chat-timeline {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 5px;
+    margin-bottom: 0.6rem;
+  }
+  &__chat-track {
+    position: relative;
+    height: 18px;
+    border-radius: 9px;
+    background: rgb(var(--color-text) / 5%);
+    border: 1px solid rgb(var(--color-text) / 8%);
+    cursor: pointer;
+    &--static {
+      cursor: default;
+    }
+  }
+  &__chat-dot {
+    /* Shared by timeline dots and legend chips: a currentColor pellet. */
+    position: absolute;
+    top: 50%;
+    box-sizing: border-box;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: currentColor;
+    box-shadow: 0 0 5px rgb(var(--color-text) / 30%);
+    cursor: pointer;
+    &:disabled {
+      cursor: default;
+    }
+  }
+  /* Channel palette: team green · all white · division yellow · private
+     purple. Dots carry it via currentColor, rows via border-left. */
+  &__chat-ch--team {
+    color: #3cb478;
+  }
+  &__chat-ch--all {
+    color: rgb(var(--color-text) / 85%);
+  }
+  &__chat-ch--division {
+    color: #f2c94c;
+  }
+  &__chat-ch--private {
+    color: #b48cf2;
+  }
+  &__chat-playhead {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: rgb(var(--color-primary));
+    box-shadow: 0 0 6px rgb(var(--color-primary) / 80%);
+    pointer-events: none;
+  }
+  &__chat-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.9rem;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-text) / 0.55);
+  }
+  &__chat-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  &__chat-legend-item &__chat-dot {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+    cursor: default;
+  }
+  &__chat-list {
+    /* ONE grid for the whole list so the sender and message columns are
+       shared axes across every row (each row alone would size max-content
+       to its own name and the axes would go ragged). */
+    display: grid;
+    grid-template-columns: 3.4em max-content minmax(0, 1fr) 18px;
+    column-gap: 0.55rem;
+    row-gap: 0.35rem;
     margin: 0;
     padding: 0;
     list-style: none;
   }
   &__chat-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
+    display: grid;
+    /* Rows inherit the list's shared columns via subgrid (Chromium 117+ /
+       WebView2 evergreen). The first declaration is the pre-subgrid
+       fallback — the row then owns a private copy of the same template. */
+    grid-template-columns: 3.4em max-content minmax(0, 1fr) 18px;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    align-items: center;
     padding: 0.3rem 0.55rem;
     border-radius: 6px;
     background: rgb(var(--color-text) / 4%);
     border-left: 3px solid rgb(var(--color-primary));
     font-size: var(--text-sm);
-    /* Relations: 0/1 = self + allies, 2+ = enemies. */
-    &--ally {
+    &--team {
       border-left-color: #3cb478;
     }
-    &--enemy {
-      border-left-color: #e05555;
+    &--all {
+      border-left-color: rgb(var(--color-text) / 85%);
+    }
+    &--division {
+      border-left-color: #f2c94c;
+    }
+    &--private {
+      border-left-color: #b48cf2;
+    }
+    &:hover .replay-view__chat-copy,
+    &:focus-within .replay-view__chat-copy {
+      opacity: 1;
     }
   }
   &__chat-time {
-    flex: 0 0 auto;
     font-size: var(--text-2xs);
     color: rgb(var(--color-text) / 0.45);
     font-variant-numeric: tabular-nums;
   }
   &__chat-sender {
-    flex: 0 1 auto;
-    max-width: 40%;
+    max-width: 30ch;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
+    justify-self: end;
     color: rgb(var(--color-text) / 0.85);
   }
+  button.replay-view__chat-sender {
+    cursor: pointer;
+    &:hover {
+      color: rgb(var(--color-primary));
+      text-decoration: underline;
+    }
+  }
+  &__chat-sender--static {
+    cursor: default;
+  }
   &__chat-text {
-    flex: 1 1 auto;
     min-width: 0;
     overflow-wrap: anywhere;
     color: rgb(var(--color-text));
     white-space: pre-wrap;
+  }
+  &__chat-copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: rgb(var(--color-text) / 0.45);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    &:hover {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-text) / 8%);
+    }
   }
 
   /* Post-battle: two-column team matrix + drill-down panel. The stats

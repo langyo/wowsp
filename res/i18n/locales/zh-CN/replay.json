@@ -246,5 +246,12 @@
     }
   },
   "chatLog": "聊天记录",
+  "chat": {
+    "team": "队伍",
+    "all": "全局",
+    "division": "小队",
+    "private": "私聊",
+    "copy": "复制消息"
+  },
   "achieved": "达成了成就"
 }

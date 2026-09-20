@@ -246,5 +246,12 @@
     }
   },
   "chatLog": "Chat de batalla",
+  "chat": {
+    "team": "Equipo",
+    "all": "Todos",
+    "division": "División",
+    "private": "Privado",
+    "copy": "Copiar mensaje"
+  },
   "achieved": "logró el logro"
 }
