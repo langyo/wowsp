@@ -2,12 +2,17 @@
 //!
 //! The update-watch config (`[package.metadata.shun.update]`) is embedded at
 //! build time (see `build.rs`) — the same table drives the installer shell's
-//! delivery pipeline. Every mirror source is probed **in parallel** (a plain
-//! GET of the `latest` marker through the proxy-aware client, 10 s cap each)
-//! and the first marker to arrive wins the resolution
-//! ([`resolve_latest`], used by `update_check`).
+//! delivery pipeline. Every mirror source is probed **in parallel** through
+//! the proxy-aware client (10 s cap each): resolution follows the source's
+//! `releases/latest` redirect and reads the version straight out of the
+//! final tag URL (`…/releases/tag/v0.3.0` → `0.3.0`), so the published tag
+//! IS the version truth — nothing has to be uploaded alongside a release
+//! for clients to notice it. The legacy `latest` marker file stays as a
+//! compatibility fallback for mirrors that serve the download mount but
+//! mangle the tag-page redirect. The first source to resolve a version wins
+//! the resolution ([`resolve_latest`], used by `update_check`).
 //!
-//! `update_download` goes further: every source that returned the marker
+//! `update_download` goes further: every source that resolved the version
 //! enters a parallel **artifact race** — one streaming task per mirror, each
 //! writing its own `.part` file. After a 10 s race window the leader (most
 //! bytes) keeps its connection while the losers are cancelled; if the leader
@@ -61,8 +66,8 @@ static UPDATE_CANCEL: AtomicBool = AtomicBool::new(false);
 /// An installer is hundreds of MB; anything smaller is a mirror error page.
 const MIN_INSTALLER_BYTES: u64 = 1_000_000;
 
-/// Per-source cap on the `latest` marker probe: a slow or dead mirror
-/// simply times out instead of stalling the race.
+/// Per-source cap on the version probe: a slow or dead mirror simply times
+/// out instead of stalling the race.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How long the parallel artifact race runs before the leader (most bytes)
@@ -158,7 +163,32 @@ fn ewma(prev: f64, sample: f64, alpha: f64) -> f64 {
     prev + alpha * (sample - prev)
 }
 
-// ── Marker race (resolution) ─────────────────────────────────────────────
+// ── Source race (resolution) ─────────────────────────────────────────────
+
+/// The `releases/latest` page URL for a source. Sources point at the
+/// download mount (`…/releases/latest/download`); stripping the suffix
+/// lands on the redirecting page whose final URL names the latest release
+/// tag — version truth that needs no separately-uploaded marker file.
+/// A source without the suffix is used as-is (its tag probe then simply
+/// fails and the marker fallback takes over).
+fn tag_url_from_source(base: &str) -> String {
+    let trimmed = base.trim().trim_end_matches('/');
+    match trimmed.strip_suffix("/download") {
+        Some(page) => page.to_string(),
+        None => trimmed.to_string(),
+    }
+}
+
+/// The bare version carried by a post-redirect release URL:
+/// `…/releases/tag/v0.3.0?x=1` → `0.3.0`. `None` when the URL never landed
+/// on a tag page (proxy followed internally, error page, …).
+fn version_from_redirect(url: &str) -> Option<String> {
+    let (path, _) = url.split_once(['?', '#']).unwrap_or((url, ""));
+    let tag = path.rsplit_once("/tag/")?.1;
+    let tag = tag.trim_end_matches('/').trim();
+    let version = tag.strip_prefix(['v', 'V']).unwrap_or(tag);
+    (!version.is_empty()).then(|| version.to_string())
+}
 
 /// GET `{base}/{marker}` and return the trimmed body — the candidate
 /// version. 200 + non-empty text makes the source reachable.
@@ -191,9 +221,49 @@ async fn probe_marker(
     Ok(version)
 }
 
-/// One mirror that returned the marker. `index` is the position in the
-/// configured sources list (used for the part-file name).
-struct MarkerCandidate {
+/// Resolve the latest version by following the source's `releases/latest`
+/// redirect and reading the tag out of the final URL. The body is never
+/// read — the redirected URL is the payload, then the connection drops.
+async fn probe_tag(client: &reqwest::Client, base: &str) -> Result<String, String> {
+    let url = tag_url_from_source(base);
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("probe {url}: {e}"))?;
+    if response.status() != reqwest::StatusCode::OK {
+        return Err(format!(
+            "probe {url}: unexpected status {}",
+            response.status()
+        ));
+    }
+    let final_url = response.url().to_string();
+    drop(response);
+    version_from_redirect(&final_url)
+        .ok_or_else(|| format!("probe {url}: redirect landed on a non-tag URL: {final_url}"))
+}
+
+/// Resolve the latest version from one source. The tag redirect is the
+/// primary mechanism — it needs nothing but the release itself, so a
+/// forgotten marker file can never hide a published release. The legacy
+/// `latest` marker file stays as the compatibility fallback for mirrors
+/// that proxy the download mount but mangle the tag-page redirect.
+async fn probe_source(
+    client: &reqwest::Client,
+    base: &str,
+    marker: &str,
+) -> Result<String, String> {
+    match probe_tag(client, base).await {
+        Ok(version) => Ok(version),
+        Err(tag_err) => probe_marker(client, base, marker)
+            .await
+            .map_err(|marker_err| format!("tag probe: {tag_err}; marker probe: {marker_err}")),
+    }
+}
+
+/// One mirror that resolved the latest version. `index` is the position in
+/// the configured sources list (used for the part-file name).
+struct SourceCandidate {
     index: usize,
     base: String,
     version: String,
@@ -202,22 +272,23 @@ struct MarkerCandidate {
 /// Probe every source concurrently, each capped at [`PROBE_TIMEOUT`]. With
 /// `collect_all` the pass waits for every probe (bounded by the cap) so all
 /// reachable mirrors can enter the artifact race; without it the first
-/// marker wins and the remaining probes are cancelled by drop. Either way
-/// `candidates` is in marker-arrival order — the first entry is the winner.
-/// Emits `{ phase: "race", sources_alive }` as probes settle when a window
-/// is given (the download flow), so the webui can render the racing state.
-async fn race_markers(
+/// resolution wins and the remaining probes are cancelled by drop. Either
+/// way `candidates` is in resolution-arrival order — the first entry is the
+/// winner. Emits `{ phase: "race", sources_alive }` as probes settle when a
+/// window is given (the download flow), so the webui can render the racing
+/// state.
+async fn race_sources(
     client: &reqwest::Client,
     sources: &[String],
     marker: &str,
     window: Option<&tauri::WebviewWindow>,
     collect_all: bool,
-) -> Result<Vec<MarkerCandidate>, String> {
+) -> Result<Vec<SourceCandidate>, String> {
     let mut probes: futures::stream::FuturesUnordered<_> = sources
         .iter()
         .enumerate()
         .map(|(index, base)| async move {
-            let probe = tokio::time::timeout(PROBE_TIMEOUT, probe_marker(client, base, marker))
+            let probe = tokio::time::timeout(PROBE_TIMEOUT, probe_source(client, base, marker))
                 .await
                 .map_err(|_| format!("probe {base}: timed out after {}s", PROBE_TIMEOUT.as_secs()));
             (index, base.clone(), probe)
@@ -225,7 +296,7 @@ async fn race_markers(
         .collect();
 
     let mut alive = sources.len();
-    let mut candidates: Vec<MarkerCandidate> = Vec::new();
+    let mut candidates: Vec<SourceCandidate> = Vec::new();
     while let Some((index, base, probe)) = probes.next().await {
         alive = alive.saturating_sub(1);
         if let Some(window) = window {
@@ -235,7 +306,7 @@ async fn race_markers(
             );
         }
         if let Ok(Ok(version)) = probe {
-            candidates.push(MarkerCandidate {
+            candidates.push(SourceCandidate {
                 index,
                 base,
                 version,
@@ -253,17 +324,17 @@ async fn race_markers(
     Ok(candidates)
 }
 
-/// Resolves the fastest mirror (first `latest` marker to arrive), returning
-/// the marker version plus the installer artifact URL under the
+/// Resolves the fastest mirror (first version resolution to arrive),
+/// returning the latest version plus the installer artifact URL under the
 /// winning source.
 async fn resolve_latest() -> Result<(String, String), String> {
     let watch = watch_config()?;
     let marker = watch
         .files
         .first()
-        .ok_or_else(|| "no `latest` marker declared in the update sources".to_string())?;
+        .ok_or_else(|| "no marker file declared in the update sources".to_string())?;
     let client = build_http_client()?;
-    let candidates = race_markers(&client, &watch.sources, marker, None, false).await?;
+    let candidates = race_sources(&client, &watch.sources, marker, None, false).await?;
     let winner = &candidates[0];
     Ok((
         winner.version.clone(),
@@ -694,21 +765,21 @@ async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), Stri
     // may have been cancelled by the user).
     UPDATE_CANCEL.store(false, Ordering::SeqCst);
 
-    // ── Phase 1: mirror marker race ─────────────────────────────────────
+    // ── Phase 1: mirror resolution race ────────────────────────────────
     // Every source is probed in parallel with a 10 s cap each; all that
-    // return the marker (in arrival order) enter the artifact race.
+    // resolve the latest version (in arrival order) enter the artifact race.
     let watch = watch_config()?;
     let marker = watch
         .files
         .first()
-        .ok_or_else(|| "no `latest` marker declared in the update sources".to_string())?;
+        .ok_or_else(|| "no marker file declared in the update sources".to_string())?;
     let client = build_http_client()?;
-    let candidates = race_markers(&client, &watch.sources, marker, Some(window), true).await?;
-    // Stale-mirror guard: a mirror still serving an older `latest` would
+    let candidates = race_sources(&client, &watch.sources, marker, Some(window), true).await?;
+    // Stale-mirror guard: a mirror still serving an older release would
     // fetch a different artifact file — only sources agreeing with the
     // winner stay in the race.
     let version = candidates[0].version.clone();
-    let racers: Vec<&MarkerCandidate> =
+    let racers: Vec<&SourceCandidate> =
         candidates.iter().filter(|c| c.version == version).collect();
 
     // PID-suffixed temp names: two app instances must not race one file.
@@ -1029,6 +1100,72 @@ mod tests {
         assert_eq!(pick_leader(&[5, 5, 4]), Some(0), "ties go to the first");
         assert_eq!(pick_leader(&[0, 9, 9]), Some(1));
         assert_eq!(pick_leader(&[0, 0, 0]), Some(0));
+    }
+
+    #[test]
+    fn tag_url_strips_the_download_mount() {
+        // Configured sources end in /releases/latest/download — the tag
+        // probe wants the redirecting page one step up.
+        assert_eq!(
+            tag_url_from_source("https://github.com/langyo/wowsp/releases/latest/download"),
+            "https://github.com/langyo/wowsp/releases/latest"
+        );
+        // Trailing slashes are trimmed first either way.
+        assert_eq!(
+            tag_url_from_source(
+                "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/latest/download/"
+            ),
+            "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/latest"
+        );
+        // A source without the suffix is passed through untouched (its tag
+        // probe fails and the marker fallback takes over).
+        assert_eq!(
+            tag_url_from_source("https://mirror.example.test/files/"),
+            "https://mirror.example.test/files"
+        );
+    }
+
+    #[test]
+    fn version_from_redirect_reads_the_tag_segment() {
+        // The canonical GitHub redirect target.
+        assert_eq!(
+            version_from_redirect("https://github.com/langyo/wowsp/releases/tag/v0.3.0"),
+            Some("0.3.0".to_string())
+        );
+        // A mirror that re-hosts the redirect keeps the same path shape.
+        assert_eq!(
+            version_from_redirect(
+                "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/tag/v1.2.3"
+            ),
+            Some("1.2.3".to_string())
+        );
+        // Query strings and trailing slashes must not leak into the version.
+        assert_eq!(
+            version_from_redirect("https://github.com/langyo/wowsp/releases/tag/v0.3.0?ref=xx/"),
+            Some("0.3.0".to_string())
+        );
+        // A tag without the v prefix still parses.
+        assert_eq!(
+            version_from_redirect("https://github.com/langyo/wowsp/releases/tag/0.4.0"),
+            Some("0.4.0".to_string())
+        );
+        // Non-tag landings (proxy followed internally, error page, plain
+        // source echo) resolve nothing — the marker fallback then decides.
+        assert_eq!(
+            version_from_redirect("https://github.com/langyo/wowsp/releases/latest"),
+            None
+        );
+        assert_eq!(
+            version_from_redirect(
+                "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/latest/download"
+            ),
+            None
+        );
+        assert_eq!(
+            version_from_redirect("https://example.test/tag/"),
+            None,
+            "empty tag name"
+        );
     }
 
     #[test]
