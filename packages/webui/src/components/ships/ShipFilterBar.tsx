@@ -40,7 +40,7 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import type { PlayerShipStats } from "@/api";
 import { ArrowDown, ArrowUp, GripHorizontal, Search } from "@lucide/vue";
 
-import { HSearchInput } from "@celestia-island/hikari";
+import { HPopover, HSearchInput } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -288,18 +288,40 @@ export default defineComponent({
     // ── Search state (kept verbatim from v1) ──
     const shipQuery = ref("");
     const searchOpen = ref(false);
-    const searchAnchor = ref<HTMLDivElement | null>(null);
     const chipsRow = ref<HTMLDivElement | null>(null);
+    // The search BUTTON anchors the teleported panel (the wrapper div only
+    // carries spacing); the panel content elements below feed the outside-
+    // close containment — they render at body level, outside the bar root.
+    const searchBtnEl = ref<HTMLButtonElement | null>(null);
+    const searchPanelEl = ref<HTMLElement | null>(null);
+    const popPanelEls = new Map<CatKey, HTMLElement | null>();
 
-    function onDocMouseDown(e: MouseEvent) {
-      const search = searchAnchor.value;
-      if (search && !search.contains(e.target as Node)) searchOpen.value = false;
-      const row = chipsRow.value;
-      if (row && !row.contains(e.target as Node)) openPop.value = null;
+    /** One outside-close for the whole bar, attached exactly while a panel
+     *  is open (capture so it precedes every inside handler). Presses inside
+     *  the bar root are ignored here — the chip's own click then toggles or
+     *  switches popups, keeping one-click switching. The open panel itself
+     *  teleports to body (HPopover), outside the bar root, so its element is
+     *  containment-checked too: a press on an option must reach its click. */
+    function onDocPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (chipsRow.value?.contains(target)) return;
+      if (openPop.value != null && popPanelEls.get(openPop.value)?.contains(target)) return;
+      if (searchOpen.value && searchPanelEl.value?.contains(target)) return;
+      openPop.value = null;
+      searchOpen.value = false;
     }
-    onMounted(() => document.addEventListener("mousedown", onDocMouseDown));
+    watch(
+      () => openPop.value !== null || searchOpen.value,
+      (anyOpen) => {
+        if (anyOpen) {
+          document.addEventListener("pointerdown", onDocPointerDown, true);
+        } else {
+          document.removeEventListener("pointerdown", onDocPointerDown, true);
+        }
+      },
+    );
     onBeforeUnmount(() => {
-      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
       window.removeEventListener("pointermove", onChipPointerMove);
       window.removeEventListener("pointerup", onChipPointerUp);
       window.removeEventListener("pointercancel", onChipPointerCancel);
@@ -581,11 +603,7 @@ export default defineComponent({
               .map((v) => catOptions.value[key].find((o) => o.value === v)?.label ?? v)
               .join("·") || t(def.allLabel);
           return (
-            <div
-              key={key}
-              class="ship-filter-bar__chip-anchor"
-              data-edge={key === order.value[order.value.length - 1] || undefined}
-            >
+            <div key={key} class="ship-filter-bar__chip-anchor">
               <button
                 type="button"
                 ref={(el) => {
@@ -609,8 +627,32 @@ export default defineComponent({
                 <span>{chipLabel}</span>
                 {isSortCat(key) ? dirIcon(cur.dir) : null}
               </button>
-              {openPop.value === key ? (
-                <div class="ship-filter-bar__pop">
+              {/* The popup teleports to body (HPopover) — no overflow
+                  ancestor can clip it. closeOnBackdrop stays off: hikari's
+                  own document listener would close on the re-click of the
+                  open chip before that click re-opens it; the bar-level
+                  pointerdown listener above is the outside-close, and chip
+                  re-click switching runs through onChipClick untouched. */}
+              <HPopover
+                modelValue={openPop.value === key}
+                onUpdate:modelValue={(v: boolean) => {
+                  if (!v && openPop.value === key) openPop.value = null;
+                }}
+                anchorRef={chipEls.get(key) ?? null}
+                // The right-most chip's popup opens leftwards so it never
+                // leaves the strip (the old data-edge CSS hook).
+                placement={
+                  key === order.value[order.value.length - 1] ? "bottom-end" : "bottom-start"
+                }
+                closeOnBackdrop={false}
+                title={t(def.title)}
+              >
+                <div
+                  ref={(el) => {
+                    popPanelEls.set(key, (el as HTMLElement | null) ?? null);
+                  }}
+                  class="ship-filter-bar__pop"
+                >
                   <div class="ship-filter-bar__pop-head">
                     <span>{t(def.title)}</span>
                     <button
@@ -645,7 +687,7 @@ export default defineComponent({
                   </div>
                   <div class="ship-filter-bar__pop-hint">{popHint(key)}</div>
                 </div>
-              ) : null}
+              </HPopover>
             </div>
           );
         })}
@@ -656,12 +698,14 @@ export default defineComponent({
           })}
         </span>
         {/* Search — one button; the input lives in a popup panel that opens
-            leftwards from the button (roomier than an inline box). The
-            button stays highlighted while a query is in effect so the
-            bypass-everything state is never invisible. */}
-        <div ref={searchAnchor} class="ship-filter-bar__search-anchor">
+            leftwards from the button (roomier than an inline box; HPopover
+            placement, teleported to body). The button stays highlighted
+            while a query is in effect so the bypass-everything state is
+            never invisible. */}
+        <div class="ship-filter-bar__search-anchor">
           <button
             type="button"
+            ref={searchBtnEl}
             class={[
               "ship-filter-bar__search-btn",
               searchOpen.value || shipQuery.value.trim() ? "ship-filter-bar__search-btn--on" : "",
@@ -674,8 +718,17 @@ export default defineComponent({
             <Search size={13} />
             <span>{t("common.search.fuzzy")}</span>
           </button>
-          {searchOpen.value ? (
-            <div class="ship-filter-bar__search-panel">
+          <HPopover
+            modelValue={searchOpen.value}
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) searchOpen.value = false;
+            }}
+            anchorRef={searchBtnEl.value}
+            placement="bottom-end"
+            closeOnBackdrop={false}
+            title={t("common.search.fuzzy")}
+          >
+            <div ref={searchPanelEl} class="ship-filter-bar__search-panel">
               <div class="ship-filter-bar__search-panel-head">
                 <span>{t("common.search.fuzzy")}</span>
                 <button
@@ -713,7 +766,7 @@ export default defineComponent({
                 <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>
               ) : null}
             </div>
-          ) : null}
+          </HPopover>
         </div>
       </div>
     );

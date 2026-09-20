@@ -9,8 +9,14 @@
  * views are lazy-loaded per route, and a component landing in the ships
  * chunk cannot rely on the LookupView chunk to carry the styles (Vite
  * dedupes the CSS module, so both surfaces stay in lockstep).
+ *
+ * The popup renders through hikari HPopover: it teleports to body level and
+ * positions against the chip button, so an overflow ancestor (the ship
+ * picker's HModal body is a scroll container) can never clip it.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
+
+import { HPopover } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import "./ShipFilterBar.scss";
@@ -29,7 +35,7 @@ export default defineComponent({
     },
     selected: { type: Object as PropType<Set<string>>, default: () => new Set<string>() },
     open: { type: Boolean, default: false },
-    /** Right-most chip in a row — the popup opens leftwards (data-edge CSS hook). */
+    /** Right-most chip in a row — the popup opens leftwards (bottom-end). */
     edge: { type: Boolean, default: false },
   },
   emits: {
@@ -42,35 +48,39 @@ export default defineComponent({
     // check: several chip anchors coexist on one page and each must close
     // only for events landing outside itself.
     const root = ref<HTMLElement | null>(null);
+    // The chip BUTTON anchors the teleported HPopover panel. The panel
+    // content element rides along in the outside-close test: it renders at
+    // body level, outside `root`, so a press on an option must not count as
+    // an outside press (it would kill the panel before the option's click).
+    const chipBtn = ref<HTMLButtonElement | null>(null);
+    const panelEl = ref<HTMLElement | null>(null);
 
     function close() {
       emit("update:open", false);
     }
 
     function onDocPointerDown(e: PointerEvent) {
-      if (root.value && !root.value.contains(e.target as Node)) close();
-    }
-    function onDocKeydown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
+      const target = e.target as Node;
+      if (root.value?.contains(target)) return;
+      if (panelEl.value?.contains(target)) return;
+      close();
     }
 
-    // Listeners live exactly while the popup is open — a closed chip must
-    // not intercept document events, and sibling chips each attach their own.
+    // The outside-close listener lives exactly while the popup is open — a
+    // closed chip must not intercept document events, and sibling chips each
+    // attach their own. Escape close is HPopover's own (closeOnEscape).
     watch(
       () => props.open,
       (open) => {
         if (open) {
           document.addEventListener("pointerdown", onDocPointerDown, true);
-          document.addEventListener("keydown", onDocKeydown);
         } else {
           document.removeEventListener("pointerdown", onDocPointerDown, true);
-          document.removeEventListener("keydown", onDocKeydown);
         }
       },
     );
     onBeforeUnmount(() => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
-      document.removeEventListener("keydown", onDocKeydown);
     });
 
     // Chip label reads in canonical option order (not click order) so the
@@ -83,9 +93,10 @@ export default defineComponent({
     });
 
     return () => (
-      <div ref={root} class="ship-filter-bar__chip-anchor" data-edge={props.edge || undefined}>
+      <div ref={root} class="ship-filter-bar__chip-anchor">
         <button
           type="button"
+          ref={chipBtn}
           class={[
             "ship-filter-bar__chip",
             props.selected.size ? "ship-filter-bar__chip--on" : "ship-filter-bar__chip--all",
@@ -94,8 +105,21 @@ export default defineComponent({
         >
           <span>{chipLabel.value}</span>
         </button>
-        {props.open ? (
-          <div class="ship-filter-bar__pop">
+        {/* closeOnBackdrop stays off: HPopover's own document listener would
+            close on the re-click of the open chip before that click re-opens
+            it, making the open chip impossible to dismiss. The pointerdown
+            listener above is the outside-close; Escape rides closeOnEscape. */}
+        <HPopover
+          modelValue={props.open}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) close();
+          }}
+          anchorRef={chipBtn.value}
+          placement={props.edge ? "bottom-end" : "bottom-start"}
+          closeOnBackdrop={false}
+          title={props.title}
+        >
+          <div ref={panelEl} class="ship-filter-bar__pop">
             <div class="ship-filter-bar__pop-head">
               <span>{props.title}</span>
               <button type="button" class="ship-filter-bar__pop-close" onClick={close}>
@@ -131,7 +155,7 @@ export default defineComponent({
             </div>
             <div class="ship-filter-bar__pop-hint">{t("ships.filter.hintMulti")}</div>
           </div>
-        ) : null}
+        </HPopover>
       </div>
     );
   },
