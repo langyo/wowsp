@@ -41,38 +41,11 @@
   }
 }
 
-.async-search-combo__panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  width: min(360px, 70vw);
-  padding: 10px 12px 12px;
-  border-radius: 10px;
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 18%);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-  z-index: 50;
-  animation: async-search-pop var(--duration-normal) var(--ease-standard);
-
-  &--left {
-    left: 0;
-  }
-
-  &--right {
-    right: 0;
-  }
-}
-
-@keyframes async-search-pop {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
+/* The panel renders through hikari HPopover (body-level teleport, glass
+   surface) so overflow ancestors can never clip it — the old absolute-
+   position `.async-search-combo__panel` rule (and its --left/--right edge
+   modifiers, now HPopover placements) died with that move. Only the
+   panel's INNER content is styled below. */
 .async-search-combo__panel-head {
   display: flex;
   align-items: center;

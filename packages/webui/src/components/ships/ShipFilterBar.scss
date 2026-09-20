@@ -103,39 +103,11 @@
   white-space: nowrap;
 }
 
-/* ── Chip popup: the category's original segmented button group ── */
-.ship-filter-bar__pop {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 8px);
-  width: max-content;
-  max-width: min(560px, 90vw);
-  padding: 10px 12px 8px;
-  border-radius: 10px;
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 18%);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-  z-index: 50;
-  animation: ship-filter-pop var(--duration-normal) var(--ease-standard);
-}
-
-/* The right-most chip's popup opens leftwards so it never leaves the strip. */
-.ship-filter-bar__chip-anchor[data-edge] .ship-filter-bar__pop {
-  left: auto;
-  right: 0;
-}
-
-@keyframes ship-filter-pop {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
+/* ── Chip popup: the category's original segmented button group ──
+   The popup panel itself renders through hikari HPopover (body-level
+   teleport, glass surface) so overflow ancestors can never clip it — the
+   old absolute-position `.ship-filter-bar__pop` / `[data-edge]` rules died
+   with that move. Only the panel's INNER content is styled here. */
 .ship-filter-bar__pop-head {
   display: flex;
   align-items: center;
@@ -215,7 +187,10 @@
   color: rgb(var(--color-muted) / 90%);
 }
 
-/* ── Search: one compact button, roomy leftward popup panel ── */
+/* ── Search: one compact button, roomy leftward popup panel ──
+   The panel renders through hikari HPopover like the chip popups (the old
+   absolute-position `.ship-filter-bar__search-panel` rule died with that
+   move); only its inner content is styled below. */
 .ship-filter-bar__search-anchor {
   position: relative;
   /* Breathing room from the match-count text to its left. */
@@ -244,31 +219,6 @@
     color: rgb(var(--color-primary));
     border-color: rgb(var(--color-primary) / 25%);
     background: rgb(var(--color-primary) / 12%);
-  }
-}
-
-.ship-filter-bar__search-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  width: min(360px, 70vw);
-  padding: 10px 12px 12px;
-  border-radius: 10px;
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 18%);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-  z-index: 50;
-  animation: ship-search-pop var(--duration-normal) var(--ease-standard);
-}
-
-@keyframes ship-search-pop {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
   }
 }
 
