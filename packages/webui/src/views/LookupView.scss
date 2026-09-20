@@ -295,8 +295,9 @@
 }
 
 .lookup-view__ship-tier {
+  flex: 0 0 32px;
+  text-align: center;
   font-style: normal;
-  margin-right: 6px;
   color: rgb(var(--color-text));
   font-family: var(--font-mono);
 }
