@@ -108,7 +108,10 @@ mod tests {
     #[test]
     fn decodes_ascii_and_cjk_paths() {
         assert_eq!(percent_decode("D:/tmp/a.png").unwrap(), "D:/tmp/a.png");
-        assert_eq!(percent_decode("D:/%E6%BA%90x/b.png").unwrap(), "D:/源x/b.png");
+        assert_eq!(
+            percent_decode("D:/%E6%BA%90x/b.png").unwrap(),
+            "D:/源x/b.png"
+        );
         // encodeURIComponent leaves these untouched; spaces arrive as %20.
         assert_eq!(percent_decode("a%20b.webm").unwrap(), "a b.webm");
     }
