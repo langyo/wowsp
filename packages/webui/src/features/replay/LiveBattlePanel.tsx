@@ -263,7 +263,7 @@ export default defineComponent({
         const st = clickable ? stats.get(v.id) : null;
         const stamp =
           st && !st.loading && !st.hidden && st.winrate != null
-            ? careerStamp(st.pr, st.battles)
+            ? careerStamp(st.pr, st.battles, st.winrate)
             : null;
         const classes = [
           "live-battle__player",
