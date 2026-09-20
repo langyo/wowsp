@@ -18,6 +18,8 @@ import sys
 import zlib
 from collections import Counter, defaultdict
 
+# Third-party dep of this probe only (NOT in scripts/requirements.txt):
+#   pip install pycryptodome
 from Cryptodome.Cipher import Blowfish
 
 KEY = bytes([0x29, 0xB7, 0xC9, 0x09, 0x38, 0x3F, 0x84, 0x88,
