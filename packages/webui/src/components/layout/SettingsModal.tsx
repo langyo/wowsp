@@ -52,6 +52,7 @@ import {
   previewDpiScale,
   resetDpiScale,
   revertPreviewDpiScale,
+  useAppliedDpiScale,
   useDpiCountdown,
 } from "@/theme/dpiPrefs";
 import { t, type Locale } from "@/i18n";
@@ -453,6 +454,13 @@ export default defineComponent({
       if (mounted) return;
       pendingDpi.value = null;
       if (dpiCountdown.active) revertPreviewDpiScale();
+      dpiScale.value = loadDpiScale();
+    });
+    // Ctrl/Cmd+Alt+0 can reset the scale from anywhere while this control is
+    // on screen; the root-zoom ref (MutationObserver-fed) mirrors that into
+    // the readout unless a staged notch or live preview owns the display.
+    watch(useAppliedDpiScale(), () => {
+      if (dpiCountdown.active || pendingDpi.value != null) return;
       dpiScale.value = loadDpiScale();
     });
     onBeforeUnmount(() => {
