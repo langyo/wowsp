@@ -6,6 +6,7 @@ import stampAir from "../../res/stamps/stamp-air.png";
 import stampApe from "../../res/stamps/stamp-ape.png";
 import stampMaggot from "../../res/stamps/stamp-maggot.png";
 import stampMiracle from "../../res/stamps/stamp-miracle.png";
+import stampRat from "../../res/stamps/stamp-rat.png";
 import stampSub from "../../res/stamps/stamp-sub.png";
 import "./RatingStamp.scss";
 
@@ -15,14 +16,15 @@ let stampSeq = 0;
  *  weave + ink-rough displacement filter) around pre-rendered glyph bitmaps.
  *
  *  The glyphs are baked to PNGs by `scripts/gen_stamp_bitmaps.py` (calligraphy
- *  fonts: 神 in 毛体, the rest in 鲁迅行书; the four-char composition tags are
- *  laid out as a 2x2 seal face — 空中 over 小人). The fonts themselves are
+ *  fonts: 神 in 毛体, the rest in 鲁迅行书; the four-char tags are laid out as
+ *  a 2x2 seal face — 空中 over 小人, 过街 over 老鼠). The fonts themselves are
  *  commercial / unclear-
  *  license and are NOT bundled — bitmaps only, so the seals look identical
  *  everywhere. Displacement seeds are fixed per kind → deterministic ink.
  *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
  *   - "ape" (海猴): PR < 750 with winrate ≥ 40%
  *   - "maggot" (蛆): PR < 750 with winrate < 40%
+ *   - "rat" (过街老鼠): hidden profile — no stats to grade, hiding is the tell
  *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
  *     mains (career share > 20% over 200+ battles)
  *
@@ -32,6 +34,7 @@ const STAMP_GLYPHS: Record<StampKind, string> = {
   miracle: stampMiracle,
   ape: stampApe,
   maggot: stampMaggot,
+  rat: stampRat,
   air: stampAir,
   sub: stampSub,
 };
@@ -39,6 +42,7 @@ const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
   ape: "海猴",
   maggot: "蛆",
+  rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
 };
@@ -46,6 +50,7 @@ const STAMP_SEED: Record<StampKind, number> = {
   miracle: 7,
   ape: 13,
   maggot: 31,
+  rat: 44,
   air: 21,
   sub: 5,
 };
