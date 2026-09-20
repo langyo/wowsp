@@ -149,10 +149,10 @@ export default defineComponent({
                 <RatingStamp class="stats-card__stamp" kind={stamp.value} size={58} />
               ) : null}
               {composition.value.air ? (
-                <RatingStamp class="stats-card__stamp" kind="air" size={46} />
+                <RatingStamp class="stats-card__stamp" kind="air" size={58} />
               ) : null}
               {composition.value.sub ? (
-                <RatingStamp class="stats-card__stamp" kind="sub" size={46} />
+                <RatingStamp class="stats-card__stamp" kind="sub" size={58} />
               ) : null}
             </div>
           ) : null}
