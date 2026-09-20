@@ -1526,3 +1526,55 @@ pub struct AuxCacheStatus {
     /// Recursive on-disk size in bytes; 0 when the directory is absent.
     pub size_bytes: u64,
 }
+
+/// Feasibility-shell (experiment E1) battlefield snapshot for the decision-AI
+/// inference chain. A deliberately dummy 8-float encoding of the incomplete
+/// battle state — the real feature vector replaces it once the actual model
+/// is trained. Field order IS the model input order (see
+/// `commands::decision_ai`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionDummyState {
+    /// sin(own heading), heading normalized to [0, 2π).
+    pub own_heading_sin: f32,
+    /// cos(own heading).
+    pub own_heading_cos: f32,
+    /// Own current speed (normalized by the caller).
+    pub own_speed: f32,
+    /// sin(bearing to nearest enemy).
+    pub enemy_bearing_sin: f32,
+    /// cos(bearing to nearest enemy).
+    pub enemy_bearing_cos: f32,
+    /// Distance to nearest enemy (normalized).
+    pub enemy_distance: f32,
+    /// Own hit-point fraction, [0, 1].
+    pub own_hp_fraction: f32,
+    /// 1.0 when the nearest enemy is currently visible, else 0.0.
+    pub target_visible: f32,
+}
+
+/// Feasibility-shell (experiment E1) decision suggestion mapped out of the
+/// tiny fixture model's output logits. Placeholder semantics — a proof of
+/// the wire format, not tactical advice.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionDummySuggestion {
+    /// Compass sector to steer toward: argmax over output logits 0..4 (0-3).
+    pub heading_sector: u32,
+    /// Throttle level: argmax over output logits 4..7 (0-2).
+    pub speed_setting: u32,
+    /// Whether the model votes to fire: last output logit > 0.
+    pub fire: bool,
+}
+
+/// Runtime status of the decision-AI inference chain (E1 diagnostics).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionAiStatus {
+    /// The `ort` crate version this binary was built against.
+    pub ort_version: String,
+    /// Native ONNX Runtime build info (version, git commit, compile flags).
+    pub runtime_info: String,
+    /// Whether the embedded fixture model initialized into a live session.
+    pub fixture_loaded: bool,
+}
