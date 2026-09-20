@@ -16,6 +16,7 @@
 import { onBeforeUnmount, reactive, watch } from "vue";
 
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
+import { prAlgoForRequest } from "@/stores/statsPrefs";
 
 /** The client renders bots as `:NAME:`. */
 const AI_NAME = /^:.*:$/;
@@ -35,6 +36,16 @@ export interface RosterStat {
 
 const statCache = new Map<string, RosterStat>();
 const STAT_CACHE_MAX = 2000;
+
+/** Cache key embeds the request algorithm: the batch answers PR=null under
+ *  "expected" (see the backend's `apply_batch_pr_algo`), so an entry cached
+ *  under one algorithm must never serve a view switched to the other —
+ *  without the tag, toggling the pref would keep the old caliber (numbers
+ *  or dashes) until restart. `undefined` (rating off) maps to "default" =
+ *  the backend's winrate default. */
+function rosterCacheKey(realm: string, name: string): string {
+  return `${prAlgoForRequest() ?? "default"}:${realm}:${name}`;
+}
 
 const emptyStat = (loading: boolean): RosterStat => ({
   winrate: null,
@@ -68,7 +79,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   let retriesLeft = 2;
 
   function cacheKey(name: string): string {
-    return `${options.realm()}:${name}`;
+    return rosterCacheKey(options.realm(), name);
   }
 
   /** Seed per-vehicle stats from cache; queue the rest for a batch call. */
@@ -114,7 +125,11 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     const gen = battleGen;
     inFlight = true;
     try {
-      const results = await api.lookupPlayersStatsBatch(names, options.realm());
+      const results = await api.lookupPlayersStatsBatch(
+        names,
+        options.realm(),
+        prAlgoForRequest(),
+      );
       if (gen !== battleGen) return;
       names.forEach((name, i) => {
         const r = results[i];
@@ -239,13 +254,13 @@ export async function fetchRosterStatsByNames(
   const misses: string[] = [];
   for (const name of names) {
     if (isAiName(name)) continue;
-    const cached = statCache.get(`${realm}:${name}`);
+    const cached = statCache.get(rosterCacheKey(realm, name));
     if (cached) out.set(name, cached);
     else misses.push(name);
   }
   if (misses.length === 0) return out;
   try {
-    const results = await api.lookupPlayersStatsBatch(misses, realm);
+    const results = await api.lookupPlayersStatsBatch(misses, realm, prAlgoForRequest());
     misses.forEach((name, i) => {
       const r = results[i];
       const st = r
@@ -259,7 +274,7 @@ export async function fetchRosterStatsByNames(
           }
         : emptyStat(false);
       if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
-      statCache.set(`${realm}:${name}`, st);
+      statCache.set(rosterCacheKey(realm, name), st);
       out.set(name, st);
     });
   } catch {

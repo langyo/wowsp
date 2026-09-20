@@ -5,6 +5,7 @@
  */
 import { transport } from "@/transport";
 import { RPC } from "@/rpc";
+import type { PrAlgo } from "@/stores/statsPrefs";
 
 /** Mirrors `wowsp_tauri_shared::GameInstall`. */
 export interface GameInstall {
@@ -1092,27 +1093,48 @@ export const api = {
    *  main window's live panel reorders its columns to mirror it. */
   listenTabOrder: (handler: (order: TabRowOrder) => void) =>
     transport.listen?.<TabRowOrder>("wowsp://tab-order", handler),
-  lookupPlayerStats: (name: string, realm: string) =>
-    transport.invoke<PlayerStats>(RPC.lookup_player_stats, { name, realm }),
+  /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =
+   *  ApeRadar weighted winrate, "expected" = wows-numbers expected values);
+   *  omitted → the backend's zero-cost default. Forward it only while the
+   *  PR rating is enabled (see stores/statsPrefs prAlgoForRequest). */
+  lookupPlayerStats: (name: string, realm: string, prAlgo?: PrAlgo) =>
+    transport.invoke<PlayerStats>(RPC.lookup_player_stats, {
+      name,
+      realm,
+      prAlgo: prAlgo ?? null,
+    }),
   /** Batch roster lookup: one entry per input name, in order; null = not
    *  found / lookup failed (the panel renders that as "no data"). Skips the
-   *  per-player Vortex dog-tag call — roster cards show WR/PR only. */
-  lookupPlayersStatsBatch: (names: string[], realm: string) =>
-    transport.invoke<(PlayerStats | null)[]>(RPC.lookup_players_stats_batch, { names, realm }),
+   *  per-player Vortex dog-tag call — roster cards show WR/PR only.
+   *  `prAlgo` as in lookupPlayerStats. */
+  lookupPlayersStatsBatch: (names: string[], realm: string, prAlgo?: PrAlgo) =>
+    transport.invoke<(PlayerStats | null)[]>(RPC.lookup_players_stats_batch, {
+      names,
+      realm,
+      prAlgo: prAlgo ?? null,
+    }),
   /** Live player autocomplete (nickname substring or numeric UID). */
   suggestPlayers: (search: string, realm: string) =>
     transport.invoke<PlayerSuggestion[]>(RPC.suggest_players, { search, realm }),
   /** Live clan autocomplete (tag/name substring or numeric clan id). */
   suggestClans: (search: string, realm: string) =>
     transport.invoke<ClanSuggestion[]>(RPC.suggest_clans, { search, realm }),
-  /** Clan overview + roster (members' names/stats resolved server-side). */
-  lookupClanInfo: (clanId: number, realm: string) =>
-    transport.invoke<ClanInfo>(RPC.lookup_clan_info, { clanId, realm }),
+  /** Clan overview + roster (members' names/stats resolved server-side).
+   *  `prAlgo` as in lookupPlayerStats — under "expected" the roster answers
+   *  member PR=null (per-member aggregation is too costly server-side; the
+   *  roster renders "—" for it). */
+  lookupClanInfo: (clanId: number, realm: string, prAlgo?: PrAlgo) =>
+    transport.invoke<ClanInfo>(RPC.lookup_clan_info, { clanId, realm, prAlgo: prAlgo ?? null }),
   getGameVersion: () => transport.invoke<GameVersionInfo>(RPC.get_game_version),
   getShipEncyclopedia: (realm: string, forceRefresh: boolean, language?: string) =>
     transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh, language }),
-  lookupPlayerShipStats: (accountId: number, realm: string) =>
-    transport.invoke<PlayerShipStats[]>(RPC.lookup_player_ship_stats, { accountId, realm }),
+  /** Per-ship stats list. `prAlgo` as in lookupPlayerStats. */
+  lookupPlayerShipStats: (accountId: number, realm: string, prAlgo?: PrAlgo) =>
+    transport.invoke<PlayerShipStats[]>(RPC.lookup_player_ship_stats, {
+      accountId,
+      realm,
+      prAlgo: prAlgo ?? null,
+    }),
   /** Per-ship history points — baselines for "recent N days" deltas. */
   readShipStatsHistory: (accountId: number, realm: string) =>
     transport.invoke<ShipStatsHistoryPoint[]>(RPC.read_ship_stats_history, { accountId, realm }),

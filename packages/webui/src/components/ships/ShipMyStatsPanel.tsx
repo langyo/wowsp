@@ -12,9 +12,11 @@ import {
   careerStamp,
   damageColor,
   prTier,
+  prTierLabel,
   winrateColor,
   type StampKind,
 } from "@/utils/winrate";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { dateRangeCutoff, shipRecentDelta, type DateRange } from "@/utils/shipAggregation";
 import { useClipboard } from "@/composables/useClipboard";
 import "./ShipMyStatsPanel.scss";
@@ -43,6 +45,7 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const stats = useStatsStore();
     const ranked = useRankedStore();
+    const prefs = useStatsPrefsStore();
     const { copy } = useClipboard();
 
     const history = computed(() => {
@@ -159,26 +162,28 @@ export default defineComponent({
                   {s.battles.toLocaleString()} {t("stats.battles")}
                 </span>
               </div>
-              {stamps.value.length > 0 ? (
+              {stamps.value.length > 0 && prefs.prefs.sealsEnabled ? (
                 <div class="ship-my-stats__stamps">
                   {stamps.value.map((kind) => (
                     <RatingStamp key={kind} kind={kind} size={46} />
                   ))}
                 </div>
               ) : null}
-              <div
-                class={["ship-my-stats__pr", pr.value.rainbow ? "rainbow-text" : null]}
-                style={pr.value.rainbow ? undefined : { color: pr.value.color }}
-                data-hint={`PR: ${s.pr ?? "—"} · ${t("common.clickToCopy")}`}
-                onClick={() => copy(String(s.pr ?? "—"), t("common.copied"))}
-              >
-                <span class="ship-my-stats__pr-num">
-                  {s.pr != null ? s.pr.toLocaleString() : "—"}
-                </span>
-                <span class="ship-my-stats__pr-label">
-                  {pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`)}
-                </span>
-              </div>
+              {/* Per-ship PR block — hidden while the rating is off; the
+                  hero keeps winrate (+ seals) without collapsing. */}
+              {prefs.prefs.prEnabled ? (
+                <div
+                  class={["ship-my-stats__pr", pr.value.rainbow ? "rainbow-text" : null]}
+                  style={pr.value.rainbow ? undefined : { color: pr.value.color }}
+                  data-hint={`PR: ${s.pr ?? "—"} · ${t("common.clickToCopy")}`}
+                  onClick={() => copy(String(s.pr ?? "—"), t("common.copied"))}
+                >
+                  <span class="ship-my-stats__pr-num">
+                    {s.pr != null ? s.pr.toLocaleString() : "—"}
+                  </span>
+                  <span class="ship-my-stats__pr-label">{prTierLabel(pr.value.key)}</span>
+                </div>
+              ) : null}
             </div>
 
             {/* Account-wide division winrates — always four slots to mirror

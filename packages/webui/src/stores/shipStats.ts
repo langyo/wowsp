@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type PlayerShipStats, type ShipStatsHistoryPoint } from "@/api";
+import { prAlgoForRequest } from "@/stores/statsPrefs";
 
 /** Per-player per-ship stats store. Wraps `lookup_player_ship_stats` with an
  *  in-memory cache keyed by `${realm}_${accountId}`. The Rust layer also
@@ -36,7 +37,7 @@ export const useShipStatsStore = defineStore("shipStats", () => {
     loading.value = true;
     error.value = null;
     try {
-      const stats = await api.lookupPlayerShipStats(accountId, realm);
+      const stats = await api.lookupPlayerShipStats(accountId, realm, prAlgoForRequest());
       cache.value.set(key(realm, accountId), stats);
       return stats;
     } catch (e) {

@@ -221,6 +221,10 @@
     &:hover { color: rgb(var(--color-text)); }
   }
   &__modal-body {
+    /* Flex child of a max-height column: without min-height:0 it refuses
+       to shrink and the panel's overflow:hidden silently clips it. */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.6rem 1rem;
   }
@@ -501,6 +505,13 @@
       font-size: var(--text-sm);
     }
   }
+  /* Player-detail body scrolls between the fixed head and the jump button —
+     StatsCard + tier/class charts overflow the 82vh cap on short viewports. */
+  &__postbattle-modal-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
   &__postbattle-modal-raw {
     flex: 1;
     min-height: 0;
@@ -536,6 +547,7 @@
     b { color: rgb(var(--color-text)); font-family: var(--font-mono); margin-right: 3px; }
   }
   &__postbattle-jump {
+    flex: none;
     margin-top: 10px;
     padding: 5px 12px;
     border: none;

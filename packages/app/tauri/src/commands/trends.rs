@@ -82,22 +82,81 @@ const EXPECTED_VALUES_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 /// dataset. `Err` means no usable data at all (network down and no cache).
 #[tauri::command]
 pub async fn get_ship_server_stats(ship_id: i64) -> Result<Option<ShipServerStats>, String> {
-    let cached = read_expected_values();
-    let (raw, from_cache) = if let Some(raw) = cached.filter(|_| expected_values_fresh()) {
-        (raw, true)
-    } else {
-        match fetch_and_cache_expected_values().await {
-            Ok(raw) => (raw, false),
-            Err(e) => {
-                // Offline (or wows-numbers hiccup): a stale cache still answers.
-                match read_expected_values() {
-                    Some(raw) => (raw, true),
-                    None => return Err(e),
-                }
-            },
-        }
-    };
+    let (raw, from_cache) = expected_values_document().await?;
     Ok(lookup_ship_server_stats(&raw, ship_id, from_cache))
+}
+
+/// Resolve the expected-values document: the on-disk cache when fresh, else a
+/// download (validated before it may overwrite the cache), else a stale cache
+/// when offline. Returns the raw document and whether it was served from the
+/// cache. Shared by `get_ship_server_stats` and the expected PR algorithm in
+/// `wg_api` (`load_expected_values`) so both see the same 7-day cadence.
+async fn expected_values_document() -> Result<(String, bool), String> {
+    if let Some(raw) = read_expected_values().filter(|_| expected_values_fresh()) {
+        return Ok((raw, true));
+    }
+    match fetch_and_cache_expected_values().await {
+        Ok(raw) => Ok((raw, false)),
+        // Offline (or wows-numbers hiccup): a stale cache still answers.
+        Err(e) => match read_expected_values() {
+            Some(raw) => Ok((raw, true)),
+            None => Err(e),
+        },
+    }
+}
+
+/// Expected (server-wide average) values for one ship, as served by
+/// wows-numbers. `win_rate` is in percent — their raw field.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ExpectedValues {
+    pub(crate) average_damage_dealt: f64,
+    pub(crate) average_frags: f64,
+    pub(crate) win_rate: f64,
+}
+
+/// Parse a raw expected-values document into a { ship_id → expected } map.
+/// Empty-array entries (ship with no sample) and rows missing a field are
+/// simply absent — the PR math treats "not in the table" as "no rating".
+pub(crate) fn parse_expected_values(
+    raw: &str,
+) -> Option<std::collections::HashMap<i64, ExpectedValues>> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let data = v.get("data")?.as_object()?;
+    let mut map = std::collections::HashMap::with_capacity(data.len());
+    for (key, entry) in data {
+        let Ok(id) = key.parse::<i64>() else {
+            continue;
+        };
+        let Some(obj) = entry.as_object() else {
+            continue; // `[]` = no sample for this ship
+        };
+        let (Some(average_damage_dealt), Some(average_frags), Some(win_rate)) = (
+            obj.get("average_damage_dealt").and_then(|x| x.as_f64()),
+            obj.get("average_frags").and_then(|x| x.as_f64()),
+            obj.get("win_rate").and_then(|x| x.as_f64()),
+        ) else {
+            continue;
+        };
+        map.insert(
+            id,
+            ExpectedValues {
+                average_damage_dealt,
+                average_frags,
+                win_rate,
+            },
+        );
+    }
+    Some(map)
+}
+
+/// The expected-values table for the wows-numbers PR algorithm (see
+/// `wg_api::expected_account_pr`): fresh cache, else download + cache, else
+/// stale cache. None when there is no usable data at all (offline and never
+/// fetched) — callers degrade to "no PR" instead of failing their command.
+pub(crate) async fn load_expected_values() -> Option<std::collections::HashMap<i64, ExpectedValues>>
+{
+    let (raw, _) = expected_values_document().await.ok()?;
+    parse_expected_values(&raw)
 }
 
 fn expected_values_path() -> Result<std::path::PathBuf, String> {
@@ -463,6 +522,35 @@ mod tests {
     #[test]
     fn lookup_survives_garbage_document() {
         assert!(lookup_ship_server_stats("not json", 1, true).is_none());
+    }
+
+    #[test]
+    fn parse_expected_values_maps_sampled_ships_only() {
+        let map = parse_expected_values(&expected_values_doc()).unwrap();
+        let ev = map.get(&3374266064).expect("sampled ship present");
+        assert!((ev.average_damage_dealt - 61228.37).abs() < 0.01);
+        assert!((ev.average_frags - 0.769).abs() < 0.001);
+        assert!((ev.win_rate - 50.77).abs() < 0.01);
+        // `[]` entry (no sample) and unknown ids are absent, not zeroed —
+        // "not in the table" must read as "no rating".
+        assert!(!map.contains_key(&3330258928));
+        assert!(!map.contains_key(&9999999999));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn parse_expected_values_survives_garbage() {
+        assert!(parse_expected_values("not json").is_none());
+        assert!(parse_expected_values(r#"{"time":123}"#).is_none());
+        // An empty data object parses to an empty table (callers treat every
+        // ship as unrated); the fetch-side validator rejects such a download
+        // before it can reach the cache, so this only arises from a
+        // hand-edited cache file.
+        assert!(
+            parse_expected_values(r#"{"time":123,"data":{}}"#)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

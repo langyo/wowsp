@@ -1,6 +1,9 @@
 /** Winrate color tiers — mirrors ApeRadar / competitive WoWS community convention.
  *  Red < 47% → yellow 47-50% → green 50-55% → purple > 55%. */
 
+import { t } from "@/i18n";
+import { statsPrefsState } from "@/stores/statsPrefs";
+
 export type WinrateTier = "red" | "yellow" | "green" | "purple";
 
 export function winrateTier(wr: number | null | undefined): WinrateTier {
@@ -40,6 +43,35 @@ export function prTier(pr: number | null | undefined): PrTier {
   if (pr >= 1350) return { key: "tierAvg", color: "rgb(68 179 0)" };
   if (pr >= 750) return { key: "tierBelowAvg", color: "rgb(255 199 31)" };
   return { key: "tierBad", color: "rgb(254 14 0)" };
+}
+
+/** Standard English tier wording for `localizedTiers: false` — the
+ *  wows-numbers band vocabulary instead of the fun localized flavor
+ *  (拉完了/夯/战舰仙人…) that lives in res/i18n `stats.json`. Front-end
+ *  constants by design: the wording must NOT follow the UI locale when the
+ *  user asked for the neutral scale. `unknown` renders the same "—" the
+ *  localized path uses (there is no `stats.unknown` key — every consumer
+ *  hardcodes the em dash for a missing rating). */
+export const PR_TIER_STANDARD_LABELS: Record<string, string> = {
+  tierBad: "Bad",
+  tierBelowAvg: "Below Average",
+  tierAvg: "Average",
+  tierGood: "Good",
+  tierGreat: "Great",
+  tierUnicum: "Unicum",
+  unknown: "—",
+};
+
+/** Display label for a PR tier key: the localized flavor wording or the
+ *  standard English band word, per the stats prefs. Reads the prefs ref
+ *  directly so a settings toggle re-renders every consumer, and routes
+ *  through `t` inside the caller's render context so locale switches do
+ *  too. Colors/rainbow stay tied to prTier() and never follow this knob. */
+export function prTierLabel(key: string): string {
+  if (!statsPrefsState.value.localizedTiers) {
+    return PR_TIER_STANDARD_LABELS[key] ?? PR_TIER_STANDARD_LABELS.unknown;
+  }
+  return key === "unknown" ? "—" : t(`stats.${key}`);
 }
 
 export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";

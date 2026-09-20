@@ -8,9 +8,10 @@
   "gamePath": "Ruta del juego",
   "realm": "Servidor",
   "themeMode": "Apariencia",
-  "themeModeSystem": "Automático (sol)",
-  "themeModeDark": "Oscuro",
-  "themeModeLight": "Claro",
+  "themeModeSystem": "Según el sistema",
+  "themeModeDark": "Siempre oscuro",
+  "themeModeLight": "Siempre claro",
+  "themeModeSolar": "Según la luz solar",
   "themePreset": "Esquema de color",
   "geolocation": "Ubicación",
   "geolocationHint": "Se usa para el tema automático basado en el sol. Prioriza la ubicación nativa si el sistema la proporciona; si no, usa la IP — se guarda en caché durante la sesión.",
@@ -79,5 +80,19 @@
   "attributions": "Atribuciones",
   "attributionsHint": "Materiales de colaboradores, proyectos upstream y agradecimientos usados por esta aplicación.",
   "account": "Cuenta",
-  "accountHint": "La cuenta activa se usa en «Mis estadísticas» y en las consultas de datos. Haz clic en una tarjeta para cambiar; busca un apodo arriba para vincular una nueva."
+  "accountHint": "La cuenta activa se usa en «Mis estadísticas» y en las consultas de datos. Haz clic en una tarjeta para cambiar; busca un apodo arriba para vincular una nueva.",
+  "statsSection": "Estadísticas",
+  "statsSectionHint": "Preferencias de visualización de la evaluación PR en las fichas de estadísticas y la lista de batalla.",
+  "statsPrefs": {
+    "prToggle": "Evaluación PR",
+    "prToggleDesc": "Muestra la puntuación y el nivel PR en las fichas de estadísticas. Desactivado por defecto.",
+    "prAlgo": "Algoritmo de evaluación",
+    "prAlgoDesc": "Fórmula con la que se calcula la puntuación PR.",
+    "prAlgoWinrate": "Victorias ponderadas de ApeRadar",
+    "prAlgoExpected": "Valores esperados de wows-numbers",
+    "sealsToggle": "Sellos de evaluación",
+    "sealsToggleDesc": "Sellos de veredicto 神了/海猴/蛆: solo se muestran con la interfaz en chino.",
+    "localizedTiersToggle": "Etiquetas de nivel localizadas",
+    "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar (Bad/Good/Unicum, etc.)."
+  }
 }

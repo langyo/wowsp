@@ -14,10 +14,10 @@ import "./AboutModal.scss";
  * About modal: app name + version (dynamic via Tauri app API), tech stack,
  * links, license, and the QQ feedback group notice. Carries the mandatory
  * free & open-source notice as a permanent, always-visible card (no dismiss
- * — the dismissible twin lives in AnnouncementDialog). Includes a "check for
- * updates" action when the updater is available. Every link opens through
- * the Rust backend so the system default browser is used (the webview
- * itself never navigates remotely).
+ * — the dismissable twin is the onboarding wizard's welcome step).
+ * Includes a "check for updates" action when the updater is available.
+ * Every link opens through the Rust backend so the system default browser
+ * is used (the webview itself never navigates remotely).
  */
 
 const TECH_LINKS = [

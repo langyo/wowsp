@@ -8,9 +8,10 @@
   "gamePath": "Game path",
   "realm": "Realm",
   "themeMode": "Appearance",
-  "themeModeSystem": "Auto (sun)",
-  "themeModeDark": "Dark",
-  "themeModeLight": "Light",
+  "themeModeSystem": "Follow system",
+  "themeModeDark": "Always dark",
+  "themeModeLight": "Always light",
+  "themeModeSolar": "Follow daylight",
   "themePreset": "Color preset",
   "geolocation": "Location",
   "geolocationHint": "Used for solar-based auto theme. Native fix when the shell provides one, otherwise IP — cached for the session.",
@@ -79,5 +80,19 @@
   "attributions": "Attributions",
   "attributionsHint": "Partner assets, upstream projects, and acknowledgements used by this app.",
   "account": "Account",
-  "accountHint": "The active account drives My Stats and record lookups. Click a card to switch; search a nickname above to bind a new one."
+  "accountHint": "The active account drives My Stats and record lookups. Click a card to switch; search a nickname above to bind a new one.",
+  "statsSection": "Battle stats",
+  "statsSectionHint": "Display preferences for the water-table PR rating on player stat cards and the live roster.",
+  "statsPrefs": {
+    "prToggle": "Water-table PR rating",
+    "prToggleDesc": "Show the PR rating score and tier on player stat cards. Off by default.",
+    "prAlgo": "Rating algorithm",
+    "prAlgoDesc": "Which formula computes the PR score.",
+    "prAlgoWinrate": "ApeRadar weighted winrate",
+    "prAlgoExpected": "wows-numbers expected values",
+    "sealsToggle": "Rating stamps",
+    "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — shown only under a Chinese interface.",
+    "localizedTiersToggle": "Localized tier labels",
+    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum."
+  }
 }

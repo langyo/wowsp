@@ -5,6 +5,7 @@ import { ref } from "vue";
 export type SettingsSection =
   | "language"
   | "appearance"
+  | "stats"
   | "gamePath"
   | "account"
   | "network"

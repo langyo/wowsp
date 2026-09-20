@@ -20,6 +20,7 @@ import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useRosterStats, isAiName } from "@/composables/useRosterStats";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
@@ -69,6 +70,7 @@ export default defineComponent({
   setup(props) {
     const accounts = useAccountStore();
     const router = useRouter();
+    const prefs = useStatsPrefsStore();
     const { dataLanguage, uiLocale } = useLanguage();
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
@@ -238,14 +240,21 @@ export default defineComponent({
               <b style={{ color: winrateColor(st.winrate) }}>
                 {st.winrate.toFixed(1)}%
               </b>{" "}
-              WR ·{" "}
-              <b
-                class={tier.rainbow ? "rainbow-text" : undefined}
-                style={tier.rainbow ? undefined : { color: tier.color }}
-              >
-                {st.pr ?? "—"}
-              </b>{" "}
-              PR
+              WR
+              {/* Inline PR rides along only while the rating is on — the
+                  line keeps the bare winrate otherwise. */}
+              {prefs.prefs.prEnabled ? (
+                <>
+                  {" · "}
+                  <b
+                    class={tier.rainbow ? "rainbow-text" : undefined}
+                    style={tier.rainbow ? undefined : { color: tier.color }}
+                  >
+                    {st.pr ?? "—"}
+                  </b>{" "}
+                  PR
+                </>
+              ) : null}
             </span>
           );
         }
@@ -285,7 +294,7 @@ export default defineComponent({
               <span class="live-battle__player-ship">{shipName}</span>
               <span class="live-battle__player-stat">{statLine(v)}</span>
             </span>
-            {stamp ? (
+            {stamp && prefs.prefs.sealsEnabled ? (
               <RatingStamp
                 kind={stamp}
                 size={26}
