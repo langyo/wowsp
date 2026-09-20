@@ -30,9 +30,9 @@ pub const GAP_THRESHOLD: f32 = 4.0;
 
 /// Count of roster entries per shipId, split by side.
 #[derive(Default, Clone, Copy)]
-struct ShipIdSides {
-    ally: u32,
-    enemy: u32,
+pub(crate) struct ShipIdSides {
+    pub(crate) ally: u32,
+    pub(crate) enemy: u32,
 }
 
 /// Team of a shipId from the roster split: `Some(0)` (recorder's team) /
@@ -48,9 +48,36 @@ fn side_of(sides: &ShipIdSides) -> Option<i8> {
     }
 }
 
+/// Resolve one entity's recorder-relative team from its roster shipId:
+/// `(Some(0)/Some(1), ambiguous)`. Shared by the E3 report and the E6
+/// decision-tick builder so both surfaces keep identical join semantics.
+pub(crate) fn resolve_team(
+    ship_id: Option<i64>,
+    sides: &std::collections::BTreeMap<i64, ShipIdSides>,
+    conflicts: &[i64],
+) -> (Option<i8>, bool) {
+    match ship_id {
+        Some(sid) => {
+            let sides_for = sides.get(&sid).copied().unwrap_or_default();
+            let mut team = side_of(&sides_for);
+            let mut ambiguous = team.is_none() && (sides_for.ally + sides_for.enemy > 0);
+            if conflicts.contains(&sid) {
+                // Battle results place this ship on both teams — same
+                // ambiguity, validated by the game's own data.
+                team = None;
+                ambiguous = true;
+            }
+            (team, ambiguous)
+        },
+        None => (None, false),
+    }
+}
+
 /// Build the shipId → sides map from the roster (relation 0/1 = recorder's
 /// team, 2+ = enemy).
-fn roster_sides(vehicles: &[VehicleEntry]) -> std::collections::BTreeMap<i64, ShipIdSides> {
+pub(crate) fn roster_sides(
+    vehicles: &[VehicleEntry],
+) -> std::collections::BTreeMap<i64, ShipIdSides> {
     let mut map: std::collections::BTreeMap<i64, ShipIdSides> = std::collections::BTreeMap::new();
     for v in vehicles {
         if v.ship_id == 0 {
@@ -75,7 +102,7 @@ fn roster_sides(vehicles: &[VehicleEntry]) -> std::collections::BTreeMap<i64, Sh
 /// relation is recorder-relative while teamId is absolute, and calibrating
 /// the two namespaces is future work. Returns the ids the results place on
 /// multiple teams.
-fn battle_results_conflicts(battle_results: Option<&str>) -> Vec<i64> {
+pub(crate) fn battle_results_conflicts(battle_results: Option<&str>) -> Vec<i64> {
     let Some(br) = battle_results else {
         return Vec::new();
     };
@@ -187,21 +214,7 @@ pub fn build_report(
             0.0
         };
         let ship_id = kind.and_then(|k| k.ship_id);
-        let (team_id, ship_id_ambiguous) = match ship_id {
-            Some(sid) => {
-                let sides_for = sides.get(&sid).copied().unwrap_or_default();
-                let mut team = side_of(&sides_for);
-                let mut ambiguous = team.is_none() && (sides_for.ally + sides_for.enemy > 0);
-                if conflicts.contains(&sid) {
-                    // Battle results place this ship on both teams — same
-                    // ambiguity, validated by the game's own data.
-                    team = None;
-                    ambiguous = true;
-                }
-                (team, ambiguous)
-            },
-            None => (None, false),
-        };
+        let (team_id, ship_id_ambiguous) = resolve_team(ship_id, &sides, &conflicts);
         entities.push(EntityVisibilityStats {
             entity_id: t.entity_id,
             entity_type: kind.map(|k| k.entity_type).unwrap_or(-1),
@@ -251,7 +264,7 @@ pub fn replay_visibility_probe(path: String) -> Result<ReplayProbeReport, String
 
 /// Read the roster out of a replay's descriptor JSON block (empty on any
 /// structural problem — the report degrades to team-less stats).
-fn read_roster(path: &str) -> Result<Vec<VehicleEntry>, String> {
+pub(crate) fn read_roster(path: &str) -> Result<Vec<VehicleEntry>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
     let Some(json) = super::replay::extract_descriptor_json_pub(&bytes) else {
         return Ok(Vec::new());

@@ -316,6 +316,8 @@ fn main() {
             commands::update::update_cancel,
             commands::decision_ai::decision_ai_status,
             commands::decision_ai::decision_ai_suggest,
+            commands::decision_tick::decision_scale_calibration,
+            commands::decision_tick::decision_tick_state,
             commands::replay_probe::replay_visibility_probe,
             commands::quit_app,
         ])
