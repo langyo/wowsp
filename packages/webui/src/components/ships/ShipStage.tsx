@@ -15,7 +15,7 @@ import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { Pause, Play, RotateCcw, X } from "@lucide/vue";
 
 import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
-import { createCycleTimer, useImage } from "@wowsp/holo";
+import { useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
@@ -285,11 +285,10 @@ export default defineComponent({
       if (c) c.autoRotate = on;
     }
 
-    // Auto holo ↔ armor cycle on the shared timer (same period as the site
-    // stage); hovering the 3D view pauses it, the button group jumps.
-    const armorCycle = createCycleTimer(14600, () => toggleArmor());
-    const onStageEnter = () => armorCycle.pause();
-    const onStageLeave = () => armorCycle.resume();
+    // No holo↔armor auto-cycle here. In a detail modal an unprompted flip
+    // every ~15s reads as "the mode I picked reverted" — and while the armor
+    // rebuild is in flight the toggle no longer matches the scene. Both modes
+    // are strictly user-driven through the 全息/装甲 switch.
 
     /** Deep-dispose a detached group's geometries + materials. */
     function disposeGroupDeep(g: THREE.Group) {
@@ -482,27 +481,15 @@ export default defineComponent({
       sc.add(armorSc);
       armorGroup.value = armorSc;
       armorReady.value = true;
-      // Re-apply the hide/solo state after the rebuild (rebuilds happen on the
-      // holo↔armor auto-cycle and on ship-zone changes).
+      // Re-apply the hide/solo state after the rebuild (rebuilds happen on a
+      // manual holo↔armor switch and on ship-zone changes).
       applyArmorVisibility();
     }
 
-    function toggleArmor() {
-      showArmor.value = !showArmor.value;
-      syncArmorOverlay();
-    }
-
     function setArmor(on: boolean) {
-      if (showArmor.value === on) {
-        armorCycle.stop();
-        armorCycle.start();
-        return;
-      }
+      if (showArmor.value === on) return;
       showArmor.value = on;
       syncArmorOverlay();
-      // restart the auto-cycle from this phase
-      armorCycle.stop();
-      armorCycle.start();
     }
 
     watch(
@@ -515,9 +502,8 @@ export default defineComponent({
      *  heuristic zones) — gates the legend and the hidden-parts panel. */
     const armorReady = ref(false);
     /** Thickness classes / zone boxes currently toggled off. Keys: "b3"
-     *  (ARMOR_SCALE bucket) or "z:deck" (heuristic zone box). Survives the
-     *  holo↔armor auto-cycle (re-applied on rebuild); cleared on ship change
-     *  and scene teardown. */
+     *  (ARMOR_SCALE bucket) or "z:deck" (heuristic zone box). Re-applied on
+     *  every overlay rebuild; cleared on ship change and scene teardown. */
     const hiddenArmorKeys = ref<Set<string>>(new Set());
     /** Soloed thickness class ("只看该厚度"): clicking a legend swatch shows
      *  that class alone, clicking it again shows everything. Independent of
@@ -1121,7 +1107,7 @@ export default defineComponent({
           return name;
         }
 
-        function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color; edge: number } {
+        function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color } {
           name = categoryBase(name);
           let hue: number, sat: number, lit: number;
           if (PRESET_HUES[name] != null) {
@@ -1145,11 +1131,9 @@ export default defineComponent({
           } else {
             sat = 0.50; lit = 0.32;
           }
-          const edgeHue = (hue + 18) % 360;
           return {
             base: new THREE.Color().setHSL(hue / 360, sat, lit),
             fresnel: new THREE.Color().setHSL(hue / 360, sat * 0.85, Math.min(lit * 2.0, 0.85)),
-            edge: edgeHue,
           };
         }
 
@@ -1188,21 +1172,13 @@ export default defineComponent({
           depthAnchor.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
           mesh.add(depthAnchor);
 
-          // Faint structural-edge overlay — matches the part's hue.
-          const c = colorForCategory(name);
-          const edgeHex = new THREE.Color().setHSL(c.edge / 360, 0.5, 0.55).getHex();
-          const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 8);
-          const line = new THREE.LineSegments(
-            edgeGeo,
-            new THREE.LineBasicMaterial({
-              color: edgeHex,
-              transparent: true,
-              opacity: 0.18,
-              depthWrite: false,
-            }),
-          );
-          line.raycast = () => {};
-          mesh.add(line);
+          // No structural-edge overlay: the baked hull is a coarse mesh, so an
+          // 8° crease threshold catches nearly every plate boundary and the
+          // line network reads as bright triangle edges drawn over the faces.
+          // Recolouring it to the part's own hue does not hide it either — the
+          // faces vary with Fresnel, so a constant-colour line still stands out.
+          // The shader's rim light already carries the shape; the silhouette
+          // comes from the geometry itself.
         }
 
         if (scene.value) scene.value.add(model);
@@ -1272,7 +1248,6 @@ export default defineComponent({
         initScene();
         void loadModel();
       }
-      if (!props.hidden) armorCycle.start();
     });
 
     // Re-show initialization frame handle — cancelled on unmount/re-hide so a
@@ -1282,7 +1257,6 @@ export default defineComponent({
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(showRafId);
-      armorCycle.stop();
       disposeScene();
     });
 
@@ -1311,7 +1285,6 @@ export default defineComponent({
       (hidden) => {
         cancelAnimationFrame(showRafId);
         if (hidden) {
-          armorCycle.stop();
           disposeScene();
         } else if (viewMode.value === "3d") {
           showRafId = requestAnimationFrame(() => {
@@ -1319,7 +1292,6 @@ export default defineComponent({
             initScene();
             void loadModel();
           });
-          armorCycle.start();
         }
       },
     );
@@ -1497,12 +1469,9 @@ export default defineComponent({
           initScene();
           void loadModel();
         });
-        armorCycle.start();
       } else {
-        // 2D has no scene: park the holo↔armor auto-cycle so it neither
-        // spins against a disposed scene nor leaks armor state into the
-        // next 3D session (disposeScene already resets showArmor).
-        armorCycle.stop();
+        // 2D has no scene: tear the WebGL side down (disposeScene also resets
+        // showArmor, so the next 3D session starts on the hologram).
         disposeScene();
         viewMode.value = "2d";
       }
@@ -1516,8 +1485,6 @@ export default defineComponent({
             <div
               class={["ship-stage__canvas", viewMode.value === "2d" ? "ship-stage__canvas--2d" : ""]}
               ref={containerRef}
-              onMouseenter={onStageEnter}
-              onMouseleave={onStageLeave}
             >
               {viewMode.value === "2d" && img2d.src.value && img2d.status.value !== "error" ? (
                 <img
