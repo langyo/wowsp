@@ -307,6 +307,8 @@
     "noCommandersForNation": "該國別暫無可用特殊艦長。",
     "slotEmpty": "無可選升級",
     "commanderLegend": "「傳奇」徽章 = 擁有專屬天賦的傳奇艦長；「精英」徽章 = 精英/特種艦長。",
+    "epicRibbon": "傳奇艦長強化技能",
+    "epicLegend": "綠色角帶 = 當前傳奇艦長以強化數值教授的技能。",
     "activator": {
       "DamageDoneActivator": "造成損傷時",
       "TargetsDamagedActivator": "命中目標時",

@@ -344,6 +344,26 @@
     pointer-events: none;
   }
 
+  /* Enhanced-by-legendary-commander marker (game-style corner ribbon): an
+     angled band across the top-left corner of the plate. Sibling of the
+     button so active/banned filters never wash it out. */
+  &__ribbon {
+    position: absolute;
+    z-index: 1;
+    width: 26px;
+    height: 7px;
+    border-radius: 1px;
+    box-shadow: 0 0 3px rgb(0 0 0 / 45%);
+    pointer-events: none;
+
+    &--epic {
+      top: 7px;
+      left: -4px;
+      transform: rotate(-45deg);
+      background: linear-gradient(180deg, #7ce8a9, #2ea05d);
+    }
+  }
+
   &__icon {
     width: 34px;
     height: 34px;
