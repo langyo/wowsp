@@ -331,7 +331,11 @@
     display: grid;
     /* Rows inherit the list's shared columns via subgrid (Chromium 117+ /
        WebView2 evergreen). The first declaration is the pre-subgrid
-       fallback — the row then owns a private copy of the same template. */
+       fallback — the row then owns a private copy of the same template.
+       NOTE: the row's horizontal padding never insets the inherited tracks
+       (they keep the parent's sizes and overflow the content box), so any
+       breathing room for the trailing copy button must come from the
+       button's own margin, not from padding here. */
     grid-template-columns: 3.4em max-content minmax(0, 1fr) 18px;
     grid-template-columns: subgrid;
     grid-column: 1 / -1;
@@ -399,6 +403,12 @@
     justify-content: center;
     width: 18px;
     height: 18px;
+    /* Right inset from the card edge: the subgrid row's own padding never
+       reaches this column (see __chat-row), so the margin does that job —
+       but only with end alignment, otherwise the button rides the track
+       start and the margin overflows past the card edge. */
+    justify-self: end;
+    margin-right: 0.6rem;
     padding: 0;
     border: none;
     border-radius: 4px;
