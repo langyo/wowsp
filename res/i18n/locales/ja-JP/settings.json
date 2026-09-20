@@ -8,9 +8,10 @@
   "gamePath": "ゲームパス",
   "realm": "サーバー",
   "themeMode": "外観",
-  "themeModeSystem": "自動（日照に追従）",
-  "themeModeDark": "ダーク",
-  "themeModeLight": "ライト",
+  "themeModeSystem": "システムに従う",
+  "themeModeDark": "常にダーク",
+  "themeModeLight": "常にライト",
+  "themeModeSolar": "日照に従う",
   "themePreset": "カラープリセット",
   "geolocation": "位置情報",
   "geolocationHint": "日照ベースの自動テーマに使用します。OS から位置情報を取得できる場合はそれを優先し、なければ IP から解決します（セッション中はキャッシュ）。",
@@ -79,5 +80,19 @@
   "attributions": "著作権表示",
   "attributionsHint": "本アプリが使用しているパートナー素材・上流プロジェクト・謝辞の一覧。",
   "account": "アカウント",
-  "accountHint": "現在のアカウントは「マイ成績」や戦績照会に使用されます。カードをクリックして切り替え、上の検索でニックネームを入力して新しいアカウントを紐付けできます。"
+  "accountHint": "現在のアカウントは「マイ成績」や戦績照会に使用されます。カードをクリックして切り替え、上の検索でニックネームを入力して新しいアカウントを紐付けできます。",
+  "statsSection": "戦績",
+  "statsSectionHint": "プレイヤー戦績カードとバトル中の名簿における PR 評価の表示設定です。",
+  "statsPrefs": {
+    "prToggle": "PR 評価",
+    "prToggleDesc": "プレイヤーの戦績カードに PR 評価スコアと段階を表示します。既定ではオフです。",
+    "prAlgo": "評価アルゴリズム",
+    "prAlgoDesc": "PR スコアの計算式を選びます。",
+    "prAlgoWinrate": "ApeRadar 加重勝率",
+    "prAlgoExpected": "wows-numbers 期待値",
+    "sealsToggle": "評価の印章",
+    "sealsToggleDesc": "「神了/海猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
+    "localizedTiersToggle": "ローカライズ段階表記",
+    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。"
+  }
 }

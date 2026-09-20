@@ -8,9 +8,10 @@
   "gamePath": "Chemin du jeu",
   "realm": "Serveur",
   "themeMode": "Apparence",
-  "themeModeSystem": "Auto (solaire)",
-  "themeModeDark": "Sombre",
-  "themeModeLight": "Clair",
+  "themeModeSystem": "Selon le système",
+  "themeModeDark": "Toujours sombre",
+  "themeModeLight": "Toujours clair",
+  "themeModeSolar": "Selon la lumière du jour",
   "themePreset": "Palette de couleurs",
   "geolocation": "Localisation",
   "geolocationHint": "Utilisée pour le thème automatique basé sur le soleil. Position native si le système en fournit une, sinon par IP — mise en cache pour la session.",
@@ -79,5 +80,19 @@
   "attributions": "Attributions",
   "attributionsHint": "Ressources des partenaires, projets upstream et remerciements utilisés par cette application.",
   "account": "Compte",
-  "accountHint": "Le compte actif alimente « Mes statistiques » et les recherches de données. Cliquez sur une carte pour changer ; recherchez un pseudo ci-dessus pour en lier un nouveau."
+  "accountHint": "Le compte actif alimente « Mes statistiques » et les recherches de données. Cliquez sur une carte pour changer ; recherchez un pseudo ci-dessus pour en lier un nouveau.",
+  "statsSection": "Statistiques",
+  "statsSectionHint": "Préférences d'affichage de l'évaluation PR sur les fiches de statistiques et la liste de combat.",
+  "statsPrefs": {
+    "prToggle": "Évaluation PR",
+    "prToggleDesc": "Affiche le score et le palier PR sur les fiches de statistiques. Désactivé par défaut.",
+    "prAlgo": "Algorithme d'évaluation",
+    "prAlgoDesc": "Formule utilisée pour calculer le score PR.",
+    "prAlgoWinrate": "Victoire pondérée ApeRadar",
+    "prAlgoExpected": "Valeurs attendues wows-numbers",
+    "sealsToggle": "Sceaux d'évaluation",
+    "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
+    "localizedTiersToggle": "Libellés de palier localisés",
+    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…)."
+  }
 }

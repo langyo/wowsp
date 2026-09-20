@@ -13,7 +13,7 @@ import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
-import { useClanStatsStore } from "@/stores/clanStats";
+import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
@@ -118,7 +118,7 @@ export default defineComponent({
     );
     const clanResult = ref<ClanInfo | null>(
       lastLookup.value?.kind === "clan"
-        ? (clanStats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.id}`) ?? null)
+        ? (clanStats.cache.get(clanCacheKey(lastLookup.value.realm, lastLookup.value.id)) ?? null)
         : null,
     );
     const history = ref<HistoryEntry[]>(loadHistory());

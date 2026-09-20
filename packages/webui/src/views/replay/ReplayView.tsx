@@ -46,6 +46,7 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { damageColor, winrateColor } from "@/utils/winrate";
+import { prAlgoForRequest } from "@/stores/statsPrefs";
 import { fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
@@ -257,7 +258,7 @@ const PostBattlePanel = defineComponent({
       shipDistList.value = [];
       if (!p.realm) return;
       try {
-        const list = await api.lookupPlayerShipStats(p.accountId, p.realm);
+        const list = await api.lookupPlayerShipStats(p.accountId, p.realm, prAlgoForRequest());
         shipDistList.value = list.map((s) => ({ shipId: s.shipId, battles: s.battles }));
       } catch {
         /* distribution unavailable — hide */
@@ -316,7 +317,7 @@ const PostBattlePanel = defineComponent({
       globalLoading.value = true;
       const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name: p.name }));
       try {
-        globalStats.value = await api.lookupPlayerStats(p.name, p.realm);
+        globalStats.value = await api.lookupPlayerStats(p.name, p.realm, prAlgoForRequest());
         toast.remove(tid);
       } catch {
         toast.remove(tid);
@@ -440,84 +441,86 @@ const PostBattlePanel = defineComponent({
                   </span>
                   <button onClick={() => (detailOpen.value = false)}>✕</button>
                 </div>
-                {!sel.alive && sel.killerName ? (
-                  <div class="replay-view__postbattle-killed">
-                    {t("replay.postbattle.destroyedBy", { name: sel.killerName })}
-                  </div>
-                ) : null}
-                <div class="replay-view__postbattle-detail-body">
-                  <div class="replay-view__postbattle-detail-damage">
-                    <span class="replay-view__postbattle-detail-damage-num">
-                      {sel.damage.toLocaleString()}
-                      {sel.accountId !== pb.selfId ? (
-                        <em
-                          class="replay-view__postbattle-damage-unknown"
-                          data-hint={t("replay.postbattle.damageUnknownNote")}
-                        >
-                          *
-                        </em>
-                      ) : null}
-                    </span>
-                    <span class="replay-view__postbattle-detail-damage-label">
-                      {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
-                      {sel.hpRatio != null
-                        ? ` · ${t("replay.hpRemaining")} ${Math.round(sel.hpRatio)}%`
-                        : ""}
-                    </span>
-                  </div>
-                  <div class="replay-view__postbattle-detail-ribbons">
-                    {sel.ribbons.map((x) => {
-                      const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
-                      return (
-                        <span
-                          key={x.key}
-                          class="replay-view__postbattle-detail-ribbon"
-                          data-hint={`${name} ×${x.value}`}
-                        >
-                          <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
-                          <em>{x.value}</em>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-                {/* Own full settlement data — the replay only streams the
-                    recorder's private results. */}
-                {sel.accountId === pb.selfId && (pb.selfExp != null || pb.selfCredits != null) ? (
-                  <div class="replay-view__postbattle-settlement">
-                    <span>{t("replay.postbattle.xp")} <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
-                    <span>{t("replay.postbattle.credits")} <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
-                  </div>
-                ) : null}
-                {/* On-demand global stats (toast while loading) */}
-                <div class="replay-view__postbattle-global">
-                  {globalLoading.value ? (
-                    <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                      <HSpinner size="md" tone="current" />
-                    </span>
-                  ) : globalStats.value ? (
-                    <StatsCard stats={globalStats.value} />
-                  ) : globalError.value ? (
-                    <span class="replay-view__postbattle-global-note">
-                      {t("replay.postbattle.globalFailedAi")}
-                    </span>
-                  ) : (
-                    <span class="replay-view__postbattle-global-note">
-                      {t("replay.postbattle.globalUnavailable")}
-                      {sel.realm ? "" : t("replay.postbattle.noRealm")}
-                    </span>
-                  )}
-                </div>
-                {/* Ship distribution: tier histogram + class pie — spot
-                    low-tier farmers / CV-SS specialists. */}
-                {shipDistList.value.length > 0 ? (
-                  <div class="replay-view__postbattle-dist">
-                    <div class="replay-view__postbattle-dist-title">
-                      {t("replay.postbattle.tierDist")}
+                <div class="replay-view__postbattle-modal-scroll">
+                  {!sel.alive && sel.killerName ? (
+                    <div class="replay-view__postbattle-killed">
+                      {t("replay.postbattle.destroyedBy", { name: sel.killerName })}
                     </div>
-                    <ShipDistCharts ships={shipDistList.value} />
+                  ) : null}
+                  <div class="replay-view__postbattle-detail-body">
+                    <div class="replay-view__postbattle-detail-damage">
+                      <span class="replay-view__postbattle-detail-damage-num">
+                        {sel.damage.toLocaleString()}
+                        {sel.accountId !== pb.selfId ? (
+                          <em
+                            class="replay-view__postbattle-damage-unknown"
+                            data-hint={t("replay.postbattle.damageUnknownNote")}
+                          >
+                            *
+                          </em>
+                        ) : null}
+                      </span>
+                      <span class="replay-view__postbattle-detail-damage-label">
+                        {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
+                        {sel.hpRatio != null
+                          ? ` · ${t("replay.hpRemaining")} ${Math.round(sel.hpRatio)}%`
+                          : ""}
+                      </span>
+                    </div>
+                    <div class="replay-view__postbattle-detail-ribbons">
+                      {sel.ribbons.map((x) => {
+                        const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
+                        return (
+                          <span
+                            key={x.key}
+                            class="replay-view__postbattle-detail-ribbon"
+                            data-hint={`${name} ×${x.value}`}
+                          >
+                            <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
+                            <em>{x.value}</em>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                ) : null}
+                  {/* Own full settlement data — the replay only streams the
+                      recorder's private results. */}
+                  {sel.accountId === pb.selfId && (pb.selfExp != null || pb.selfCredits != null) ? (
+                    <div class="replay-view__postbattle-settlement">
+                      <span>{t("replay.postbattle.xp")} <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
+                      <span>{t("replay.postbattle.credits")} <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
+                    </div>
+                  ) : null}
+                  {/* On-demand global stats (toast while loading) */}
+                  <div class="replay-view__postbattle-global">
+                    {globalLoading.value ? (
+                      <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
+                        <HSpinner size="md" tone="current" />
+                      </span>
+                    ) : globalStats.value ? (
+                      <StatsCard stats={globalStats.value} />
+                    ) : globalError.value ? (
+                      <span class="replay-view__postbattle-global-note">
+                        {t("replay.postbattle.globalFailedAi")}
+                      </span>
+                    ) : (
+                      <span class="replay-view__postbattle-global-note">
+                        {t("replay.postbattle.globalUnavailable")}
+                        {sel.realm ? "" : t("replay.postbattle.noRealm")}
+                      </span>
+                    )}
+                  </div>
+                  {/* Ship distribution: tier histogram + class pie — spot
+                      low-tier farmers / CV-SS specialists. */}
+                  {shipDistList.value.length > 0 ? (
+                    <div class="replay-view__postbattle-dist">
+                      <div class="replay-view__postbattle-dist-title">
+                        {t("replay.postbattle.tierDist")}
+                      </div>
+                      <ShipDistCharts ships={shipDistList.value} />
+                    </div>
+                  ) : null}
+                </div>
                 <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                   {t("replay.postbattle.fullStats")}
                 </button>
@@ -669,7 +672,7 @@ const PostBattleFallbackPanel = defineComponent({
       globalLoading.value = true;
       const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name }));
       try {
-        globalStats.value = await api.lookupPlayerStats(name, realm.value);
+        globalStats.value = await api.lookupPlayerStats(name, realm.value, prAlgoForRequest());
         toast.remove(tid);
       } catch {
         toast.remove(tid);
@@ -791,65 +794,67 @@ const PostBattleFallbackPanel = defineComponent({
                   </span>
                   <button onClick={() => (detailOpen.value = false)}>✕</button>
                 </div>
-                <div class="replay-view__postbattle-detail-body">
-                  <div class="replay-view__postbattle-detail-damage">
-                    <span class="replay-view__postbattle-detail-damage-num">
-                      {sel.damage.toLocaleString()}
-                    </span>
-                    <span class="replay-view__postbattle-detail-damage-label">
-                      {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
-                      {sel.hpRatio != null
-                        ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
-                        : ""}
-                    </span>
+                <div class="replay-view__postbattle-modal-scroll">
+                  <div class="replay-view__postbattle-detail-body">
+                    <div class="replay-view__postbattle-detail-damage">
+                      <span class="replay-view__postbattle-detail-damage-num">
+                        {sel.damage.toLocaleString()}
+                      </span>
+                      <span class="replay-view__postbattle-detail-damage-label">
+                        {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
+                        {sel.hpRatio != null
+                          ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
+                          : ""}
+                      </span>
+                    </div>
+                    <div class="replay-view__postbattle-detail-ribbons">
+                      {sel.ribbons.map((x) => {
+                        const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
+                        return (
+                          <span
+                            key={x.key}
+                            class="replay-view__postbattle-detail-ribbon"
+                            data-hint={`${name} ×${x.value}`}
+                          >
+                            <AssetImage
+                              src={bundledRibbonUrl(x.key)}
+                              width={40}
+                              height={15}
+                              alt=""
+                            />
+                            <em>{x.value}</em>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div class="replay-view__postbattle-detail-ribbons">
-                    {sel.ribbons.map((x) => {
-                      const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
-                      return (
-                        <span
-                          key={x.key}
-                          class="replay-view__postbattle-detail-ribbon"
-                          data-hint={`${name} ×${x.value}`}
-                        >
-                          <AssetImage
-                            src={bundledRibbonUrl(x.key)}
-                            width={40}
-                            height={15}
-                            alt=""
-                          />
-                          <em>{x.value}</em>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div class="replay-view__postbattle-global">
-                  <span class="replay-view__postbattle-global-note">
-                    {t("replay.noDamageData")}
-                  </span>
-                </div>
-                {isBot(sel) ? (
                   <div class="replay-view__postbattle-global">
                     <span class="replay-view__postbattle-global-note">
-                      {t("replay.botNote")}
+                      {t("replay.noDamageData")}
                     </span>
                   </div>
-                ) : (
-                  <div class="replay-view__postbattle-global">
-                    {globalLoading.value ? (
-                      <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                        <HSpinner size="md" tone="current" />
-                      </span>
-                    ) : globalStats.value ? (
-                      <StatsCard stats={globalStats.value} />
-                    ) : globalError.value ? (
+                  {isBot(sel) ? (
+                    <div class="replay-view__postbattle-global">
                       <span class="replay-view__postbattle-global-note">
-                        {t("replay.postbattle.globalFailed")}
+                        {t("replay.botNote")}
                       </span>
-                    ) : null}
-                  </div>
-                )}
+                    </div>
+                  ) : (
+                    <div class="replay-view__postbattle-global">
+                      {globalLoading.value ? (
+                        <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
+                          <HSpinner size="md" tone="current" />
+                        </span>
+                      ) : globalStats.value ? (
+                        <StatsCard stats={globalStats.value} />
+                      ) : globalError.value ? (
+                        <span class="replay-view__postbattle-global-note">
+                          {t("replay.postbattle.globalFailed")}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
                 {!isBot(sel) ? (
                   <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                     {t("replay.postbattle.fullStats")}

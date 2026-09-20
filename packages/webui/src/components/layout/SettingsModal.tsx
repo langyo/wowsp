@@ -1,5 +1,6 @@
 import { computed, defineComponent, onMounted, ref, watch } from "vue";
 import {
+  BarChart3,
   Check,
   Copyright,
   Database,
@@ -15,6 +16,7 @@ import {
   Palette,
   RefreshCw,
   Sun,
+  SunMoon,
   UserRound,
 } from "@lucide/vue";
 
@@ -32,6 +34,11 @@ import {
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
+import {
+  setThemeModePreference,
+  themeModePreference,
+  type ThemeModePreference,
+} from "@/theme/themeModePreference";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type GameInstall, type NetworkConfig } from "@/api";
@@ -49,6 +56,7 @@ import { AboutContent } from "@/components/layout/AboutModal";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
 import RealmFlag from "@/components/base/RealmFlag";
 import AuthorMark from "@/components/base/AuthorMark";
+import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
 import "./SettingsModal.scss";
@@ -359,6 +367,7 @@ export default defineComponent({
     const SECTION_ICONS = {
       language: Languages,
       appearance: Palette,
+      stats: BarChart3,
       gamePath: FolderCog,
       account: UserRound,
       network: Globe,
@@ -370,6 +379,7 @@ export default defineComponent({
     const sectionLabels = computed<Record<SettingsSection, string>>(() => ({
       language: t("settings.language"),
       appearance: t("settings.themeMode"),
+      stats: t("settings.statsSection"),
       gamePath: t("settings.gamePath"),
       account: t("settings.account"),
       network: t("settings.network"),
@@ -445,15 +455,22 @@ export default defineComponent({
           {/* appearance — mode, color preset, wallpaper, solar indicator */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.themeMode")}</h2>
+            {/* Four-way mode preference (wowsp's own key — see
+                theme/themeModePreference): dark/light verbatim, solar =
+                daylight-following (hikari "system"), system = OS
+                prefers-color-scheme. Selection applies immediately. */}
             <HTabs
               block
               variant="segmented"
-              modelValue={theme.currentMode.value}
-              onUpdate:modelValue={(v: string) => theme.setMode(v as "system" | "dark" | "light")}
+              modelValue={themeModePreference.value}
+              onUpdate:modelValue={(v: string) =>
+                setThemeModePreference(v as ThemeModePreference)
+              }
               tabs={[
-                { key: "system", label: t("settings.themeModeSystem"), icon: <Monitor size={14} /> },
                 { key: "dark", label: t("settings.themeModeDark"), icon: <Moon size={14} /> },
                 { key: "light", label: t("settings.themeModeLight"), icon: <Sun size={14} /> },
+                { key: "solar", label: t("settings.themeModeSolar"), icon: <SunMoon size={14} /> },
+                { key: "system", label: t("settings.themeModeSystem"), icon: <Monitor size={14} /> },
               ]}
             />
 
@@ -539,6 +556,19 @@ export default defineComponent({
               ) : null}
             </p>
             <p class="settings-modal__hint">{t("settings.geolocationHint")}</p>
+          </section>
+
+          </>
+          ) : null}
+          {ui.section === "stats" ? (
+          <>
+          {/* 战绩 (water-table prefs) — the same four controls as the
+              onboarding wizard's preferences step (StatsPrefsControls),
+              reading/writing the shared statsPrefs store. */}
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.statsSection")}</h2>
+            <p class="settings-modal__hint">{t("settings.statsSectionHint")}</p>
+            <StatsPrefsControls ns="settings" />
           </section>
 
           </>

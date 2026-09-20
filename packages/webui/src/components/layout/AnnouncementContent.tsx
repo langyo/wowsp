@@ -10,8 +10,8 @@ import "./AnnouncementContent.scss";
  * block per language variant (language name, bold headline, body paragraph),
  * separated by hairline dividers. Locale-reactive through the shared
  * language store — switching the UI language in settings immediately
- * adds/removes the fourth block. Shared by the forced first-launch
- * AnnouncementDialog and the always-visible card inside AboutModal.
+ * adds/removes the fourth block. Shared by the onboarding wizard's welcome
+ * step and the always-visible card inside AboutModal.
  */
 export default defineComponent({
   name: "AnnouncementContent",

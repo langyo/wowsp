@@ -18,7 +18,8 @@ import { ArrowDown, ArrowUp } from "@lucide/vue";
 import IdentityHead from "@/components/stats/IdentityHead";
 import type { ClanInfo, ClanMember } from "@/api";
 import { t } from "@/i18n";
-import { prTier, winrateColor } from "@/utils/winrate";
+import { prTier, prTierLabel, winrateColor } from "@/utils/winrate";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import "./ClanCard.scss";
 
 /** Roster sort keys; null = role-ordered default (officers, battles desc). */
@@ -74,6 +75,7 @@ export default defineComponent({
     onMemberClick: Function as PropType<(member: ClanMember) => void>,
   },
   setup(props) {
+    const prefs = useStatsPrefsStore();
     const sortKey = ref<SortKey | null>(null);
     const sortDir = ref<"desc" | "asc">("desc");
 
@@ -128,10 +130,11 @@ export default defineComponent({
       },
     );
 
+    // Average member PR — same tier scale/color as the player card. The
+    // label is PR-tier wording (prTierLabel honors the localized-tiers
+    // pref); the roster rows below show PR numbers, not tier labels.
     const avgPrTier = computed(() => prTier(props.clan.avgPr ?? null));
-    const avgPrLabel = computed(() =>
-      avgPrTier.value.key === "unknown" ? "—" : t(`stats.${avgPrTier.value.key}`),
-    );
+    const avgPrLabel = computed(() => prTierLabel(avgPrTier.value.key));
 
     const kpis = computed(() => [
       {
@@ -208,16 +211,19 @@ export default defineComponent({
                 : "—"}
             </span>
           </div>
-          {/* Average member PR — same tier scale/color as the player card. */}
-          <div
-            class={["clan-card__pr-block", avgPrTier.value.rainbow ? "rainbow-text" : null]}
-            style={avgPrTier.value.rainbow ? undefined : { color: avgPrTier.value.color }}
-          >
-            <span class="clan-card__pr-num">
-              {props.clan.avgPr != null ? props.clan.avgPr.toLocaleString() : "—"}
-            </span>
-            <span class="clan-card__pr-label">{avgPrLabel.value}</span>
-          </div>
+          {/* Average member PR — hidden while the rating is off; the hero
+              keeps the clan-wide winrate layout. */}
+          {prefs.prefs.prEnabled ? (
+            <div
+              class={["clan-card__pr-block", avgPrTier.value.rainbow ? "rainbow-text" : null]}
+              style={avgPrTier.value.rainbow ? undefined : { color: avgPrTier.value.color }}
+            >
+              <span class="clan-card__pr-num">
+                {props.clan.avgPr != null ? props.clan.avgPr.toLocaleString() : "—"}
+              </span>
+              <span class="clan-card__pr-label">{avgPrLabel.value}</span>
+            </div>
+          ) : null}
         </div>
 
         <div class="clan-card__kpis">
@@ -229,14 +235,22 @@ export default defineComponent({
           ))}
         </div>
 
-        <div class="clan-card__roster">
+        <div
+          class={[
+            "clan-card__roster",
+            // The PR column hides with the rating (the pref's master switch
+            // covers every PR surface on the card, roster rows included) —
+            // the grid collapses to five columns (see ClanCard.scss).
+            prefs.prefs.prEnabled ? "" : "clan-card__roster--no-pr",
+          ]}
+        >
           <div class="clan-card__roster-title">{t("lookup.clanMembers")}</div>
           <div class="clan-card__roster-head">
             <span class="clan-card__col clan-card__col--name">{t("lookup.memberName")}</span>
             <span class="clan-card__col clan-card__col--role">{t("lookup.roleLabel")}</span>
             {headCell("battles", t("stats.battles"))}
             {headCell("winrate", t("stats.winrate"))}
-            {headCell("pr", t("stats.pr"))}
+            {prefs.prefs.prEnabled ? headCell("pr", t("stats.pr")) : null}
             {headCell("avgDamage", t("stats.avgDamage"))}
           </div>
           {members.value.map((m) => {
@@ -271,16 +285,22 @@ export default defineComponent({
                 >
                   {m.stats.winrate != null ? `${m.stats.winrate.toFixed(1)}%` : "—"}
                 </span>
-                <span
-                  class={["clan-card__col", "clan-card__col--num", memberPrTier.rainbow ? "rainbow-text" : null]}
-                  style={
-                    m.stats.pr != null && !memberPrTier.rainbow
-                      ? { color: memberPrTier.color, fontWeight: 600 }
-                      : undefined
-                  }
-                >
-                  {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
-                </span>
+                {prefs.prefs.prEnabled ? (
+                  <span
+                    class={[
+                      "clan-card__col",
+                      "clan-card__col--num",
+                      memberPrTier.rainbow ? "rainbow-text" : null,
+                    ]}
+                    style={
+                      m.stats.pr != null && !memberPrTier.rainbow
+                        ? { color: memberPrTier.color, fontWeight: 600 }
+                        : undefined
+                    }
+                  >
+                    {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
+                  </span>
+                ) : null}
                 <span class="clan-card__col clan-card__col--num">
                   {m.stats.avgDamage != null
                     ? Math.round(m.stats.avgDamage).toLocaleString()

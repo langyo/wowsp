@@ -16,17 +16,34 @@ use wowsp_tauri_shared::{
     ShipStatsHistoryPoint, StatsSnapshot,
 };
 
+use super::trends::ExpectedValues;
+use super::wg_api::{ExpectedPrRow, PrAlgo};
+
 /// Fetch (and cache) a player's per-ship PvP stats. `ship_name_map` is built
 /// from the encyclopedia cache so each entry carries a readable name.
+/// `pr_algo` selects the per-ship PR algorithm ("winrate" default /
+/// "expected" = wows-numbers against the server-average table); see
+/// [`apply_pr_algo`].
 #[tauri::command]
 pub async fn lookup_player_ship_stats(
     account_id: i64,
     realm: String,
+    pr_algo: Option<String>,
 ) -> Result<Vec<PlayerShipStats>, String> {
+    let algo = PrAlgo::from_param(pr_algo.as_deref());
     let cache_file = format!("ship-stats/{realm}_{account_id}.json");
     // We always re-fetch on demand (the player may have played new battles);
     // the cache is just a fallback when the API is unreachable.
     let name_map = load_ship_name_map();
+    // Expected algorithm: load the wows-numbers table once for the whole
+    // list (downloaded on cache miss, see `trends`). None when it can't be
+    // loaded — every row then renders "--" instead of failing the lookup.
+    // The winrate algorithm skips this entirely: zero extra cost.
+    let expected_table = if algo == PrAlgo::Expected {
+        super::trends::load_expected_values().await
+    } else {
+        None
+    };
 
     let result = fetch_ship_stats(account_id, &realm).await;
     let stats = match result {
@@ -37,6 +54,7 @@ pub async fn lookup_player_ship_stats(
                 .map(|raw| {
                     let mut p: PlayerShipStats = raw.into();
                     p.name = name_map.get(&raw.ship_id).cloned().unwrap_or_default();
+                    apply_pr_algo(&mut p, algo, &expected_table);
                     p
                 })
                 .collect();
@@ -50,9 +68,15 @@ pub async fn lookup_player_ship_stats(
             enriched
         },
         Err(e) => {
-            // Fallback to cache if the live API failed.
+            // Fallback to cache if the live API failed. The cache may have
+            // been written under the other PR algorithm; both algorithms are
+            // pure functions of the stored counters, so re-derive instead of
+            // serving a stale mixed rating.
             if let Ok(Some(raw)) = appdata_read(cache_file) {
-                if let Ok(cached) = serde_json::from_str::<Vec<PlayerShipStats>>(&raw) {
+                if let Ok(mut cached) = serde_json::from_str::<Vec<PlayerShipStats>>(&raw) {
+                    for p in &mut cached {
+                        apply_pr_algo(p, algo, &expected_table);
+                    }
                     return Ok(cached);
                 }
             }
@@ -60,6 +84,47 @@ pub async fn lookup_player_ship_stats(
         },
     };
     Ok(stats)
+}
+
+/// Re-derive one row's PR for the selected algorithm from the row's own
+/// counters. Winrate recomputes the historical anchor mapping (identical to
+/// what the `From` conversion produced); expected applies the wows-numbers
+/// formula against the loaded table — a missing table or a ship absent from
+/// it yields None ("--"), never a silent fallback to the other algorithm.
+fn apply_pr_algo(
+    p: &mut PlayerShipStats,
+    algo: PrAlgo,
+    expected_table: &Option<std::collections::HashMap<i64, ExpectedValues>>,
+) {
+    p.pr = match algo {
+        PrAlgo::Winrate => Some(super::wg_api::rating_from_winrate(p.winrate)),
+        PrAlgo::Expected => expected_table
+            .as_ref()
+            .and_then(|table| table.get(&p.ship_id))
+            .and_then(|ev| {
+                super::wg_api::expected_ship_pr(p.battles, p.damage_caused, p.frags, p.wins, ev)
+            }),
+    };
+}
+
+/// Per-ship PvP (randoms) totals for the account-level expected PR — the
+/// same fetch `lookup_player_ship_stats` performs, without the name
+/// enrichment or cache/history writes (the caller only needs the counters).
+pub(crate) async fn fetch_expected_pr_rows(
+    account_id: i64,
+    realm: &str,
+) -> Result<Vec<ExpectedPrRow>, String> {
+    Ok(fetch_ship_stats(account_id, realm)
+        .await?
+        .iter()
+        .map(|s| ExpectedPrRow {
+            ship_id: s.ship_id,
+            battles: s.battles,
+            damage: s.damage_caused,
+            frags: s.frags,
+            wins: s.wins,
+        })
+        .collect())
 }
 
 /// Points landing within this window of the latest history point replace it —
@@ -745,6 +810,38 @@ mod tests {
             avg_xp: None,
             modes: None,
         }
+    }
+
+    /// Per-row PR follows the selected algorithm: winrate recomputes the
+    /// anchor mapping; expected needs the table AND the ship's entry, and
+    /// yields None otherwise (no silent fallback to the other algorithm).
+    #[test]
+    fn apply_pr_algo_switches_formula_per_algorithm() {
+        let mut p = mk_stats(4282948544, 100);
+        // mk_stats rows sit at 50% WR → between the 47%→750 and 52%→1350
+        // anchors: 750 + 3/5·600 = 1110.
+        apply_pr_algo(&mut p, PrAlgo::Winrate, &None);
+        assert_eq!(p.pr, Some(1110));
+        // Expected with no table (download failed / offline) → None ("--").
+        apply_pr_algo(&mut p, PrAlgo::Expected, &None);
+        assert_eq!(p.pr, None);
+        // Expected with the ship in the table: mk_stats counters (50% WR,
+        // 10k avg damage, 1.0 frags/battle) exactly meet these expected
+        // values → the 1150 at-expected anchor.
+        let table = std::collections::HashMap::from([(
+            4282948544_i64,
+            ExpectedValues {
+                average_damage_dealt: 10_000.0,
+                average_frags: 1.0,
+                win_rate: 50.0,
+            },
+        )]);
+        apply_pr_algo(&mut p, PrAlgo::Expected, &Some(table.clone()));
+        assert_eq!(p.pr, Some(1150));
+        // A ship missing from the table → None even with the table loaded.
+        let mut other = mk_stats(999, 10);
+        apply_pr_algo(&mut other, PrAlgo::Expected, &Some(table));
+        assert_eq!(other.pr, None);
     }
 
     fn read_history_file(file: &str) -> Vec<ShipStatsHistoryPoint> {

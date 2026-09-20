@@ -32,6 +32,8 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
+use super::trends::ExpectedValues;
+
 /// Concurrency cap for the batch name→account resolution. WG public API
 /// rate-limits ~20 req/s per IP; 4 in-flight keeps a full 24-player roster
 /// inside a couple of waves without tripping it.
@@ -41,11 +43,18 @@ const BATCH_CONCURRENCY: usize = 4;
 /// searches). Numeric UID queries bypass this gate.
 const MIN_SEARCH_CHARS: usize = 3;
 
-/// Look up one player's stats by name on the given realm.
+/// Look up one player's stats by name on the given realm. `pr_algo` selects
+/// the PR algorithm ("winrate" default / "expected" = wows-numbers); see
+/// [`PrAlgo`].
 #[tauri::command]
-pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerStats, String> {
+pub async fn lookup_player_stats(
+    name: String,
+    realm: String,
+    pr_algo: Option<String>,
+) -> Result<PlayerStats, String> {
+    let algo = PrAlgo::from_param(pr_algo.as_deref());
     if realm == "cn" {
-        return super::wg_api_cn::lookup_player_stats(name).await;
+        return super::wg_api_cn::lookup_player_stats(name, algo).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
@@ -117,10 +126,24 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
     let (info, clan_map, dog_tag) = tokio::join!(info_fut, clan_fut, dog_tag_fut);
     let info: WgResponse<serde_json::Value> = info?;
 
+    // Expected algorithm: replace the winrate proxy with the wows-numbers PR
+    // aggregated over the player's per-ship randoms (one extra ships/stats
+    // request — see `account_expected_pr_for`). Computed before the assembly
+    // below consumes `entry`/`realm`. Unavailable inputs (expected table or
+    // ship rows) yield None — the card renders "--", the lookup itself must
+    // not fail over a rating.
+    let expected_pr = if algo == PrAlgo::Expected {
+        account_expected_pr_for(&realm, entry.account_id).await
+    } else {
+        None
+    };
     // Hidden profiles return null statistics; player_stats_from_info surfaces
     // that as hidden=true.
     let mut stats = player_stats_from_info(entry, realm, info.data.as_ref(), &clan_map);
     stats.dog_tag = dog_tag;
+    if algo == PrAlgo::Expected {
+        stats.pr = expected_pr;
+    }
     Ok(stats)
 }
 
@@ -130,16 +153,23 @@ pub async fn lookup_player_stats(name: String, realm: String) -> Result<PlayerSt
 /// in order; `None` = account not found, no exact-name match, or the lookup
 /// failed — roster UIs render that as "no data" rather than failing the
 /// whole panel.
+///
+/// `pr_algo` selects the PR algorithm. Under "expected" every entry answers
+/// PR=None (see [`apply_batch_pr_algo`]): the roster line then renders its
+/// "—" fallback instead of a winrate proxy the player card wouldn't agree
+/// with.
 #[tauri::command]
 pub async fn lookup_players_stats_batch(
     names: Vec<String>,
     realm: String,
+    pr_algo: Option<String>,
 ) -> Result<Vec<Option<PlayerStats>>, String> {
+    let algo = PrAlgo::from_param(pr_algo.as_deref());
     if names.is_empty() {
         return Ok(Vec::new());
     }
     if realm == "cn" {
-        return super::wg_api_cn::lookup_players_stats_batch(names).await;
+        return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
@@ -245,10 +275,31 @@ pub async fn lookup_players_stats_batch(
         .into_iter()
         .map(|entry| {
             entry.map(|entry| {
-                player_stats_from_info(entry, realm.clone(), info.data.as_ref(), &clan_map)
+                let mut stats =
+                    player_stats_from_info(entry, realm.clone(), info.data.as_ref(), &clan_map);
+                apply_batch_pr_algo(&mut stats, algo);
+                stats
             })
         })
         .collect())
+}
+
+/// Batch-roster PR policy. The expected algorithm needs each player's
+/// per-ship randoms rows (`account_expected_pr_for` — ONE ships/stats fetch
+/// per account, the heaviest per-account endpoint WG serves), and a battle
+/// roster hands this command up to 24 human names at once: wiring it in
+/// would multiply the request budget by the roster size every single battle
+/// (several MB and several extra seconds on this live-roster fast path,
+/// whose whole contract is speed). That is the same per-row multiplication
+/// `lookup_clan_info` documents and rejects, so the batch answers PR=None
+/// under `Expected` and the roster renders its "—" fallback — never a
+/// winrate proxy the player card wouldn't agree with. Full-card lookups
+/// (`lookup_player_stats`) still aggregate the expected PR per player.
+/// Shared with the CN batch arm (`wg_api_cn::lookup_players_stats_batch`).
+pub(crate) fn apply_batch_pr_algo(stats: &mut PlayerStats, algo: PrAlgo) {
+    if algo == PrAlgo::Expected {
+        stats.pr = None;
+    }
 }
 
 /// Build a `PlayerStats` from the batch account/info response map. The dog
@@ -633,11 +684,17 @@ pub(crate) fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> Clan
 /// account/info sweep over all member ids (the endpoint accepts up to 100
 /// ids per call; WoWS clans cap at ~50 members) resolving nicknames and PvP
 /// stats. Aggregate fields are computed across visible members — WG has no
-/// clan-wide aggregate endpoint.
+/// clan-wide aggregate endpoint. `pr_algo` selects the member PR algorithm;
+/// under "expected" the roster answers PR=None (see `clan_info_from_response`).
 #[tauri::command]
-pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, String> {
+pub async fn lookup_clan_info(
+    clan_id: i64,
+    realm: String,
+    pr_algo: Option<String>,
+) -> Result<ClanInfo, String> {
+    let algo = PrAlgo::from_param(pr_algo.as_deref());
     if realm == "cn" {
-        return super::wg_api_cn::lookup_clan_info(clan_id).await;
+        return super::wg_api_cn::lookup_clan_info(clan_id, algo).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
@@ -696,6 +753,7 @@ pub async fn lookup_clan_info(clan_id: i64, realm: String) -> Result<ClanInfo, S
         &realm,
         &node,
         &serde_json::Value::Object(roster),
+        algo,
     ))
 }
 
@@ -752,11 +810,18 @@ fn member_pvp_of(player_node: Option<&serde_json::Value>) -> MemberPvp {
 /// account/info roster (id → player node). Pure — unit-tested. Members come
 /// from the `members` extra (roles + join dates) with `members_ids` as the
 /// fallback when the extra was not requested.
+///
+/// Under `PrAlgo::Expected` every member PR is None: the expected algorithm
+/// needs per-ship rows per member, and a ships/stats fetch for every roster
+/// row would multiply the request budget by the member count. The roster
+/// renders "--" rather than a winrate proxy the player card wouldn't agree
+/// with (same call on the CN roster).
 fn clan_info_from_response(
     clan_id: i64,
     realm: &str,
     clan_node: &serde_json::Value,
     roster: &serde_json::Value,
+    pr_algo: PrAlgo,
 ) -> ClanInfo {
     let members_map = clan_node
         .get("members")
@@ -799,6 +864,13 @@ fn clan_info_from_response(
             .map(|s| s.to_owned())
             .unwrap_or_else(|| format!("#{id}"));
         let pvp = member_pvp_of(player);
+        let pvp = if pr_algo == PrAlgo::Expected {
+            let mut pvp = pvp;
+            pvp.stats.pr = None;
+            pvp
+        } else {
+            pvp
+        };
         if pvp.stats.hidden {
             hidden_count += 1;
         } else if let Some(pr) = pvp.stats.pr {
@@ -1005,7 +1077,9 @@ pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared:
 /// All fields are optional — hidden profiles yield null, and casual accounts
 /// may lack division splits. PR is a career rating derived from an
 /// ApeRadar-style weighted winrate (see `compute_pr`), not WG's internal
-/// hidden score. Also fed with vortex-normalized nodes by `wg_api_cn`.
+/// hidden score; under the "expected" algorithm callers overwrite `pr` with
+/// the wows-numbers value (see `account_expected_pr_for`). Also fed with
+/// vortex-normalized nodes by `wg_api_cn`.
 pub(crate) struct PvpStats {
     pub(crate) battles: Option<i64>,
     pub(crate) winrate: Option<f32>,
@@ -1227,6 +1301,135 @@ pub(crate) fn compute_pr(
     div3: Option<(f32, i64)>,
 ) -> Option<i64> {
     Some(rating_from_winrate(weighted_winrate(solo, div2, div3)?))
+}
+
+// ── selectable PR algorithm (frontend `prAlgo` parameter) ─────────────────
+
+/// Which PR algorithm a stats command computes. `Winrate` is the historical
+/// default and must stay free of any extra work (no expected-table load, no
+/// extra API calls); `Expected` is the wows-numbers personal rating computed
+/// against the server-wide expected-values table (see `expected_account_pr`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PrAlgo {
+    /// ApeRadar weighted winrate mapped onto the community scale (`compute_pr`).
+    Winrate,
+    /// wows-numbers expected-values PR (damage/frags/wins vs server averages).
+    Expected,
+}
+
+impl PrAlgo {
+    /// Parse the frontend parameter: only the exact string "expected" selects
+    /// the expected algorithm; None, "winrate" and any unknown value keep the
+    /// historical winrate behavior — a typo must degrade, never error.
+    pub(crate) fn from_param(pr_algo: Option<&str>) -> Self {
+        match pr_algo {
+            Some("expected") => Self::Expected,
+            _ => Self::Winrate,
+        }
+    }
+}
+
+/// One per-ship PvP (randoms) row feeding the account-level expected PR.
+pub(crate) struct ExpectedPrRow {
+    pub(crate) ship_id: i64,
+    pub(crate) battles: i64,
+    pub(crate) damage: i64,
+    pub(crate) frags: i64,
+    pub(crate) wins: i64,
+}
+
+/// wows-numbers personal rating from actual/expected totals. Their published
+/// formula (same shape as the vendored reference in wows-toolkit's
+/// `util/personal_rating.rs`): each ratio is normalized — damage (r−0.4)/0.6,
+/// frags (r−0.1)/0.9, wins (r−0.7)/0.3, each floored at zero — and combined
+/// as PR = 700·nDmg + 300·nFrags + 150·nWins. The offsets are calibrated so
+/// playing exactly at the server average lands on 1150 (Average band).
+/// Rounded to an integer and clamped to [0, 10000]. None when an expected
+/// total is unusable (zero battles / missing sample).
+fn expected_pr_from_totals(
+    actual_damage: f64,
+    actual_frags: f64,
+    actual_wins: f64,
+    expected_damage: f64,
+    expected_frags: f64,
+    expected_wins: f64,
+) -> Option<i64> {
+    if expected_damage <= 0.0 || expected_frags <= 0.0 || expected_wins <= 0.0 {
+        return None;
+    }
+    let normalize = |ratio: f64, floor: f64, span: f64| ((ratio - floor) / span).max(0.0);
+    let pr = 700.0 * normalize(actual_damage / expected_damage, 0.4, 0.6)
+        + 300.0 * normalize(actual_frags / expected_frags, 0.1, 0.9)
+        + 150.0 * normalize(actual_wins / expected_wins, 0.7, 0.3);
+    Some(pr.round().clamp(0.0, 10_000.0) as i64)
+}
+
+/// One ship's wows-numbers PR: the ship's PvP totals against its expected
+/// values (expected per-battle averages × battles; wins as a decimal rate —
+/// expected wins = win_rate/100 × battles). None when the ship has no battles
+/// (degenerate expected totals).
+pub(crate) fn expected_ship_pr(
+    battles: i64,
+    damage: i64,
+    frags: i64,
+    wins: i64,
+    expected: &ExpectedValues,
+) -> Option<i64> {
+    let battles = battles as f64;
+    expected_pr_from_totals(
+        damage as f64,
+        frags as f64,
+        wins as f64,
+        expected.average_damage_dealt * battles,
+        expected.average_frags * battles,
+        expected.win_rate / 100.0 * battles,
+    )
+}
+
+/// Account-level wows-numbers PR: per-ship totals aggregated with the
+/// expected side weighted by each ship's battles — the same battle-weighted
+/// aggregation wows-numbers performs (NOT a mean of per-ship PRs). Ships
+/// missing from the expected table are skipped on both sides. None when no
+/// ship carries expected values.
+pub(crate) fn expected_account_pr(
+    rows: &[ExpectedPrRow],
+    table: &HashMap<i64, ExpectedValues>,
+) -> Option<i64> {
+    let (mut a_dmg, mut a_frags, mut a_wins) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut e_dmg, mut e_frags, mut e_wins) = (0.0f64, 0.0f64, 0.0f64);
+    let mut counted = 0usize;
+    for row in rows {
+        let Some(expected) = table.get(&row.ship_id) else {
+            continue; // no expected sample → skip both sides
+        };
+        let battles = row.battles as f64;
+        a_dmg += row.damage as f64;
+        a_frags += row.frags as f64;
+        a_wins += row.wins as f64;
+        e_dmg += expected.average_damage_dealt * battles;
+        e_frags += expected.average_frags * battles;
+        e_wins += expected.win_rate / 100.0 * battles;
+        counted += 1;
+    }
+    if counted == 0 {
+        return None;
+    }
+    expected_pr_from_totals(a_dmg, a_frags, a_wins, e_dmg, e_frags, e_wins)
+}
+
+/// Account-level expected PR for one player: the expected-values table
+/// (7-day on-disk cache, downloaded on miss — see `trends::load_expected_values`)
+/// plus ONE per-ship stats fetch, the same request `lookup_player_ship_stats`
+/// makes, aggregated in Rust. Works for every realm including "cn" (the CN
+/// vortex serves the per-ship endpoint too, so both transports behave
+/// identically). None when either side is unavailable — the stats lookup
+/// itself must not fail over a rating.
+pub(crate) async fn account_expected_pr_for(realm: &str, account_id: i64) -> Option<i64> {
+    let table = super::trends::load_expected_values().await?;
+    let rows = super::ship_stats::fetch_expected_pr_rows(account_id, realm)
+        .await
+        .ok()?;
+    expected_account_pr(&rows, &table)
 }
 
 #[derive(Deserialize)]
@@ -1513,7 +1716,7 @@ mod tests {
             },
             "22": { "nickname": "ghost", "statistics": { "pvp": null } }
         });
-        let info = clan_info_from_response(500123, "asia", &clan_node, &roster);
+        let info = clan_info_from_response(500123, "asia", &clan_node, &roster, PrAlgo::Winrate);
         assert_eq!(info.tag, "HOOD");
         assert_eq!(info.realm, "asia");
         assert_eq!(info.members_count, 2);
@@ -1570,7 +1773,7 @@ mod tests {
                 }
             }
         });
-        let info = clan_info_from_response(9, "eu", &clan_node, &roster);
+        let info = clan_info_from_response(9, "eu", &clan_node, &roster, PrAlgo::Winrate);
         let member = &info.members[0];
         assert!((member.stats.winrate.unwrap() - 50.538).abs() < 0.01);
         assert_eq!(member.stats.pr, Some(983));
@@ -1588,7 +1791,8 @@ mod tests {
             "members_count": 1,
             "members_ids": [33]
         });
-        let info = clan_info_from_response(7, "eu", &clan_node, &serde_json::json!({}));
+        let info =
+            clan_info_from_response(7, "eu", &clan_node, &serde_json::json!({}), PrAlgo::Winrate);
         assert_eq!(info.members.len(), 1);
         assert_eq!(info.members[0].name, "#33");
         assert_eq!(info.members[0].role, "private");
@@ -1647,10 +1851,210 @@ mod tests {
             "members_ids": [11],
             "description": "&quot; OBJECTIVE&quot;* HAVE FUN,\r\nClan QQ:123"
         });
-        let info = clan_info_from_response(500123, "asia", &clan_node, &serde_json::json!({}));
+        let info = clan_info_from_response(
+            500123,
+            "asia",
+            &clan_node,
+            &serde_json::json!({}),
+            PrAlgo::Winrate,
+        );
         assert_eq!(
             info.description.as_deref(),
             Some("\" OBJECTIVE\"* HAVE FUN,\nClan QQ:123")
         );
+    }
+
+    // ── expected-values PR (wows-numbers algorithm) ───────────────────────
+
+    #[test]
+    fn pr_algo_param_defaults_and_unknown_values_fall_back_to_winrate() {
+        assert_eq!(PrAlgo::from_param(None), PrAlgo::Winrate);
+        assert_eq!(PrAlgo::from_param(Some("winrate")), PrAlgo::Winrate);
+        assert_eq!(PrAlgo::from_param(Some("")), PrAlgo::Winrate);
+        assert_eq!(PrAlgo::from_param(Some("nonsense")), PrAlgo::Winrate);
+        // Exact match only — a case typo degrades to winrate, never errors.
+        assert_eq!(PrAlgo::from_param(Some("Expected")), PrAlgo::Winrate);
+        assert_eq!(PrAlgo::from_param(Some("expected")), PrAlgo::Expected);
+    }
+
+    fn ev(dmg: f64, frags: f64, win_rate: f64) -> ExpectedValues {
+        ExpectedValues {
+            average_damage_dealt: dmg,
+            average_frags: frags,
+            win_rate,
+        }
+    }
+
+    #[test]
+    fn expected_ship_pr_matches_wows_numbers_formula() {
+        // Small expected profile: 50k damage, 1.0 frags, 52% WR. Actual: 100
+        // battles, 6M damage, 120 frags, 56 wins.
+        //   rDmg   = 1.2      → nDmg   = (1.2−0.4)/0.6 = 1.3333…
+        //   rFrags = 1.2      → nFrags = (1.2−0.1)/0.9 = 1.2222…
+        //   rWins  = .56/.52  → nWins  = 1.2564…
+        //   PR = 700·1.3333 + 300·1.2222 + 150·1.2564 ≈ 1488.46 → 1488.
+        let e = ev(50_000.0, 1.0, 52.0);
+        assert_eq!(expected_ship_pr(100, 6_000_000, 120, 56, &e), Some(1488));
+        // Playing exactly at the server average lands on 1150 (Average band)
+        // — the anchor the normalization constants are calibrated for.
+        assert_eq!(expected_ship_pr(100, 5_000_000, 100, 52, &e), Some(1150));
+    }
+
+    #[test]
+    fn expected_ship_pr_clamps_to_bounds() {
+        let e = ev(50_000.0, 1.0, 52.0);
+        // All-zero counters floor every normalized term at zero.
+        assert_eq!(expected_ship_pr(100, 0, 0, 0, &e), Some(0));
+        // Absurd performance clamps at the 10000 cap.
+        assert_eq!(
+            expected_ship_pr(100, 6_000_000_000, 20_000, 100, &e),
+            Some(10_000)
+        );
+        // No battles → degenerate expected totals → no rating.
+        assert_eq!(expected_ship_pr(0, 0, 0, 0, &e), None);
+    }
+
+    #[test]
+    fn expected_account_pr_aggregates_by_battles() {
+        let table = HashMap::from([(1, ev(40_000.0, 0.8, 50.0)), (2, ev(80_000.0, 1.6, 54.0))]);
+        // Ship 1 (100 battles) exactly at expected; ship 2 (300 battles) at
+        // double the expected damage/frags with a 100% winrate; ship 3 is not
+        // in the table and must count on neither side.
+        let rows = [
+            ExpectedPrRow {
+                ship_id: 1,
+                battles: 100,
+                damage: 4_000_000,
+                frags: 80,
+                wins: 50,
+            },
+            ExpectedPrRow {
+                ship_id: 2,
+                battles: 300,
+                damage: 48_000_000,
+                frags: 960,
+                wins: 300,
+            },
+            ExpectedPrRow {
+                ship_id: 3,
+                battles: 1_000,
+                damage: 500_000_000,
+                frags: 5_000,
+                wins: 900,
+            },
+        ];
+        // Totals: damage 52M vs 28M and frags 1040 vs 560 (ratio 13/7),
+        // wins 350 vs 212.
+        //   nDmg   = (13/7−0.4)/0.6 = 2.4286…   → 700·2.4286 = 1700.0
+        //   nFrags = (13/7−0.1)/0.9 = 1.9524…   → 300·1.9524 =  585.7
+        //   nWins  = (350/212−0.7)/0.3 = 3.1698 → 150·3.1698 =  475.5
+        //   PR ≈ 2761.19 → 2761.
+        assert_eq!(expected_account_pr(&rows, &table), Some(2761));
+        // Same per-ship performances with the battle mix flipped (300/100)
+        // must yield a different PR — the aggregation is battle-weighted over
+        // the counters, not a mean of per-ship PRs.
+        let flipped = [
+            ExpectedPrRow {
+                ship_id: 1,
+                battles: 300,
+                damage: 12_000_000,
+                frags: 240,
+                wins: 150,
+            },
+            ExpectedPrRow {
+                ship_id: 2,
+                battles: 100,
+                damage: 16_000_000,
+                frags: 320,
+                wins: 100,
+            },
+            ExpectedPrRow {
+                ship_id: 3,
+                battles: 1_000,
+                damage: 500_000_000,
+                frags: 5_000,
+                wins: 900,
+            },
+        ];
+        // rDmg = rFrags = 28M/20M = 1.4, rWins = 250/204:
+        //   700·(1.4−0.4)/0.6 + 300·(1.4−0.1)/0.9 + 150·(250/204−0.7)/0.3
+        //   = 1166.67 + 433.33 + 262.75 ≈ 1862.75 → 1863.
+        assert_eq!(expected_account_pr(&flipped, &table), Some(1863));
+        // Every ship at its expected values (any battle mix) → 1150; ships
+        // missing from the table alone → None.
+        let at_expected = [
+            ExpectedPrRow {
+                ship_id: 1,
+                battles: 100,
+                damage: 4_000_000,
+                frags: 80,
+                wins: 50,
+            },
+            ExpectedPrRow {
+                ship_id: 2,
+                battles: 50,
+                damage: 4_000_000,
+                frags: 80,
+                wins: 27,
+            },
+        ];
+        assert_eq!(expected_account_pr(&at_expected, &table), Some(1150));
+        let unrated = [ExpectedPrRow {
+            ship_id: 3,
+            battles: 100,
+            damage: 1,
+            frags: 1,
+            wins: 1,
+        }];
+        assert_eq!(expected_account_pr(&unrated, &table), None);
+        assert_eq!(expected_account_pr(&[], &table), None);
+    }
+
+    #[test]
+    fn clan_roster_expected_algo_yields_no_pr() {
+        // The roster cannot afford per-member ships/stats fetches, so the
+        // expected algorithm answers None instead of a winrate proxy.
+        let clan_node = serde_json::json!({
+            "tag": "E", "name": "Expected", "members_count": 1, "members_ids": [11]
+        });
+        let roster = serde_json::json!({
+            "11": {
+                "nickname": "alpha",
+                "statistics": { "pvp": { "battles": 100, "wins": 60, "damage_dealt": 150_000 } }
+            }
+        });
+        let info = clan_info_from_response(500123, "eu", &clan_node, &roster, PrAlgo::Expected);
+        assert_eq!(info.members[0].stats.pr, None);
+        assert_eq!(info.avg_pr, None);
+        // The default algorithm keeps the historical winrate PR.
+        let info = clan_info_from_response(500123, "eu", &clan_node, &roster, PrAlgo::Winrate);
+        assert_eq!(info.members[0].stats.pr, Some(2100));
+    }
+
+    /// Minimal `PlayerStats` for the batch-policy test — Option fields are
+    /// absent from the JSON (serde reads them as None), only the required
+    /// primitives are supplied.
+    fn batch_player(pr: Option<i64>) -> PlayerStats {
+        serde_json::from_value(serde_json::json!({
+            "accountId": 42, "name": "player", "realm": "eu", "hidden": false, "pr": pr,
+        }))
+        .expect("PlayerStats parses with optional fields absent")
+    }
+
+    #[test]
+    fn batch_roster_expected_algo_yields_no_pr() {
+        // The live-roster fast path cannot afford one ships/stats fetch per
+        // roster row (see `apply_batch_pr_algo`), so the expected algorithm
+        // blanks the PR instead of answering a winrate proxy.
+        let mut stats = batch_player(Some(2100));
+        apply_batch_pr_algo(&mut stats, PrAlgo::Winrate);
+        assert_eq!(stats.pr, Some(2100));
+        apply_batch_pr_algo(&mut stats, PrAlgo::Expected);
+        assert_eq!(stats.pr, None);
+        // A profile that already had no PR (hidden) stays PR-less under both
+        // algorithms — the policy never invents a rating.
+        let mut hidden = batch_player(None);
+        apply_batch_pr_algo(&mut hidden, PrAlgo::Winrate);
+        assert_eq!(hidden.pr, None);
     }
 }
