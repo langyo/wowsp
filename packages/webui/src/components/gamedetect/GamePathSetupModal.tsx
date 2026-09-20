@@ -4,26 +4,19 @@ import { MonitorPlay } from "@lucide/vue";
 import { HButton, HModal, useToast } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
+import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { api, type GameInstall, type GameInstallKind } from "@/api";
+import { api, type GameInstall } from "@/api";
 import { t } from "@/i18n";
+import { installLabelOf } from "@/utils/installLabel";
 import "./GamePathSetupModal.scss";
 
-/** Map a client kind to its localized label (same keys as the sidebar). */
-function kindLabel(kind: GameInstallKind | null | undefined): string {
-  if (!kind) return "";
-  return t(`common.game.kind.${kind}`);
-}
-
-/** Short "Steam · ASIA" style label for an install row. */
-function installLabel(i: GameInstall): string {
-  return [kindLabel(i.kind), i.realm?.toUpperCase()].filter(Boolean).join(" · ");
-}
-
 /**
- * Game-path setup modal — the manual-location entry. Three surfaces open it:
+ * Game-path setup modal — the manual-location entry. Two surfaces open it:
  * the first-launch prompt (AppShell pops it whenever detection comes up
- * empty), the settings 游戏路径 row, and the ship-detail armor-error banner.
+ * empty) and the ship-detail armor-error banner. The settings 游戏路径
+ * section now manages installs itself as a table, so it no longer routes
+ * through this modal.
  *
  * Body: current path status, the detected installs as a pick list, a
  * running-game shortcut (from the process watcher's synthesized install),
@@ -40,6 +33,7 @@ export default defineComponent({
   },
   setup(props, { emit }) {
     const config = useConfigStore();
+    const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
     const toast = useToast();
 
@@ -66,8 +60,19 @@ export default defineComponent({
       emit("update:modelValue", false);
     }
 
+    /** Follow a client switch to that realm's preferred account — same
+     *  behavior as the settings 游戏路径 table. */
+    async function followRealm(realm?: string | null) {
+      if (!realm) return;
+      const switched = await accounts.autoSwitchRealm(realm);
+      if (switched) {
+        toast.info(t("account.autoSwitched", { name: switched.nickname }));
+      }
+    }
+
     async function pickInstall(i: GameInstall) {
       await config.selectInstall(i.path);
+      await followRealm(i.realm);
       toast.info(t("common.gamePath.applied"));
       close();
     }
@@ -94,7 +99,8 @@ export default defineComponent({
 
     async function applyManual(path: string) {
       try {
-        await config.setManualPath(path);
+        const resolved = await config.setManualPath(path);
+        await followRealm(resolved?.realm);
         toast.info(t("common.gamePath.applied"));
         close();
       } catch (e) {
@@ -152,7 +158,7 @@ export default defineComponent({
                   ]}
                   onClick={() => void pickInstall(i)}
                 >
-                  <span class="game-path-modal__install-label">{installLabel(i)}</span>
+                  <span class="game-path-modal__install-label">{installLabelOf(i)}</span>
                   <span class="game-path-modal__install-path">{i.path}</span>
                 </button>
               ))}

@@ -1,60 +1,39 @@
-import { computed, defineComponent, ref } from "vue";
+import { computed, defineComponent } from "vue";
 import { RouterLink } from "vue-router";
-import { BarChart3, Search, Ship, Film, Settings, Package } from "@lucide/vue";
+import { BarChart3, Search, Ship, Film, Package } from "@lucide/vue";
 
-import { HSelect, HTooltip, useToast } from "@celestia-island/hikari";
+import { HTooltip } from "@celestia-island/hikari";
 
 import { useAccountStore } from "@/stores/account";
+import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { useGameDetect } from "@/features/gamedetect/useGameDetect";
-import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import SettingsModal from "@/components/layout/SettingsModal";
+import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
-import { api, type GameInstallKind } from "@/api";
+import { installLabel, kindLabel } from "@/utils/installLabel";
 import "./Sidebar.scss";
-
-/** Option value that opens the native game-folder picker instead of picking
- *  an install — never becomes the select's model value. */
-const MANUAL_PATH_VALUE = "__pick__";
-
-/** Map a client kind to its localized label (e.g. Steam / 官服 / Lesta / 国服). */
-function kindLabel(kind: GameInstallKind | null | undefined): string {
-  if (!kind) return "";
-  return t(`common.game.kind.${kind}`);
-}
-
-/** Short label for a client option: "Steam · ASIA" (kind only when the realm
- *  is unknown). */
-function installLabel(kind: GameInstallKind, realm?: string | null): string {
-  const parts = [kindLabel(kind)];
-  if (realm) parts.push(realm.toUpperCase());
-  return parts.join(" · ");
-}
 
 /**
  * Left sidebar: brand + nav links + spacer + footer.
  *
  * Nav links (top): Dashboard / Lookup / Ships / Replay / Resources.
- * Footer (bottom): server (client-install) selector + game-status dot +
- * account button + settings icon button.
+ * Footer (bottom): game-status indicator, then two full-width buttons in
+ * the same style — the active game client (opens settings on 游戏路径)
+ * and the active account (opens settings on 账户). Management itself lives
+ * in the settings modal; the footer only mirrors the current state.
  *
- * The server selector is the app-wide client context — the replay list, mod
- * hub and account auto-switching all follow it. Switching to a server with a
- * bound account activates that realm's preferred account; the "选择游戏路径…"
- * option opens the native folder picker for installs auto-detection missed.
+ * The active client is the app-wide context — the replay list, mod hub and
+ * account auto-switching all follow it — so its tooltip shows the full
+ * install path.
  */
 export default defineComponent({
   name: "Sidebar",
   setup() {
     const accounts = useAccountStore();
+    const config = useConfigStore();
     const gameStatus = useGameStatusStore();
-    const gd = useGameDetect();
-    const toast = useToast();
+    const ui = useSettingsUiStore();
     const { copy } = useClipboard();
-    const showSwitcher = ref(false);
-    const showSettings = ref(false);
-    const pickingPath = ref(false);
 
     const accountLabel = computed(() => {
       const a = accounts.activeAccount;
@@ -72,51 +51,13 @@ export default defineComponent({
       return [k, r].filter(Boolean).join(" · ");
     });
 
-    // Server-selector options: one per detected install + the manual picker.
-    const serverOptions = computed(() => [
-      ...gd.config.installs.map((i) => ({
-        value: i.path,
-        label: installLabel(i.kind, i.realm),
-      })),
-      { value: MANUAL_PATH_VALUE, label: t("common.gamePath.pick") },
-    ]);
-    const activePath = computed(() => gd.config.activeInstall?.path ?? "");
-
-    /** Follow a server change to that realm's preferred account. */
-    async function followRealm(realm?: string | null) {
-      if (!realm) return;
-      const switched = await accounts.autoSwitchRealm(realm);
-      if (switched) {
-        toast.info(t("account.autoSwitched", { name: switched.nickname }));
-      }
-    }
-
-    async function onSelectServer(value: string) {
-      if (value === MANUAL_PATH_VALUE) {
-        await pickInstallFolder();
-        return;
-      }
-      const install = gd.config.installs.find((i) => i.path === value);
-      await gd.config.selectInstall(value);
-      if (install) await followRealm(install.realm);
-    }
-
-    /** Native folder picker → validate → pin as the active install. */
-    async function pickInstallFolder() {
-      if (pickingPath.value) return;
-      pickingPath.value = true;
-      try {
-        const picked = await api.pickGameFolder();
-        if (!picked) return;
-        await gd.config.setManualPath(picked.path);
-        await followRealm(picked.realm);
-        toast.info(t("common.gamePath.applied"));
-      } catch (e) {
-        toast.error(`${t("common.gamePath.invalid")}\n${(e as Error).message || e}`);
-      } finally {
-        pickingPath.value = false;
-      }
-    }
+    // Footer button: the ACTIVE install (what data reads use), not the
+    // running process — they can differ while another client is playing.
+    const activeInstallLabel = computed(() => {
+      const i = config.activeInstall;
+      return i ? installLabel(i.kind, i.realm) : "";
+    });
+    const activeInstallPath = computed(() => config.activeInstall?.path ?? "");
 
     function copyPid() {
       if (proc.value.pid != null) {
@@ -157,20 +98,7 @@ export default defineComponent({
         <div class="sidebar__spacer" />
 
         <div class="sidebar__footer">
-          <HTooltip
-            text={activePath.value || t("common.gamePath.noneFound")}
-            placement="right"
-          >
-            <div class="sidebar__server">
-              <HSelect
-                modelValue={activePath.value}
-                onUpdate:modelValue={(v: string) => void onSelectServer(v)}
-                options={serverOptions.value}
-                placeholder={t("replay.client")}
-                disabled={pickingPath.value}
-              />
-            </div>
-          </HTooltip>
+          {/* game status — an indicator, not a control */}
           <div class={["sidebar__game-status", running.value ? "is-running" : "is-offline"]}>
             <div class="sidebar__game-status-row">
               <span
@@ -210,32 +138,26 @@ export default defineComponent({
               </div>
             ) : null}
           </div>
-          <div class="sidebar__account-row">
-            <div class="sidebar__account" onClick={() => (showSwitcher.value = true)}>
-              <span class="sidebar__account-name">{accountLabel.value}</span>
-            </div>
-            {/* Settings as an icon button in the bottom-left — opens the
-                settings modal instead of routing to a dedicated page */}
-            <HTooltip text={t("nav.settings")} placement="right">
-              <button
-                type="button"
-                class="sidebar__settings-btn"
-                onClick={() => (showSettings.value = true)}
-              >
-                <Settings size={18} />
-              </button>
-            </HTooltip>
-          </div>
-        </div>
 
-        <AccountSwitcherModal
-          modelValue={showSwitcher.value}
-          onUpdate:modelValue={(v: boolean) => (showSwitcher.value = v)}
-        />
-        <SettingsModal
-          modelValue={showSettings.value}
-          onUpdate:modelValue={(v: boolean) => (showSettings.value = v)}
-        />
+          {/* active client — same button style as the account below; opens
+              settings on the 游戏路径 table where clients are switched */}
+          <HTooltip text={activeInstallPath.value || t("common.gamePath.noneFound")} placement="right">
+            <button
+              type="button"
+              class="sidebar__footer-btn"
+              onClick={() => ui.show("gamePath")}
+            >
+              <span class="sidebar__footer-btn-label">
+                {activeInstallLabel.value || t("replay.client")}
+              </span>
+            </button>
+          </HTooltip>
+
+          {/* active account — opens settings on the 账户 section */}
+          <button type="button" class="sidebar__footer-btn" onClick={() => ui.show("account")}>
+            <span class="sidebar__footer-btn-label">{accountLabel.value}</span>
+          </button>
+        </div>
       </aside>
     );
   },

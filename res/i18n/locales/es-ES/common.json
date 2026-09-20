@@ -40,13 +40,13 @@
     "unset": "Sin establecer",
     "detected": "Instalaciones detectadas",
     "browse": "Examinar carpeta…",
-    "pick": "Elegir carpeta del juego…",
     "redetect": "Volver a detectar",
     "runningHint": "Juego en ejecución detectado: {path}",
     "useRunning": "Usar esta ruta",
     "noneFound": "No se detectó ninguna instalación del juego. Selecciona manualmente la carpeta de instalación (debe contener WorldOfWarships.exe y una carpeta bin/).",
     "applied": "Ruta del juego actualizada",
     "invalid": "La carpeta seleccionada no es válida",
-    "setAction": "Establecer ruta del juego"
+    "setAction": "Establecer ruta del juego",
+    "inUse": "En uso"
   }
 }

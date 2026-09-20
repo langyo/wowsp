@@ -13,6 +13,10 @@ import "./AppTitleBar.scss";
  * events since WebView2 does not honor CSS `app-region` in plain
  * frameless windows.
  *
+ * `customActions` (extra icon buttons left of minimize — the app puts the
+ * settings gear there) pass through verbatim; their clicks surface as the
+ * `action` emit with the button's id.
+ *
  * Self-guards: outside Tauri (plain browser) it renders the bar inert —
  * browser chrome already provides window controls.
  */
@@ -23,8 +27,15 @@ export default defineComponent({
     title: { type: String, default: "WoWSP" },
     subtitle: { type: String, default: "" },
     showMaximize: { type: Boolean, default: true },
+    customActions: {
+      type: Array as () => { id: string; label: string; icon?: unknown }[],
+      default: () => [],
+    },
   },
-  setup(props) {
+  emits: {
+    action: (_id: string) => true,
+  },
+  setup(props, { emit }) {
     const maximized = ref(false);
     let win: ReturnType<typeof getCurrentWindow> | null = null;
     let unlistenResize: (() => void) | null = null;
@@ -80,8 +91,10 @@ export default defineComponent({
           subtitle={props.subtitle}
           maximized={maximized.value}
           showMaximize={props.showMaximize}
+          customActions={props.customActions}
           onMinimize={() => win?.minimize().catch(() => {})}
           onClose={() => win?.close().catch(() => {})}
+          onAction={(id: string) => emit("action", id)}
           // upstream declares the emit as kebab-case "toggle-maximize";
           // under plain tsc the JSX key must match it verbatim (spread form,
           // since a quoted key is not a valid JSX attribute name).
