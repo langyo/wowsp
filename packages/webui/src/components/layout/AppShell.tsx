@@ -105,33 +105,42 @@ export default defineComponent({
           if (!editable) event.preventDefault();
         });
       }
-      // Resource packs (production only; dev uses publicDir). The model pack
-      // auto-downloads ONLY when entirely missing (lite install / wiped
-      // cache) — an outdated-but-present pack is surfaced as an update in
-      // Settings → cache management instead of silently re-pulling ~1.2 GB
-      // on every launch. The dog-tag pack is tiny and still auto-refreshes.
+      // Resource pack (production only; dev uses publicDir). APP UPDATES
+      // GO FIRST: this pass waits for the updater's delayed probe, so a
+      // pending app update (whose installer restarts the app) always
+      // precedes a ~1.2 GB pack pull — the pack catches up after the
+      // restart. The pack auto-downloads ONLY when entirely missing (lite
+      // install / wiped cache); an outdated-but-present pack is surfaced
+      // in Settings → updates instead of silently re-pulling.
       if (!import.meta.env.DEV) {
         void cacheStore.init();
         void (async () => {
           try {
-            const status = await api.getPackStatus();
-            const models = status.find((p) => p.id === "models");
-            if (models && !models.present) {
-              await initModelPack(() => api.ensureModelPack());
+            await updater.init().then(() => updater.waitForCheck());
+            if (updater.available) {
+              // A newer build is pending and its prompt is up — the pack
+              // waits for the post-update restart.
               return;
             }
-            // Present (or status unavailable): refresh the remote stamps so
-            // the cache panel's update banner is ready when it opens.
+            // Dog-tag assets prefer the cached pack (models + dogtags ship
+            // as one content-addressed pack); the bundled snapshot serves
+            // while the pack is absent.
+            void initDogtagPack(() => api.ensureResPack()).catch(() => {});
+            const status = await api.getResStatus();
+            if (!status.present) {
+              await initModelPack(() => api.ensureResPack());
+              return;
+            }
+            // Present (or status unavailable): refresh the remote manifest
+            // so the updates panel's banner is ready when it opens.
             await cacheStore.refreshUpdates();
           } catch {
-            // Older shell without the status command — fall back to the
-            // historical unconditional ensure so the pack still wires up.
-            void initModelPack(() => api.ensureModelPack()).catch(() => {});
+            // Older shell / offline — fall back to the unconditional
+            // ensure so the pack still wires up (it serves whatever is on
+            // disk when the network is unreachable).
+            void initModelPack(() => api.ensureResPack()).catch(() => {});
           }
         })();
-        // Dog-tag pack overlays the bundled medals snapshot (small; its own
-        // release asset so it refreshes without re-downloading the models).
-        void initDogtagPack(() => api.ensureDogtagPack()).catch(() => {});
       }
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].

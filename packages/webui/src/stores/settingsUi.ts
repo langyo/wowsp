@@ -9,7 +9,7 @@ export type SettingsSection =
   | "gamePath"
   | "account"
   | "network"
-  | "cache"
+  | "updates"
   | "overlay"
   | "about"
   | "attributions";

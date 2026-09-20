@@ -71,10 +71,13 @@ const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-conf
 const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
 /// Build flavor identity (model-pack + WebView2 bundling), stamped by build.rs.
 const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.txt"));
-/// res-latest asset updated_at the staged models were packed from
-/// ("" when unknown — e.g. plain `cargo build`); written as the
-/// app's model-cache version stamp after relocation.
-const SHUN_MODEL_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-model-version.txt"));
+/// Content tree hash of the staged resource pack ("" when unknown — e.g.
+/// plain `cargo build` or an unreachable res-latest manifest); written
+/// with the version below into the app's `.res-version.json` stamp after
+/// relocation, so first launch treats the shipped pack as current.
+const SHUN_RES_TREE_SHA256: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-tree.txt"));
+/// The published-at timestamp that shipped with that tree hash.
+const SHUN_RES_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-version.txt"));
 /// License texts per wizard locale (SySL + official translations).
 const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"));
 const LICENSE_ZH_HANS: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hans.txt"));
@@ -904,7 +907,7 @@ async fn start_install(
             );
         }
         cleanup_bootstrap_payload(&install_dir);
-        relocate_model_pack(&install_dir, portable);
+        relocate_res_pack(&install_dir, portable);
         write_flavor_marker(&install_dir);
         Ok(())
     })
@@ -920,67 +923,87 @@ fn cleanup_bootstrap_payload(install_dir: &Path) {
     let _ = std::fs::remove_dir_all(install_dir.join(WEBVIEW2_PAYLOAD_PREFIX));
 }
 
-/// Relocates the payload's shipped model pack into the location the
-/// application's model-pack cache resolves to (the paths.rs conventions:
-/// portable → `<dir>/data/cache`, local → `%LOCALAPPDATA%\WoWSP`). The
-/// extraction lands at `<dir>/models`; a rename usually suffices, falling
-/// back to a recursive copy across volumes. After a successful relocation
-/// the pack is stamped with the res-latest `updated_at` it was packed
-/// from (`<cache>/.version`) so the app treats it as current instead of
-/// re-downloading on first launch; no stamp when the version is unknown
+/// Relocates the payload's shipped resource pack (`models/` + `dogtags/`)
+/// into the location the application's resource cache resolves to (the
+/// paths.rs conventions: portable → `<dir>/data/cache`, local →
+/// `%LOCALAPPDATA%\WoWSP`). The extraction lands at `<dir>/models` /
+/// `<dir>/dogtags`; a rename usually suffices, falling back to a recursive
+/// copy across volumes. An existing target sub-directory is REMOVED first
+/// so the shipped pack REPLACES (not merges with) whatever an older full
+/// installer left behind — a merge would keep files the new pack dropped,
+/// which is exactly the stale-mix that broke parsing before.
+///
+/// After a successful relocation the pack is stamped with the
+/// content-tree hash + published-at it was packed from
+/// (`<cache>/.res-version.json`) so the app treats it as current instead
+/// of re-downloading on first launch; no stamp when the hash is unknown
 /// or the pack is absent (plain `cargo build` payload).
-fn relocate_model_pack(install_dir: &Path, portable: bool) {
-    let from = install_dir.join("models");
-    if !from.is_dir() {
-        return;
-    }
-    let mut to = if portable {
+fn relocate_res_pack(install_dir: &Path, portable: bool) {
+    let cache = if portable {
         install_dir.join("data").join("cache")
     } else {
         local_appdata().join("WoWSP")
     };
-    let _ = std::fs::create_dir_all(&to);
-    to.push("models");
+    let _ = std::fs::create_dir_all(&cache);
 
-    // The pack ends up in place when it was already at its final home
-    // (nothing to move), when the rename fast path succeeds, or when the
-    // recursive-copy fallback lands it across volumes.
-    let moved = if to == from || std::fs::rename(&from, &to).is_ok() {
-        true
-    } else {
-        let copied = copy_dir_recursive(&from, &to);
-        if copied {
-            let _ = std::fs::remove_dir_all(&from);
+    // The stamp may only be written when EVERY shipped sub-directory
+    // landed — a partial relocation (disk full / AV lock mid-copy) stamped
+    // as complete would leave the app believing it is current and never
+    // offering the repair download.
+    let mut shipped = 0usize;
+    let mut relocated = 0usize;
+    for subdir in ["models", "dogtags"] {
+        let from = install_dir.join(subdir);
+        if !from.is_dir() {
+            continue;
         }
-        copied
-    };
-    if !moved {
+        shipped += 1;
+        let to = cache.join(subdir);
+        if to == from {
+            relocated += 1;
+            continue;
+        }
+        // Replace semantics: wipe the target first so no stale files from
+        // an older shipped pack survive beside the new one.
+        if to.exists() {
+            let _ = std::fs::remove_dir_all(&to);
+        }
+        let moved = if std::fs::rename(&from, &to).is_ok() {
+            true
+        } else {
+            let copied = copy_dir_recursive(&from, &to);
+            if copied {
+                let _ = std::fs::remove_dir_all(&from);
+            }
+            copied
+        };
+        relocated += usize::from(moved);
+    }
+    if shipped == 0 || relocated != shipped {
         return;
     }
 
-    // Stamp the relocated pack as the res-latest version it was packed
-    // from, so the app's update check sees it as current instead of
-    // re-downloading ~1.2 GB on first launch. No stamp when the version
-    // is unknown; the app then falls back to its normal fetch-or-serve
-    // behavior. (Same file the app's write_cached_version uses.)
-    let version = SHUN_MODEL_VERSION.trim();
-    if !version.is_empty() {
-        if let Some(cache) = to.parent() {
-            let _ = std::fs::write(cache.join(".version"), version);
-        }
+    // Stamp the relocated pack with the content hash it was packed from,
+    // so the app's update check sees it as current instead of re-downloading
+    // ~1.2 GB on first launch. No stamp when the hash is unknown; the app
+    // then falls back to its normal fetch-or-serve behavior. (Same file the
+    // app's write_local_version uses; both values are build-time constants
+    // so the JSON needs no serializer.)
+    let tree = SHUN_RES_TREE_SHA256.trim();
+    let version = SHUN_RES_VERSION.trim();
+    if !tree.is_empty() {
+        let stamp = format!("{{\"treeSha256\":\"{tree}\",\"version\":\"{version}\"}}");
+        let _ = std::fs::write(cache.join(".res-version.json"), stamp);
     }
 }
 
 /// Stages the install flavor (`full` / `full-webview2` / `lite`) next to the
-/// app as `wowsp-flavor.txt`. The app's updater reads it to pick its own
-/// update artifact — a lite install must keep updating with the `-lite`
-/// installer instead of silently ballooning to the full payload. Failures
-/// are ignored: the app then falls back to the full artifact name.
+/// app as `wowsp-flavor.txt`. Since 0.4 the app updater always picks the
+/// `-lite` artifact (the resource pack rides its own channel), so this is
+/// now a diagnostic marker; it stays for older builds that still read it
+/// to pick their update artifact. Failures are ignored.
 fn write_flavor_marker(install_dir: &Path) {
-    let _ = std::fs::write(
-        install_dir.join("wowsp-flavor.txt"),
-        SHUN_FLAVOR.trim().to_string(),
-    );
+    let _ = std::fs::write(install_dir.join("wowsp-flavor.txt"), SHUN_FLAVOR.trim());
 }
 
 /// Recursively copies `from` into `to` (creating directories as needed).
@@ -1113,7 +1136,7 @@ fn run_headless(
         println!("shun: removed {stale} stale file(s) from the previous install");
     }
     cleanup_bootstrap_payload(&install_dir);
-    relocate_model_pack(&install_dir, portable);
+    relocate_res_pack(&install_dir, portable);
     write_flavor_marker(&install_dir);
     // Shortcut policy on the silent path:
     //

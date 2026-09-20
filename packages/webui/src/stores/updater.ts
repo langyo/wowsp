@@ -221,6 +221,23 @@ export const useUpdaterStore = defineStore("updater", () => {
     setTimeout(() => void check(), delayMs);
   }
 
+  /** Resolve once the startup check has settled — immediately when the
+   *  updater is disabled (portable) or already checked, and never later
+   *  than `timeoutMs` (a dead network must not stall the caller). The
+   *  resource pack's startup pass uses this to let app updates go first. */
+  function waitForCheck(timeoutMs = 15000): Promise<void> {
+    if (checked.value || portable.value) return Promise.resolve();
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const timer = window.setInterval(() => {
+        if (checked.value || portable.value || Date.now() - started >= timeoutMs) {
+          window.clearInterval(timer);
+          resolve();
+        }
+      }, 250);
+    });
+  }
+
   return {
     available,
     version,
@@ -242,6 +259,7 @@ export const useUpdaterStore = defineStore("updater", () => {
     downloadAndInstall,
     cancelDownload,
     scheduleAutoCheck,
+    waitForCheck,
     offerPrompt,
   };
 });

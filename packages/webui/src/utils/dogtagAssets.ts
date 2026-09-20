@@ -6,10 +6,11 @@
  * in `src/data/dogtags_map.json`. Both are snapshots of the game client, so
  * medals Wargaming adds later are unknown until a new app build ships.
  *
- * The desktop shell bridges that gap: `ensure_dogtag_pack()` downloads the
- * `wowsp-dogtags.tar.gz` asset from the rotating `res-latest` release (see
- * `scripts/release_models.py`), which carries a refreshed map plus any new
- * part images. initDogtagPack() wires that pack in once at startup:
+ * The desktop shell bridges that gap: `ensure_res_pack()` serves the
+ * content-addressed resource pack from the fixed `res-latest` release
+ * (see `scripts/release_models.py`), whose `dogtags/` subtree carries a
+ * refreshed map plus any new part images. initDogtagPack() wires that
+ * pack in once at startup:
  *
  *   - dogtagAssetUrl() serves part images from the pack cache (via
  *     convertFileSrc), falling back to the bundled publicDir paths during

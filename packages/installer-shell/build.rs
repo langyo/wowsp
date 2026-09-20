@@ -47,14 +47,17 @@ fn main() {
     let flavor = std::env::var("SHUN_FLAVOR").unwrap_or_else(|_| "dev".into());
     std::fs::write(out_dir.join("shun-flavor.txt"), flavor).expect("write flavor");
 
-    // 4. Model-pack version stamp: the res-latest asset updated_at the
-    //    staged models were packed from. The installer writes it next to
-    //    the relocated models so the app treats the shipped pack as
-    //    current instead of re-downloading it on first launch.
-    let model_version = std::env::var("SHUN_MODEL_VERSION").unwrap_or_default();
-    std::fs::write(out_dir.join("shun-model-version.txt"), model_version)
-        .expect("write model version");
-    println!("cargo:rerun-if-env-changed=SHUN_MODEL_VERSION");
+    // 4. Resource-pack stamp: the content-tree hash + published-at the
+    //    staged resources were packed from (read from the res-latest
+    //    manifest at build time). The installer writes them next to the
+    //    relocated pack so the app treats the shipped resources as
+    //    current instead of re-downloading them on first launch.
+    let res_tree = std::env::var("SHUN_RES_TREE_SHA256").unwrap_or_default();
+    std::fs::write(out_dir.join("shun-res-tree.txt"), res_tree).expect("write res tree hash");
+    println!("cargo:rerun-if-env-changed=SHUN_RES_TREE_SHA256");
+    let res_version = std::env::var("SHUN_RES_VERSION").unwrap_or_default();
+    std::fs::write(out_dir.join("shun-res-version.txt"), res_version).expect("write res version");
+    println!("cargo:rerun-if-env-changed=SHUN_RES_VERSION");
 
     // 5. License: the SySL text plus official translations. The zh texts
     //    are vendored from celestia-island/sysl (licenses/); en comes from
