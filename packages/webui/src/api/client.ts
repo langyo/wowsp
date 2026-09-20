@@ -609,6 +609,11 @@ export interface PlayerStats {
   soloWr?: number | null;
   div2Wr?: number | null;
   div3Wr?: number | null;
+  /** Battle counts behind each division winrate (the split tooltips).
+   *  Absent on cache files written before these fields existed. */
+  soloBattles?: number | null;
+  div2Battles?: number | null;
+  div3Battles?: number | null;
 }
 
 /** Player-name autocomplete item (WG account/list). Mirrors `wowsp_tauri_shared::PlayerSuggestion`. */
