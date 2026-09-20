@@ -464,14 +464,36 @@ export default defineComponent({
     const flagTip = ref<{ sig: SignalEntry; cx: number; bottom: number } | null>(null);
     const flagTipEl = ref<HTMLElement | null>(null);
     const flagTipPos = ref<Record<string, string>>({ left: "0px", top: "0px", visibility: "hidden" });
+    // Faded hover card: the DOM stays through a short leave transition
+    // (delayed unmount) instead of snapping; `mounted` drives the leave
+    // class while `flagTip` keeps serving the frozen content.
+    const flagTipMounted = ref(false);
+    let flagTipHideTimer: number | undefined;
 
     function hideFlagTip(): void {
-      flagTip.value = null;
       window.removeEventListener("scroll", hideFlagTip, true);
+      if (flagTipHideTimer !== undefined) {
+        window.clearTimeout(flagTipHideTimer);
+        flagTipHideTimer = undefined;
+      }
+      if (!flagTipMounted.value) {
+        flagTip.value = null;
+        return;
+      }
+      flagTipMounted.value = false;
+      flagTipHideTimer = window.setTimeout(() => {
+        flagTipHideTimer = undefined;
+        flagTip.value = null;
+      }, 180);
     }
     function showFlagTip(sig: SignalEntry, el: HTMLElement): void {
+      if (flagTipHideTimer !== undefined) {
+        window.clearTimeout(flagTipHideTimer);
+        flagTipHideTimer = undefined;
+      }
       const r = el.getBoundingClientRect();
       flagTip.value = { sig, cx: r.left + r.width / 2, bottom: r.bottom };
+      flagTipMounted.value = true;
       // Any scroll (capture: the modal body scrolls, not the window) moves a
       // fixed card off its anchor — hide, same trade the global hint makes.
       window.addEventListener("scroll", hideFlagTip, true);
@@ -494,7 +516,14 @@ export default defineComponent({
       { flush: "post" },
     );
     watch(section, hideFlagTip);
-    onScopeDispose(hideFlagTip);
+    onScopeDispose(() => {
+      window.removeEventListener("scroll", hideFlagTip, true);
+      if (flagTipHideTimer !== undefined) {
+        window.clearTimeout(flagTipHideTimer);
+        flagTipHideTimer = undefined;
+      }
+      flagTip.value = null;
+    });
 
     /** Signed percent text, game-style: "+5%" / "−5%" / "+0.5%". */
     function signedPct(v: number): string {
@@ -839,7 +868,11 @@ export default defineComponent({
                transform, which would re-anchor a plain fixed card and its
                overflow:hidden would clip it away entirely. */
             <Teleport to="body">
-              <div class="flag-card" ref={flagTipEl} style={flagTipPos.value}>
+              <div
+                class={["flag-card", !flagTipMounted.value ? "flag-card--leave" : ""]}
+                ref={flagTipEl}
+                style={flagTipPos.value}
+              >
                 <div class="flag-card__name">{signalName(tip.sig)}</div>
                 <div class="flag-card__flavor">{dataText(tip.sig.desc, "")}</div>
                 <div class="flag-card__effects">

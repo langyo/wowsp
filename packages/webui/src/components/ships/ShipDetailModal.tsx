@@ -161,6 +161,11 @@ export default defineComponent({
       (s) => {
         // Water-table opens land straight on My Stats with the hologram
         // collapsed; encyclopedia opens keep the specs-first full stage.
+        // Closing (ship → null) must NOT run this reset: the leave
+        // animation is still folding the old content, and re-seating the
+        // tab/stage mid-fold blanks what the user is looking at. Every
+        // meaningful open re-runs the reset anyway.
+        if (!s) return;
         const water = props.source === "water";
         tab.value = water ? "mystats" : "specs";
         stageHidden.value = water;
@@ -169,11 +174,9 @@ export default defineComponent({
         gpError.value = null;
         myStatsLoaded.value = false;
         build.value = emptyBuild();
-        if (s) {
-          void loadGameparams();
-          void trends.loadCommunity(s.shipId);
-          if (water) void loadMyStats();
-        }
+        void loadGameparams();
+        void trends.loadCommunity(s.shipId);
+        if (water) void loadMyStats();
       },
       { immediate: true },
     );
@@ -185,10 +188,28 @@ export default defineComponent({
 
     const open = computed(() => props.ship !== null);
 
+    // ── Leave-animation snapshot ─────────────────────────────────────────
+    // Views null the ship prop on the close edge (the `close` emit), so the
+    // live prop goes empty while the modal is still folding out. Render
+    // against the last non-null ship so the exit animation frames the real
+    // content instead of a blank shell — belt-and-braces on top of hikari's
+    // modal content hold (same discipline as shittim-chest's log windows,
+    // which never clear their payload on the close arm).
+    const heldShip = ref<ShipInfo | null>(null);
+    watch(
+      () => props.ship,
+      (s) => {
+        if (s) heldShip.value = s;
+      },
+      { immediate: true },
+    );
+    const viewShip = computed(() => props.ship ?? heldShip.value);
+
     const myShipStats = computed(() => {
       const acc = playerCtx.value;
-      if (!acc || !props.ship) return null;
-      return shipStats.getShip(acc.accountId, acc.realm, props.ship.shipId);
+      const ship = viewShip.value;
+      if (!acc || !ship) return null;
+      return shipStats.getShip(acc.accountId, acc.realm, ship.shipId);
     });
 
     /** Player-side numbers feeding the server-trend comparison table. */
@@ -203,11 +224,12 @@ export default defineComponent({
     });
 
     const relevantPatches = computed(() => {
-      if (!props.ship || !trends.playerTrend) return [];
-      return trends.playerTrend.patches.filter((p) => p.shipIds.includes(props.ship!.shipId));
+      const ship = viewShip.value;
+      if (!ship || !trends.playerTrend) return [];
+      return trends.playerTrend.patches.filter((p) => p.shipIds.includes(ship.shipId));
     });
 
-    const dp = computed(() => (props.ship?.defaultProfile ?? {}) as Record<string, unknown>);
+    const dp = computed(() => (viewShip.value?.defaultProfile ?? {}) as Record<string, unknown>);
 
     // ── Armor overlay data (from GameParams, passed to ShipStage) ──────────
     const armorZones = computed<ArmorZone[]>(() => {
@@ -298,21 +320,23 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
-    const rarity = computed(() =>
-      props.ship ? shipRarity(props.ship) : "common",
-    );
-    const typeShort = computed(() =>
-      props.ship ? SHIP_TYPE_SHORT[props.ship.type] ?? "?" : "?",
-    );
+    const rarity = computed(() => {
+      const ship = viewShip.value;
+      return ship ? shipRarity(ship) : "common";
+    });
+    const typeShort = computed(() => {
+      const ship = viewShip.value;
+      return ship ? SHIP_TYPE_SHORT[ship.type] ?? "?" : "?";
+    });
 
     return () => (
       <HModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
-        title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
+        title={viewShip.value ? `${tierToRoman(viewShip.value.tier)} ${useEncyclopediaStore().shipDisplayName(viewShip.value)}` : t("ships.detail.title")}
         width="80vw"
       >
-        {!props.ship ? null : (
+        {!viewShip.value ? null : (
           <div class="ship-detail">
             {/* holographic stage: shown for all tabs except skill (where the
                 build planner replaces it). Water-table opens start with the
@@ -322,7 +346,7 @@ export default defineComponent({
               <>
                 <ShipStage
                   ref={stageRef}
-                  ship={props.ship}
+                  ship={viewShip.value}
                   armorZones={armorZones.value}
                   waterlineDraft={waterlineDraft.value}
                   hidden={stageHidden.value}
@@ -336,11 +360,11 @@ export default defineComponent({
 
             {/* identity header */}
             <div class="ship-detail__id">
-              <HTag variant="primary">{tierToRoman(props.ship.tier)}</HTag>
-              <HTag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</HTag>
+              <HTag variant="primary">{tierToRoman(viewShip.value.tier)}</HTag>
+              <HTag variant="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</HTag>
               <NationFlag
-                nation={props.ship.nation}
-                label={nationLabel(props.ship.nation)}
+                nation={viewShip.value.nation}
+                label={nationLabel(viewShip.value.nation)}
                 variant="flag"
                 size="md"
                 showLabel
@@ -350,8 +374,8 @@ export default defineComponent({
               </HTag>
             </div>
 
-            {props.ship.description ? (
-              <p class="ship-detail__desc">{props.ship.description}</p>
+            {viewShip.value.description ? (
+              <p class="ship-detail__desc">{viewShip.value.description}</p>
             ) : null}
 
             {/* Armor-data failure banner: shows the backend error plus the
@@ -384,7 +408,7 @@ export default defineComponent({
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
-                  <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
+                  <div key="specs"><SpecsPanel profile={dp.value} nation={viewShip.value.nation} /></div>
                 ) : tab.value === "mystats" ? (
                 <div class="ship-detail__mystats" key="mystats">
                   <ShipMyStatsPanel
@@ -406,7 +430,7 @@ export default defineComponent({
                 </div>
               ) : tab.value === "community" ? (
                 <div class="ship-detail__community" key="community">
-                  <ServerTrendPanel shipId={props.ship.shipId} compare={serverCompare.value} />
+                  <ServerTrendPanel shipId={viewShip.value.shipId} compare={serverCompare.value} />
                   {trends.communityTrend?.available ? (
                     <div class="ship-detail__trend">
                       <h4>{t("trend.winrateOverTime")}</h4>
@@ -417,7 +441,7 @@ export default defineComponent({
               ) : (
                 <div class="ship-detail__skill" key="skill">
                   <BuildPlanner
-                    ship={props.ship}
+                    ship={viewShip.value}
                     build={build.value}
                     gameRoot={props.gameRoot}
                     onUpdate:build={(b: PlannerBuild) => (build.value = b)}
