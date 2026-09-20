@@ -1,7 +1,8 @@
-import { computed, defineComponent, onMounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref, watch } from "vue";
 import {
   Check,
   Copyright,
+  Database,
   FolderCog,
   FolderOpen,
   Globe,
@@ -43,6 +44,7 @@ import {
   type TableAnchorMode,
 } from "@/stores/overlayConfig";
 import { useSettingsUiStore, type SettingsSection } from "@/stores/settingsUi";
+import { useCacheStore, type PackId } from "@/stores/cache";
 import { AboutContent } from "@/components/layout/AboutModal";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
 import RealmFlag from "@/components/base/RealmFlag";
@@ -202,11 +204,23 @@ export default defineComponent({
     }
 
     async function saveNet() {
+      // Re-fetch the CURRENT config so fields this section does not edit
+      // (githubMirror — saved from the cache section — and future additions)
+      // survive the round-trip instead of being reverted to mount-time
+      // snapshots.
+      let base: NetworkConfig;
+      try {
+        base = await api.getNetworkConfig();
+      } catch {
+        base = { ...netLastSaved.value };
+      }
       const payload: NetworkConfig = {
+        ...base,
         mode: netCfg.value.mode,
         proxy: netCfg.value.proxy?.trim() || null,
         resourceCdn: netCfg.value.resourceCdn?.trim() || null,
       };
+      delete payload.effectiveProxy;
       try {
         await api.setNetworkConfig(payload);
         netCfg.value = { ...payload };
@@ -219,6 +233,125 @@ export default defineComponent({
       }
     }
 
+    // ── Cache management (resource packs + mirror + aux caches) ──────────
+    const cacheStore = useCacheStore();
+    /** Mirror input draft; commits through the cache store (which spreads
+     *  the rest of the network config). */
+    const mirrorDraft = ref("");
+    const mirrorSavedFlash = ref(false);
+    let mirrorFlashTimer: number | undefined;
+    /** Two-step delete confirm per pack (id of the armed row). */
+    const clearArmed = ref<string | null>(null);
+    /** Two-step aux-cache clear confirm (scope of the armed row). */
+    const auxArmed = ref<string | null>(null);
+    /** Common ghproxy presets — click to fill the input. */
+    const MIRROR_PRESETS = [
+      "https://ghfast.top",
+      "https://gh-proxy.com",
+      "https://ghproxy.net",
+    ] as const;
+
+    const mirrorDirty = computed(
+      () => (mirrorDraft.value.trim() || null) !== (cacheStore.githubMirror ?? null),
+    );
+
+    watch(
+      () => ui.section,
+      (id) => {
+        // Leaving the section disarms any pending two-step confirm.
+        clearArmed.value = null;
+        auxArmed.value = null;
+        if (id !== "cache") return;
+        void cacheStore.refreshStatus();
+        void cacheStore.loadMirror().then(() => {
+          mirrorDraft.value = cacheStore.githubMirror ?? "";
+        });
+        if (!cacheStore.updatesCheckedAt) void cacheStore.refreshUpdates();
+      },
+    );
+
+    // The modal stays mounted, so reopening it while still on the cache
+    // section would show stale sizes/versions — refresh on open too.
+    watch(
+      () => ui.visible,
+      (open) => {
+        if (open && ui.section === "cache") {
+          void cacheStore.refreshStatus();
+          void cacheStore.refreshUpdates();
+        }
+      },
+    );
+
+    async function saveMirror() {
+      if (!mirrorDirty.value) return;
+      try {
+        await cacheStore.saveMirror(mirrorDraft.value || null);
+        mirrorDraft.value = cacheStore.githubMirror ?? "";
+        mirrorSavedFlash.value = true;
+        window.clearTimeout(mirrorFlashTimer);
+        mirrorFlashTimer = window.setTimeout(() => (mirrorSavedFlash.value = false), 1600);
+      } catch {
+        // best-effort — desktop persists it
+      }
+    }
+
+    /** Human-readable bytes (1 decimal under GB, integer above). */
+    function formatBytes(n: number): string {
+      if (!n) return "0 MB";
+      if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(2)} GB`;
+      if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MB`;
+      return `${Math.max(1, Math.round(n / 1024))} KB`;
+    }
+
+    /** The release `updated_at` stamp shown as a local date-time. */
+    function formatStamp(stamp?: string | null): string {
+      if (!stamp) return t("settings.cacheVersionUnknown");
+      const d = new Date(stamp);
+      return Number.isNaN(d.getTime()) ? stamp : d.toLocaleString();
+    }
+
+    function packTitle(id: PackId): string {
+      return id === "models"
+        ? t("settings.cachePackModels")
+        : t("settings.cachePackDogtags");
+    }
+
+    function packDesc(id: PackId): string {
+      return id === "models"
+        ? t("settings.cachePackModelsDesc")
+        : t("settings.cachePackDogtagsDesc");
+    }
+
+    /** Aux-cache scope → i18n keys (unknown future scopes render raw). */
+    const AUX_LABELS: Record<string, { title: string; desc: string }> = {
+      "image-cache": {
+        title: "settings.cacheAuxImageCache",
+        desc: "settings.cacheAuxImageCacheDesc",
+      },
+      gameparams: {
+        title: "settings.cacheAuxGameparams",
+        desc: "settings.cacheAuxGameparamsDesc",
+      },
+      encyclopedia: {
+        title: "settings.cacheAuxEncyclopedia",
+        desc: "settings.cacheAuxEncyclopediaDesc",
+      },
+      community: {
+        title: "settings.cacheAuxCommunity",
+        desc: "settings.cacheAuxCommunityDesc",
+      },
+    };
+
+    function auxTitle(scope: string): string {
+      const key = AUX_LABELS[scope]?.title;
+      return key ? t(key) : scope;
+    }
+
+    function auxDesc(scope: string): string {
+      const key = AUX_LABELS[scope]?.desc;
+      return key ? t(key) : "";
+    }
+
     // ── section rail ────────────────────────────────────────────────────────
     // The left rail mirrors the main sidebar's nav look; only the active
     // section's card renders in the content pane. Section identity lives in
@@ -229,6 +362,7 @@ export default defineComponent({
       gamePath: FolderCog,
       account: UserRound,
       network: Globe,
+      cache: Database,
       overlay: Layers,
       about: Info,
       attributions: Copyright,
@@ -239,6 +373,7 @@ export default defineComponent({
       gamePath: t("settings.gamePath"),
       account: t("settings.account"),
       network: t("settings.network"),
+      cache: t("settings.cache"),
       overlay: t("settings.overlay"),
       about: t("settings.about"),
       attributions: t("settings.attributions"),
@@ -536,6 +671,200 @@ export default defineComponent({
               />
             </div>
             <p class="settings-modal__hint">{t("settings.resourceCdnHint")}</p>
+          </section>
+
+          </>
+          ) : null}
+          {ui.section === "cache" ? (
+          <>
+          {/* cache management — resource packs (download / update / delete
+              with live progress), the GitHub mirror source for mainland
+              networks, and clearable auxiliary caches. Pack sync versions
+              are the GitHub release asset's updated_at stamp; an outdated
+              pack shows an update banner instead of silently re-downloading
+              gigabytes at startup. */}
+          <section class="settings-modal__group">
+            <div class="settings-modal__packs-head">
+              <h2 class="settings-modal__group-title">{t("settings.cachePacksTitle")}</h2>
+              <HButton
+                size="sm"
+                loading={cacheStore.updatesLoading}
+                onClick={() => void cacheStore.refreshUpdates()}
+              >
+                {t("settings.cacheCheckUpdates")}
+              </HButton>
+            </div>
+            <p class="settings-modal__hint">{t("settings.cachePacksHint")}</p>
+            {cacheStore.anyUpdateAvailable ? (
+              <p class="settings-modal__packs-banner">{t("settings.cacheUpdateBanner")}</p>
+            ) : null}
+            {(["models", "dogtags"] as PackId[]).map((id) => {
+              const st = cacheStore.pack(id);
+              const upd = cacheStore.updateOf(id);
+              const prog = cacheStore.progress[id];
+              const downloading =
+                (st?.downloading ?? false) ||
+                (prog != null && (prog.phase === "download" || prog.phase === "extract"));
+              const pct =
+                prog && prog.phase === "download" && prog.total > 0
+                  ? Math.min(100, Math.round((prog.received / prog.total) * 100))
+                  : 0;
+              return (
+                <div class="settings-modal__pack" key={id}>
+                  <div class="settings-modal__pack-info">
+                    <span class="settings-modal__pack-name">{packTitle(id)}</span>
+                    <span class="settings-modal__pack-desc">{packDesc(id)}</span>
+                    <span class="settings-modal__pack-meta">
+                      {st?.present ? formatBytes(st.sizeBytes) : t("settings.cacheStatusMissing")}
+                      {" · "}
+                      {t("settings.cacheVersionLabel")}
+                      {": "}
+                      {formatStamp(st?.version)}
+                      {upd?.updateAvailable && !downloading ? (
+                        <span class="settings-modal__pack-update">
+                          {t("settings.cacheUpdateAvailable")}
+                        </span>
+                      ) : null}
+                    </span>
+                    {downloading ? (
+                      <div class="settings-modal__pack-progress">
+                        <div
+                          class="settings-modal__pack-progress-fill"
+                          style={{ width: prog?.phase === "extract" ? "100%" : `${pct}%` }}
+                        />
+                      </div>
+                    ) : null}
+                    {prog?.phase === "error" && prog.error ? (
+                      <span class="settings-modal__pack-error">
+                        {t("settings.cacheDownloadFailed")}: {prog.error}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div class="settings-modal__pack-actions">
+                    {downloading ? (
+                      <HButton size="sm" onClick={() => void cacheStore.cancel()}>
+                        {prog?.phase === "extract"
+                          ? t("settings.cacheExtracting")
+                          : t("settings.cacheCancel")}
+                      </HButton>
+                    ) : st?.present ? (
+                      <>
+                        <HButton
+                          variant="primary"
+                          size="sm"
+                          disabled={upd == null || !upd.updateAvailable}
+                          onClick={() => void cacheStore.download(id)}
+                        >
+                          {t("settings.cacheUpdate")}
+                        </HButton>
+                        {clearArmed.value === id ? (
+                          <HButton
+                            variant="danger"
+                            size="sm"
+                            onClick={() => {
+                              clearArmed.value = null;
+                              void cacheStore.clearPack(id);
+                            }}
+                          >
+                            {t("settings.cacheDeleteConfirm")}
+                          </HButton>
+                        ) : (
+                          <HButton
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => (clearArmed.value = id)}
+                          >
+                            {t("settings.cacheDelete")}
+                          </HButton>
+                        )}
+                      </>
+                    ) : (
+                      <HButton
+                        variant="primary"
+                        size="sm"
+                        onClick={() => void cacheStore.download(id)}
+                      >
+                        {t("settings.cacheDownload")}
+                      </HButton>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.cacheMirrorTitle")}</h2>
+            <p class="settings-modal__hint">{t("settings.cacheMirrorHint")}</p>
+            <div class="settings-modal__netmanual">
+              <div class="settings-modal__netinput">
+                <HInput
+                  modelValue={mirrorDraft.value}
+                  onUpdate:modelValue={(v: string) => (mirrorDraft.value = v)}
+                  placeholder={t("settings.cacheMirrorPlaceholder")}
+                  submitOnEnter={() => void saveMirror()}
+                />
+              </div>
+              <HButton size="sm" disabled={!mirrorDirty.value} onClick={() => void saveMirror()}>
+                {mirrorSavedFlash.value
+                  ? t("settings.networkSaved")
+                  : t("settings.networkSave")}
+              </HButton>
+            </div>
+            <div class="settings-modal__mirror-presets">
+              <button
+                type="button"
+                class="settings-modal__mirror-preset"
+                onClick={() => (mirrorDraft.value = "")}
+              >
+                {t("settings.cacheMirrorDirect")}
+              </button>
+              {MIRROR_PRESETS.map((m) => (
+                <button
+                  type="button"
+                  key={m}
+                  class="settings-modal__mirror-preset"
+                  onClick={() => (mirrorDraft.value = m)}
+                >
+                  {m.replace("https://", "")}
+                </button>
+              ))}
+            </div>
+          </section>
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.cacheAuxTitle")}</h2>
+            <p class="settings-modal__hint">{t("settings.cacheAuxHint")}</p>
+            {cacheStore.auxCaches.map((c) => (
+              <div class="settings-modal__pack" key={c.scope}>
+                <div class="settings-modal__pack-info">
+                  <span class="settings-modal__pack-name">{auxTitle(c.scope)}</span>
+                  <span class="settings-modal__pack-desc">{auxDesc(c.scope)}</span>
+                  <span class="settings-modal__pack-meta">{formatBytes(c.sizeBytes)}</span>
+                </div>
+                <div class="settings-modal__pack-actions">
+                  {auxArmed.value === c.scope ? (
+                    <HButton
+                      variant="danger"
+                      size="sm"
+                      onClick={() => {
+                        auxArmed.value = null;
+                        void cacheStore.clearAuxCache(c.scope);
+                      }}
+                    >
+                      {t("settings.cacheDeleteConfirm")}
+                    </HButton>
+                  ) : (
+                    <HButton
+                      variant="secondary"
+                      size="sm"
+                      disabled={c.sizeBytes === 0}
+                      onClick={() => (auxArmed.value = c.scope)}
+                    >
+                      {t("settings.cacheAuxClear")}
+                    </HButton>
+                  )}
+                </div>
+              </div>
+            ))}
           </section>
 
           </>

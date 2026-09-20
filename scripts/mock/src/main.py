@@ -848,7 +848,12 @@ async def cmd_appdata_write(payload: dict) -> None:
 # In-memory only: the browser mock has no real proxy stack, but the settings
 # UI still exercises the same get/set round-trip as the desktop shell.
 
-_MOCK_NETWORK: dict[str, Any] = {"mode": "system", "proxy": None}
+_MOCK_NETWORK: dict[str, Any] = {
+    "mode": "system",
+    "proxy": None,
+    "resourceCdn": None,
+    "githubMirror": None,
+}
 
 
 @app.post("/api/get_network_config")
@@ -860,6 +865,91 @@ async def cmd_get_network_config() -> dict:
 async def cmd_set_network_config(payload: dict) -> None:
     _MOCK_NETWORK["mode"] = payload.get("mode", "system")
     _MOCK_NETWORK["proxy"] = payload.get("proxy")
+    _MOCK_NETWORK["resourceCdn"] = payload.get("resourceCdn")
+    _MOCK_NETWORK["githubMirror"] = payload.get("githubMirror")
+    return None
+
+
+# --- Resource packs / caches (Settings -> Cache management) ----------------
+# Static canned state: the browser mock has no pack downloads, but the panel
+# renders and its buttons round-trip like the desktop shell.
+
+_MOCK_PACKS: dict[str, dict[str, Any]] = {
+    "models": {
+        "id": "models",
+        "present": True,
+        "version": "2026-09-11T09:16:54Z",
+        "sizeBytes": 1_234_567_890,
+        "downloading": False,
+    },
+    "dogtags": {
+        "id": "dogtags",
+        "present": True,
+        "version": "2026-09-11T09:16:54Z",
+        "sizeBytes": 3_141_592,
+        "downloading": False,
+    },
+}
+
+
+@app.post("/api/get_pack_status")
+async def cmd_get_pack_status() -> list[dict]:
+    return list(_MOCK_PACKS.values())
+
+
+@app.post("/api/check_pack_updates")
+async def cmd_check_pack_updates() -> list[dict]:
+    return [
+        {"id": pid, "remoteVersion": p["version"], "updateAvailable": False}
+        for pid, p in _MOCK_PACKS.items()
+    ]
+
+
+@app.post("/api/pack_download")
+async def cmd_pack_download(payload: dict) -> None:
+    # No real download in the mock; flip the flag briefly so the UI path runs.
+    pid = payload.get("id")
+    if pid in _MOCK_PACKS:
+        _MOCK_PACKS[pid]["present"] = True
+    return None
+
+
+@app.post("/api/pack_cancel")
+async def cmd_pack_cancel() -> None:
+    return None
+
+
+@app.post("/api/clear_pack")
+async def cmd_clear_pack(payload: dict) -> None:
+    pid = payload.get("id")
+    if pid in _MOCK_PACKS:
+        _MOCK_PACKS[pid]["present"] = False
+        _MOCK_PACKS[pid]["version"] = None
+        _MOCK_PACKS[pid]["sizeBytes"] = 0
+    return None
+
+
+_MOCK_AUX_CACHES: dict[str, int] = {
+    "image-cache": 84_000_000,
+    "gameparams": 12_000_000,
+    "encyclopedia": 6_500_000,
+    "community": 2_100_000,
+}
+
+
+@app.post("/api/aux_cache_overview")
+async def cmd_aux_cache_overview() -> list[dict]:
+    return [
+        {"scope": scope, "sizeBytes": size}
+        for scope, size in _MOCK_AUX_CACHES.items()
+    ]
+
+
+@app.post("/api/clear_aux_cache")
+async def cmd_clear_aux_cache(payload: dict) -> None:
+    scope = payload.get("scope")
+    if scope in _MOCK_AUX_CACHES:
+        _MOCK_AUX_CACHES[scope] = 0
     return None
 
 

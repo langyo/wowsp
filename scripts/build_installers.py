@@ -5,17 +5,21 @@
 2. Build the installer shell once per variant with ``SHUN_PAYLOAD`` pointing
    at the staged directory (the payload is packed into the shell binary —
    the single-file installer pattern; see packages/installer-shell/build.rs).
-   Every installer carries the FULL payload: the application plus the
-   current 2D/3D model pack, so an install never touches the network for
-   resources. The pack comes from a local bake
-   (``packages/webui/src/res/models`` — ``scripts/fetch_models.py`` output)
-   when present, and is otherwise fetched ONCE from the published
-   ``res-latest`` release and extracted into the same layout — which is what
-   release CI does on its clean runners. The only variant split is WebView2:
+   Flavor split:
 
-   - (default)     — application + full model pack, and
-   - ``webview2``  — the same payload with the Evergreen offline runtime
+   - ``full`` (default) — application + the current 2D/3D model pack, so an
+     install never touches the network for resources. The pack comes from a
+     local bake (``packages/webui/src/res/models`` — ``scripts/fetch_models.py``
+     output) when present, and is otherwise fetched ONCE from the published
+     ``res-latest`` release and extracted into the same layout — which is
+     what release CI does on its clean runners.
+   - ``webview2`` — the full payload with the Evergreen offline runtime
      embedded for machines without the WebView2 runtime.
+   - ``lite`` — the bare application, NO model pack: most features work
+     out of the box and the pack downloads on demand (Settings → cache
+     management, or automatically on the first 3D view). The shell stages a
+     ``wowsp-flavor.txt`` marker so the app's updater keeps picking the
+     ``-lite`` artifact.
 
 The shell's own frontend (``@wowsp/installer-web`` → ``web/dist``) is
 rebuilt before the shell compiles, and the shell's codegen cache is
@@ -23,7 +27,7 @@ purged so the embedded UI is never stale — plain ``cargo build`` would
 happily re-link with a previously expanded asset set.
 
 Artifacts land in ``target/release/bundle/installer/`` as
-``WoWSP_<version>_x64-installer[-webview2].exe``.
+``WoWSP_<version>_x64-installer[-webview2|-lite].exe``.
 
 The Evergreen offline runtime (~180 MB) is cached under
 ``packages/installer-shell/vendor/`` (gitignored).
@@ -325,20 +329,16 @@ def main() -> int:
     )
     ap.add_argument(
         "--flavors",
-        default="full,full-webview2",
-        help="comma list of artifacts to build: full, full-webview2 "
-        "(every installer carries the full model pack; the split is "
-        "WebView2 runtime bundling only)",
+        default="full,full-webview2,lite",
+        help="comma list of artifacts to build: full, full-webview2, lite "
+        "(full flavors carry the model pack; lite downloads it on demand)",
     )
     args = ap.parse_args()
 
     flavors = [f.strip() for f in args.flavors.split(",") if f.strip()]
-    unknown = [f for f in flavors if f not in ("full", "full-webview2")]
+    unknown = [f for f in flavors if f not in ("full", "full-webview2", "lite")]
     if unknown:
-        sys.exit(
-            f"unknown flavor(s): {', '.join(unknown)} — the lite split is "
-            "retired; installers always carry the full model pack"
-        )
+        sys.exit(f"unknown flavor(s): {', '.join(unknown)} — expected full, full-webview2, lite")
 
     version = app_version()
 
@@ -361,18 +361,28 @@ def main() -> int:
     model_version = model_pack_version()
 
     # One shared staging directory: application + full model pack; the
-    # webview2 variant just adds the offline runtime subdirectory.
-    wv2 = ensure_payload()
+    # webview2 variant just adds the offline runtime subdirectory. The
+    # Evergreen download is only needed when a webview2 flavor is built.
+    wv2 = ensure_payload() if any(f.endswith("webview2") for f in flavors) else None
 
     suffixes = {
         "full": "",
         "full-webview2": "-webview2",
+        "lite": "-lite",
     }
 
-    ensure_models(force_fetch=args.models == "fetch")
     stage = stage_payload(app_exe)
-    stage_models(stage)
-    for flavor in flavors:
+    # The lite installer packs the BARE app: build it before the model pack
+    # is staged into the shared directory, so its payload stays slim.
+    if "lite" in flavors:
+        exe = build_installer(stage, "lite", model_version)
+        emit(version, exe, suffixes["lite"])
+
+    full_flavors = [f for f in flavors if f != "lite"]
+    if full_flavors:
+        ensure_models(force_fetch=args.models == "fetch")
+        stage_models(stage)
+    for flavor in full_flavors:
         flavor_stage = stage
         if flavor.endswith("webview2"):
             flavor_stage = stage_webview2(stage, wv2)

@@ -1,200 +1,732 @@
-//! Resource-pack downloader: fetches generated asset packs from GitHub
-//! Releases on first launch and caches them in AppData. Subsequent launches
-//! skip the download as long as the cached asset upload timestamp is
-//! unchanged.
+//! Resource-pack downloader + cache manager.
+//!
+//! Packs (each a top-level `<dir>/` subtree of its tar.gz):
+//!   `models`  baked GLB models (~1.2 GB)  → 3D ships/maps/planes
+//!   `dogtags` dog-tag map + part PNGs (~3 MB)
 //!
 //! Tag convention (shared by every pack):
 //!   `res-latest`           — newest pack (primary download target)
 //!   `res-latest-old-1`     — previous pack (fallback)
 //!   `res-latest-old-2`     — two versions back (final fallback)
 //!
-//! Packs (each a top-level `<dir>/` subtree inside its tar.gz):
-//!   `wowsp-models.tar.gz`   baked GLB models → `ensure_model_pack()`
-//!   `wowsp-dogtags.tar.gz`  dog-tag map + part PNGs → `ensure_dogtag_pack()`
+//! The asset's `updated_at` on the release IS the pack's sync version: it is
+//! stamped into `<cache>/.version[-dogtags]` after a download, and
+//! `check_pack_updates` diffs it against the current `res-latest` stamp so
+//! the Settings → cache-management panel can show "update available" without
+//! downloading anything.
 //!
-//! The frontend calls the `ensure_*` commands once at startup; the returned
-//! cache directory is the pack parent, and assets are served through
-//! `convertFileSrc`. Each pack tracks its own `.version` file (`.version` is
-//! the historical models file), so refreshing the small dog-tag pack never
-//! re-downloads the ~500 MB model pack.
+//! Every GitHub URL (api.github.com metadata AND github.com asset downloads)
+//! is tried through a candidate list: the user-configured mirror
+//! (Settings → cache management, stored in network-config.json) first, then a
+//! direct connection, then the built-in ghproxy-style mirrors — so mainland
+//! China networks can pin a working prefix instead of waiting out the dead
+//! direct attempt.
+//!
+//! `ensure_*` keeps its historical fire-and-forget contract for the startup /
+//! on-demand paths (skip when the stamp matches, installer-shipped pack
+//! counts as present), while `pack_download` is the panel's explicit
+//! download: streaming, progress events (`wowsp://pack-progress`) and
+//! cancellable.
 
 use std::fs;
-use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use flate2::read::GzDecoder;
 use reqwest::Client;
 use tar::Archive;
+use tauri::{AppHandle, Emitter};
+use wowsp_tauri_shared::{AuxCacheStatus, PackProgress, PackStatus, PackUpdate};
+
+use crate::paths;
 
 const REPO: &str = "langyo/wowsp";
-const MODELS_ASSET: &str = "wowsp-models.tar.gz";
-const DOGTAGS_ASSET: &str = "wowsp-dogtags.tar.gz";
 const RELEASE_TAGS: [&str; 3] = ["res-latest", "res-latest-old-1", "res-latest-old-2"];
+pub const PACK_PROGRESS_EVENT: &str = "wowsp://pack-progress";
 
-fn cache_dir() -> Result<PathBuf, String> {
-    crate::paths::ensure_cache_dir()
+/// Built-in ghproxy-style mirror prefixes (the same set the updater races
+/// and mod-catalog falls back to). Tried AFTER a direct connection so they
+/// only carry traffic the direct route cannot.
+const BUILTIN_MIRRORS: [&str; 4] = [
+    "https://ghp.ci/",
+    "https://gh-proxy.com/",
+    "https://ghfast.top/",
+    "https://ghproxy.net/",
+];
+
+/// One downloadable pack's identity: cache layout + release asset.
+struct PackSpec {
+    /// Cache-management id: `models` | `dogtags`.
+    id: &'static str,
+    /// Release asset file name.
+    asset: &'static str,
+    /// Version-stamp file under the cache root.
+    version_file: &'static str,
+    /// Top-level directory inside the archive AND the cache.
+    subdir: &'static str,
 }
 
-fn version_file(name: &str) -> Result<PathBuf, String> {
-    Ok(cache_dir()?.join(name))
+const PACKS: [PackSpec; 2] = [
+    PackSpec {
+        id: "models",
+        asset: "wowsp-models.tar.gz",
+        version_file: ".version",
+        subdir: "models",
+    },
+    PackSpec {
+        id: "dogtags",
+        asset: "wowsp-dogtags.tar.gz",
+        version_file: ".version-dogtags",
+        subdir: "dogtags",
+    },
+];
+
+fn spec_by_id(id: &str) -> Result<&'static PackSpec, String> {
+    PACKS
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| format!("unknown pack id: {id}"))
 }
 
-fn cached_version(name: &str) -> Option<String> {
-    fs::read_to_string(version_file(name).ok()?).ok()
+/// In-flight download bookkeeping: which pack is downloading (single-flight)
+/// plus a cooperative cancel flag the panel sets mid-stream.
+static DOWNLOAD_ACTIVE: Mutex<Option<String>> = Mutex::new(None);
+static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
+
+fn is_downloading(id: &str) -> bool {
+    DOWNLOAD_ACTIVE
+        .lock()
+        .ok()
+        .map(|g| g.as_deref() == Some(id))
+        .unwrap_or(false)
 }
 
-fn write_cached_version(name: &str, version: &str) -> Result<(), String> {
-    let dir = cache_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| format!("create cache dir: {e}"))?;
-    fs::write(version_file(name)?, version).map_err(|e| format!("write version: {e}"))
+fn cache_root() -> Result<PathBuf, String> {
+    paths::ensure_cache_dir()
 }
 
-/// Resolve a GitHub Release asset download URL + upload timestamp for a tag.
-/// The timestamp is the cache version: the tag stays fixed (res-latest) across
-/// packs, so the asset's updated_at is what tells an already-installed app a
-/// new pack was published.
+fn cached_version(cache: &Path, spec: &PackSpec) -> Option<String> {
+    fs::read_to_string(cache.join(spec.version_file))
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn write_cached_version(cache: &Path, spec: &PackSpec, version: &str) -> Result<(), String> {
+    fs::create_dir_all(cache).map_err(|e| format!("create cache dir: {e}"))?;
+    fs::write(cache.join(spec.version_file), version)
+        .map_err(|e| format!("write version stamp: {e}"))
+}
+
+/// Candidate URLs for a GitHub URL: the user-configured mirror first, then
+/// direct, then the built-in mirrors.
+fn mirror_candidates(url: &str) -> Vec<String> {
+    let cfg = super::network::load_config();
+    candidates_with_mirror(cfg.github_mirror.as_deref(), url)
+}
+
+fn candidates_with_mirror(user_mirror: Option<&str>, url: &str) -> Vec<String> {
+    let mut out = Vec::with_capacity(2 + BUILTIN_MIRRORS.len());
+    if let Some(m) = user_mirror.map(str::trim).filter(|m| !m.is_empty()) {
+        out.push(format!("{}/{url}", m.trim_end_matches('/')));
+    }
+    out.push(url.to_string());
+    out.extend(BUILTIN_MIRRORS.iter().map(|m| format!("{m}{url}")));
+    out
+}
+
+/// Resolve a GitHub release asset's download URL + `updated_at` stamp,
+/// trying every mirror candidate (user-configured mirror, direct, built-ins)
+/// before giving up.
 async fn release_asset_info(
     client: &Client,
     tag: &str,
     asset_name: &str,
 ) -> Result<(String, String), String> {
-    let url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
+    let api_url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
+    let mut last_err = format!("no mirror attempted for {tag}");
+    for url in mirror_candidates(&api_url) {
+        match release_asset_info_at(client, &url, asset_name).await {
+            Ok(info) => return Ok(info),
+            Err(e) => last_err = e,
+        }
+    }
+    Err(last_err)
+}
+
+/// One API attempt: GET the release JSON at `api_url`, find the asset.
+async fn release_asset_info_at(
+    client: &Client,
+    api_url: &str,
+    asset_name: &str,
+) -> Result<(String, String), String> {
     let resp: serde_json::Value = client
-        .get(&url)
+        .get(api_url)
         .header("User-Agent", "WoWSP-model-pack/1.0")
         .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| format!("fetch release {tag}: {e}"))?
+        .map_err(|e| format!("fetch release: {e}"))?
         .json()
         .await
-        .map_err(|e| format!("parse release {tag}: {e}"))?;
-
+        .map_err(|e| format!("parse release: {e}"))?;
     let assets = resp["assets"]
         .as_array()
-        .ok_or_else(|| format!("release {tag} has no assets"))?;
-
+        .ok_or_else(|| "release has no assets".to_string())?;
     for asset in assets {
-        let name = asset["name"].as_str().unwrap_or("");
-        if name == asset_name {
+        if asset["name"].as_str() == Some(asset_name) {
             let download_url = asset["browser_download_url"]
                 .as_str()
-                .ok_or_else(|| format!("asset {asset_name} missing download_url"))?
+                .ok_or_else(|| "asset missing download_url".to_string())?
                 .to_string();
             let updated_at = asset["updated_at"].as_str().unwrap_or("").to_string();
             return Ok((download_url, updated_at));
         }
     }
-    Err(format!("asset {asset_name} not found in release {tag}"))
+    Err(format!("asset {asset_name} not found"))
 }
 
-/// Download and extract a pack from an asset URL. `subdir` is the archive's
-/// top-level directory; it is wiped first so stale files never linger.
-async fn download_and_extract(
+/// Recursive directory size in bytes (0 when absent).
+fn dir_size(path: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_dir() {
+            total += dir_size(&entry.path());
+        } else {
+            total += meta.len();
+        }
+    }
+    total
+}
+
+/// Whether a directory exists and holds at least one entry.
+fn dir_populated(path: &Path) -> bool {
+    fs::read_dir(path)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+}
+
+/// Emit a progress event when a handle is available (ensure_* paths run
+/// headless without one).
+fn emit_progress(app: Option<&AppHandle>, progress: &PackProgress) {
+    if let Some(app) = app {
+        let _ = app.emit(PACK_PROGRESS_EVENT, progress);
+    }
+}
+
+/// Stream `url` into `dest`, emitting throttled download progress and
+/// honouring the cancel flag. The generous overall timeout only caps a
+/// stalled transfer — a healthy slow link streams well within it.
+async fn download_to_file(
+    client: &Client,
     url: &str,
     dest: &Path,
-    subdir: &str,
-    client: &Client,
+    id: &str,
+    app: Option<&AppHandle>,
 ) -> Result<(), String> {
-    tracing::info!(url, "downloading resource pack");
-
-    let response = client
+    let mut resp = client
         .get(url)
-        .header("User-Agent", "WoWSP-model-pack/1.0")
+        .timeout(Duration::from_secs(3600))
         .send()
         .await
-        .map_err(|e| format!("download: {e}"))?;
-
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| format!("read response: {e}"))?;
-    let cursor = io::Cursor::new(&body[..]);
-
-    // Remove existing pack contents so we don't accumulate stale files.
-    let pack_root = dest.join(subdir);
-    if pack_root.exists() {
-        fs::remove_dir_all(&pack_root).map_err(|e| format!("clean {subdir} dir: {e}"))?;
+        .map_err(|e| format!("{url}: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("{url}: HTTP {}", resp.status()));
     }
-    fs::create_dir_all(&pack_root).map_err(|e| format!("create {subdir} dir: {e}"))?;
-
-    let gz = GzDecoder::new(cursor);
-    let mut archive = Archive::new(gz);
-    archive
-        .unpack(dest)
-        .map_err(|e| format!("extract resource pack: {e}"))?;
-
-    tracing::info!(url, "resource pack extracted");
+    let total = resp.content_length().unwrap_or(0);
+    let mut file = File::create(dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
+    let mut received = 0u64;
+    let mut since_emit = 0u64;
+    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("{url}: {e}"))? {
+        if DOWNLOAD_CANCEL.load(Ordering::Relaxed) {
+            let _ = fs::remove_file(dest);
+            return Err("cancelled".to_string());
+        }
+        file.write_all(&chunk).map_err(|e| format!("write: {e}"))?;
+        received += chunk.len() as u64;
+        since_emit += chunk.len() as u64;
+        if since_emit >= 262_144 {
+            since_emit = 0;
+            emit_progress(
+                app,
+                &PackProgress {
+                    id: id.to_string(),
+                    phase: "download".into(),
+                    received,
+                    total,
+                    error: None,
+                },
+            );
+        }
+    }
+    file.flush().map_err(|e| format!("flush: {e}"))?;
     Ok(())
 }
 
-/// Ensure one pack is present in the local cache.
+/// Wipe `dest/<subdir>` and unpack the tar.gz at `archive` into `dest`.
+/// Unpack the tar.gz at `archive` into `dest/<subdir>` WITHOUT ever leaving
+/// `dest/<subdir>` in a partial state: the archive is unpacked into a
+/// sibling STAGING directory first and only swapped in after a complete
+/// extraction — a cancel or a corrupt archive leaves the previous pack (if
+/// any) fully intact. Runs on the blocking pool (a ~1.2 GB unpack must not
+/// stall the async runtime).
+fn extract_pack_blocking(archive: &Path, dest: &Path, subdir: &str) -> Result<(), String> {
+    let staging = dest.join(format!(".{subdir}.staging"));
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|e| format!("clean staging dir: {e}"))?;
+    }
+    fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
+    let unpack = || -> Result<(), String> {
+        let file = File::open(archive).map_err(|e| format!("open archive: {e}"))?;
+        let gz = GzDecoder::new(file);
+        let mut tar = Archive::new(gz);
+        tar.set_preserve_permissions(true);
+        tar.unpack(&staging)
+            .map_err(|e| format!("extract resource pack: {e}"))
+    };
+    if let Err(e) = unpack() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(e);
+    }
+    // Swap the staged pack in. Both directories sit under the same cache
+    // root, so the rename cannot cross volumes.
+    let staged = staging.join(subdir);
+    let final_dir = dest.join(subdir);
+    if !staged.is_dir() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!("archive layout: no top-level {subdir}/ directory"));
+    }
+    if final_dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&final_dir) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(format!("replace old {subdir} dir: {e}"));
+        }
+    }
+    if let Err(e) = fs::rename(&staged, &final_dir) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!("move staged {subdir} into place: {e}"));
+    }
+    let _ = fs::remove_dir_all(&staging);
+    Ok(())
+}
+
+/// Download + install one pack. Emits progress events when `app` is given.
+/// Resolves the asset across the tag ladder (res-latest first) and the
+/// download across the mirror ladder. Caller holds the single-flight guard.
+async fn install_pack(
+    spec: &PackSpec,
+    app: Option<&AppHandle>,
+    client: &Client,
+) -> Result<(), String> {
+    // Resolve the newest available asset across the tag ladder.
+    let mut resolved: Option<(String, String)> = None;
+    let mut last_err = String::from("no release tags available");
+    for tag in RELEASE_TAGS {
+        match release_asset_info(client, tag, spec.asset).await {
+            Ok(info) => {
+                resolved = Some(info);
+                break;
+            },
+            Err(e) => last_err = e,
+        }
+    }
+    let Some((download_url, version)) = resolved else {
+        return Err(format!("failed to resolve {}: {last_err}", spec.asset));
+    };
+
+    let cache = cache_root()?;
+    let tmp = cache.join(format!(".pack-{}.download", spec.id));
+    emit_progress(
+        app,
+        &PackProgress {
+            id: spec.id.to_string(),
+            phase: "download".into(),
+            received: 0,
+            total: 0,
+            error: None,
+        },
+    );
+    // Mirror ladder for the asset itself; a dying mirror restarts the
+    // progress stream from zero on the next candidate.
+    let mut last_err = String::from("no mirror attempted");
+    let mut downloaded = false;
+    for url in mirror_candidates(&download_url) {
+        match download_to_file(client, &url, &tmp, spec.id, app).await {
+            Ok(()) => {
+                downloaded = true;
+                break;
+            },
+            Err(e) => {
+                if e == "cancelled" {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(e);
+                }
+                last_err = e;
+            },
+        }
+    }
+    if !downloaded {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("download {}: {last_err}", spec.asset));
+    }
+
+    emit_progress(
+        app,
+        &PackProgress {
+            id: spec.id.to_string(),
+            phase: "extract".into(),
+            received: 0,
+            total: 0,
+            error: None,
+        },
+    );
+    // A cancel that lands mid-extract lets the (complete) archive finish
+    // unpacking — the swap-based extractor never leaves a partial pack, so
+    // aborting here would only waste the downloaded bytes.
+    let archive = tmp.clone();
+    let dest = cache.clone();
+    let subdir = spec.subdir.to_string();
+    let extracted =
+        tokio::task::spawn_blocking(move || extract_pack_blocking(&archive, &dest, &subdir))
+            .await
+            .map_err(|e| format!("extract task: {e}"))
+            .and_then(|r| r);
+    let _ = fs::remove_file(&tmp);
+    extracted?;
+    write_cached_version(&cache, spec, &version)?;
+    emit_progress(
+        app,
+        &PackProgress {
+            id: spec.id.to_string(),
+            phase: "done".into(),
+            received: 0,
+            total: 0,
+            error: None,
+        },
+    );
+    Ok(())
+}
+
+/// Ensure one pack is present in the local cache (startup / on-demand path,
+/// no progress events).
 ///
-/// Returns the cache root directory (the parent of `subdir`) so the frontend
-/// can construct paths like `<cache>/models/ships/Yamato.glb`.
+/// Returns the cache root directory (the parent of `models/` / `dogtags/`)
+/// so the frontend can construct paths like `<root>/models/ships/X.glb`.
 ///
-/// Lookup order: res-latest, then res-latest-old-1, then res-latest-old-2.
-/// The cache version is the asset upload timestamp (not the fixed tag), so a
-/// re-published pack is re-downloaded on the next launch. When no release is
-/// reachable, an installer-shipped `<subdir>/` beside the cache still counts
-/// as present (the shun installer stages models/ that way).
-async fn ensure_pack(asset_name: &str, version_name: &str, subdir: &str) -> Result<String, String> {
-    let cache_dir = cache_dir()?;
+/// Fast path when the cached stamp already matches `res-latest`. When no
+/// release is reachable, an installer-shipped `<subdir>/` beside the cache
+/// still counts as present (the shun installer stages models/ that way).
+async fn ensure_pack(spec: &PackSpec) -> Result<String, String> {
+    let cache = cache_root()?;
     let client = crate::commands::network::build_http_client()?;
 
+    // Resolve the newest stamp once; reused after the guard wait so a
+    // download that finished meanwhile is detected with a LOCAL compare.
+    // An unreachable release flattens to None — the flow below then simply
+    // attempts the install and falls back to the shipped pack.
+    let latest_stamp = release_asset_info(&client, RELEASE_TAGS[0], spec.asset)
+        .await
+        .ok()
+        .map(|(_, version)| version);
     // If the latest asset version already matches the cache, skip the download.
-    if let Ok((_url, version)) = release_asset_info(&client, RELEASE_TAGS[0], asset_name).await {
-        if cached_version(version_name).as_deref() == Some(version.as_str()) {
-            tracing::info!(?cache_dir, subdir, "resource pack up to date");
-            return Ok(cache_dir.to_string_lossy().to_string());
+    if let Some(version) = latest_stamp.as_deref() {
+        if cached_version(&cache, spec).as_deref() == Some(version) {
+            tracing::info!(?cache, subdir = spec.subdir, "resource pack up to date");
+            return Ok(cache.to_string_lossy().to_string());
         }
     }
 
-    // Download + extract, trying each tag in order.
-    let mut last_err = format!("no {asset_name} tags available");
-    for tag in RELEASE_TAGS {
-        match release_asset_info(&client, tag, asset_name).await {
-            Err(e) => {
-                tracing::warn!(?e, tag, "pack resolve failed");
-                last_err = e;
-            },
-            Ok((url, version)) => {
-                match download_and_extract(&url, &cache_dir, subdir, &client).await {
-                    Ok(()) => {
-                        write_cached_version(version_name, &version)?;
-                        return Ok(cache_dir.to_string_lossy().to_string());
-                    },
-                    Err(e) => {
-                        tracing::warn!(?e, tag, "pack download failed");
-                        last_err = e;
-                    },
+    // Route through the SAME single-flight guard the panel download uses, so
+    // a startup/on-demand ensure never installs concurrently with a panel
+    // download (both write the same temp archive + pack directory). While
+    // another download holds the guard, sleep and retry — and once ACQUIRED,
+    // re-check the stamp: a download that finished while we waited may have
+    // landed the pack already (cheap local compare against the stamp fetched
+    // above — no extra API call). Patience is bounded (~2 minutes) so a
+    // stuck download falls through to the shipped-pack / error fallbacks
+    // below instead of hanging forever.
+    const WAIT_SLOT: Duration = Duration::from_millis(750);
+    const WAIT_SLOTS: u32 = 160;
+    // Ownership flag: the release below may only clear the guard when THIS
+    // call acquired it — a timed-out wait must never release a slot that a
+    // still-running panel download of the same pack legitimately holds.
+    let mut held = false;
+    let mut waited: u32 = 0;
+    let installed = loop {
+        let blocked_by = {
+            let mut guard = DOWNLOAD_ACTIVE.lock().map_err(|_| "lock poisoned")?;
+            match guard.as_deref() {
+                Some(active) => Some(active.to_string()),
+                None => {
+                    DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
+                    *guard = Some(spec.id.to_string());
+                    held = true;
+                    None
+                },
+            }
+        };
+        match blocked_by {
+            None => {
+                // Another download may have landed this exact pack while we
+                // were waiting for the guard — one LOCAL stamp compare
+                // settles it without another API round-trip.
+                if let Some(version) = latest_stamp.as_deref() {
+                    if cached_version(&cache, spec).as_deref() == Some(version) {
+                        tracing::info!(
+                            subdir = spec.subdir,
+                            "pack landed by a concurrent download"
+                        );
+                        break Ok(());
+                    }
                 }
+                break install_pack(spec, None, &client).await;
             },
+            Some(active) => {
+                waited += 1;
+                if waited >= WAIT_SLOTS {
+                    break Err(format!(
+                        "another pack download ({active}) stayed in flight for too long"
+                    ));
+                }
+                tracing::info!(active, "pack download in flight, waiting");
+                tokio::time::sleep(WAIT_SLOT).await;
+            },
+        }
+    };
+
+    // Release the single-flight slot ONLY when this call acquired it.
+    if held {
+        if let Ok(mut guard) = DOWNLOAD_ACTIVE.lock() {
+            if guard.as_deref() == Some(spec.id) {
+                *guard = None;
+            }
         }
     }
 
     // Installer-shipped pack: the shun installer stages models/ beside the
-    // cache. When no release is reachable (offline machine, res-latest not
-    // published yet), serve what shipped instead of failing — otherwise the
-    // frontend would fall back to empty publicDir placeholders.
-    let shipped = fs::read_dir(cache_dir.join(subdir))
-        .map(|mut entries| entries.next().is_some())
-        .unwrap_or(false);
-    if shipped {
-        tracing::warn!(?cache_dir, "using installer-shipped resource pack");
-        return Ok(cache_dir.to_string_lossy().to_string());
+    // cache. When no release is reachable (offline machine), serve what
+    // shipped instead of failing — otherwise the frontend would fall back to
+    // empty publicDir placeholders.
+    if installed.is_err() && dir_populated(&cache.join(spec.subdir)) {
+        tracing::warn!(?cache, "using installer-shipped resource pack");
+        return Ok(cache.to_string_lossy().to_string());
     }
 
-    Err(format!(
-        "failed to download {asset_name} from any tag: {last_err}"
-    ))
+    installed.map(|(): ()| cache.to_string_lossy().to_string())
 }
+
+// ── Cache-management commands (Settings panel) ───────────────────────────
+
+/// Local state of every pack: presence, sync version, on-disk size,
+/// in-flight download flag. No network, but the size walk over a ~1.2 GB
+/// tree runs on the blocking pool so the IPC thread stays responsive.
+#[tauri::command]
+pub async fn get_pack_status() -> Result<Vec<PackStatus>, String> {
+    let cache = cache_root()?;
+    let statuses = tokio::task::spawn_blocking(move || -> Vec<PackStatus> {
+        PACKS
+            .iter()
+            .map(|spec| {
+                let dir = cache.join(spec.subdir);
+                PackStatus {
+                    id: spec.id.to_string(),
+                    present: dir_populated(&dir),
+                    version: cached_version(&cache, spec),
+                    size_bytes: dir_size(&dir),
+                    downloading: is_downloading(spec.id),
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| format!("status task: {e}"))?;
+    Ok(statuses)
+}
+
+/// Remote pack state: the `res-latest` asset stamp per pack plus whether it
+/// differs from the cached stamp (i.e. an update is available). Offline /
+/// rate-limited lookups surface as `remote_version: None` instead of an
+/// error so the panel can still render local state.
+#[tauri::command]
+pub async fn check_pack_updates() -> Result<Vec<PackUpdate>, String> {
+    let cache = cache_root()?;
+    let client = crate::commands::network::build_http_client()?;
+    let mut out = Vec::with_capacity(PACKS.len());
+    for spec in &PACKS {
+        let remote = release_asset_info(&client, RELEASE_TAGS[0], spec.asset)
+            .await
+            .ok()
+            .map(|(_, updated_at)| updated_at);
+        let update_available = match (&remote, cached_version(&cache, spec)) {
+            // Remote known and different (or nothing cached yet) → update.
+            (Some(r), cached) => cached.as_deref() != Some(r.as_str()),
+            // Remote unknown → we cannot promise an update.
+            (None, _) => false,
+        };
+        out.push(PackUpdate {
+            id: spec.id.to_string(),
+            remote_version: remote,
+            update_available,
+        });
+    }
+    Ok(out)
+}
+
+/// Explicit download (initial or update) of one pack, streaming progress
+/// through `wowsp://pack-progress`. Single-flight: a second call while any
+/// pack is downloading is rejected.
+#[tauri::command]
+pub async fn pack_download(id: String, app: AppHandle) -> Result<(), String> {
+    let spec = spec_by_id(&id)?;
+    // Build the client BEFORE taking the guard — an early error here must
+    // not leak the single-flight slot.
+    let client = crate::commands::network::build_http_client()?;
+    {
+        let mut guard = DOWNLOAD_ACTIVE.lock().map_err(|_| "lock poisoned")?;
+        if let Some(active) = guard.as_deref() {
+            return Err(format!("a pack download is already in flight ({active})"));
+        }
+        // Clear any stale cancel request from a previous interaction; the
+        // flag is intentionally NOT reset at the end of a download — the
+        // next download's start (here or in ensure_pack) clears it instead,
+        // so a late reset can never erase a cancel aimed at a NEW download.
+        DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
+        *guard = Some(spec.id.to_string());
+    }
+    let result = install_pack(spec, Some(&app), &client).await;
+    if let Err(e) = &result {
+        emit_progress(
+            Some(&app),
+            &PackProgress {
+                id: spec.id.to_string(),
+                phase: "error".into(),
+                received: 0,
+                total: 0,
+                error: Some(e.clone()),
+            },
+        );
+    }
+    if let Ok(mut guard) = DOWNLOAD_ACTIVE.lock() {
+        if guard.as_deref() == Some(spec.id) {
+            *guard = None;
+        }
+    }
+    result
+}
+
+/// Cancel the in-flight pack download (cooperative: checked between chunks
+/// and before the version stamp is written).
+#[tauri::command]
+pub fn pack_cancel() -> Result<(), String> {
+    DOWNLOAD_CANCEL.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Delete one pack's cache directory + version stamp. Refused while the
+/// pack is downloading. The recursive delete runs on the blocking pool so a
+/// ~1.2 GB tree removal cannot freeze the IPC thread.
+#[tauri::command]
+pub async fn clear_pack(id: String) -> Result<(), String> {
+    let spec = spec_by_id(&id)?;
+    if is_downloading(spec.id) {
+        return Err(format!("pack {id} is downloading — cancel it first"));
+    }
+    let cache = cache_root()?;
+    let dir = cache.join(spec.subdir);
+    let stamp = cache.join(spec.version_file);
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        if dir.exists() {
+            fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+        }
+        if stamp.exists() {
+            let _ = fs::remove_file(&stamp);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("clear task: {e}"))?
+}
+
+// ── Auxiliary caches (Settings panel) ────────────────────────────────────
+
+/// Clearable auxiliary cache directories. Scopes under the DATA dir are all
+/// re-downloadable derived data; `image-cache` (ship portraits) lives under
+/// the cache dir. User data (stats, ship history, accounts, mod ledger) is
+/// deliberately NOT listed.
+fn aux_cache_dir(scope: &str) -> Result<PathBuf, String> {
+    match scope {
+        "image-cache" => Ok(paths::ensure_cache_dir()?.join("image-cache")),
+        "gameparams" => Ok(paths::ensure_data_dir()?.join("gameparams")),
+        "encyclopedia" => Ok(paths::ensure_data_dir()?.join("encyclopedia")),
+        "community" => Ok(paths::ensure_data_dir()?.join("community")),
+        other => Err(format!("unknown cache scope: {other}")),
+    }
+}
+
+/// Sizes of every clearable auxiliary cache directory.
+#[tauri::command]
+pub async fn aux_cache_overview() -> Result<Vec<AuxCacheStatus>, String> {
+    let scopes = tokio::task::spawn_blocking(|| -> Vec<AuxCacheStatus> {
+        ["image-cache", "gameparams", "encyclopedia", "community"]
+            .iter()
+            .map(|scope| {
+                let size = aux_cache_dir(scope).map(|d| dir_size(&d)).unwrap_or(0);
+                AuxCacheStatus {
+                    scope: scope.to_string(),
+                    size_bytes: size,
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| format!("overview task: {e}"))?;
+    Ok(scopes)
+}
+
+/// Wipe one auxiliary cache directory (contents only — the directory itself
+/// is kept so owners never see a missing-dir state). Deletes run on the
+/// blocking pool: recursive removals can take seconds on Windows and a sync
+/// command would freeze the IPC thread.
+#[tauri::command]
+pub async fn clear_aux_cache(scope: String) -> Result<(), String> {
+    let dir = aux_cache_dir(&scope)?;
+    if !dir.exists() {
+        return Ok(());
+    }
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let entries: Vec<PathBuf> = fs::read_dir(&dir)
+            .map_err(|e| format!("read {dir:?}: {e}"))?
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        for entry in entries {
+            if entry.is_dir() {
+                fs::remove_dir_all(&entry).map_err(|e| format!("remove {entry:?}: {e}"))?;
+            } else {
+                let _ = fs::remove_file(&entry);
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("clear task: {e}"))?
+}
+
+// ── Startup / on-demand ensure commands ──────────────────────────────────
 
 /// Baked GLB model pack (Three.js ships/maps). See module docs.
 #[tauri::command]
 pub async fn ensure_model_pack() -> Result<String, String> {
-    ensure_pack(MODELS_ASSET, ".version", "models").await
+    ensure_pack(&PACKS[0]).await
 }
 
 /// Dog-tag pack (player-avatar map + part PNGs overlaying the bundled
@@ -202,5 +734,46 @@ pub async fn ensure_model_pack() -> Result<String, String> {
 /// release). See module docs.
 #[tauri::command]
 pub async fn ensure_dogtag_pack() -> Result<String, String> {
-    ensure_pack(DOGTAGS_ASSET, ".version-dogtags", "dogtags").await
+    ensure_pack(&PACKS[1]).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ASSET: &str = "https://github.com/langyo/wowsp/x.tar.gz";
+
+    #[test]
+    fn mirror_candidates_put_user_mirror_first() {
+        let urls = candidates_with_mirror(Some("https://ghfast.top"), ASSET);
+        assert_eq!(
+            urls[0],
+            "https://ghfast.top/https://github.com/langyo/wowsp/x.tar.gz"
+        );
+        assert_eq!(urls[1], ASSET);
+        assert!(urls.len() >= 6);
+    }
+
+    #[test]
+    fn mirror_candidates_trim_a_trailing_slash() {
+        let urls = candidates_with_mirror(Some("https://gh-proxy.com/"), ASSET);
+        assert_eq!(
+            urls[0],
+            "https://gh-proxy.com/https://github.com/langyo/wowsp/x.tar.gz"
+        );
+    }
+
+    #[test]
+    fn mirror_candidates_without_config_start_direct() {
+        let urls = candidates_with_mirror(None, ASSET);
+        assert_eq!(urls[0], ASSET);
+        assert_eq!(urls.len(), 5);
+    }
+
+    #[test]
+    fn pack_ids_roundtrip() {
+        assert_eq!(spec_by_id("models").unwrap().subdir, "models");
+        assert_eq!(spec_by_id("dogtags").unwrap().subdir, "dogtags");
+        assert!(spec_by_id("nope").is_err());
+    }
 }

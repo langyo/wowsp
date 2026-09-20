@@ -13,6 +13,7 @@ import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useUpdaterStore } from "@/stores/updater";
+import { useCacheStore } from "@/stores/cache";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { api } from "@/api";
@@ -45,6 +46,7 @@ export default defineComponent({
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
     const updater = useUpdaterStore();
+    const cacheStore = useCacheStore();
 
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
@@ -90,9 +92,30 @@ export default defineComponent({
           if (!editable) event.preventDefault();
         });
       }
-      // Download model pack on first launch (production only; dev uses publicDir).
+      // Resource packs (production only; dev uses publicDir). The model pack
+      // auto-downloads ONLY when entirely missing (lite install / wiped
+      // cache) — an outdated-but-present pack is surfaced as an update in
+      // Settings → cache management instead of silently re-pulling ~1.2 GB
+      // on every launch. The dog-tag pack is tiny and still auto-refreshes.
       if (!import.meta.env.DEV) {
-        void initModelPack(() => api.ensureModelPack()).catch(() => {});
+        void cacheStore.init();
+        void (async () => {
+          try {
+            const status = await api.getPackStatus();
+            const models = status.find((p) => p.id === "models");
+            if (models && !models.present) {
+              await initModelPack(() => api.ensureModelPack());
+              return;
+            }
+            // Present (or status unavailable): refresh the remote stamps so
+            // the cache panel's update banner is ready when it opens.
+            await cacheStore.refreshUpdates();
+          } catch {
+            // Older shell without the status command — fall back to the
+            // historical unconditional ensure so the pack still wires up.
+            void initModelPack(() => api.ensureModelPack()).catch(() => {});
+          }
+        })();
         // Dog-tag pack overlays the bundled medals snapshot (small; its own
         // release asset so it refreshes without re-downloading the models).
         void initDogtagPack(() => api.ensureDogtagPack()).catch(() => {});
