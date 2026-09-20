@@ -5,23 +5,30 @@ import { api, type GameVersionInfo, type ShipInfo } from "@/api";
 import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
-import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { shipDescriptionFromOfflineDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 
-/** Replace API names with localized names from the offline game-file DB
- *  (ship_names.json, extracted from res/texts/<lang> gettext catalogs).
- *  The WG API serves the same harmonized simplified Chinese on every realm,
- *  so the 亚服/国服 distinction the user picks cannot be sourced from it —
- *  the game client files are the only realm-distinct source. Ships missing
- *  from the offline DB keep their API name. Event-ship bracket tags
+/** Replace API names AND descriptions with localized ones from the offline
+ *  game-file DBs (ship_names.json / ship_descriptions.json, extracted from
+ *  res/texts/<lang> gettext catalogs). The WG API serves the same harmonized
+ *  simplified Chinese on every realm, so the 亚服/国服 distinction the user
+ *  picks cannot be sourced from it — the game client files are the only
+ *  realm-distinct source. Descriptions follow the same overlay: zh-CN mode
+ *  gets the 国服 zoo text, zh-SG/zh-TW the 亚服 formal one; ships missing
+ *  from the offline DB keep their API text. Event-ship bracket tags
  *  ("[TS] Yamato") are carried over unchanged so `displayShips` filtering
  *  and `isEventShip` keep working. */
-function localizeShipNames(list: ShipInfo[], lang: string): ShipInfo[] {
+function localizeShips(list: ShipInfo[], lang: string): ShipInfo[] {
   return list.map((s) => {
     const localized = shipNameFromOfflineDb(s.shipId, lang);
-    if (!localized || localized === s.name) return s;
+    const desc = shipDescriptionFromOfflineDb(s.shipId, lang);
+    if ((!localized || localized === s.name) && (!desc || desc === s.description)) return s;
     const tags = s.name.match(/\[[^\]]*\]/g)?.join(" ") ?? "";
-    return { ...s, name: tags ? `${localized} ${tags}` : localized };
+    return {
+      ...s,
+      name: localized ? (tags ? `${localized} ${tags}` : localized) : s.name,
+      description: desc ?? s.description,
+    };
   });
 }
 
@@ -31,10 +38,11 @@ function localizeShipNames(list: ShipInfo[], lang: string): ShipInfo[] {
  *
  *  Language: the data-language setting determines which WG API language code
  *  to use (zh-cn, zh-tw, en, ...). Switching realm or language triggers a
- *  re-load. Display names are then overlaid from the offline game-file DB
- *  (ship_names.json) — the WG API only carries one simplified Chinese (the
- *  harmonized CN translation) on every realm, so the 亚服简体 original names
- *  can only come from the game client files. */
+ *  re-load. Display names and descriptions are then overlaid from the
+ *  offline game-file DBs (ship_names.json / ship_descriptions.json) — the WG
+ *  API only carries one simplified Chinese (the harmonized CN translation)
+ *  on every realm, so the 亚服简体 original names/texts can only come from
+ *  the game client files. */
 export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   const ships = ref<ShipInfo[]>([]);
   const version = ref<GameVersionInfo | null>(null);
@@ -124,7 +132,7 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       const fresh = await api.getShipEncyclopedia(realm, forceRefresh, apiLang);
       if (seq !== loadSeq) return; // a newer realm/language load took over
       version.value = ver;
-      ships.value = localizeShipNames(fresh, lang);
+      ships.value = localizeShips(fresh, lang);
       loadedRealm.value = realm;
       loadedLanguage.value = lang;
     } catch (e) {
@@ -139,7 +147,7 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
           const fresh = await api.getShipEncyclopedia(realm, true, "en");
           if (seq !== loadSeq) return;
           version.value = ver;
-          ships.value = localizeShipNames(fresh, lang);
+          ships.value = localizeShips(fresh, lang);
           loadedRealm.value = realm;
           loadedLanguage.value = lang; // stay as user's preference
           console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
@@ -173,7 +181,7 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
         basicsToShipInfo(Number(shipId), basics, entry),
       );
       version.value = { gameVersion: basics.gameVersion, shipsTotal: list.length, timestamp: 0 };
-      ships.value = localizeShipNames(list, lang);
+      ships.value = localizeShips(list, lang);
       loadedRealm.value = realm;
       loadedLanguage.value = lang;
       console.warn("[encyclopedia] WG API unreachable — bundled ship basics in use");

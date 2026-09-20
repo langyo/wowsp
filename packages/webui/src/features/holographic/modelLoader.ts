@@ -18,6 +18,7 @@
 
 import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
+import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -279,6 +280,35 @@ export function shipNameFromOfflineDb(
   if (lang && entry.names[lang]) return entry.names[lang];
   const values = Object.values(entry.names);
   return entry.names["en"] ?? (values.length > 0 ? values[0] : null);
+}
+
+// ── Offline ship-description DB (zh zoo/formal split) ───────────────────
+// `ship_descriptions.json` is produced by
+// `scripts/model_convert/extract_ship_descriptions.py` from the game gettext
+// catalogs. The WG encyclopedia API serves the same harmonized CN
+// simplified-Chinese description (IJN ships as animals, Yamato = 鲸) on every
+// realm; the 国服 zoo text and the 亚服 formal 简/繁 texts live ONLY in the
+// client catalogs, so the Chinese trio is baked here for the overlay.
+
+interface ShipDescriptionEntry {
+  descriptions: Record<string, string>;
+}
+const shipDescriptionMap =
+  (shipDescriptionsDbRaw as Record<string, ShipDescriptionEntry>) ?? {};
+
+/** Localized ship description from the offline DB, EXACT language only —
+ *  unlike shipNameFromOfflineDb there is no cross-language fallback: when the
+ *  entry (or its translation for `lang`) is missing, null is returned and the
+ *  caller keeps the WG API description, which is already language-appropriate
+ *  (only the zh-CN/zh-SG/zh-TW realm split needs this overlay at all). */
+export function shipDescriptionFromOfflineDb(
+  shipId: number | string | undefined,
+  lang?: string,
+): string | null {
+  if (shipId == null) return null;
+  const entry = shipDescriptionMap[String(shipId)];
+  const text = lang ? entry?.descriptions[lang] : undefined;
+  return text ?? null;
 }
 
 /** Localized nation label from the baked game-file DB (nation_names.json,

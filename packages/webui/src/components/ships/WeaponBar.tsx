@@ -2,6 +2,7 @@ import { defineComponent, computed, type PropType } from "vue";
 import { Crosshair, Target, Wind, Rocket, Anchor } from "@lucide/vue";
 
 import { t } from "@/i18n";
+import { gunBandMap } from "./antiAir";
 import type { FocusZone } from "./ShipStage";
 import "./WeaponBar.scss";
 
@@ -154,15 +155,20 @@ function buildWeapons(gp: Gp): WeaponCard[] {
     }
   }
 
-  // ── AA (non-DP only) — collapse by range tier ──
+  // ── AA (non-DP only) — collapse by aura band ──
+  // Mount dicts have no maxDistance (their antiAirAuraDistance rides a
+  // non-meter scale), so the old distance read dumped everything into
+  // "short". Bucket by aura membership instead: the band whose `guns` list
+  // names the slot; mounts no aura claims default to near.
   const aa = gp.A_AirDefense;
   if (aa && typeof aa === "object") {
+    const bandOf = gunBandMap(gp);
     const tiers: Record<string, number> = { long: 0, mid: 0, short: 0 };
-    for (const [k, a] of aaSlots) {
+    for (const [k] of aaSlots) {
       if (dpSlots.has(k)) continue;
-      const dist = Number(a.maxDistance ?? 0);
-      if (dist > 5) tiers.long++;
-      else if (dist > 2.5) tiers.mid++;
+      const band = bandOf.get(k) ?? "near";
+      if (band === "far") tiers.long++;
+      else if (band === "medium") tiers.mid++;
       else tiers.short++;
     }
     if (tiers.long > 0) out.push({
