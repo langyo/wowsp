@@ -612,6 +612,20 @@
     color: var(--holo-hud-text);
   }
 }
+/* Fixture-model badge (decision suggestions): warns that the numbers come
+   from the embedded demo model, not a trained pack. Amber chip matching
+   the HUD pill language; hover reveals the provenance via title. */
+.holo-map__mmzoom-badge {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  color: rgb(251, 191, 36);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: help;
+}
 .holo-map__mmzoom-canvas {
   width: min(80vw, 80vh, 720px);
   height: auto;

@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "Modelos de barcos, mapas y aviones para repeticiones y vista de barcos (~1,2 GB).",
   "cachePackDogtags": "Paquete de placas",
   "cachePackDogtagsDesc": "Mapa de placas e imágenes de medallas (~3 MB).",
+  "cachePackDecisions": "Paquete de IA de decisiones",
+  "cachePackDecisionsDesc": "Modelo de decisión y rásteres de línea de visión del terreno para las sugerencias de repetición (descarga pequeña).",
   "cacheStatusMissing": "No descargado",
   "cacheVersionLabel": "Versión de sincronización",
   "cacheVersionUnknown": "desconocida",

@@ -76,6 +76,10 @@
     "zoom": "Zoomed map",
     "trails": "Ship trails"
   },
+  "decisions": {
+    "toggle": "Fire suggestions",
+    "demoModel": "Demo model"
+  },
   "labels": {
     "hide": "Hide labels",
     "show": "Show labels"

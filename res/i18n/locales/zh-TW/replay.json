@@ -76,6 +76,10 @@
     "zoom": "放大地圖",
     "trails": "船隻軌跡"
   },
+  "decisions": {
+    "toggle": "開火建議",
+    "demoModel": "示範模型"
+  },
   "labels": {
     "hide": "隱藏標籤",
     "show": "顯示標籤"

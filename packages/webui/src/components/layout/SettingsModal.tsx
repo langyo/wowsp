@@ -44,7 +44,7 @@ import {
   type TableAnchorMode,
 } from "@/stores/overlayConfig";
 import { useSettingsUiStore, type SettingsSection } from "@/stores/settingsUi";
-import { useCacheStore, type PackId } from "@/stores/cache";
+import { useCacheStore, PACK_IDS, type PackId } from "@/stores/cache";
 import { AboutContent } from "@/components/layout/AboutModal";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
 import RealmFlag from "@/components/base/RealmFlag";
@@ -313,13 +313,17 @@ export default defineComponent({
     function packTitle(id: PackId): string {
       return id === "models"
         ? t("settings.cachePackModels")
-        : t("settings.cachePackDogtags");
+        : id === "dogtags"
+          ? t("settings.cachePackDogtags")
+          : t("settings.cachePackDecisions");
     }
 
     function packDesc(id: PackId): string {
       return id === "models"
         ? t("settings.cachePackModelsDesc")
-        : t("settings.cachePackDogtagsDesc");
+        : id === "dogtags"
+          ? t("settings.cachePackDogtagsDesc")
+          : t("settings.cachePackDecisionsDesc");
     }
 
     /** Aux-cache scope → i18n keys (unknown future scopes render raw). */
@@ -698,7 +702,7 @@ export default defineComponent({
             {cacheStore.anyUpdateAvailable ? (
               <p class="settings-modal__packs-banner">{t("settings.cacheUpdateBanner")}</p>
             ) : null}
-            {(["models", "dogtags"] as PackId[]).map((id) => {
+            {PACK_IDS.map((id) => {
               const st = cacheStore.pack(id);
               const upd = cacheStore.updateOf(id);
               const prog = cacheStore.progress[id];

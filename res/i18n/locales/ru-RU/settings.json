@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "Модели кораблей, карт и самолётов для реплеев и просмотра кораблей (~1,2 ГБ).",
   "cachePackDogtags": "Пакет жетонов",
   "cachePackDogtagsDesc": "Карта жетонов и изображения наград (~3 МБ).",
+  "cachePackDecisions": "Пакет ИИ-решений",
+  "cachePackDecisionsDesc": "Модель решений и растры видимости рельефа для подсказок в реплеях (небольшой размер).",
   "cacheStatusMissing": "Не загружен",
   "cacheVersionLabel": "Версия синхронизации",
   "cacheVersionUnknown": "неизвестна",

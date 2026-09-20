@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "리플레이와 함선 보기에 사용되는 함선·맵·항공기 모델(약 1.2 GB).",
   "cachePackDogtags": "훈장 팩",
   "cachePackDogtagsDesc": "훈장 맵과 아트워크(약 3 MB).",
+  "cachePackDecisions": "결정 AI 모델 팩",
+  "cachePackDecisionsDesc": "리플레이 발포 제안용 결정 모델과 지형 시야 래스터(소용량).",
   "cacheStatusMissing": "미다운로드",
   "cacheVersionLabel": "동기 버전",
   "cacheVersionUnknown": "알 수 없음",

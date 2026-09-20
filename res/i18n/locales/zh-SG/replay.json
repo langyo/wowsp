@@ -76,6 +76,10 @@
     "zoom": "放大地图",
     "trails": "船只轨迹"
   },
+  "decisions": {
+    "toggle": "开火建议",
+    "demoModel": "演示模型"
+  },
   "labels": {
     "hide": "隐藏标签",
     "show": "显示标签"

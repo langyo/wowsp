@@ -1018,6 +1018,47 @@ export interface DogTag {
   backgroundId: number;
 }
 
+// ── Decision suggestions (mirrors `wowsp_tauri_shared`, see commands/decision_serve.rs) ──
+
+/** One ship's fire-decision suggestion at one instant (G4). */
+export interface DecisionSuggestion {
+  entityId: number;
+  shipId: number | null;
+  /** Recorder-relative team: 0 = recorder's side, 1 = enemy; null when the
+   *  shipId could not be attributed (only possible on the recorder row). */
+  teamId: 0 | 1 | null;
+  /** Whether this row is the replay's recorder (the UI highlights it). */
+  isRecorder: boolean;
+  /** Head-A logit "physically able to fire" (saturated ±1 on fixture models). */
+  canFireLogit: number;
+  /** Head-B logit "expert would fire now". */
+  fireLogit: number;
+  /** sigmoid(fireLogit), always in [0, 1]. */
+  fireProb: number;
+  /** Nearest observed-now enemy within engagement range, null when none. */
+  targetEntityId: number | null;
+  /** Distance to the target in metres. */
+  targetDistanceM: number | null;
+}
+
+/** The `decision_fire_suggestions` payload — one row per qualifying decider
+ *  at one instant, ordered by entity id. */
+export interface DecisionSuggestionReport {
+  timeSec: number;
+  mapName: string | null;
+  /** "pack" (decisions model pack) | "fixture" (embedded E1 dummy — treat
+   *  the numbers as placeholders and show a demo badge). */
+  modelSource: "pack" | "fixture";
+  /** Provenance detail: the pack file's path or the fixture label. */
+  modelDetail: string;
+  /** "fire24" (E9 two-head schema) | "fixture8" (E1 dummy schema). */
+  modelKind: "fire24" | "fixture8";
+  /** Whether a terrain-LOS raster was loaded for this map. */
+  losGridLoaded: boolean;
+  /** Rows ordered by entityId ascending. */
+  suggestions: DecisionSuggestion[];
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
@@ -1231,4 +1272,15 @@ export const api = {
   modHubRecords: () => transport.invoke<ModInstallRecord[]>(RPC.mod_hub_records),
   listenCatalogProgress: (handler: (p: CatalogProgress) => void) =>
     transport.listen?.<CatalogProgress>("wowsp://mod-catalog-progress", handler),
+  // ── Decision suggestions (G4) ──
+  /** Fire-decision suggestions for one replay instant. `losGridDir` is
+   *  optional (defaults to the installed `decisions` pack's raster layout);
+   *  resolves or fails with a string error — callers render failures
+   *  silently. */
+  decisionFireSuggestions: (replayPath: string, timeSec: number, losGridDir?: string) =>
+    transport.invoke<DecisionSuggestionReport>(RPC.decision_fire_suggestions, {
+      replayPath,
+      timeSec,
+      losGridDir: losGridDir ?? null,
+    }),
 };

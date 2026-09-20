@@ -31,6 +31,7 @@ import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
   CameraSample,
   DamageStatSample,
+  DecisionSuggestionReport,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -50,7 +51,10 @@ import type {
   VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
-import { foldDamageStats } from "@/api";
+// Alias: `setup` below destructures its OWN `api` (the Three.js scene
+// handle) from useThreeScene, so the RPC client must arrive under a
+// different local name.
+import { api as rpcApi, foldDamageStats } from "@/api";
 import planeIcon from "./planeIcons";
 import { shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
@@ -420,6 +424,56 @@ export default defineComponent({
     /** Sorted ship entity ids — the spawn-order fallback for roleless ships
      *  (the game client spawns team A before team B). */
     let shipEntityIds: number[] = [];
+
+    // ── Decision suggestions layer (G4-b) ─────────────────────────────────
+    /** Toggle for the AI fire-suggestion overlay on the enlarged 2D map.
+     *  Default off: the layer costs one `decision_fire_suggestions` IPC per
+     *  ~2 s of battle time and is a review aid, not core playback. */
+    const decisionsOn = ref(false);
+    /** Latest report (null = nothing fetched / last call failed). Rendered
+     *  by drawMinimap onto the zoom canvas through the SAME projection as
+     *  ship glyphs, so suggestions and markers can never drift apart. */
+    const decisionReport = ref<DecisionSuggestionReport | null>(null);
+    /** Battle time the last in-flight call was issued for (throttle anchor). */
+    let decisionsLastFetchT = -Infinity;
+    /** Monotonic sequence: drop stale responses after seeks/toggles. */
+    let decisionsSeq = 0;
+    /** Re-fetch only when the playhead moved this many battle seconds past
+     *  the last call — the model reads coarse tactical state, finer refresh
+     *  would re-run full replay decode IPC for visually identical output. */
+    const DECISION_REFETCH_S = 2;
+    /** Minimum fireProb for a team-0 (recorder-side) row to be drawn. The
+     *  recorder row always draws (it is the flagship "what should I do"
+     *  readout), even at a low probability. */
+    const DECISION_TEAM_PROB_MIN = 0.5;
+
+    /** Fetch suggestions for the current playhead, throttled. Failures are
+     *  silent by design: no replay open, older shell without the command or
+     *  a decode error simply leaves the layer blank (never a console throw). */
+    function maybeFetchDecisions(): void {
+      if (!decisionsOn.value || !props.replayPath) return;
+      const t = current.value;
+      if (Math.abs(t - decisionsLastFetchT) < DECISION_REFETCH_S) return;
+      decisionsLastFetchT = t;
+      const seq = ++decisionsSeq;
+      rpcApi
+        .decisionFireSuggestions(props.replayPath, t)
+        .then((report) => {
+          if (seq !== decisionsSeq || !decisionsOn.value) return;
+          decisionReport.value = report;
+        })
+        .catch(() => {
+          // Older shell / mock backend / unreadable replay — draw nothing.
+          if (seq === decisionsSeq) decisionReport.value = null;
+        });
+    }
+
+    /** Reset the layer's fetched state (toggle-on, replay switch). */
+    function resetDecisionLayer(): void {
+      decisionReport.value = null;
+      decisionsLastFetchT = -Infinity;
+      decisionsSeq++;
+    }
 
     function formatTime(sec: number): string {
       const s = Math.max(0, Math.round(sec));
@@ -1534,6 +1588,77 @@ export default defineComponent({
                 zctx.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
                 zctx.fill();
               }
+            }
+          }
+
+          // Decision suggestions (G4-b): for every visible suggestion — the
+          // recorder row always, team-0 rows at/above DECISION_TEAM_PROB_MIN —
+          // draw a probability ring around the ship glyph, a dashed
+          // "open fire" line to the suggested target and a small target
+          // reticle. Positions come from the SAME trajectories/gap semantics
+          // as the glyphs, so an unspotted target renders at its last known
+          // pose exactly like its ghost marker. Silent on any fetch failure.
+          if (decisionsOn.value && decisionReport.value) {
+            const report = decisionReport.value;
+            // Amber → red as fireProb climbs 0 → 1 (readable on both the
+            // game's light-dark map art and next to team green/red glyphs).
+            const probColor = (p: number): string => {
+              const k = Math.min(1, Math.max(0, p));
+              const r = Math.round(251 + (239 - 251) * k);
+              const g = Math.round(191 + (68 - 191) * k);
+              const b = Math.round(36 + (68 - 36) * k);
+              return `rgba(${r}, ${g}, ${b}, 0.95)`;
+            };
+            const posOf = (entityId: number) => {
+              const tr = props.trajectories.find(
+                (it) => it.entityId === entityId && it.samples.length > 0,
+              );
+              return tr ? sampleAt(tr, t) : null;
+            };
+            zctx.font = "bold 11px sans-serif";
+            zctx.textAlign = "center";
+            for (const sug of report.suggestions) {
+              if (
+                !sug.isRecorder &&
+                !(sug.teamId === 0 && sug.fireProb >= DECISION_TEAM_PROB_MIN)
+              ) {
+                continue;
+              }
+              const from = posOf(sug.entityId);
+              if (!from) continue;
+              const color = sug.isRecorder ? "rgba(255, 255, 255, 0.95)" : probColor(sug.fireProb);
+              const fx = zwx(from.x);
+              const fz = zwz(-from.z);
+              // Suggested target: dashed line + reticle ring at the target.
+              if (sug.targetEntityId != null) {
+                const to = posOf(sug.targetEntityId);
+                if (to) {
+                  const tx = zwx(to.x);
+                  const tz = zwz(-to.z);
+                  zctx.strokeStyle = color;
+                  zctx.lineWidth = 1.6;
+                  zctx.setLineDash([9, 7]);
+                  zctx.beginPath();
+                  zctx.moveTo(fx, fz);
+                  zctx.lineTo(tx, tz);
+                  zctx.stroke();
+                  zctx.setLineDash([]);
+                  zctx.beginPath();
+                  zctx.arc(tx, tz, 7, 0, Math.PI * 2);
+                  zctx.stroke();
+                }
+              }
+              // Probability ring around the decider's glyph (width + colour
+              // scale with fireProb; recorder ring stays white).
+              const ringR = 23;
+              zctx.strokeStyle = color;
+              zctx.lineWidth = 1.5 + Math.min(1, sug.fireProb) * 2.5;
+              zctx.beginPath();
+              zctx.arc(fx, fz, ringR, 0, Math.PI * 2);
+              zctx.stroke();
+              zctx.fillStyle = color;
+              zctx.textBaseline = "top";
+              zctx.fillText(`${Math.round(sug.fireProb * 100)}%`, fx, fz + ringR + 4);
             }
           }
         }
@@ -4653,6 +4778,8 @@ export default defineComponent({
           minimapZoom.value = false;
           mmView.value = { cx: 0, cz: 0, scale: 1 };
           mmViewTween = null;
+          // Suggestions belong to the previous replay's entity stream.
+          resetDecisionLayer();
           clearActors();
           shipLabels.value = [];
           bounds = null;
@@ -4706,7 +4833,10 @@ export default defineComponent({
     );
 
     // Recompute markers whenever the scrubber moves.
-    watch(current, (t) => updateMarkersAt(t));
+    watch(current, (t) => {
+      updateMarkersAt(t);
+      maybeFetchDecisions();
+    });
 
     // Keep the range input's DOM value in lockstep with the playback clock.
     // Relying on the reactive `value`/`max` props alone let the thumb drift
@@ -4928,6 +5058,32 @@ export default defineComponent({
                   {i18nT("replay.tactical.toggle")}
                 </HSwitch>
               </span>
+              <span onClick={(e: MouseEvent) => e.stopPropagation()}>
+                <HSwitch
+                  modelValue={decisionsOn.value}
+                  onUpdate:modelValue={(v: boolean) => {
+                    decisionsOn.value = v;
+                    if (v) {
+                      resetDecisionLayer();
+                      maybeFetchDecisions();
+                    }
+                  }}
+                >
+                  {i18nT("replay.decisions.toggle")}
+                </HSwitch>
+              </span>
+              {/* Fixture-model badge: the numbers are placeholder demos, not
+                  trained-model output — keep it visible while the layer is
+                  on and served by the embedded fixture. */}
+              {decisionsOn.value && decisionReport.value?.modelSource === "fixture" ? (
+                <span
+                  class="holo-map__mmzoom-badge"
+                  title={decisionReport.value.modelDetail}
+                  onClick={(e: MouseEvent) => e.stopPropagation()}
+                >
+                  {i18nT("replay.decisions.demoModel")}
+                </span>
+              ) : null}
             </div>
             {/* Stage: base map canvas + tactical annotation layer. Clicks on
                 the map no longer close the overlay (drawing/selection needs

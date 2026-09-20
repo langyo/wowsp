@@ -76,6 +76,10 @@
     "zoom": "拡大マップ",
     "trails": "艦艇の航跡"
   },
+  "decisions": {
+    "toggle": "射撃提案",
+    "demoModel": "デモモデル"
+  },
   "labels": {
     "hide": "ラベルを非表示",
     "show": "ラベルを表示"

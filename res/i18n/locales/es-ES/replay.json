@@ -76,6 +76,10 @@
     "zoom": "Mapa ampliado",
     "trails": "Estelas de los buques"
   },
+  "decisions": {
+    "toggle": "Sugerencias de tiro",
+    "demoModel": "Modelo de demo"
+  },
   "labels": {
     "hide": "Ocultar etiquetas",
     "show": "Mostrar etiquetas"

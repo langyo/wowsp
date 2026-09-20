@@ -76,6 +76,10 @@
     "zoom": "Carte agrandie",
     "trails": "Trajectoires des navires"
   },
+  "decisions": {
+    "toggle": "Suggestions de tir",
+    "demoModel": "Modèle de démo"
+  },
   "labels": {
     "hide": "Masquer les étiquettes",
     "show": "Afficher les étiquettes"

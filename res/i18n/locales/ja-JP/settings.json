@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "リプレイと艦船ビューで使用する艦船・マップ・航空機モデル（約 1.2 GB）。",
   "cachePackDogtags": "ドッグタグパック",
   "cachePackDogtagsDesc": "ドッグタグマップと勲章画像（約 3 MB）。",
+  "cachePackDecisions": "判断AIモデルパック",
+  "cachePackDecisionsDesc": "リプレイの射撃提案に使う判断モデルと地形視線ラスタ（小容量）。",
   "cacheStatusMissing": "未ダウンロード",
   "cacheVersionLabel": "同期バージョン",
   "cacheVersionUnknown": "不明",

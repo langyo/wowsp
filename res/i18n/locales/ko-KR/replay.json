@@ -76,6 +76,10 @@
     "zoom": "확대 맵",
     "trails": "함선 궤적"
   },
+  "decisions": {
+    "toggle": "발포 제안",
+    "demoModel": "데모 모델"
+  },
   "labels": {
     "hide": "라벨 숨기기",
     "show": "라벨 표시"

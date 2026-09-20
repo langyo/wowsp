@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "Modèles de navires, cartes et avions pour les relectures et la vue navire (~1,2 Go).",
   "cachePackDogtags": "Pack de badges",
   "cachePackDogtagsDesc": "Carte des badges et visuels de médailles (~3 Mo).",
+  "cachePackDecisions": "Pack IA de décisions",
+  "cachePackDecisionsDesc": "Modèle de décision et rasters de ligne de vue du terrain pour les suggestions en replay (petit téléchargement).",
   "cacheStatusMissing": "Non téléchargé",
   "cacheVersionLabel": "Version de synchro",
   "cacheVersionUnknown": "inconnue",

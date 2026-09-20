@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "回放与舰船视图使用的舰船、地图与飞机模型（约 1.2 GB）。",
   "cachePackDogtags": "铭牌资源包",
   "cachePackDogtagsDesc": "铭牌映射与勋章贴图（约 3 MB）。",
+  "cachePackDecisions": "决策 AI 模型包",
+  "cachePackDecisionsDesc": "回放开火建议用的决策模型与地形视线栅格（体积很小）。",
   "cacheStatusMissing": "未下载",
   "cacheVersionLabel": "同步版本",
   "cacheVersionUnknown": "未知",

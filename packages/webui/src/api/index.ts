@@ -5,6 +5,8 @@ export type {
   GameProcessInfo,
   DogTag,
   NetworkConfig,
+  DecisionSuggestion,
+  DecisionSuggestionReport,
   PackStatus,
   PackUpdate,
   PackProgress,

@@ -15,7 +15,7 @@ import { computed, reactive, ref } from "vue";
 
 import { api, type NetworkConfig, type PackProgress, type PackStatus, type PackUpdate } from "@/api";
 
-export const PACK_IDS = ["models", "dogtags"] as const;
+export const PACK_IDS = ["models", "dogtags", "decisions"] as const;
 export type PackId = (typeof PACK_IDS)[number];
 
 export function isPackId(id: string): id is PackId {

@@ -40,6 +40,8 @@
   "cachePackModelsDesc": "Ships, maps and aircraft models for the replay and ship views (~1.2 GB).",
   "cachePackDogtags": "Dog-tag pack",
   "cachePackDogtagsDesc": "Dog-tag map and medal artwork (~3 MB).",
+  "cachePackDecisions": "Decision-AI model pack",
+  "cachePackDecisionsDesc": "Fire-decision model and terrain line-of-sight rasters for replay suggestions (small download).",
   "cacheStatusMissing": "Not downloaded",
   "cacheVersionLabel": "Sync version",
   "cacheVersionUnknown": "unknown",
