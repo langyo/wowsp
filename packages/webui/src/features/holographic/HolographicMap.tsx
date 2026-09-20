@@ -1,5 +1,8 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
+import { Line2 } from "three/examples/jsm/lines/Line2.js";
+import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Crosshair, Eye, EyeOff, MessageSquare, Orbit, Pause, Plane, Play, Shield, Skull, Swords, Trophy, Video } from "@lucide/vue";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
@@ -265,6 +268,69 @@ interface ShellTraceSlot {
   shell: THREE.Object3D;
 }
 
+// --- Screen-space overlay sizing -------------------------------------------
+//
+// The cap/smoke/ward rings and the cap-letter / smoke-countdown sprites used
+// to be sized in world units (fat torus + fixed sprite scale), so zooming in
+// blew them up into fat donuts and blurry billboards. They are now sized in
+// SCREEN pixels: the rings are Line2 objects whose pixel linewidth never
+// changes, and the sprites get a distance-derived world scale each frame so
+// they always occupy the same number of CSS pixels. Canvas resolutions are
+// bumped accordingly so the textures stay supersampled (crisp) at that size.
+
+/** Constant on-screen sizes (CSS px) for the zoom-independent overlays. */
+const CAP_RING_PX = 3;
+const SMOKE_RING_PX = 2;
+const WARD_RING_PX = 2;
+const CAP_SPRITE_PX = 64;
+const SMOKE_SPRITE_PX = 30;
+
+/** Circle tessellation for the screen-space rings (closed loop). */
+const OVERLAY_RING_SEGMENTS = 96;
+
+/** Flat circle vertex positions in the XZ plane (closed loop). */
+function circlePositions(radius: number): number[] {
+  const pts: number[] = [];
+  for (let i = 0; i <= OVERLAY_RING_SEGMENTS; i++) {
+    const a = (i / OVERLAY_RING_SEGMENTS) * Math.PI * 2;
+    pts.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+  }
+  return pts;
+}
+
+/** Build a flat circle in the XZ plane as a Line2 with a pixel linewidth. */
+function makeOverlayRing(radius: number, pxWidth: number, opacity: number): Line2 {
+  const geom = new LineGeometry();
+  geom.setPositions(circlePositions(radius));
+  const mat = new LineMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    // worldUnits defaults to false → linewidth is screen pixels.
+    linewidth: pxWidth,
+  });
+  return new Line2(geom, mat);
+}
+
+/** Paint the cap-point sprite: big zone letter on top, optional capture
+ *  countdown below. Shared by the initial draw and the per-frame redraw so
+ *  both stay on the same hi-res layout. */
+function paintCapSprite(canvas: HTMLCanvasElement, letter: string, eta: string) {
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "bold 140px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(letter, canvas.width / 2, canvas.height * 0.34);
+  if (eta) {
+    ctx.fillStyle = "rgba(251,191,36,0.95)";
+    ctx.font = "bold 56px sans-serif";
+    ctx.fillText(eta, canvas.width / 2, canvas.height * 0.78);
+  }
+}
+
 export default defineComponent({
   name: "HolographicMap",
   props: {
@@ -345,6 +411,9 @@ export default defineComponent({
       drawMinimap();
       if (originalView.value) applyOriginalCamera(current.value);
       else followSelected();
+      // After the camera updates so the overlay scale reflects THIS frame's
+      // distance/fov (the original replay camera changes fov per frame).
+      updateOverlayScale();
     });
 
     // Playback state.
@@ -909,6 +978,9 @@ export default defineComponent({
     let capRings: THREE.Mesh[] = [];
     /** Cap-letter sprites (redrawn with the point ETA while Alt is held). */
     let capLetterSprites: THREE.Sprite[] = [];
+    /** Line materials of every screen-space overlay ring (cap / smoke /
+     *  ward). Their viewport resolution uniform is refreshed each frame. */
+    let overlayLineMats: LineMaterial[] = [];
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
@@ -1867,7 +1939,13 @@ export default defineComponent({
       loadedModelPool = [];
       modelWaiters = [];
       capRings = [];
+      // SpriteMaterial.dispose() does not release its map — free the canvas
+      // textures explicitly (256²/256x128 each after the hi-res bump).
+      for (const s of capLetterSprites) {
+        (s.material as THREE.SpriteMaterial).map?.dispose();
+      }
       capLetterSprites = [];
+      overlayLineMats = [];
       capSim.clear();
       for (const cl of smokeClusters) {
         for (const ring of cl.rings) {
@@ -1877,7 +1955,9 @@ export default defineComponent({
         }
         if (cl.timeSprite) {
           scene.remove(cl.timeSprite);
-          (cl.timeSprite.material as THREE.Material).dispose();
+          const mat = cl.timeSprite.material as THREE.SpriteMaterial;
+          mat.map?.dispose();
+          mat.dispose();
         }
       }
       smokeClusters = [];
@@ -2323,25 +2403,32 @@ export default defineComponent({
             cluster.endT = endT;
           }
         }
-        const smokeRingGeom = new THREE.RingGeometry(40, 46, 36);
-        const smokeRingMat = new THREE.MeshBasicMaterial({
+        // Screen-space ring (constant pixel width) shared by every cluster of
+        // this build; the old world-space RingGeometry turned into a fat
+        // donut when the camera dollied in. 43 = the old RingGeometry(40, 46)
+        // centerline radius.
+        const smokeRingGeom = new LineGeometry();
+        smokeRingGeom.setPositions(circlePositions(43));
+        const smokeRingMat = new LineMaterial({
           color: 0xffffff,
           transparent: true,
           opacity: 0.75,
           depthWrite: false,
-          side: THREE.DoubleSide,
+          linewidth: SMOKE_RING_PX,
         });
+        overlayLineMats.push(smokeRingMat);
         for (const cl of smokeClusters) {
           for (let i = 0; i < 2; i++) {
-            const ring = new THREE.Mesh(smokeRingGeom, smokeRingMat);
-            ring.rotation.x = -Math.PI / 2;
+            const ring = new Line2(smokeRingGeom, smokeRingMat);
             ring.visible = false;
             scene.add(ring);
             cl.rings.push(ring);
           }
+          // 4x supersampled relative to its constant on-screen height so the
+          // countdown stays crisp at any zoom.
           const cvs = document.createElement("canvas");
-          cvs.width = 128;
-          cvs.height = 64;
+          cvs.width = 256;
+          cvs.height = 128;
           const tex = new THREE.CanvasTexture(cvs);
           const sprite = new THREE.Sprite(
             new THREE.SpriteMaterial({
@@ -2351,7 +2438,6 @@ export default defineComponent({
             }),
           );
           sprite.visible = false;
-          sprite.scale.set(60, 30, 1);
           sprite.userData.canvas = cvs;
           sprite.userData.text = "";
           scene.add(sprite);
@@ -2687,18 +2773,12 @@ export default defineComponent({
           const role = owner ? resolveRoleQuick(owner) : "enemy";
           const color = TEAM_COLOR[role as TeamRole] ?? 0x78d2ff;
           const radius = Math.max(60, w.radius || 0);
-          const ring = new THREE.Mesh(
-            new THREE.RingGeometry(Math.max(6, radius - 7), radius, 64),
-            new THREE.MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: 0.8,
-              depthWrite: false,
-              side: THREE.DoubleSide,
-            }),
-          );
+          // Screen-space ring outline (constant pixel width) + translucent
+          // world-space area fill.
+          const ring = makeOverlayRing(radius, WARD_RING_PX, 0.8);
+          (ring.material as LineMaterial).color.set(color);
           const fill = new THREE.Mesh(
-            new THREE.CircleGeometry(Math.max(6, radius - 7), 64),
+            new THREE.CircleGeometry(radius, 64),
             new THREE.MeshBasicMaterial({
               color,
               transparent: true,
@@ -2710,12 +2790,15 @@ export default defineComponent({
           // Patrol altitude: the ward centre's own height (never below the
           // water so the ring stays visible against the sea plane).
           const h = Math.max(6, w.y ?? 0);
+          // The Line2 circle is already built in the XZ plane (no rotation);
+          // the fill disc lies in XY and needs the flat spin.
+          fill.rotation.x = -Math.PI / 2;
           for (const m of [ring, fill]) {
-            m.rotation.x = -Math.PI / 2;
             m.position.set(w.x, h, -w.z);
             m.visible = false;
             scene.add(m);
           }
+          overlayLineMats.push(ring.material as LineMaterial);
           // Alive from the add until the first remove for this patrol after
           // it (wards can be re-deployed under the same id).
           let end: number | null = null;
@@ -3371,28 +3454,16 @@ export default defineComponent({
           const radius = Math.max(g.members[k].radius, 25);
           const cx = g.x + spread;
           const cz = g.z;
-          const ringGeom = new THREE.TorusGeometry(radius, 2.4, 8, 48);
-          const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.55,
-            depthWrite: false,
-          });
-          const ring = new THREE.Mesh(ringGeom, ringMat);
-          ring.rotation.x = Math.PI / 2;
+          const ring = makeOverlayRing(radius, CAP_RING_PX, 0.55);
           ring.position.set(cx, 0.6, -cz);
           scene.add(ring);
           trajectoryLines.push(ring as unknown as THREE.Line);
           capRings.push(ring);
+          overlayLineMats.push(ring.material as LineMaterial);
           const canvas = document.createElement("canvas");
-          canvas.width = 64;
-          canvas.height = 64;
-          const ctx = canvas.getContext("2d")!;
-          ctx.fillStyle = "rgba(255,255,255,0.8)";
-          ctx.font = "bold 48px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(String.fromCharCode(65 + letterIdx++), 32, 32);
+          canvas.width = 256;
+          canvas.height = 256;
+          paintCapSprite(canvas, String.fromCharCode(65 + letterIdx++), "");
           const tex = new THREE.CanvasTexture(canvas);
           const spriteMat = new THREE.SpriteMaterial({
             map: tex,
@@ -3401,7 +3472,10 @@ export default defineComponent({
           });
           const sprite = new THREE.Sprite(spriteMat);
           sprite.position.set(cx, 30, -cz);
-          sprite.scale.set(40, 40, 1);
+          // World scale is derived from the camera each frame
+          // (updateOverlayScale) so the letter occupies a constant number of
+          // screen pixels at any zoom.
+          sprite.scale.set(1, 1, 1);
           scene.add(sprite);
           trajectoryLines.push(sprite as unknown as THREE.Line);
           capLetterSprites.push(sprite);
@@ -3640,7 +3714,7 @@ export default defineComponent({
       capDisplay.value.forEach((c, i) => {
         const ring = capRings[i];
         if (!ring) return;
-        const mat = ring.material as THREE.MeshBasicMaterial;
+        const mat = ring.material as LineMaterial;
         if (c.owner === 1) mat.color.set(0x4ade80);
         else if (c.owner === 2) mat.color.set(0xcc3333);
         else mat.color.set(0xffffff);
@@ -3652,8 +3726,7 @@ export default defineComponent({
       capDisplay.value.forEach((c, i) => {
         const sprite = capLetterSprites[i];
         if (!sprite) return;
-        const canvas = sprite.userData.canvas as HTMLCanvasElement | undefined;
-        if (!canvas) return;
+        if (!sprite.userData.canvas) return;
         const text = String(c.letter);
         let etaLine = "";
         if (capAlt) {
@@ -3665,25 +3738,14 @@ export default defineComponent({
           c.etaSeconds != null && c.etaSeconds > 0
             ? Math.ceil(c.etaSeconds) + " s"
             : "";
-        if (sprite.userData.text === `${text}|${etaLine}|${quickEta}`) return;
-        sprite.userData.text = `${text}|${etaLine}|${quickEta}`;
-        sprite.userData.text = `${text}|${etaLine}`;
-        const ctx = canvas.getContext("2d")!;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "rgba(255,255,255,0.8)";
-        ctx.font = "bold 48px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(text, 32, 32);
-        if (quickEta) {
-          ctx.fillStyle = "rgba(251,191,36,0.95)";
-          ctx.font = "bold 22px sans-serif";
-          ctx.fillText(quickEta, 32, 56);
-        } else if (etaLine) {
-          ctx.fillStyle = "rgba(251,191,36,0.95)";
-          ctx.font = "bold 22px sans-serif";
-          ctx.fillText(etaLine, 32, 56);
-        }
+        const key = `${text}|${etaLine}|${quickEta}`;
+        if (sprite.userData.text === key) return;
+        sprite.userData.text = key;
+        paintCapSprite(
+          sprite.userData.canvas as HTMLCanvasElement,
+          text,
+          quickEta || etaLine,
+        );
         (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
       });
       // Smoke screens: white start/end rings + a floating remaining-seconds
@@ -3731,12 +3793,12 @@ export default defineComponent({
             const ctx = cvs.getContext("2d")!;
             ctx.clearRect(0, 0, cvs.width, cvs.height);
             ctx.fillStyle = "rgba(255,255,255,0.9)";
-            ctx.font = "bold 40px sans-serif";
+            ctx.font = "bold 80px sans-serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.shadowColor = "rgba(0,0,0,0.9)";
-            ctx.shadowBlur = 8;
-            ctx.fillText(text, 64, 32);
+            ctx.shadowBlur = 12;
+            ctx.fillText(text, cvs.width / 2, cvs.height / 2);
             (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
           }
           sprite.position.set(pStart.x, 34, -pStart.z);
@@ -4673,6 +4735,33 @@ export default defineComponent({
         label.x = (_projVec.x * hw) + hw;
         label.y = (-_projVec.y * hh) + hh;
         if (_projVec.z >= 1) label.visible = false;
+      }
+    }
+
+    /** Keep the screen-space overlays (cap/smoke/ward ring outlines, cap
+     *  letters, smoke countdown) at a constant on-screen size: the Line2
+     *  ring materials only need their viewport resolution uniform refreshed,
+     *  while each text sprite gets a world scale derived from its distance
+     *  to the camera so it always spans the same number of CSS pixels —
+     *  zooming no longer inflates them into fat, blurry billboards. */
+    function updateOverlayScale() {
+      const cam = api.value?.camera;
+      const el = container.value;
+      if (!cam || !el) return;
+      const vw = el.clientWidth || 800;
+      const vh = el.clientHeight || 600;
+      // World units per CSS pixel, per unit of camera distance: a sprite
+      // whose world height is `dist * k * px` spans exactly `px` pixels.
+      const k = (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)) / vh;
+      for (const mat of overlayLineMats) mat.resolution.set(vw, vh);
+      const fitSprite = (sprite: THREE.Sprite, pxHeight: number, aspect: number) => {
+        const dist = cam.position.distanceTo(sprite.position);
+        const world = dist * k * pxHeight;
+        sprite.scale.set(world * aspect, world, 1);
+      };
+      for (const s of capLetterSprites) fitSprite(s, CAP_SPRITE_PX, 1);
+      for (const cl of smokeClusters) {
+        if (cl.timeSprite) fitSprite(cl.timeSprite, SMOKE_SPRITE_PX, 2);
       }
     }
 
