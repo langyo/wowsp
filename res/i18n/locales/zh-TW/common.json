@@ -26,7 +26,8 @@
       "cn360": "國服（360）",
       "cnKongzhong": "國服（空中網）",
       "manual": "手動指定"
-    }
+    },
+    "versionLabel": "用戶端版本"
   },
   "search": {
     "fuzzy": "模糊搜尋",

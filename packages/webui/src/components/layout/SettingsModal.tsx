@@ -47,7 +47,7 @@ import { useSettingsUiStore, type SettingsSection } from "@/stores/settingsUi";
 import { useCacheStore, type PackId } from "@/stores/cache";
 import { AboutContent } from "@/components/layout/AboutModal";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
-import RealmFlag from "@/components/base/RealmFlag";
+import PlatformIcon from "@/components/base/PlatformIcon";
 import AuthorMark from "@/components/base/AuthorMark";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
@@ -69,7 +69,7 @@ const presetIds = Object.keys(themePresets).sort((a, b) =>
  * title-bar gear and the sidebar's client / account buttons all open it,
  * optionally landing on a section): language, appearance (theme mode +
  * color preset + wallpaper + solar indicator), game path (ALL known
- * installs as rich cards with a realm flag — click to activate), account
+ * installs as rich cards with a platform badge — click to activate), account
  * management, network proxy, and About. Sections live in titled cards
  * stacked in the modal body; every control rows up with its card so
  * nothing floats mid-air.
@@ -546,8 +546,8 @@ export default defineComponent({
           {ui.section === "gamePath" ? (
           <>
           {/* game path — every known install (detected clients + manual pins)
-              as a rich card mirroring the 账户 list: realm flag on the left,
-              client + realm tag + path in the body; clicking a card
+              as a rich card mirroring the 账户 list: platform badge on the
+              left, client + realm tag + path in the body; clicking a card
               activates it, which switches the app-wide client context
               (replay list, armor/ballistics loader, stats realm) and follows
               that realm's preferred account. Detection and the native
@@ -568,7 +568,7 @@ export default defineComponent({
                       class={["install-card", active ? "install-card--active" : ""]}
                       onClick={() => void activateInstall(i)}
                     >
-                      <RealmFlag realm={i.realm} kind={i.kind} />
+                      <PlatformIcon kind={i.kind} size={38} />
                       <span class="install-card__body">
                         <span class="install-card__head">
                           <span class="install-card__name">{kindLabel(i.kind)}</span>

@@ -1,0 +1,40 @@
+/* PlatformIcon — brand-coloured channel badge, sized by the component
+   (default 38px) to sit where the old realm flag sat in the install list.
+   Brand colours are constants: the badge must read the same on either
+   theme, like the flag colours it replaces. */
+
+.platform-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-border) / 30%);
+  background: rgb(var(--color-border) / 40%);
+  color: #fff;
+
+  /* Full-bleed sizing is for the badge marks only; the lucide fallback
+     glyph sizes itself from its `size` prop and must keep that box. */
+  svg:not(.platform-icon__glyph) {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  &__glyph {
+    color: rgb(var(--color-muted));
+  }
+
+  &--steam {
+    background: #1b2838;
+  }
+
+  &--wg {
+    background: #17181a;
+  }
+
+  &--cn {
+    background: #6fbe2c;
+  }
+}
