@@ -10,6 +10,7 @@ pub mod decision_ai;
 pub mod decision_tick;
 pub mod encyclopedia;
 pub mod exports;
+pub mod fire_dataset;
 pub mod game_detect;
 pub mod gameparams;
 pub mod media;
