@@ -229,6 +229,58 @@
     padding: 0.6rem 1rem;
   }
 
+  /* Chat log modal — narrower than the results panel, timeline list */
+  &__chat-panel {
+    width: min(520px, 92vw);
+  }
+  &__chat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  &__chat-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 6px;
+    background: rgb(var(--color-text) / 4%);
+    border-left: 3px solid rgb(var(--color-primary));
+    font-size: var(--text-sm);
+    /* Relations: 0/1 = self + allies, 2+ = enemies. */
+    &--ally {
+      border-left-color: #3cb478;
+    }
+    &--enemy {
+      border-left-color: #e05555;
+    }
+  }
+  &__chat-time {
+    flex: 0 0 auto;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-text) / 0.45);
+    font-variant-numeric: tabular-nums;
+  }
+  &__chat-sender {
+    flex: 0 1 auto;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: rgb(var(--color-text) / 0.85);
+  }
+  &__chat-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: rgb(var(--color-text));
+    white-space: pre-wrap;
+  }
+
   /* Post-battle: two-column team matrix + drill-down panel */
   &__postbattle-cell-status {
     flex: 0 0 auto;

@@ -243,5 +243,7 @@
     "view": {
       "reset": "Restablecer el zoom"
     }
-  }
+  },
+  "chatLog": "Chat de batalla",
+  "achieved": "logró el logro"
 }

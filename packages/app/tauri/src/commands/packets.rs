@@ -214,6 +214,13 @@ pub struct DecodedReplay {
     /// authoritative per-weapon totals for the recorder, incl. aircraft
     /// weapons. Empty on versions whose exposed method id isn't pinned.
     pub damage_stats: Vec<wowsp_tauri_shared::DamageStatSample>,
+    /// Battle chat timeline (avatar onChatMessage) — every player's messages
+    /// with match timestamps. Empty when the version's exposed id isn't
+    /// pinned or the payload fails the wire-shape check.
+    pub chat_messages: Vec<wowsp_tauri_shared::ChatEvent>,
+    /// In-battle achievement awards (avatar onAchievementEarned): a roster
+    /// player earned a GameParams achievement at a match time.
+    pub achievements: Vec<wowsp_tauri_shared::AchievementEvent>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -406,6 +413,8 @@ fn walk_frames(
     let mut ward_removes: Vec<wowsp_tauri_shared::WardRemoveEvent> = Vec::new();
     let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
     let mut damage_stats: Vec<wowsp_tauri_shared::DamageStatSample> = Vec::new();
+    let mut chat_messages: Vec<wowsp_tauri_shared::ChatEvent> = Vec::new();
+    let mut achievements: Vec<wowsp_tauri_shared::AchievementEvent> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -678,6 +687,14 @@ fn walk_frames(
             ));
         } else if m.avatar_receive_damage_stat == Some(call.method_id) {
             damage_stats.extend(decode_damage_stat(call.time, &call.args));
+        } else if call.method_id == m.avatar_on_chat_message {
+            if let Some(c) = decode_chat_message(call.time, &call.args) {
+                chat_messages.push(c);
+            }
+        } else if call.method_id == m.avatar_on_achievement_earned {
+            if let Some(a) = decode_achievement(call.time, &call.args) {
+                achievements.push(a);
+            }
         }
     }
     for samples in positions.values_mut() {
@@ -724,6 +741,8 @@ fn walk_frames(
         ward_removes,
         shot_kills,
         damage_stats,
+        chat_messages,
+        achievements,
     }
 }
 
@@ -889,6 +908,63 @@ fn decode_shot_kills(
         }
     }
     out
+}
+
+/// Read one BigWorld wire string from `args` at `off`: a `u8` length prefix,
+/// with `0xff` escaping to `u16` length + one dummy byte. Returns the decoded
+/// (lossy UTF-8) string and the offset just past it.
+fn read_wire_string(args: &[u8], off: usize) -> Option<(String, usize)> {
+    let mut cursor = off;
+    let len = match *args.get(cursor)? {
+        0xff => {
+            let u16_len = u16::from_le_bytes(read_bytes(args, cursor + 1)?) as usize;
+            // 0xff flag + u16 length + 1 dummy byte before the body.
+            cursor += 4;
+            u16_len
+        },
+        plain => {
+            cursor += 1;
+            plain as usize
+        },
+    };
+    let raw = args.get(cursor..cursor + len)?;
+    Some((String::from_utf8_lossy(raw).into_owned(), cursor + len))
+}
+
+/// Decode `onChatMessage` args: `i32 playerId, STRING namespace, STRING
+/// message, STRING unk` (the trailing `unk` is bounded but dropped — captures
+/// show it empty). Any shape mismatch yields `None` (the message is skipped,
+/// never fatal).
+fn decode_chat_message(time: f32, args: &[u8]) -> Option<wowsp_tauri_shared::ChatEvent> {
+    if args.len() < 5 {
+        return None;
+    }
+    let player_id = i32::from_le_bytes(read_bytes(args, 0)?);
+    let (namespace, off) = read_wire_string(args, 4)?;
+    let (message, off) = read_wire_string(args, off)?;
+    // Third string (unknown purpose) only bounds-checks the payload tail.
+    read_wire_string(args, off)?;
+    Some(wowsp_tauri_shared::ChatEvent {
+        time,
+        player_id,
+        namespace,
+        message,
+    })
+}
+
+/// Decode `onAchievementEarned` args: `i32 playerId, u32 achievementId`. The
+/// id joins GameParams Achievement entries (bundled `achievement_names.json`
+/// for display names); multiple ids map to the same achievement via template
+/// variants, so the frontend keys on the raw id.
+fn decode_achievement(time: f32, args: &[u8]) -> Option<wowsp_tauri_shared::AchievementEvent> {
+    if args.len() < 8 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::AchievementEvent {
+        time,
+        player_id: i32::from_le_bytes(read_bytes(args, 0)?),
+        achievement_id: u32::from_le_bytes(read_bytes(args, 4)?),
+    })
 }
 
 /// A value from a narrow pickle-proto-2 subset — exactly the shapes the
@@ -1894,6 +1970,15 @@ fn parse_position(payload: &[u8], time: f32) -> Option<PositionSample> {
 mod tests {
     use super::*;
 
+    /// Decode a hex string into bytes — sample payloads below are pasted
+    /// straight from the capture dumps they document.
+    fn hex_literal(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
     /// PlayerPosition (0x2c) parses the 32-byte layout into a position sample.
     #[test]
     fn parses_player_position_payload() {
@@ -2453,6 +2538,67 @@ mod tests {
         assert_eq!(legacy_kills.len(), 1);
         assert_eq!(legacy_kills[0].shot_id, 7);
         assert!((legacy_kills[0].z - 20.0).abs() < 1e-3);
+    }
+
+    /// onChatMessage: `i32 playerId, STRING namespace, STRING message, STRING
+    /// unk`. The samples are byte-for-byte the two 15.8.0 captures the decoder
+    /// was written against (ASCII and CJK bodies, empty `unk`).
+    #[test]
+    fn decodes_chat_message_wire_shape() {
+        // 537555508 (roster "Nutthakun_Jiamsri") "battle_team" "SRY" ""
+        let ascii = hex_literal(&"34720a200b626174746c655f7465616d03535259 00".replace(' ', ""));
+        let msg = decode_chat_message(103.6, &ascii).expect("must parse");
+        assert_eq!(msg.player_id, 537555508);
+        assert_eq!(msg.namespace, "battle_team");
+        assert_eq!(msg.message, "SRY");
+        assert!((msg.time - 103.6).abs() < 1e-3);
+        // 537685747 (roster "wuheshido") "battle_team" "输了" "" — the u8
+        // length prefix counts bytes, so the CJK body is 6 bytes, not 2 chars.
+        let cjk =
+            hex_literal(&"f36e0c200b626174746c655f7465616d06e8be93e4ba86 00".replace(' ', ""));
+        let msg = decode_chat_message(942.4, &cjk).expect("must parse");
+        assert_eq!(msg.player_id, 537685747);
+        assert_eq!(msg.message, "输了");
+        // Truncated payloads are skipped, never fatal.
+        assert!(decode_chat_message(0.0, &[]).is_none());
+        assert!(decode_chat_message(0.0, &ascii[..ascii.len() - 1]).is_none());
+        assert!(decode_chat_message(0.0, &ascii[..8]).is_none());
+        // A declared length running past the payload aborts the parse.
+        let mut overrun = ascii.clone();
+        overrun[4] = 0xff;
+        assert!(decode_chat_message(0.0, &overrun).is_none());
+    }
+
+    /// Wire strings escape past 255 bytes via `0xff, u16 len, dummy byte`.
+    #[test]
+    fn chat_message_supports_long_escape() {
+        let body = vec![b'x'; 300];
+        let mut args = Vec::new();
+        args.extend_from_slice(&7i32.to_le_bytes()); // playerId
+        args.push(0xff);
+        args.extend_from_slice(&(body.len() as u16).to_le_bytes());
+        args.push(0u8); // dummy byte
+        args.extend_from_slice(&body);
+        args.push(3u8);
+        args.extend_from_slice(b"abc");
+        args.push(0u8);
+        let msg = decode_chat_message(1.0, &args).expect("must parse");
+        assert_eq!(msg.namespace.len(), 300);
+        assert_eq!(msg.message, "abc");
+    }
+
+    /// onAchievementEarned: `i32 playerId, u32 achievementId` — sample bytes
+    /// from the 15.8.0 capture, whose id matches the battle-results
+    /// achievements list of the same replay.
+    #[test]
+    fn decodes_achievement_event() {
+        let args = hex_literal(&"99ea0a20b0e3f2fe");
+        let a = decode_achievement(237.3, &args).expect("must parse");
+        assert_eq!(a.player_id, 537586329);
+        assert_eq!(a.achievement_id, 4277330864);
+        assert!((a.time - 237.3).abs() < 1e-3);
+        assert!(decode_achievement(0.0, &args[..7]).is_none());
+        assert!(decode_achievement(0.0, &[]).is_none());
     }
 
     /// receiveTorpedoDirection: fixed 39-byte layout decodes owner/shot/pos.

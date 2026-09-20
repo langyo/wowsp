@@ -17,6 +17,7 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
 
 import { HPopover } from "@celestia-island/hikari";
+import { X } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import "./ShipFilterBar.scss";
@@ -123,7 +124,7 @@ export default defineComponent({
             <div class="ship-filter-bar__pop-head">
               <span>{props.title}</span>
               <button type="button" class="ship-filter-bar__pop-close" onClick={close}>
-                ✕
+                <X size={12} />
               </button>
             </div>
             {/* Wrap unconditionally: this component may host long option
