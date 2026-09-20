@@ -11,7 +11,7 @@
   "themeModeDark": "常にダーク",
   "themeModeLight": "常にライト",
   "themeModeSolar": "日照に従う",
-  "wallpaperSolid": "単色（テーマに追従）",
+  "wallpaperSolid": "単色（ダーク）",
   "themePreset": "カラープリセット",
   "geolocation": "位置情報",
   "geolocationHint": "日照ベースの自動テーマに使用します。OS から位置情報を取得できる場合はそれを優先し、なければ IP から解決します（セッション中はキャッシュ）。",
@@ -27,7 +27,7 @@
   "wallpaperDelete": "壁紙を削除",
   "wallpaperDeleteConfirm": "削除を確認",
   "wallpaperRemoveFailed": "壁紙の削除に失敗しました",
-  "wallpaperHint": "単色背景は上のテーマモードに追従します。カスタム画像はデータディレクトリの wallpapers フォルダーに保存されます。",
+  "wallpaperHint": "単色背景は常にダークベース・明るい文字で表示されます。カスタム画像はデータディレクトリの wallpapers フォルダーに保存されます。",
   "fontSize": "フォントサイズ",
   "fontSizeHint": "タイトルバーとアプリ名を除く全テキストに適用されます。",
   "fontSizeXS": "最小",
@@ -131,5 +131,6 @@
   "resFullDownload": "フルダウンロードが必要",
   "resAfterApp": "先にアプリ本体を更新してください。リソースパックは再起動後に更新されます。",
   "resSegment": "パッチ {current} / {total}",
-  "cacheApplying": "適用中…"
+  "cacheApplying": "適用中…",
+  "wallpaperOverlay": "オーバーレイの不透明度"
 }

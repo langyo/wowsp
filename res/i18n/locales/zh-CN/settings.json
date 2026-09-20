@@ -11,7 +11,7 @@
   "themeModeDark": "常黑",
   "themeModeLight": "常白",
   "themeModeSolar": "根据时间（日照）",
-  "wallpaperSolid": "纯色（跟随主题）",
+  "wallpaperSolid": "纯色（深色）",
   "themePreset": "配色方案",
   "geolocation": "位置",
   "geolocationHint": "用于基于日照的自动主题。壳层提供定位时优先使用，否则按 IP 解析，本次会话内缓存。",
@@ -27,7 +27,7 @@
   "wallpaperDelete": "删除壁纸",
   "wallpaperDeleteConfirm": "确认删除",
   "wallpaperRemoveFailed": "壁纸删除失败",
-  "wallpaperHint": "纯色背景自动跟随上方主题模式；自定义图片保存在数据目录的 wallpapers 文件夹中。",
+  "wallpaperHint": "纯色背景始终为深色底、浅色文字；自定义图片保存在数据目录的 wallpapers 文件夹中。",
   "fontSize": "字体大小",
   "fontSizeHint": "除标题栏与应用标题外，全局文字随之放大缩小。",
   "fontSizeXS": "更小",
@@ -131,5 +131,6 @@
   "resFullDownload": "需完整下载",
   "resAfterApp": "请先完成应用更新，重启后再更新资源包。",
   "resSegment": "第 {current} / {total} 段",
-  "cacheApplying": "应用中…"
+  "cacheApplying": "应用中…",
+  "wallpaperOverlay": "遮罩不透明度"
 }

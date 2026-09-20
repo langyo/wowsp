@@ -11,7 +11,7 @@
   "themeModeDark": "常黑",
   "themeModeLight": "常白",
   "themeModeSolar": "根據時間（日照）",
-  "wallpaperSolid": "純色（跟隨主題）",
+  "wallpaperSolid": "純色（深色）",
   "themePreset": "配色方案",
   "geolocation": "位置",
   "geolocationHint": "用於基於日照的自動主題。殼層提供定位時優先使用，否則依 IP 解析，於本次工作階段內快取。",
@@ -27,7 +27,7 @@
   "wallpaperDelete": "刪除桌布",
   "wallpaperDeleteConfirm": "確認刪除",
   "wallpaperRemoveFailed": "桌布刪除失敗",
-  "wallpaperHint": "純色背景自動跟隨上方主題模式；自訂圖片儲存在資料目錄的 wallpapers 資料夾中。",
+  "wallpaperHint": "純色背景始終為深色底、淺色文字；自訂圖片儲存在資料目錄的 wallpapers 資料夾中。",
   "fontSize": "字體大小",
   "fontSizeHint": "除標題列與應用程式標題外，全域文字將隨之放大縮小。",
   "fontSizeXS": "更小",
@@ -131,5 +131,6 @@
   "resFullDownload": "需完整下載",
   "resAfterApp": "請先完成應用更新，重啟後再更新資源包。",
   "resSegment": "第 {current} / {total} 段",
-  "cacheApplying": "套用中…"
+  "cacheApplying": "套用中…",
+  "wallpaperOverlay": "遮罩不透明度"
 }

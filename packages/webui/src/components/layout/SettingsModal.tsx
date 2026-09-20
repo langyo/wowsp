@@ -36,6 +36,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
+import { THEME_PRESET_ORDER } from "@/theme";
 import {
   setThemeModePreference,
   themeModePreference,
@@ -84,11 +85,10 @@ function css(rgb: { r: number; g: number; b: number }): string {
   return `rgb(${rgb.r} ${rgb.g} ${rgb.b})`;
 }
 
-// Brand default first, then hikari's built-ins (incl. the shared
-// nord/gruvbox/tokyonight presets and any user custom themes).
-const presetIds = Object.keys(themePresets).sort((a, b) =>
-  a === "ocean" ? -1 : b === "ocean" ? 1 : 0,
-);
+// The shipped presets in display order (Nord first, Synthwave '84 last —
+// see THEME_PRESET_ORDER). Resolved at render time through themePresets so
+// cards appear even though the registry is mutated at runtime.
+const presetIds = THEME_PRESET_ORDER.filter((id) => id in themePresets);
 
 /**
  * Settings modal (app-singleton, driven by the settingsUi store — the
@@ -709,6 +709,30 @@ export default defineComponent({
                   >
                     <ImagePlus size={14} /> {t("settings.wallpaperImport")}
                   </HButton>
+                </div>
+              ) : null}
+              {/* Overlay strength over image wallpapers — the transparency
+                  dial (wallpaperOverlay.ts); meaningless for solid, which
+                  never draws a scrim, so it only renders while an image is
+                  active. Applies live for instant preview. */}
+              {wallpaper.isImage.value ? (
+                <div class="settings-modal__dpi-row">
+                  <span class="settings-modal__overlay-label">
+                    {t("settings.wallpaperOverlay")}
+                  </span>
+                  <HSlider
+                    class="settings-modal__dpi-slider"
+                    min={0}
+                    max={100}
+                    step={5}
+                    modelValue={wallpaper.overlayPercent.value}
+                    onUpdate:modelValue={wallpaper.setOverlayPercent}
+                    ariaLabel={t("settings.wallpaperOverlay")}
+                    formatValue={(v: number) => `${v}%`}
+                  />
+                  <span class="settings-modal__dpi-value">
+                    {wallpaper.overlayPercent.value}%
+                  </span>
                 </div>
               ) : null}
               <p class="settings-modal__hint">{t("settings.wallpaperHint")}</p>

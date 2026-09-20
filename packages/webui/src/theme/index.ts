@@ -1,10 +1,18 @@
 // Theme + runtime forwarding: the shared theme system lives in hikari.
-// WoWSP-specific pieces stay local: brand presets (brandThemes.ts) and the
-// wallpaper system (wallpaper.ts / useWallpaper.ts).
+// WoWSP-specific pieces stay local: the wallpaper system (wallpaper.ts /
+// useWallpaper.ts / wallpaperOverlay.ts) and the mode preference
+// (themeModePreference.ts).
 //
 // hikari's runtime buses replace wowsp's former animationBus / cronBus /
 // useSolarTime (deleted in the hikari sync) — same API surface, upstream
 // maintained.
+
+/** Display order of the shipped color presets, shared by the settings
+ *  appearance section and the onboarding wizard: Nord first (also the boot
+ *  default — index.html declares __celestiaDefaultTheme so a stored id that
+ *  no longer resolves snaps here), Synthwave '84 deliberately last. */
+export const THEME_PRESET_ORDER = ["nord", "gruvbox", "tokyonight", "synthwave84"] as const;
+
 export {
   initTheme,
   useTheme,

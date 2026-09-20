@@ -18,9 +18,11 @@
  * The retired wowsp-side "system" value (OS prefers-color-scheme follower)
  * migrates onto "solar" as well.
  */
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
 import { useTheme } from "@celestia-island/hikari";
+
+import { useWallpaper } from "./useWallpaper";
 
 export type ThemeModePreference = "dark" | "light" | "solar";
 
@@ -74,6 +76,19 @@ function applyPreference(mode: ThemeModePreference) {
   useTheme().setMode(mode === "solar" ? "system" : mode);
 }
 
+// Solid wallpapers always present dark: their paint is the dark theme
+// color, so the whole shell must use the dark palette to keep text light
+// and readable day and night (a light palette over the dark solid would
+// paint dark-on-dark everywhere). Image wallpapers follow the stored
+// preference, whose light mode keeps dark-on-light-glass readable.
+const wallpaper = useWallpaper();
+
+/** Effective-mode applier: the stored preference, overridden to dark while
+ *  a solid background is active. */
+function applyEffectivePreference() {
+  applyPreference(wallpaper.isSolid.value ? "dark" : themeModePreference.value);
+}
+
 /** Change + persist + apply immediately (settings section, onboarding
  *  wizard — both want live preview). */
 export function setThemeModePreference(mode: ThemeModePreference) {
@@ -83,11 +98,13 @@ export function setThemeModePreference(mode: ThemeModePreference) {
   } catch {
     // storage unavailable — the preference holds for the session
   }
-  applyPreference(mode);
+  applyEffectivePreference();
 }
 
 /** Boot hook: apply the stored preference after hikari's initTheme() so the
- *  authoritative key wins over whatever hikari restored. */
+ *  authoritative key wins over whatever hikari restored — and keep
+ *  re-applying whenever the wallpaper flips between solid and image. */
 export function initThemeModePreference() {
-  applyPreference(themeModePreference.value);
+  applyEffectivePreference();
+  watch(wallpaper.isSolid, applyEffectivePreference);
 }

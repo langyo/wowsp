@@ -11,7 +11,7 @@
   "themeModeDark": "Siempre oscuro",
   "themeModeLight": "Siempre claro",
   "themeModeSolar": "Según la luz solar",
-  "wallpaperSolid": "Sólido (sigue el tema)",
+  "wallpaperSolid": "Sólido (oscuro)",
   "themePreset": "Esquema de color",
   "geolocation": "Ubicación",
   "geolocationHint": "Se usa para el tema automático basado en el sol. Prioriza la ubicación nativa si el sistema la proporciona; si no, usa la IP — se guarda en caché durante la sesión.",
@@ -27,7 +27,7 @@
   "wallpaperDelete": "Eliminar fondo",
   "wallpaperDeleteConfirm": "Confirmar eliminación",
   "wallpaperRemoveFailed": "Error al eliminar el fondo",
-  "wallpaperHint": "El fondo sólido sigue el modo de tema de arriba; las imágenes personalizadas se guardan en la carpeta wallpapers del directorio de datos.",
+  "wallpaperHint": "El fondo sólido siempre se presenta oscuro y con texto claro; las imágenes personalizadas se guardan en la carpeta wallpapers del directorio de datos.",
   "fontSize": "Tamaño de fuente",
   "fontSizeHint": "Se aplica a todo el texto, salvo la barra de título y el título de la app.",
   "fontSizeXS": "El más pequeño",
@@ -131,5 +131,6 @@
   "resFullDownload": "Se requiere descarga completa",
   "resAfterApp": "Actualiza primero la aplicación — el paquete de recursos seguirá tras el reinicio.",
   "resSegment": "Parche {current} / {total}",
-  "cacheApplying": "Aplicando…"
+  "cacheApplying": "Aplicando…",
+  "wallpaperOverlay": "Opacidad del velo"
 }

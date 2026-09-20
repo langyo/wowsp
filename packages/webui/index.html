@@ -49,11 +49,11 @@
     <div id="app"></div>
     <script>
       // Theme globals read by hikari's theme module at import time (before
-      // any bundle code runs): "ocean" is the WoWSP brand default. Also
-      // migrate the pre-hikari localStorage keys once so existing installs
-      // keep their mode/preset choice.
-      window.__celestiaThemes = { ocean: true };
-      window.__celestiaDefaultTheme = "ocean";
+      // any bundle code runs): Nord is the WoWSP default — a stored id that
+      // no longer resolves (e.g. the retired "ocean" brand preset) drops to
+      // it at boot. Also migrate the pre-hikari localStorage keys once so
+      // existing installs keep their mode/preset choice.
+      window.__celestiaDefaultTheme = "nord";
       (function () {
         try {
           if (!localStorage.getItem("hikari-theme-mode") && localStorage.getItem("wowsp-theme-mode")) {
@@ -61,7 +61,7 @@
           }
           if (!localStorage.getItem("hikari-theme")) {
             var preset = localStorage.getItem("wowsp-theme-preset");
-            if (preset === "ocean" || preset === "nord" || preset === "gruvbox" || preset === "tokyonight") {
+            if (preset === "nord" || preset === "gruvbox" || preset === "tokyonight" || preset === "synthwave84") {
               localStorage.setItem("hikari-theme", preset);
             }
           }

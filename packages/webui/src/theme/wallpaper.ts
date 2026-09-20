@@ -2,16 +2,16 @@
  * WoWSP wallpaper types + presets.
  *
  * The wallpaper choice is deliberately two-dimensional and nothing more:
- *   - Solid: a plain background that FOLLOWS the theme mode (light theme can
- *     never end up on a black background) — the single built-in preset.
+ *   - Solid: a plain background that always presents dark (see
+ *     themeModePreference) — the single built-in preset.
  *   - Custom: image files the user imported, stored in the fixed
  *     `<data_dir>/wallpapers/` folder (see commands::wallpaper). The
  *     directory IS the list — ids are file names, so there is no metadata
  *     blob to keep in sync.
  *
- * The wallpaper is applied to <body> via CSS custom properties consumed by
- * theme.scss: --wallpaper-image, --wallpaper-solid-color,
- * --wallpaper-overlay-opacity.
+ * The active wallpaper is applied by WallpaperRenderer: image sources as a
+ * dedicated fixed layer on <body>, solid as body's background-color — see
+ * theme.scss for the layer/scrim rules.
  */
 
 export type WallpaperType = "solid" | "image";

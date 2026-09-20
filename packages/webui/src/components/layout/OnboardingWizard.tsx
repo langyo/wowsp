@@ -1,9 +1,10 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
-import { HButton, HModal, HStepFlow, useToast } from "@celestia-island/hikari";
+import { HButton, HModal, HStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t } from "@/i18n";
+import { THEME_PRESET_ORDER } from "@/theme";
 import {
   setThemeModePreference,
   themeModePreference,
@@ -69,6 +70,7 @@ export default defineComponent({
     const step = ref<StepKey>("welcome");
     const countdown = ref(ACK_COUNTDOWN_SECONDS);
     let timer: number | undefined;
+    const theme = useTheme();
     const wallpaper = useWallpaper();
     const toast = useToast();
     const prefs = useStatsPrefsStore();
@@ -197,6 +199,35 @@ export default defineComponent({
       )),
     );
 
+    // Color-preset cards (the settings appearance row, mirrored): swatch =
+    // the preset's own background at the effective mode, click applies the
+    // theme immediately for a live preview.
+    const presetCards = computed(() =>
+      THEME_PRESET_ORDER.map((id) => {
+        const tokens = getThemeTokens(id, theme.effectiveMode.value);
+        if (!tokens) return null;
+        const on = theme.currentTheme.value === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={on}
+            class={["onboarding__option", on ? "onboarding__option--on" : ""]}
+            onClick={() => theme.setTheme(id)}
+          >
+            <span class="onboarding__option-swatch">
+              <span
+                class="onboarding__option-swatch-fill"
+                style={{ background: `rgb(${tokens.background.r} ${tokens.background.g} ${tokens.background.b})` }}
+              />
+            </span>
+            <span class="onboarding__option-label">{themePresets[id].name}</span>
+            {on ? <Check size={14} class="onboarding__option-check" /> : null}
+          </button>
+        );
+      }),
+    );
+
     const wallpaperCards = computed(() =>
       wallpaper.allWallpapers.value.map((w) => {
         const on = wallpaper.activeWallpaperId.value === w.id;
@@ -269,6 +300,14 @@ export default defineComponent({
 
                     <div class="onboarding__options onboarding__options--three">
                       {themeCards.value}
+                    </div>
+
+                    {/* Color scheme — the four shipped presets in the shared
+                        display order (THEME_PRESET_ORDER, Synthwave '84
+                        last), same cards as the settings appearance row. */}
+                    <h3 class="onboarding__subtitle">{t("settings.themePreset")}</h3>
+                    <div class="onboarding__options onboarding__options--four">
+                      {presetCards.value}
                     </div>
 
                     <h3 class="onboarding__subtitle">{t("onboarding.wallpaperSection")}</h3>
