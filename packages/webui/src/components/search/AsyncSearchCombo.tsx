@@ -3,7 +3,8 @@
  * debounced, race-safe ASYNC autocomplete. Same interaction shell as the
  * ship fuzzy-search popup (ShipFilterBar), but network-backed and generic:
  * the component knows nothing about players/clans/ships — callers pass a
- * `search` callback plus row renderers.
+ * `search` callback plus row renderers. The panel renders through hikari
+ * HPopover (body-level teleport) so overflow ancestors can never clip it.
  *
  * Debounce + Enter-flush come from hikari's HSearchInput (`debounce` prop +
  * `search` event); the race token mirrors HkKeywordSearchModal's semantic
@@ -11,6 +12,7 @@
  * Numeric queries bypass the minimum-length gate (UID lookups).
  */
 import {
+  computed,
   defineComponent,
   onBeforeUnmount,
   onMounted,
@@ -19,7 +21,7 @@ import {
   type VNodeChild,
 } from "vue";
 
-import { HSearchInput } from "@celestia-island/hikari";
+import { HPopover, HSearchInput } from "@celestia-island/hikari";
 import { Search } from "@lucide/vue";
 
 import "./AsyncSearchCombo.scss";
@@ -63,6 +65,11 @@ export default defineComponent({
     /** True once a query has completed (drives the "no results" state). */
     const searched = ref(false);
     const anchor = ref<HTMLElement | null>(null);
+    // The BUTTON anchors the teleported HPopover panel; the panel element
+    // joins the outside-close test — it renders at body level, outside
+    // `anchor`, so a press inside it must not count as an outside press.
+    const btnEl = ref<HTMLButtonElement | null>(null);
+    const panelEl = ref<HTMLElement | null>(null);
     /** Race token: only the newest in-flight query may write state. */
     let seq = 0;
 
@@ -101,15 +108,22 @@ export default defineComponent({
       props.onSelect(item);
     }
 
-    function onDocMouseDown(e: MouseEvent) {
+    /** HPopover placement — the align prop's popup-side choice, expressed
+     *  as the anchored placement (left = panel grows rightwards). */
+    const placement = computed(() =>
+      props.align === "right" ? ("bottom-end" as const) : ("bottom-start" as const),
+    );
+
+    function onDocPointerDown(e: PointerEvent) {
       if (!open.value) return;
-      if (anchor.value && !anchor.value.contains(e.target as Node)) {
-        open.value = false;
-      }
+      const target = e.target as Node;
+      if (anchor.value?.contains(target)) return;
+      if (panelEl.value?.contains(target)) return;
+      open.value = false;
     }
-    onMounted(() => document.addEventListener("mousedown", onDocMouseDown));
+    onMounted(() => document.addEventListener("pointerdown", onDocPointerDown, true));
     onBeforeUnmount(() => {
-      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
       // Invalidate any in-flight query so its resolve can't touch the dead
       // component's state.
       seq++;
@@ -119,6 +133,7 @@ export default defineComponent({
       <div ref={anchor} class="async-search-combo">
         <button
           type="button"
+          ref={btnEl}
           class={[
             "async-search-combo__btn",
             open.value || query.value.trim() ? "async-search-combo__btn--on" : "",
@@ -133,8 +148,21 @@ export default defineComponent({
               crushing a CSS-sized-only svg down to zero width. */}
           <Search size={14} />
         </button>
-        {open.value ? (
-          <div class={["async-search-combo__panel", `async-search-combo__panel--${props.align}`]}>
+        {/* closeOnBackdrop stays off: HPopover's own document listener would
+            close on the re-click of the open trigger before that click
+            re-opens it. The pointerdown listener above is the outside-close;
+            Escape rides closeOnEscape. */}
+        <HPopover
+          modelValue={open.value}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) open.value = false;
+          }}
+          anchorRef={btnEl.value}
+          placement={placement.value}
+          closeOnBackdrop={false}
+          title={props.title || props.placeholder}
+        >
+          <div ref={panelEl} class="async-search-combo__panel">
             {props.title ? (
               <div class="async-search-combo__panel-head">
                 <span>{props.title}</span>
@@ -179,7 +207,7 @@ export default defineComponent({
               <div class="async-search-combo__hint">{props.noResultsText}</div>
             ) : null}
           </div>
-        ) : null}
+        </HPopover>
       </div>
     );
   },

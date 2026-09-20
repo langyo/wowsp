@@ -20,18 +20,27 @@
  *    to one pick on load;
  *  - selections survive an unmount/remount cycle.
  *
+ * The option popups render through hikari HPopover: their DOM teleports to
+ * document.body (overflow ancestors can never clip them), so popup queries
+ * scope to body and each open/close is polled to let the popover machine's
+ * timer-driven enter/leave settle.
+ *
  * The drag gesture itself is pointer-driven and exercised by hand; the
  * priority mechanics it feeds are covered here through the persisted order.
  */
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createPinia } from "pinia";
-import { flushPromises, mount } from "@vue/test-utils";
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
 import ShipFilterBar, { type FilterState } from "./ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { PlayerShipStats, ShipInfo } from "@/api";
 
 const PERSIST_KEY = "wowsp.shipFilter.v3";
+
+// A popover left open by one test must not leak into the next test's
+// body-level queries — unmount every wrapper after each test.
+enableAutoUnmount(afterEach);
 
 function ship(partial: Partial<PlayerShipStats> & { shipId: number }): PlayerShipStats {
   return {
@@ -88,9 +97,32 @@ const order = (wrapper: ReturnType<typeof mountBar>) =>
   lastState(wrapper).ships.map((s) => s.shipId);
 const chip = (wrapper: ReturnType<typeof mountBar>, key: string) =>
   wrapper.find(`[data-chip="${key}"]`);
-/** Popup options follow the category's option order: index 0 is 全部…. */
-const popOpts = (wrapper: ReturnType<typeof mountBar>) =>
-  wrapper.findAll(".ship-filter-bar__pop .ship-filter-bar__opt");
+/** Popup options follow the category's option order: index 0 is 全部…. The
+ *  popups teleport to body (HPopover), so they are queried there. */
+const bodyPops = () => [
+  ...document.body.querySelectorAll<HTMLElement>(".ship-filter-bar__pop"),
+];
+const popOpts = (): DOMWrapper<HTMLElement>[] =>
+  [
+    ...document.body.querySelectorAll<HTMLElement>(
+      ".ship-filter-bar__pop .ship-filter-bar__opt",
+    ),
+  ].map((el) => new DOMWrapper(el));
+const activeOpts = (): DOMWrapper<HTMLElement>[] =>
+  [...document.body.querySelectorAll<HTMLElement>(".ship-filter-bar__opt[data-active]")].map(
+    (el) => new DOMWrapper(el),
+  );
+
+/** Poll until exactly `count` popovers stand mounted in body — 1 means the
+ *  opened panel is in AND any earlier panel has fully retired (the switch
+ *  overlap would otherwise pollute the option queries). */
+async function waitPops(count: number) {
+  await flushPromises();
+  for (let i = 0; i < 100 && bodyPops().length !== count; i += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(bodyPops().length).toBe(count);
+}
 
 describe("ShipFilterBar chips", () => {
   beforeEach(() => {
@@ -116,8 +148,8 @@ describe("ShipFilterBar chips", () => {
 
     // Open the winrate popup and pick the 50–60% bracket (option 3).
     await chip(wrapper, "winrate").trigger("click");
-    expect(wrapper.find(".ship-filter-bar__pop").exists()).toBe(true);
-    await popOpts(wrapper)[3]!.trigger("click");
+    await waitPops(1);
+    await popOpts()[3]!.trigger("click");
     await flushPromises();
 
     // Chip turns active; filter applied; descending → higher winrate first.
@@ -125,25 +157,24 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([3, 1, 2]);
 
     // Re-click the 50–60% option → the SHARED flag flips to ascending.
-    await popOpts(wrapper)[3]!.trigger("click");
+    await popOpts()[3]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 1, 3]);
 
     // Picking ≥60% REPLACES the bracket instead of OR-ing with it.
-    await popOpts(wrapper)[4]!.trigger("click");
+    await popOpts()[4]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([5]);
-    const active = () => wrapper.findAll(".ship-filter-bar__opt[data-active]");
-    expect(active().length).toBe(1);
+    expect(activeOpts().length).toBe(1);
     // The single pick keeps the category's (flipped) ascending arrow.
-    expect(active()[0]!.find(".lucide-arrow-up").exists()).toBe(true);
+    expect(activeOpts()[0]!.find(".lucide-arrow-up").exists()).toBe(true);
 
     // 全部胜率 (option 0) resets the chip to the gray state.
-    await popOpts(wrapper)[0]!.trigger("click");
+    await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
-    expect(active().length).toBe(1); // only 全部胜率 itself
+    expect(activeOpts().length).toBe(1); // only 全部胜率 itself
   });
 
   it("engages a 全部… sort (arrow always shown) and flips it like any key", async () => {
@@ -151,32 +182,33 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     await chip(wrapper, "winrate").trigger("click");
+    await waitPops(1);
     // 全部胜率 shows its direction arrow before anything is engaged.
-    expect(popOpts(wrapper)[0]!.find(".ship-filter-bar__dir").exists()).toBe(true);
+    expect(popOpts()[0]!.find(".ship-filter-bar__dir").exists()).toBe(true);
 
     // First click sorts in the displayed (descending) direction while the
     // chip keeps filtering nothing — the intermediate --sort style.
-    await popOpts(wrapper)[0]!.trigger("click");
+    await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--sort");
     expect(chip(wrapper, "winrate").find(".lucide-arrow-down").exists()).toBe(true);
     expect(order(wrapper)).toEqual([5, 3, 1, 2, 4]);
 
     // Further clicks flip the direction.
-    await popOpts(wrapper)[0]!.trigger("click");
+    await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "winrate").find(".lucide-arrow-up").exists()).toBe(true);
     expect(order(wrapper)).toEqual([4, 2, 1, 3, 5]);
 
     // A concrete pick keeps the direction and adds the filter on top.
-    await popOpts(wrapper)[3]!.trigger("click"); // 50–60%
+    await popOpts()[3]!.trigger("click"); // 50–60%
     await flushPromises();
     expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--on");
     expect(order(wrapper)).toEqual([2, 1, 3]);
 
     // 全部胜率 with a selection resets the category completely — the
     // all-state sort goes off with the filter.
-    await popOpts(wrapper)[0]!.trigger("click");
+    await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
@@ -187,21 +219,21 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     await chip(wrapper, "tier").trigger("click");
-    await popOpts(wrapper)[2]!.trigger("click"); // VI–VII → id 3 only
-    await popOpts(wrapper)[3]!.trigger("click"); // VIII–IX → adds ids 1, 2
+    await waitPops(1);
+    await popOpts()[2]!.trigger("click"); // VI–VII → id 3 only
+    await popOpts()[3]!.trigger("click"); // VIII–IX → adds ids 1, 2
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 1, 3]); // tier desc: T9, T8, T6
 
     // Both brackets are active, both show the same down arrow…
-    const active = () => wrapper.findAll(".ship-filter-bar__opt[data-active]");
-    expect(active().length).toBe(2);
-    expect(active().filter((o) => o.find(".lucide-arrow-down").exists()).length).toBe(2);
+    expect(activeOpts().length).toBe(2);
+    expect(activeOpts().filter((o) => o.find(".lucide-arrow-down").exists()).length).toBe(2);
 
     // …and flipping ONE of them flips BOTH (shared category direction).
-    await popOpts(wrapper)[3]!.trigger("click");
+    await popOpts()[3]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([3, 1, 2]); // tier asc: T6, T8, T9
-    expect(active().filter((o) => o.find(".lucide-arrow-up").exists()).length).toBe(2);
+    expect(activeOpts().filter((o) => o.find(".lucide-arrow-up").exists()).length).toBe(2);
   });
 
   it("keeps ship types pure filters: no arrows, re-click deselects", async () => {
@@ -209,29 +241,30 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     await chip(wrapper, "type").trigger("click");
+    await waitPops(1);
     // Option order: 全部舰种, Battleship, Cruiser, Destroyer (present only).
-    await popOpts(wrapper)[1]!.trigger("click"); // Battleship
+    await popOpts()[1]!.trigger("click"); // Battleship
     await flushPromises();
 
     expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--on");
     expect(order(wrapper)).toEqual([1, 2]); // filtered, battles-desc within
     // No direction anywhere: not on the chip, not on the picked option.
     expect(chip(wrapper, "type").find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(popOpts(wrapper)[1]!.find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(popOpts()[1]!.find(".ship-filter-bar__dir").exists()).toBe(false);
 
     // Re-clicking a type deselects it instead of flipping a direction.
-    await popOpts(wrapper)[1]!.trigger("click");
+    await popOpts()[1]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--all");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
 
     // 全部舰种 is the only way to make the category sort: ascending first
     // (no visible change here — BB happens to lead), then descending.
-    await popOpts(wrapper)[0]!.trigger("click");
+    await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--sort");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
-    await popOpts(wrapper)[0]!.trigger("click");
+    await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([4, 3, 5, 1, 2]); // DD → CA → BB
   });
@@ -247,9 +280,14 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     await chip(wrapper, "battles").trigger("click");
-    await popOpts(wrapper)[1]!.trigger("click"); // ≥30 场
+    await waitPops(1);
+    await popOpts()[1]!.trigger("click"); // ≥30 场
+    // Chip-to-chip switches swap teleported popovers — the retired panel
+    // must be fully gone before the next option query or its options
+    // pollute the indices.
     await chip(wrapper, "winrate").trigger("click");
-    await popOpts(wrapper)[3]!.trigger("click"); // 50–60%
+    await waitPops(1);
+    await popOpts()[3]!.trigger("click"); // 50–60%
     await flushPromises();
 
     // Both filters pass ids {1, 2, 3} (id 5 is above the bracket). Battles
@@ -261,7 +299,8 @@ describe("ShipFilterBar chips", () => {
     // 100-battle pair still resolves by winrate desc (55 before 52).
     // (Only one popup is open at a time — reopen the battles chip first.)
     await chip(wrapper, "battles").trigger("click");
-    await popOpts(wrapper)[1]!.trigger("click");
+    await waitPops(1);
+    await popOpts()[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([3, 1, 2]);
   });
@@ -293,7 +332,8 @@ describe("ShipFilterBar chips", () => {
     const first = mountBar();
     await flushPromises();
     await chip(first, "winrate").trigger("click");
-    await popOpts(first)[4]!.trigger("click"); // ≥60%
+    await waitPops(1);
+    await popOpts()[4]!.trigger("click"); // ≥60%
     await flushPromises();
     first.unmount();
 
