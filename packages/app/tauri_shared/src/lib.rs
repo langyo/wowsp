@@ -937,6 +937,18 @@ pub struct PlayerSuggestion {
     pub nickname: String,
 }
 
+/// 空中小人/水下小人 verdict for one player (Tab overlay seals). Thresholds
+/// mirror the frontend compositionStamps() (packages/webui/src/utils/winrate.ts):
+/// career battles must exceed 200 and the class share must exceed 20%
+/// (strictly greater on both bounds) — see
+/// `commands::wg_composition::composition_verdict`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerComposition {
+    pub air: bool,
+    pub sub: bool,
+}
+
 /// One clan suggestion from the WG clans/list autocomplete.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
