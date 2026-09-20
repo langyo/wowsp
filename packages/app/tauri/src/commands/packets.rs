@@ -1417,8 +1417,9 @@ fn decode_consumable_used(
         target_id: None,
     };
     match blob.first().copied() {
-        // NONE — empty blob (or a leading zero byte, as the reference accepts).
-        None | Some(0) => (),
+        // NONE — empty blob (or a single zero byte, as the reference accepts);
+        // trailing bytes past one would be a desync, not a valid NONE payload.
+        None | Some(0) if blob_len <= 1 => (),
         // DEFAULT: <BB> = usage + consumable id.
         Some(1) if blob_len == 2 => {
             event.usage_type = 1;
