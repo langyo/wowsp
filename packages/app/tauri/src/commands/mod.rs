@@ -35,6 +35,7 @@ pub mod update;
 pub mod wallpaper;
 pub mod wg_api;
 pub mod wg_api_cn;
+pub mod wg_composition;
 pub mod wg_realm;
 
 use crate::os_prefs::OsPreferences;

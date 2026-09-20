@@ -438,8 +438,8 @@ pub(crate) fn nickname_matches(query: &str, found: &str) -> bool {
 
 /// account/list (limit=10) — one nickname → account entry. The search is a
 /// prefix query, so the exact account is picked out of the hits; Ok(None)
-/// when it isn't among them.
-async fn account_list_one(
+/// when it isn't among them. Shared with `wg_composition`'s batch resolution.
+pub(crate) async fn account_list_one(
     client: &reqwest::Client,
     app_id: &str,
     host: &str,
@@ -1444,9 +1444,9 @@ struct WgError {
     message: Option<String>,
 }
 #[derive(Deserialize)]
-struct AccountListEntry {
-    account_id: i64,
-    nickname: String,
+pub(crate) struct AccountListEntry {
+    pub(crate) account_id: i64,
+    pub(crate) nickname: String,
 }
 
 /// One entry of the clans/list autocomplete response.

@@ -2,5 +2,7 @@
   "hint": "전투 중 Tab 키를 길게 누르면 전적을 표시합니다.",
   "locateHint": "감지가 활성화되었지만 아직 팀 목록의 위치를 찾지 못했습니다. 전투에 진입한 후 다시 시도해 주세요.",
   "locatingHint": "Tab 키를 누른 채 기다리면 명단을 인식합니다…",
-  "recognizingBadge": "명단 인식 중…"
+  "recognizingBadge": "명단 인식 중…",
+  "queryingBadge": "전적 조회 중…",
+  "staleBadge": "편성 갱신 중…"
 }

@@ -92,6 +92,19 @@ pub(crate) fn detect_roster(
     height: u32,
     team_sizes: (usize, usize),
 ) -> Option<DetectedRoster> {
+    detect_roster_with_band(rgba, width, height, team_sizes).map(|(_, det)| det)
+}
+
+/// [`detect_roster`] plus the located [`HeaderBand`] — the cacheable
+/// geometry half the Tab watcher stores so later captures only need a cheap
+/// band re-verification ([`verify_header_band`]) and a geometric rebuild
+/// ([`rebuild_roster_from_band`]) instead of a full-frame scan.
+pub(crate) fn detect_roster_with_band(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    team_sizes: (usize, usize),
+) -> Option<(HeaderBand, DetectedRoster)> {
     let (expected_allies, expected_enemies) = team_sizes;
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let (px, w, h) = downscale_rgba(rgba, width, height, scale);
@@ -104,43 +117,16 @@ pub(crate) fn detect_roster(
     };
 
     // ── 1. Header: a THICK band of consecutive scan rows each carrying the
-    //    green AND red bar (see `find_header_band`) ─────────────────────────
-    let (hy, (gx0, gx1), (rx0, rx1)) = find_header_band(&px, w, h)?;
+    //    green AND red bar (see `find_header_band`; the band's bar height —
+    //    the row pitch's source — is measured inside it too) ────────────────
+    let band = find_header_band(&px, w, h)?;
+    let (prof_top, pitch, first) = grid_origin(band, h);
+    let gx0 = band.green.0;
+    let gx1 = band.green.1;
+    let rx0 = band.red.0;
+    let rx1 = band.red.1;
 
-    // ── 2. Header height: scan down from the bar top; a row stays "header"
-    //    while ≥2 of 6 sample points across both bars read bar color or the
-    //    white bar captions punched into them ─────────────────────────────
-    let samples = [
-        gx0 + (gx1 - gx0) / 4,
-        gx0 + (gx1 - gx0) / 2,
-        gx0 + (gx1 - gx0) * 3 / 4,
-        rx0 + (rx1 - rx0) / 4,
-        rx0 + (rx1 - rx0) / 2,
-        rx0 + (rx1 - rx0) * 3 / 4,
-    ];
-    // Continuation checks the BAR colors only — counting white here would
-    // let the scan bleed into the first player-name row sitting right
-    // under the bar whenever a sample lands inside the name text.
-    let is_bar_color = |x: usize, y: usize| -> bool {
-        let (r, g, b) = rgb(x, y);
-        is_header_green(r, g, b) || is_header_red(r, g, b)
-    };
-    let mut hh = 0usize;
-    let mut miss = 0usize;
-    for y in hy..((hy + h / 6).min(h)) {
-        if samples.iter().filter(|&&x| is_bar_color(x, y)).count() >= 2 {
-            hh = y - hy + 1;
-            miss = 0;
-        } else {
-            miss += 1;
-            if miss >= 2 {
-                break;
-            }
-        }
-    }
-    let hh = hh.clamp(HEADER_MIN_H, (h / 10).max(HEADER_MIN_H));
-
-    // ── 3. Player rows by pure GEOMETRY (no pixel row-counting) ───────────
+    // ── 2. Player rows by pure GEOMETRY (no pixel row-counting) ───────────
     // Seven anchor points pin the table: THREE on top (green-bar top-left,
     // seam top, red-bar top-right — the header band) and FOUR at the bottom
     // (each sub-table's own bottom corners, derived from ITS row count —
@@ -150,9 +136,6 @@ pub(crate) fn detect_roster(
     // same UI scale); each side's grid starts half a pitch under the shared
     // header. White-text bands only fine-tune the PHASE of each side's
     // grid independently (± pitch/3) — they never gate the result.
-    let prof_top = (hy + hh).min(h);
-    let pitch = hh as f32 * PITCH_PER_HEADER;
-    let first = prof_top as f32 + pitch * 0.5;
     // White-text density profiles over the generous window below the header,
     // one per side — used ONLY for the per-side phase refinement below.
     let prof_cap = (prof_top + (h as f32 * ROW_SCAN_MAX_SPAN_FRAC) as usize).min(h);
@@ -224,8 +207,29 @@ pub(crate) fn detect_roster(
     let mut centers = build_grid(expected_allies, &profile_l);
     centers.extend(build_grid(expected_enemies, &profile_r));
 
-    // ── 4. Rectangle + team split, back to physical px ────────────────────
-    let pitch = hh as f32 * PITCH_PER_HEADER;
+    // ── 3. Rectangle + team split, back to physical px ────────────────────
+    Some((band, finish_roster(band, h, scale, centers)))
+}
+
+/// Pure geometry shared by the full detector and the cache rebuild: header
+/// band → the row-grid origin, in working px. `prof_top` is where the
+/// player rows start (clamped to the working frame, as the original inline
+/// computation was), `pitch` the row pitch (header-bar height ×
+/// [`PITCH_PER_HEADER`] — bars and rows share the UI scale), `first` the
+/// first row's center (half a pitch below the header).
+fn grid_origin(band: HeaderBand, h: usize) -> (usize, f32, f32) {
+    let prof_top = (band.top + band.height).min(h);
+    let pitch = band.height as f32 * PITCH_PER_HEADER;
+    let first = prof_top as f32 + pitch * 0.5;
+    (prof_top, pitch, first)
+}
+
+/// Shared detector tail (pure): row centers in working px → the physical-px
+/// [`DetectedRoster`] (table rect + team split + scaled centers). Used by
+/// both the full detection and [`rebuild_roster_from_band`] so the two can
+/// never drift apart geometrically.
+fn finish_roster(band: HeaderBand, h: usize, scale: u32, centers: Vec<f32>) -> DetectedRoster {
+    let (prof_top, pitch, _) = grid_origin(band, h);
     let last = *centers.last().unwrap_or(&(prof_top as f32));
     // Window height floor: 12v12 is the largest standard roster, and the
     // overlay window must never be shorter than that even when the current
@@ -234,38 +238,53 @@ pub(crate) fn detect_roster(
     let y1w = (last + pitch * 0.75)
         .max(prof_top as f32 + pitch * MIN_WINDOW_ROWS)
         .min(h as f32 - 1.0) as usize;
-    let split_raw =
-        ((gx1 + rx0) as f32 * 0.5 - gx0 as f32) / (rx1.saturating_sub(gx0)).max(1) as f32;
+    let split_raw = ((band.green.1 + band.red.0) as f32 * 0.5 - band.green.0 as f32)
+        / (band.red.1.saturating_sub(band.green.0)).max(1) as f32;
     let team_split = if (0.30..=0.70).contains(&split_raw) {
         split_raw
     } else {
         0.5
     };
     let to_phys = |v: usize| (v as f32 * scale as f32).round() as i32;
-    Some(DetectedRoster {
+    DetectedRoster {
         rect: Rect {
-            x: to_phys(gx0),
-            y: to_phys(hy),
-            width: to_phys(rx1.saturating_sub(gx0)),
-            height: to_phys(y1w.saturating_sub(hy)),
+            x: to_phys(band.green.0),
+            y: to_phys(band.top),
+            width: to_phys(band.red.1.saturating_sub(band.green.0)),
+            height: to_phys(y1w.saturating_sub(band.top)),
         },
         row_centers: centers
             .iter()
             .map(|&c| (c * scale as f32).round() as i32)
             .collect(),
         team_split,
-    })
+    }
 }
 
-/// One located header band: (band top y, green span, red span), all in
-/// working px, spans end-exclusive.
-type HeaderBand = (usize, (usize, usize), (usize, usize));
+/// One located team-header band — the cacheable geometry half of
+/// [`detect_roster`]. All coordinates are WORKING px (the downscaled
+/// analysis frame; `scale = width.div_ceil(MAX_WORK_WIDTH)` maps them back
+/// to physical), spans end-exclusive. Carries the measured BAR HEIGHT too:
+/// the row pitch is derived from it ([`PITCH_PER_HEADER`]), so band + height
+/// is everything [`rebuild_roster_from_band`] needs to re-emit a grid
+/// without rescanning the frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeaderBand {
+    /// Top scan row carrying both bars.
+    pub top: usize,
+    /// Header-bar height in working px.
+    pub height: usize,
+    /// Green (ally) bar horizontal span.
+    pub green: (usize, usize),
+    /// Red (enemy) bar horizontal span.
+    pub red: (usize, usize),
+}
 
 /// Locate the team-header band: a thick run of consecutive scan rows each
 /// carrying BOTH the teal and the brick bar. Single-row anchoring was
 /// fragile (a stray water horizon could outscore the real header), so the
 /// band must be [`HEADER_MIN_ROWS`] rows thick and the best total bar area
-/// wins. Returns [`HeaderBand`].
+/// wins. Returns [`HeaderBand`] (band top + bar height + both spans).
 fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
     let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
     let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
@@ -323,7 +342,65 @@ fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
     let (rx0, rx1) = band.iter().fold((usize::MAX, 0), |(s, e), (_, _, r)| {
         (s.min(r.0), e.max(r.1))
     });
-    Some((top, (gx0, gx1), (rx0, rx1)))
+    Some(HeaderBand {
+        top,
+        height: header_bar_height(px, w, h, top, (gx0, gx1), (rx0, rx1)),
+        green: (gx0, gx1),
+        red: (rx0, rx1),
+    })
+}
+
+/// Header-bar height: scan down from the band top; a row stays "header"
+/// while ≥2 of 6 sample points across both bars read bar color (or the
+/// white captions punched into them). Continuation checks the BAR colors
+/// only — counting white here would let the scan bleed into the first
+/// player-name row sitting right under the bar whenever a sample lands
+/// inside the name text. The same six sample columns are what
+/// [`verify_header_band`] re-checks on later captures.
+fn header_bar_height(
+    px: &[u8],
+    w: usize,
+    h: usize,
+    top: usize,
+    green: (usize, usize),
+    red: (usize, usize),
+) -> usize {
+    let rgb = |x: usize, y: usize| -> (i16, i16, i16) {
+        let i = (y * w + x) * 3;
+        (px[i] as i16, px[i + 1] as i16, px[i + 2] as i16)
+    };
+    let samples = header_samples(green, red);
+    let is_bar_color = |x: usize, y: usize| -> bool {
+        let (r, g, b) = rgb(x, y);
+        is_header_green(r, g, b) || is_header_red(r, g, b)
+    };
+    let mut hh = 0usize;
+    let mut miss = 0usize;
+    for y in top..((top + h / 6).min(h)) {
+        if samples.iter().filter(|&&x| is_bar_color(x, y)).count() >= 2 {
+            hh = y - top + 1;
+            miss = 0;
+        } else {
+            miss += 1;
+            if miss >= 2 {
+                break;
+            }
+        }
+    }
+    hh.clamp(HEADER_MIN_H, (h / 10).max(HEADER_MIN_H))
+}
+
+/// The six sample columns across the two header bars (3 per bar, at the
+/// quarter points) shared by the height scan and the band verification.
+fn header_samples(green: (usize, usize), red: (usize, usize)) -> [usize; 6] {
+    [
+        green.0 + (green.1 - green.0) / 4,
+        green.0 + (green.1 - green.0) / 2,
+        green.0 + (green.1 - green.0) * 3 / 4,
+        red.0 + (red.1 - red.0) / 4,
+        red.0 + (red.1 - red.0) / 2,
+        red.0 + (red.1 - red.0) * 3 / 4,
+    ]
 }
 
 /// Full-frame header presence check — the strongest "inside a battle" proof
@@ -338,6 +415,141 @@ pub(crate) fn header_bars_present(rgba: &[u8], width: u32, height: u32) -> bool 
         return false;
     }
     find_header_band(&px, w, h).is_some()
+}
+
+/// Box-average one scale×scale source block into a working-px RGB triplet —
+/// the EXACT per-pixel formula of [`downscale_rgba`], computed on demand so
+/// a band verification never has to materialize the whole working frame.
+fn sample_working(rgba: &[u8], width: u32, scale: u32, x: usize, y: usize) -> (i16, i16, i16) {
+    let sw = scale as usize;
+    let n = scale * scale;
+    let fw = width as usize;
+    let (mut sr, mut sg, mut sb) = (0u32, 0u32, 0u32);
+    for dy in 0..sw {
+        for dx in 0..sw {
+            let i = ((y * sw + dy) * fw + x * sw + dx) * 4;
+            if i + 2 < rgba.len() {
+                sr += rgba[i] as u32;
+                sg += rgba[i + 1] as u32;
+                sb += rgba[i + 2] as u32;
+            }
+        }
+    }
+    (
+        (sr / n).min(255) as i16,
+        (sg / n).min(255) as i16,
+        (sb / n).min(255) as i16,
+    )
+}
+
+/// Counter-evidence columns sit this many working px OUTSIDE each end of
+/// the cached header band (see [`verify_header_band`]): close enough that
+/// any real horizontal slide of the table puts a bar over them, far enough
+/// that a pixel or two of edge anti-aliasing on an unmoved table cannot.
+const BAND_EDGE_COUNTER_OFFSETS_PX: usize = 2;
+
+/// Cheap re-verification of a cached detection: sample ONLY the cached
+/// header band region (the six bar sample columns × the band's rows — the
+/// same points the height scan used) and confirm the teal/brick team-header
+/// colors are still there, PLUS a few counter-evidence columns just outside
+/// the band's left/right ends. O(band area) with no full-frame downscale:
+/// this is what every capture pays INSTEAD of a full `detect_roster` while
+/// the cached geometry is trusted.
+///
+/// The positive half alone proves "the bars are still HERE" but not "the
+/// table did not slide horizontally": the bars are ~24% of the width each
+/// and the sample columns sit at their quarter points, so a shift of a few
+/// pixels keeps every interior sample on bar color. The counter columns
+/// (1–2 working px outside each end) must stay bar-COLOR-FREE — a maximal
+/// color run's neighborhood is by construction not bar color on the frame
+/// the band was detected on — and a shift lights them on essentially every
+/// band row. Failure of either half means the table moved or the scene
+/// changed: the cached geometry must not anchor that frame. A lone noisy
+/// counter row is tolerated (the positive half has the same tolerance for
+/// caption text punching holes); two or more mean the band drifted.
+pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &HeaderBand) -> bool {
+    let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
+    let w_work = (width / scale) as usize;
+    let h_work = (height / scale) as usize;
+    if w_work < 64 || h_work < 64 {
+        return false;
+    }
+    if band.green.1 <= band.green.0 || band.red.1 <= band.red.0 {
+        return false;
+    }
+    let bar_color_at = |x: usize, y: usize| -> bool {
+        x < w_work && {
+            let (r, g, b) = sample_working(rgba, width, scale, x, y);
+            is_header_green(r, g, b) || is_header_red(r, g, b)
+        }
+    };
+    let samples = header_samples(band.green, band.red);
+    let rows = band.height.max(1);
+    let mut hits = 0usize;
+    for dy in 0..rows {
+        let y = band.top + dy;
+        if y >= h_work {
+            break;
+        }
+        let bar_hits = samples.iter().filter(|&&sx| bar_color_at(sx, y)).count();
+        if bar_hits >= 2 {
+            hits += 1;
+        }
+    }
+    // Counter-evidence columns outside both ends of the band (a bar at the
+    // frame's edge simply loses that side's columns — nothing to contradict
+    // there).
+    let mut counter_cols = Vec::with_capacity(4);
+    for off in 1..=BAND_EDGE_COUNTER_OFFSETS_PX {
+        if band.green.0 >= off {
+            counter_cols.push(band.green.0 - off);
+        }
+        counter_cols.push(band.red.1 + off);
+    }
+    let mut counter_rows = 0usize;
+    for dy in 0..rows {
+        let y = band.top + dy;
+        if y >= h_work {
+            break;
+        }
+        if counter_cols.iter().any(|&x| bar_color_at(x, y)) {
+            counter_rows += 1;
+        }
+    }
+    // At least half the cached band rows must still read as header bars.
+    // A perfect score is not required (the white captions punch holes into
+    // individual rows — the height scan tolerates the same), but a moved or
+    // vanished table loses most rows at once. AND the band edges must stay
+    // clean: header-colored columns outside the cached band mean the table
+    // slid horizontally (the interior samples above would miss it) and the
+    // cached x must be re-detected.
+    hits * 2 >= rows && counter_rows < 2
+}
+
+/// Geometric rebuild of the row grid from a CACHED header band for NEW team
+/// sizes (the next battle is 7v7 after a 12v12 on the same game window):
+/// same band origin and pitch, row count from the new roster. No frame scan
+/// and no white-text phase refinement — the cached pitch is trusted (the
+/// refinement's frame-to-frame jitter is exactly what the pin exists to
+/// suppress). The geometry matches [`detect_roster`]'s unrefined grid
+/// because both go through [`grid_origin`] / [`finish_roster`].
+pub(crate) fn rebuild_roster_from_band(
+    band: &HeaderBand,
+    width: u32,
+    height: u32,
+    team_sizes: (usize, usize),
+) -> DetectedRoster {
+    let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
+    let h_work = (height / scale) as usize;
+    let (_, pitch, first) = grid_origin(*band, h_work);
+    // Row counts: the arena hint is authoritative; without any hint the
+    // same conservative 5-row grid the full detector falls back to.
+    let rows_wanted = |hint: usize| if hint > 0 { hint } else { 5 };
+    let mut centers: Vec<f32> = (0..rows_wanted(team_sizes.0))
+        .map(|i| first + pitch * i as f32)
+        .collect();
+    centers.extend((0..rows_wanted(team_sizes.1)).map(|i| first + pitch * i as f32));
+    finish_roster(*band, h_work, scale, centers)
 }
 
 /// Box-filter downscale to an RGB working image (alpha dropped, opaque).
@@ -442,6 +654,19 @@ mod tests {
     /// Geometry mirrors the real client (~47% × table around 22% from top).
     /// Returns the frame plus the table rect in physical px.
     fn synth_header_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
+        synth_header_table_at(w, h, rows, 0)
+    }
+
+    /// [`synth_header_table`] with the whole table drawn `x_shift` physical
+    /// px to the (right when positive / left when negative) side — the
+    /// horizontal-slide scenario the band verify's counter-evidence
+    /// columns exist to catch.
+    fn synth_header_table_at(
+        w: u32,
+        h: u32,
+        rows: usize,
+        x_shift: i32,
+    ) -> (Vec<u8>, Rect, Vec<f32>) {
         let mut img = vec![0u8; (w * h * 4) as usize];
         let mut noise = Noise(0x1234_5678);
         for y in 0..h {
@@ -454,7 +679,7 @@ mod tests {
                 img[i + 3] = 255;
             }
         }
-        let tx = (w as f32 * 0.26) as u32;
+        let tx = ((w as f32 * 0.26) as i32 + x_shift).max(0) as u32;
         let tw = (w as f32 * 0.47) as u32;
         let ty = (h as f32 * 0.22) as u32;
         let seam = tx + tw / 2;
@@ -1107,6 +1332,7 @@ mod tests {
             row_players: None,
             row_alive: None,
             row_players_pending: false,
+            stale: false,
         }
     }
 
@@ -1171,6 +1397,178 @@ mod tests {
         let pinned = anchor_with(&[50, 92], true);
         let fresh_empty = anchor_with(&[], true);
         assert!(!anchor_meaningfully_moved(&pinned, &fresh_empty));
+    }
+
+    #[test]
+    fn verify_header_band_accepts_cached_frame_and_rejects_moved_table() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 6);
+        let (band, _) = detect_roster_with_band(&img, w, h, (6, 6)).expect("detect");
+        // The frame the band was detected on trivially verifies.
+        assert!(verify_header_band(&img, w, h, &band), "same frame verifies");
+        // HUD phase moved the table away: paint scene noise over the band's
+        // PHYSICAL region (the band lives in working px; the working scale
+        // is the same width.div_ceil(MAX_WORK_WIDTH) the detector uses) and
+        // the verify must fail — the cached geometry must not anchor this
+        // frame.
+        let s = w.div_ceil(MAX_WORK_WIDTH).max(1) as usize;
+        let mut moved = img.clone();
+        let mut noise = Noise(0x5eed_5eed);
+        let y0 = band.top.saturating_sub(2) * s;
+        let y1 = ((band.top + band.height + 2) * s).min(h as usize);
+        for y in y0..y1 {
+            for x in 0..w as usize {
+                let l = noise.next_f32(125.0, 175.0) as u8;
+                let i = (y * w as usize + x) * 4;
+                moved[i] = l;
+                moved[i + 1] = l;
+                moved[i + 2] = l;
+            }
+        }
+        assert!(
+            !verify_header_band(&moved, w, h, &band),
+            "erased band must fail"
+        );
+        // A band whose geometry leaves the (tiny) frame is rejected outright
+        // rather than half-verified.
+        let offscreen = HeaderBand {
+            top: h as usize - 1,
+            height: band.height,
+            green: band.green,
+            red: band.red,
+        };
+        assert!(!verify_header_band(&img, w, h, &offscreen));
+    }
+
+    /// The real captured fixture: the band detected on it must verify on the
+    /// SAME frame — the cheap path the watcher runs every capture instead of
+    /// a full detection.
+    #[test]
+    fn verify_header_band_passes_on_the_real_fixture() {
+        let png = include_bytes!("testdata/tab_table_768x480.png");
+        let img = image::load_from_memory(png)
+            .expect("fixture decodes")
+            .to_rgba8();
+        let (w, h) = img.dimensions();
+        let rgba = img.into_raw();
+        let (band, _) = detect_roster_with_band(&rgba, w, h, (5, 5)).expect("real detect");
+        assert!(verify_header_band(&rgba, w, h, &band), "fixture verifies");
+        // And the identical band still verifies when the table content below
+        // it changes (rows re-sorted by sinks) — only the BAND region counts.
+        let mut shifted = rgba.clone();
+        let shift_top = (band.top + band.height + 2).min(h as usize - 1);
+        for y in shift_top..h as usize {
+            for x in 0..w as usize {
+                let i = ((y * w as usize + x) * 4) as usize;
+                shifted[i] = 30;
+                shifted[i + 1] = 30;
+                shifted[i + 2] = 30;
+            }
+        }
+        assert!(
+            verify_header_band(&shifted, w, h, &band),
+            "band verify ignores everything below the header"
+        );
+    }
+
+    /// Horizontal slide of the whole table: the interior quarter-point
+    /// samples still sit on the (wide) bars, so only the counter-evidence
+    /// columns OUTSIDE the cached band's ends can catch the drift — the
+    /// verify must fail so the next capture re-detects the x instead of
+    /// anchoring chips on the old geometry.
+    #[test]
+    fn verify_header_band_rejects_horizontal_shift() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 6);
+        let (band, _) = detect_roster_with_band(&img, w, h, (6, 6)).expect("detect");
+        assert!(verify_header_band(&img, w, h, &band), "baseline verifies");
+        // 16 physical px = 8 working px right: the brick bar now covers the
+        // cached band's right counter columns.
+        let (right, _, _) = synth_header_table_at(w, h, 6, 16);
+        assert!(
+            !verify_header_band(&right, w, h, &band),
+            "rightward slide must fail"
+        );
+        // Same distance left: the teal bar covers the left counter columns.
+        let (left, _, _) = synth_header_table_at(w, h, 6, -16);
+        assert!(
+            !verify_header_band(&left, w, h, &band),
+            "leftward slide must fail"
+        );
+    }
+
+    #[test]
+    fn rebuild_roster_from_band_resizes_the_grid_without_a_rescan() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 12);
+        let (band, det) = detect_roster_with_band(&img, w, h, (12, 12)).expect("detect");
+        // Same team sizes: the rebuild matches the detector's grid and rect
+        // (the phase refinement is a no-op on the clean synthetic table).
+        // Pitch compares within ±1 px: both paths round working-px centers
+        // to physical, so a fractional pitch (18.4 working × scale 2)
+        // alternates 18/19 deltas frame to frame.
+        let rebuilt = rebuild_roster_from_band(&band, w, h, (12, 12));
+        assert_eq!(rebuilt.row_centers.len(), 24);
+        let pitch_det = det.row_centers[1] - det.row_centers[0];
+        let pitch_re = rebuilt.row_centers[1] - rebuilt.row_centers[0];
+        assert!(
+            (pitch_det - pitch_re).abs() <= 1,
+            "cached pitch kept verbatim: {pitch_det} vs {pitch_re}"
+        );
+        assert_eq!(rebuilt.rect.y, det.rect.y);
+        assert_eq!(rebuilt.rect.x, det.rect.x);
+        // New battle shape on the same window (7v7 after 12v12): the row
+        // COUNT follows the new hint, the pitch does not move.
+        let small = rebuild_roster_from_band(&band, w, h, (6, 6));
+        assert_eq!(small.row_centers.len(), 12);
+        assert!(
+            (small.row_centers[1] - small.row_centers[0] - pitch_re).abs() <= 1,
+            "rebuild pitch is uniform"
+        );
+        // Asym counts work per side.
+        let asym = rebuild_roster_from_band(&band, w, h, (12, 6));
+        assert_eq!(asym.row_centers.len(), 18);
+        // No hint → the same conservative 5+5 grid detect_roster uses.
+        let unhinted = rebuild_roster_from_band(&band, w, h, (0, 0));
+        assert_eq!(unhinted.row_centers.len(), 10);
+    }
+
+    #[test]
+    fn read_row_alive_flags_painted_rows_and_defaults_missing_ones_alive() {
+        let (w, h) = (1280u32, 720u32);
+        let mut img = vec![20u8; (w * h * 4) as usize];
+        for i in 0..(w * h) as usize {
+            img[i * 4 + 3] = 255;
+        }
+        let roster = Rect {
+            x: 320,
+            y: 160,
+            width: 600,
+            height: 300,
+        };
+        let rows = vec![220, 270, 220, 270];
+        let paint = |img: &mut [u8], r: &Rect| {
+            for y in r.y..r.y + r.height {
+                for x in r.x..r.x + r.width {
+                    let i = ((y as u32 * w + x as u32) * 4) as usize;
+                    img[i] = 240;
+                    img[i + 1] = 240;
+                    img[i + 2] = 240;
+                }
+            }
+        };
+        // Row 0 (ally) and row 3 (enemy #1) painted bright = alive; rows 1
+        // and 2 left dark = sunk. The vec follows row_centers order.
+        paint(
+            &mut img,
+            &row_name_strip_rect(&roster, &rows, 0.5, 2, 0).unwrap(),
+        );
+        paint(
+            &mut img,
+            &row_name_strip_rect(&roster, &rows, 0.5, 2, 3).unwrap(),
+        );
+        let alive = read_row_alive(&img, w, h, &roster, &rows, 0.5, 2);
+        assert_eq!(alive, vec![true, false, false, true]);
     }
 }
 
@@ -1374,6 +1772,10 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
 /// Horizontal padding (physical px): WIDER than vertical because the stat
 /// chips render OUTSIDE the table's left/right edges (inside they cover the
 /// ship names) — the window must reserve a full chip width per side.
+/// Observation point (accepted cosmetic): at this function's 150 px floor
+/// (narrow tables) a chip carrying its full seal set can reach the window
+/// edge and clip its outermost 1–5 px. Revisit the floor only if a wider
+/// chip (bigger seals / font scale) ever lands.
 pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
     (roster.width / 5).clamp(150, 280)
 }
@@ -1424,10 +1826,13 @@ pub(crate) fn build_anchor(
         // Anchors are built without recognition; the row→name pipeline in
         // `row_recognize` fills `row_players` / `row_alive` afterwards when
         // it ran (and flips `row_players_pending` with it — manual/automatic
-        // alike, pending never starts as true).
+        // alike, pending never starts as true). `stale` is equally false at
+        // construction: it is a watcher-side pin flag (the sink probe / OCR
+        // re-map lifecycle), never a property of a fresh detection.
         row_players: None,
         row_alive: None,
         row_players_pending: false,
+        stale: false,
     };
     (overlay, anchor)
 }
@@ -1717,4 +2122,39 @@ pub(crate) fn crop_row_name_strips(
                 .and_then(|rect| crop_rgba(rgba, width, height, &rect))
         })
         .collect()
+}
+
+/// Per-row alive flags read off the CURRENT frame at the given roster
+/// geometry — no OCR, no detection, no roster read: one name-strip crop per
+/// row classified by its brightest-glyph luma ([`strip_max_luma`] +
+/// [`row_strip_alive`]). This is the Tab watcher's SINK FAST-PATH: cheap
+/// enough to run a few times per second while the overlay is up, so a ship
+/// sinking is seen in ~500 ms instead of waiting for the next full
+/// revalidation. Unreadable rows default to alive — identical to the
+/// recognition pipeline's semantics (a missing strip must never read as
+/// "sunk").
+pub(crate) fn read_row_alive(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    ally_rows: usize,
+) -> Vec<bool> {
+    crop_row_name_strips(
+        rgba,
+        width,
+        height,
+        roster,
+        row_centers,
+        team_split,
+        ally_rows,
+    )
+    .into_iter()
+    .map(|strip| match strip {
+        Some((buf, _, _)) => row_strip_alive(strip_max_luma(&buf)),
+        None => true,
+    })
+    .collect()
 }

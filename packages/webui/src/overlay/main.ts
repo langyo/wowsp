@@ -13,7 +13,13 @@
  * Coordinates arrive in physical px relative to the overlay window's own
  * origin; CSS px = physical / devicePixelRatio.
  */
-import { damageColor, winrateColor } from "@/utils/winrate";
+import { careerStamp, damageColor, winrateColor, type StampKind } from "@/utils/winrate";
+import stampAir from "../res/stamps/stamp-air.png";
+import stampApe from "../res/stamps/stamp-ape.png";
+import stampMaggot from "../res/stamps/stamp-maggot.png";
+import stampMiracle from "../res/stamps/stamp-miracle.png";
+import stampRat from "../res/stamps/stamp-rat.png";
+import stampSub from "../res/stamps/stamp-sub.png";
 import "./overlay.css";
 
 // Same locale files the Vue app consumes — one source of truth for the hint
@@ -25,6 +31,12 @@ interface OverlayMessages {
   locatingHint: string;
   /** Small badge over the table while the row mapping is still pending. */
   recognizingBadge: string;
+  /** Badge while the batched stats lookup is still working and at least
+   *  one mapped chip has no numbers yet. */
+  queryingBadge: string;
+  /** Badge while a detected sink reshuffled the rows and the row→name
+   *  re-mapping is still catching up. */
+  staleBadge: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -88,12 +100,30 @@ interface OverlayAnchor {
    *  matched): a small "recognizing roster" badge renders over the table
    *  until the watcher transplants the mapping onto the pin. */
   rowPlayersPending?: boolean;
+  /** True when a detected sink JUST changed the rows (alive flags flipped,
+   *  the in-game table re-sorted) and the row→name re-mapping is catching
+   *  up at the accelerated OCR cadence: the chips' attribution below may
+   *  change again within seconds. Purely informational — a "roster
+   *  updating" badge renders while it is up. */
+  stale?: boolean;
 }
 
 interface Stat {
   winrate: number | null;
   avgDamage: number | null;
+  /** Career PR + battle count — only consumed by the career seal below. */
+  pr: number | null;
+  battles: number | null;
   hidden: boolean;
+}
+
+/** Composition-seal verdict from `lookup_players_composition` (mirrors
+ *  `wowsp_tauri_shared::PlayerComposition`; the >200 battles / >20% share
+ *  thresholds are enforced backend-side). null = no data / hidden profile /
+ *  that player's lookup failed. */
+interface PlayerComposition {
+  air: boolean;
+  sub: boolean;
 }
 
 const AI_NAME = /^:.*:$/;
@@ -108,6 +138,45 @@ const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
 const realm = new URLSearchParams(window.location.search).get("realm") ?? "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
+
+// ── Seals (career/composition stamp bitmaps beside the chip numbers) ────
+// Local one-knob mirror of stores/statsPrefs.ts (STATS_PREFS_STORAGE_KEY =
+// "wowsp-stats-prefs", DEFAULT_STATS_PREFS.sealsEnabled = true): the bare-DOM
+// page must not import the pinia store, so the pref is re-read here with the
+// same contract as parsePrefs — a corrupt blob or unavailable localStorage
+// falls back to the default (on).
+const SEALS_ENABLED = (() => {
+  try {
+    const raw = localStorage.getItem("wowsp-stats-prefs");
+    if (raw == null) return true;
+    const j = JSON.parse(raw) as { sealsEnabled?: unknown };
+    return typeof j?.sealsEnabled === "boolean" ? j.sealsEnabled : true;
+  } catch {
+    return true;
+  }
+})();
+// The seal glyphs are Chinese calligraphy bitmaps — RatingStamp.tsx renders
+// nothing under a non-zh UI locale, and the overlay chips follow suit.
+const SEALS_ON = SEALS_ENABLED && locale.startsWith("zh");
+
+// kind → bitmap + Chinese label, copied from RatingStamp.tsx's STAMP_GLYPHS
+// (bare DOM cannot reuse that Vue component).
+const STAMP_GLYPHS: Record<StampKind, string> = {
+  miracle: stampMiracle,
+  ape: stampApe,
+  maggot: stampMaggot,
+  rat: stampRat,
+  air: stampAir,
+  sub: stampSub,
+};
+const STAMP_TEXT: Record<StampKind, string> = {
+  miracle: "神了",
+  ape: "海猴",
+  maggot: "蛆",
+  rat: "过街老鼠",
+  air: "空中小人",
+  sub: "水下小人",
+};
 
 let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
@@ -130,6 +199,16 @@ let statusState: string | null = null;
 const stats = new Map<string, Stat>();
 const pending = new Set<string>();
 let batchTimer: ReturnType<typeof setTimeout> | null = null;
+// Composition seals get their OWN cache + batch pipeline: the lookup rides
+// behind the stats batch (only names whose stats already landed are queued)
+// but retries independently — a failed seal batch must not stretch the
+// stats backoff and vice versa.
+const compositions = new Map<string, PlayerComposition | null>();
+const compPending = new Set<string>();
+let compBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let compInFlight = false;
+let compRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let compRetryDelayMs = 2000;
 
 const cacheKey = (name: string) => `${realm}:${name}`;
 
@@ -137,18 +216,35 @@ function fmtDamage(avg: number): string {
   return avg >= 100000 ? `${Math.round(avg / 1000)}k` : `${(avg / 1000).toFixed(1)}k`;
 }
 
+function stampImg(kind: StampKind): string {
+  const label = STAMP_TEXT[kind];
+  return `<img class="overlay-stamp" src="${STAMP_GLYPHS[kind]}" alt="${label}" title="${label}">`;
+}
+
 function chipContent(name: string): string {
   if (AI_NAME.test(name)) return `<span class="muted">bot</span>`;
   const st = stats.get(cacheKey(name));
-  if (!st) return `<span class="muted">…</span>`;
-  if (st.hidden) return `<span class="hidden">●</span>`;
-  if (st.winrate == null) return `<span class="muted">—</span>`;
-  const wr = `<b style="color:${winrateColor(st.winrate)}">${st.winrate.toFixed(1)}%</b>`;
-  const dmg =
-    st.avgDamage != null
-      ? `<b style="color:${damageColor(st.avgDamage)}">${fmtDamage(st.avgDamage)}</b>`
-      : `<b class="muted">—</b>`;
-  return `${wr}<span class="sep">·</span>${dmg}`;
+  let core: string;
+  if (!st) core = `<span class="muted">…</span>`;
+  else if (st.hidden) core = `<span class="hidden">●</span>`;
+  else if (st.winrate == null) core = `<span class="muted">—</span>`;
+  else {
+    const wr = `<b style="color:${winrateColor(st.winrate)}">${st.winrate.toFixed(1)}%</b>`;
+    const dmg =
+      st.avgDamage != null
+        ? `<b style="color:${damageColor(st.avgDamage)}">${fmtDamage(st.avgDamage)}</b>`
+        : `<b class="muted">—</b>`;
+    core = `${wr}<span class="sep">·</span>${dmg}`;
+  }
+  if (!SEALS_ON) return core;
+  // Seals flank the numbers: career verdict left, composition tags right
+  // (air before sub). A name without stats yet shows no seal at all — the
+  // verdicts are derived from data the stats/composition batches bring.
+  const career = st ? careerStamp(st.pr, st.battles, st.winrate, st.hidden) : null;
+  const comp = compositions.get(cacheKey(name)) ?? null;
+  const left = career ? stampImg(career) : "";
+  const right = (comp?.air ? stampImg("air") : "") + (comp?.sub ? stampImg("sub") : "");
+  return left + core + right;
 }
 
 /** A row→name payload is usable only when at least one row matched —
@@ -156,6 +252,14 @@ function chipContent(name: string): string {
  *  honest silence and must not shadow the remembered mapping. */
 function usableRowPlayers(p: (string | null)[] | null | undefined): (string | null)[] | null {
   return p && p.some((n) => n != null) ? p : null;
+}
+
+/** A single pill for the badge stack over the table's top edge. */
+function makeBadge(text: string, variant: "stale" | null): HTMLDivElement {
+  const badge = document.createElement("div");
+  badge.className = "overlay-badge" + (variant ? ` overlay-badge--${variant}` : "");
+  badge.textContent = text;
+  return badge;
 }
 
 /** Rebuild every chip from the current roster + anchor. */
@@ -220,16 +324,23 @@ function render() {
     [allies, "ally", allyBlock, 0],
     [enemies, "enemy", enemyBlock, allies.length],
   ];
+  // At least one chip below renders from a known name whose stats have not
+  // landed yet — the face the "querying" badge (bottom of this function)
+  // is about. Tracked while the chips are built so it cannot drift from
+  // what is actually on screen.
+  let chipsMissingStats = false;
   for (const [list, side, block, blockOffset] of sides) {
     list.forEach((v, i) => {
       if (block[i] == null) return;
       const el = document.createElement("div");
       let sunk = false;
+      let mappedName: string | null = null;
       if (players) {
         const mapped = players[blockOffset + i] ?? null;
         if (mapped != null) {
           // Recognized name — exactly a roster nickname, so the stats
           // cache lookup works unchanged.
+          mappedName = mapped;
           el.innerHTML = chipContent(mapped);
           sunk = aliveArr?.[blockOffset + i] === false;
         } else {
@@ -239,7 +350,11 @@ function render() {
         }
       } else {
         // No recognition payload — legacy index mapping.
+        mappedName = v.name;
         el.innerHTML = chipContent(v.name);
+      }
+      if (mappedName != null && !AI_NAME.test(mappedName) && !stats.has(cacheKey(mappedName))) {
+        chipsMissingStats = true;
       }
       el.className =
         `overlay-chip overlay-chip--${side}` + (sunk ? " overlay-chip--sunk" : "");
@@ -256,23 +371,42 @@ function render() {
     });
   }
 
-  // Recognition-enabled but no trusted row→name mapping yet (the arena
-  // roster landed after the pin, or the first OCR pass read nothing): a
-  // low-key badge at the table's top edge tells the player the chips'
-  // attribution is still settling. Disappears on the next anchor event
-  // once the watcher transplants the mapping (render() rebuilds from
-  // scratch each time). Sits centered over the table's top edge — the
-  // chips live OUTSIDE the left/right edges, so nothing is covered but
-  // the table's own header band.
+  // Badge stack on the table's top edge, rebuilt on every render. Up to
+  // three states can be live at once (mapping pending + stats querying +
+  // roster churning), so the pills share one flex-column container instead
+  // of overlapping each other. The stack is ANCHORED at the table's top
+  // edge and grows DOWNWARD (CSS translateX only): sitting a few px onto
+  // the table's decorative header band is fine — the chips live OUTSIDE
+  // the left/right edges, so nothing readable is covered. (The earlier
+  // bottom-anchored, upward-growing variant clipped against the window's
+  // top edge on small rosters / high DPR.) Disappears with its trigger on
+  // the next event (render() rebuilds from scratch each time).
+  const badges: HTMLDivElement[] = [];
   if (anchor.rowPlayersPending) {
-    const badge = document.createElement("div");
-    badge.className = "overlay-badge";
-    badge.style.left = `${(anchor.rosterRect.x + anchor.rosterRect.width / 2) / dpr}px`;
-    // `top` is the badge's BOTTOM edge (translateY(-100%) in CSS); clamp
-    // so a thin top padding (small roster / high DPR) cannot clip it.
-    badge.style.top = `${Math.max(26, anchor.rosterRect.y / dpr - gap)}px`;
-    badge.textContent = localized("recognizingBadge");
-    root.appendChild(badge);
+    badges.push(makeBadge(localized("recognizingBadge"), null));
+  }
+  // Stats are visibly in flight AND at least one on-screen chip still
+  // waits for its numbers. An undetected realm disables the lookups
+  // entirely, which leaves the pipeline inactive — no badge, by design.
+  if (chipsMissingStats && (pending.size > 0 || inFlight || retryTimer != null)) {
+    badges.push(makeBadge(localized("queryingBadge"), null));
+  }
+  // A sink just reshuffled the rows and re-recognition is racing to catch
+  // up — the strongest "hold on, this is settling" signal of the three.
+  if (anchor.stale) {
+    badges.push(makeBadge(localized("staleBadge"), "stale"));
+  }
+  if (badges.length > 0) {
+    const stack = document.createElement("div");
+    stack.className = "overlay-badges";
+    stack.style.left = `${(anchor.rosterRect.x + anchor.rosterRect.width / 2) / dpr}px`;
+    // Top edge of the table (header band top) + a small offset so the
+    // first pill's border sits just inside the band. No bottom clamp: the
+    // stack grows down into the table area and can never leave the window
+    // upward.
+    stack.style.top = `${anchor.rosterRect.y / dpr + 2}px`;
+    for (const b of badges) stack.appendChild(b);
+    root.appendChild(stack);
   }
 }
 
@@ -289,6 +423,10 @@ const RETRY_DELAY_MAX_MS = 30000;
 
 function scheduleBatch() {
   if (!arena || !tauri) return;
+  // Names whose stats already landed may still owe a composition verdict —
+  // give the seal pipeline its trigger here too, before the stats-specific
+  // guards below (they are about the STATS cadence, not the seal's).
+  scheduleCompBatch();
   // No detected realm → no lookups; chips stay muted ("…") rather than
   // showing numbers fetched from a guessed realm.
   if (!realm) return;
@@ -320,14 +458,25 @@ async function runBatch() {
         stats.set(cacheKey(name), {
           winrate: r.winrate ?? null,
           avgDamage: r.avgDamage ?? null,
+          pr: r.pr ?? null,
+          battles: r.battles ?? null,
           hidden: r.hidden,
         });
       } else {
-        stats.set(cacheKey(name), { winrate: null, avgDamage: null, hidden: false });
+        stats.set(cacheKey(name), {
+          winrate: null,
+          avgDamage: null,
+          pr: null,
+          battles: null,
+          hidden: false,
+        });
       }
     });
     // Success: restore the initial cadence for any future failure.
     retryDelayMs = 2000;
+    // Freshly landed stats unlock the composition-seal lookups for those
+    // names (seals only queue names that already have their stats).
+    scheduleCompBatch();
     render();
   } catch {
     // Transient WG hiccup: retry the same (still-uncached) names after a
@@ -340,6 +489,59 @@ async function runBatch() {
     retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
   } finally {
     inFlight = false;
+  }
+}
+
+/** Queue one composition-seal batch: every roster name whose career stats
+ *  already landed but whose verdict is not cached yet. Seals off (or an
+ *  empty realm) never queue, so the whole pipeline stays dormant. */
+function scheduleCompBatch() {
+  if (!arena || !tauri || !SEALS_ON || !realm) return;
+  // A failed seal batch owns its retry cadence (backoff below) — fresh
+  // events must not bypass it and hammer the API, same contract as stats.
+  if (compRetryTimer) return;
+  for (const v of arena.vehicles) {
+    if (AI_NAME.test(v.name)) continue;
+    // Only names the stats batch already answered — the seal lookup rides
+    // behind it instead of racing a name still in flight there.
+    if (stats.has(cacheKey(v.name)) && !compositions.has(cacheKey(v.name))) {
+      compPending.add(v.name);
+    }
+  }
+  if (compPending.size === 0 || compBatchTimer || compInFlight) return;
+  compBatchTimer = setTimeout(runCompBatch, 250);
+}
+
+async function runCompBatch() {
+  compBatchTimer = null;
+  if (!tauri || compPending.size === 0 || compInFlight) return;
+  const names = [...compPending];
+  compPending.clear();
+  compInFlight = true;
+  try {
+    // One entry per input name, in order. null = hidden / no data / that
+    // player's per-name lookup failed (the backend degrades per-name
+    // failures instead of failing the batch). Cached as-is: null is
+    // indistinguishable from "no stamp" here and a seal is decoration.
+    const results = (await tauri.core.invoke("lookup_players_composition", {
+      names,
+      realm,
+    })) as Array<PlayerComposition | null>;
+    names.forEach((name, i) => compositions.set(cacheKey(name), results[i] ?? null));
+    // Success: restore the initial cadence for any future failure.
+    compRetryDelayMs = 2000;
+    render();
+  } catch {
+    // WHOLE-batch failure (WG hiccup): the same capped doubling backoff as
+    // the stats batch, on its own timer. Nothing was cached on failure, so
+    // the retry's scheduleCompBatch() re-queues the same names.
+    compRetryTimer = setTimeout(() => {
+      compRetryTimer = null;
+      scheduleCompBatch();
+    }, compRetryDelayMs);
+    compRetryDelayMs = Math.min(compRetryDelayMs * 2, RETRY_DELAY_MAX_MS);
+  } finally {
+    compInFlight = false;
   }
 }
 
@@ -368,6 +570,13 @@ async function start() {
       if (retryTimer) {
         clearTimeout(retryTimer);
         retryTimer = null;
+      }
+      // The seal pipeline resets its cadence the same way (its cache
+      // persists — career composition does not change battle to battle).
+      compRetryDelayMs = 2000;
+      if (compRetryTimer) {
+        clearTimeout(compRetryTimer);
+        compRetryTimer = null;
       }
     }
     arena = next;

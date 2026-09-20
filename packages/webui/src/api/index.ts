@@ -59,6 +59,7 @@ export type {
   ReplayStream,
   PlayerStats,
   PlayerSuggestion,
+  PlayerComposition,
   ClanSuggestion,
   ClanMemberStats,
   ClanMember,

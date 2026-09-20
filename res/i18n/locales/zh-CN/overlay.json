@@ -2,5 +2,7 @@
   "hint": "对局中按住 Tab 键显示双方水表数据。",
   "locateHint": "当前检测已开启，但暂未定位到表格，请进入游戏后再试",
   "locatingHint": "请按住 Tab，正在识别名单…",
-  "recognizingBadge": "正在识别名单…"
+  "recognizingBadge": "正在识别名单…",
+  "queryingBadge": "战绩查询中…",
+  "staleBadge": "阵容更新中…"
 }

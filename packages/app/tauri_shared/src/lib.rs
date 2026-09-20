@@ -274,6 +274,15 @@ pub struct OverlayAnchor {
     /// tables anyway.
     #[serde(default)]
     pub row_players_pending: bool,
+    /// True when the rows' data JUST changed under the chips (a ship sank —
+    /// the sink fast-probe flipped `row_alive`, grayed + re-sorted the
+    /// chips) and the row→name re-mapping is still catching up at the
+    /// accelerated OCR cadence: the current chips' row attribution may
+    /// change again within seconds. Purely informational — consumers keep
+    /// rendering the current chips. `#[serde(default)]` keeps older
+    /// frontends deserializing the payload unchanged.
+    #[serde(default)]
+    pub stale: bool,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.
@@ -326,6 +335,17 @@ pub struct OverlayStatus {
     /// the battle or the game-window geometry changes (or the user clears
     /// it). Every automatic state carries `false`.
     pub manual: bool,
+    /// Mirrors [`OverlayAnchor::stale`]: true while the anchored rows' data
+    /// just changed (a ship sank) and the row→name re-mapping is catching
+    /// up at the accelerated cadence — the main window can badge the panel
+    /// "updating". CONSUME ONLY WHILE `state` IS DETECTED: the flag rides
+    /// the watcher's pin state across the whole pin lifetime, so a pin
+    /// that went stale and was then hidden (Tab released, focus lost) can
+    /// report `idle`/`searching` with `stale` still true — on a
+    /// non-detected payload the field is residual carry-over, not a
+    /// statement about what is (or is not) on screen. It resets with the
+    /// next battle / fresh pin.
+    pub stale: bool,
 }
 
 /// One row of the in-game Tab panel, as recognized off the live frame:
@@ -921,6 +941,18 @@ pub struct PlayerStats {
 pub struct PlayerSuggestion {
     pub account_id: i64,
     pub nickname: String,
+}
+
+/// 空中小人/水下小人 verdict for one player (Tab overlay seals). Thresholds
+/// mirror the frontend compositionStamps() (packages/webui/src/utils/winrate.ts):
+/// career battles must exceed 200 and the class share must exceed 20%
+/// (strictly greater on both bounds) — see
+/// `commands::wg_composition::composition_verdict`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerComposition {
+    pub air: bool,
+    pub sub: bool,
 }
 
 /// One clan suggestion from the WG clans/list autocomplete.

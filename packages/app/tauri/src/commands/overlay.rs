@@ -32,7 +32,39 @@
 //! mapping — first recognition landing late, or sunk ships re-sorting the
 //! rows — only the mapping is transplanted onto the pin (geometry
 //! untouched) and the anchor is re-emitted, so the chips re-render with
-//! correct attribution without ever wandering.
+//! correct attribution without ever wandering. When the pin's geometry IS
+//! replaced (the table moved at row scale), the replacement carries the OLD
+//! pin's trusted row→name mapping on the fresh grid
+//! ([`carry_mapping_into_fresh`]) — the roster is fixed for the battle, so
+//! re-attributing the chips from scratch on every HUD-phase move would only
+//! flash "recognizing roster…" for nothing.
+//!
+//! Three further mechanisms keep the chips honest without flicker:
+//!
+//! - SINGLE STATE OWNER: every cross-thread input (manual anchor set/clear,
+//!   a fresh `tempArenaInfo.json` voiding the pin) enters a FIFO command
+//!   queue ([`WatchCommand`]) that the watcher loop drains at the top of
+//!   each tick. The loop's state machine ([`WatchFsm`]) is the only state
+//!   owner and the only `overlay-status` emitter, so command ordering is
+//!   deterministic and the last-status dedup mirror covers every emission.
+//! - GEOMETRY CACHE: the table's pixel geometry is fully detected once per
+//!   game-window mode (rect + style bits, [`GeometryKey`]) and cached;
+//!   every later capture only re-verifies the cached header band
+//!   ([`overlay_detect::verify_header_band`], band-area cost) and reuses
+//!   the cached grid — a new battle shape on the same window is rebuilt
+//!   from the band without a rescan. Three consecutive verify misses (a
+//!   HUD-phase table move) retire the cache and re-arm a full detection.
+//! - SINK FAST-PATH: while the overlay is up, a light probe
+//!   ([`overlay_detect::read_row_alive`] — strip luma, no OCR) runs every
+//!   [`SINK_CHECK_INTERVAL`] at the pinned geometry; an alive-flag flip
+//!   immediately updates the pin, re-places the chips (they gray out and
+//!   re-sort), re-emits the tab order and raises the wire's `stale` flag
+//!   while the OCR re-map chases at the accelerated
+//!   [`SINK_CATCHUP_INTERVAL`] cadence. The flip is direction-sensitive
+//!   ([`sink_probe_confirm`]): a SINK applies at once, while a pure
+//!   REVIVAL flip — usually one frame of glare/explosion pushing a sunk
+//!   row's strip over the luma threshold — must survive two consecutive
+//!   probes before the pin believes it.
 //!
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
@@ -43,6 +75,9 @@
 //! live-battle panel badges the detection state from it. Transitions only:
 //! the watcher keeps a loop-local mirror of the last emitted status and
 //! drops no-op reports, so the ~30 Hz poll can never flood the event pipe.
+//! Within one (battle, game-window rect) a Detected state never degrades
+//! back to Searching: the pin-reuse path reports Detected directly instead
+//! of flashing "locating…" before every Tab press.
 //!
 //! The MANUAL LOCATE flow (`start_manual_locate` → the drag-box picker
 //! window → `set_manual_roster_rect`) lets the player anchor the chips by
@@ -68,6 +103,7 @@
 //! via thread-safe dispatches (`emit`, `set_position`, …).
 
 use base64::Engine;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -151,6 +187,35 @@ const ANCHOR_REVALIDATE_INTERVAL: Duration = Duration::from_secs(5);
 const ARENA_FRESHNESS_SECS: u64 = 30 * 60;
 /// How often the cached game HWND is re-resolved.
 const HWND_REFRESH: Duration = Duration::from_secs(2);
+/// While the overlay is shown with a confirmed pin, the SINK FAST-PATH runs
+/// at this cadence: one capture + a per-row strip-luma read (no OCR, no
+/// detection) at the pinned geometry. A ship sinking re-sorts the in-game
+/// panel's rows within a second — far faster than the 5 s revalidation — so
+/// the chips gray out and re-sort in step with the game.
+const SINK_CHECK_INTERVAL: Duration = Duration::from_millis(500);
+/// Recognition catch-up cadence while the pin is STALE (the sink probe just
+/// flipped alive flags and the row→name mapping needs re-reading): a full
+/// OCR pass runs every 500 ms instead of the usual [`CAPTURE_MIN_INTERVAL`]
+/// so the re-map lands within a second or two of the sink. The stale flag
+/// clears as soon as a trusted mapping produced by FRESH OCR lands — a move
+/// replacement that merely CARRIES the old pin's mapping keeps the flag
+/// (the carried order still describes the pre-sink rows).
+const SINK_CATCHUP_INTERVAL: Duration = Duration::from_millis(500);
+/// Consecutive header-band verify misses before the geometry cache is
+/// retired and the next capture runs a full detection again. One miss is a
+/// HUD-phase table move (or a transient scene change) — cheap ticks skip
+/// the full scan and wait; three in a row mean the cached position is dead.
+/// While a pin is shown the sink probe's 500 ms cadence normally
+/// accumulates the misses in ~1 s; in the acquisition arm they accumulate
+/// per rate-limited capture attempt instead.
+const GEOMETRY_VERIFY_MAX_FAILS: u32 = 3;
+/// How long an unconfirmed sink-probe REVIVAL candidate (see
+/// [`sink_probe_confirm`]) stays confirmable: two agreeing probes at the
+/// normal [`SINK_CHECK_INTERVAL`] cadence land ~500 ms apart; past this TTL
+/// the candidate expires and the next flip starts a fresh two-probe count.
+/// Generous enough to ride out a skipped probe, tight enough that a stale
+/// reading can never confirm a much later flip.
+const SINK_CANDIDATE_TTL: Duration = Duration::from_millis(1500);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Window management
@@ -205,13 +270,12 @@ pub async fn create_overlay_window(
 /// store, and closing the webview skips Vue teardown.
 #[tauri::command]
 pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
-    // Manual-locate leftovers must not outlive overlay mode: an open picker
-    // window and a stored anchor are both torn down BEFORE the watcher
-    // stops, so its loop-exit idle report already carries manual: false.
+    // Manual-locate leftovers must not outlive overlay mode: the open picker
+    // window is torn down here, and the stored anchor lives in the watcher's
+    // FSM ([`WatchFsm::manual_anchor`]) — it dies with the loop thread that
+    // `stop_overlay_tab_watch` signals below, whose loop-exit idle report
+    // clears the anchor first so it already carries manual: false.
     destroy_manual_locate_window(&app);
-    if take_manual_anchor().is_some() {
-        tracing::info!("manual anchor dropped with overlay mode");
-    }
     stop_overlay_tab_watch().await?;
     let _ = super::arena_info::stop_arena_watcher().await;
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
@@ -300,9 +364,10 @@ fn post_create_window_setup(win: &tauri::WebviewWindow) {
 // ─────────────────────────────────────────────────────────────────────────
 
 /// A user-drawn roster box, valid for ONE battle (arena stamp) on ONE
-/// game-window geometry. Stored across Tab presses in [`MANUAL_ANCHOR`]:
-/// while the battle stamp and the game rect both still match, every Tab
-/// hold anchors the chips to this box instead of running the detector.
+/// game-window geometry. Held in the watcher's FSM ([`WatchFsm::
+/// manual_anchor`]): while the battle stamp and the game rect both still
+/// match, every Tab hold anchors the chips to this box instead of running
+/// the detector.
 #[derive(Debug, Clone)]
 struct ManualAnchor {
     /// Arena stamp (tempArenaInfo.json mtime) the box was drawn under — a
@@ -319,10 +384,6 @@ struct ManualAnchor {
     /// silently move chips the user just placed.
     team_sizes: (usize, usize),
 }
-
-/// Cross-press manual anchor store (same static pattern as `TAB_WATCHER`).
-/// `None` = no manual anchor in force.
-static MANUAL_ANCHOR: Mutex<Option<ManualAnchor>> = Mutex::new(None);
 
 /// Outcome of checking the stored manual anchor against the CURRENT battle
 /// stamp + game-window rect.
@@ -341,13 +402,16 @@ enum ManualAnchorCheck {
     Inert,
 }
 
-/// Pure decision: does the stored manual anchor still apply to this battle
-/// on this game-window geometry?
-fn manual_anchor_check(battle: i64, game_rect: Option<Rect>) -> ManualAnchorCheck {
-    let Ok(guard) = MANUAL_ANCHOR.lock() else {
-        return ManualAnchorCheck::Inert;
-    };
-    let Some(m) = guard.as_ref() else {
+/// Pure decision: does a stored manual anchor still apply to this battle on
+/// this game-window geometry? The anchor lives in the watcher FSM, so the
+/// stored value is passed in directly and the decision stays unit-testable
+/// without cross-test static state.
+fn manual_anchor_check(
+    stored: Option<&ManualAnchor>,
+    battle: i64,
+    game_rect: Option<Rect>,
+) -> ManualAnchorCheck {
+    let Some(m) = stored else {
         return ManualAnchorCheck::Inert;
     };
     if m.battle != battle {
@@ -360,23 +424,62 @@ fn manual_anchor_check(battle: i64, game_rect: Option<Rect>) -> ManualAnchorChec
     }
 }
 
-/// Drop the stored manual anchor, whatever the reason (battle/window change,
-/// explicit clear, overlay-mode teardown).
-fn take_manual_anchor() -> Option<ManualAnchor> {
-    let mut guard = MANUAL_ANCHOR.lock().ok()?;
-    guard.take()
-}
-
-/// Total row count of the STORED manual anchor, when one is armed (any
+/// Total row count of a stored manual anchor, when one is armed (any
 /// liveness — the watcher only expires it on the focused+Tab path). Drives
 /// the `manual` flag on automatic status reports: while the anchor survives
 /// an Idle/Searching transition, the panel's manual badge + clear button
 /// must survive it with it.
-fn manual_anchor_stored_rows() -> Option<u32> {
-    let guard = MANUAL_ANCHOR.lock().ok()?;
-    guard
-        .as_ref()
-        .map(|m| (m.team_sizes.0 + m.team_sizes.1) as u32)
+fn stored_manual_rows(stored: Option<&ManualAnchor>) -> Option<u32> {
+    stored.map(|m| (m.team_sizes.0 + m.team_sizes.1) as u32)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Cross-thread watcher commands (FIFO pipeline)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Cross-thread inputs to the Tab watcher, drained FIFO by the loop at the
+/// top of every tick. Producers (the manual-locate commands on the Tauri
+/// async runtime, the arena watcher thread) never touch watcher state
+/// directly and never emit `overlay-status` themselves: the loop applies
+/// the commands in push order and is the single state owner + status
+/// emitter. That kills two live races of the old direct-emit design —
+/// out-of-order state application (a manual set landing between a tick's
+/// read and write) and a direct emit resurrecting a badge the loop had just
+/// corrected (the loop's dedup mirror never saw those emissions).
+pub(super) enum WatchCommand {
+    /// The manual-locate picker confirmed a box: arm the manual anchor for
+    /// THIS battle on THIS game-window geometry.
+    ManualAnchorSet {
+        rect: Rect,
+        game_rect: Rect,
+        battle: i64,
+        team_sizes: (usize, usize),
+    },
+    /// The user cleared the manual anchor.
+    ManualAnchorCleared,
+    /// A NEW battle's `tempArenaInfo.json` landed (arena mtime moved) — the
+    /// current pin, if any, is void.
+    BattleChanged,
+}
+
+/// FIFO command queue between the command threads and the watcher loop
+/// (same static pattern as the old manual-anchor store).
+static WATCH_COMMANDS: Mutex<VecDeque<WatchCommand>> = Mutex::new(VecDeque::new());
+
+/// Hard queue bound. Protects the targets where the (Windows-only) watcher
+/// loop never runs and nothing drains the queue, and a wedged loop, from
+/// unbounded growth — every command is latest-state-wins in spirit, so
+/// dropping the oldest under flood loses nothing that matters.
+const WATCH_COMMANDS_MAX: usize = 64;
+
+/// Enqueue a watcher command, FIFO.
+pub(super) fn push_watch_command(cmd: WatchCommand) {
+    if let Ok(mut q) = WATCH_COMMANDS.lock() {
+        if q.len() >= WATCH_COMMANDS_MAX {
+            q.pop_front();
+        }
+        q.push_back(cmd);
+    }
 }
 
 /// Pure: validate a picker submission (game-relative physical px) against
@@ -553,10 +656,9 @@ pub async fn cancel_manual_locate(app: AppHandle) -> Result<(), String> {
 }
 
 /// Submit the picker's selection (physical px relative to the game window
-/// origin): validate it, freeze it as the manual anchor for the CURRENT
-/// battle + game geometry, and close the picker. The anchor takes effect on
-/// the next Tab hold; the status broadcast flips the live-battle panel to
-/// its manual badge immediately.
+/// origin): validate it and enqueue it as a FIFO command — the watcher loop
+/// arms the manual anchor and reports the manual badge from there (within
+/// one poll interval). The anchor takes effect on the next Tab hold.
 #[tauri::command]
 pub async fn set_manual_roster_rect(
     app: AppHandle,
@@ -594,28 +696,16 @@ pub async fn set_manual_roster_rect(
     };
     validate_manual_selection(&sel, &game_rect)?;
     let battle = super::arena_info::last_arena_stamp();
-    *MANUAL_ANCHOR
-        .lock()
-        .map_err(|e| format!("manual anchor lock: {e}"))? = Some(ManualAnchor {
-        battle,
-        game_rect,
+    // No direct status emit here (the old immediate Manual report): the
+    // watcher loop applies this command FIFO within one poll interval and
+    // emits the identical payload from the single emitter — same panel
+    // feedback, but ordered against every other watcher transition.
+    push_watch_command(WatchCommand::ManualAnchorSet {
         rect: sel,
+        game_rect,
+        battle,
         team_sizes,
     });
-    // Immediate panel feedback (green "manually located" badge + the button
-    // flips to "clear"). The watcher re-emits the identical payload when it
-    // actually places the chips, so a lost race costs nothing.
-    let rows = (team_sizes.0 + team_sizes.1) as u32;
-    if let Err(e) = app.emit(
-        OVERLAY_STATUS_EVENT,
-        OverlayStatus {
-            state: OverlayState::Manual,
-            rows: Some(rows),
-            manual: true,
-        },
-    ) {
-        tracing::warn!(error = %e, "emit overlay-status failed");
-    }
     // Success — the picker's job is done; it must not linger as a zombie.
     destroy_manual_locate_window(&app);
     tracing::info!(
@@ -623,38 +713,23 @@ pub async fn set_manual_roster_rect(
         sel = format!("{}x{} at ({},{})", sel.width, sel.height, sel.x, sel.y),
         allies = team_sizes.0,
         enemies = team_sizes.1,
-        "manual roster anchor set"
+        "manual roster anchor queued"
     );
     Ok(())
 }
 
 /// Drop the manual anchor (the live-battle panel's "clear locate" button)
-/// and report the state the overlay is ACTUALLY in: visible → the automatic
-/// flow is searching; hidden (Tab up / game unfocused) → idle. An
-/// unconditional "searching" would stick forever — the watcher's hide branch
-/// only runs while the overlay is shown, so nothing would ever demote the
-/// badge afterwards. Also closes the picker if one is somehow still open.
+/// via the FIFO pipeline: the watcher loop clears the anchor and reports
+/// the state the overlay is ACTUALLY in — visible with a live automatic
+/// pin → detected, visible without one → searching, hidden (Tab up / game
+/// unfocused) → idle. An unconditional "searching" would stick forever —
+/// the watcher's hide branch only runs while the overlay is shown, so
+/// nothing would ever demote the badge afterwards. Also closes the picker
+/// if one is somehow still open.
 #[tauri::command]
 pub async fn clear_manual_roster_rect(app: AppHandle) -> Result<(), String> {
-    if take_manual_anchor().is_some() {
-        tracing::info!("manual anchor cleared by user");
-    }
+    push_watch_command(WatchCommand::ManualAnchorCleared);
     destroy_manual_locate_window(&app);
-    let state = if overlay_window_visible(&app) {
-        OverlayState::Searching
-    } else {
-        OverlayState::Idle
-    };
-    if let Err(e) = app.emit(
-        OVERLAY_STATUS_EVENT,
-        OverlayStatus {
-            state,
-            rows: None,
-            manual: false,
-        },
-    ) {
-        tracing::warn!(error = %e, "emit overlay-status failed");
-    }
     Ok(())
 }
 
@@ -714,6 +789,14 @@ pub async fn stop_overlay_tab_watch() -> Result<(), String> {
         // Leave the thread to exit on its own next tick; joining here would
         // block the IPC thread for up to one poll interval otherwise.
     }
+    // Watcher teardown drops pending commands with it — same semantics as
+    // the old manual-anchor teardown: a ManualAnchorSet that lost the race
+    // against overlay-mode teardown must not re-arm itself in the NEXT
+    // overlay session, and a stale BattleChanged is re-derived anyway (the
+    // fresh watcher reads the arena stamp per tick).
+    if let Ok(mut q) = WATCH_COMMANDS.lock() {
+        q.clear();
+    }
     tracing::info!("overlay tab watcher stopped");
     Ok(())
 }
@@ -733,38 +816,122 @@ struct PinnedAnchor {
     anchor: OverlayAnchor,
 }
 
+/// Geometry-cache identity: the game window's rect AND its style bits. The
+/// rect alone misses a window-MODE switch (borderless ↔ windowed can keep
+/// the outer rect identical); `GWL_STYLE`/`GWL_EXSTYLE` change with it, so
+/// either mismatch retires the cache.
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GeometryKey {
+    game_rect: Rect,
+    style_bits: u64,
+}
+
+/// One full detection's worth of pixel geometry, cached per game-window
+/// mode: the located header band, the roster grid detected WITH it (same
+/// frame, phase refinement included) and the team sizes the grid was built
+/// for. Every later capture first verifies the band cheaply
+/// ([`overlay_detect::verify_header_band`]); a pass reuses the cached grid
+/// verbatim, a team-size change rebuilds from the band, and repeated
+/// misses retire the entry.
+#[cfg(target_os = "windows")]
+struct GeometryCacheEntry {
+    key: GeometryKey,
+    band: overlay_detect::HeaderBand,
+    roster: overlay_detect::DetectedRoster,
+    team_sizes: (usize, usize),
+}
+
+/// All mutable watcher state in ONE struct (the loop's single-owner state
+/// machine): the want-visible bookkeeping, the pin, the manual anchor, the
+/// cadence stamps, the status mirror, the sink fast-path's stale flag and
+/// the geometry cache. The loop owns it exclusively; commands and cadenced
+/// passes mutate it through `&mut` — no other thread writes any of it, so
+/// the status mirror's dedup is exact (the old scattered statics + direct
+/// emits had none of those guarantees).
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct WatchFsm {
+    /// Whether the overlay window is logically shown (the watcher placed it
+    /// and has not hidden it since).
+    overlay_shown: bool,
+    pinned_anchor: Option<PinnedAnchor>,
+    /// Whether the CURRENTLY shown overlay is the manual anchor's placement
+    /// (vs an automatic detection): gates the one-shot manual place_and_show
+    /// so a live manual anchor does not re-place every 30 ms tick.
+    manual_shown: bool,
+    manual_anchor: Option<ManualAnchor>,
+    /// Cached game-window resolution (handle + clamp time).
+    cached_game: Option<(GameWindow, Instant)>,
+    /// When the last game-window SCAN ran — bounds find_game_window() even
+    /// when it keeps failing (each call takes a full Toolhelp process
+    /// snapshot; a failing lookup retried every poll tick would peg a core).
+    last_scan: Option<Instant>,
+    /// When the last capture ATTEMPT ran (success or failure) — bounds the
+    /// expensive BitBlt + detector work even under frantic Tab tapping.
+    last_capture_attempt: Option<Instant>,
+    /// When the last hide was sent — spaces out the hide retries.
+    last_hide: Option<Instant>,
+    /// When the last battle-state refresh ran.
+    last_state_refresh: Option<Instant>,
+    /// When the last pinned-anchor revalidation ran.
+    last_revalidate: Option<Instant>,
+    /// When the last recognition CATCH-UP pass ran.
+    last_catch_up: Option<Instant>,
+    /// When the last sink fast-probe ran (independent of every other stamp:
+    /// the probe is deliberately far cheaper and faster than a revalidate).
+    last_sink_check: Option<Instant>,
+    /// Mirror of the LAST `wowsp://overlay-status` payload emitted (None =
+    /// nothing emitted yet). report_status() drops reports identical to it,
+    /// so the per-tick status pushes are edge events, not level events.
+    last_status: Option<OverlayStatus>,
+    /// True when the pin's row data just changed under the chips (the sink
+    /// probe flipped alive flags) and the row→name re-map is still catching
+    /// up: rides the wire on every status + anchor emission until a trusted
+    /// mapping lands.
+    stale: bool,
+    /// Pending sink-probe REVIVAL candidate (pure-debounce state, see
+    /// [`sink_probe_confirm`]): a probe read that only flipped sunk rows
+    /// back to alive — almost always a single-frame glare/explosion
+    /// artifact — waits here for the NEXT probe to agree before the pin is
+    /// updated. `None` when nothing is pending.
+    sink_candidate: Option<(Vec<bool>, Instant)>,
+    /// Per-game-window-mode table geometry (see [`GeometryCacheEntry`]).
+    geometry_cache: Option<GeometryCacheEntry>,
+    /// Consecutive band-verify misses on the current cache entry.
+    geometry_verify_fails: u32,
+}
+
 /// Push a detection-status report to ALL windows — but only when it differs
 /// from the last emitted one: the tick runs at ~30 Hz and its branches
 /// re-enter every poll, while the consumer (the live-battle panel badge)
-/// wants edge events, not level events. `last_status` is the loop-local
-/// mirror of what already went out (`None` = nothing emitted yet). Emissions
-/// from OUTSIDE the loop (`set_manual_roster_rect` /
-/// `clear_manual_roster_rect`) bypass this mirror — a duplicate payload at
-/// the consumer is harmless, so the loop just re-emits on its next edge.
+/// wants edge events, not level events. `fsm.last_status` is the mirror of
+/// what already went out (`None` = nothing emitted yet). The watcher loop
+/// is the ONLY emitter — the manual-anchor commands arrive through the FIFO
+/// queue and are reported from `apply_watch_command` here — so the mirror
+/// covers every emission and the dedup is exact.
 ///
 /// While a manual anchor is STORED (armed, whatever its liveness), every
 /// automatic report carries `manual: true` and the anchor's row count: the
 /// panel's green manual badge + clear button must survive Idle/Searching
 /// transitions, because the anchor itself does — it re-anchors on the same
-/// battle's next Tab hold.
+/// battle's next Tab hold. The payload's `stale` mirrors the FSM's
+/// pin-staleness flag (a stale flip carries no state transition, which is
+/// exactly why the pin path reports every tick and lets this dedup decide).
 #[cfg(target_os = "windows")]
-fn report_status(
-    app: &AppHandle,
-    last_status: &mut Option<OverlayStatus>,
-    state: OverlayState,
-    rows: Option<u32>,
-) {
-    let manual_rows = manual_anchor_stored_rows();
+fn report_status(app: &AppHandle, fsm: &mut WatchFsm, state: OverlayState, rows: Option<u32>) {
+    let manual_rows = stored_manual_rows(fsm.manual_anchor.as_ref());
     let manual = manual_rows.is_some() || state == OverlayState::Manual;
     let status = OverlayStatus {
         state,
         rows: rows.or(manual_rows.filter(|_| manual)),
         manual,
+        stale: fsm.stale,
     };
-    if *last_status == Some(status) {
+    if fsm.last_status == Some(status) {
         return;
     }
-    *last_status = Some(status);
+    fsm.last_status = Some(status);
     if let Err(e) = app.emit(OVERLAY_STATUS_EVENT, status) {
         tracing::warn!(error = %e, "emit overlay-status failed");
     }
@@ -773,40 +940,10 @@ fn report_status(
 /// The watcher loop — see the module docs for the interaction contract.
 #[cfg(target_os = "windows")]
 fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
-    let mut overlay_shown = false;
-    let mut pinned_anchor: Option<PinnedAnchor> = None;
-    // Whether the CURRENTLY shown overlay is the manual anchor's placement
-    // (vs an automatic detection): gates the one-shot manual place_and_show
-    // so a live manual anchor does not re-place every 30 ms tick.
-    let mut manual_shown = false;
-    let mut cached_game: Option<(GameWindow, Instant)> = None;
-    // When the last game-window SCAN ran — bounds find_game_window() even
-    // when it keeps failing (each call takes a full Toolhelp process
-    // snapshot; a failing lookup retried every poll tick would peg a core).
-    let mut last_scan: Option<Instant> = None;
-    // When the last capture ATTEMPT ran (success or failure) — bounds the
-    // expensive BitBlt + detector work even under frantic Tab
-    // tapping or a focus-flicker loop while the key is held.
-    let mut last_capture_attempt: Option<Instant> = None;
-    // When the last hide was sent — spaces out the hide retries.
-    let mut last_hide: Option<Instant> = None;
-    // When the last battle-state refresh ran — bounds the replay-tree walk
-    // inside refresh_battle_state while Tab is held without a known battle.
-    let mut last_state_refresh: Option<Instant> = None;
-    // When the last pinned-anchor revalidation ran — independent of
-    // last_capture_attempt: it throttles the periodic re-check of the pin
-    // while the overlay STAYS shown (see ANCHOR_REVALIDATE_INTERVAL).
-    let mut last_revalidate: Option<Instant> = None;
-    // When the last recognition CATCH-UP pass ran. Its own stamp (not
-    // last_capture_attempt — that one only gates the acquisition arm, which
-    // never runs while a confirmed pin is shown) spaces the faster-than-5 s
-    // revalidation passes that keep trying while a pin still lacks its
-    // row→name mapping.
-    let mut last_catch_up: Option<Instant> = None;
-    // Mirror of the LAST `wowsp://overlay-status` payload emitted (None =
-    // nothing emitted yet). report_status() drops reports identical to it,
-    // so the per-tick status pushes are edge events, not level events.
-    let mut last_status: Option<OverlayStatus> = None;
+    // All mutable watcher state lives in ONE machine: a panicked tick leaves
+    // a coherent struct behind, and the catch_unwind boundary passes a
+    // single `&mut` through instead of a dozen loose locals.
+    let mut fsm = WatchFsm::default();
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -816,20 +953,7 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
         // longer observe the Tab release and the overlay would stay on
         // screen forever. The next tick re-syncs all state.
         let tick = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            watch_tab_tick(
-                &app,
-                &mut overlay_shown,
-                &mut pinned_anchor,
-                &mut manual_shown,
-                &mut cached_game,
-                &mut last_scan,
-                &mut last_capture_attempt,
-                &mut last_hide,
-                &mut last_state_refresh,
-                &mut last_revalidate,
-                &mut last_catch_up,
-                &mut last_status,
-            );
+            watch_tab_tick(&app, &mut fsm);
         }));
         if tick.is_err() {
             tracing::warn!("tab watcher tick panicked — continuing on the next tick");
@@ -837,284 +961,453 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
         std::thread::sleep(POLL_INTERVAL);
     }
     // Never leave the overlay behind when the watcher dies.
-    if overlay_shown {
+    if fsm.overlay_shown {
         hide_overlay(&app);
     }
     // Nor a stale badge in the main window: drop the panel to idle (a no-op
-    // when the last emitted state already was idle).
-    report_status(&app, &mut last_status, OverlayState::Idle, None);
+    // when the last emitted state already was idle). The manual anchor and
+    // the stale flag are cleared FIRST — they live in this FSM and die with
+    // the loop — so the exit report already carries manual: false.
+    fsm.manual_anchor = None;
+    fsm.stale = false;
+    report_status(&app, &mut fsm, OverlayState::Idle, None);
+}
+
+/// Apply one FIFO command to the FSM. Pure-ish (no emit, no AppHandle) so
+/// the ordering semantics are unit-testable; returns the status report the
+/// caller should emit, if any.
+#[cfg(target_os = "windows")]
+fn apply_watch_command(
+    fsm: &mut WatchFsm,
+    cmd: WatchCommand,
+) -> Option<(OverlayState, Option<u32>)> {
+    match cmd {
+        WatchCommand::ManualAnchorSet {
+            rect,
+            game_rect,
+            battle,
+            team_sizes,
+        } => {
+            fsm.manual_anchor = Some(ManualAnchor {
+                battle,
+                game_rect,
+                rect,
+                team_sizes,
+            });
+            tracing::info!(battle, "manual roster anchor armed");
+            // Immediate panel feedback (green "manually located" badge + the
+            // button flips to "clear") — the same payload the old direct
+            // emit produced, now ordered through the loop. report_status's
+            // dedup swallows the loop's own re-report when the chips place.
+            Some((
+                OverlayState::Manual,
+                Some((team_sizes.0 + team_sizes.1) as u32),
+            ))
+        },
+        WatchCommand::ManualAnchorCleared => {
+            if fsm.manual_anchor.take().is_some() {
+                tracing::info!("manual anchor cleared by user");
+            }
+            // Report the state the overlay is ACTUALLY in — an unconditional
+            // "searching" would stick forever while hidden (the hide branch
+            // only runs while shown), and a live automatic pin means the
+            // chips are still anchored (no Detected→Searching flicker).
+            let state = if !fsm.overlay_shown {
+                OverlayState::Idle
+            } else if fsm
+                .pinned_anchor
+                .as_ref()
+                .is_some_and(|p| p.anchor.table_detected)
+            {
+                OverlayState::Detected
+            } else {
+                OverlayState::Searching
+            };
+            Some((state, None))
+        },
+        WatchCommand::BattleChanged => {
+            // A new battle voids the pin outright (its geometry belongs to
+            // the old HUD phase and its row order to the old roster). The
+            // geometry cache deliberately SURVIVES: same window rect+style
+            // means the same pixel geometry, and a new battle shape is
+            // rebuilt from the cached band without a rescan.
+            let had_pin = fsm.pinned_anchor.take().is_some();
+            fsm.stale = false;
+            fsm.sink_candidate = None;
+            fsm.last_catch_up = None;
+            fsm.last_revalidate = None;
+            fsm.last_sink_check = None;
+            tracing::info!(had_pin, "arena stamp changed — pin voided by FIFO command");
+            // No immediate report: the next tick re-derives the honest state
+            // (Searching while acquiring, Idle while hidden) and reports it
+            // through the dedup mirror.
+            None
+        },
+    }
+}
+
+/// Drain the whole command queue in FIFO order, applying each to the FSM
+/// and emitting the command-driven status reports. Runs at the top of every
+/// tick so the tick's own decisions always see the queued inputs applied.
+#[cfg(target_os = "windows")]
+fn drain_watch_commands(app: &AppHandle, fsm: &mut WatchFsm) {
+    loop {
+        let cmd = WATCH_COMMANDS.lock().ok().and_then(|mut q| q.pop_front());
+        let Some(cmd) = cmd else {
+            break;
+        };
+        if let Some((state, rows)) = apply_watch_command(fsm, cmd) {
+            report_status(app, fsm, state, rows);
+        }
+    }
 }
 
 /// One poll iteration of the Tab watcher (factored out so the loop can wrap
 /// it in `catch_unwind`).
 #[cfg(target_os = "windows")]
-#[allow(clippy::too_many_arguments)]
-fn watch_tab_tick(
-    app: &AppHandle,
-    overlay_shown: &mut bool,
-    pinned_anchor: &mut Option<PinnedAnchor>,
-    manual_shown: &mut bool,
-    cached_game: &mut Option<(GameWindow, Instant)>,
-    last_scan: &mut Option<Instant>,
-    last_capture_attempt: &mut Option<Instant>,
-    last_hide: &mut Option<Instant>,
-    last_state_refresh: &mut Option<Instant>,
-    last_revalidate: &mut Option<Instant>,
-    last_catch_up: &mut Option<Instant>,
-    last_status: &mut Option<OverlayStatus>,
-) {
+fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
+    // FIFO command pipeline first: every cross-thread input (manual anchor
+    // set/clear, arena battle change) lands in push order before this tick's
+    // own decisions read the state.
+    drain_watch_commands(app, fsm);
+
+    // Resolve the game window: cached while valid, rescanned at most
+    // once per HWND_REFRESH — including the not-found case.
+    let game = match fsm.cached_game {
+        Some((g, at)) if at.elapsed() < HWND_REFRESH && g.is_alive() => Some(g),
+        _ if fsm.last_scan.is_none_or(|t| t.elapsed() >= HWND_REFRESH) => {
+            fsm.last_scan = Some(Instant::now());
+            let found = find_game_window();
+            fsm.cached_game = found.map(|g| (g, Instant::now()));
+            found
+        },
+        _ => fsm
+            .cached_game
+            .filter(|(g, _)| g.is_alive())
+            .map(|(g, _)| g),
+    };
+
+    let focused_on_game = game.is_some_and(|g| g.is_foreground());
+    let tab_down = tab_key_down();
+
+    // Table-anchoring switch (`overlay-config.json`, written by the
+    // settings modal): `table: "off"` disables the WHOLE Tab overlay.
+    // The webui never creates the overlay window + watcher while it is
+    // off and tears them down on the off edge; this cached read is the
+    // Rust-side belt-and-suspenders — a stray tick (or a stale watcher
+    // outliving the webui's teardown) must never show the window
+    // against the setting, and an already-shown one hides again as soon
+    // as `want_visible` flips false below.
+    let table_off = super::overlay_config::table_overlay_off();
+
+    // WANT-VISIBLE state machine instead of press-edge triggering: the
+    // previous edge-only model did all its work exactly once per press,
+    // so a single failed capture (transient scene-probe miss, rate-limit
+    // window) meant the overlay stayed down until Tab was released and
+    // pressed again — rapid tapping then felt permanently dead ("按不出
+    // 来了"). Here, holding Tab with the game focused DURING a battle is
+    // the standing want; each rate-limit window retries acquisition
+    // until it succeeds.
+    let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+    if focused_on_game
+        && tab_down
+        && !battle_known
+        && fsm
+            .last_state_refresh
+            .is_none_or(|t| t.elapsed() >= STATE_REFRESH)
     {
-        // Resolve the game window: cached while valid, rescanned at most
-        // once per HWND_REFRESH — including the not-found case.
-        let game = match &*cached_game {
-            Some((g, at)) if at.elapsed() < HWND_REFRESH && g.is_alive() => Some(*g),
-            _ if last_scan.is_none_or(|t| t.elapsed() >= HWND_REFRESH) => {
-                *last_scan = Some(Instant::now());
-                let found = find_game_window();
-                *cached_game = found.map(|g| (g, Instant::now()));
-                found
-            },
-            _ => (*cached_game).filter(|(g, _)| g.is_alive()).map(|(g, _)| g),
-        };
+        fsm.last_state_refresh = Some(Instant::now());
+        battle_known = super::arena_info::refresh_battle_state();
+        tracing::debug!(battle_known, "tab held: refreshed battle state");
+    }
+    // The manual-locate picker covers the game and owns the pointer:
+    // while it exists the overlay must never fight it for screen space,
+    // and it is torn down when the game window disappears underneath it.
+    let picker_open = app.get_webview_window(MANUAL_LOCATE_LABEL).is_some();
+    if picker_open && game.is_none() {
+        destroy_manual_locate_window(app);
+    }
 
-        let focused_on_game = game.is_some_and(|g| g.is_foreground());
-        let tab_down = tab_key_down();
-
-        // Table-anchoring switch (`overlay-config.json`, written by the
-        // settings modal): `table: "off"` disables the WHOLE Tab overlay.
-        // The webui never creates the overlay window + watcher while it is
-        // off and tears them down on the off edge; this cached read is the
-        // Rust-side belt-and-suspenders — a stray tick (or a stale watcher
-        // outliving the webui's teardown) must never show the window
-        // against the setting, and an already-shown one hides again as soon
-        // as `want_visible` flips false below.
-        let table_off = super::overlay_config::table_overlay_off();
-
-        // WANT-VISIBLE state machine instead of press-edge triggering: the
-        // previous edge-only model did all its work exactly once per press,
-        // so a single failed capture (transient scene-probe miss, rate-limit
-        // window) meant the overlay stayed down until Tab was released and
-        // pressed again — rapid tapping then felt permanently dead ("按不出
-        // 来了"). Here, holding Tab with the game focused DURING a battle is
-        // the standing want; each rate-limit window retries acquisition
-        // until it succeeds.
-        let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
-        if focused_on_game
-            && tab_down
-            && !battle_known
-            && last_state_refresh.is_none_or(|t| t.elapsed() >= STATE_REFRESH)
-        {
-            *last_state_refresh = Some(Instant::now());
-            battle_known = super::arena_info::refresh_battle_state();
-            tracing::debug!(battle_known, "tab held: refreshed battle state");
-        }
-        // The manual-locate picker covers the game and owns the pointer:
-        // while it exists the overlay must never fight it for screen space,
-        // and it is torn down when the game window disappears underneath it.
-        let picker_open = app.get_webview_window(MANUAL_LOCATE_LABEL).is_some();
-        if picker_open && game.is_none() {
-            destroy_manual_locate_window(app);
-        }
-
-        let battle = super::arena_info::last_arena_stamp();
-        let game_rect = game.map(|g| rect_from_win32(g.rect));
-        // MANUAL anchor first: while a user-drawn box is in force for THIS
-        // battle on THIS game-window geometry, it replaces the entire
-        // automatic machine for the tick — no capture, no detector, no pin.
-        // The 5 s revalidation never touches it (there is nothing to
-        // re-detect about a hand-drawn box), and hiding the overlay does
-        // not expire it (the same battle's next Tab hold re-places it). It
-        // shares the auto path's preconditions (game focused + Tab held +
-        // battle known), minus the picker.
-        let manual_active =
-            if !picker_open && focused_on_game && tab_down && battle_known && !table_off {
-                match manual_anchor_check(battle, game_rect) {
-                    ManualAnchorCheck::Live(m, r) => Some((m, r)),
-                    ManualAnchorCheck::Stale => {
-                        // New battle, or the game window moved/resized: expire
-                        // silently back to the automatic flow (the panel status
-                        // flips via the normal searching/idle reports).
-                        tracing::info!(battle, "manual anchor expired — back to auto detection");
-                        take_manual_anchor();
-                        None
-                    },
-                    // Nothing stored — or no game rect this tick to judge the
-                    // window-geometry half with.
-                    ManualAnchorCheck::Inert => None,
-                }
-            } else {
+    let battle = super::arena_info::last_arena_stamp();
+    let game_rect = game.map(|g| rect_from_win32(g.rect));
+    // MANUAL anchor first: while a user-drawn box is in force for THIS
+    // battle on THIS game-window geometry, it replaces the entire
+    // automatic machine for the tick — no capture, no detector, no pin.
+    // The 5 s revalidation never touches it (there is nothing to
+    // re-detect about a hand-drawn box), and hiding the overlay does
+    // not expire it (the same battle's next Tab hold re-places it). It
+    // shares the auto path's preconditions (game focused + Tab held +
+    // battle known), minus the picker.
+    let manual_active = if !picker_open && focused_on_game && tab_down && battle_known && !table_off
+    {
+        match manual_anchor_check(fsm.manual_anchor.as_ref(), battle, game_rect) {
+            ManualAnchorCheck::Live(m, r) => Some((m, r)),
+            ManualAnchorCheck::Stale => {
+                // New battle, or the game window moved/resized: expire
+                // silently back to the automatic flow (the panel status
+                // flips via the normal searching/idle reports).
+                tracing::info!(battle, "manual anchor expired — back to auto detection");
+                fsm.manual_anchor = None;
                 None
-            };
-
-        let want_visible =
-            focused_on_game && tab_down && battle_known && !picker_open && !table_off;
-        if let Some((m, manual_game)) = manual_active {
-            // Place ONCE per manual hold, not every 30 ms tick.
-            if !*overlay_shown || !*manual_shown {
-                let anchor = build_manual_anchor(&m, manual_game);
-                place_and_show(app, &anchor);
-                report_status(
-                    app,
-                    last_status,
-                    OverlayState::Manual,
-                    Some(anchor.row_centers.len() as u32),
-                );
-                *overlay_shown = true;
-                *manual_shown = true;
-                *last_hide = None;
-            }
-            // The manual anchor owns this tick: neither the automatic
-            // acquisition path below nor the hide-retry branch may touch
-            // the overlay while it stays live.
-            return;
+            },
+            // Nothing stored — or no game rect this tick to judge the
+            // window-geometry half with.
+            ManualAnchorCheck::Inert => None,
         }
-        *manual_shown = false;
-        if want_visible {
-            // A CONFIRMED pin is the only "done" state. Shown WITHOUT one —
-            // the centered-fallback hint — must keep acquiring: a Tab press
-            // can beat the panel's first render (the scene gate opens on the
-            // battle HUD alone), and with the gates below split on
-            // `overlay_shown` / `pinned_anchor.is_some()` that hint was a
-            // terminal state for the whole hold — acquisition stopped, and
-            // revalidation had no pin to re-check, so the hint never
-            // recovered even once the table was fully on screen.
-            let confirmed_pin = pinned_anchor
+    } else {
+        None
+    };
+
+    let want_visible = focused_on_game && tab_down && battle_known && !picker_open && !table_off;
+    if let Some((m, manual_game)) = manual_active {
+        // Place ONCE per manual hold, not every 30 ms tick.
+        if !fsm.overlay_shown || !fsm.manual_shown {
+            let anchor = build_manual_anchor(&m, manual_game);
+            // Manual placement is fully current data — any leftover stale
+            // flag from a previous automatic pin does not apply to it.
+            fsm.stale = false;
+            place_and_show(app, &anchor, false);
+            report_status(
+                app,
+                fsm,
+                OverlayState::Manual,
+                Some(anchor.row_centers.len() as u32),
+            );
+            fsm.overlay_shown = true;
+            fsm.manual_shown = true;
+            fsm.last_hide = None;
+        }
+        // The manual anchor owns this tick: neither the automatic
+        // acquisition path below nor the hide-retry branch may touch
+        // the overlay while it stays live.
+        return;
+    }
+    fsm.manual_shown = false;
+    if want_visible {
+        // A CONFIRMED pin valid for the CURRENT battle + game-window
+        // geometry is the only "done" state (see `pin_matches` for the
+        // exact keys). Resolving it FIRST — before any status decision —
+        // is the no-flicker rule: the old tick reported Searching at the
+        // top of this branch and only then looked for a reusable pin, so
+        // every Tab re-press flashed "locating…" for one tick before the
+        // chips came back.
+        let pin_valid = fsm.pinned_anchor.as_ref().is_some_and(|p| {
+            pin_matches(
+                p.battle,
+                &p.game_rect,
+                p.anchor.table_detected,
+                battle,
+                game_rect,
+            )
+        });
+        let held = held_status(
+            pin_valid,
+            fsm.last_status
                 .as_ref()
-                .is_some_and(|p| p.anchor.table_detected);
-            if !*overlay_shown || !confirmed_pin {
-                // Status: acquiring without a confirmed pin. The one
-                // unambiguous "tried and failed" signal is the centered
-                // fallback hint being what's on screen — which is exactly
-                // what a Fallback mirror state means (it is emitted only
-                // from the two places below that put/keep the hint up, and
-                // every hide resets it to Idle). Everything else reads as
-                // Searching; report_status dedups the per-tick re-pushes.
-                if last_status
-                    .as_ref()
-                    .is_some_and(|s| s.state == OverlayState::Fallback)
-                {
-                    report_status(app, last_status, OverlayState::Fallback, None);
-                } else {
-                    report_status(app, last_status, OverlayState::Searching, None);
-                }
-                // BATTLE-PINNED anchor first: once a table was located for
-                // THIS battle and this game-window geometry, every later
-                // press reuses it verbatim — per-press re-detection measured
-                // slightly different header bands frame to frame and the
-                // chips visibly wandered ("飘"). The pin lives for the whole
-                // battle (arena stamp) or until the window moves/resizes.
-                // (`battle` / `game_rect` are hoisted to the tick top, where
-                // the manual-anchor check above shares them.)
-                let pinned = pinned_anchor.as_ref().filter(|p| {
-                    p.battle == battle
-                        && game_rect.is_some_and(|r| r == p.game_rect)
-                        && p.anchor.table_detected
-                });
-                let anchor = match pinned {
-                    Some(p) => Some(p.anchor.clone()),
-                    None => {
-                        // Rate-limited acquisition attempt. A FAILED attempt
-                        // stays unpinned, so the next tick (after the rate
-                        // limit) retries — no release-and-press needed,
-                        // whether the overlay is still hidden or sitting on
-                        // the hint. Only a CONFIRMED table detection pins;
-                        // fallback anchors (hint box) stay unpinned so the
-                        // next attempt keeps trying for the real table.
-                        let Some(g) = game else {
-                            return;
-                        };
-                        if !last_capture_attempt.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
-                        {
-                            tracing::debug!("tab held: capture rate-limited, waiting");
-                            return;
-                        }
-                        *last_capture_attempt = Some(Instant::now());
-                        let computed = compute_anchor(&g);
-                        if let Some(anchor) = computed.as_ref().filter(|a| a.table_detected) {
-                            *pinned_anchor = Some(PinnedAnchor {
-                                battle,
-                                game_rect: rect_from_win32(g.rect),
-                                anchor: anchor.clone(),
-                            });
-                        }
-                        computed
-                    },
-                };
-                if let Some(anchor) = anchor {
-                    // Place when the overlay is not up yet, or when a
-                    // CONFIRMED anchor must replace the on-screen hint;
-                    // re-placing an identical fallback hint every rate-limit
-                    // window would only churn the event pipe.
-                    if !*overlay_shown || anchor.table_detected {
-                        place_and_show(app, &anchor);
-                    }
-                    // Status: what is on screen NOW. A confirmed anchor pins
-                    // the chips (detected + row count); a fallback anchor is
-                    // (or would re-place) the centered hint. place_and_show
-                    // may skip a redundant re-place of the hint, but the
-                    // hint staying up is still Fallback — and the mirror
-                    // dedup swallows the no-op anyway.
-                    if anchor.table_detected {
-                        report_status(
-                            app,
-                            last_status,
-                            OverlayState::Detected,
-                            Some(anchor.row_centers.len() as u32),
-                        );
-                    } else {
-                        report_status(app, last_status, OverlayState::Fallback, None);
-                    }
-                    *overlay_shown = true;
-                    *last_hide = None;
-                    // The anchor on screen is fresh as of NOW (a new pin, or
-                    // this battle's pin re-shown): start the revalidation
-                    // clock here so the first re-check waits a full interval
-                    // instead of firing on the next tick.
-                    *last_revalidate = Some(Instant::now());
-                }
-                // A failed acquisition while ALREADY shown keeps the old
-                // anchor on screen — the previous behavior of hiding here
-                // made a single failed re-capture blink the overlay off.
+                .is_some_and(|s| s.state == OverlayState::Fallback),
+        );
+        if held == HeldStatus::Pin {
+            let g = game.expect("want_visible implies a resolved game window");
+            let pin = fsm.pinned_anchor.as_ref().expect("pin_valid implies a pin");
+            let anchor = pin.anchor.clone();
+            if !fsm.overlay_shown {
+                // Re-show this battle's pin verbatim — no capture, no
+                // Searching detour, the chips are where they were.
+                place_and_show(app, &anchor, fsm.stale);
+                fsm.overlay_shown = true;
+                fsm.last_hide = None;
+                // The anchor on screen is fresh as of NOW: start the
+                // revalidation clock here so the first re-check waits a
+                // full interval instead of firing on the next tick.
+                fsm.last_revalidate = Some(Instant::now());
+            }
+            // Status EVERY tick of the pin path (deduped by the mirror): a
+            // stale flip — sink detected, or the OCR re-map landing — is a
+            // payload change with no state transition to carry it.
+            report_status(
+                app,
+                fsm,
+                OverlayState::Detected,
+                Some(anchor.row_centers.len() as u32),
+            );
+            // Cadenced work while the pin is up — at most ONE capture per
+            // tick, priority: sink probe (cheapest, most time-critical) →
+            // recognition catch-up → full revalidation. A branch that fires
+            // bumps only its own stamp, so the others simply run on a later
+            // tick (their `due` conditions stay armed).
+            if fsm
+                .last_sink_check
+                .is_none_or(|t| t.elapsed() >= SINK_CHECK_INTERVAL)
+            {
+                sink_check_pass(app, fsm, &g);
             } else if should_catch_up_recognition(
-                pinned_anchor.as_ref().map(|p| &p.anchor),
+                Some(&anchor),
+                fsm.stale,
                 row_recognize::recognizer_enabled(),
-                last_catch_up.is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL),
+                fsm.last_catch_up.is_none_or(|t| {
+                    t.elapsed()
+                        >= if fsm.stale {
+                            SINK_CATCHUP_INTERVAL
+                        } else {
+                            CAPTURE_MIN_INTERVAL
+                        }
+                }),
             ) {
-                // Recognition is still pending on a CONFIRMED pin (the arena
-                // roster landed after the pin, or the first OCR pass read
-                // nothing): run the SAME revalidation pass at the capture
-                // rate limit instead of waiting the full 5 s — the fresh
-                // detection both re-checks the geometry and carries a new
-                // row→name mapping for the transplant inside. The pass bumps
+                // The pin needs its row→name mapping (re)read: run the SAME
+                // revalidation pass at the (stale-accelerated) catch-up
+                // cadence instead of waiting the full 5 s — the fresh pass
+                // both re-checks the geometry and carries a new row→name
+                // mapping for the transplant inside. The pass bumps
                 // last_revalidate itself, so the two cadences never stack.
-                *last_catch_up = Some(Instant::now());
-                revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate, last_status);
-            } else if last_revalidate.is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL) {
-                // Shown AND pinned (the only way to reach this arm):
-                // periodically re-check the pin against a live detection —
+                fsm.last_catch_up = Some(Instant::now());
+                revalidate_pinned_anchor(app, fsm, Some(g));
+            } else if fsm
+                .last_revalidate
+                .is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL)
+            {
+                // Periodically re-check the pin against a live detection —
                 // the panel moves as a whole when HUD phases change
                 // (countdown → combat) and neither pin key (arena stamp,
                 // window rect) can see it.
-                revalidate_pinned_anchor(app, pinned_anchor, game, last_revalidate, last_status);
+                revalidate_pinned_anchor(app, fsm, Some(g));
             }
-        } else if *overlay_shown {
-            // Keep re-sending the hide while the overlay should be down:
-            // each attempt posts one async Win32 command + one event, and
-            // any single one can be lost; both are idempotent. Retries stop
-            // once the window reports itself actually hidden.
-            if last_hide.is_none_or(|t| t.elapsed() >= HIDE_RETRY) {
-                hide_overlay(app);
-                // Overlay going down — drop the panel badge to idle. The
-                // mirror dedup keeps the hide-retry re-sends from emitting
-                // this more than once.
-                report_status(app, last_status, OverlayState::Idle, None);
-                *last_hide = Some(Instant::now());
-                if !overlay_window_visible(app) {
-                    *overlay_shown = false;
+        } else {
+            // ACQUISITION: no pin matched this battle + geometry — the one
+            // arm where Searching (or the Fallback continuation) is honest.
+            // The unambiguous "tried and failed" signal is the centered
+            // fallback hint being what's on screen (it is emitted only from
+            // the places below that put/keep the hint up, and every hide
+            // resets it to Idle); everything else reads as Searching, and
+            // report_status dedups the per-tick re-pushes.
+            if held == HeldStatus::Fallback {
+                report_status(app, fsm, OverlayState::Fallback, None);
+            } else {
+                report_status(app, fsm, OverlayState::Searching, None);
+            }
+            let Some(g) = game else {
+                return;
+            };
+            if !fsm
+                .last_capture_attempt
+                .is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
+            {
+                tracing::debug!("tab held: capture rate-limited, waiting");
+                return;
+            }
+            fsm.last_capture_attempt = Some(Instant::now());
+            let computed = compute_anchor(&g, fsm);
+            if let Some(anchor) = computed.as_ref().filter(|a| a.table_detected) {
+                fsm.pinned_anchor = Some(PinnedAnchor {
+                    battle,
+                    game_rect: rect_from_win32(g.rect),
+                    anchor: anchor.clone(),
+                });
+                // A fresh pin restarts the stale lifecycle: brand-new
+                // recognition, nothing to re-map yet.
+                fsm.stale = false;
+                fsm.sink_candidate = None;
+                fsm.last_sink_check = Some(Instant::now());
+            }
+            if let Some(anchor) = computed {
+                // Place when the overlay is not up yet, or when a
+                // CONFIRMED anchor must replace the on-screen hint;
+                // re-placing an identical fallback hint every rate-limit
+                // window would only churn the event pipe.
+                if !fsm.overlay_shown || anchor.table_detected {
+                    place_and_show(app, &anchor, fsm.stale);
                 }
+                // Status: what is on screen NOW. A confirmed anchor pins
+                // the chips (detected + row count); a fallback anchor is
+                // (or would re-place) the centered hint. place_and_show
+                // may skip a redundant re-place of the hint, but the
+                // hint staying up is still Fallback — and the mirror
+                // dedup swallows the no-op anyway.
+                if anchor.table_detected {
+                    report_status(
+                        app,
+                        fsm,
+                        OverlayState::Detected,
+                        Some(anchor.row_centers.len() as u32),
+                    );
+                } else {
+                    report_status(app, fsm, OverlayState::Fallback, None);
+                }
+                fsm.overlay_shown = true;
+                fsm.last_hide = None;
+                // The anchor on screen is fresh as of NOW (a new pin, or
+                // this battle's pin re-shown): start the revalidation
+                // clock here so the first re-check waits a full interval
+                // instead of firing on the next tick.
+                fsm.last_revalidate = Some(Instant::now());
+            }
+            // A failed acquisition while ALREADY shown keeps the old
+            // anchor on screen — the previous behavior of hiding here
+            // made a single failed re-capture blink the overlay off.
+        }
+    } else if fsm.overlay_shown {
+        // Keep re-sending the hide while the overlay should be down:
+        // each attempt posts one async Win32 command + one event, and
+        // any single one can be lost; both are idempotent. Retries stop
+        // once the window reports itself actually hidden.
+        if fsm.last_hide.is_none_or(|t| t.elapsed() >= HIDE_RETRY) {
+            hide_overlay(app);
+            // Overlay going down — drop the panel badge to idle. The
+            // mirror dedup keeps the hide-retry re-sends from emitting
+            // this more than once.
+            report_status(app, fsm, OverlayState::Idle, None);
+            fsm.last_hide = Some(Instant::now());
+            if !overlay_window_visible(app) {
+                fsm.overlay_shown = false;
             }
         }
     }
+}
+
+/// What the want-visible branch reports this tick (pure, unit-tested — the
+/// no-flicker rule lives here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeldStatus {
+    /// A pin valid for THIS battle + game rect is (being) shown: Detected,
+    /// never the tick-top Searching flash.
+    Pin,
+    /// The centered fallback hint is what's on screen; keep labeling it so
+    /// the consumer sees one continuous "hint" episode instead of
+    /// hint↔searching churn while the scene gate keeps failing.
+    Fallback,
+    /// Acquiring without a pin — honest Searching.
+    Searching,
+}
+
+/// Pure status decision for the want-visible path: with a valid pin the
+/// report is Detected — ALWAYS. Searching/Fallback only report on the
+/// acquisition arm, i.e. when no pin matched the current (battle,
+/// game-window rect). Falling back to Searching is therefore exactly the
+/// event that voids a pin: a BattleChanged command / arena-stamp mismatch,
+/// a changed game rect, a cleared manual anchor, watcher stop, or the
+/// table switch — never a mundane Tab re-press within one battle.
+fn held_status(pin_valid: bool, fallback_on_screen: bool) -> HeldStatus {
+    if pin_valid {
+        HeldStatus::Pin
+    } else if fallback_on_screen {
+        HeldStatus::Fallback
+    } else {
+        HeldStatus::Searching
+    }
+}
+
+/// Pure pin-validity rule (unit-testable): the pin applies to THIS battle
+/// on THIS game-window geometry and is a confirmed table detection. A new
+/// battle (arena stamp moved), a moved/resized game window, or a fallback
+/// anchor void it — and voiding it is exactly what re-arms the Searching
+/// report.
+fn pin_matches(
+    pin_battle: i64,
+    pin_rect: &Rect,
+    pin_table_detected: bool,
+    battle: i64,
+    game_rect: Option<Rect>,
+) -> bool {
+    pin_table_detected && pin_battle == battle && game_rect.is_some_and(|r| r == *pin_rect)
 }
 
 /// Pure: does this `row_players` payload count as "no trusted row→name
@@ -1130,11 +1423,15 @@ fn mapping_untrusted(players: &Option<Vec<Option<String>>>) -> bool {
     }
 }
 
-/// Pure catch-up gate (unit-testable; time and engine availability are
-/// injected by the caller): run a recognition catch-up pass when a CONFIRMED
-/// pin is on screen but still lacks a trusted row→name mapping (absent, or
-/// an all-`None` read — nothing matched) while recognition is enabled — and
-/// the throttle says a capture may run.
+/// Pure catch-up gate (unit-testable; time, engine availability and the
+/// stale flag are injected by the caller): run a recognition catch-up pass
+/// when a CONFIRMED pin is on screen and its row→name mapping needs a
+/// fresh OCR read — either because it still lacks a trusted mapping
+/// (absent, or an all-`None` read: nothing matched) or because the pin is
+/// STALE (the sink probe flipped alive flags; the old mapping is
+/// battle-accurate but the rows re-sorted, so the mapping must be re-read
+/// to confirm the new order) — while recognition is enabled and the
+/// throttle says a pass may run.
 ///
 /// Keeping the gate armed on an all-`None` pin cannot oscillate: a
 /// deterministic re-read is again all-`None`, compares equal to the pin's
@@ -1142,12 +1439,142 @@ fn mapping_untrusted(players: &Option<Vec<Option<String>>>) -> bool {
 /// nothing.
 fn should_catch_up_recognition(
     pin: Option<&OverlayAnchor>,
+    stale: bool,
     recognizer_on: bool,
     throttle_elapsed: bool,
 ) -> bool {
-    pin.is_some_and(|p| p.table_detected && mapping_untrusted(&p.row_players))
+    pin.is_some_and(|p| p.table_detected && (mapping_untrusted(&p.row_players) || stale))
         && recognizer_on
         && throttle_elapsed
+}
+
+/// Pure move-replacement mapping carry (unit-tested): the anchor a layout
+/// move should pin — `fresh`'s geometry with the OLD pin's row→name
+/// mapping carried over when fresh has nothing better. The in-battle panel
+/// shifts as a whole when HUD phases change, but the ROSTER is fixed for
+/// the battle: the fresh detection's OCR has usually not even landed yet
+/// (`row_players_pending` → the overlay would flash "recognizing
+/// roster…"), while the pin's mapping is battle-accurate — rows re-sort
+/// only when ships sink, and the sink fast-probe tracks exactly that.
+///
+/// - fresh carries its own trusted mapping → keep it (it is newer);
+/// - the grids disagree on row count → never index-guess: fresh stays
+///   unmapped;
+/// - the pin has no trusted mapping (absent / all-`None`) → nothing worth
+///   carrying.
+fn carry_mapping_into_fresh(fresh: &OverlayAnchor, pinned: &OverlayAnchor) -> OverlayAnchor {
+    let mut out = fresh.clone();
+    if !mapping_untrusted(&fresh.row_players) {
+        return out;
+    }
+    let same_grid = out.row_centers.len() == pinned.row_centers.len();
+    if same_grid && !mapping_untrusted(&pinned.row_players) {
+        out.row_players = pinned.row_players.clone();
+        out.row_alive = pinned.row_alive.clone();
+        out.row_players_pending = pinned.row_players_pending;
+    }
+    out
+}
+
+/// Where a mapping that just landed on the pin came from — decides whether
+/// it may clear the sink-lifecycle `stale` flag ([`stale_after_mapping`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MappingOrigin {
+    /// This frame's own OCR produced the trusted mapping: the attribution on
+    /// screen is CURRENT, so a set stale flag has done its job and clears.
+    FreshOcr,
+    /// The mapping was CARRIED from the OLD pin
+    /// ([`carry_mapping_into_fresh`]): the names are battle-accurate, but
+    /// the row order they describe is the PRE-sink one — exactly the
+    /// mis-attribution `stale` exists to flag. Carrying it onto new
+    /// geometry must never launder the flag away (and must never SET it
+    /// either — carrying is not a data change, just a re-print).
+    CarriedFromPin,
+}
+
+/// Pure stale lifecycle on the OCR side (unit-tested): only a TRUSTED
+/// mapping produced by THIS frame's OCR ([`MappingOrigin::FreshOcr`]) means
+/// the re-map has caught up — clear the stale flag. A trusted mapping
+/// CARRIED from the old pin keeps the flag exactly as it was, and an
+/// all-`None` landing (honest silence) or an absent mapping keeps it too:
+/// the chips' attribution is still in flux and the fast catch-up must stay
+/// armed.
+fn stale_after_mapping(
+    stale: bool,
+    mapping: &Option<Vec<Option<String>>>,
+    origin: MappingOrigin,
+) -> bool {
+    if mapping_untrusted(mapping) {
+        stale
+    } else {
+        match origin {
+            MappingOrigin::FreshOcr => false,
+            MappingOrigin::CarriedFromPin => stale,
+        }
+    }
+}
+
+/// Pure sink decision (unit-tested): did any row's alive flag change
+/// between the pin's classification and a fresh strip read? Missing pin
+/// data (recognition never ran) or a length mismatch reads as "no change"
+/// — the sink channel only fires on comparable, same-grid data, never on a
+/// guess.
+fn alive_changed(pinned: Option<&[bool]>, fresh: &[bool]) -> bool {
+    match pinned {
+        Some(p) => p.len() == fresh.len() && p.iter().zip(fresh).any(|(a, b)| a != b),
+        None => false,
+    }
+}
+
+/// Outcome pair of one sink probe against the pinned alive state
+/// ([`sink_probe_confirm`]): what to apply to the pin NOW, and the candidate
+/// state to carry into the next probe (`None` = nothing pending).
+type SinkProbeResult = (Option<Vec<bool>>, Option<(Vec<bool>, Instant)>);
+
+/// Pure sink-probe hysteresis (unit-tested; time injected): sinks apply
+/// IMMEDIATELY, revives need two agreeing probes.
+///
+/// A sinking ship must re-sort the chips within a probe interval (the
+/// user-facing point of the fast path), so any alive→false flip applies at
+/// once. A false→true flip, however, is almost always a single-frame
+/// artifact — an explosion flash or water glare pushing a SUNK row's name
+/// strip over the alive-luma threshold — and applying it would flip a chip
+/// back to colored for one probe and re-sort the rows around nothing. So a
+/// pure-revive read is only CANDIDATE-armed; it applies when the NEXT probe
+/// (≈ [`SINK_CHECK_INTERVAL`] later, within [`SINK_CANDIDATE_TTL`]) reads
+/// the same vector. Any disagreeing read — the pin itself, a different
+/// vector, an expired candidate — resets the count to the newest reading.
+///
+/// Returns `(apply_now, next_candidate)`: `apply_now` is the alive vector
+/// to write onto the pin (already re-placed by the caller), `next_candidate`
+/// the debounce state for the following probe.
+fn sink_probe_confirm(
+    pinned: Option<&[bool]>,
+    candidate: Option<(&[bool], Instant)>,
+    fresh: &[bool],
+    now: Instant,
+) -> SinkProbeResult {
+    // Not comparable (recognition never produced a baseline, length
+    // mismatch) or the read equals the pin: nothing to do — and a pending
+    // candidate was just contradicted by the pin-matching read, so drop it.
+    if !alive_changed(pinned, fresh) {
+        return (None, None);
+    }
+    let pinned = pinned.unwrap_or_default();
+    // Any alive→false flip is a genuine sink signal: apply immediately.
+    if pinned.iter().zip(fresh).any(|(a, b)| *a && !*b) {
+        return (Some(fresh.to_vec()), None);
+    }
+    // Pure revival: confirm only a second, consistent reading.
+    if let Some((c, first_seen)) = candidate
+        && c == fresh
+        && now.duration_since(first_seen) <= SINK_CANDIDATE_TTL
+    {
+        return (Some(fresh.to_vec()), None);
+    }
+    // First observation, a differing re-read, or an expired candidate:
+    // (re)arm with this reading and apply nothing yet.
+    (None, Some((fresh.to_vec(), now)))
 }
 
 /// Pure transplant decision (unit-testable): a fresh detection carries a
@@ -1232,42 +1659,43 @@ fn tab_order_from_anchor(
 /// pin with it. Two outcomes change the pin (re-emitting the anchor):
 ///
 /// - the table MOVED at row scale (`overlay_detect::anchor_meaningfully_moved`)
-///   → the whole pin is replaced by the fresh anchor, which carries its own
-///   fresh recognition;
+///   → the pin is replaced by [`carry_mapping_into_fresh`]: fresh geometry,
+///   fresh recognition when trusted, otherwise the old pin's trusted
+///   mapping carried over — a HUD-phase move must not flash "recognizing
+///   roster…" for the seconds the fresh OCR takes to land;
 /// - the geometry is unchanged but the row→name mapping CHANGED
 ///   ([`transplant_row_players`] — first recognition landing after the pin
-///   because the arena roster file was late, or a re-detection after sinks
-///   re-sorted the rows) → only `row_players` / `row_players_pending` are
-///   transplanted onto the pin, geometry untouched.
+///   because the arena roster file was late, or a re-read after sinks
+///   re-sorted the rows) → only `row_players` / `row_alive` /
+///   `row_players_pending` are transplanted onto the pin, geometry
+///   untouched.
 ///
 /// Every other outcome — a failed capture, a fallback detection, sub-pitch
 /// jitter, an identical mapping — keeps the pin and emits nothing, so this
 /// pass can never make the chips wander. Status reports are only touched by
 /// the move-replacement (whose row count may change); a transplant keeps the
-/// `detected` state and merely re-renders the chips.
-/// `last_revalidate` is bumped unconditionally: the pass costs a full
-/// capture attempt regardless of its outcome.
+/// `detected` state and merely re-renders the chips. `last_revalidate` is
+/// bumped unconditionally: the pass costs a full capture attempt regardless
+/// of its outcome. A trusted mapping landing from FRESH OCR clears the FSM's
+/// stale flag ([`MappingOrigin::FreshOcr`]); a mapping CARRIED from the old
+/// pin onto a moved grid does not — it still describes the pre-sink row
+/// order, so the stale flag survives until this frame's own OCR confirms
+/// the new order.
 ///
 /// Note that `compute_anchor` already drops a tab dump on every CONFIRMED
 /// detection (`tab_dump`): the pass that discovers a NEW layout leaves a
 /// ground-truth artifact for it, deduped per (battle, layout) by the
 /// anchor's first row.
 #[cfg(target_os = "windows")]
-fn revalidate_pinned_anchor(
-    app: &AppHandle,
-    pinned_anchor: &mut Option<PinnedAnchor>,
-    game: Option<GameWindow>,
-    last_revalidate: &mut Option<Instant>,
-    last_status: &mut Option<OverlayStatus>,
-) {
-    *last_revalidate = Some(Instant::now());
+fn revalidate_pinned_anchor(app: &AppHandle, fsm: &mut WatchFsm, game: Option<GameWindow>) {
+    fsm.last_revalidate = Some(Instant::now());
     let Some(g) = game else {
         return;
     };
-    let Some(pinned) = pinned_anchor.as_ref().map(|p| p.anchor.clone()) else {
+    let Some(pinned) = fsm.pinned_anchor.as_ref().map(|p| p.anchor.clone()) else {
         return;
     };
-    let Some(fresh) = compute_anchor(&g) else {
+    let Some(fresh) = compute_anchor(&g, fsm) else {
         tracing::debug!("anchor revalidation: capture/detection failed — pin kept");
         return;
     };
@@ -1277,23 +1705,35 @@ fn revalidate_pinned_anchor(
             fresh_first_row = fresh.row_centers.first().copied().unwrap_or(0),
             "panel layout shifted — replacing the pinned anchor"
         );
-        // Re-key the pin to the CURRENT battle + window geometry: the fresh
-        // anchor was computed from THIS frame, so it belongs to this geometry.
-        *pinned_anchor = Some(PinnedAnchor {
+        // Fresh geometry + the best available mapping (see
+        // `carry_mapping_into_fresh`), re-keyed to the CURRENT battle +
+        // window geometry: the fresh anchor was computed from THIS frame,
+        // so it belongs to this geometry.
+        let carried = carry_mapping_into_fresh(&fresh, &pinned);
+        fsm.pinned_anchor = Some(PinnedAnchor {
             battle: super::arena_info::last_arena_stamp(),
             game_rect: rect_from_win32(g.rect),
-            anchor: fresh.clone(),
+            anchor: carried.clone(),
         });
-        place_and_show(app, &fresh);
-        // The replacement anchor is always CONFIRMED (a fallback fresh anchor
-        // can never move past `anchor_meaningfully_moved` against a confirmed
-        // pin) — but its row count may differ from the old pin's. report_status
-        // dedups, so an unchanged layout costs nothing.
+        // Only a trusted mapping produced by THIS frame's OCR clears the
+        // stale flag. When the replacement CARRIED the old pin's mapping
+        // (fresh recognition not landed yet), the on-screen row order still
+        // describes the pre-sink state — the flag must survive the move so
+        // the accelerated catch-up keeps chasing until fresh OCR confirms
+        // the new order. (A carried mapping never SETS the flag either.)
+        let fresh_ocr = !mapping_untrusted(&fresh.row_players);
+        let origin = if fresh_ocr {
+            MappingOrigin::FreshOcr
+        } else {
+            MappingOrigin::CarriedFromPin
+        };
+        fsm.stale = stale_after_mapping(fsm.stale, &carried.row_players, origin);
+        place_and_show(app, &carried, fsm.stale);
         report_status(
             app,
-            last_status,
+            fsm,
             OverlayState::Detected,
-            Some(fresh.row_centers.len() as u32),
+            Some(carried.row_centers.len() as u32),
         );
         return;
     }
@@ -1311,11 +1751,138 @@ fn revalidate_pinned_anchor(
                 .unwrap_or(0),
             "row recognition caught up — transplanting the mapping onto the pin"
         );
-        if let Some(pin) = pinned_anchor.as_mut() {
+        // A transplant always copies THIS frame's OCR (see
+        // `should_transplant_rows`): a trusted landing clears stale.
+        fsm.stale = stale_after_mapping(fsm.stale, &updated.row_players, MappingOrigin::FreshOcr);
+        if let Some(pin) = fsm.pinned_anchor.as_mut() {
             pin.anchor = updated.clone();
         }
-        place_and_show(app, &updated);
+        place_and_show(app, &updated, fsm.stale);
     }
+}
+
+/// One SINK FAST-PATH pass (overlay shown + confirmed pin): capture the
+/// game window once and read every row's alive flag straight off the
+/// PINNED geometry — strip crops + brightest-glyph luma only, no OCR, no
+/// detection, no roster read ([`overlay_detect::read_row_alive`]). A
+/// settled alive-flag flip (see [`sink_probe_confirm`]: a SINK applies
+/// immediately, a pure revival needs two agreeing probes) then:
+///
+/// - updates the pin's `row_alive` and re-places the anchor (the chips
+///   gray out and re-sort; a trusted mapping also re-emits the tab order
+///   inside `place_and_show`);
+/// - raises the FSM's `stale` flag (wire-visible) — the old row→name
+///   mapping describes the pre-sink order;
+/// - clears `last_catch_up`, so the OCR re-map fires on the next tick at
+///   the accelerated [`SINK_CATCHUP_INTERVAL`] cadence.
+///
+/// The pass shares the geometry cache's band verify: a frame whose header
+/// band is NOT at the cached spot is a geometry event (HUD phase moved the
+/// table), not a sink signal — it still counts a verify miss so a dead
+/// cache is retired quickly. Guard failures (no pin alive data, no cache)
+/// cost nothing: the probe is deliberately silent unless it can be sure.
+#[cfg(target_os = "windows")]
+fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
+    fsm.last_sink_check = Some(Instant::now());
+    // Everything decided BEFORE the capture: a pass with nothing comparable
+    // (recognition never produced alive flags, or no cache to gate the band
+    // with) must not pay a BitBlt.
+    {
+        let Some(pin) = fsm.pinned_anchor.as_ref() else {
+            return;
+        };
+        if pin.anchor.row_alive.is_none() {
+            return;
+        }
+        if fsm.geometry_cache.is_none() {
+            return;
+        }
+    }
+    let Some((rgba, w, h)) = capture_game_rgba(&game.rect) else {
+        return;
+    };
+    let (roster, rows, split, ally_rows) = {
+        let pin = fsm.pinned_anchor.as_ref().expect("checked above");
+        let anchor = &pin.anchor;
+        // The pin's anchor is OVERLAY-relative; shift it back into
+        // capture-relative coordinates (the overlay window's origin inside
+        // the game rect).
+        let dy = anchor.overlay_rect.y - pin.game_rect.y;
+        let mut roster = anchor.roster_rect;
+        roster.x += anchor.overlay_rect.x - pin.game_rect.x;
+        roster.y += dy;
+        let rows: Vec<i32> = anchor.row_centers.iter().map(|c| c + dy).collect();
+        // The ally-block count the strips key on: the roster is static for
+        // the battle, so the current atomic read is the same value the grid
+        // was built from. RACE WINDOW (accepted): a BattleChanged command
+        // can land between this read and the next tick's FIFO drain, so
+        // this ONE probe may split the strips with the NEW roster's ally
+        // count against the OLD pin's grid. Worst case is a single
+        // mis-split probe (unreadable strips default to alive — no false
+        // "sunk"), and the drain voids the pin at the top of the very next
+        // tick, so nothing downstream can build on it. Self-healing by
+        // ordering; not worth a lock.
+        let ally_rows = super::arena_info::last_known_team_sizes().0;
+        (roster, rows, anchor.team_split, ally_rows)
+    };
+    // Band gate — O(band area). The table not being at the cached spot is
+    // NOT a sink signal; it does count toward the cache's miss budget.
+    let band_ok = fsm
+        .geometry_cache
+        .as_ref()
+        .is_some_and(|c| overlay_detect::verify_header_band(&rgba, w, h, &c.band));
+    if !band_ok {
+        fsm.geometry_verify_fails += 1;
+        if fsm.geometry_verify_fails >= GEOMETRY_VERIFY_MAX_FAILS {
+            tracing::info!(
+                fails = fsm.geometry_verify_fails,
+                "sink probe: header band verify kept failing — geometry cache dropped"
+            );
+            fsm.geometry_cache = None;
+            fsm.geometry_verify_fails = 0;
+        }
+        return;
+    }
+    fsm.geometry_verify_fails = 0;
+    let fresh = overlay_detect::read_row_alive(&rgba, w, h, &roster, &rows, split, ally_rows);
+    let pinned_alive = fsm
+        .pinned_anchor
+        .as_ref()
+        .and_then(|p| p.anchor.row_alive.clone());
+    // Hysteresis: sinks apply at once, pure revives wait for a second
+    // agreeing probe (see `sink_probe_confirm`).
+    let (apply_now, next_candidate) = sink_probe_confirm(
+        pinned_alive.as_deref(),
+        fsm.sink_candidate.as_ref().map(|(v, t)| (v.as_slice(), *t)),
+        &fresh,
+        Instant::now(),
+    );
+    fsm.sink_candidate = next_candidate;
+    let Some(alive) = apply_now else {
+        return;
+    };
+    let sunk = alive.iter().filter(|&&v| !v).count();
+    // A row's alive flag settled: update the pin, re-place (chips gray out
+    // + re-sort + tab-order re-emitted when the mapping is trusted), flag
+    // stale, and arm the fast OCR re-map.
+    let mut updated = fsm
+        .pinned_anchor
+        .as_ref()
+        .expect("checked above")
+        .anchor
+        .clone();
+    updated.row_alive = Some(alive);
+    fsm.stale = true;
+    fsm.last_catch_up = None;
+    if let Some(pin) = fsm.pinned_anchor.as_mut() {
+        pin.anchor = updated.clone();
+    }
+    place_and_show(app, &updated, true);
+    tracing::info!(
+        sunk,
+        rows = updated.row_centers.len(),
+        "sink probe: alive flags changed — pin updated, stale, fast re-map armed"
+    );
 }
 
 /// Whether the overlay window currently reports as visible (false when it is
@@ -1347,7 +1914,9 @@ fn tab_key_down() -> bool {
 }
 
 /// Place the overlay window over the game rect, push the anchor to the
-/// webview, then show without activating.
+/// webview, then show without activating. `stale` rides on the emitted
+/// anchor (the FSM's current pin-staleness flag): true tells the overlay
+/// page the row data just changed and the name re-map is in flight.
 ///
 /// All native window work goes through DIRECT async Win32 calls from this
 /// watcher thread (`SetWindowPos` with `SWP_ASYNCWINDOWPOS` +
@@ -1359,12 +1928,14 @@ fn tab_key_down() -> bool {
 /// ordering between a show and a later hide is preserved because both are
 /// posted to the same window thread in watcher-loop order.
 #[cfg(target_os = "windows")]
-fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
+fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor, stale: bool) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
         tracing::warn!("overlay window missing — cannot show (was it destroyed?)");
         return;
     };
-    if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, anchor) {
+    let mut payload = anchor.clone();
+    payload.stale = stale;
+    if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, &payload) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
     // Mirror the on-screen row order to ALL windows (main window's
@@ -1375,10 +1946,10 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     // cadence `row_recognize` already reads it at; without a roster there
     // is no battle identity to stamp the order with, so the event is
     // simply skipped.
-    if !mapping_untrusted(&anchor.row_players) {
+    if !mapping_untrusted(&payload.row_players) {
         match super::arena_info::read_arena_snapshot() {
             Some((info, _)) => {
-                if let Some(order) = tab_order_from_anchor(anchor, &info)
+                if let Some(order) = tab_order_from_anchor(&payload, &info)
                     && let Err(e) = app.emit(TAB_ORDER_EVENT, &order)
                 {
                     tracing::warn!(error = %e, "emit tab-order failed");
@@ -1397,7 +1968,7 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     };
     place_and_show_async(
         windows::Win32::Foundation::HWND(hwnd.0),
-        &anchor.overlay_rect,
+        &payload.overlay_rect,
     );
     tracing::info!("overlay show posted (tab held)");
 }
@@ -1439,7 +2010,7 @@ fn show_async(hwnd: windows::Win32::Foundation::HWND) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor) {}
+fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor, _stale: bool) {}
 
 /// Hide the overlay: HTML-level hide FIRST (the event reaches the page
 /// directly from this thread), then the async native hide. Both idempotent —
@@ -1466,11 +2037,13 @@ fn hide_overlay(_app: &AppHandle) {}
 // Capture + anchor computation
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Capture the game window, run the detector, and return the anchor for the
-/// chip layer. Falls back to a conservative centered table when detection
-/// fails but a battle roster is known — stats must still be readable.
+/// Capture the game window, resolve the table geometry (via the FSM's
+/// per-game-window-mode cache when it verifies; a full detection otherwise)
+/// and return the anchor for the chip layer. Falls back to a conservative
+/// centered table when detection fails but a battle roster is known — stats
+/// must still be readable. Fallback geometry never enters the cache.
 #[cfg(target_os = "windows")]
-fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
+fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor> {
     let team_sizes = super::arena_info::last_known_team_sizes();
     let Some((rgba, w, h)) = capture_game_rgba(&game.rect) else {
         tracing::warn!("game window capture returned no pixels");
@@ -1479,27 +2052,114 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     if std::env::var_os("WOWSP_DEBUG_CAPTURE").is_some() {
         dump_capture(&rgba, w, h);
     }
-    // Scene gate. The HUD probe (HP bar + ship icons) only renders inside
-    // the 3D scene, but holding Tab DIMS the whole frame and real captures
-    // show it then finds as few as 2 icon clusters (threshold 5) or a 12px
-    // HP run (threshold 48) — it kept rejecting real battles. So the probe
-    // is only the SECOND opinion: the header detection itself is the
-    // strongest possible in-scene proof (the teal/brick team-header bars
-    // exist ONLY on the in-battle Tab table), and either one passes.
-    let probe = overlay_detect::probe_battle_scene(&rgba, w, h);
-    let header_found = overlay_detect::header_bars_present(&rgba, w, h);
-    if !probe.detected() && !header_found {
-        tracing::info!(
-            hp_bar = probe.hp_bar,
-            icon_blobs = probe.icon_blobs,
-            header_found,
-            "tab press: no battle HUD and no team header — not in a 3D scene, skipping"
-        );
+    // ── Geometry cache: the full-frame scan runs ONCE per game-window mode;
+    //    every later capture only re-verifies the cached header band (band-
+    //    area cost) and reuses the cached grid. The cache deliberately
+    //    survives battle changes — same window rect+style means the same
+    //    pixel geometry, and a new battle shape rebuilds from the band.
+    //    Resolved BEFORE the scene gate: a verified band IS the in-scene
+    //    proof, so cache-hit frames pay no probe scan and no full-frame
+    //    band search at all.
+    let key = GeometryKey {
+        game_rect: rect_from_win32(game.rect),
+        style_bits: window_style_bits(game.hwnd),
+    };
+    let mut verify_missed = false;
+    let mut band_verified = false;
+    let cached = 'cache: {
+        let Some(cache) = fsm.geometry_cache.as_mut() else {
+            break 'cache None;
+        };
+        if cache.key != key {
+            // The window moved / resized / changed style: everything about
+            // the cached geometry is void — full re-detection on this frame.
+            tracing::info!("game window mode changed — roster geometry cache voided");
+            fsm.geometry_cache = None;
+            fsm.geometry_verify_fails = 0;
+            break 'cache None;
+        }
+        if overlay_detect::verify_header_band(&rgba, w, h, &cache.band) {
+            fsm.geometry_verify_fails = 0;
+            band_verified = true;
+            if cache.team_sizes == team_sizes {
+                break 'cache Some(cache.roster.clone());
+            }
+            // Same window, different battle shape (7v7 after 12v12):
+            // rebuild the grid from the still-valid band — geometry, no
+            // frame scan.
+            let det = overlay_detect::rebuild_roster_from_band(&cache.band, w, h, team_sizes);
+            cache.roster = det.clone();
+            cache.team_sizes = team_sizes;
+            break 'cache Some(det);
+        }
+        // The band is NOT at the cached spot on this frame — a HUD-phase
+        // table move (or a scene change). The cached geometry must not
+        // anchor this frame; count the miss and fall through. After
+        // GEOMETRY_VERIFY_MAX_FAILS consecutive misses the cache is
+        // declared dead so the full detector can re-acquire.
+        fsm.geometry_verify_fails += 1;
+        if fsm.geometry_verify_fails >= GEOMETRY_VERIFY_MAX_FAILS {
+            tracing::info!(
+                fails = fsm.geometry_verify_fails,
+                "header band verify kept failing — roster geometry cache dropped"
+            );
+            fsm.geometry_cache = None;
+            fsm.geometry_verify_fails = 0;
+        } else {
+            verify_missed = true;
+        }
+        break 'cache None;
+    };
+    if verify_missed {
+        // Band verify missed but the cache is not (yet) declared dead: skip
+        // BOTH the gate's full scans and the detection for THIS frame — the
+        // next capture (sink probe 500 ms / catch-up 1.5 s / revalidate 5 s
+        // / acquisition 1.5 s) re-judges cheaply. A full-frame band search
+        // here would find the MOVED table, but rescanning every frame is
+        // exactly the cost this cache exists to avoid; the strike counter
+        // is the last-resort re-arm.
         return None;
     }
-    let (roster_rel, rows, split, detected) =
-        match overlay_detect::detect_roster(&rgba, w, h, team_sizes) {
-            Some(det) => (det.rect, det.row_centers, det.team_split, true),
+    // Scene gate (only reached for frames that will actually be detected:
+    // a verified band or no cache). The HUD probe (HP bar + ship icons)
+    // only renders inside the 3D scene, but holding Tab DIMS the whole
+    // frame and real captures show it then finds as few as 2 icon clusters
+    // (threshold 5) or a 12px HP run (threshold 48) — it kept rejecting
+    // real battles. So the probe is only the SECOND opinion: the header
+    // detection itself is the strongest possible in-scene proof (the
+    // teal/brick team-header bars exist ONLY on the in-battle Tab table),
+    // and either one passes. With a verified cached band this whole block
+    // is skipped — the band verify already proved it.
+    if !band_verified {
+        let probe = overlay_detect::probe_battle_scene(&rgba, w, h);
+        let header_found = overlay_detect::header_bars_present(&rgba, w, h);
+        if !probe.detected() && !header_found {
+            tracing::info!(
+                hp_bar = probe.hp_bar,
+                icon_blobs = probe.icon_blobs,
+                header_found,
+                "tab press: no battle HUD and no team header — not in a 3D scene, skipping"
+            );
+            return None;
+        }
+    }
+    let (roster_rel, rows, split, detected) = if let Some(det) = cached {
+        (det.rect, det.row_centers, det.team_split, true)
+    } else {
+        match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes) {
+            Some((band, det)) => {
+                // Confirmed detection → (re)fill the cache. Fallback
+                // geometry never enters it (table_detected == false never
+                // pins, so it would never be reused by a pin path anyway).
+                fsm.geometry_cache = Some(GeometryCacheEntry {
+                    key,
+                    band,
+                    roster: det.clone(),
+                    team_sizes,
+                });
+                fsm.geometry_verify_fails = 0;
+                (det.rect, det.row_centers, det.team_split, true)
+            },
             None => {
                 tracing::info!(
                     allies = team_sizes.0,
@@ -1510,7 +2170,8 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
                 let (r, rows) = overlay_detect::fallback_roster(w as i32, h as i32, expected);
                 (r, rows, 0.5, false)
             },
-        };
+        }
+    };
     // Row → player-name recognition. Runs on the DETECTED capture-relative
     // geometry, before build_anchor re-bases it to the overlay origin; ON by
     // default (WOWSP_ROW_RECOGNIZER, engine `windows-ocr`) and a no-op then
@@ -1572,6 +2233,20 @@ fn compute_anchor(game: &GameWindow) -> Option<OverlayAnchor> {
     // table cannot be found leaves its frame behind for offline analysis.
     super::tab_dump::maybe_dump_tab_frame(&rgba, w, h, &anchor);
     Some(anchor)
+}
+
+/// Pack `GWL_STYLE` + `GWL_EXSTYLE` into one geometry-cache key component:
+/// a window-mode switch (borderless ↔ windowed) can theoretically keep the
+/// outer rect identical while the styles change — the style bits turn that
+/// into a cache miss too.
+#[cfg(target_os = "windows")]
+fn window_style_bits(hwnd: windows::Win32::Foundation::HWND) -> u64 {
+    use windows::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW};
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        ((style as u64) << 32) | (ex as u64 & 0xffff_ffff)
+    }
 }
 
 /// Capture the game window region and return it as base64 PNG plus the
@@ -1969,6 +2644,7 @@ mod tests {
             row_players: players,
             row_alive: None,
             row_players_pending: pending,
+            stale: false,
         }
     }
 
@@ -2210,7 +2886,7 @@ mod tests {
     }
 
     #[test]
-    fn catch_up_gate_needs_pin_pending_engine_and_throttle() {
+    fn catch_up_gate_needs_pin_pending_stale_engine_and_throttle() {
         let pending_pin = anchor_with_players(2, true, None, true);
         // An all-None mapping (text read, nothing matched) is NOT ready —
         // catch-up stays armed for it too.
@@ -2219,24 +2895,71 @@ mod tests {
         let fallback_pin = anchor_with_players(2, false, None, false);
         // Pending (absent or all-None mapping) + engine on + throttle
         // elapsed → run the catch-up pass.
-        assert!(should_catch_up_recognition(Some(&pending_pin), true, true));
-        assert!(should_catch_up_recognition(Some(&all_none_pin), true, true));
+        assert!(should_catch_up_recognition(
+            Some(&pending_pin),
+            false,
+            true,
+            true
+        ));
+        assert!(should_catch_up_recognition(
+            Some(&all_none_pin),
+            false,
+            true,
+            true
+        ));
         // …but not without the engine, the throttle, a pin, a confirmed
         // table, or once a trusted mapping has landed.
         assert!(!should_catch_up_recognition(
             Some(&pending_pin),
             false,
+            false,
             true
         ));
         assert!(!should_catch_up_recognition(
             Some(&pending_pin),
+            false,
             true,
             false
         ));
-        assert!(!should_catch_up_recognition(None, true, true));
-        assert!(!should_catch_up_recognition(Some(&ready_pin), true, true));
+        assert!(!should_catch_up_recognition(None, false, true, true));
+        assert!(!should_catch_up_recognition(
+            Some(&ready_pin),
+            false,
+            true,
+            true
+        ));
         assert!(!should_catch_up_recognition(
             Some(&fallback_pin),
+            false,
+            true,
+            true
+        ));
+        // STALE (the sink probe just flipped alive flags) arms the gate even
+        // on a trusted mapping: the mapping is battle-accurate but describes
+        // the PRE-sink row order — the re-read confirms the new order.
+        assert!(should_catch_up_recognition(
+            Some(&ready_pin),
+            true,
+            true,
+            true
+        ));
+        // …still gated by the engine, the throttle, the pin and the table.
+        assert!(!should_catch_up_recognition(
+            Some(&ready_pin),
+            true,
+            false,
+            true
+        ));
+        assert!(!should_catch_up_recognition(
+            Some(&ready_pin),
+            true,
+            true,
+            false
+        ));
+        assert!(!should_catch_up_recognition(None, true, true, true));
+        assert!(!should_catch_up_recognition(
+            Some(&fallback_pin),
+            true,
             true,
             true
         ));
@@ -2342,16 +3065,16 @@ mod tests {
             },
             team_sizes: (12, 12),
         };
-        *MANUAL_ANCHOR.lock().unwrap() = Some(stored.clone());
+        let armed = Some(&stored);
 
         // Same battle + same window → live.
         assert!(matches!(
-            manual_anchor_check(111, Some(game)),
+            manual_anchor_check(armed, 111, Some(game)),
             ManualAnchorCheck::Live(_, r) if r == game
         ));
         // New battle → stale.
         assert!(matches!(
-            manual_anchor_check(222, Some(game)),
+            manual_anchor_check(armed, 222, Some(game)),
             ManualAnchorCheck::Stale
         ));
         // Window moved → stale.
@@ -2362,27 +3085,26 @@ mod tests {
             height: 1440,
         };
         assert!(matches!(
-            manual_anchor_check(111, Some(moved)),
+            manual_anchor_check(armed, 111, Some(moved)),
             ManualAnchorCheck::Stale
         ));
         // No game rect this tick → inert (NOT stale: a transient HWND miss
         // must not nuke the box).
         assert!(matches!(
-            manual_anchor_check(111, None),
+            manual_anchor_check(armed, 111, None),
             ManualAnchorCheck::Inert
         ));
 
         // While stored, the anchor's row total backs the automatic status
         // reports' manual flag (the panel badge survives Idle/Searching).
-        assert_eq!(manual_anchor_stored_rows(), Some(24)); // 12 + 12
+        assert_eq!(stored_manual_rows(armed), Some(24)); // 12 + 12
 
         // Empty store → inert, and no manual rows to report.
-        *MANUAL_ANCHOR.lock().unwrap() = None;
         assert!(matches!(
-            manual_anchor_check(111, Some(game)),
+            manual_anchor_check(None, 111, Some(game)),
             ManualAnchorCheck::Inert
         ));
-        assert_eq!(manual_anchor_stored_rows(), None);
+        assert_eq!(stored_manual_rows(None), None);
     }
 
     #[test]
@@ -2429,5 +3151,325 @@ mod tests {
         assert_eq!(anchor.roster_rect.x, padx);
         assert_eq!(anchor.roster_rect.y, pad);
         assert_eq!(anchor.team_split, 0.5);
+    }
+
+    // ── Status no-flicker rule ────────────────────────────────────────────
+
+    #[test]
+    fn detected_pin_never_degrades_to_searching() {
+        let game = Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        // With a pin valid for the current battle + rect the report is
+        // ALWAYS the pin path (Detected) — a Tab re-press within one battle
+        // must not flash Searching before the chips come back.
+        assert!(pin_matches(7, &game, true, 7, Some(game)));
+        assert_eq!(held_status(true, false), HeldStatus::Pin);
+        // Even a leftover Fallback label cannot outrank a live pin.
+        assert_eq!(held_status(true, true), HeldStatus::Pin);
+        // Battle changed → the pin is void, Searching (or the fallback
+        // continuation) is the honest report.
+        assert!(!pin_matches(7, &game, true, 8, Some(game)));
+        assert_eq!(held_status(false, false), HeldStatus::Searching);
+        // Game rect changed (moved/resized window) → same.
+        let moved = Rect {
+            x: 5,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        assert!(!pin_matches(7, &game, true, 7, Some(moved)));
+        assert!(!pin_matches(7, &game, true, 7, None), "no rect to match");
+        // A fallback anchor never counts as a pin (hint keeps acquiring).
+        assert!(!pin_matches(7, &game, false, 7, Some(game)));
+        // Fallback continuation: the hint is on screen, keep labeling it.
+        assert_eq!(held_status(false, true), HeldStatus::Fallback);
+    }
+
+    // ── Move replacement carries the old mapping ─────────────────────────
+
+    #[test]
+    fn carry_mapping_into_fresh_rules() {
+        let pinned = anchor_with_state(
+            3,
+            Some(vec![Some("Alpha".into()), None, Some("Delta".into())]),
+            Some(vec![true, false, true]),
+        );
+        // HUD phase moved the table: fresh grid (different centers), fresh
+        // OCR NOT landed yet (pending).
+        let fresh_geometry = anchor_with_players(3, true, None, true);
+        let carried = carry_mapping_into_fresh(&fresh_geometry, &pinned);
+        assert!(
+            !mapping_untrusted(&carried.row_players),
+            "the battle-accurate mapping is carried onto the moved grid"
+        );
+        assert_eq!(
+            carried.row_players, pinned.row_players,
+            "names copied verbatim"
+        );
+        assert_eq!(carried.row_alive, pinned.row_alive, "alive flags copied");
+        assert!(!carried.row_players_pending, "pending cleared with it");
+        // Fresh GEOMETRY is kept: centers come from the moved detection.
+        assert_eq!(carried.row_centers, fresh_geometry.row_centers);
+        // Fresh carries its own trusted mapping → kept (it is newer).
+        let fresh_mapped =
+            anchor_with_players(3, true, Some(vec![Some("Bravo".into()), None, None]), false);
+        let kept = carry_mapping_into_fresh(&fresh_mapped, &pinned);
+        assert_eq!(kept.row_players, fresh_mapped.row_players);
+        // Grid length mismatch → never index-guess: fresh stays unmapped.
+        let fresh_other_grid = anchor_with_players(4, true, None, true);
+        let skipped = carry_mapping_into_fresh(&fresh_other_grid, &pinned);
+        assert!(mapping_untrusted(&skipped.row_players));
+        // Pin has no trusted mapping (None / all-None) → nothing to carry.
+        let unmapped_pin = anchor_with_players(3, true, None, true);
+        let nothing = carry_mapping_into_fresh(&fresh_geometry, &unmapped_pin);
+        assert!(mapping_untrusted(&nothing.row_players));
+        let silent_pin = anchor_with_players(3, true, Some(vec![None, None, None]), false);
+        assert!(mapping_untrusted(
+            &carry_mapping_into_fresh(&fresh_geometry, &silent_pin).row_players
+        ));
+    }
+
+    // ── Stale lifecycle ──────────────────────────────────────────────────
+
+    #[test]
+    fn stale_lifecycle_set_on_sink_cleared_by_trusted_landing() {
+        // Sink probe flips alive flags → stale rises…
+        let before = Some(vec![true, true, false]);
+        let after = vec![true, true, true];
+        assert!(alive_changed(before.as_deref(), &after), "a flip fires");
+        // …and the OCR side of the lifecycle clears it exactly when a
+        // TRUSTED mapping produced by THIS FRAME's OCR lands; an all-None
+        // landing (honest silence) keeps the flag and the fast catch-up
+        // armed.
+        let trusted = Some(vec![Some("Alpha".into()), None, Some("Delta".into())]);
+        let all_none = Some(vec![None, None, None]);
+        assert!(!stale_after_mapping(
+            true,
+            &trusted,
+            MappingOrigin::FreshOcr
+        ));
+        assert!(stale_after_mapping(
+            true,
+            &all_none,
+            MappingOrigin::FreshOcr
+        ));
+        assert!(stale_after_mapping(true, &None, MappingOrigin::FreshOcr));
+        // A trusted landing keeps stale cleared; a missing mapping never
+        // sets it on its own.
+        assert!(!stale_after_mapping(
+            false,
+            &trusted,
+            MappingOrigin::FreshOcr
+        ));
+        assert!(!stale_after_mapping(false, &None, MappingOrigin::FreshOcr));
+    }
+
+    #[test]
+    fn carried_mapping_never_touches_the_stale_flag() {
+        // A mapping CARRIED from the old pin onto a moved grid still
+        // describes the PRE-sink row order — it must not launder a set
+        // stale flag, and carrying is not a data change, so it must not
+        // set one either. Only this frame's own OCR may clear.
+        let trusted = Some(vec![Some("Alpha".into()), None, Some("Delta".into())]);
+        let all_none = Some(vec![None, None, None]);
+        assert!(
+            stale_after_mapping(true, &trusted, MappingOrigin::CarriedFromPin),
+            "carry + stale → stays stale"
+        );
+        assert!(
+            !stale_after_mapping(false, &trusted, MappingOrigin::CarriedFromPin),
+            "carry + fresh → stays fresh (never sets)"
+        );
+        // Untrusted mappings keep the flag regardless of origin.
+        assert!(stale_after_mapping(
+            true,
+            &all_none,
+            MappingOrigin::CarriedFromPin
+        ));
+        assert!(!stale_after_mapping(
+            false,
+            &all_none,
+            MappingOrigin::CarriedFromPin
+        ));
+        assert!(stale_after_mapping(
+            true,
+            &None,
+            MappingOrigin::CarriedFromPin
+        ));
+    }
+
+    #[test]
+    fn alive_changed_only_fires_on_comparable_data() {
+        // No baseline (recognition never ran) → never fires.
+        assert!(!alive_changed(None, &[true, false]));
+        // Length mismatch (different grids) → never fires.
+        assert!(!alive_changed(Some(&[true]), &[true, false]));
+        // Identical vectors → no change.
+        assert!(!alive_changed(Some(&[true, false]), &[true, false]));
+        // Any single flipped row fires (a ship sank, or a row re-read).
+        assert!(alive_changed(Some(&[true, true]), &[true, false]));
+        assert!(alive_changed(Some(&[false, false]), &[false, true]));
+    }
+
+    #[test]
+    fn sink_probe_applies_sinks_now_and_debounces_revivals() {
+        let t0 = Instant::now();
+        // Two sunk rows so several distinct pure-revival reads exist.
+        let pinned = [true, false, false];
+        // A SINK (alive→false) applies on the FIRST probe, candidate cleared.
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), None, &[false, false, false], t0);
+        assert_eq!(apply.as_deref(), Some(&[false, false, false][..]));
+        assert!(cand.is_none(), "sinks never arm a candidate");
+
+        // A pure REVIVAL (glare on a sunk row) only arms a candidate.
+        let revived_a = [true, true, false];
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), None, &revived_a, t0);
+        assert_eq!(apply, None, "first revival read is not applied");
+        let (cvec, cseen) = cand.expect("revival arms a candidate");
+        assert_eq!(cvec, revived_a.to_vec());
+
+        // A second agreeing probe within the TTL confirms it.
+        let t1 = t0 + SINK_CANDIDATE_TTL;
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), Some((&cvec, cseen)), &revived_a, t1);
+        assert_eq!(apply.as_deref(), Some(&[true, true, false][..]));
+        assert!(cand.is_none(), "confirmation clears the candidate");
+
+        // A DISAGREEING revival re-read resets the count to the newest
+        // reading (the first glare described a different row)…
+        let revived_b = [true, false, true];
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), Some((&cvec, cseen)), &revived_b, t1);
+        assert_eq!(apply, None, "conflicting reads stay unapplied");
+        let (nv, ns) = cand.expect("the newest reading re-arms the candidate");
+        assert_eq!(nv, revived_b.to_vec());
+        assert_eq!(ns, t1);
+        // …and the re-armed candidate still needs its own second probe.
+        let (apply, _) = sink_probe_confirm(Some(&pinned), Some((&nv, ns)), &revived_a, t1);
+        assert_eq!(apply, None);
+
+        // A read matching the pin drops a pending candidate (the glare
+        // never repeated — nothing happened).
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), Some((&nv, ns)), &pinned, t1);
+        assert_eq!(apply, None);
+        assert!(cand.is_none(), "pin-matching read resets the debounce");
+
+        // An EXPIRED candidate does not confirm a later agreeing read.
+        let late = t0 + SINK_CANDIDATE_TTL + Duration::from_millis(1);
+        let (apply, cand) =
+            sink_probe_confirm(Some(&pinned), Some((&cvec, cseen)), &revived_a, late);
+        assert_eq!(apply, None, "past the TTL the count restarts");
+        assert_eq!(cand.unwrap().0, revived_a.to_vec());
+
+        // Non-comparable data (no baseline / length mismatch) is quiet and
+        // clears any pending candidate.
+        let (apply, cand) = sink_probe_confirm(None, Some((&cvec, cseen)), &revived_a, t1);
+        assert_eq!(apply, None);
+        assert!(cand.is_none());
+        let (apply, cand) = sink_probe_confirm(Some(&[true]), Some((&cvec, cseen)), &revived_a, t1);
+        assert_eq!(apply, None);
+        assert!(cand.is_none());
+    }
+
+    // ── FIFO command pipeline ────────────────────────────────────────────
+
+    #[test]
+    fn watch_command_queue_is_fifo() {
+        // The queue must hand commands back strictly in push order — the
+        // watcher loop's state transitions (and the badge order) depend on
+        // it. Bounded too: the oldest command drops past the cap.
+        let first = WatchCommand::ManualAnchorCleared;
+        let second = WatchCommand::BattleChanged;
+        push_watch_command(first);
+        push_watch_command(second);
+        let drained: Vec<WatchCommand> = WATCH_COMMANDS.lock().unwrap().drain(..).collect();
+        assert_eq!(drained.len(), 2, "test owns the whole queue");
+        assert!(matches!(drained[0], WatchCommand::ManualAnchorCleared));
+        assert!(matches!(drained[1], WatchCommand::BattleChanged));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn watch_commands_apply_in_fifo_order_to_the_fsm() {
+        let game = Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        let mut fsm = WatchFsm::default();
+        // Set then clear, in order: the anchor must end up GONE (a direct
+        // unordered application could leave it armed).
+        let r1 = apply_watch_command(
+            &mut fsm,
+            WatchCommand::ManualAnchorSet {
+                rect: Rect {
+                    x: 600,
+                    y: 300,
+                    width: 1200,
+                    height: 500,
+                },
+                game_rect: game,
+                battle: 42,
+                team_sizes: (5, 5),
+            },
+        );
+        assert!(fsm.manual_anchor.is_some(), "set arms the anchor");
+        assert_eq!(
+            r1,
+            Some((OverlayState::Manual, Some(10))),
+            "the set reports the manual badge immediately"
+        );
+        // Clear while hidden → Idle report (an unconditional Searching
+        // would stick forever — the hide branch only runs while shown).
+        let r2 = apply_watch_command(&mut fsm, WatchCommand::ManualAnchorCleared);
+        assert!(fsm.manual_anchor.is_none(), "clear disarms the anchor");
+        assert_eq!(r2, Some((OverlayState::Idle, None)));
+        // Clear while shown WITHOUT a pin → Searching.
+        fsm.overlay_shown = true;
+        let r3 = apply_watch_command(&mut fsm, WatchCommand::ManualAnchorCleared);
+        assert_eq!(r3, Some((OverlayState::Searching, None)));
+        // Clear while shown WITH a confirmed pin → Detected (no flicker).
+        fsm.pinned_anchor = Some(PinnedAnchor {
+            battle: 42,
+            game_rect: game,
+            anchor: anchor_with_players(10, true, None, true),
+        });
+        let r4 = apply_watch_command(&mut fsm, WatchCommand::ManualAnchorCleared);
+        assert_eq!(r4, Some((OverlayState::Detected, None)));
+
+        // BattleChanged voids the pin and the stale flag but KEEPS the
+        // geometry cache (same window mode → same pixel geometry).
+        fsm.stale = true;
+        fsm.geometry_cache = Some(GeometryCacheEntry {
+            key: GeometryKey {
+                game_rect: game,
+                style_bits: 1,
+            },
+            band: overlay_detect::HeaderBand {
+                top: 10,
+                height: 5,
+                green: (20, 30),
+                red: (30, 40),
+            },
+            roster: overlay_detect::DetectedRoster {
+                rect: game,
+                row_centers: vec![1, 2, 3],
+                team_split: 0.5,
+            },
+            team_sizes: (5, 5),
+        });
+        assert!(
+            apply_watch_command(&mut fsm, WatchCommand::BattleChanged).is_none(),
+            "the next tick re-derives the honest state"
+        );
+        assert!(fsm.pinned_anchor.is_none(), "pin voided");
+        assert!(!fsm.stale, "stale reset with the pin");
+        assert!(
+            fsm.geometry_cache.is_some(),
+            "the cache survives battle changes by design"
+        );
     }
 }
