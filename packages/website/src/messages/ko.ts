@@ -305,6 +305,7 @@ lookup: {
     loadFailed: "최신 버전을 가져올 수 없습니다 — GitHub Releases에서 직접 다운로드해 주세요",
     assets: "릴리스 에셋",
     notes: "모든 에셋은 GitHub Releases에 게시됩니다",
+    mirrorNote: "gh-proxy.com 미러를 통해 다운로드됩니다",
   },
   footer: {
     license: "SySL-1.0 라이선스",

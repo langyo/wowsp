@@ -18,7 +18,6 @@ const ReplayLive = defineAsyncComponent(() => import("@/features/replay3d/Replay
 const ShipLive = defineAsyncComponent(() => import("@/features/replay3d/ShipLive"));
 
 const GITHUB = "https://github.com/langyo/wowsp";
-const RELEASES = `${GITHUB}/releases`;
 
 export default defineComponent({
   name: "HomeView",
@@ -120,10 +119,14 @@ export default defineComponent({
 
             <Reveal delay={320}>
               <div class="hero__actions">
-                <LinkButton size="lg" href={RELEASES} external>
-                  <Download size={17} />
-                  {t("hero.download")}
-                </LinkButton>
+                <RouterLink to="/download" custom>
+                  {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
+                    <HButton size="lg" onClick={navigate}>
+                      <Download size={17} />
+                      {t("hero.download")}
+                    </HButton>
+                  )}
+                </RouterLink>
                 <RouterLink to="/mods" custom>
                   {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
                     <HButton size="lg" variant="secondary" onClick={navigate}>
@@ -305,10 +308,14 @@ export default defineComponent({
             </Reveal>
             <Reveal delay={200}>
               <div class="cta-band__actions">
-                <LinkButton size="lg" href={RELEASES} external>
-                  <Download size={17} />
-                  {t("cta.download")}
-                </LinkButton>
+                <RouterLink to="/download" custom>
+                  {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
+                    <HButton size="lg" onClick={navigate}>
+                      <Download size={17} />
+                      {t("cta.download")}
+                    </HButton>
+                  )}
+                </RouterLink>
                 <LinkButton size="lg" variant="ghost" href={GITHUB} external>
                   <GithubMark size={16} />
                   GitHub
