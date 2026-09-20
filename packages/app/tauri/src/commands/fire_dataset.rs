@@ -613,13 +613,14 @@ pub fn analyze_salvo_structure(
         barrels.sort_unstable();
         barrels.dedup();
         // Censoring: time inside [salvo_start, salvo_start + reload) capped at
-        // the next salvo's start, over the owner's alive window.
+        // the next MAIN-battery salvo's start, over the owner's alive window.
+        // Secondary/AA bursts are AI-automatic — they never gate a player's
+        // fire decision, so only main-battery salvos censor.
         let alive = alive_window(ship);
         let window = (alive.1 - alive.0).max(0.0);
         let mut censored = 0.0f32;
-        for (i, s) in ctx.salvos.iter().enumerate() {
-            let seg_end = ctx
-                .salvos
+        for (i, s) in main.iter().enumerate() {
+            let seg_end = main
                 .get(i + 1)
                 .map_or(alive.1, |n| n.start.min(s.start + ctx.reload_s));
             censored += (seg_end - s.start).clamp(0.0, ctx.reload_s);
@@ -766,9 +767,12 @@ pub fn count_decision_samples(
             // decision point just before such a salvo sits inside the reload
             // interval). No fire history → guns start loaded.
             let effective_reload = (ctx.reload_s - params.decision_interval_s).max(0.0);
+            // Main battery only: secondary/AA bursts are AI-automatic and
+            // never mean the player chose to hold fire.
             let is_reloaded = !ctx
                 .salvos
                 .iter()
+                .filter(|s| s.main_battery)
                 .any(|s| s.start <= t && t - s.start < effective_reload);
             if !is_reloaded {
                 t += params.decision_interval_s;
@@ -804,9 +808,12 @@ pub fn count_decision_samples(
                 continue;
             }
             eligible += 1;
+            // Label from MAIN-battery salvos only (secondaries fire on AI
+            // and would plant false positives on brawling ships).
             let fired_now = ctx
                 .salvos
                 .iter()
+                .filter(|s| s.main_battery)
                 .any(|s| s.start > t && s.start <= t + params.label_window_s);
             if fired_now {
                 fired += 1;
