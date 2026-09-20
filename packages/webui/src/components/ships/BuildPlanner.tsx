@@ -214,6 +214,12 @@ const TALENT_SECOND_KEYS = new Set(["workTime"]);
 /** Additive percentage-point talent keys (0.01 = +1pp). */
 const TALENT_POINTS_KEYS = new Set(["burnChanceBonus"]);
 
+/** Mod families whose GameParams ships-list is a WHITELIST despite carrying
+ *  a type restriction like exclusion-listing regulars. GameParams has no
+ *  explicit marker — the store semantics are known per family: skip bombers
+ *  only exist on the six hybrid-art carriers (PCM081/092_SkipBomber_Mod_I). */
+const SHIPS_WHITELIST_FAMILIES = /_SkipBomber_Mod_/;
+
 /** i18n key exists? (avoids vue-i18n fallback warnings for data-driven keys) */
 function hasMsg(key: string): boolean {
   // te() on the full message schema explodes type instantiation — go loose.
@@ -507,12 +513,18 @@ export default defineComponent({
      *  restriction — the low-tier Aiming Systems Mod 0 names exactly the
      *  three ships that may mount it. Only broadly-typed regular mods carry
      *  EXCLUSION lists (Main Gun Mod 3 names the submarines it must not be
-     *  mounted on), so reading those as whitelists would gut the tab. */
+     *  mounted on), so reading those as whitelists would gut the tab —
+     *  with one exception: the skip-bomber mods are typed like regular CV
+     *  upgrades but their six-ship list is a whitelist (the game mounts
+     *  them on exactly those hybrid-art carriers). */
     function shipMatches(m: ModernizationEntry): boolean {
       if (!m.ships?.length) return true;
       const index = techTreeNode(props.ship.shipId)?.index ?? null;
       const hit = index != null && m.ships.some((s) => s.split("_")[0] === index);
-      const whitelist = m.tags?.includes("unique") || m.shiptype.length === 0;
+      const whitelist =
+        m.tags?.includes("unique") ||
+        m.shiptype.length === 0 ||
+        SHIPS_WHITELIST_FAMILIES.test(m.name);
       return whitelist ? hit : !hit;
     }
     function upgradesForSlot(slot: number): ModernizationEntry[] {
