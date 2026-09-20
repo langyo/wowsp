@@ -286,8 +286,8 @@ async fn fetch_delta_edges(client: &Client) -> Result<Vec<DeltaEdge>, String> {
                 if asset["name"].as_str() == Some(DELTA_ARCHIVE) {
                     if let Some(url) = asset["browser_download_url"].as_str() {
                         edges.push(DeltaEdge {
-                            from,
-                            to,
+                            from: from.clone(),
+                            to: to.clone(),
                             url: url.to_string(),
                             size: asset["size"].as_u64().unwrap_or(0),
                         });
