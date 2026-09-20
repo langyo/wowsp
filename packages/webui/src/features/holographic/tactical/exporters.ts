@@ -10,6 +10,16 @@
  * playback; the compose pipeline below is shared by both.
  */
 import { api } from "@/api/client";
+import {
+  BufferTarget,
+  CanvasSource,
+  Mp4OutputFormat,
+  Output,
+  QUALITY_HIGH,
+  WebMOutputFormat,
+  canEncodeVideo,
+  type VideoCodec,
+} from "mediabunny";
 import type { ImageExportOptions } from "./types";
 import { TACTICAL_SIZE } from "./render";
 
@@ -146,6 +156,132 @@ export function pickRecorderMime(): { mime: string; ext: "mp4" | "webm" } | null
     if (MediaRecorder.isTypeSupported(cand.mime)) return cand;
   }
   return null;
+}
+
+// ── Offline (faster-than-realtime) export via WebCodecs ──────────────────
+
+/** Frame timestamps for an offline render: starts at `from`, steps by
+ *  1/fps, never passes `to`, always contains at least `from`. Pure —
+ *  unit-tested so the encoder contract (strictly increasing, last ≤ to)
+ *  stays guaranteed. */
+export function frameTimes(from: number, to: number, fps: number): number[] {
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || fps <= 0) {
+    return Number.isFinite(from) ? [from] : [];
+  }
+  const step = 1 / fps;
+  const out: number[] = [];
+  // Snap to a fixed grid (not += accumulation) so float error can never
+  // produce a non-increasing pair.
+  const count = Math.floor((to - from) / step + 1e-9) + 1;
+  for (let i = 0; i < count; i++) {
+    const t = from + i * step;
+    out.push(t > to ? to : Number(t.toFixed(6)));
+  }
+  return out;
+}
+
+export interface OfflineRenderOptions {
+  fps: number;
+  times: number[];
+  /** Output edge in px (square canvas, same as the realtime recorder). */
+  size: number;
+  /** Paint one finished frame (base map + annotations + timestamp) for
+   *  battle time `t` onto `ctx`. Called once per entry of `times`. */
+  paintAt: (t: number, ctx: CanvasRenderingContext2D, size: number) => void;
+  onProgress?: (done: number, total: number) => void;
+  cancelToken?: { cancelled: boolean };
+}
+
+export interface OfflineRenderResult {
+  blob: Blob;
+  ext: "mp4" | "webm";
+  /** True when the user cancelled; `blob` then holds the partial render
+   *  (possibly empty) and callers stay quiet instead of erroring. */
+  cancelled: boolean;
+}
+
+/** Preferred codec/format ladder for offline exports: H.264 MP4 first (plays
+ *  everywhere), VP9 WebM as the fallback. Returns null when WebCodecs can't
+ *  encode either (caller falls back to the realtime MediaRecorder path). */
+async function pickOfflineFormat(
+  width: number,
+  height: number,
+): Promise<{ codec: VideoCodec; ext: "mp4" | "webm" } | null> {
+  if (typeof VideoEncoder === "undefined") return null;
+  if (await canEncodeVideo("avc", { width, height })) return { codec: "avc", ext: "mp4" };
+  if (await canEncodeVideo("vp9", { width, height })) return { codec: "vp9", ext: "webm" };
+  return null;
+}
+
+export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<OfflineRenderResult | null> {
+  const times = opts.times;
+  if (times.length === 0) return null;
+  const size = opts.size;
+  const picked = await pickOfflineFormat(size, size);
+  if (!picked) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const target = new BufferTarget();
+  const output = new Output({
+    format: picked.ext === "mp4"
+      ? new Mp4OutputFormat({ fastStart: "in-memory" })
+      : new WebMOutputFormat(),
+    target,
+  });
+  const source = new CanvasSource(canvas, { codec: picked.codec, quality: QUALITY_HIGH });
+  output.addVideoTrack(source, { frameRate: opts.fps });
+  const cancelled = () => opts.cancelToken?.cancelled === true;
+
+  try {
+    // mediabunny contract: tracks must be declared, then the output started,
+    // before the first sample — `source.add` throws on a pending output.
+    await output.start();
+    const first = times[0];
+    const frameDuration = 1 / opts.fps;
+    let encodedAny = false;
+    for (let i = 0; i < times.length; i++) {
+      if (cancelled()) break;
+      const t = times[i];
+      opts.paintAt(t, ctx, size);
+      // Video timestamps are relative to the first rendered frame.
+      await source.add(t - first, frameDuration);
+      encodedAny = true;
+      opts.onProgress?.(i + 1, times.length);
+    }
+    source.close();
+    await output.finalize();
+    // A cancelled render with zero encoded frames finalizes to a header-only
+    // mux (~100 B, unplayable) — judge by frames, not by buffer size.
+    if (!encodedAny) {
+      if (cancelled()) {
+        return { blob: new Blob([], { type: "video/mp4" }), ext: picked.ext, cancelled: true };
+      }
+      return null;
+    }
+    const buffer = target.buffer;
+    if (!buffer || buffer.byteLength === 0) return null;
+    return {
+      blob: new Blob([buffer], {
+        type: picked.ext === "mp4" ? "video/mp4" : "video/webm",
+      }),
+      ext: picked.ext,
+      cancelled: cancelled(),
+    };
+  } catch (e) {
+    // Cancel the output so no half-written file escapes; the realtime
+    // recorder is the caller's fallback.
+    try {
+      await output.cancel();
+    } catch {
+      // ignore secondary cancel failures
+    }
+    throw e;
+  }
 }
 
 /**

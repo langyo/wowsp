@@ -979,6 +979,19 @@ export default defineComponent({
       return best ? { entityId: best.entityId, label: best.label } : null;
     }
 
+    /** Pause + jump the battle clock to `t` and paint synchronously (markers
+     *  AND the 2D map canvases). Used by the tactical board for step
+     *  navigation and the offline video exporter's frame-by-frame render,
+     *  which steps the clock faster than realtime without waiting on the
+     *  RAF loop or the pre-flush `current` watcher. */
+    function seekBattleTime(t: number): void {
+      playing.value = false;
+      const clamped = Math.max(0, Math.min(duration.value || t, t));
+      current.value = clamped;
+      updateMarkersAt(clamped);
+      drawMinimap();
+    }
+
     function drawMinimap() {
       const full: MapBounds | null = computeFullMapBounds();
       if (!full) return;
@@ -4805,6 +4818,7 @@ export default defineComponent({
                 getPlaying={() => playing.value}
                 play={() => { if (!playing.value) togglePlay(); }}
                 pause={() => { if (playing.value) togglePlay(); }}
+                seekTo={seekBattleTime}
                 trajectories={() => props.trajectories}
                 pickShipAt={pickShipAt}
                 baseCanvas={() => zoomCanvas.value}

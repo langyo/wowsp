@@ -11,6 +11,7 @@ import type {
   StrokeLook,
   TacticalDoc,
   TacticalElement,
+  TacticalStep,
   TextElement,
   Vec2,
 } from "./types";
@@ -96,6 +97,21 @@ export function commitPath(
   t0: number,
 ): PathElement {
   return { id: newElementId(), kind: "replayPath", t0, entityId, upTo, ...look };
+}
+
+export function commitStep(t: number, name?: string): TacticalStep {
+  return { id: newElementId(), t: Math.max(0, t), name: name ?? "" };
+}
+
+/** Presentation auto-advance park decision: the step the show should park
+ *  on RIGHT NOW (pause + dwell), or null. A step strictly ahead of `t`
+ *  counts once the playhead is within 50 ms of it (playTick overshoots by
+ *  one frame at 10× speed, so an exact `t >= s.t` test would skip parks).
+ *  After parking on a step, `t === s.t` and the strict `>` excludes it, so
+ *  resuming cannot immediately re-park the same step. */
+export function presentParkTarget<T extends { t: number }>(steps: T[], t: number): T | null {
+  const next = steps.find((s) => s.t > t);
+  return next != null && t >= next.t - 0.05 ? next : null;
 }
 
 function defaultDrawInSec(points: Vec2[]): number {
@@ -211,17 +227,34 @@ export function serializeDoc(doc: TacticalDoc): string {
 
 export function parseDoc(json: string): TacticalDoc | null {
   try {
-    const d = JSON.parse(json) as TacticalDoc;
+    const d = JSON.parse(json) as Partial<TacticalDoc>;
     if (d && d.version === 1 && Array.isArray(d.elements)) {
       // Sanitize + normalize: a corrupted/hand-edited localStorage entry
       // must neither brick the render loop nor degrade silently — drop
       // malformed elements and backfill safe defaults for optional fields.
-      return { version: 1, elements: d.elements.flatMap(normalizeElement) };
+      // (Docs from wave 1 have no `steps` — backfill an empty list.)
+      const steps = normalizeSteps(d.steps);
+      return { version: 1, elements: d.elements.flatMap(normalizeElement), steps };
     }
     return null;
   } catch {
     return null;
   }
+}
+
+function normalizeSteps(raw: unknown): TacticalStep[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TacticalStep[] = [];
+  for (const s of raw) {
+    if (!s || typeof s !== "object") continue;
+    const e = s as Record<string, unknown>;
+    if (typeof e.id !== "string") continue;
+    const t = fin(e.t, Number.NaN);
+    if (!Number.isFinite(t)) continue;
+    out.push({ id: e.id, t: Math.max(0, t), name: typeof e.name === "string" ? e.name : "" });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out;
 }
 
 const ELEMENT_KINDS = new Set([

@@ -202,7 +202,14 @@
       "timestamp": "타임스탬프",
       "full": "전체 지도 스냅샷 내보내기",
       "region": "영역 지정 스냅샷",
-      "regionRun": "선택 영역 내보내기"
+      "regionRun": "선택 영역 내보내기",
+      "range": "범위",
+      "rangeNow": "현재부터",
+      "rangeFull": "전체 경기",
+      "fps": "프레임률",
+      "offline": "오프라인 빠른 내보내기(실시간보다 빠름)",
+      "offlineRunning": "렌더링 중",
+      "cancel": "취소"
     },
     "record": {
       "start": "녹화 시작(리플레이 재생)",
@@ -215,6 +222,15 @@
       "pinned": "{name}의 항적을 고정했습니다",
       "empty": "저장할 내용이 없습니다"
     },
-    "count": "주석 {n}개"
+    "count": "주석 {n}개",
+    "steps": {
+      "add": "현재 시점을 단계로 추가([ ] 탐색)",
+      "prev": "이전 단계",
+      "next": "다음 단계",
+      "present": "프레젠테이션 재생(단계 간 자동 진행)",
+      "presentStop": "프레젠테이션 중지",
+      "empty": "단계 없음 — ＋로 설명 지점을 표시",
+      "duplicate": "이 시점에는 이미 단계가 있습니다"
+    }
   }
 }

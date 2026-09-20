@@ -1,12 +1,12 @@
 /**
- * Reactive tactical-board state: the element list, active tool, stroke look,
- * selection, undo/redo history and per-replay persistence. Rendering and
- * pointer interaction live in TacticalBoard.tsx; this composable is the
- * single source of truth for "what is on the board".
+ * Reactive tactical-board state: the element list, presentation steps, active
+ * tool, stroke look, selection, undo/redo history and per-replay persistence.
+ * Rendering and pointer interaction live in TacticalBoard.tsx; this
+ * composable is the single source of truth for "what is on the board".
  */
 import { computed, ref, watch, type Ref } from "vue";
-import type { DashStyle, TacticalElement, TacticalToolId } from "./types";
-import { docStorageKey, parseDoc, serializeDoc } from "./model";
+import type { DashStyle, TacticalElement, TacticalStep, TacticalToolId } from "./types";
+import { commitStep, docStorageKey, parseDoc, serializeDoc } from "./model";
 
 export interface TacticalStyleState {
   color: string;
@@ -31,9 +31,13 @@ export const TACTICAL_PALETTE = [
 export const TACTICAL_WIDTHS = [2, 4, 7, 11] as const;
 
 const HISTORY_LIMIT = 80;
+/** Two steps closer than this (battle seconds) collapse into one — the
+ *  author double-clicking the bookmark button must not spam the strip. */
+const STEP_MERGE_S = 0.5;
 
 export function useTactical(replayPath: Ref<string>) {
   const elements = ref<TacticalElement[]>([]);
+  const steps = ref<TacticalStep[]>([]);
   const tool = ref<TacticalToolId>("select");
   const style = ref<TacticalStyleState>({ color: "#f43f5e", width: 4, dash: "solid" });
   const selectedId = ref<string | null>(null);
@@ -48,7 +52,7 @@ export function useTactical(replayPath: Ref<string>) {
   const redoStack: string[] = [];
 
   function snapshot(): string {
-    return serializeDoc({ version: 1, elements: elements.value });
+    return serializeDoc({ version: 1, elements: elements.value, steps: steps.value });
   }
   function syncHistoryFlags(): void {
     canUndo.value = undoStack.length > 0;
@@ -77,7 +81,10 @@ export function useTactical(replayPath: Ref<string>) {
   }
   function applySnapshot(json: string): void {
     const doc = parseDoc(json);
-    if (doc) elements.value = doc.elements;
+    if (doc) {
+      elements.value = doc.elements;
+      steps.value = doc.steps;
+    }
     if (selectedId.value && !elements.value.some((el) => el.id === selectedId.value)) {
       selectedId.value = null;
     }
@@ -101,10 +108,34 @@ export function useTactical(replayPath: Ref<string>) {
     if (selectedId.value === id) selectedId.value = null;
   }
   function clearAll(): void {
-    if (elements.value.length === 0) return;
+    if (elements.value.length === 0 && steps.value.length === 0) return;
     pushHistory();
     elements.value = [];
+    steps.value = [];
     selectedId.value = null;
+  }
+
+  // ── Presentation steps ────────────────────────────────────────────────
+  /** Steps sorted by time with display names assigned (`#1`, `#2`, …). */
+  const stepsSorted = computed<TacticalStep[]>(() =>
+    [...steps.value].sort((a, b) => a.t - b.t).map((s, i) => ({
+      ...s,
+      name: s.name || `#${i + 1}`,
+    })),
+  );
+
+  /** Bookmark the given battle time as a step. Returns false when a step
+   *  already exists within the merge window (idempotent double-click). */
+  function addStep(t: number): boolean {
+    if (steps.value.some((s) => Math.abs(s.t - t) <= STEP_MERGE_S)) return false;
+    pushHistory();
+    steps.value = [...steps.value, commitStep(t)];
+    return true;
+  }
+  function removeStep(id: string): void {
+    if (!steps.value.some((s) => s.id === id)) return;
+    pushHistory();
+    steps.value = steps.value.filter((s) => s.id !== id);
   }
 
   const selected = computed(() =>
@@ -130,7 +161,7 @@ export function useTactical(replayPath: Ref<string>) {
   function persist(): void {
     pendingSave = {
       path: replayPath.value,
-      json: serializeDoc({ version: 1, elements: elements.value }),
+      json: serializeDoc({ version: 1, elements: elements.value, steps: steps.value }),
     };
     if (saveTimer != null) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -148,19 +179,24 @@ export function useTactical(replayPath: Ref<string>) {
       const raw = window.localStorage.getItem(docStorageKey(replayPath.value));
       const doc = raw ? parseDoc(raw) : null;
       elements.value = doc ? doc.elements : [];
+      steps.value = doc ? doc.steps : [];
       undoStack.length = 0;
       redoStack.length = 0;
       syncHistoryFlags();
     } catch {
       elements.value = [];
+      steps.value = [];
     }
   }
 
   watch(replayPath, load, { immediate: true });
   watch(elements, persist, { deep: true });
+  watch(steps, persist, { deep: true });
 
   return {
     elements,
+    steps,
+    stepsSorted,
     tool,
     style,
     selectedId,
@@ -176,6 +212,8 @@ export function useTactical(replayPath: Ref<string>) {
     replaceElement,
     removeElement,
     clearAll,
+    addStep,
+    removeStep,
   };
 }
 

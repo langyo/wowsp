@@ -12,6 +12,7 @@ import {
   Camera,
   Circle,
   Crop,
+  FastForward,
   MousePointer2,
   Minus,
   Pen,
@@ -35,6 +36,8 @@ interface ExportSettings {
   format: "png" | "webp";
   scale: 1 | 2;
   timestamp: boolean;
+  offlineFps: 30 | 60;
+  offlineFrom: "now" | "start";
 }
 
 /** Board-provided callbacks (plain props — avoids the JSX kebab-case emit
@@ -43,6 +46,7 @@ export interface TacticalToolbarActions {
   exportFull: () => void;
   exportRegion: () => void;
   recordToggle: () => void;
+  offlineExport: () => void;
 }
 
 const TOOLS: { id: TacticalToolId; icon: typeof Pen; key: string }[] = [
@@ -301,6 +305,48 @@ export default defineComponent({
               onClick={() => props.actions.recordToggle()}
             >
               <Video size={15} />
+            </HIconButton>
+          </HTooltip>
+        </div>
+
+        {/* Offline export: faster-than-realtime render via WebCodecs. */}
+        <div class="tac-rail__group tac-rail__export">
+          <label class="tac-rail__field">
+            <span class="tac-rail__field-label">{i18nT("replay.tactical.export.range")}</span>
+            <select
+              class="tac-rail__select"
+              value={props.exportSettings.offlineFrom}
+              onChange={(e: Event) => {
+                props.exportSettings.offlineFrom =
+                  (e.target as HTMLSelectElement).value === "start" ? "start" : "now";
+              }}
+            >
+              <option value="now">{i18nT("replay.tactical.export.rangeNow")}</option>
+              <option value="start">{i18nT("replay.tactical.export.rangeFull")}</option>
+            </select>
+          </label>
+          <label class="tac-rail__field">
+            <span class="tac-rail__field-label">{i18nT("replay.tactical.export.fps")}</span>
+            <select
+              class="tac-rail__select"
+              value={String(props.exportSettings.offlineFps)}
+              onChange={(e: Event) => {
+                props.exportSettings.offlineFps =
+                  (e.target as HTMLSelectElement).value === "60" ? 60 : 30;
+              }}
+            >
+              <option value="30">30</option>
+              <option value="60">60</option>
+            </select>
+          </label>
+          <HTooltip text={i18nT("replay.tactical.export.offline")} placement="left">
+            <HIconButton
+              size={32}
+              variant="primary"
+              disabled={props.busy || props.recording}
+              onClick={() => props.actions.offlineExport()}
+            >
+              <FastForward size={15} />
             </HIconButton>
           </HTooltip>
         </div>

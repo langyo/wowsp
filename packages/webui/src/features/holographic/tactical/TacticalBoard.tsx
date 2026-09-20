@@ -35,6 +35,7 @@ import {
   commitText,
   hitTestElement,
   moveElement,
+  presentParkTarget,
 } from "./model";
 import type { LogicalRect, TacticalElement, Vec2 } from "./types";
 import {
@@ -42,7 +43,9 @@ import {
   composeExportCanvas,
   drawTimestampChip,
   formatBattleClock,
+  frameTimes,
   pickRecorderMime,
+  renderVideoOffline,
   saveExportBlob,
   TacticalRecorder,
 } from "./exporters";
@@ -79,6 +82,9 @@ export default defineComponent({
     getPlaying: { type: Function as PropType<() => boolean>, required: true },
     play: { type: Function as PropType<() => void>, required: true },
     pause: { type: Function as PropType<() => void>, required: true },
+    /** Pause + jump the battle clock AND repaint markers + the 2D map
+     *  synchronously (step navigation + offline frame rendering). */
+    seekTo: { type: Function as PropType<(t: number) => void>, required: true },
     trajectories: { type: Function as PropType<() => EntityTrajectory[]>, required: true },
     pickShipAt: {
       type: Function as PropType<(x: number, z: number) => ShipPick | null>,
@@ -107,8 +113,23 @@ export default defineComponent({
     let recorder: TacticalRecorder | null = null;
     let autoPlayedOnRecord = false;
 
+    // Offline (faster-than-realtime) export state.
+    const offlineRendering = ref(false);
+    const offlineProgress = ref({ done: 0, total: 0 });
+    const offlineCancel: { cancelled: boolean } = { cancelled: false };
+
+    // Presentation mode: auto-advance playback that pauses at each step.
+    const presentMode = ref(false);
+    let presentDwellTimer: ReturnType<typeof setTimeout> | null = null;
+
     // Export settings owned here; the toolbar mutates them via its settings prop.
-    const exportSettings = ref({ format: "png" as "png" | "webp", scale: 1 as 1 | 2, timestamp: false });
+    const exportSettings = ref({
+      format: "png" as "png" | "webp",
+      scale: 1 as 1 | 2,
+      timestamp: false,
+      offlineFps: 30 as 30 | 60,
+      offlineFrom: "now" as "now" | "start",
+    });
 
     const trajMap = computed(() => {
       const m = new Map<number, EntityTrajectory>();
@@ -146,6 +167,19 @@ export default defineComponent({
         recorder.tick();
         const dur = props.getDuration();
         if (dur > 0 && props.getTime() >= dur - 0.08) void stopRecording();
+      }
+      // Presentation auto-advance: playing crosses a step boundary → park
+      // exactly on it, dwell, then continue toward the next step.
+      if (presentMode.value && props.getPlaying()) {
+        const t = props.getTime();
+        const park = presentParkTarget(store.stepsSorted.value, t);
+        if (park) {
+          props.seekTo(park.t);
+          props.pause();
+          schedulePresentDwell();
+        } else if (props.getDuration() > 0 && t >= props.getDuration() - 0.1) {
+          exitPresentMode();
+        }
       }
     }
 
@@ -495,6 +529,10 @@ export default defineComponent({
           pendingRegion.value = null;
           return;
         }
+        if (presentMode.value) {
+          exitPresentMode();
+          return;
+        }
         store.selectedId.value = null;
         return;
       }
@@ -523,6 +561,14 @@ export default defineComponent({
         if (tool) {
           store.tool.value = tool as typeof store.tool.value;
           regionMode.value = false;
+          return;
+        }
+        if (e.key === "[") {
+          e.preventDefault();
+          stepPrev();
+        } else if (e.key === "]") {
+          e.preventDefault();
+          stepNext();
         }
       }
     }
@@ -563,7 +609,11 @@ export default defineComponent({
       }
     }
 
-    function composeRecordFrame(ctx: CanvasRenderingContext2D, size: number): void {
+    /** Compose one finished frame (base map + annotations + battle clock)
+     *  onto an export ctx at `size`. Used by both the realtime recorder and
+     *  the offline renderer — the battle time is passed explicitly so the
+     *  offline path stamps the frame it just painted, not the live clock. */
+    function composePaintedFrame(ctx: CanvasRenderingContext2D, size: number, t: number): void {
       const base = props.baseCanvas();
       if (!base) return;
       ctx.clearRect(0, 0, size, size);
@@ -572,7 +622,7 @@ export default defineComponent({
       ctx.drawImage(base, 0, 0, base.width, base.height, 0, 0, size, size);
       const overlay = canvasRef.value;
       if (overlay) ctx.drawImage(overlay, 0, 0, overlay.width, overlay.height, 0, 0, size, size);
-      drawTimestampChip(ctx, size, formatBattleClock(props.getTime()));
+      drawTimestampChip(ctx, size, formatBattleClock(t));
     }
 
     async function startRecording(): Promise<void> {
@@ -581,7 +631,10 @@ export default defineComponent({
         toast.error(i18nT("replay.tactical.record.unsupported"));
         return;
       }
-      const rec = new TacticalRecorder(composeRecordFrame, 1280);
+      const rec = new TacticalRecorder(
+        (ctx, size) => composePaintedFrame(ctx, size, props.getTime()),
+        1280,
+      );
       if (!rec.start()) {
         toast.error(i18nT("replay.tactical.record.unsupported"));
         return;
@@ -621,6 +674,140 @@ export default defineComponent({
       await finalizeRecording(rec);
     }
 
+    // ── Presentation mode (step timeline) ────────────────────────────────
+    const stepsSorted = computed(() => store.stepsSorted.value);
+    /** Index of the last step at or before the playhead (-1 = before the
+     *  first step). */
+    const currentStepIndex = computed(() => {
+      const t = props.getTime();
+      let idx = -1;
+      for (let i = 0; i < stepsSorted.value.length; i++) {
+        if (stepsSorted.value[i].t <= t + 0.05) idx = i;
+        else break;
+      }
+      return idx;
+    });
+
+    function goToStep(i: number): void {
+      if (offlineRendering.value) return;
+      const s = stepsSorted.value[i];
+      if (s) props.seekTo(s.t);
+    }
+    function stepPrev(): void {
+      goToStep(Math.max(0, currentStepIndex.value));
+    }
+    function stepNext(): void {
+      goToStep(Math.min(stepsSorted.value.length - 1, currentStepIndex.value + 1));
+    }
+    function addStepHere(): void {
+      if (offlineRendering.value) return;
+      const ok = store.addStep(props.getTime());
+      if (!ok) toast.info(i18nT("replay.tactical.steps.duplicate"));
+    }
+    function removeStepById(id: string): void {
+      store.removeStep(id);
+    }
+
+    function schedulePresentDwell(): void {
+      if (presentDwellTimer != null) clearTimeout(presentDwellTimer);
+      presentDwellTimer = setTimeout(() => {
+        presentDwellTimer = null;
+        if (!presentMode.value) return;
+        // More steps ahead → keep playing toward the next one; otherwise the
+        // show is over.
+        const hasFurther = stepsSorted.value.some((s) => s.t > props.getTime() + 0.05);
+        if (hasFurther) props.play();
+        else exitPresentMode();
+      }, 1400);
+    }
+    function enterPresentMode(): void {
+      if (offlineRendering.value) return;
+      if (stepsSorted.value.length === 0) {
+        toast.info(i18nT("replay.tactical.steps.empty"));
+        return;
+      }
+      presentMode.value = true;
+      props.play();
+    }
+    function exitPresentMode(): void {
+      if (!presentMode.value) return;
+      presentMode.value = false;
+      if (presentDwellTimer != null) {
+        clearTimeout(presentDwellTimer);
+        presentDwellTimer = null;
+      }
+      props.pause();
+    }
+    function togglePresent(): void {
+      if (presentMode.value) exitPresentMode();
+      else enterPresentMode();
+    }
+
+    // ── Offline (faster-than-realtime) video export ──────────────────────
+    function cancelOfflineExport(): void {
+      offlineCancel.cancelled = true;
+    }
+
+    async function runOfflineExport(): Promise<void> {
+      const base = props.baseCanvas();
+      const dur = props.getDuration();
+      if (!base || dur <= 0 || busy.value || offlineRendering.value) return;
+      // The offline render seeks the live clock frame by frame — it cannot
+      // share the stage with a realtime recording or presentation playback.
+      if (recording.value) {
+        toast.info(i18nT("replay.tactical.record.recording"));
+        return;
+      }
+      exitPresentMode();
+      const s = exportSettings.value;
+      const from = s.offlineFrom === "start" ? 0 : props.getTime();
+      const times = frameTimes(from, dur, s.offlineFps);
+      if (times.length < 2) {
+        toast.info(i18nT("replay.tactical.toast.empty"));
+        return;
+      }
+      props.pause();
+      const resumeAt = props.getTime();
+      offlineCancel.cancelled = false;
+      offlineRendering.value = true;
+      offlineProgress.value = { done: 0, total: times.length };
+      busy.value = true;
+      try {
+        const result = await renderVideoOffline({
+          fps: s.offlineFps,
+          times,
+          size: 1280,
+          paintAt: (t, ctx, size) => {
+            // Step the whole live 2D map (base + ships + caps + smoke +
+            // planes) to t, repaint annotations, then compose one frame.
+            props.seekTo(t);
+            renderNow(null);
+            composePaintedFrame(ctx, size, t);
+          },
+          onProgress: (done, total) => {
+            offlineProgress.value = { done, total };
+          },
+          cancelToken: offlineCancel,
+        });
+        if (!result) {
+          toast.error(i18nT("replay.tactical.record.unsupported"));
+        } else if (result.cancelled && result.blob.size === 0) {
+          // User cancelled before anything encoded — stay quiet.
+        } else if (result.blob.size > 0) {
+          const saved = await saveExportBlob(result.blob, defaultName(result.ext), "Video", result.ext);
+          if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
+        } else {
+          toast.info(i18nT("replay.tactical.toast.empty"));
+        }
+      } catch (e) {
+        toast.error(String((e as Error)?.message ?? e));
+      } finally {
+        offlineRendering.value = false;
+        busy.value = false;
+        props.seekTo(resumeAt);
+      }
+    }
+
     // ── Toolbar actions ──────────────────────────────────────────────────
     function beginRegionMode(): void {
       pendingRegion.value = null;
@@ -643,6 +830,7 @@ export default defineComponent({
         regionMode.value = false;
         pendingRegion.value = null;
         textEdit.value = null;
+        exitPresentMode();
         if (recorder) {
           const rec = recorder;
           recorder = null;
@@ -658,6 +846,10 @@ export default defineComponent({
     onBeforeUnmount(() => {
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeydown, true);
+      exitPresentMode();
+      // Stop the offline render at the next frame boundary; whatever was
+      // encoded so far still gets saved by the finally-block in the runner.
+      offlineCancel.cancelled = true;
       // Unmounting (overlay closed / replay switched) mid-take still saves.
       if (recorder) {
         const rec = recorder;
@@ -731,9 +923,89 @@ export default defineComponent({
               {i18nT("replay.tactical.record.recording")}
             </div>
           ) : null}
+          {offlineRendering.value ? (
+            <div class="tac-layer__rec-chip" onClick={(e: MouseEvent) => e.stopPropagation()}>
+              <span class="tac-layer__rec-dot" />
+              {i18nT("replay.tactical.export.offlineRunning")}
+              <b class="tac-layer__rec-count">
+                {offlineProgress.value.done}/{offlineProgress.value.total}
+              </b>
+              <button class="tac-layer__rec-cancel" onClick={cancelOfflineExport}>
+                {i18nT("replay.tactical.export.cancel")}
+              </button>
+            </div>
+          ) : null}
           {regionMode.value ? (
             <div class="tac-layer__hint" onClick={(e: MouseEvent) => e.stopPropagation()}>
               {i18nT("replay.tactical.hint.region")}
+            </div>
+          ) : null}
+          {edit ? (
+            <div
+              class={["tac-steps", offlineRendering.value ? "tac-steps--busy" : ""]}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            >
+              <button
+                class="tac-steps__btn"
+                title={i18nT("replay.tactical.steps.prev")}
+                onClick={stepPrev}
+              >
+                ‹
+              </button>
+              <button
+                class="tac-steps__btn tac-steps__btn--add"
+                title={i18nT("replay.tactical.steps.add")}
+                onClick={addStepHere}
+              >
+                ＋
+              </button>
+              <div class="tac-steps__chips">
+                {stepsSorted.value.length === 0 ? (
+                  <span class="tac-steps__empty">{i18nT("replay.tactical.steps.empty")}</span>
+                ) : (
+                  stepsSorted.value.map((s, i) => (
+                    <span
+                      key={s.id}
+                      class={[
+                        "tac-steps__chip",
+                        i === currentStepIndex.value ? "tac-steps__chip--on" : "",
+                      ]}
+                    >
+                      <button class="tac-steps__jump" onClick={() => goToStep(i)}>
+                        {s.name}
+                      </button>
+                      <button
+                        class="tac-steps__del"
+                        title={i18nT("replay.tactical.action.delete")}
+                        onClick={() => removeStepById(s.id)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <button
+                class="tac-steps__btn"
+                title={i18nT("replay.tactical.steps.next")}
+                onClick={stepNext}
+              >
+                ›
+              </button>
+              <button
+                class={[
+                  "tac-steps__btn",
+                  presentMode.value ? "tac-steps__btn--on" : "",
+                ].join(" ")}
+                title={
+                  presentMode.value
+                    ? i18nT("replay.tactical.steps.presentStop")
+                    : i18nT("replay.tactical.steps.present")
+                }
+                onClick={togglePresent}
+              >
+                {presentMode.value ? "❚❚" : "▶"}
+              </button>
             </div>
           ) : null}
           {edit ? (
@@ -753,6 +1025,7 @@ export default defineComponent({
                   else beginRegionMode();
                 },
                 recordToggle: toggleRecording,
+                offlineExport: () => void runOfflineExport(),
               }}
             />
           ) : null}

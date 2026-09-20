@@ -202,7 +202,14 @@
       "timestamp": "時間戳記",
       "full": "匯出全圖截圖",
       "region": "框選區域截圖",
-      "regionRun": "匯出所選區域"
+      "regionRun": "匯出所選區域",
+      "range": "範圍",
+      "rangeNow": "從目前時刻",
+      "rangeFull": "整場",
+      "fps": "幀率",
+      "offline": "離線快轉匯出影片（快於即時）",
+      "offlineRunning": "正在渲染",
+      "cancel": "取消"
     },
     "record": {
       "start": "開始錄製（播放並錄製畫面）",
@@ -215,6 +222,15 @@
       "pinned": "已釘選 {name} 的航跡",
       "empty": "沒有可儲存的內容"
     },
-    "count": "{n} 項註解"
+    "count": "{n} 項註解",
+    "steps": {
+      "add": "把目前時刻加為步驟（[ ] 切換）",
+      "prev": "上一步",
+      "next": "下一步",
+      "present": "簡報播放（步驟間自動推進）",
+      "presentStop": "停止簡報",
+      "empty": "暫無步驟——用 ＋ 標記講解節點",
+      "duplicate": "該時刻已有步驟"
+    }
   }
 }

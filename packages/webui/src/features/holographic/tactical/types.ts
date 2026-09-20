@@ -87,9 +87,23 @@ export interface PathElement extends BaseElement, StrokeLook {
 
 export type TacticalElement = ShapeElement | TextElement | MarkerElement | PathElement;
 
+/** A presentation step: a battle-time bookmark the author uses to walk an
+ *  audience through the fight (seek targets for prev/next + auto-advance
+ *  playback, which also replays every annotation's draw-on reveal). */
+export interface TacticalStep {
+  id: string;
+  /** Battle seconds the step jumps to. */
+  t: number;
+  /** Reserved for custom names; wave 2 derives `#<index>` at display time
+   *  (stored as "" so deleting a step renumbers the rest automatically). */
+  name: string;
+}
+
 export interface TacticalDoc {
   version: 1;
   elements: TacticalElement[];
+  /** Ordered by `t` (normalizeDoc enforces it). */
+  steps: TacticalStep[];
 }
 
 /** Rect in 760-unit logical canvas space (region crop for exports). */

@@ -202,7 +202,14 @@
       "timestamp": "Timestamp",
       "full": "Export full-map snapshot",
       "region": "Crop-region snapshot",
-      "regionRun": "Export selected region"
+      "regionRun": "Export selected region",
+      "range": "Range",
+      "rangeNow": "From now",
+      "rangeFull": "Full match",
+      "fps": "FPS",
+      "offline": "Export video offline (faster than realtime)",
+      "offlineRunning": "Rendering",
+      "cancel": "Cancel"
     },
     "record": {
       "start": "Start recording (plays the replay)",
@@ -215,6 +222,15 @@
       "pinned": "Pinned the track of {name}",
       "empty": "Nothing to save"
     },
-    "count": "{n} annotations"
+    "count": "{n} annotations",
+    "steps": {
+      "add": "Bookmark the current moment as a step ([ ] navigate)",
+      "prev": "Previous step",
+      "next": "Next step",
+      "present": "Play presentation (auto-advance between steps)",
+      "presentStop": "Stop presentation",
+      "empty": "No steps yet — mark explanation beats with ＋",
+      "duplicate": "A step already exists at this moment"
+    }
   }
 }

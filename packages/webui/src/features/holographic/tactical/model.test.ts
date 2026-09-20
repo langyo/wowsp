@@ -5,12 +5,14 @@ import type { TacticalDoc, TacticalElement } from "./types";
 import {
   commitFreehand,
   commitShape,
+  commitStep,
   commitText,
   docStorageKey,
   elementProgress,
   hitTestElement,
   moveElement,
   parseDoc,
+  presentParkTarget,
   serializeDoc,
   visibleAt,
 } from "./model";
@@ -92,11 +94,37 @@ describe("moveElement", () => {
   });
 });
 
+describe("presentParkTarget", () => {
+  const steps = [{ t: 10 }, { t: 20 }, { t: 30 }];
+  it("parks on the upcoming step once within one frame of it", () => {
+    expect(presentParkTarget(steps, 9.9)?.t).toBeUndefined();
+    expect(presentParkTarget(steps, 9.98)?.t).toBe(10);
+    expect(presentParkTarget(steps, 19.97)?.t).toBe(20);
+  });
+  it("never parks between steps, on the current step, or past the last", () => {
+    expect(presentParkTarget(steps, 15)).toBeNull();
+    expect(presentParkTarget(steps, 10)).toBeNull();
+    expect(presentParkTarget(steps, 20.5)).toBeNull();
+    expect(presentParkTarget(steps, 35)).toBeNull();
+  });
+  it("handles an empty timeline", () => {
+    expect(presentParkTarget([], 5)).toBeNull();
+  });
+  it("parks through a 10x playback overshoot (step smaller than 50 ms slack)", () => {
+    // playTick at 10x advances ~0.16 s per RAF tick — an overshoot lands
+    // past the step, but the step is no longer strictly ahead, so it must
+    // NOT park (the next frame parks on the following step instead).
+    expect(presentParkTarget(steps, 10.16)).toBeNull();
+    expect(presentParkTarget(steps, 29.96)?.t).toBe(30);
+  });
+});
+
 describe("persistence helpers", () => {
   it("round-trips a document", () => {
     const doc: TacticalDoc = {
       version: 1,
       elements: [commitText(p(1, 2), "hi", "#fff", 0)],
+      steps: [commitStep(42, "opening")],
     };
     expect(parseDoc(serializeDoc(doc))).toEqual(doc);
   });

@@ -202,7 +202,14 @@
       "timestamp": "Horodatage",
       "full": "Exporter la carte complète",
       "region": "Capture d'une zone",
-      "regionRun": "Exporter la zone sélectionnée"
+      "regionRun": "Exporter la zone sélectionnée",
+      "range": "Plage",
+      "rangeNow": "Depuis la position",
+      "rangeFull": "Match entier",
+      "fps": "IPS",
+      "offline": "Export vidéo hors ligne (plus rapide que le temps réel)",
+      "offlineRunning": "Rendu",
+      "cancel": "Annuler"
     },
     "record": {
       "start": "Démarrer l'enregistrement (lecture)",
@@ -215,6 +222,15 @@
       "pinned": "Trace de {name} épinglée",
       "empty": "Rien à enregistrer"
     },
-    "count": "{n} annotations"
+    "count": "{n} annotations",
+    "steps": {
+      "add": "Marquer l'instant présent comme étape ([ ] pour naviguer)",
+      "prev": "Étape précédente",
+      "next": "Étape suivante",
+      "present": "Lecture présentation (avance auto entre étapes)",
+      "presentStop": "Arrêter la présentation",
+      "empty": "Aucune étape — marquez les temps forts avec ＋",
+      "duplicate": "Une étape existe déjà à cet instant"
+    }
   }
 }

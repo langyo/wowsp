@@ -202,7 +202,14 @@
       "timestamp": "时间戳",
       "full": "导出全图截图",
       "region": "框选区域截图",
-      "regionRun": "导出所选区域"
+      "regionRun": "导出所选区域",
+      "range": "范围",
+      "rangeNow": "从当前时刻",
+      "rangeFull": "整场",
+      "fps": "帧率",
+      "offline": "离线快进导出视频（快于实时）",
+      "offlineRunning": "正在渲染",
+      "cancel": "取消"
     },
     "record": {
       "start": "开始录制（播放并录制画面）",
@@ -215,6 +222,15 @@
       "pinned": "已钉取 {name} 的航迹",
       "empty": "没有可保存的内容"
     },
-    "count": "{n} 项注解"
+    "count": "{n} 项注解",
+    "steps": {
+      "add": "把当前时刻加为步骤（[ ] 切换）",
+      "prev": "上一步",
+      "next": "下一步",
+      "present": "演示播放（步骤间自动推进）",
+      "presentStop": "停止演示",
+      "empty": "暂无步骤——用 ＋ 标记讲解节点",
+      "duplicate": "该时刻已有步骤"
+    }
   }
 }
