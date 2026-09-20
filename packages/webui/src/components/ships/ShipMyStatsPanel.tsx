@@ -190,7 +190,9 @@ export default defineComponent({
                   {s.battles.toLocaleString()} {t("stats.battles")}
                 </span>
               </div>
-              {stamps.value.length > 0 && prefs.prefs.sealsEnabled ? (
+              {stamps.value.length > 0 &&
+              prefs.prefs.prEnabled &&
+              prefs.prefs.sealsEnabled ? (
                 <div class="ship-my-stats__stamps">
                   {stamps.value.map((kind) => (
                     <RatingStamp key={kind} kind={kind} size={46} />
