@@ -59,6 +59,7 @@ import AccountManagerContent from "@/components/account/AccountManagerContent";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import AuthorMark from "@/components/base/AuthorMark";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
+import FontSizeControl from "@/components/layout/FontSizeControl";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
 import "./SettingsModal.scss";
@@ -615,6 +616,15 @@ export default defineComponent({
                 </div>
               ) : null}
               <p class="settings-modal__hint">{t("settings.wallpaperHint")}</p>
+            </div>
+
+            {/* font size — global --text-* token scaling (see
+                theme/fontScalePreference): the whole UI rescales except the
+                title bar and the sidebar's app title, which are pinned. */}
+            <div class="settings-modal__sub">
+              <h3 class="settings-modal__sub-title">{t("settings.fontSize")}</h3>
+              <FontSizeControl ns="settings" />
+              <p class="settings-modal__hint">{t("settings.fontSizeHint")}</p>
             </div>
 
             {/* solar status — what "Auto (sun)" currently resolves to */}

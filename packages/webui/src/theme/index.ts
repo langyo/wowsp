@@ -32,6 +32,19 @@ export {
   DEFAULT_GEO_LOCATION,
 } from "@celestia-island/hikari";
 
+// Font-size scaling preference (appearance settings + onboarding wizard):
+// inline --text-* overrides on :root driven by the persisted level.
+export {
+  FONT_SCALE_FACTORS,
+  FONT_SCALE_LEVELS,
+  FONT_SCALE_STORAGE_KEY,
+  fontScaleLevel,
+  readStoredFontScaleLevel,
+  setFontScaleLevel,
+  initFontScalePreference,
+  type FontScaleLevel,
+} from "./fontScalePreference";
+
 // Shared animation/timer buses (idle-zero-frame scheduling).
 export {
   onFrame,

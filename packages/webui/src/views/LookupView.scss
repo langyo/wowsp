@@ -152,7 +152,7 @@
 
 .lookup-view__history-realm {
   color: rgb(var(--color-muted) / 80%);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .lookup-view__main {
@@ -305,7 +305,7 @@
 .lookup-view__ship-type {
   flex: 0 0 24px;
   color: rgb(var(--color-muted));
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
 }
 
@@ -340,5 +340,5 @@
   flex: 0 0 84px;
   text-align: right;
   color: rgb(var(--color-muted) / 80%);
-  font-size: 10px;
+  font-size: 0.625rem;
 }

@@ -371,7 +371,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    font-size: 8px;
+    font-size: 0.5rem;
     font-weight: 700;
     color: #f2f3f4;
   }
@@ -384,7 +384,7 @@
   }
 
   &__name {
-    font-size: 8px;
+    font-size: 0.5rem;
     color: rgb(var(--color-text));
     text-align: center;
     line-height: 1.15;
@@ -446,7 +446,7 @@
   z-index: 1;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 700;
   line-height: 1.5;
   color: rgb(0 0 0 / 75%);
@@ -495,7 +495,7 @@
 }
 
 .planner-v__cmd-nation {
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: rgb(var(--color-muted) / 70%);
   white-space: nowrap;
   overflow: hidden;
@@ -543,7 +543,7 @@
   align-items: baseline;
   gap: 0.35rem;
   flex-wrap: wrap;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -772,7 +772,7 @@
   right: 4px;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 700;
   line-height: 1.4;
   color: rgb(0 0 0 / 75%);
@@ -787,7 +787,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 700;
   color: rgb(var(--color-muted));
 }
@@ -800,7 +800,7 @@
 }
 
 .planner-v__mod-name {
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: rgb(var(--color-text));
   line-height: 1.2;
   max-width: 100%;
