@@ -1,7 +1,7 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { HButton, HStepFlow } from "@celestia-island/hikari";
-import { Check, Monitor, Moon, Sun, SunMoon } from "@lucide/vue";
+import { HButton, HStepFlow, useToast } from "@celestia-island/hikari";
+import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import {
@@ -10,6 +10,8 @@ import {
   type ThemeModePreference,
 } from "@/theme/themeModePreference";
 import { useWallpaper } from "@/theme/useWallpaper";
+import { isTauri } from "@/transport";
+import { useStatsPrefsStore, STATS_PREFS_STORAGE_KEY } from "@/stores/statsPrefs";
 import AnnouncementContent from "./AnnouncementContent";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import "./OnboardingWizard.scss";
@@ -24,11 +26,12 @@ const LEGACY_ACK_KEY = "wowsp-oss-notice-acked";
  *  AnnouncementDialog unchanged. */
 const ACK_COUNTDOWN_SECONDS = 5;
 
-const STEP_KEYS = ["welcome", "preferences", "theme", "wallpaper"] as const;
+const STEP_KEYS = ["welcome", "preferences", "appearance"] as const;
 type StepKey = (typeof STEP_KEYS)[number];
 
-/** Theme step cards — click applies the preference immediately (live
- *  preview through the translucent overlay). */
+/** Appearance-step theme cards — click applies the preference immediately
+ *  (live preview through the translucent overlay). The OS-follower option is
+ *  gone: solar already covers "not always dark, not always light". */
 const THEME_OPTIONS: {
   key: ThemeModePreference;
   labelKey: string;
@@ -37,18 +40,17 @@ const THEME_OPTIONS: {
   { key: "dark", labelKey: "onboarding.themeDark", icon: Moon },
   { key: "light", labelKey: "onboarding.themeLight", icon: Sun },
   { key: "solar", labelKey: "onboarding.themeSolar", icon: SunMoon },
-  { key: "system", labelKey: "onboarding.themeSystem", icon: Monitor },
 ];
 
 /**
- * First-launch setup wizard (four steps: notice ack → water-table prefs →
- * theme mode → wallpaper), replacing the old forced AnnouncementDialog —
- * the notice content is now the wizard's first step with the same 5-second
- * blind-click guard on its confirm button.
+ * First-launch setup wizard (three steps: notice ack → water-table prefs →
+ * appearance with theme + wallpaper merged), replacing the old forced
+ * AnnouncementDialog — the notice content is now the wizard's first step
+ * with the same 5-second blind-click guard on its confirm button.
  *
  * The overlay sits ABOVE the sidebar/main chrome but BELOW hikari's popup
  * bands (modals/toasts), and uses a light scrim + backdrop blur instead of
- * an opaque fill so the theme/wallpaper choices preview live through it.
+ * an opaque fill so the appearance choices preview live through it.
  * Every choice applies immediately and can be re-changed later in Settings.
  */
 export default defineComponent({
@@ -64,13 +66,29 @@ export default defineComponent({
     const countdown = ref(ACK_COUNTDOWN_SECONDS);
     let timer: number | undefined;
     const wallpaper = useWallpaper();
+    const toast = useToast();
+    const prefs = useStatsPrefsStore();
+    const importing = ref(false);
 
     const steps = computed(() => [
       { key: "welcome", label: t("onboarding.stepWelcome") },
       { key: "preferences", label: t("onboarding.stepPreferences") },
-      { key: "theme", label: t("onboarding.stepTheme") },
-      { key: "wallpaper", label: t("onboarding.stepWallpaper") },
+      { key: "appearance", label: t("onboarding.stepAppearance") },
     ]);
+
+    // First-run default: the preferences step presents the PR rating as ON —
+    // users who leave it untouched keep the enabled state; flipping the
+    // switch off here persists OFF like any explicit choice. Gated on the
+    // wizard actually running this session: users who already completed the
+    // old (pre-stats-prefs) wizard must NOT get the rating silently flipped
+    // on at boot, and users with stored prefs keep their earlier decisions.
+    try {
+      if (localStorage.getItem(COMPLETED_KEY) == null && localStorage.getItem(STATS_PREFS_STORAGE_KEY) == null) {
+        prefs.setPrEnabled(true);
+      }
+    } catch {
+      // storage unavailable — skip the default, the switch stays as stored
+    }
 
     function startCountdown() {
       countdown.value = ACK_COUNTDOWN_SECONDS;
@@ -120,7 +138,7 @@ export default defineComponent({
     /** Footer primary action: the welcome step's countdown-gated confirm,
      *  plain 下一步 mid-flow, 开始使用 at the end. */
     const isWelcome = computed(() => step.value === "welcome");
-    const isLast = computed(() => step.value === "wallpaper");
+    const isLast = computed(() => step.value === "appearance");
     const primaryDisabled = computed(() => isWelcome.value && countdown.value > 0);
     const primaryLabel = computed(() => {
       if (isWelcome.value) {
@@ -130,6 +148,18 @@ export default defineComponent({
       }
       return isLast.value ? t("onboarding.start") : t("onboarding.next");
     });
+
+    async function importWallpaper() {
+      if (importing.value) return;
+      importing.value = true;
+      try {
+        await wallpaper.importCustom();
+      } catch (e) {
+        toast.error(`${t("settings.wallpaperImportFailed")}\n${(e as Error).message || e}`);
+      } finally {
+        importing.value = false;
+      }
+    }
 
     // Card clusters are computed (not built once) so the selected-state
     // highlight tracks the live preference / wallpaper id through the
@@ -170,16 +200,10 @@ export default defineComponent({
           >
             <span class="onboarding__option-swatch">
               {w.source.type === "solid" ? (
+                // Solid mirrors the theme background — a live swatch.
                 <span
                   class="onboarding__option-swatch-fill"
-                  style={{
-                    background:
-                      w.source.color === "black"
-                        ? "#0b1220"
-                        : w.source.color === "white"
-                          ? "#f8fafc"
-                          : "linear-gradient(135deg, #0b1220 50%, #f8fafc 50%)",
-                  }}
+                  style={{ background: "rgb(var(--color-background))" }}
                 />
               ) : (
                 <span
@@ -188,7 +212,9 @@ export default defineComponent({
                 />
               )}
             </span>
-            <span class="onboarding__option-label">{w.name}</span>
+            <span class="onboarding__option-label">
+              {w.nameKey ? t(w.nameKey) : w.name}
+            </span>
             {on ? <Check size={14} class="onboarding__option-check" /> : null}
           </button>
         );
@@ -225,16 +251,35 @@ export default defineComponent({
                     <StatsPrefsControls ns="onboarding" />
                   </div>
                 ),
-                theme: () => (
+                appearance: () => (
                   <div class="onboarding__body">
-                    <p class="onboarding__desc">{t("onboarding.themeDesc")}</p>
-                    <div class="onboarding__options">{themeCards.value}</div>
-                  </div>
-                ),
-                wallpaper: () => (
-                  <div class="onboarding__body">
-                    <p class="onboarding__desc">{t("onboarding.wallpaperDesc")}</p>
-                    <div class="onboarding__options">{wallpaperCards.value}</div>
+                    <p class="onboarding__desc">{t("onboarding.appearanceDesc")}</p>
+
+                    <div class="onboarding__options onboarding__options--three">
+                      {themeCards.value}
+                    </div>
+
+                    <h3 class="onboarding__subtitle">{t("onboarding.wallpaperSection")}</h3>
+                    <div class="onboarding__options onboarding__options--three">
+                      {wallpaperCards.value}
+                      {isTauri() ? (
+                        <button
+                          key="import"
+                          type="button"
+                          class="onboarding__option"
+                          disabled={importing.value}
+                          onClick={() => void importWallpaper()}
+                        >
+                          <span class="onboarding__option-icon">
+                            <ImagePlus size={18} />
+                          </span>
+                          <span class="onboarding__option-label">
+                            {t("settings.wallpaperImport")}
+                          </span>
+                        </button>
+                      ) : null}
+                    </div>
+                    <p class="onboarding__desc">{t("settings.wallpaperHint")}</p>
                   </div>
                 ),
               }}

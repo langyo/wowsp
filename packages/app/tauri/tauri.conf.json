@@ -50,7 +50,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$LOCALDATA/WoWSP/**"
+          "$LOCALDATA/WoWSP/**",
+          "$DATA/WoWSP/wallpapers/**"
         ]
       }
     }

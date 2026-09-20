@@ -32,6 +32,7 @@ pub mod ship_stats;
 pub mod tab_dump;
 pub mod trends;
 pub mod update;
+pub mod wallpaper;
 pub mod wg_api;
 pub mod wg_api_cn;
 pub mod wg_realm;

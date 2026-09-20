@@ -1019,6 +1019,16 @@ export interface DogTag {
   backgroundId: number;
 }
 
+/** Mirrors `commands::wallpaper::WallpaperFile` — one user-imported wallpaper
+ *  image under `<data_dir>/wallpapers/`. `id` doubles as the file name and
+ *  the persisted selection key. */
+export interface WallpaperFile {
+  id: string;
+  name: string;
+  /** Absolute path — the frontend rewrites it into an asset-protocol URL. */
+  path: string;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
@@ -1035,6 +1045,12 @@ export const api = {
   /** Native multi-select dialog for .wowsreplay files anywhere on disk.
    *  Empty array = cancelled. */
   pickReplayFiles: () => transport.invoke<string[]>(RPC.pick_replay_files),
+  /** List imported wallpapers in the fixed AppData `wallpapers/` folder. */
+  wallpaperList: () => transport.invoke<WallpaperFile[]>(RPC.wallpaper_list),
+  /** Native image picker → copy into the wallpapers folder. Null = the
+   *  user cancelled the dialog. */
+  wallpaperImport: () => transport.invoke<WallpaperFile | null>(RPC.wallpaper_import),
+  wallpaperRemove: (id: string) => transport.invoke<null>(RPC.wallpaper_remove, { id }),
   /** res_mods ribbon-skin directory for a game install (None if unmodded). */
   ribbonSkinDir: (gamePath: string) =>
     transport.invoke<string | null>(RPC.ribbon_skin_dir, { gamePath }),
