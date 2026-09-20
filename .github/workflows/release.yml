@@ -51,10 +51,10 @@ jobs:
           python scripts/glsl_bundle.py --verbose
           python scripts/ensure_tauri_icons.py
 
-      - name: Prepare model-pack release assets
+      - name: Prepare resource-pack release assets
         # If a `res-latest` tag already exists, nothing to do (the release
-        # workflow only uploads the app artifacts). The model pack is
-        # published by scripts/publish_models.py separately.
+        # workflow only uploads the app artifacts). The resource pack is
+        # published by scripts/release_models.py separately.
         shell: bash
         run: |
           if gh release view res-latest >/dev/null 2>&1; then
