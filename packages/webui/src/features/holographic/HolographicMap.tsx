@@ -331,6 +331,18 @@ function paintCapSprite(canvas: HTMLCanvasElement, letter: string, eta: string) 
   }
 }
 
+/** Playback surface exposed to parents via the template ref. The clock refs
+ *  arrive unwrapped (numbers) through the expose proxy but stay reactive, so
+ *  a reader re-evaluates as playback advances; `seek` pauses and jumps.
+ *  Lets overlays like the chat-log panel draw a live playhead and jump to a
+ *  message without HolographicMap lifting its clock out. */
+export interface HoloMapHandle {
+  current: number;
+  duration: number;
+  playing: boolean;
+  seek: (t: number) => void;
+}
+
 export default defineComponent({
   name: "HolographicMap",
   props: {
@@ -403,7 +415,7 @@ export default defineComponent({
     /** Open with the enlarged 2D minimap shown (deep-link/dev aid). */
     initialMinimapZoom: { type: Boolean, default: false },
   },
-  setup(props) {
+  setup(props, { expose }) {
     const container = ref<HTMLElement | null>(null);
     const { ready, api } = useThreeScene(container, (_dt) => {
       advanceMmViewTween();
@@ -4978,6 +4990,13 @@ export default defineComponent({
       clearShipMarkerCache();
       clearPropMarkerCache();
     });
+
+    // Public playback surface (see HoloMapHandle) — read by the replay view's
+    // chat-log panel for its playhead + dot seeks. NOTE: this must go through
+    // the setup context's `expose` — the `defineExpose` import from "vue" is
+    // a <script setup> compiler macro whose runtime stub is a silent no-op,
+    // which is exactly what it did when called from this JSX component.
+    expose({ current, duration, playing, seek: seekBattleTime });
 
     return () => (
       <div class="holo-map">

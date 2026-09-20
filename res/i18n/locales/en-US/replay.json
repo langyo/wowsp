@@ -246,5 +246,12 @@
     }
   },
   "chatLog": "Battle chat",
+  "chat": {
+    "team": "Team",
+    "all": "All",
+    "division": "Division",
+    "private": "Private",
+    "copy": "Copy message"
+  },
   "achieved": "earned"
 }

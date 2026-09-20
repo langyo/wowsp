@@ -129,6 +129,13 @@
   }
 
   &__play {
+    /* Flex-centred: the lucide icons are inline SVGs that otherwise sit on
+       the text baseline — inside a fixed 28px button they rode visibly high
+       (and the row's flex-shrink could squash the squares non-round). */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
     width: 28px;
     height: 28px;
     padding: 0;
@@ -142,6 +149,10 @@
   }
 
   &__lbltoggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
     width: 28px;
     height: 28px;
     padding: 0;
@@ -234,6 +245,10 @@
     position: relative;
   }
   &__speed-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
     min-width: 44px;
     height: 28px;
     padding: 0 8px;

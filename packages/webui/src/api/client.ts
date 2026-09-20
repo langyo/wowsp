@@ -478,7 +478,9 @@ export interface DamageStatSample {
 export interface ChatEvent {
   time: number;
   playerId: number;
-  /** Channel namespace, e.g. `battle_team` (team chat). */
+  /** Channel namespace. The audiences the client's BattleController knows:
+   *  `battle_common` (all), `battle_team` (team), `battle_prebattle`
+   *  (division); anything else is server-specific and shown as private. */
   namespace: string;
   message: string;
 }

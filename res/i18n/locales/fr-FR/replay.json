@@ -246,5 +246,12 @@
     }
   },
   "chatLog": "Chat de bataille",
+  "chat": {
+    "team": "Équipe",
+    "all": "Tous",
+    "division": "Division",
+    "private": "Privé",
+    "copy": "Copier le message"
+  },
   "achieved": "a obtenu le succès"
 }
