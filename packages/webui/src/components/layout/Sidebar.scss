@@ -3,7 +3,12 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: rgb(var(--color-surface));
+  /* Glass tint instead of an opaque fill: the body wallpaper (custom image
+     or solid) stays faintly visible behind the nav, same recipe as the
+     shared glass-panel mixin. */
+  background: rgb(var(--color-surface) / 85%);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
   border-right: 1px solid rgb(var(--color-border) / 20%);
   user-select: none;
 
