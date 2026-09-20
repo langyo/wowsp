@@ -81,6 +81,9 @@ export const RPC = {
   mod_catalog_install: "mod_catalog_install",
   mod_catalog_uninstall: "mod_catalog_uninstall",
   mod_hub_records: "mod_hub_records",
+  wallpaper_list: "wallpaper_list",
+  wallpaper_import: "wallpaper_import",
+  wallpaper_remove: "wallpaper_remove",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

@@ -112,6 +112,18 @@ fn main() {
                 },
                 Err(e) => tracing::warn!(error = %e, "asset scope: cache dir unresolved"),
             }
+            // Same deal for the custom wallpaper library (<data_dir>/wallpapers
+            // — Roaming AppData locally, exe-relative in portable mode): the
+            // static scope only covers the local layout, so allow the resolved
+            // dir here or portable installs can't render imported backgrounds.
+            match paths::data_dir().map(|d| d.join("wallpapers")) {
+                Ok(dir) => {
+                    if let Err(e) = app.asset_protocol_scope().allow_directory(&dir, true) {
+                        tracing::warn!(error = %e, ?dir, "asset scope: allow wallpapers dir failed");
+                    }
+                },
+                Err(e) => tracing::warn!(error = %e, "asset scope: data dir unresolved"),
+            }
             // Seed OS preferences (locale + color scheme) into the webview
             // BEFORE any page JS runs, so the first paint matches the OS theme.
             let prefs = os_prefs::detect();
@@ -291,6 +303,9 @@ fn main() {
             commands::model_pack::clear_pack,
             commands::model_pack::aux_cache_overview,
             commands::model_pack::clear_aux_cache,
+            commands::wallpaper::wallpaper_list,
+            commands::wallpaper::wallpaper_import,
+            commands::wallpaper::wallpaper_remove,
             commands::trends::get_player_trend,
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,

@@ -241,19 +241,71 @@
   }
 
   &__wallpaper {
+    position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.5rem;
     background: rgb(var(--color-surface));
     border: 2px solid transparent;
     border-radius: var(--radius-sm);
-    cursor: pointer;
     transition: border-color var(--duration-short) var(--ease-standard);
 
     &:hover {
       border-color: rgb(var(--color-border) / 30%);
+    }
+
+    &--on {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  /* Clickable body of a wallpaper card (select as active). */
+  &__wallpaper-pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    border-radius: var(--radius-sm);
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  &__wallpaper-check {
+    flex: none;
+    color: rgb(var(--color-primary));
+  }
+
+  /* Delete affordance on custom cards — quiet icon, flips into a text
+     confirm when armed (two-step, same contract as the cache clears). */
+  &__wallpaper-delete {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.3rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+
+    &:hover {
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 50%);
     }
 
     &:focus-visible {
@@ -261,9 +313,16 @@
       outline-offset: 1px;
     }
 
-    &--on {
-      border-color: rgb(var(--color-primary));
+    &--confirm {
+      width: auto;
+      color: rgb(var(--color-error));
+      font-weight: 600;
     }
+  }
+
+  &__wallpaper-actions {
+    display: flex;
+    margin-top: 0.5rem;
   }
 
   &__wallpaper-preview {
@@ -289,6 +348,10 @@
   }
 
   &__wallpaper-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
   }
@@ -399,7 +462,7 @@
 
   &__pack-error {
     font-size: var(--text-2xs);
-    color: rgb(var(--color-danger, 220 60 60));
+    color: rgb(var(--color-error));
   }
 
   /* Thin progress track (same visual language as the mod-catalog rows). */
