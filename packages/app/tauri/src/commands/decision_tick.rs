@@ -43,7 +43,7 @@
 use serde::Serialize;
 use wowsp_tauri_shared::{
     CruiseSample, DecisionTickEntity, DecisionTickEvents, DecisionTickRecorder, DecisionTickState,
-    DecisionTickZone, HpSample, PositionSample, ReplayStream, VehicleEntry,
+    DecisionTickZone, HpSample, PositionSample, ReplayStream, SmokeScreenEvent, VehicleEntry,
 };
 
 use super::replay_probe::{
@@ -564,27 +564,159 @@ pub fn decision_scale_calibration(replay_path: String) -> Result<ScaleCalibratio
 /// Decision-model input snapshot for one replay at one instant (the E6
 /// command surface). `los_grid_path` optionally points at an E4
 /// `terrain_los.npz`; `eye_height` (raster units) defaults to
-/// [`DEFAULT_EYE_HEIGHT`].
+/// [`DEFAULT_EYE_HEIGHT`]. Since E12 the payload also carries the ACTIVE
+/// smoke clouds and per-entity inside-smoke flags (see
+/// [`build_tick_state_with_smokes`]) — additive JSON keys, so existing
+/// consumers keep working. COST NOTE: the smoke lifecycles live behind
+/// [`super::replay::read_replay_smoke_screens`], which decodes the replay a
+/// SECOND time (the smoke events cannot ride `ReplayStream` while the shared
+/// DTOs are frozen); unify the two decodes when `replay.rs` unfreezes.
 #[tauri::command]
 pub fn decision_tick_state(
     replay_path: String,
     time_sec: f32,
     los_grid_path: Option<String>,
     eye_height: Option<f32>,
-) -> Result<DecisionTickState, String> {
+) -> Result<DecisionTickSmokeState, String> {
     let stream = super::replay::read_replay_positions(replay_path.clone())?;
     let vehicles = read_roster(&replay_path)?;
     let grid = match los_grid_path {
         Some(p) => Some(LosGrid::load_npz(std::path::Path::new(&p))?),
         None => None,
     };
-    build_tick_state(
+    let smokes = super::replay::read_replay_smoke_screens(replay_path)?;
+    build_tick_state_with_smokes(
         &stream,
         &vehicles,
+        &smokes,
         time_sec,
         grid.as_ref(),
         eye_height.unwrap_or(DEFAULT_EYE_HEIGHT),
     )
+}
+
+// ── E12 / G1: smoke geometry in the tick snapshot ───────────────────────────
+
+/// GameParams distance unit → metres (E8 calibration: radar `distShip`
+/// 333.33 ⇒ 10 km). NOT the replay scene axis ([`METERS_PER_UNIT`] ≈ 5.86):
+/// smoke radii arrive in GP units while smoke and ship positions are scene
+/// units — always convert before comparing.
+pub const METERS_PER_GP_UNIT: f32 = 30.0;
+
+/// One ACTIVE smoke cloud in the tick snapshot. Reuses the shared
+/// [`SmokeScreenEvent`] verbatim ([`serde(flatten)`]) plus the derived fields
+/// the decision model needs. Defined HERE rather than in `wowsp_tauri_shared`
+/// because the shared DTOs are frozen by parallel experiments — the smoke
+/// source of truth stays the E8 DTO, zero shared-crate changes.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickSmoke {
+    #[serde(flatten)]
+    pub event: SmokeScreenEvent,
+    /// Cloud radius in metres (`event.radius` GP units × 30). `None` when the
+    /// create state did not decode (version drift) — such a cloud cannot
+    /// gate entity flags either.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius_m: Option<f32>,
+    /// Seconds from `t` until the observed dissipation (`end_time − t`).
+    /// `None` when the entity never left the capture (remaining unknown,
+    /// cloud treated as active).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining_s: Option<f32>,
+    /// Last-known cloud centre (scene units): the smoke entity's own
+    /// position trail at/before `t` (smoke drifts with the laying ship's
+    /// wake), falling back to the spawn point.
+    pub last_known_x: f32,
+    pub last_known_z: f32,
+}
+
+/// Per-entity smoke verdict — a PARALLEL array to `DecisionTickState`'s
+/// entity list, because `DecisionTickEntity` lives in the frozen shared
+/// crate and cannot grow an `insideSmoke` field.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickSmokeFlag {
+    pub entity_id: i32,
+    /// The entity's LAST-KNOWN position lies inside an active cloud (centre
+    /// distance < cloud radius, both in metres). Last-known, not
+    /// observed-now: a stale track inside a cloud is exactly the "gone dark
+    /// in smoke" signal.
+    pub inside_smoke: bool,
+}
+
+/// The E12 tick snapshot: the E6 [`DecisionTickState`] flattened verbatim
+/// plus the smoke block. The JSON is the old shape with `smokes` and
+/// `entitiesInsideSmoke` added — additive keys only.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickSmokeState {
+    #[serde(flatten)]
+    pub tick: DecisionTickState,
+    pub smokes: Vec<DecisionTickSmoke>,
+    pub entities_inside_smoke: Vec<DecisionTickSmokeFlag>,
+}
+
+/// Build the tick state WITH smoke geometry (E12 / G1): every cloud active at
+/// `t` (creation ≤ t < observed dissipation; no observed end ⇒ still active)
+/// and, for every ship row of the tick, whether its last-known position sits
+/// inside one. `smokes` comes from [`super::replay::read_replay_smoke_screens`].
+/// Smoke entities themselves (entityType 4) stay out of the ship list — they
+/// are reported through `smokes`.
+pub fn build_tick_state_with_smokes(
+    stream: &ReplayStream,
+    vehicles: &[VehicleEntry],
+    smokes: &[SmokeScreenEvent],
+    time_sec: f32,
+    los: Option<&LosGrid>,
+    eye_height: f32,
+) -> Result<DecisionTickSmokeState, String> {
+    let tick = build_tick_state(stream, vehicles, time_sec, los, eye_height)?;
+    let mut active = Vec::new();
+    for ev in smokes {
+        if ev.time > time_sec {
+            continue; // not laid yet
+        }
+        if ev.end_time.is_some_and(|end| time_sec >= end) {
+            continue; // dissipated
+        }
+        // Drifting centre: the smoke entity's own trail when present.
+        let (cx, cz) = stream
+            .trajectories
+            .iter()
+            .find(|tr| tr.entity_id == ev.entity_id)
+            .and_then(|tr| tr.samples.iter().rfind(|s| s.time <= time_sec))
+            .map(|s| (s.x, s.z))
+            .unwrap_or((ev.x, ev.z));
+        active.push(DecisionTickSmoke {
+            radius_m: ev.radius.map(|r| r * METERS_PER_GP_UNIT),
+            remaining_s: ev.end_time.map(|end| (end - time_sec).max(0.0)),
+            last_known_x: cx,
+            last_known_z: cz,
+            event: *ev,
+        });
+    }
+    let entities_inside_smoke = tick
+        .entities
+        .iter()
+        .map(|e| DecisionTickSmokeFlag {
+            entity_id: e.entity_id,
+            inside_smoke: active.iter().any(|s| {
+                s.radius_m.is_some_and(|r_m| {
+                    // Scene-unit distance -> metres on the E5 axis; compare
+                    // against the GP-unit radius converted to metres.
+                    let dist_m = (e.last_known_x - s.last_known_x)
+                        .hypot(e.last_known_z - s.last_known_z)
+                        * METERS_PER_UNIT;
+                    dist_m < r_m
+                })
+            }),
+        })
+        .collect();
+    Ok(DecisionTickSmokeState {
+        tick,
+        smokes: active,
+        entities_inside_smoke,
+    })
 }
 
 #[cfg(test)]
@@ -1294,5 +1426,288 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// One smoke lifecycle for the synthetic smoke tests: laid at `start`
+    /// at (x, z), drifting +x at 0.2 units/s along its own entity trail,
+    /// radius `r` GP units, dissipated at `end`.
+    fn smoke_event(
+        eid: i32,
+        start: f32,
+        end: Option<f32>,
+        radius: Option<f32>,
+        x: f32,
+        z: f32,
+    ) -> SmokeScreenEvent {
+        SmokeScreenEvent {
+            time: start,
+            entity_id: eid,
+            x,
+            y: 0.0,
+            z,
+            radius,
+            height: Some(5.0),
+            end_time: end,
+        }
+    }
+
+    /// E12 / G1 synthetic: active-window filtering (not-yet-laid and
+    /// dissipated clouds excluded; no-end clouds stay active), the GP-unit →
+    /// metre radius conversion, remaining_s, the drifting centre from the
+    /// smoke entity's own trail, and the per-entity inside-smoke flags
+    /// (including a STALE track inside a cloud — the gone-dark signal).
+    #[test]
+    fn tick_smokes_active_window_flags_and_units() {
+        let t = 100.0f32;
+        // Smoke A: laid t=50, dissipates t=170, radius 17 GP units = 510 m
+        // (≈ 87 scene units at 5.86 m/unit), entity 30 drifting +x.
+        let mut smoke_traj = trajectory(
+            30,
+            kind(4, None),
+            (0..=50)
+                .map(|i| sample(50.0 + i as f32, 30, 10.0 + 0.2 * i as f32, 10.0))
+                .collect(),
+        );
+        smoke_traj.death_time = Some(170.0);
+        let smokes = vec![
+            smoke_event(30, 50.0, Some(170.0), Some(17.0), 10.0, 10.0),
+            smoke_event(31, 200.0, Some(320.0), Some(17.5), 0.0, 0.0), // future
+            smoke_event(32, 10.0, Some(80.0), Some(30.0), 0.0, 0.0),   // dissipated
+            smoke_event(33, 60.0, None, None, 400.0, 400.0),           // active, radius unknown
+        ];
+        // Ships around smoke A's centre at t=100: the trail last sample ≤ 100
+        // is t=100 at x=10+0.2*50=20.0, z=10 — centre (20, 10).
+        // Enemy 9 at (30, 10): 10 units ≈ 58.6 m < 510 m → INSIDE, observed.
+        // Enemy 10 at (100, 10): 80 units ≈ 468.8 m < 510 m → INSIDE (stale
+        // last-known from t=30 — stale tracks still get flagged).
+        // Ally 11 at (300, 10): 280 units ≈ 1641 m → outside.
+        let mk = |eid: i32, x: f32, ship: i64, times: (f32, f32)| {
+            let mut v = Vec::new();
+            let mut tt = times.0;
+            while tt <= times.1 {
+                v.push(sample(tt, eid, x, 10.0));
+                tt += 0.5;
+            }
+            trajectory(eid, kind(2, Some(ship)), v)
+        };
+        let stream = ReplayStream {
+            trajectories: vec![
+                mk(7, 0.0, 111, (0.0, 100.0)),
+                mk(9, 30.0, 222, (0.0, 99.5)),
+                mk(10, 100.0, 333, (10.0, 30.0)), // stale after t=30
+                mk(11, 300.0, 444, (0.0, 100.0)),
+                smoke_traj,
+            ],
+            recorder_vehicle_id: Some(7),
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 111),
+            roster_entry(2, 2, 222),
+            roster_entry(3, 2, 333),
+            roster_entry(4, 0, 444),
+        ];
+        let state =
+            build_tick_state_with_smokes(&stream, &vehicles, &smokes, t, None, DEFAULT_EYE_HEIGHT)
+                .expect("tick with smokes");
+        // Active set: A (50 ≤ 100 < 170) and the radius-unknown cloud; the
+        // future and dissipated ones are excluded.
+        assert_eq!(state.smokes.len(), 2, "{:?}", state.smokes);
+        let a = state
+            .smokes
+            .iter()
+            .find(|s| s.event.entity_id == 30)
+            .expect("smoke A");
+        assert!((a.radius_m.unwrap() - 17.0 * METERS_PER_GP_UNIT).abs() < 1e-3);
+        assert!((a.remaining_s.unwrap() - 70.0).abs() < 1e-3);
+        // Drifting centre: the trail's last sample at/before t=100 → (20, 10),
+        // NOT the spawn point (10, 10).
+        assert!((a.last_known_x - 20.0).abs() < 1e-3, "{}", a.last_known_x);
+        assert!((a.last_known_z - 10.0).abs() < 1e-3);
+        let unknown = state
+            .smokes
+            .iter()
+            .find(|s| s.event.entity_id == 33)
+            .expect("radius-unknown cloud");
+        assert_eq!(unknown.radius_m, None);
+        assert_eq!(unknown.remaining_s, None, "no observed end");
+        // Flags: near observed enemy + stale in-cloud enemy inside; the far
+        // ally outside. Three ship rows (recorder excluded, the type-4 smoke
+        // entity is not a ship row).
+        assert_eq!(state.tick.entities.len(), 3);
+        let flag = |eid: i32| {
+            state
+                .entities_inside_smoke
+                .iter()
+                .find(|f| f.entity_id == eid)
+                .unwrap_or_else(|| panic!("no flag for {eid}"))
+        };
+        assert!(flag(9).inside_smoke, "observed enemy inside cloud A");
+        assert!(flag(10).inside_smoke, "stale enemy track inside cloud A");
+        assert!(!flag(11).inside_smoke, "far ally outside");
+        // Boundary: just outside the radius stays OUTSIDE (strict <, with a
+        // 1-unit ≈ 5.9 m margin so float noise cannot flip the verdict).
+        // 510 m / 5.86 m/unit ≈ 87.03 units from centre (20, 10).
+        let r_units = 17.0 * METERS_PER_GP_UNIT / METERS_PER_UNIT;
+        let on_edge = 20.0 + r_units + 1.0;
+        let mut edge_stream = ReplayStream {
+            trajectories: vec![
+                mk(7, 0.0, 111, (0.0, 100.0)),
+                mk(9, on_edge, 222, (0.0, 99.5)),
+                trajectory(
+                    30,
+                    kind(4, None),
+                    (0..=50)
+                        .map(|i| sample(50.0 + i as f32, 30, 10.0 + 0.2 * i as f32, 10.0))
+                        .collect(),
+                ),
+            ],
+            recorder_vehicle_id: Some(7),
+            ..minimal_stream()
+        };
+        edge_stream.trajectories[2].death_time = Some(170.0);
+        let edge = build_tick_state_with_smokes(
+            &edge_stream,
+            &[roster_entry(1, 0, 111), roster_entry(2, 2, 222)],
+            &smokes[..1],
+            t,
+            None,
+            DEFAULT_EYE_HEIGHT,
+        )
+        .expect("edge tick");
+        assert!(
+            !edge
+                .entities_inside_smoke
+                .iter()
+                .find(|f| f.entity_id == 9)
+                .unwrap()
+                .inside_smoke,
+            "just outside the radius is outside (strict <)"
+        );
+        // A tick BEFORE any smoke: empty active list, all flags false.
+        let early = build_tick_state_with_smokes(
+            &stream,
+            &vehicles,
+            &smokes,
+            5.0,
+            None,
+            DEFAULT_EYE_HEIGHT,
+        )
+        .expect("early tick");
+        assert!(early.smokes.is_empty());
+        assert!(early.entities_inside_smoke.iter().all(|f| !f.inside_smoke));
+        // JSON shape: flattened E6 keys plus the smoke block.
+        let js = serde_json::to_value(&state).expect("serialize");
+        assert!(js.get("matchTime").is_some(), "flattened tick keys");
+        assert!(js.get("recorder").is_some());
+        assert!(js.get("smokes").is_some());
+        assert!(js.get("entitiesInsideSmoke").is_some());
+        assert!(
+            js["smokes"][0].get("entityId").is_some(),
+            "flattened event keys"
+        );
+    }
+
+    /// E12 / G1 against the real reference replay — run with
+    /// `WOWSP_TEST_REPLAY=<path> cargo test -p wowsp_tauri e12_smoke --
+    /// --nocapture`. Prints the full E8 smoke table, then the t=300 snapshot:
+    /// active clouds and which last-known ship tracks sit inside them.
+    /// Cross-check: the active count must equal an independent recomputation
+    /// from the raw events (E8 recorded 9 clouds total on this replay).
+    #[test]
+    fn e12_smoke_on_real_replay() {
+        let Ok(path) = std::env::var("WOWSP_TEST_REPLAY") else {
+            eprintln!("[e12-smoke] WOWSP_TEST_REPLAY not set - skipping");
+            return;
+        };
+        let stream =
+            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+        let vehicles = read_roster(&path).expect("roster");
+        let smokes =
+            super::super::replay::read_replay_smoke_screens(path).expect("smoke lifecycles");
+        eprintln!("[e12-smoke] full E8 table: {} smoke screens", smokes.len());
+        for s in &smokes {
+            eprintln!(
+                "  t={:>6.1} eid={} pos=({:>6.1},{:>6.1}) r={:?} h={:?} end={:?}",
+                s.time, s.entity_id, s.x, s.z, s.radius, s.height, s.end_time
+            );
+        }
+        let t = 300.0f32;
+        let state =
+            build_tick_state_with_smokes(&stream, &vehicles, &smokes, t, None, DEFAULT_EYE_HEIGHT)
+                .expect("tick with smokes");
+        // Independent recomputation of the active window.
+        let expected_active = smokes
+            .iter()
+            .filter(|s| s.time <= t && !s.end_time.is_some_and(|e| t >= e))
+            .count();
+        assert_eq!(
+            state.smokes.len(),
+            expected_active,
+            "active count must match the raw recomputation"
+        );
+        for s in &state.smokes {
+            eprintln!(
+                "[e12-smoke] ACTIVE eid {} laid {:.0}s ago, remaining {:?}, radius {:?} m, centre ({:.0},{:.0})",
+                s.event.entity_id,
+                t - s.event.time,
+                s.remaining_s,
+                s.radius_m,
+                s.last_known_x,
+                s.last_known_z
+            );
+        }
+        let inside: Vec<i32> = state
+            .entities_inside_smoke
+            .iter()
+            .filter(|f| f.inside_smoke)
+            .map(|f| f.entity_id)
+            .collect();
+        eprintln!(
+            "[e12-smoke] ships inside a cloud at t=300: {:?} (of {} rows)",
+            inside,
+            state.tick.entities.len()
+        );
+        // The reference replay's smokes all decode radius + end (E8); every
+        // active cloud therefore carries both derived fields.
+        for s in &state.smokes {
+            assert!(
+                s.radius_m.is_some(),
+                "cloud {} lost its radius",
+                s.event.entity_id
+            );
+            assert!(s.remaining_s.is_some());
+            assert!(s.remaining_s.unwrap() > 0.0);
+            assert!(
+                (100.0..=3_000.0).contains(&s.radius_m.unwrap()),
+                "radius {}",
+                s.radius_m.unwrap()
+            );
+        }
+        // Flag/list consistency: one flag per ship row.
+        assert_eq!(state.entities_inside_smoke.len(), state.tick.entities.len());
+        assert_eq!(state.tick.match_time, t);
+        // A second instant where the E8 table shows SEVERAL overlapping
+        // clouds (t=600: four lifetimes overlap) — proves the active-set
+        // handles concurrent smokes and entity flags OR across clouds.
+        let t2 = 600.0f32;
+        let late =
+            build_tick_state_with_smokes(&stream, &vehicles, &smokes, t2, None, DEFAULT_EYE_HEIGHT)
+                .expect("tick at t=600");
+        let expected_late = smokes
+            .iter()
+            .filter(|s| s.time <= t2 && !s.end_time.is_some_and(|e| t2 >= e))
+            .count();
+        assert_eq!(late.smokes.len(), expected_late);
+        assert!(late.smokes.len() >= 2, "t=600 must show overlapping clouds");
+        eprintln!(
+            "[e12-smoke] t=600: {} active clouds, {} of {} ship rows inside one",
+            late.smokes.len(),
+            late.entities_inside_smoke
+                .iter()
+                .filter(|f| f.inside_smoke)
+                .count(),
+            late.tick.entities.len()
+        );
     }
 }
