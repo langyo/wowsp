@@ -99,12 +99,14 @@ export function skillIconUrl(code: string, cls?: SkillClass): string | null {
 }
 
 // ── Hull-gated skills ─────────────────────────────────────────────────────
-// A few skills only make sense on hulls that carry the matching armament;
-// picking them on a hull without it would be a wasted point. The table is
-// deliberately small: consumable-gated skills like ConsumablesSpotterUpgrade
-// (空中之眼) depend on catapult-aircraft loadouts the WG API does not expose,
-// so they stay enabled rather than being wrongly banned.
-export type SkillRequirement = "torpedoes" | "aa" | "aaOrAsw";
+// A few skills only make sense on hulls that carry the matching armament or
+// consumable; picking them without it would be a wasted point. Weapon needs
+// come from the WG default_profile; consumable needs (空中之眼 needs a
+// Spotter/Fighter catapult aircraft) come from the locally extracted
+// `ship_consumables.json` — the WG API does not expose consumable loadouts.
+// Hulls missing from that dataset stay ungated: banning conservatively only
+// where the data proves the consumable absent.
+export type SkillRequirement = "torpedoes" | "aa" | "aaOrAsw" | "spotterOrFighter";
 
 const SKILL_REQUIREMENTS: Record<string, SkillRequirement> = {
   TorpedoSpeed: "torpedoes",
@@ -113,12 +115,17 @@ const SKILL_REQUIREMENTS: Record<string, SkillRequirement> = {
   TorpedoDamage: "torpedoes",
   AaPrioritysectorDamageConstant: "aa",
   AaDamageConstantBubbles: "aaOrAsw",
+  ConsumablesSpotterUpgrade: "spotterOrFighter",
 };
 
-/** Which hull capability a skill needs, or null when it is always pickable. */
+/** Which hull capability a skill needs, or null when it is always pickable.
+ *  `consumables` = the hull's consumable families (Spotter / Fighter / …)
+ *  from ship_consumables.json; null/undefined when the hull is not in the
+ *  dataset (its consumable needs then never ban). */
 export function skillUnavailable(
   skillCode: string,
   profile: Record<string, any> | null | undefined,
+  consumables?: ReadonlySet<string> | null,
 ): SkillRequirement | null {
   const req = SKILL_REQUIREMENTS[skillCode];
   if (!req) return null;
@@ -138,5 +145,10 @@ export function skillUnavailable(
       return (num(profile?.anti_aircraft?.defense) ?? 0) > 0 || has(profile?.depth_charge)
         ? null
         : "aaOrAsw";
+    case "spotterOrFighter":
+      if (!consumables) return null;
+      return consumables.has("Spotter") || consumables.has("Fighter")
+        ? null
+        : "spotterOrFighter";
   }
 }
