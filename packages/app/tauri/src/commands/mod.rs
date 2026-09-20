@@ -25,6 +25,7 @@ pub mod overlay_detect;
 pub mod packets;
 pub mod ranked;
 pub mod replay;
+pub mod replay_probe;
 pub mod res_mods;
 pub mod row_match;
 pub mod row_recognize;
