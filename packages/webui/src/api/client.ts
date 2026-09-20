@@ -884,38 +884,53 @@ export interface NetworkConfig {
   effectiveProxy?: string | null;
 }
 
-// ── Resource packs (mirrors `wowsp_tauri_shared`, see commands/model_pack.rs)
+// ── Resource pack (mirrors `wowsp_tauri_shared`, see commands/model_pack.rs)
 
-/** One resource pack's LOCAL state (Settings → cache management). */
-export interface PackStatus {
-  /** "models" | "dogtags". */
-  id: string;
+/** The single resource pack's LOCAL state (Settings → updates panel). */
+export interface ResStatus {
   present: boolean;
-  /** Cached sync version — the release asset's `updated_at` stamp. */
+  /** Content tree hash the cache was installed from (last 6 chars shown). */
+  treeSha256?: string | null;
+  /** Published-at timestamp that shipped with that tree hash (ISO-8601). */
   version?: string | null;
+  /** True when only a legacy `.version` stamp exists — hash unknowable,
+   *  the panel offers a one-time full re-download. */
+  legacyStamp: boolean;
   /** Recursive on-disk size in bytes. */
   sizeBytes: number;
   downloading: boolean;
 }
 
-/** Remote pack state after a `res-latest` lookup. */
-export interface PackUpdate {
-  /** "models" | "dogtags". */
-  id: string;
-  remoteVersion?: string | null;
-  /** Remote version known AND different from the cached stamp. */
-  updateAvailable: boolean;
+/** One link of the chain-patch path (`res-delta-<from>-<to>` release). */
+export interface ResDeltaStep {
+  from: string;
+  to: string;
+  url: string;
+  size: number;
 }
 
-/** Progress push for a pack download (`wowsp://pack-progress`). */
-export interface PackProgress {
-  /** "models" | "dogtags". */
-  id: string;
-  /** "download" | "extract" | "done" | "error". */
+/** Remote resource-pack state after a `res-latest` manifest lookup. */
+export interface ResUpdate {
+  latestTreeSha256?: string | null;
+  latestVersion?: string | null;
+  /** Manifest known AND the local hash differs (or is unknown/legacy). */
+  updateAvailable: boolean;
+  /** Chain-patch path: `Some([])` = full download required, `Some(steps)`
+   *  = apply the patches in order, `null` = delta lookup failed. */
+  deltaSteps?: ResDeltaStep[] | null;
+}
+
+/** Progress push for a resource-pack pass (`wowsp://res-progress`). */
+export interface ResProgress {
+  /** "download" | "apply" | "done" | "error". */
   phase: string;
   received: number;
-  /** Total bytes when the server reported Content-Length, else 0. */
+  /** Total bytes when known, else 0. */
   total: number;
+  /** 1-based index of the segment streaming (full download = 1). */
+  segment: number;
+  /** How many segments the pass consists of. */
+  segments: number;
   error?: string | null;
 }
 
@@ -1271,29 +1286,29 @@ export const api = {
     transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
   getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
     transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
-  /** Download model pack from GitHub Releases to local cache. Returns the
-   *  cache directory path so the frontend can construct file URLs. */
-  ensureModelPack: () => transport.invoke<string>(RPC.ensure_model_pack),
-  /** Dog-tag pack (map + part PNGs) overlaying the bundled snapshot. */
-  ensureDogtagPack: () => transport.invoke<string>(RPC.ensure_dogtag_pack),
-  // ── Resource packs: cache management (Settings panel) ──
-  /** Local state of every pack (presence, version, size, in-flight). */
-  getPackStatus: () => transport.invoke<PackStatus[]>(RPC.get_pack_status),
-  /** Remote `res-latest` stamps + whether an update is available. */
-  checkPackUpdates: () => transport.invoke<PackUpdate[]>(RPC.check_pack_updates),
-  /** Explicit (initial/update) pack download with progress events. */
-  packDownload: (id: string) => transport.invoke<null>(RPC.pack_download, { id }),
-  /** Cancel the in-flight pack download. */
-  packCancel: () => transport.invoke<null>(RPC.pack_cancel),
-  /** Delete one pack's cache directory + version stamp. */
-  clearPack: (id: string) => transport.invoke<null>(RPC.clear_pack, { id }),
+  /** Ensure the single resource pack is present (models + dogtags).
+   *  Returns the cache directory path so the frontend can construct file
+   *  URLs; never silently re-pulls a present-but-outdated pack. */
+  ensureResPack: () => transport.invoke<string>(RPC.ensure_res_pack),
+  // ── Resource pack: updates panel ──
+  /** Local state (presence, hash stamp, size, in-flight). */
+  getResStatus: () => transport.invoke<ResStatus>(RPC.get_res_status),
+  /** Remote manifest hash/timestamp + chain-patch path, if any. */
+  checkResUpdate: () => transport.invoke<ResUpdate>(RPC.check_res_update),
+  /** Explicit (initial/migration/update) pass with progress events;
+   *  prefers chain patches, falls back to the hash-verified full pack. */
+  resDownload: () => transport.invoke<null>(RPC.res_download),
+  /** Cancel the in-flight resource-pack pass. */
+  resCancel: () => transport.invoke<null>(RPC.res_cancel),
+  /** Delete the pack's cache sub-directories + version stamp. */
+  clearRes: () => transport.invoke<null>(RPC.clear_res),
   /** Sizes of the clearable auxiliary cache directories. */
   auxCacheOverview: () => transport.invoke<AuxCacheStatus[]>(RPC.aux_cache_overview),
   /** Wipe one auxiliary cache directory's contents. */
   clearAuxCache: (scope: string) => transport.invoke<null>(RPC.clear_aux_cache, { scope }),
-  /** Pack-download progress stream (`wowsp://pack-progress`). */
-  listenPackProgress: (handler: (p: PackProgress) => void) =>
-    transport.listen?.<PackProgress>("wowsp://pack-progress", handler),
+  /** Resource-pack progress stream (`wowsp://res-progress`). */
+  listenResProgress: (handler: (p: ResProgress) => void) =>
+    transport.listen?.<ResProgress>("wowsp://res-progress", handler),
   /** Network proxy settings (system / none / manual), applied globally. */
   getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
   setNetworkConfig: (config: NetworkConfig) =>

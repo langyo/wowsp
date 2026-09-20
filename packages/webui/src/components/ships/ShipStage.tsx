@@ -1393,7 +1393,7 @@ export default defineComponent({
           modelPackDownloading.value = true;
           toast.show(t("ships.model3d.downloadStart"));
           try {
-            await initModelPack(() => api.ensureModelPack());
+            await initModelPack(() => api.ensureResPack());
             toast.success(t("ships.model3d.ready"));
           } catch {
             toast.error(t("ships.model3d.failed"));

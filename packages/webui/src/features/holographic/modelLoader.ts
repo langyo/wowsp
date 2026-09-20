@@ -497,36 +497,36 @@ function getLoader(): GLTFLoader {
 
 /**
  * Fetch a model-pack resource with an automatic fallback to the embedded
- * copy. The pack ships twice: inside the binary (frontendDist, always
- * complete, served from the app origin at `/models/...`) and in the cache
- * directory (served via the asset protocol). The cache path is preferred
- * because it tracks the published pack, but its `asset.localhost` fetch can
- * die at the transport level on machines whose system proxy/PAC routes
- * `*.localhost` pseudo-hosts through the proxy (Clash-style PACs only
- * bypass bare `localhost`) — those failures surface as raw "Failed to
- * fetch" TypeErrors, and non-404 responses cover an incomplete cache.
- * Either way the embedded copy has the same file, so retry against it.
+ * copy. The pack ships twice: inside the binary (frontendDist, a 2D-only
+ * snapshot served from the app origin at `/models/...`) and in the cache
+ * directory (served via the asset protocol). The CACHE copy is the primary
+ * source — it tracks the published (possibly updated) content-addressed
+ * pack, and an older embedded snapshot must never shadow a newer cached
+ * file (the pre-0.4 embedded-first order caused exactly that staleness).
+ * The embedded copy stays the fallback: for files the cache does not carry
+ * and for machines whose system proxy/PAC routes `*.localhost`
+ * pseudo-hosts through the proxy (Clash-style PACs only bypass bare
+ * `localhost`) — those failures surface as raw "Failed to fetch"
+ * TypeErrors; non-ok responses cover an incomplete cache.
  */
 export async function fetchModelResource(url: string): Promise<Response> {
+  const isAsset = url.startsWith("http://asset.localhost/");
+  if (!isAsset) return fetch(url);
   // The asset URL is percent-encoded (backslashes and slashes alike), so
   // the cache-relative tail must be recovered from the DECODED form.
-  const isAsset = url.startsWith("http://asset.localhost/");
-  const embedded = isAsset
-    ? "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "")
-    : url;
-  // The embedded copy (frontendDist, served from the app origin) is the
-  // primary source: same-origin, untouched by system proxies/PACs that
-  // route `*.localhost` pseudo-hosts through the proxy. The cache copy is
-  // the fallback for packs published after this binary was built (files
-  // the origin 404s on).
-  if (isAsset) {
-    const fromOrigin = await fetch(embedded);
-    if (fromOrigin.ok) return fromOrigin;
+  const embedded = "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "");
+  try {
+    const fromCache = await fetch(url);
+    if (fromCache.ok) return fromCache;
     console.warn(
-      `[modelLoader] embedded fetch ${fromOrigin.status}, trying pack cache: ${url}`,
+      `[modelLoader] cache fetch ${fromCache.status}, falling back to the embedded copy: ${embedded}`,
+    );
+  } catch (e) {
+    console.warn(
+      `[modelLoader] cache fetch failed (${e}), falling back to the embedded copy: ${embedded}`,
     );
   }
-  return fetch(url);
+  return fetch(embedded);
 }
 
 function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {

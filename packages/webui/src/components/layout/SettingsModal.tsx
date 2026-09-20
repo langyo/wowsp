@@ -3,7 +3,6 @@ import {
   BarChart3,
   Check,
   Copyright,
-  Database,
   FolderCog,
   FolderOpen,
   Globe,
@@ -68,7 +67,8 @@ import {
   type TableAnchorMode,
 } from "@/stores/overlayConfig";
 import { useSettingsUiStore, type SettingsSection } from "@/stores/settingsUi";
-import { useCacheStore, type PackId } from "@/stores/cache";
+import { useCacheStore } from "@/stores/cache";
+import { useUpdaterStore } from "@/stores/updater";
 import { AboutContent } from "@/components/layout/AboutModal";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
 import PlatformIcon from "@/components/base/PlatformIcon";
@@ -285,8 +285,9 @@ export default defineComponent({
       }
     }
 
-    // ── Cache management (resource packs + mirror + aux caches) ──────────
+    // ── Updates (app binary + resource pack + mirror + aux caches) ─────
     const cacheStore = useCacheStore();
+    const updater = useUpdaterStore();
     /** Mirror input draft; commits through the cache store (which spreads
      *  the rest of the network config). */
     const mirrorDraft = ref("");
@@ -317,7 +318,7 @@ export default defineComponent({
         // Re-sync the wallpaper list with the AppData folder (also heals a
         // failed boot-time listing instead of staying empty all session).
         if (id === "appearance") void wallpaper.refreshCustom();
-        if (id !== "cache") return;
+        if (id !== "updates") return;
         void cacheStore.refreshStatus();
         void cacheStore.loadMirror().then(() => {
           mirrorDraft.value = cacheStore.githubMirror ?? "";
@@ -331,7 +332,7 @@ export default defineComponent({
     watch(
       () => ui.visible,
       (open) => {
-        if (open && ui.section === "cache") {
+        if (open && ui.section === "updates") {
           void cacheStore.refreshStatus();
           void cacheStore.refreshUpdates();
         }
@@ -366,17 +367,16 @@ export default defineComponent({
       return Number.isNaN(d.getTime()) ? stamp : d.toLocaleString();
     }
 
-    function packTitle(id: PackId): string {
-      return id === "models"
-        ? t("settings.cachePackModels")
-        : t("settings.cachePackDogtags");
+    /** The display form of a tree hash — its LAST 6 hex chars, upper-case
+     *  (the "game build id" convention the publisher's delta tags use). */
+    function hash6(hash?: string | null): string {
+      if (!hash) return t("settings.resVersionUnknown");
+      return hash.slice(-6).toUpperCase();
     }
 
-    function packDesc(id: PackId): string {
-      return id === "models"
-        ? t("settings.cachePackModelsDesc")
-        : t("settings.cachePackDogtagsDesc");
-    }
+    /** True while an app update is pending (or streaming) — the resource
+     *  pack must wait for it: app first, pack after the restart. */
+    const appUpdatePending = computed(() => updater.available && !updater.portable);
 
     /** Aux-cache scope → i18n keys (unknown future scopes render raw). */
     const AUX_LABELS: Record<string, { title: string; desc: string }> = {
@@ -483,7 +483,7 @@ export default defineComponent({
       gamePath: FolderCog,
       account: UserRound,
       network: Globe,
-      cache: Database,
+      updates: RefreshCw,
       overlay: Layers,
       about: Info,
       attributions: Copyright,
@@ -495,7 +495,7 @@ export default defineComponent({
       gamePath: t("settings.gamePath"),
       account: t("settings.account"),
       network: t("settings.network"),
-      cache: t("settings.cache"),
+      updates: t("settings.updates"),
       overlay: t("settings.overlay"),
       about: t("settings.about"),
       attributions: t("settings.attributions"),
@@ -926,17 +926,67 @@ export default defineComponent({
 
           </>
           ) : null}
-          {ui.section === "cache" ? (
+          {ui.section === "updates" ? (
           <>
-          {/* cache management — resource packs (download / update / delete
-              with live progress), the GitHub mirror source for mainland
-              networks, and clearable auxiliary caches. Pack sync versions
-              are the GitHub release asset's updated_at stamp; an outdated
-              pack shows an update banner instead of silently re-downloading
-              gigabytes at startup. */}
+          {/* updates — the app-binary card and the single content-addressed
+              resource-pack card (download / update / delete with live
+              progress), the GitHub mirror source for mainland networks, and
+              clearable auxiliary caches. APP UPDATES GO FIRST: while a
+              newer build is pending the pack's buttons are disabled and the
+              hint says so — the pack update follows after the restart.
+              Pack versions are content tree hashes shown as their last 6
+              hex chars; an outdated pack offers the retained chain patches
+              (incremental) or falls back to the full archive. */}
           <section class="settings-modal__group">
             <div class="settings-modal__packs-head">
-              <h2 class="settings-modal__group-title">{t("settings.cachePacksTitle")}</h2>
+              <h2 class="settings-modal__group-title">{t("settings.updatesAppTitle")}</h2>
+              <HButton
+                size="sm"
+                loading={updater.checking}
+                disabled={updater.portable}
+                onClick={() => void updater.check()}
+              >
+                {t("settings.cacheCheckUpdates")}
+              </HButton>
+            </div>
+            <p class="settings-modal__hint">{t("settings.updatesAppHint")}</p>
+            <div class="settings-modal__pack">
+              <div class="settings-modal__pack-info">
+                <span class="settings-modal__pack-name">{t("settings.updatesAppName")}</span>
+                <span class="settings-modal__pack-desc">{t("settings.updatesAppDesc")}</span>
+                <span class="settings-modal__pack-meta">
+                  {t("settings.updatesCurrent")}: {updater.current || "—"}
+                  {" · "}
+                  {t("settings.updatesLatest")}
+                  {": "}
+                  {updater.available ? (updater.version ?? "—") : t("settings.updatesUpToDate")}
+                </span>
+                {updater.running ? (
+                  <span class="settings-modal__pack-update">{updater.statusText}</span>
+                ) : null}
+                {updater.error ? (
+                  <span class="settings-modal__pack-error">{updater.error}</span>
+                ) : null}
+              </div>
+              <div class="settings-modal__pack-actions">
+                {updater.portable ? (
+                  <span class="settings-modal__hint">{t("settings.updatesPortable")}</span>
+                ) : updater.available ? (
+                  <HButton
+                    variant="primary"
+                    size="sm"
+                    disabled={updater.running}
+                    onClick={() => void updater.downloadAndInstall()}
+                  >
+                    {t("settings.updatesAppNow")}
+                  </HButton>
+                ) : null}
+              </div>
+            </div>
+          </section>
+          <section class="settings-modal__group">
+            <div class="settings-modal__packs-head">
+              <h2 class="settings-modal__group-title">{t("settings.resPackTitle")}</h2>
               <HButton
                 size="sm"
                 loading={cacheStore.updatesLoading}
@@ -945,44 +995,65 @@ export default defineComponent({
                 {t("settings.cacheCheckUpdates")}
               </HButton>
             </div>
-            <p class="settings-modal__hint">{t("settings.cachePacksHint")}</p>
+            <p class="settings-modal__hint">{t("settings.resPackHint")}</p>
             {cacheStore.anyUpdateAvailable ? (
               <p class="settings-modal__packs-banner">{t("settings.cacheUpdateBanner")}</p>
             ) : null}
-            {(["models", "dogtags"] as PackId[]).map((id) => {
-              const st = cacheStore.pack(id);
-              const upd = cacheStore.updateOf(id);
-              const prog = cacheStore.progress[id];
+            {appUpdatePending.value ? (
+              <p class="settings-modal__packs-banner">{t("settings.resAfterApp")}</p>
+            ) : null}
+            {(() => {
+              const st = cacheStore.status;
+              const upd = cacheStore.update;
+              const prog = cacheStore.progress;
               const downloading =
                 (st?.downloading ?? false) ||
-                (prog != null && (prog.phase === "download" || prog.phase === "extract"));
+                (prog != null && (prog.phase === "download" || prog.phase === "apply"));
               const pct =
                 prog && prog.phase === "download" && prog.total > 0
                   ? Math.min(100, Math.round((prog.received / prog.total) * 100))
                   : 0;
+              const deltaSteps = upd?.deltaSteps;
               return (
-                <div class="settings-modal__pack" key={id}>
+                <div class="settings-modal__pack">
                   <div class="settings-modal__pack-info">
-                    <span class="settings-modal__pack-name">{packTitle(id)}</span>
-                    <span class="settings-modal__pack-desc">{packDesc(id)}</span>
+                    <span class="settings-modal__pack-name">{t("settings.resPackName")}</span>
+                    <span class="settings-modal__pack-desc">{t("settings.resPackDesc")}</span>
                     <span class="settings-modal__pack-meta">
                       {st?.present ? formatBytes(st.sizeBytes) : t("settings.cacheStatusMissing")}
                       {" · "}
-                      {t("settings.cacheVersionLabel")}
+                      {t("settings.resCurrent")}
                       {": "}
-                      {formatStamp(st?.version)}
-                      {upd?.updateAvailable && !downloading ? (
-                        <span class="settings-modal__pack-update">
-                          {t("settings.cacheUpdateAvailable")}
-                        </span>
-                      ) : null}
+                      {st?.legacyStamp ? t("settings.resLegacy") : hash6(st?.treeSha256)}
+                      {st?.version && !st.legacyStamp ? ` · ${formatStamp(st.version)}` : ""}
+                      {" · "}
+                      {t("settings.resLatest")}
+                      {": "}
+                      {hash6(upd?.latestTreeSha256)}
                     </span>
+                    {upd?.updateAvailable && !downloading ? (
+                      <span class="settings-modal__pack-update">
+                        {deltaSteps == null
+                          ? t("settings.cacheUpdateAvailable")
+                          : deltaSteps.length > 0
+                            ? t("settings.resDeltaAvailable", { n: deltaSteps.length })
+                            : t("settings.resFullDownload")}
+                      </span>
+                    ) : null}
                     {downloading ? (
                       <div class="settings-modal__pack-progress">
                         <div
                           class="settings-modal__pack-progress-fill"
-                          style={{ width: prog?.phase === "extract" ? "100%" : `${pct}%` }}
+                          style={{ width: prog?.phase === "apply" ? "100%" : `${pct}%` }}
                         />
+                        {prog && prog.segments > 1 ? (
+                          <span class="settings-modal__pack-desc">
+                            {t("settings.resSegment", {
+                              current: prog.segment,
+                              total: prog.segments,
+                            })}
+                          </span>
+                        ) : null}
                       </div>
                     ) : null}
                     {prog?.phase === "error" && prog.error ? (
@@ -994,8 +1065,8 @@ export default defineComponent({
                   <div class="settings-modal__pack-actions">
                     {downloading ? (
                       <HButton size="sm" onClick={() => void cacheStore.cancel()}>
-                        {prog?.phase === "extract"
-                          ? t("settings.cacheExtracting")
+                        {prog?.phase === "apply"
+                          ? t("settings.cacheApplying")
                           : t("settings.cacheCancel")}
                       </HButton>
                     ) : st?.present ? (
@@ -1003,18 +1074,18 @@ export default defineComponent({
                         <HButton
                           variant="primary"
                           size="sm"
-                          disabled={upd == null || !upd.updateAvailable}
-                          onClick={() => void cacheStore.download(id)}
+                          disabled={upd == null || !upd.updateAvailable || appUpdatePending.value}
+                          onClick={() => void cacheStore.download()}
                         >
                           {t("settings.cacheUpdate")}
                         </HButton>
-                        {clearArmed.value === id ? (
+                        {clearArmed.value === "res" ? (
                           <HButton
                             variant="danger"
                             size="sm"
                             onClick={() => {
                               clearArmed.value = null;
-                              void cacheStore.clearPack(id);
+                              void cacheStore.clearRes();
                             }}
                           >
                             {t("settings.cacheDeleteConfirm")}
@@ -1023,7 +1094,7 @@ export default defineComponent({
                           <HButton
                             variant="secondary"
                             size="sm"
-                            onClick={() => (clearArmed.value = id)}
+                            onClick={() => (clearArmed.value = "res")}
                           >
                             {t("settings.cacheDelete")}
                           </HButton>
@@ -1033,7 +1104,8 @@ export default defineComponent({
                       <HButton
                         variant="primary"
                         size="sm"
-                        onClick={() => void cacheStore.download(id)}
+                        disabled={appUpdatePending.value}
+                        onClick={() => void cacheStore.download()}
                       >
                         {t("settings.cacheDownload")}
                       </HButton>
@@ -1041,7 +1113,7 @@ export default defineComponent({
                   </div>
                 </div>
               );
-            })}
+            })()}
           </section>
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.cacheMirrorTitle")}</h2>

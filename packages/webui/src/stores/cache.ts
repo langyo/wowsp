@@ -1,35 +1,41 @@
 /**
- * Resource-pack + auxiliary-cache state for the Settings → cache management
- * panel. Owns the pack status/update snapshots, the in-flight download
- * progress (fed by the `wowsp://pack-progress` stream) and the GitHub mirror
+ * Resource-pack + auxiliary-cache state for the Settings → updates panel.
+ * Owns the single pack's status/update snapshots, the in-flight pass
+ * progress (fed by the `wowsp://res-progress` stream) and the GitHub mirror
  * preference (persisted through network-config.json, same file the network
  * section edits).
  *
- * Startup policy lives in AppShell: the model pack auto-downloads only when
- * ENTIRELY missing (lite install / wiped cache); an outdated-but-present
- * pack is surfaced here as `updateAvailable` instead of silently re-pulling
- * ~1.2 GB.
+ * The pack is content-addressed: `checkResUpdate` compares the local tree
+ * hash against the `res-latest` manifest and reports the chain-patch path
+ * (`deltaSteps`) when one exists — the panel then says "incremental, N
+ * patches" instead of promising a ~1.2 GB re-download. `download` runs the
+ * pass on the Rust side (which itself picks patches over the full archive).
+ *
+ * Startup policy lives in AppShell: the pack auto-downloads only when
+ * ENTIRELY missing (lite install / wiped cache) AND the app itself is
+ * current — app updates go first, the pack follows after the restart; an
+ * outdated-but-present pack is surfaced here as `updateAvailable` instead
+ * of silently re-pulling.
  */
 import { defineStore } from "pinia";
-import { computed, reactive, ref } from "vue";
+import { computed, ref } from "vue";
 
-import { api, type NetworkConfig, type PackProgress, type PackStatus, type PackUpdate } from "@/api";
-
-export const PACK_IDS = ["models", "dogtags"] as const;
-export type PackId = (typeof PACK_IDS)[number];
-
-export function isPackId(id: string): id is PackId {
-  return (PACK_IDS as readonly string[]).includes(id);
-}
+import {
+  api,
+  type NetworkConfig,
+  type ResProgress,
+  type ResStatus,
+  type ResUpdate,
+} from "@/api";
 
 export const useCacheStore = defineStore("resourceCache", () => {
-  const packs = ref<PackStatus[]>([]);
-  const updates = ref<PackUpdate[]>([]);
+  const status = ref<ResStatus | null>(null);
+  const update = ref<ResUpdate | null>(null);
   const auxCaches = ref<{ scope: string; sizeBytes: number }[]>([]);
-  /** Per-pack live progress from the download stream; a terminal phase
+  /** Live pass progress from the event stream; a terminal phase
    *  ("done"/"error") stays until the next refresh so the panel can show
    *  the outcome briefly. */
-  const progress = reactive<Partial<Record<PackId, PackProgress>>>({});
+  const progress = ref<ResProgress | null>(null);
   const updatesLoading = ref(false);
   const updatesCheckedAt = ref(0);
   /** ghproxy-style mirror prefix; saved through setNetworkConfig so the
@@ -37,20 +43,16 @@ export const useCacheStore = defineStore("resourceCache", () => {
   const githubMirror = ref<string | null>(null);
   let progressWired = false;
 
-  /** Status of one pack (null before the first refresh). */
-  function pack(id: PackId): PackStatus | null {
-    return packs.value.find((p) => p.id === id) ?? null;
-  }
+  /** True when the manifest is known and the local hash differs — drives
+   *  the update banner in the updates section. */
+  const anyUpdateAvailable = computed(() => update.value?.updateAvailable ?? false);
 
-  function updateOf(id: PackId): PackUpdate | null {
-    return updates.value.find((u) => u.id === id) ?? null;
-  }
-
-  /** True when ANY pack has a known update available — drives the update
-   *  banner in the cache section. */
-  const anyUpdateAvailable = computed(() =>
-    updates.value.some((u) => u.updateAvailable),
-  );
+  /** The chain-patch path length when a delta chain is known to exist
+   *  (null = unknown / full download). */
+  const deltaStepCount = computed<number | null>(() => {
+    const steps = update.value?.deltaSteps;
+    return steps ? steps.length : null;
+  });
 
   function wireProgressStream() {
     if (progressWired) return;
@@ -58,9 +60,8 @@ export const useCacheStore = defineStore("resourceCache", () => {
     // Outside the Tauri shell (browser dev) there is no event source; the
     // optional listener simply stays unset there. The store lives for the
     // app's lifetime, so the returned unlisten is intentionally dropped.
-    const un = api.listenPackProgress?.((p) => {
-      if (!isPackId(p.id)) return;
-      progress[p.id] = p;
+    const un = api.listenResProgress?.((p) => {
+      progress.value = p;
     });
     if (un instanceof Promise) void un.catch(() => {});
   }
@@ -68,7 +69,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
   /** Refresh the cheap LOCAL state (no network). */
   async function refreshStatus() {
     try {
-      packs.value = await api.getPackStatus();
+      status.value = await api.getResStatus();
     } catch {
       // older shell / mock — keep whatever we had
     }
@@ -79,11 +80,11 @@ export const useCacheStore = defineStore("resourceCache", () => {
     }
   }
 
-  /** Refresh the REMOTE stamps (GitHub / mirror reachability required). */
+  /** Refresh the REMOTE manifest (GitHub / mirror reachability required). */
   async function refreshUpdates() {
     updatesLoading.value = true;
     try {
-      updates.value = await api.checkPackUpdates();
+      update.value = await api.checkResUpdate();
       updatesCheckedAt.value = Date.now();
     } catch {
       // offline / older shell — keep previous snapshot
@@ -114,22 +115,24 @@ export const useCacheStore = defineStore("resourceCache", () => {
     githubMirror.value = next.githubMirror ?? null;
   }
 
-  /** Explicit pack download (initial or update). Progress arrives through
-   *  the event stream; the panel derives its buttons from `progress`. */
-  async function download(id: PackId) {
+  /** Explicit pack pass (initial / migration / update — the Rust side
+   *  picks chain patches when possible). Progress arrives through the
+   *  event stream; the panel derives its buttons from `progress`. */
+  async function download() {
     wireProgressStream();
-    progress[id] = { id, phase: "download", received: 0, total: 0 };
+    progress.value = { phase: "download", received: 0, total: 0, segment: 1, segments: 1 };
     try {
-      await api.packDownload(id);
+      await api.resDownload();
     } catch (e) {
-      // Early rejections (busy guard, unknown id, network-stack failure)
-      // never reach install_pack, so no error EVENT arrives — surface the
+      // Early rejections (busy guard, network-stack failure) never reach
+      // the install pass, so no error EVENT arrives — surface the
       // rejection here or the panel would sit on a dead progress bar.
-      progress[id] = {
-        id,
+      progress.value = {
         phase: "error",
         received: 0,
         total: 0,
+        segment: 0,
+        segments: 0,
         error: e instanceof Error ? e.message : String(e),
       };
     }
@@ -139,15 +142,15 @@ export const useCacheStore = defineStore("resourceCache", () => {
 
   async function cancel() {
     try {
-      await api.packCancel();
+      await api.resCancel();
     } catch {
       /* best-effort */
     }
   }
 
-  async function clearPack(id: PackId) {
+  async function clearRes() {
     try {
-      await api.clearPack(id);
+      await api.clearRes();
     } catch {
       /* refused while downloading etc. */
     }
@@ -175,23 +178,22 @@ export const useCacheStore = defineStore("resourceCache", () => {
   }
 
   return {
-    packs,
-    updates,
+    status,
+    update,
     auxCaches,
     progress,
     updatesLoading,
     updatesCheckedAt,
     githubMirror,
     anyUpdateAvailable,
-    pack,
-    updateOf,
+    deltaStepCount,
     refreshStatus,
     refreshUpdates,
     loadMirror,
     saveMirror,
     download,
     cancel,
-    clearPack,
+    clearRes,
     clearAuxCache,
     init,
   };
