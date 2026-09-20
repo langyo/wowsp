@@ -219,6 +219,8 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         ward_removes,
         shot_kills,
         damage_stats,
+        cruise,
+        recorder_vehicle,
     } = decoded;
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
@@ -291,6 +293,13 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
             } else {
                 destroys.get(&entity_id).copied()
             };
+            // The CruiseState (0x32) stream is recorder-scoped — it lands on
+            // the recorder's own vehicle trajectory only.
+            let cruise_samples = if recorder_vehicle == Some(entity_id) {
+                cruise.clone()
+            } else {
+                Vec::new()
+            };
             wowsp_tauri_shared::EntityTrajectory {
                 entity_id,
                 kind,
@@ -299,6 +308,7 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
                 hp_samples,
                 cap_samples,
                 cap_progress,
+                cruise_samples,
             }
         })
         .collect();
@@ -314,6 +324,7 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
                 hp_samples: hp_map.remove(eid).unwrap_or_default(),
                 cap_samples: cap_map.remove(eid).unwrap_or_default(),
                 cap_progress: cap_progress.remove(eid).unwrap_or_default(),
+                cruise_samples: Vec::new(),
             });
         }
     }
@@ -323,6 +334,7 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
     out.sort_by_key(|t| Reverse(t.samples.len()));
     wowsp_tauri_shared::ReplayStream {
         trajectories: out,
+        recorder_vehicle_id: recorder_vehicle,
         shell_launches,
         explosions,
         torpedoes,

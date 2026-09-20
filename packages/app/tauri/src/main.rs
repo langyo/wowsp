@@ -316,6 +316,7 @@ fn main() {
             commands::update::update_cancel,
             commands::decision_ai::decision_ai_status,
             commands::decision_ai::decision_ai_suggest,
+            commands::replay_probe::replay_visibility_probe,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())

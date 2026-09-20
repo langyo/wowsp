@@ -409,6 +409,11 @@ pub struct EntityTrajectory {
     /// it from ship positions. Only present for capture zones.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cap_progress: Vec<HpSample>,
+    /// Recorder control-input timeline (CruiseState, 0x32) — engine telegraph
+    /// and rudder presets. Only the recorder's own trajectory carries these
+    /// (the packet is recorder-scoped, not per-entity; see [`CruiseSample`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cruise_samples: Vec<CruiseSample>,
 }
 
 /// A single HP snapshot from the replay's property stream.
@@ -667,6 +672,72 @@ pub struct NetStatsSample {
     pub is_lagging: bool,
 }
 
+/// One recorder control-input sample (CruiseState, 0x32) — experiment E2.
+///
+/// Reverse-engineered payload (8 bytes, little-endian; 31 packets on the
+/// 15.8.0 reference replay, every one exactly 8 bytes):
+///   `u32 controller, i32 level`
+///
+/// The packet is NOT per-entity (the first u32 is 0/1, not a BigWorld entity
+/// id) — it echoes the recorder's own discrete control presets:
+///   - controller 0 = engine telegraph. Levels observed -1..4. Dynamics
+///     confirmed on the reference replay: a 0→1→2→3→4 burst at battle start
+///     is followed by the ship accelerating to its speed plateau (~55 s,
+///     carrier-like); sustained level 0 events decelerate the ship to a full
+///     stop within ~50 s; a level -1 (astern) tap left the (already stopped)
+///     ship stationary. Mapping: 0 = stop, 1..4 = 1/4..full ahead, -1 =
+///     astern (sign confirmed; whether deeper astern levels exist is NOT —
+///     only -1 was ever observed).
+///   - controller 1 = rudder. Levels observed -2..2. Dynamics confirmed:
+///     a 1→0→-1→-2 burst flips the ship's yaw rate from +0.05 to -0.05 rad/s
+///     within ~10 s (negative = port), and a level 0 (center) event decays
+///     the turn to 0 rad/s over ~30 s. Mapping: sign = side (negative =
+///     port, positive = starboard); whether |1|/|2| are exactly half/full
+///     rudder is inferred from the 5-mark telegraph, not separately
+///     confirmed.
+///
+/// `value` carries the normalized semantic value when the level is
+/// confirmed: controller 0 → throttle fraction in [-1, 1] (level / 4 for
+/// ahead presets; -1 → -1.0 astern), controller 1 → rudder in [-1, 1]
+/// (level / 2). `None` marks levels with no confirmed meaning (e.g. throttle
+/// below -1 — deeper astern — or unknown controller ids such as possible
+/// submarine dive-plane domains).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CruiseSample {
+    /// Seconds since match start.
+    pub time: f32,
+    /// 0 = engine telegraph (throttle), 1 = rudder. Other ids would be future
+    /// domains (submarine dive planes?) — kept raw rather than guessed.
+    pub controller: u32,
+    /// Raw discrete level as sent on the wire.
+    pub level: i32,
+    /// Normalized value (see the type docs) when the level's meaning is
+    /// confirmed, else `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f32>,
+}
+
+impl CruiseSample {
+    /// Map a raw (controller, level) onto its normalized semantic value.
+    /// Unknown territory yields `None` — see the type docs for the evidence
+    /// backing each confirmed branch.
+    pub fn map_value(controller: u32, level: i32) -> Option<f32> {
+        match controller {
+            0 => match level {
+                -1 => Some(-1.0), // astern (sign confirmed, depth unconfirmed)
+                0..=4 => Some(level as f32 / 4.0),
+                _ => None, // deeper astern levels — never observed
+            },
+            1 => match level {
+                -2..=2 => Some(level as f32 / 2.0),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
 /// An aircraft-squadron creation (`receive_addSquadron` on the avatar): the
 /// squadron's game-params id and its spawn position. Method id resolves via
 /// the decoder's per-version tables.
@@ -708,6 +779,12 @@ pub struct SquadronPlane {
 #[serde(rename_all = "camelCase")]
 pub struct ReplayStream {
     pub trajectories: Vec<EntityTrajectory>,
+    /// Entity id of the recorder's own vehicle (the type-2 entity the avatar
+    /// links to in its PlayerPosition 0x2c stream) — the trajectory that
+    /// carries `cruiseSamples`. `None` when the replay carries no PlayerPosition
+    /// link (pre-modern-layout replays or a truncated capture).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorder_vehicle_id: Option<i32>,
     /// Artillery launches (`receiveArtilleryShots`) — the primary shell data:
     /// muzzle point, aim point and flight time per projectile.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1577,4 +1654,107 @@ pub struct DecisionAiStatus {
     pub runtime_info: String,
     /// Whether the embedded fixture model initialized into a live session.
     pub fixture_loaded: bool,
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Replay visibility probe (experiment E3)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// One uninterrupted period during which an entity produced no position
+/// samples — the working proxy for "not spotted by the recorder's team"
+/// (allies and spotted enemies stream positions; unspotted enemies do not).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibilityGap {
+    /// Gap start (seconds since match start; the last sample before the gap).
+    pub from: f32,
+    /// Gap end (the first sample after the gap).
+    pub to: f32,
+    pub duration: f32,
+}
+
+/// Per-entity visibility statistics produced by the replay probe (E3).
+///
+/// Team attribution (`team_id`) joins entity → shipId (EntityCreate state
+/// scan) → roster relation / battle-results teamId. The join is only unique
+/// when no roster entry on the OTHER team plays the same ship: in that case
+/// `team_id` is `None` and `ship_id_ambiguous` is set. This is a known
+/// capability gap — a deterministic per-player join would need an
+/// entity-level identity the packet stream does not currently expose.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityVisibilityStats {
+    pub entity_id: i32,
+    /// EntityCreate type index (2 = vehicle/ship, 4 = aircraft, 14 = zone...).
+    pub entity_type: i16,
+    /// Roster shipId when the EntityCreate state scan found a unique match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ship_id: Option<i64>,
+    /// 0 = recorder's team, 1 = enemy (relative to the recording player);
+    /// `None` when the join was impossible or ambiguous.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<i8>,
+    /// The shipId matched roster entries on BOTH teams — team attribution is
+    /// impossible via the shipId join.
+    #[serde(default)]
+    pub ship_id_ambiguous: bool,
+    /// True for the recorder's own vehicle entity (always observed).
+    #[serde(default)]
+    pub is_recorder: bool,
+    /// Match time the entity was destroyed, if it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub death_time: Option<f32>,
+    /// First position sample time; `None` when the entity has no samples
+    /// (static zones, entities never observed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_sample_time: Option<f32>,
+    /// Total position samples.
+    pub sample_count: u32,
+    /// Mean samples per second over the entity's observed span.
+    pub avg_sample_rate: f32,
+    /// Gaps in the sample stream longer than the probe's threshold.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<VisibilityGap>,
+    /// Total duration (seconds) of all listed gaps.
+    pub gap_total: f32,
+    /// Fraction of the entity's life window during which it was being
+    /// observed (inter-sample intervals at or below the gap threshold).
+    /// 1.0 = continuously observed (allies, the recorder itself).
+    pub observed_fraction: f32,
+}
+
+/// Whole-report container for the replay visibility probe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayProbeReport {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub map_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// The gap threshold (seconds) the gap statistics were computed with.
+    pub gap_threshold_seconds: f32,
+    /// Match end proxy: the latest position sample across all entities.
+    pub match_end: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorder_vehicle_id: Option<i32>,
+    /// ShipIds that matched roster entries on both teams (per-team counts),
+    /// making their entities' team attribution impossible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ambiguous_ship_ids: Vec<AmbiguousShipId>,
+    /// Per-entity stats, entity id order. Ships (type 2) first-class; the
+    /// consumer filters by `entity_type`.
+    pub entities: Vec<EntityVisibilityStats>,
+}
+
+/// A shipId that appears on both teams of the roster — entities carrying it
+/// cannot be team-attributed via the shipId join.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AmbiguousShipId {
+    pub ship_id: i64,
+    /// Roster entries on the recorder's team playing this ship.
+    pub ally_count: u32,
+    /// Roster entries on the enemy team playing this ship.
+    pub enemy_count: u32,
 }
