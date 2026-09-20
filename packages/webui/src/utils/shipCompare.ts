@@ -308,21 +308,6 @@ const TORPEDO_COLUMNS: CompareColumn[] = [
   },
 ];
 
-// ── anti-air ─────────────────────────────────────────────────────────────
-// Only the aggregate rating survives: the live API's AA slots always carry
-// avg_damage = null / distance = -1, so per-band aura columns could never
-// fill.
-const ANTI_AIR_COLUMNS: CompareColumn[] = [
-  {
-    key: "aaRating",
-    labelKey: "ships.spec.aaRating",
-    get: (p) => {
-      const v = num(p?.anti_aircraft?.defense);
-      return v != null && v > 0 ? String(v) : null;
-    },
-  },
-];
-
 // ── ASW (depth charges) ──────────────────────────────────────────────────
 const ASW_COLUMNS: CompareColumn[] = [
   {
@@ -385,7 +370,6 @@ export const COMPARE_GROUPS: CompareGroup[] = [
   { key: "hull", labelKey: "ships.compare.group.hull", columns: HULL_COLUMNS },
   { key: "artillery", labelKey: "ships.spec.group.artillery", columns: ARTILLERY_COLUMNS },
   { key: "torpedoes", labelKey: "ships.spec.group.torpedoes", columns: TORPEDO_COLUMNS },
-  { key: "antiAir", labelKey: "ships.spec.group.antiAir", columns: ANTI_AIR_COLUMNS },
   { key: "asw", labelKey: "ships.compare.group.asw", columns: ASW_COLUMNS },
   { key: "aircraft", labelKey: "ships.compare.group.aircraft", columns: AIRCRAFT_COLUMNS },
 ];
@@ -397,8 +381,6 @@ export function groupApplies(group: CompareGroup, p: Record<string, any> | null 
   switch (group.key) {
     case "torpedoes":
       return has(p?.torpedoes) || (num(p?.hull?.torpedoes_barrels) ?? 0) > 0;
-    case "antiAir":
-      return (num(p?.anti_aircraft?.defense) ?? 0) > 0;
     case "artillery":
       // Direct null check instead of has(): TS 5.5 infers `v is object` for
       // that helper, which would narrow p?.artillery to plain `object` and

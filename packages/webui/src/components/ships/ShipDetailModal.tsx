@@ -100,11 +100,17 @@ export default defineComponent({
       // seconds even on release builds) — keep the loading toast up long
       // enough to cover it; the finally block dismisses it on completion.
       const timer = setTimeout(() => toast.remove(toastId), 90_000);
+      // Guard the switch-ships-while-loading race: if the user moves to
+      // another ship while this fetch is in flight, the watch already reset
+      // the state — a late resolve for the OLD ship must not clobber the
+      // new ship's gameparams (armor tab, WeaponBar, AA spec rows).
+      const requestedId = props.ship.shipId;
       try {
-        gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
+        const gp = await api.getShipGameparams(requestedId, props.gameRoot);
+        if (props.ship?.shipId === requestedId) gameparams.value = gp;
       } catch (e) {
         const msg = (e as Error).message || String(e);
-        gpError.value = msg;
+        if (props.ship?.shipId === requestedId) gpError.value = msg;
         toast.error(`${t("ships.detail.gameparamsErrorTip")}\n${msg}`);
       } finally {
         clearTimeout(timer);
@@ -408,7 +414,7 @@ export default defineComponent({
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
-                  <div key="specs"><SpecsPanel profile={dp.value} nation={viewShip.value.nation} /></div>
+                  <div key="specs"><SpecsPanel profile={dp.value} nation={viewShip.value.nation} gameparams={gameparams.value as Record<string, unknown> | null} /></div>
                 ) : tab.value === "mystats" ? (
                 <div class="ship-detail__mystats" key="mystats">
                   <ShipMyStatsPanel
@@ -444,6 +450,7 @@ export default defineComponent({
                     ship={viewShip.value}
                     build={build.value}
                     gameRoot={props.gameRoot}
+                    gameparams={gameparams.value as Record<string, unknown> | null}
                     onUpdate:build={(b: PlannerBuild) => (build.value = b)}
                   />
                 </div>
@@ -469,10 +476,13 @@ const SpecsPanel = defineComponent({
   props: {
     profile: { type: Object as () => Record<string, unknown> | null, default: null },
     nation: { type: String, default: undefined },
+    /** Raw GameParams entry (lazy-fetched by the modal) — feeds the
+     *  per-band AA rows the WG profile cannot provide. */
+    gameparams: { type: Object as () => Record<string, unknown> | null, default: null },
   },
   setup(props) {
     const toast = useToast();
-    const groups = computed(() => buildShipSpecs(props.profile, props.nation));
+    const groups = computed(() => buildShipSpecs(props.profile, props.nation, props.gameparams));
     const iconFor = (name: string) => {
       switch (name) {
         case "Shield": return Shield;
