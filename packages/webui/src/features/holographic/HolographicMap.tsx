@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
-import { Crosshair, MessageSquare, Plane, Shield, Skull, Swords, Trophy } from "@lucide/vue";
+import { Crosshair, Eye, EyeOff, MessageSquare, Orbit, Pause, Plane, Play, Shield, Skull, Swords, Trophy, Video } from "@lucide/vue";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
@@ -5146,7 +5146,7 @@ export default defineComponent({
               data-hint={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
               aria-label={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
             >
-              {showLabels.value ? "◉" : "◎"}
+              {showLabels.value ? <Eye size={14} /> : <EyeOff size={14} />}
             </button>
             {props.cameraFrames.length > 0 || cameraMode.value !== "free" ? (
               <div class="holo-map__camera">
@@ -5159,7 +5159,13 @@ export default defineComponent({
                   data-hint={i18nT("replay.camera.title")}
                   aria-label={i18nT("replay.camera.title")}
                 >
-                  {cameraMode.value === "original" ? "🎥" : cameraMode.value === "follow" ? "◎" : "⛶"}
+                  {cameraMode.value === "original" ? (
+                    <Video size={14} />
+                  ) : cameraMode.value === "follow" ? (
+                    <Crosshair size={14} />
+                  ) : (
+                    <Orbit size={14} />
+                  )}
                 </button>
                 {cameraMenuOpen.value ? (
                   <div class="holo-map__cam-menu" onClick={(e) => e.stopPropagation()}>
@@ -5226,7 +5232,7 @@ export default defineComponent({
               </div>
             ) : null}
             <button class="holo-map__play" onClick={togglePlay}>
-              {playing.value ? "❚❚" : "▶"}
+              {playing.value ? <Pause size={14} /> : <Play size={14} />}
             </button>
             <input
               ref={scrubEl}

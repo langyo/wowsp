@@ -408,7 +408,7 @@ const PostBattlePanel = defineComponent({
               >
                 <div class="replay-view__postbattle-modal-head">
                   <span>{t("replay.postbattle.rawData")}</span>
-                  <button onClick={() => (rawOpen.value = false)}>✕</button>
+                  <button onClick={() => (rawOpen.value = false)}><X size={12} /></button>
                 </div>
                 <pre class="replay-view__postbattle-modal-raw">{props.raw}</pre>
               </div>
@@ -441,7 +441,7 @@ const PostBattlePanel = defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
                 </div>
                 <div class="replay-view__postbattle-modal-scroll">
                   {!sel.alive && sel.killerName ? (
@@ -794,7 +794,7 @@ const PostBattleFallbackPanel = defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
                 </div>
                 <div class="replay-view__postbattle-modal-scroll">
                   <div class="replay-view__postbattle-detail-body">
@@ -1377,7 +1377,7 @@ export default defineComponent({
 
     /** One replay info card. `external` cards are session-temporary picks
      *  from outside the game folder — they carry an "external" pill and a
-     *  corner ✕ (a sibling of the card button, so no nested buttons). Their
+     *  corner X icon (a sibling of the card button, so no nested buttons). Their
      *  key is namespaced so a pick that also exists in the scanned folder
      *  can't collide with the regular card's key. */
     function renderReplayCard(r: ReplayMetaLite, external: boolean) {
@@ -1666,7 +1666,7 @@ export default defineComponent({
                         onClick={() => (showResults.value = false)}
                         aria-label="Close"
                       >
-                        ✕
+                        <X size={14} />
                       </button>
                     </div>
                     <div class="replay-view__modal-body">
@@ -1706,7 +1706,7 @@ export default defineComponent({
                         onClick={() => (showChat.value = false)}
                         aria-label="Close"
                       >
-                        ✕
+                        <X size={14} />
                       </button>
                     </div>
                     <div class="replay-view__modal-body">
