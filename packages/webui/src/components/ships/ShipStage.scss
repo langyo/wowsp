@@ -123,6 +123,38 @@
     }
   }
 
+  /* Turntable play/pause (3D only) — same pill look as the group switch so
+     the control row still reads as one cluster. */
+  &__rotate {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-surface) / 75%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+  }
+
+  &__rotate-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover { color: rgb(var(--color-text)); }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 14%);
+    }
+  }
+
   /* Stage visibility switch (hide/show hologram) — same pill look as the
      armor-modes group so the control row reads as one cluster. */
   &__vis {
@@ -191,7 +223,19 @@
     overflow: hidden;
     box-shadow: 0 0 0 1px rgb(0 0 0 / 22%);
 
-    span { flex: 1 1 0; }
+    /* Clickable swatches: click one to show that thickness class alone. */
+    button.ship-stage__armor-swatch {
+      flex: 1 1 0;
+      padding: 0;
+      border: 0;
+      cursor: pointer;
+      transition: filter 0.15s;
+
+      &:hover { filter: brightness(1.14); }
+
+      /* Inset ring marks the isolated class — the band clips outer shadows. */
+      &.is-solo { box-shadow: inset 0 0 0 2px rgb(var(--color-text)); }
+    }
   }
 
   /* Ruler-style tick row: one boundary number centred under each swatch
@@ -250,6 +294,13 @@
     &:hover {
       color: rgb(var(--color-text));
       border-color: rgb(var(--color-primary) / 55%);
+    }
+
+    /* The isolated class reads as an active filter, not a hidden one. */
+    &.is-solo {
+      color: rgb(var(--color-primary));
+      border-color: rgb(var(--color-primary) / 45%);
+      background: rgb(var(--color-primary) / 14%);
     }
   }
 

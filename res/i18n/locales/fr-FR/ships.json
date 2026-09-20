@@ -86,7 +86,10 @@
       "hint3d": "Glisser pour tourner · molette pour zoomer · clic droit glisser pour déplacer",
       "holo": "Hologramme",
       "hide": "Masquer l'aperçu",
-      "show": "Afficher l'aperçu"
+      "show": "Afficher l'aperçu",
+      "rotate": "Rotation auto",
+      "rotateOn": "Rotation auto · cliquer pour suspendre",
+      "rotateOff": "Suspendu · cliquer pour reprendre"
     },
     "weapon": {
       "mainGun": "Artillerie principale",
@@ -135,7 +138,8 @@
         "bounce": "Ricochet"
       },
       "restore": "Restaurer",
-      "pickHint": "Cliquez la coque pour masquer une classe"
+      "solo": "Seulement",
+      "pickHint": "Clic sur une bande pour isoler · clic sur le modèle pour masquer"
     },
     "openHint": "Cliquez pour ouvrir les détails du navire",
     "my": {

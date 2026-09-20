@@ -86,7 +86,10 @@
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
       "holo": "Holograma",
       "hide": "Ocultar vista previa",
-      "show": "Mostrar vista previa"
+      "show": "Mostrar vista previa",
+      "rotate": "Rotación automática",
+      "rotateOn": "Girando solo · clic para pausar",
+      "rotateOff": "En pausa · clic para reanudar"
     },
     "weapon": {
       "mainGun": "Batería principal",
@@ -135,7 +138,8 @@
         "bounce": "Rebote"
       },
       "restore": "Restaurar",
-      "pickHint": "Pulsa el casco para ocultar una clase"
+      "solo": "Solo",
+      "pickHint": "Clic en una banda para aislar · clic en el modelo para ocultar"
     },
     "openHint": "Haz clic para ver los detalles del barco",
     "my": {

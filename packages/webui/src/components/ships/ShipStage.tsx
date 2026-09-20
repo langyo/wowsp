@@ -12,7 +12,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
-import { RotateCcw, X } from "@lucide/vue";
+import { Pause, Play, RotateCcw, X } from "@lucide/vue";
 
 import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
 import { createCycleTimer, useImage } from "@wowsp/holo";
@@ -274,6 +274,17 @@ export default defineComponent({
       props.ship ? resolveShipImage(props.ship.shipId, props.ship.images?.large) : null,
     );
 
+    /** Whether the camera turntable is running. Single source of truth for the
+     *  toolbar's play/pause button: OrbitControls' own "start" listener clears
+     *  it when the user grabs the view, and a weapon focus parks it, so the
+     *  icon always matches what the camera is actually doing. */
+    const autoRotate = ref(true);
+    function setAutoRotate(on: boolean) {
+      autoRotate.value = on;
+      const c = controls.value;
+      if (c) c.autoRotate = on;
+    }
+
     // Auto holo ↔ armor cycle on the shared timer (same period as the site
     // stage); hovering the 3D view pauses it, the button group jumps.
     const armorCycle = createCycleTimer(14600, () => toggleArmor());
@@ -454,6 +465,8 @@ export default defineComponent({
         // Nothing resolvable (no baked GLB, no zones): nothing to legend or pick.
         for (const key of hiddenArmorKeys.value) if (key.startsWith("z:")) hiddenArmorKeys.value.delete(key);
         armorReady.value = false;
+        // ...and no class to solo, so drop any isolation the caller had on.
+        soloBucket.value = null;
         // Keep the plain hologram visible instead of an empty stage.
         model.visible = true;
         return;
@@ -469,8 +482,9 @@ export default defineComponent({
       sc.add(armorSc);
       armorGroup.value = armorSc;
       armorReady.value = true;
-      // Re-apply hidden classes after the rebuild (holo↔armor auto-cycle).
-      for (const key of hiddenArmorKeys.value) applyArmorHidden(key, true);
+      // Re-apply the hide/solo state after the rebuild (rebuilds happen on the
+      // holo↔armor auto-cycle and on ship-zone changes).
+      applyArmorVisibility();
     }
 
     function toggleArmor() {
@@ -496,7 +510,7 @@ export default defineComponent({
       () => { if (showArmor.value) syncArmorOverlay(); },
     );
 
-    // ── Armor color axis + click-to-hide ──────────────────────────────────
+    // ── Armor color axis + class isolation ────────────────────────────────
     /** Whether the armor overlay actually has content to show (baked GLB or
      *  heuristic zones) — gates the legend and the hidden-parts panel. */
     const armorReady = ref(false);
@@ -505,6 +519,11 @@ export default defineComponent({
      *  holo↔armor auto-cycle (re-applied on rebuild); cleared on ship change
      *  and scene teardown. */
     const hiddenArmorKeys = ref<Set<string>>(new Set());
+    /** Soloed thickness class ("只看该厚度"): clicking a legend swatch shows
+     *  that class alone, clicking it again shows everything. Independent of
+     *  the per-class hides above — both feed applyArmorVisibility(). */
+    const soloBucket = ref<number | null>(null);
+
     const hiddenArmorChips = computed(() => {
       const chips: { key: string; label: string; css: string }[] = [];
       for (const key of hiddenArmorKeys.value) {
@@ -513,6 +532,18 @@ export default defineComponent({
       }
       return chips;
     });
+    /** The soloed class as a chip, so the state is visible and clearable next
+     *  to the hidden ones (a solo has no entry in hiddenArmorKeys). */
+    const soloChip = computed(() => {
+      const i = soloBucket.value;
+      const entry = i == null ? null : ARMOR_LEGEND[i];
+      return entry ? { label: `${t("ships.detail.armor.solo")} ${entry.label}`, css: entry.css } : null;
+    });
+    /** Classes effectively hidden right now (explicit hides + solo's dump) —
+     *  drives the restore button's count. */
+    const armorHiddenCount = computed(
+      () => hiddenArmorChips.value.length + (soloChip.value ? ARMOR_LEGEND.length - 1 : 0),
+    );
 
     /** Chip metadata for a hidden-part key, derived from the legend table or
      *  the zone boxes currently in the overlay. */
@@ -540,26 +571,48 @@ export default defineComponent({
       return null;
     }
 
-    /** Swap a key's materials to/from the grey hidden look. */
-    function applyArmorHidden(key: string, on: boolean) {
+    /** Whether a class/zone renders greyed out: explicitly hidden, or excluded
+     *  by the soloed thickness class. */
+    function isArmorHidden(key: string, bucket: number): boolean {
+      if (hiddenArmorKeys.value.has(key)) return true;
+      return soloBucket.value != null && bucket !== soloBucket.value;
+    }
+
+    /** Push the current hide/solo state onto every armor mesh — the single
+     *  place that decides what is grey, so a hide toggle and a solo can never
+     *  disagree about a slot. Baked GLBs carry one material slot per thickness
+     *  class; the heuristic fallback carries one mesh per zone box. */
+    function applyArmorVisibility() {
       armorGroup.value?.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
         const ud = mesh.userData as ArmorMeshUserData;
-        if (ud.armorBuckets) {
-          const slot = ud.armorBuckets.indexOf(Number(key.slice(1)));
-          if (slot >= 0) {
-            const mats = mesh.material as THREE.MeshBasicMaterial[];
-            if (Array.isArray(mats) && mats[slot]) mats[slot] = on ? armorHiddenMat : (ud.armorBaseMat as THREE.MeshBasicMaterial);
-          }
-        } else if (ud.armorZoneKey && ud.armorZoneKey === key) {
-          mesh.material = on ? armorHiddenMat : (ud.armorBaseMat as THREE.Material);
+        if (ud.armorBuckets && Array.isArray(mesh.material)) {
+          const mats = mesh.material as THREE.Material[];
+          ud.armorBuckets.forEach((bucket, slot) => {
+            mats[slot] = isArmorHidden(`b${bucket}`, bucket)
+              ? armorHiddenMat
+              : (ud.armorBaseMat as THREE.Material);
+          });
+        } else if (ud.armorZoneKey) {
+          // Zone boxes have no draw-group slot: their thickness maps back to a
+          // class so solo isolates them the same way.
+          const bucket = armorBucketForRgb(armorColor(ud.thickness ?? 0));
+          const hidden = isArmorHidden(ud.armorZoneKey, bucket);
+          mesh.material = hidden ? armorHiddenMat : (ud.armorBaseMat as THREE.Material);
           // The highlight edges are children of the box — fade them with it.
           for (const child of mesh.children) {
-            if ((child as THREE.LineSegments).isLineSegments) child.visible = !on;
+            if ((child as THREE.LineSegments).isLineSegments) child.visible = !hidden;
           }
         }
       });
+    }
+
+    /** Click on a legend swatch: show only that thickness class; clicking the
+     *  same swatch again (or 还原) brings every class back. */
+    function toggleArmorSolo(index: number) {
+      soloBucket.value = soloBucket.value === index ? null : index;
+      applyArmorVisibility();
     }
 
     function toggleArmorPart(key: string) {
@@ -568,12 +621,13 @@ export default defineComponent({
       else hiddenArmorKeys.value.delete(key);
       // New Set identity so the computed chip list re-runs.
       hiddenArmorKeys.value = new Set(hiddenArmorKeys.value);
-      applyArmorHidden(key, on);
+      applyArmorVisibility();
     }
 
     function restoreArmorParts() {
-      for (const key of [...hiddenArmorKeys.value]) applyArmorHidden(key, false);
       hiddenArmorKeys.value = new Set();
+      soloBucket.value = null;
+      applyArmorVisibility();
     }
 
     // ── Canvas picking (click to hide, hover cursor) ──────────────────────
@@ -915,10 +969,13 @@ export default defineComponent({
       ctrl.minDistance = 80;
       ctrl.maxDistance = 800;
       ctrl.maxPolarAngle = Math.PI * 0.85; // don't go under the grid floor
-      ctrl.autoRotate = true;
+      // The user's last choice survives scene rebuilds (2D↔3D, hide/show).
+      ctrl.autoRotate = autoRotate.value;
       ctrl.autoRotateSpeed = 0.5;
-      // Stop auto-rotate as soon as the user touches it.
+      // Grabbing the view stops the turntable — and the toolbar button follows,
+      // because the ref is the single source of truth for the button's state.
       ctrl.addEventListener("start", () => {
+        autoRotate.value = false;
         ctrl.autoRotate = false;
       });
 
@@ -1181,6 +1238,7 @@ export default defineComponent({
       detachCanvasListeners();
       disposeArmorScene();
       hiddenArmorKeys.value = new Set();
+      soloBucket.value = null;
       const c = controls.value;
       const r = renderer.value;
       const sc = scene.value;
@@ -1272,6 +1330,9 @@ export default defineComponent({
       const ctrl = controls.value;
       const box = modelBox.value;
       if (!cam || !ctrl || !box) return;
+      // Park the turntable for the flight. The ref (the toolbar's state) is
+      // left alone here: the default hero reveal resumes it after the tween,
+      // a region focus clears it below.
       ctrl.autoRotate = false;
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
@@ -1348,13 +1409,18 @@ export default defineComponent({
       // The `default` framing is the initial hero reveal — resume gentle
       // auto-rotation once the camera settles so the ship slowly turns. The
       // "start" listener on OrbitControls (set up in initScene) stops it as
-      // soon as the user grabs the view. Explicit weapon-focus zones stay
-      // non-rotating (autoRotate left off above).
+      // soon as the user grabs the view; the toolbar's play/pause button puts
+      // it back. Explicit weapon-focus zones stay parked.
       if (zone === "default") {
         const ctrlLocal = ctrl;
         window.setTimeout(() => {
-          ctrlLocal.autoRotate = true;
+          // Stay parked if the turntable was paused meanwhile (a drag or the
+          // toolbar button) — the ref records that intent.
+          if (autoRotate.value) ctrlLocal.autoRotate = true;
         }, 750);
+      } else {
+        // Region focus: parked for good, and the toolbar says so.
+        setAutoRotate(false);
       }
     }
 
@@ -1476,15 +1542,25 @@ export default defineComponent({
               {viewMode.value === "3d" && showArmor.value && armorReady.value ? (
                 <>
                   {/* Armor thickness color axis — one evenly divided segment
-                      per game color bucket, ranges labelled underneath. */}
+                      per game color bucket. Clicking a swatch isolates that
+                      thickness class ("只看"); the ruler numbers below sit at
+                      the seams between classes. */}
                   <div class="ship-stage__armor-axis">
                     <span class="ship-stage__armor-axis-title">
                       {t("ships.detail.armor.legend")}
                       <span class="ship-stage__armor-axis-hint"> · {t("ships.detail.armor.pickHint")}</span>
                     </span>
-                    <div class="ship-stage__armor-axis-band">
-                      {ARMOR_LEGEND.map((s) => (
-                        <span key={s.label} title={s.range} style={{ background: s.css }} />
+                    <div class="ship-stage__armor-axis-band" role="group" aria-label={t("ships.detail.armor.legend")}>
+                      {ARMOR_LEGEND.map((s, i) => (
+                        <button
+                          type="button"
+                          key={s.label}
+                          class={["ship-stage__armor-swatch", soloBucket.value === i ? "is-solo" : ""].join(" ")}
+                          style={{ background: s.css }}
+                          title={`${s.range} · ${t("ships.detail.armor.solo")}`}
+                          aria-pressed={soloBucket.value === i}
+                          onClick={() => toggleArmorSolo(i)}
+                        />
                       ))}
                     </div>
                     {/* Ruler-style: one number at each swatch boundary — a
@@ -1501,11 +1577,23 @@ export default defineComponent({
                       ))}
                     </div>
                   </div>
-                  {/* Hidden armor parts: chips (click to restore one) + a
-                      restore-all button, bottom right. */}
-                  {hiddenArmorChips.value.length > 0 ? (
+                  {/* Hidden classes (chips, click to restore one) + the soloed
+                      class, above a restore-all button, bottom right. */}
+                  {hiddenArmorChips.value.length > 0 || soloChip.value ? (
                     <div class="ship-stage__armor-hidden">
                       <div class="ship-stage__armor-hidden-chips">
+                        {soloChip.value ? (
+                          <button
+                            type="button"
+                            class="ship-stage__armor-chip is-solo"
+                            title={soloChip.value.label}
+                            onClick={() => toggleArmorSolo(soloBucket.value ?? 0)}
+                          >
+                            <span class="ship-stage__armor-chip-swatch" style={{ background: soloChip.value.css }} />
+                            <span>{soloChip.value.label}</span>
+                            <X size={11} strokeWidth={2.4} />
+                          </button>
+                        ) : null}
                         {hiddenArmorChips.value.map((c) => (
                           <button
                             type="button"
@@ -1523,7 +1611,7 @@ export default defineComponent({
                       <button type="button" class="ship-stage__armor-restore" onClick={restoreArmorParts}>
                         <RotateCcw size={12} strokeWidth={2.2} />
                         <span>{t("ships.detail.armor.restore")}</span>
-                        <span class="ship-stage__armor-restore-count">{hiddenArmorChips.value.length}</span>
+                        <span class="ship-stage__armor-restore-count">{armorHiddenCount.value}</span>
                       </button>
                     </div>
                   ) : null}
@@ -1540,6 +1628,20 @@ export default defineComponent({
               <>
                 {viewMode.value === "3d" ? (
                   <span class="ship-stage__hint">{t("ships.detail.stage.hint3d")}</span>
+                ) : null}
+                {viewMode.value === "3d" ? (
+                  <div class="ship-stage__rotate" role="group">
+                    <button
+                      type="button"
+                      class={["ship-stage__rotate-btn", autoRotate.value ? "is-active" : ""].join(" ")}
+                      title={autoRotate.value ? t("ships.detail.stage.rotateOn") : t("ships.detail.stage.rotateOff")}
+                      aria-label={t("ships.detail.stage.rotate")}
+                      aria-pressed={autoRotate.value}
+                      onClick={() => setAutoRotate(!autoRotate.value)}
+                    >
+                      {autoRotate.value ? <Pause size={13} strokeWidth={2.2} /> : <Play size={13} strokeWidth={2.2} />}
+                    </button>
+                  </div>
                 ) : null}
                 {viewMode.value === "3d" ? (
                   <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
