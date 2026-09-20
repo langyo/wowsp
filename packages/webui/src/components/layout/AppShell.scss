@@ -8,7 +8,12 @@
   padding-top: 32px;
   box-sizing: border-box;
   overflow: hidden;
-  background: rgb(var(--color-background));
+  /* Transparent backdrop: the wallpaper is painted on <body> (WallpaperRenderer
+     seeds the CSS vars, theme.scss layers image + readability overlay there),
+     so an opaque background here would hide every custom image behind flat
+     theme paint. With the built-in solid wallpaper the body already paints
+     the theme surface, so nothing changes visually there. */
+  background: transparent;
   color: rgb(var(--color-text));
   /* Disable text selection globally — the app is not a document. Interactive
      elements (inputs, editable areas) re-enable it per-component. Copyable
