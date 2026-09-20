@@ -233,4 +233,172 @@ mod tests {
         assert!(status.fixture_loaded);
         assert!(!status.runtime_info.is_empty());
     }
+
+    // ── E9 step 3: load the REAL trained model through ort ──────────────────
+    //
+    // The E1 fixture above proves the runtime; these tests prove the rest of
+    // the delivery loop: a model actually TRAINED by
+    // `scripts/experiments/train_fire_model.py` (PyTorch → static-shape ONNX,
+    // optional int8 dynamic quantization) loads into the same `ort` build and
+    // answers a forward pass on a REAL featurized tick (the JSONL export of
+    // E9 step 1, featurized by the training script into `sample_input.json`).
+    // Both tests default to the worktree's experiment output directory and
+    // skip when the files are absent; run explicitly with
+    // `cargo test -p wowsp_tauri e9_real_model -- --ignored --nocapture`.
+
+    /// Model input geometry — must mirror the training script's export
+    /// (entity [1, 24, 10], global_feat [1, 14], mask [1, 24]).
+    const E9_SLOTS: usize = 24;
+    const E9_ENTITY_DIM: usize = 10;
+    const E9_GLOBAL_DIM: usize = 14;
+    /// Forward passes timed for the latency report (after 5 warmups).
+    const E9_TIMING_RUNS: usize = 50;
+
+    /// Load + forward one real model, asserting the output contract and
+    /// reporting latency. Returns (logit_a, logit_b, p50_us, p95_us).
+    fn e9_run_real_model(
+        model_path: &std::path::Path,
+        sample_path: &std::path::Path,
+    ) -> Result<(f32, f32, u128, u128), String> {
+        let bytes = std::fs::read(model_path).map_err(|e| format!("read model: {e}"))?;
+        let mut session = session_from_bytes(&bytes)?;
+        let sample: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(sample_path).map_err(|e| {
+                format!(
+                    "read {} (regenerate via train_fire_model.py): {e}",
+                    sample_path.display()
+                )
+            })?)
+            .map_err(|e| format!("parse sample_input.json: {e}"))?;
+        let nums = |key: &str, want: usize| -> Result<Vec<f32>, String> {
+            serde_json::from_value::<Vec<f32>>(sample[key].clone())
+                .map_err(|e| format!("parse sample '{key}' as f32 array: {e}"))
+                .and_then(|v| {
+                    if v.len() == want {
+                        Ok(v)
+                    } else {
+                        Err(format!(
+                            "sample '{key}' has {} entries, expected {want}",
+                            v.len()
+                        ))
+                    }
+                })
+        };
+        // entity is serialized nested [SLOTS][ENTITY_DIM] (self-documenting);
+        // global/mask are flat.
+        let entity: Vec<f32> = serde_json::from_value::<Vec<Vec<f32>>>(sample["entity"].clone())
+            .map_err(|e| format!("parse sample 'entity' as f32 matrix: {e}"))
+            .and_then(|rows| {
+                if rows.len() == E9_SLOTS && rows.iter().all(|r| r.len() == E9_ENTITY_DIM) {
+                    Ok(rows.into_iter().flatten().collect())
+                } else {
+                    Err(format!(
+                        "sample 'entity' is not [{E9_SLOTS}][{E9_ENTITY_DIM}]"
+                    ))
+                }
+            })?;
+        let global = nums("global", E9_GLOBAL_DIM)?;
+        let mask = nums("mask", E9_SLOTS)?;
+        let entity_t = ort::value::Tensor::from_array(([1usize, E9_SLOTS, E9_ENTITY_DIM], entity))
+            .map_err(|e| format!("build entity tensor: {e}"))?;
+        let global_t = ort::value::Tensor::from_array(([1usize, E9_GLOBAL_DIM], global))
+            .map_err(|e| format!("build global tensor: {e}"))?;
+        let mask_t = ort::value::Tensor::from_array(([1usize, E9_SLOTS], mask))
+            .map_err(|e| format!("build mask tensor: {e}"))?;
+        let run_once = |session: &mut Session| -> Result<(f32, f32), String> {
+            let outputs = session
+                .run(ort::inputs![
+                    "entity" => entity_t.view(),
+                    "global_feat" => global_t.view(),
+                    "mask" => mask_t.view(),
+                ])
+                .map_err(|e| format!("run inference: {e}"))?;
+            let mut logits = [0.0f32; 2];
+            for (idx, name) in ["logitA", "logitB"].iter().enumerate() {
+                let v = outputs
+                    .get(name)
+                    .ok_or_else(|| format!("output '{name}' missing"))?;
+                let view = v
+                    .try_extract_array::<f32>()
+                    .map_err(|e| format!("extract {name}: {e}"))?;
+                let flat: Vec<f32> = view.iter().copied().collect();
+                // The exported heads squeeze to [1]; accept [1] or [1,1].
+                assert_eq!(flat.len(), 1, "output {name} shape {:?}", view.shape());
+                assert!(
+                    flat[0].is_finite(),
+                    "output {name} is not finite: {}",
+                    flat[0]
+                );
+                logits[idx] = flat[0];
+            }
+            Ok((logits[0], logits[1]))
+        };
+        // Warmup, then timed forwards (single-threaded session use, mirroring
+        // how a real tick-time suggestion would run).
+        for _ in 0..5 {
+            run_once(&mut session)?;
+        }
+        let mut micros: Vec<u128> = Vec::with_capacity(E9_TIMING_RUNS);
+        for _ in 0..E9_TIMING_RUNS {
+            let t0 = std::time::Instant::now();
+            run_once(&mut session)?;
+            micros.push(t0.elapsed().as_micros());
+        }
+        micros.sort_unstable();
+        let p50 = micros[micros.len() / 2];
+        let p95 = micros[micros.len() * 95 / 100];
+        let (la, lb) = run_once(&mut session)?;
+        Ok((la, lb, p50, p95))
+    }
+
+    /// Resolve the E9 model/sample pair: explicit env override, else the
+    /// worktree-default experiment outputs.
+    fn e9_paths(
+        env_model: &str,
+        default_file: &str,
+    ) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../scripts/experiments/out/fire_model");
+        let model = match std::env::var(env_model) {
+            Ok(p) => std::path::PathBuf::from(p),
+            Err(_) => out_dir.join(default_file),
+        };
+        let sample = std::env::var("WOWSP_TEST_SAMPLE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| out_dir.join("sample_input.json"));
+        model.is_file().then_some((model, sample))
+    }
+
+    /// fp32 delivery: the PyTorch-exported `fp32.onnx` loads into the ort
+    /// build and answers a real featurized tick.
+    #[test]
+    #[ignore = "needs the trained model from scripts/experiments/train_fire_model.py"]
+    fn e9_real_model_forward_fp32() {
+        let Some((model, sample)) = e9_paths("WOWSP_TEST_MODEL", "fp32.onnx") else {
+            eprintln!("[e9] fp32.onnx not found (train with train_fire_model.py) - skipping");
+            return;
+        };
+        let (la, lb, p50, p95) = e9_run_real_model(&model, &sample).expect("real model forward");
+        eprintln!(
+            "[e9] fp32 model {} loaded; logits A {la:.4} B {lb:.4}; latency p50 {p50} us / p95 {p95} us over {E9_TIMING_RUNS} runs",
+            model.display()
+        );
+    }
+
+    /// int8 delivery: the dynamically-quantized `int8.onnx` (MatMul weights
+    /// int8, activations fp32) loads and answers the same tick — the
+    /// ship-this-size variant.
+    #[test]
+    #[ignore = "needs the trained model from scripts/experiments/train_fire_model.py"]
+    fn e9_real_model_forward_int8() {
+        let Some((model, sample)) = e9_paths("WOWSP_TEST_MODEL_INT8", "int8.onnx") else {
+            eprintln!("[e9] int8.onnx not found (train with train_fire_model.py) - skipping");
+            return;
+        };
+        let (la, lb, p50, p95) = e9_run_real_model(&model, &sample).expect("real int8 forward");
+        eprintln!(
+            "[e9] int8 model {} loaded; logits A {la:.4} B {lb:.4}; latency p50 {p50} us / p95 {p95} us over {E9_TIMING_RUNS} runs",
+            model.display()
+        );
+    }
 }
