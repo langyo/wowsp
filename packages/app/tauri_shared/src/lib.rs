@@ -1760,3 +1760,171 @@ pub struct AmbiguousShipId {
     /// Roster entries on the enemy team playing this ship.
     pub enemy_count: u32,
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Decision tick state (experiments E5 + E6)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// The recorder's own ship at one decision tick — the "self" observation the
+/// decision model conditions on. Everything here is exact (own-ship data is
+/// fully visible to the recording client); speeds are converted to knots via
+/// the E5 scene-unit calibration (`commands::decision_tick::METERS_PER_UNIT`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickRecorder {
+    pub entity_id: i32,
+    pub x: f32,
+    pub z: f32,
+    /// Heading (radians) at the latest sample at/before the tick.
+    pub yaw: f32,
+    /// Planar speed in knots; `None` when fewer than ~1 s of own samples
+    /// precede the tick.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_kt: Option<f32>,
+    /// Raw engine-telegraph level (-1..4) of the latest CruiseState at/before
+    /// the tick; `None` before the first control packet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub throttle_level: Option<i32>,
+    /// Normalized throttle fraction (level / 4) when the level's meaning is
+    /// confirmed (see [`CruiseSample`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub throttle_value: Option<f32>,
+    /// Raw rudder level (-2..2) of the latest rudder CruiseState.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rudder_level: Option<i32>,
+    /// Normalized rudder deflection (level / 2) when confirmed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rudder_value: Option<f32>,
+    /// Latest HP at/before the tick, when the entity streamed any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hp: Option<u32>,
+    /// False once the ship's inferred death time passes the tick.
+    #[serde(default)]
+    pub alive: bool,
+}
+
+/// One OTHER entity as the recorder knows it at a decision tick — a
+/// deliberately incomplete-information view (experiment E6's core constraint):
+/// enemy data is whatever the recording client had received by `t`, so fields
+/// carry last-known values plus how stale they are (`lastObservedDelta`), and
+/// `observedNow: false` must be read as "this row is stale intel", not as a
+/// current observation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickEntity {
+    pub entity_id: i32,
+    /// EntityCreate type index (2 = ship in v1 — only ships are listed).
+    pub entity_type: i16,
+    /// Roster shipId when the EntityCreate state scan matched one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ship_id: Option<i64>,
+    /// 0 = recorder's team, 1 = enemy (recorder-relative, E3 semantics);
+    /// `None` when the shipId join was impossible (mirror lineups leave
+    /// `teamAmbiguous` set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<i8>,
+    /// The shipId matched roster entries on both sides — team unknown.
+    #[serde(default)]
+    pub team_ambiguous: bool,
+    /// Last position sample at/before the tick (never extrapolated, never
+    /// future-leaking).
+    pub last_known_x: f32,
+    pub last_known_z: f32,
+    /// Heading of that last sample (radians).
+    pub last_known_yaw: f32,
+    /// `t - lastSampleTime`: how stale this row is, in seconds.
+    pub last_observed_delta: f32,
+    /// True when `lastObservedDelta` is within the E3 gap threshold (~4 s) —
+    /// the entity was being observed at the tick ("spotted"). False marks
+    /// last-known-only intel.
+    #[serde(default)]
+    pub observed_now: bool,
+    /// Last-known planar speed in knots, estimated by differencing the
+    /// trailing observation streak (diffs never span a >4 s sample gap).
+    /// `None` when the streak is too short to differentiate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_kt: Option<f32>,
+    /// Planar distance from the recorder's position at the tick, in metres
+    /// (E5 scale), at the entity's last-known position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance_m: Option<f32>,
+    /// Last-known HP at/before the tick.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hp: Option<u32>,
+    /// False once the entity's death time passes the tick.
+    #[serde(default)]
+    pub alive: bool,
+    /// Terrain occlusion between the recorder and this entity, computed only
+    /// for currently-observed ENEMY ships when a LOS raster was supplied:
+    /// `Some(true)` = an island blocks the sight line, `Some(false)` = clear,
+    /// `None` = not computed (no raster, not an observed enemy).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_blocked: Option<bool>,
+}
+
+/// One capture zone's state at a decision tick.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickZone {
+    pub entity_id: i32,
+    /// 0-based domination point index (A=0, B=1, ...) for real capture
+    /// points; `None` for base/strike zones without a controlPoint component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_point_index: Option<i32>,
+    /// Ring radius (scene units) recovered from the create state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f32>,
+    /// Ownership at the tick: the latest cap-property sample at/before the
+    /// tick, falling back to the create-state initial team when the zone never
+    /// streamed an update. RAW wire value, NOT unified across its two sources
+    /// (the cap property is documented elsewhere as 0 = neutral / 1,2 = teams,
+    /// but on the E6 reference replay the two opposing base zones read 0 and
+    /// 1 — closer to absolute team ids; the initial team is -1 neutral, 0/1
+    /// teams). Consumers must treat this as opaque until the namespaces are
+    /// calibrated against battle results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<i32>,
+    /// Live capture progress at the tick (0..1 fraction of the current
+    /// capture), when the zone streamed any progress updates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f32>,
+}
+
+/// Combat-event counts in the trailing window ending at the tick (default
+/// 30 s) — a coarse "how hot is the fight" feature block.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickEvents {
+    /// Artillery shells launched in the window (all owners).
+    pub shell_launches: u32,
+    pub torpedo_launches: u32,
+    pub explosions: u32,
+    /// Subset launched by the recorder's own vehicle.
+    pub shell_launches_by_recorder: u32,
+    pub torpedo_launches_by_recorder: u32,
+    /// Explosions within ~500 m of the recorder's position — an incoming-fire
+    /// proxy (explosion events carry no owner to attribute).
+    pub explosions_near_recorder: u32,
+}
+
+/// The decision-model input snapshot for one replay at one instant
+/// (`commands::decision_tick::build_tick_state`) — experiment E6.
+///
+/// This is a RECORDER-VIEW incomplete-information state, not a god view: an
+/// enemy exists here only once the recording client first saw it, carries
+/// last-known values with explicit staleness, and `observedNow=false` rows
+/// must be treated as stale intel by any consumer. Only ships (entity type 2)
+/// are listed in `entities` in this first version — aircraft/projectile
+/// transients are excluded to keep the surface bounded.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTickState {
+    /// The tick's match time (seconds since match start).
+    pub match_time: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub map_name: Option<String>,
+    pub recorder: DecisionTickRecorder,
+    pub entities: Vec<DecisionTickEntity>,
+    pub zones: Vec<DecisionTickZone>,
+    pub recent_events: DecisionTickEvents,
+}
