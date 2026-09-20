@@ -13,6 +13,7 @@ import { useWallpaper } from "@/theme/useWallpaper";
 import { isTauri } from "@/transport";
 import { useStatsPrefsStore, STATS_PREFS_STORAGE_KEY } from "@/stores/statsPrefs";
 import AnnouncementContent from "./AnnouncementContent";
+import FontSizeControl from "@/components/layout/FontSizeControl";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import "./OnboardingWizard.scss";
 
@@ -280,6 +281,12 @@ export default defineComponent({
                       ) : null}
                     </div>
                     <p class="onboarding__desc">{t("settings.wallpaperHint")}</p>
+
+                    {/* Font size — the same five-way control as the settings
+                        appearance section (FontSizeControl), writing the
+                        shared fontScalePreference module. */}
+                    <h3 class="onboarding__subtitle">{t("onboarding.fontSize")}</h3>
+                    <FontSizeControl ns="onboarding" />
                   </div>
                 ),
               }}

@@ -356,6 +356,46 @@
     color: rgb(var(--color-muted));
   }
 
+  /* ── interface scale (DPI) ─────────────────────────────────────────────
+     Staged slider + value readout in one row; the Auto/Apply buttons live
+     in their own row underneath (the reference window's footer grammar,
+     rendered inline). The risk warning tints with the danger color so an
+     overshooting notch is caught before Apply. */
+
+  &__dpi-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  &__dpi-slider {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__dpi-value {
+    flex: none;
+    min-width: 3.5rem;
+    text-align: right;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-text));
+  }
+
+  &__dpi-warning {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-error));
+  }
+
+  &__dpi-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
   /* ── solar status (appearance card footer) ────────────────────────────── */
 
   &__geoline {

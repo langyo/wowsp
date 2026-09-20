@@ -365,14 +365,14 @@
 }
 .holo-map__selfstat-label {
   font-style: normal;
-  font-size: 10px;
+  font-size: 0.625rem;
   line-height: 1;
   color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
   letter-spacing: 0.02em;
 }
 .holo-map__selfstat-num {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--holo-hud-strong, #fff);
   font-variant-numeric: tabular-nums;
@@ -419,7 +419,7 @@
 .holo-map__kill-verb {
   align-self: center;
   padding-top: 1px;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--holo-hud-dim);
   white-space: nowrap;
 }
@@ -439,7 +439,7 @@
   white-space: nowrap;
 }
 .holo-map__kill-name {
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--holo-hud-dim);
   line-height: 1;
   overflow: hidden;
@@ -497,7 +497,7 @@
 }
 .holo-map__ach-verb {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--holo-hud-dim);
   white-space: nowrap;
 }
@@ -558,7 +558,7 @@
 }
 .holo-map__cam-group-title {
   padding: 0.25rem 0.35rem 0.15rem;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -608,12 +608,12 @@
   white-space: nowrap;
 }
 .holo-map__cam-meta {
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--holo-hud-dim);
 }
 .holo-map__cam-name {
   grid-area: name;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--holo-hud-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -621,7 +621,7 @@
 }
 .holo-map__cam-stats {
   grid-area: stats;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-family: var(--font-mono);
   color: var(--holo-hud-dim);
   white-space: nowrap;

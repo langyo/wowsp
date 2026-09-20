@@ -32,6 +32,48 @@ export {
   DEFAULT_GEO_LOCATION,
 } from "@celestia-island/hikari";
 
+// Font-size scaling preference (appearance settings + onboarding wizard):
+// inline --text-* overrides on :root driven by the persisted level.
+export {
+  FONT_SCALE_FACTORS,
+  FONT_SCALE_LEVELS,
+  FONT_SCALE_STORAGE_KEY,
+  fontScaleLevel,
+  readStoredFontScaleLevel,
+  setFontScaleLevel,
+  initFontScalePreference,
+  type FontScaleLevel,
+} from "./fontScalePreference";
+
+// Interface-scale (DPI) preference (appearance settings): root CSS `zoom`
+// driven by the persisted percent, with the app-level preview countdown and
+// the escape hatches. Canvas hosts read the applied scale via
+// useAppliedDpiScale to keep their backing stores crisp.
+export {
+  applyDpiPrefs,
+  DPI_MAX,
+  DPI_MIN,
+  DPI_REVERT_SECONDS,
+  DPI_STEP,
+  getDpiCountdownRemaining,
+  getDpiCountdownRemainingMs,
+  getPreviewedDpiScale,
+  initDpiPrefs,
+  isDpiCountdownActive,
+  isDpiRisky,
+  keepDpiScale,
+  loadDpiScale,
+  previewDpiScale,
+  resetAppliedDpiScaleForTest,
+  resetDpiScale,
+  revertPreviewDpiScale,
+  saveDpiScale,
+  shutdownDpiPrefs,
+  useAppliedDpiScale,
+  useDpiCountdown,
+  type DpiCountdownState,
+} from "./dpiPrefs";
+
 // Shared animation/timer buses (idle-zero-frame scheduling).
 export {
   onFrame,

@@ -18,6 +18,8 @@ import {
 
 import { registerBrandThemes } from "./theme/brandThemes";
 import { installGlobalTooltip } from "./composables/globalTooltip";
+import { initDpiPrefs } from "./theme/dpiPrefs";
+import { initFontScalePreference } from "./theme/fontScalePreference";
 import { initThemeModePreference } from "./theme/themeModePreference";
 import { i18n } from "./i18n";
 
@@ -45,6 +47,16 @@ export function bootstrap(): void {
   // `wowsp-theme-mode` key wins over whatever hikari restored.
   // The ?theme= deep link below still overrides both for this load only.
   initThemeModePreference();
+  // WoWSP's font-size preference (five levels over the --text-* scale)
+  // writes inline :root overrides after the stylesheets load — same
+  // authoritative-key-wins contract as the mode preference above.
+  initFontScalePreference();
+  // WoWSP's interface-scale (DPI) preference writes a root CSS `zoom` over
+  // the whole shell — same authoritative-key-wins contract as above. Only
+  // this main-window bootstrap runs it: the game overlay and manual-locate
+  // windows have separate non-Vue bootstraps and never call bootstrap(), so
+  // the zoom cannot leak into their screen-coordinate math.
+  initDpiPrefs();
   initFontContext();
 
   // Delegated tooltip hook: everything that used to lean on native
