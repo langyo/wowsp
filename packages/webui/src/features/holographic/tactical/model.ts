@@ -16,10 +16,12 @@ import type {
   Vec2,
 } from "./types";
 import {
+  TACTICAL_MAX_SCALE,
   boundsOf,
   distToPolyline,
   distToSegment,
   pointInEllipse,
+  pointAlongPolyline,
   pointNearRect,
   slicePolylineByFraction,
   sliceSegmentByFraction,
@@ -90,6 +92,43 @@ export function commitMarker(
   return { id: newElementId(), kind: "marker", t0, at, heading, variant, color, label, size: 40 };
 }
 
+/** A scripted route marker: sails the (simplified) route from `t0` over
+ *  `moveDur` battle seconds, heading along the local tangent. */
+export function commitRouteMarker(
+  rawRoute: Vec2[],
+  color: string,
+  t0: number,
+  tolerance: number,
+  moveDur = 30,
+  variant: MarkerElement["variant"] = "ship",
+): MarkerElement | null {
+  const route = simplifyRDP(rawRoute, tolerance);
+  if (route.length < 2) return null;
+  const start = pointAlongPolyline(route, 0);
+  return {
+    id: newElementId(),
+    kind: "marker",
+    t0,
+    at: start.at,
+    heading: start.heading,
+    variant,
+    color,
+    label: "",
+    size: 40,
+    route,
+    moveDur,
+  };
+}
+
+/** Where a marker sits at battle time t (route interpolation included). */
+export function markerPoseAt(el: MarkerElement, t: number): { at: Vec2; heading: number } {
+  if (!el.route || el.route.length < 2 || !el.moveDur || el.moveDur <= 0) {
+    return { at: el.at, heading: el.heading };
+  }
+  const frac = Math.max(0, Math.min(1, (t - el.t0) / el.moveDur));
+  return pointAlongPolyline(el.route, frac);
+}
+
 export function commitPath(
   entityId: number,
   look: StrokeLook,
@@ -156,8 +195,15 @@ export function elementPoints(el: TacticalElement, t: number): Vec2[] {
       return el.points;
     case "text":
       return [el.at];
-    case "marker":
-      return [el.at];
+    case "marker": {
+      const pose = markerPoseAt(el, t);
+      // Selection outline spans the whole scripted route, not just the
+      // marker's current position.
+      if (el.route && el.route.length >= 2) {
+        return [pose.at, el.route[0], el.route[el.route.length - 1]];
+      }
+      return [pose.at];
+    }
     case "replayPath":
       return [];
   }
@@ -178,8 +224,21 @@ export function hitTestElement(el: TacticalElement, p: Vec2, padWorld: number, t
     case "ellipse":
       return pointInEllipse(p, el.points[0], el.points[1], padWorld);
     case "text":
-    case "marker":
       return Math.hypot(p.x - el.at.x, p.z - el.at.z) <= padWorld * 2.2;
+    case "marker": {
+      const pose = markerPoseAt(el, t);
+      if (
+        Math.hypot(p.x - pose.at.x, p.z - pose.at.z) <= padWorld * 2.2 ||
+        // The scripted route line is clickable too (select/move the marker
+        // by grabbing its route, not just the moving glyph).
+        (el.route != null &&
+          el.route.length >= 2 &&
+          distToPolyline(p, el.route) <= padWorld)
+      ) {
+        return true;
+      }
+      return false;
+    }
     case "replayPath":
       return false; // not directly selectable in wave 1
   }
@@ -196,8 +255,13 @@ export function moveElement<T extends TacticalElement>(el: T, dx: number, dz: nu
     case "ellipse":
       return { ...el, points: el.points.map((p) => ({ x: p.x + dx, z: p.z + dz })) };
     case "text":
-    case "marker":
       return { ...el, at: { x: el.at.x + dx, z: el.at.z + dz } };
+    case "marker":
+      return {
+        ...el,
+        at: { x: el.at.x + dx, z: el.at.z + dz },
+        route: el.route?.map((p) => ({ x: p.x + dx, z: p.z + dz })),
+      };
     case "replayPath":
       return el;
   }
@@ -251,7 +315,20 @@ function normalizeSteps(raw: unknown): TacticalStep[] {
     if (typeof e.id !== "string") continue;
     const t = fin(e.t, Number.NaN);
     if (!Number.isFinite(t)) continue;
-    out.push({ id: e.id, t: Math.max(0, t), name: typeof e.name === "string" ? e.name : "" });
+    const v = e.view as Record<string, unknown> | undefined;
+    const cx = v ? fin(v.cx, Number.NaN) : Number.NaN;
+    const cz = v ? fin(v.cz, Number.NaN) : Number.NaN;
+    const scale = v ? fin(v.scale, Number.NaN) : Number.NaN;
+    const view =
+      Number.isFinite(cx) && Number.isFinite(cz) && Number.isFinite(scale)
+        ? { cx, cz, scale: Math.max(1, Math.min(TACTICAL_MAX_SCALE, scale)) }
+        : undefined;
+    out.push({
+      id: e.id,
+      t: Math.max(0, t),
+      name: typeof e.name === "string" ? e.name : "",
+      ...(view ? { view } : {}),
+    });
   }
   out.sort((a, b) => a.t - b.t);
   return out;
@@ -331,6 +408,8 @@ function normalizeElement(el: unknown): TacticalElement[] {
     }
     case "marker": {
       if (!isFiniteVec(e.at) || (e.variant !== "ship" && e.variant !== "plane")) return [];
+      const route = (Array.isArray(e.route) ? e.route : []).filter(isFiniteVec);
+      const moveDur = fin(e.moveDur, Number.NaN);
       return [
         {
           ...base,
@@ -341,6 +420,7 @@ function normalizeElement(el: unknown): TacticalElement[] {
           color: str(e.color, "#ffffff"),
           label: typeof e.label === "string" ? e.label : "",
           size: fin(e.size, 40),
+          ...(route.length >= 2 && moveDur > 0 ? { route, moveDur } : {}),
         },
       ];
     }

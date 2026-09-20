@@ -124,18 +124,34 @@ export function useTactical(replayPath: Ref<string>) {
     })),
   );
 
-  /** Bookmark the given battle time as a step. Returns false when a step
-   *  already exists within the merge window (idempotent double-click). */
-  function addStep(t: number): boolean {
+  /** Bookmark the given battle time as a step, capturing the current 2D
+   *  viewport as the step's camera. Returns false when a step already
+   *  exists within the merge window (idempotent double-click). */
+  function addStep(t: number, view?: { cx: number; cz: number; scale: number }): boolean {
     if (steps.value.some((s) => Math.abs(s.t - t) <= STEP_MERGE_S)) return false;
+    const step = commitStep(t);
     pushHistory();
-    steps.value = [...steps.value, commitStep(t)];
+    steps.value = view ? [...steps.value, { ...step, view }] : [...steps.value, step];
     return true;
   }
   function removeStep(id: string): void {
     if (!steps.value.some((s) => s.id === id)) return;
     pushHistory();
     steps.value = steps.value.filter((s) => s.id !== id);
+  }
+  /** Re-capture the camera for an existing step (Shift-click on the chip). */
+  function updateStepView(id: string, view: { cx: number; cz: number; scale: number }): void {
+    const step = steps.value.find((s) => s.id === id);
+    if (!step) return;
+    pushHistory();
+    steps.value = steps.value.map((s) => (s.id === id ? { ...s, view } : s));
+  }
+  /** Replace the whole document (JSON import). Takes one history snapshot. */
+  function applyDoc(doc: { elements: TacticalElement[]; steps: TacticalStep[] }): void {
+    pushHistory();
+    elements.value = doc.elements;
+    steps.value = doc.steps;
+    selectedId.value = null;
   }
 
   const selected = computed(() =>
@@ -214,6 +230,8 @@ export function useTactical(replayPath: Ref<string>) {
     clearAll,
     addStep,
     removeStep,
+    updateStepView,
+    applyDoc,
   };
 }
 

@@ -26,7 +26,10 @@ export type TacticalToolId =
   | "text"
   | "markerShip"
   | "markerPlane"
-  | "pinPath";
+  | "markerRoute"
+  | "pinPath"
+  | "eraser"
+  | "hand";
 
 export type DashStyle = "solid" | "dashed" | "dotted";
 
@@ -62,8 +65,9 @@ export interface TextElement extends BaseElement {
 
 export type MarkerVariant = "ship" | "plane";
 
-/** Extra unit marker the author places on top of the replay (wave-1: static
- *  position + heading; scripted movement is a wave-2 timeline feature). */
+/** Extra unit marker the author places on top of the replay. Static (at +
+ *  heading) unless a `route` is scripted, in which case the marker sails the
+ *  smoothed route from t0 over `moveDur` seconds, heading along the tangent. */
 export interface MarkerElement extends BaseElement {
   kind: "marker";
   at: Vec2;
@@ -74,6 +78,11 @@ export interface MarkerElement extends BaseElement {
   label: string;
   /** Glyph length in 760-unit logical map space. */
   size: number;
+  /** Optional scripted route (world points, ≥2); rendered dashed while the
+   *  marker advances along its smoothed curve. */
+  route?: Vec2[];
+  /** Travel time in battle seconds (default 30). */
+  moveDur?: number;
 }
 
 /** A pinned REAL trajectory from the replay, restyled as an annotation.
@@ -97,6 +106,9 @@ export interface TacticalStep {
   /** Reserved for custom names; wave 2 derives `#<index>` at display time
    *  (stored as "" so deleting a step renumbers the rest automatically). */
   name: string;
+  /** Camera captured when the step was bookmarked: seeking to the step
+   *  tweens the 2D viewport here (the "运镜" flyover). */
+  view?: { cx: number; cz: number; scale: number };
 }
 
 export interface TacticalDoc {

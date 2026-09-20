@@ -168,7 +168,10 @@
       "text": "Note texte",
       "markerShip": "Marqueur navire",
       "markerPlane": "Marqueur avion",
-      "pinPath": "Épingler la trace réelle"
+      "pinPath": "Épingler la trace réelle",
+      "markerRoute": "Marqueur mobile (tracez sa route)",
+      "eraser": "Gomme",
+      "hand": "Déplacer la vue (ou maintenir Espace)"
     },
     "style": {
       "color": "Couleur",
@@ -187,7 +190,9 @@
       "undo": "Annuler",
       "redo": "Rétablir",
       "delete": "Supprimer la sélection",
-      "clear": "Tout effacer"
+      "clear": "Tout effacer",
+      "exportJson": "Exporter les annotations en JSON",
+      "importJson": "Importer des annotations JSON"
     },
     "hint": {
       "pin": "Cliquez sur un navire pour épingler sa trace réelle",
@@ -200,7 +205,7 @@
       "format": "Format",
       "scale": "Résolution",
       "timestamp": "Horodatage",
-      "full": "Exporter la carte complète",
+      "full": "Exporter la vue actuelle",
       "region": "Capture d'une zone",
       "regionRun": "Exporter la zone sélectionnée",
       "range": "Plage",
@@ -220,7 +225,9 @@
     "toast": {
       "saved": "Enregistré : {path}",
       "pinned": "Trace de {name} épinglée",
-      "empty": "Rien à enregistrer"
+      "empty": "Rien à enregistrer",
+      "imported": "Document d'annotations importé",
+      "importBad": "Fichier d'annotations invalide"
     },
     "count": "{n} annotations",
     "steps": {
@@ -230,7 +237,11 @@
       "present": "Lecture présentation (avance auto entre étapes)",
       "presentStop": "Arrêter la présentation",
       "empty": "Aucune étape — marquez les temps forts avec ＋",
-      "duplicate": "Une étape existe déjà à cet instant"
+      "duplicate": "Une étape existe déjà à cet instant",
+      "updateView": "Clic : y aller · Maj+clic : recadrer la caméra de l'étape"
+    },
+    "view": {
+      "reset": "Réinitialiser le zoom"
     }
   }
 }

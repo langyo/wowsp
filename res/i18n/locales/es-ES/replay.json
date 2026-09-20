@@ -168,7 +168,10 @@
       "text": "Nota de texto",
       "markerShip": "Marcador de barco",
       "markerPlane": "Marcador de avión",
-      "pinPath": "Fijar trayectoria real"
+      "pinPath": "Fijar trayectoria real",
+      "markerRoute": "Marcador móvil (dibuja su ruta)",
+      "eraser": "Borrador",
+      "hand": "Mover vista (o mantén Espacio)"
     },
     "style": {
       "color": "Color",
@@ -187,7 +190,9 @@
       "undo": "Deshacer",
       "redo": "Rehacer",
       "delete": "Eliminar selección",
-      "clear": "Borrar todo"
+      "clear": "Borrar todo",
+      "exportJson": "Exportar anotaciones a JSON",
+      "importJson": "Importar anotaciones de JSON"
     },
     "hint": {
       "pin": "Haz clic en un barco para fijar su trayectoria real",
@@ -200,7 +205,7 @@
       "format": "Formato",
       "scale": "Resolución",
       "timestamp": "Marca de tiempo",
-      "full": "Exportar captura del mapa completo",
+      "full": "Exportar la vista actual",
       "region": "Captura de zona",
       "regionRun": "Exportar la zona seleccionada",
       "range": "Tramo",
@@ -220,7 +225,9 @@
     "toast": {
       "saved": "Guardado: {path}",
       "pinned": "Trayectoria de {name} fijada",
-      "empty": "Nada que guardar"
+      "empty": "Nada que guardar",
+      "imported": "Documento de anotaciones importado",
+      "importBad": "No es un archivo de anotaciones válido"
     },
     "count": "{n} anotaciones",
     "steps": {
@@ -230,7 +237,11 @@
       "present": "Reproducción tipo presentación (avanza solo)",
       "presentStop": "Detener presentación",
       "empty": "Sin pasos — marca los momentos clave con ＋",
-      "duplicate": "Ya existe un paso en este momento"
+      "duplicate": "Ya existe un paso en este momento",
+      "updateView": "Clic: saltar · Mayús+clic: recapturar la cámara del paso"
+    },
+    "view": {
+      "reset": "Restablecer el zoom"
     }
   }
 }

@@ -21,6 +21,16 @@
   &--point {
     cursor: pointer;
   }
+  &--grab {
+    cursor: grab;
+    &:active {
+      cursor: grabbing;
+    }
+  }
+}
+
+.tac-layer__file-input {
+  display: none;
 }
 
 .tac-layer__text-input {

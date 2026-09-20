@@ -1,7 +1,8 @@
 /**
  * Pure geometry for the tactical board: freehand simplification (RDP),
- * Catmull-Rom smoothing, polyline slicing for draw-on animations and
- * hit-testing. No DOM / canvas dependencies — everything is unit-testable.
+ * Catmull-Rom smoothing, polyline slicing for draw-on animations,
+ * hit-testing and the 2D viewport window math. No DOM / canvas / heavy
+ * imports — everything is unit-testable.
  */
 import type { Vec2 } from "./types";
 
@@ -115,6 +116,42 @@ export function sliceSegmentByFraction(from: Vec2, to: Vec2, fraction: number): 
   return { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
 }
 
+/** Position + heading along a polyline at an arc-length fraction. Heading
+ *  is radians clockwise from north (WoWS yaw convention) and follows the
+ *  local tangent — used by scripted route markers. */
+export function pointAlongPolyline(
+  pts: Vec2[],
+  fraction: number,
+): { at: Vec2; heading: number } {
+  if (pts.length === 0) return { at: { x: 0, z: 0 }, heading: 0 };
+  if (pts.length === 1 || fraction <= 0) {
+    const nxt = pts[1] ?? pts[0];
+    return { at: { ...pts[0] }, heading: Math.atan2(nxt.x - pts[0].x, nxt.z - pts[0].z) };
+  }
+  const total = polylineLength(pts);
+  if (total === 0 || fraction >= 1) {
+    const last = pts[pts.length - 1];
+    const prev = pts[pts.length - 2] ?? last;
+    return { at: { ...last }, heading: Math.atan2(last.x - prev.x, last.z - prev.z) };
+  }
+  const target = total * fraction;
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+    if (acc + seg >= target) {
+      const t = seg === 0 ? 0 : (target - acc) / seg;
+      const at = {
+        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+        z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * t,
+      };
+      return { at, heading: Math.atan2(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z) };
+    }
+    acc += seg;
+  }
+  const last = pts[pts.length - 1];
+  return { at: { ...last }, heading: 0 };
+}
+
 export function distToPolyline(p: Vec2, pts: Vec2[]): number {
   let best = Infinity;
   for (let i = 1; i < pts.length; i++) {
@@ -124,8 +161,7 @@ export function distToPolyline(p: Vec2, pts: Vec2[]): number {
 }
 
 /** Axis-aligned bbox of a world point cloud (selection outline, hit padding). */
-export function boundsOf(pts: Vec2[]): { minX: number; minZ: number; maxX: number; maxZ: number } {
-  let minX = Infinity;
+export function boundsOf(pts: Vec2[]): { minX: number; minZ: number; maxX: number; maxZ: number } {  let minX = Infinity;
   let minZ = Infinity;
   let maxX = -Infinity;
   let maxZ = -Infinity;
@@ -165,4 +201,41 @@ export function pointInEllipse(p: Vec2, a: Vec2, b: Vec2, pad: number): boolean 
   const nx = (p.x - cx) / rx;
   const nz = (p.z - cz) / rz;
   return nx * nx + nz * nz <= 1;
+}
+
+// ── 2D viewport window math ────────────────────────────────────────────────
+
+/** A 2D camera state (world center + zoom) as captured per presentation
+ *  step and manipulated by pan/zoom gestures. */
+export interface TacticalView {
+  cx: number;
+  cz: number;
+  scale: number;
+}
+
+export const TACTICAL_MAX_SCALE = 12;
+
+/** World rect the enlarged 2D map shows for a camera state. The window
+ *  keeps the map's aspect, never leaves the map rect, and scale 1 snaps
+ *  back to the whole map. Pure — shared by HolographicMap's drawMinimap,
+ *  the viewApi gestures and unit tests. */
+export function viewWindow(
+  view: TacticalView,
+  full: { minX: number; maxX: number; minZ: number; maxZ: number },
+  maxScale: number = TACTICAL_MAX_SCALE,
+): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const w = full.maxX - full.minX;
+  const h = full.maxZ - full.minZ;
+  const scale = Math.min(maxScale, Math.max(1, view.scale));
+  let cx = view.cx;
+  let cz = view.cz;
+  if (scale <= 1.0001) {
+    cx = (full.minX + full.maxX) / 2;
+    cz = (full.minZ + full.maxZ) / 2;
+  }
+  const halfW = w / scale / 2;
+  const halfH = h / scale / 2;
+  cx = Math.max(full.minX + halfW, Math.min(full.maxX - halfW, cx));
+  cz = Math.max(full.minZ + halfH, Math.min(full.maxZ - halfH, cz));
+  return { minX: cx - halfW, maxX: cx + halfW, minZ: cz - halfH, maxZ: cz + halfH };
 }

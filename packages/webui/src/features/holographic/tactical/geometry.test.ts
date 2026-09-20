@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   boundsOf,
   distToSegment,
+  pointAlongPolyline,
   pointInEllipse,
   pointNearRect,
   polylineLength,
@@ -10,6 +11,7 @@ import {
   slicePolylineByFraction,
   sliceSegmentByFraction,
   smoothPolyline,
+  viewWindow,
 } from "./geometry";
 
 const p = (x: number, z: number) => ({ x, z });
@@ -105,6 +107,59 @@ describe("pointNearRect / pointInEllipse", () => {
     expect(pointInEllipse(p(0, 0), a, b, 1)).toBe(true);
     expect(pointInEllipse(p(10, 0), a, b, 1)).toBe(true);
     expect(pointInEllipse(p(20, 0), a, b, 1)).toBe(false);
+  });
+});
+
+describe("pointAlongPolyline", () => {
+  const line = [p(0, 0), p(10, 0)]; // heading east (+x)
+  it("returns the start with an eastward tangent at fraction 0", () => {
+    const r = pointAlongPolyline(line, 0);
+    expect(r.at).toEqual(p(0, 0));
+    expect(r.heading).toBeCloseTo(Math.PI / 2); // east = 90° cw from north
+  });
+  it("interpolates at half length and reaches the end", () => {
+    expect(pointAlongPolyline(line, 0.5).at).toEqual(p(5, 0));
+    const end = pointAlongPolyline(line, 1);
+    expect(end.at).toEqual(p(10, 0));
+    expect(end.heading).toBeCloseTo(Math.PI / 2);
+  });
+  it("follows the local tangent around a corner", () => {
+    const corner = [p(0, 0), p(10, 0), p(10, 10)]; // east then north
+    expect(pointAlongPolyline(corner, 0).heading).toBeCloseTo(Math.PI / 2);
+    expect(pointAlongPolyline(corner, 1).heading).toBeCloseTo(0); // north
+    expect(pointAlongPolyline(corner, 0.75).at).toEqual(p(10, 5));
+  });
+  it("handles degenerate inputs", () => {
+    expect(pointAlongPolyline([], 0.5).at).toEqual(p(0, 0));
+    expect(pointAlongPolyline([p(3, 4)], 0.5).at).toEqual(p(3, 4));
+    expect(pointAlongPolyline([p(1, 1), p(1, 1)], 0.5).at).toEqual(p(1, 1));
+  });
+});
+
+describe("viewWindow", () => {
+  const full = { minX: 0, maxX: 1000, minZ: 0, maxZ: 1000 };
+  it("scale 1 (or below) snaps to the whole map regardless of center", () => {
+    expect(viewWindow({ cx: 999, cz: -5, scale: 1 }, full)).toEqual(full);
+    expect(viewWindow({ cx: 500, cz: 500, scale: 0.3 }, full)).toEqual(full);
+  });
+  it("zoomed windows keep the map aspect and stay inside the map", () => {
+    const v = viewWindow({ cx: 0, cz: 0, scale: 4 }, full);
+    expect(v.maxX - v.minX).toBeCloseTo(250);
+    expect(v.maxZ - v.minZ).toBeCloseTo(250);
+    expect(v.minX).toBeGreaterThanOrEqual(0);
+    expect(v.maxX).toBeLessThanOrEqual(1000);
+    // center pushed back inside: window clamps to the corner
+    expect(v.minX).toBeCloseTo(0);
+    expect(v.minZ).toBeCloseTo(0);
+  });
+  it("clamps scale to the max", () => {
+    const v = viewWindow({ cx: 500, cz: 500, scale: 99 }, full, 12);
+    expect(v.maxX - v.minX).toBeCloseTo(1000 / 12);
+  });
+  it("keeps a centered zoom centered", () => {
+    const v = viewWindow({ cx: 500, cz: 500, scale: 2 }, full);
+    expect(v.minX).toBeCloseTo(250);
+    expect(v.maxZ).toBeCloseTo(750);
   });
 });
 

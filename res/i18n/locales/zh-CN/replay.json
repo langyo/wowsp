@@ -168,7 +168,10 @@
       "text": "文字备注",
       "markerShip": "舰船标记",
       "markerPlane": "飞机标记",
-      "pinPath": "钉取真实航迹"
+      "pinPath": "钉取真实航迹",
+      "markerRoute": "移动标记（拖出航路）",
+      "eraser": "橡皮擦",
+      "hand": "平移视图（或按住空格）"
     },
     "style": {
       "color": "颜色",
@@ -187,7 +190,9 @@
       "undo": "撤销",
       "redo": "重做",
       "delete": "删除所选",
-      "clear": "清空全部"
+      "clear": "清空全部",
+      "exportJson": "导出注解 JSON",
+      "importJson": "导入注解 JSON"
     },
     "hint": {
       "pin": "点击一艘舰船以钉取其真实航迹",
@@ -200,7 +205,7 @@
       "format": "格式",
       "scale": "分辨率",
       "timestamp": "时间戳",
-      "full": "导出全图截图",
+      "full": "导出当前视图截图",
       "region": "框选区域截图",
       "regionRun": "导出所选区域",
       "range": "范围",
@@ -220,7 +225,9 @@
     "toast": {
       "saved": "已导出：{path}",
       "pinned": "已钉取 {name} 的航迹",
-      "empty": "没有可保存的内容"
+      "empty": "没有可保存的内容",
+      "imported": "注解文档已导入",
+      "importBad": "不是有效的注解文件"
     },
     "count": "{n} 项注解",
     "steps": {
@@ -230,7 +237,11 @@
       "present": "演示播放（步骤间自动推进）",
       "presentStop": "停止演示",
       "empty": "暂无步骤——用 ＋ 标记讲解节点",
-      "duplicate": "该时刻已有步骤"
+      "duplicate": "该时刻已有步骤",
+      "updateView": "点击跳转 · Shift+点击更新该步运镜"
+    },
+    "view": {
+      "reset": "重置视图缩放"
     }
   }
 }

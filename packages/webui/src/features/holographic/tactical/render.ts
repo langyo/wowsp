@@ -22,6 +22,7 @@ import {
   visibleAt,
 } from "./model";
 import {
+  pointAlongPolyline,
   slicePolylineByFraction,
   sliceSegmentByFraction,
   smoothPolyline,
@@ -62,6 +63,11 @@ export function makeProjection(bounds: MapBounds, size = TACTICAL_SIZE): Tactica
     },
   };
 }
+
+// Viewport window math lives in geometry.ts (pure, test-friendly); it is
+// re-exported here because HolographicMap already imports from this module.
+export { viewWindow, TACTICAL_MAX_SCALE } from "./geometry";
+export type { TacticalView } from "./geometry";
 
 function applyDash(ctx: CanvasRenderingContext2D, dash: DashStyle, width: number): void {
   const w = Math.max(1, width);
@@ -328,12 +334,33 @@ function drawElement(
       break;
     }
     case "marker": {
-      const p = proj.toPx(el.at);
+      // Scripted routes: dashed guide line + the marker sailing along it.
+      if (el.route != null && el.route.length >= 2) {
+        const routePts = cachedSmooth(el, el.route, () => smoothPolyline(el.route!));
+        const lw = Math.max(1.2, el.size / 28);
+        ctx.strokeStyle = el.color;
+        ctx.lineWidth = lw;
+        ctx.globalAlpha = alpha * 0.55;
+        applyDash(ctx, "dashed", lw);
+        strokePolylineWorld(ctx, routePts, proj);
+        ctx.setLineDash([]);
+        ctx.globalAlpha = alpha;
+      }
+      const scripted = el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0;
+      const pose = scripted
+        ? pointAlongPolyline(
+            cachedSmooth(el, el.route!, () => smoothPolyline(el.route!)),
+            mode === "normal"
+              ? Math.max(0, Math.min(1, (t - el.t0) / (el.moveDur || 1)))
+              : 0, // previews sit at the route start
+          )
+        : { at: el.at, heading: el.heading };
+      const p = proj.toPx(pose.at);
       ctx.globalAlpha = alpha * progress;
       ctx.save();
       ctx.translate(p.x, p.y);
       // Heading 0 = north (up); glyph art points right at rest → −90°.
-      ctx.rotate(el.heading - Math.PI / 2);
+      ctx.rotate(pose.heading - Math.PI / 2);
       if (el.variant === "ship") {
         drawShipGlyph(ctx, undefined, 0, 0, el.size, el.color);
       } else {

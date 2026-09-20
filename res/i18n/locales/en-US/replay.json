@@ -168,7 +168,10 @@
       "text": "Text note",
       "markerShip": "Ship marker",
       "markerPlane": "Plane marker",
-      "pinPath": "Pin real track"
+      "pinPath": "Pin real track",
+      "markerRoute": "Moving marker (drag its route)",
+      "eraser": "Eraser",
+      "hand": "Pan view (or hold Space)"
     },
     "style": {
       "color": "Color",
@@ -187,7 +190,9 @@
       "undo": "Undo",
       "redo": "Redo",
       "delete": "Delete selected",
-      "clear": "Clear all"
+      "clear": "Clear all",
+      "exportJson": "Export annotations as JSON",
+      "importJson": "Import annotations from JSON"
     },
     "hint": {
       "pin": "Click a ship to pin its real track",
@@ -200,7 +205,7 @@
       "format": "Format",
       "scale": "Resolution",
       "timestamp": "Timestamp",
-      "full": "Export full-map snapshot",
+      "full": "Export view snapshot",
       "region": "Crop-region snapshot",
       "regionRun": "Export selected region",
       "range": "Range",
@@ -220,7 +225,9 @@
     "toast": {
       "saved": "Saved: {path}",
       "pinned": "Pinned the track of {name}",
-      "empty": "Nothing to save"
+      "empty": "Nothing to save",
+      "imported": "Annotation document imported",
+      "importBad": "Not a valid annotation file"
     },
     "count": "{n} annotations",
     "steps": {
@@ -230,7 +237,11 @@
       "present": "Play presentation (auto-advance between steps)",
       "presentStop": "Stop presentation",
       "empty": "No steps yet — mark explanation beats with ＋",
-      "duplicate": "A step already exists at this moment"
+      "duplicate": "A step already exists at this moment",
+      "updateView": "Click: jump here · Shift+click: re-capture this step's camera"
+    },
+    "view": {
+      "reset": "Reset view zoom"
     }
   }
 }

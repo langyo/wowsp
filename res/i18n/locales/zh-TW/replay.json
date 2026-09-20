@@ -168,7 +168,10 @@
       "text": "文字備註",
       "markerShip": "艦船標記",
       "markerPlane": "飛機標記",
-      "pinPath": "釘選真實航跡"
+      "pinPath": "釘選真實航跡",
+      "markerRoute": "移動標記（拖出航路）",
+      "eraser": "橡皮擦",
+      "hand": "平移視圖（或按住空白鍵）"
     },
     "style": {
       "color": "顏色",
@@ -187,7 +190,9 @@
       "undo": "復原",
       "redo": "重做",
       "delete": "刪除所選",
-      "clear": "清空全部"
+      "clear": "清空全部",
+      "exportJson": "匯出註解 JSON",
+      "importJson": "匯入註解 JSON"
     },
     "hint": {
       "pin": "點擊一艘艦船以釘選其真實航跡",
@@ -200,7 +205,7 @@
       "format": "格式",
       "scale": "解析度",
       "timestamp": "時間戳記",
-      "full": "匯出全圖截圖",
+      "full": "匯出目前視圖截圖",
       "region": "框選區域截圖",
       "regionRun": "匯出所選區域",
       "range": "範圍",
@@ -220,7 +225,9 @@
     "toast": {
       "saved": "已匯出：{path}",
       "pinned": "已釘選 {name} 的航跡",
-      "empty": "沒有可儲存的內容"
+      "empty": "沒有可儲存的內容",
+      "imported": "註解文件已匯入",
+      "importBad": "不是有效的註解文件"
     },
     "count": "{n} 項註解",
     "steps": {
@@ -230,7 +237,11 @@
       "present": "簡報播放（步驟間自動推進）",
       "presentStop": "停止簡報",
       "empty": "暫無步驟——用 ＋ 標記講解節點",
-      "duplicate": "該時刻已有步驟"
+      "duplicate": "該時刻已有步驟",
+      "updateView": "點擊跳轉 · Shift+點擊更新該步運鏡"
+    },
+    "view": {
+      "reset": "重設視圖縮放"
     }
   }
 }

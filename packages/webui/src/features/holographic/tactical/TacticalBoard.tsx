@@ -26,16 +26,20 @@ import {
   renderTactical,
   TACTICAL_SIZE,
   type TacticalProjection,
+  type TacticalView,
 } from "./render";
 import {
   commitFreehand,
   commitMarker,
   commitPath,
+  commitRouteMarker,
   commitShape,
   commitText,
   hitTestElement,
   moveElement,
+  parseDoc,
   presentParkTarget,
+  serializeDoc,
 } from "./model";
 import type { LogicalRect, TacticalElement, Vec2 } from "./types";
 import {
@@ -62,7 +66,10 @@ type Drag =
   | { kind: "shape"; from: Vec2; to: Vec2 }
   | { kind: "marker"; at: Vec2; heading: number; moved: boolean }
   | { kind: "move"; id: string; grab: Vec2; last: Vec2; pushed: boolean }
-  | { kind: "region"; from: Vec2; to: Vec2 };
+  | { kind: "region"; from: Vec2; to: Vec2 }
+  | { kind: "pan"; lastLx: number; lastLy: number }
+  | { kind: "route"; raw: Vec2[] }
+  | { kind: "erase" };
 
 /** Min drag extents (logical px) below which a gesture is treated as a click. */
 const MIN_SHAPE_PX = 8;
@@ -85,6 +92,18 @@ export default defineComponent({
     /** Pause + jump the battle clock AND repaint markers + the 2D map
      *  synchronously (step navigation + offline frame rendering). */
     seekTo: { type: Function as PropType<(t: number) => void>, required: true },
+    /** Pan/zoom handle for the enlarged 2D viewport (wheel zoom, hand pan,
+     *  step camera tweens). Owned by HolographicMap. */
+    viewApi: {
+      type: Object as PropType<{
+        snapshot(): TacticalView;
+        zoomAt(lx: number, ly: number, factor: number): void;
+        panByLogical(dxL: number, dyL: number): void;
+        reset(): void;
+        tweenTo(target: TacticalView, durMs?: number): void;
+      }>,
+      required: true,
+    },
     trajectories: { type: Function as PropType<() => EntityTrajectory[]>, required: true },
     pickShipAt: {
       type: Function as PropType<(x: number, z: number) => ShipPick | null>,
@@ -121,6 +140,8 @@ export default defineComponent({
     // Presentation mode: auto-advance playback that pauses at each step.
     const presentMode = ref(false);
     let presentDwellTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Space held = temporary hand tool (pan), Photoshop-style. */
+    const spacePanning = ref(false);
 
     // Export settings owned here; the toolbar mutates them via its settings prop.
     const exportSettings = ref({
@@ -175,6 +196,7 @@ export default defineComponent({
         const park = presentParkTarget(store.stepsSorted.value, t);
         if (park) {
           props.seekTo(park.t);
+          if (park.view) props.viewApi.tweenTo(park.view);
           props.pause();
           schedulePresentDwell();
         } else if (props.getDuration() > 0 && t >= props.getDuration() - 0.1) {
@@ -279,6 +301,20 @@ export default defineComponent({
             label: "",
             size: 40,
           };
+        case "route":
+          return {
+            id: "preview",
+            kind: "marker",
+            t0: 0,
+            at: d.raw[0],
+            heading: 0,
+            variant: "ship",
+            color: look.color,
+            label: "",
+            size: 40,
+            route: d.raw,
+            moveDur: 30,
+          };
         default:
           return null;
       }
@@ -288,9 +324,18 @@ export default defineComponent({
     function onPointerDown(e: PointerEvent): void {
       // Never let the click bubble to the mmzoom overlay (it closes on click).
       e.stopPropagation();
-      if (!props.editMode || e.button !== 0) return;
+      if (e.button !== 0) return;
       const hit = eventWorld(e);
       if (!hit) return;
+      // View-only mode still pans/zooms the camera (annotations are read).
+      // Edit mode pans via the hand tool or while Space is held.
+      const wantPan = !props.editMode || spacePanning.value || store.tool.value === "hand";
+      if (wantPan) {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        drag.value = { kind: "pan", lastLx: hit.lx, lastLy: hit.ly };
+        return;
+      }
+      if (!props.editMode) return;
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       const tool = store.tool.value;
       if (regionMode.value) {
@@ -310,6 +355,13 @@ export default defineComponent({
         case "markerShip":
         case "markerPlane":
           drag.value = { kind: "marker", at: hit.p, heading: 0, moved: false };
+          break;
+        case "markerRoute":
+          drag.value = { kind: "route", raw: [hit.p] };
+          break;
+        case "eraser":
+          drag.value = { kind: "erase" };
+          eraseAt(hit.p, hit.p2);
           break;
         case "text":
           openTextEditor(hit.p, null);
@@ -335,6 +387,21 @@ export default defineComponent({
       }
     }
 
+    /** Eraser hit: delete the topmost element under the point (each removal
+     *  is its own undo entry — matches Delete-key semantics). The radius is
+     *  a fixed screen size, independent of the current stroke width. */
+    function eraseAt(p: Vec2, pr: TacticalProjection): void {
+      const t = props.getTime();
+      const padWorld = 10 * pr.worldPerPx * 1.6;
+      for (let i = store.elements.value.length - 1; i >= 0; i--) {
+        const el = store.elements.value[i];
+        if (hitTestElement(el, p, padWorld, t)) {
+          store.removeElement(el.id);
+          return;
+        }
+      }
+    }
+
     function onPointerMove(e: PointerEvent): void {
       if (!drag.value) return;
       e.stopPropagation();
@@ -342,6 +409,11 @@ export default defineComponent({
       if (!hit) return;
       const d = drag.value;
       switch (d.kind) {
+        case "pan":
+          props.viewApi.panByLogical(hit.lx - d.lastLx, hit.ly - d.lastLy);
+          d.lastLx = hit.lx;
+          d.lastLy = hit.ly;
+          break;
         case "draw": {
           const last = d.raw[d.raw.length - 1];
           if (!last || Math.hypot(last.x - hit.p.x, last.z - hit.p.z) > hit.p2.worldPerPx * 1.2) {
@@ -349,6 +421,16 @@ export default defineComponent({
           }
           break;
         }
+        case "route": {
+          const last = d.raw[d.raw.length - 1];
+          if (!last || Math.hypot(last.x - hit.p.x, last.z - hit.p.z) > hit.p2.worldPerPx * 1.2) {
+            d.raw.push(hit.p);
+          }
+          break;
+        }
+        case "erase":
+          eraseAt(hit.p, hit.p2);
+          break;
         case "shape":
           d.to = hit.p;
           break;
@@ -387,6 +469,9 @@ export default defineComponent({
       if (!d) return;
       const pr = proj();
       switch (d.kind) {
+        case "pan":
+        case "erase":
+          break;
         case "draw":
           if (d.raw.length >= 2) {
             store.commit(
@@ -394,6 +479,18 @@ export default defineComponent({
             );
           }
           break;
+        case "route": {
+          if (d.raw.length >= 2) {
+            const el = commitRouteMarker(
+              d.raw,
+              store.style.value.color,
+              anchorT0(),
+              (pr?.worldPerPx ?? 1) * 2.2,
+            );
+            if (el) store.commit(el);
+          }
+          break;
+        }
         case "shape": {
           const r = pr ? worldRectToLogical(d.from, d.to, pr) : null;
           if (r && (r.w >= MIN_SHAPE_PX || r.h >= MIN_SHAPE_PX)) {
@@ -431,6 +528,20 @@ export default defineComponent({
           break;
         }
       }
+    }
+
+    /** Wheel = cursor-anchored zoom of the 2D viewport (any mode). */
+    function onWheel(e: WheelEvent): void {
+      e.stopPropagation();
+      e.preventDefault();
+      const cvs = canvasRef.value;
+      if (!cvs) return;
+      const rect = cvs.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
+      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
+      const factor = e.deltaY < 0 ? 1.22 : 1 / 1.22;
+      props.viewApi.zoomAt(lx, ly, factor);
     }
 
     function onDoubleClick(e: MouseEvent): void {
@@ -508,7 +619,9 @@ export default defineComponent({
       t: "text",
       h: "markerShip",
       i: "markerPlane",
+      m: "markerRoute",
       g: "pinPath",
+      e: "eraser",
     };
 
     function onKeydown(e: KeyboardEvent): void {
@@ -537,6 +650,12 @@ export default defineComponent({
         return;
       }
       if (typing) return;
+      // Space = temporary hand tool (hold to pan, release to restore).
+      if (e.key === " ") {
+        e.preventDefault();
+        spacePanning.value = true;
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         const key = e.key.toLowerCase();
         if (key === "z") {
@@ -691,7 +810,10 @@ export default defineComponent({
     function goToStep(i: number): void {
       if (offlineRendering.value) return;
       const s = stepsSorted.value[i];
-      if (s) props.seekTo(s.t);
+      if (!s) return;
+      props.seekTo(s.t);
+      // Step camera ("运镜"): eased viewport tween to the captured view.
+      if (s.view) props.viewApi.tweenTo(s.view);
     }
     function stepPrev(): void {
       goToStep(Math.max(0, currentStepIndex.value));
@@ -701,7 +823,7 @@ export default defineComponent({
     }
     function addStepHere(): void {
       if (offlineRendering.value) return;
-      const ok = store.addStep(props.getTime());
+      const ok = store.addStep(props.getTime(), props.viewApi.snapshot());
       if (!ok) toast.info(i18nT("replay.tactical.steps.duplicate"));
     }
     function removeStepById(id: string): void {
@@ -839,13 +961,50 @@ export default defineComponent({
       },
     );
 
+    // ── Annotation-doc JSON import / export ──────────────────────────────
+    function exportDocJson(): void {
+      const json = serializeDoc({
+        version: 1,
+        elements: store.elements.value,
+        steps: store.steps.value,
+      });
+      const blob = new Blob([json], { type: "application/json" });
+      void saveExportBlob(blob, `wowsp-tactical-${props.mapTag || "map"}.json`, "JSON", "json").then(
+        (saved) => {
+          if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
+        },
+      );
+    }
+
+    const jsonInput = ref<HTMLInputElement | null>(null);
+    function importDocJson(e: Event): void {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) return;
+      void file
+        .text()
+        .then((text) => {
+          const doc = parseDoc(text);
+          if (!doc) {
+            toast.error(i18nT("replay.tactical.toast.importBad"));
+            return;
+          }
+          store.applyDoc(doc);
+          toast.info(i18nT("replay.tactical.toast.imported"));
+        })
+        .catch(() => toast.error(i18nT("replay.tactical.toast.importBad")));
+    }
+
     onMounted(() => {
       raf = requestAnimationFrame(frame);
       window.addEventListener("keydown", onKeydown, true);
+      window.addEventListener("keyup", onKeyUp, true);
     });
     onBeforeUnmount(() => {
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeydown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       exitPresentMode();
       // Stop the offline render at the next frame boundary; whatever was
       // encoded so far still gets saved by the finally-block in the runner.
@@ -858,7 +1017,16 @@ export default defineComponent({
       }
     });
 
+    function onKeyUp(e: KeyboardEvent): void {
+      if (e.key === " ") spacePanning.value = false;
+    }
+
     const cursorClass = computed(() => {
+      if (drag.value?.kind === "pan" || spacePanning.value || !props.editMode) {
+        return "tac-layer__canvas--grab";
+      }
+      if (store.tool.value === "hand") return "tac-layer__canvas--grab";
+      if (store.tool.value === "eraser") return "tac-layer__canvas--point";
       if (regionMode.value) return "tac-layer__canvas--cross";
       switch (store.tool.value) {
         case "pen":
@@ -868,6 +1036,7 @@ export default defineComponent({
         case "ellipse":
         case "markerShip":
         case "markerPlane":
+        case "markerRoute":
         case "text":
           return "tac-layer__canvas--cross";
         case "pinPath":
@@ -884,10 +1053,10 @@ export default defineComponent({
           <canvas
             ref={canvasRef}
             class={["tac-layer__canvas", cursorClass.value]}
-            style={{ pointerEvents: edit ? "auto" : "none" }}
             onPointerdown={onPointerDown}
             onPointermove={onPointerMove}
             onPointerup={onPointerUp}
+            onWheel={onWheel}
             onPointercancel={(e: PointerEvent) => {
               // Lost pointer capture mid-gesture — drop the stroke, don't
               // leave a frozen preview on screen.
@@ -971,7 +1140,19 @@ export default defineComponent({
                         i === currentStepIndex.value ? "tac-steps__chip--on" : "",
                       ]}
                     >
-                      <button class="tac-steps__jump" onClick={() => goToStep(i)}>
+                      <button
+                        class="tac-steps__jump"
+                        title={i18nT("replay.tactical.steps.updateView")}
+                        onClick={(ev: MouseEvent) => {
+                          // Shift+click re-captures the current camera onto
+                          // the step; plain click seeks (with its 运镜).
+                          if (ev.shiftKey) {
+                            store.updateStepView(s.id, props.viewApi.snapshot());
+                          } else {
+                            goToStep(i);
+                          }
+                        }}
+                      >
                         {s.name}
                       </button>
                       <button
@@ -1026,9 +1207,19 @@ export default defineComponent({
                 },
                 recordToggle: toggleRecording,
                 offlineExport: () => void runOfflineExport(),
+                exportJson: exportDocJson,
+                importJson: () => jsonInput.value?.click(),
+                resetView: () => props.viewApi.reset(),
               }}
             />
           ) : null}
+          <input
+            ref={jsonInput}
+            class="tac-layer__file-input"
+            type="file"
+            accept=".json,application/json"
+            onChange={importDocJson}
+          />
         </div>
       );
     };

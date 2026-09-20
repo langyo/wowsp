@@ -12,8 +12,12 @@ import {
   Camera,
   Circle,
   Crop,
+  Download,
+  Eraser,
   FastForward,
+  Hand,
   MousePointer2,
+  Maximize2,
   Minus,
   Pen,
   Plane,
@@ -24,7 +28,9 @@ import {
   Trash2,
   Type,
   Undo2,
+  Upload,
   Video,
+  Waypoints,
 } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { TacticalStore } from "./useTactical";
@@ -47,6 +53,9 @@ export interface TacticalToolbarActions {
   exportRegion: () => void;
   recordToggle: () => void;
   offlineExport: () => void;
+  exportJson: () => void;
+  importJson: () => void;
+  resetView: () => void;
 }
 
 const TOOLS: { id: TacticalToolId; icon: typeof Pen; key: string }[] = [
@@ -59,7 +68,10 @@ const TOOLS: { id: TacticalToolId; icon: typeof Pen; key: string }[] = [
   { id: "text", icon: Type, key: "tools.text" },
   { id: "markerShip", icon: Ship, key: "tools.markerShip" },
   { id: "markerPlane", icon: Plane, key: "tools.markerPlane" },
+  { id: "markerRoute", icon: Waypoints, key: "tools.markerRoute" },
   { id: "pinPath", icon: Route, key: "tools.pinPath" },
+  { id: "eraser", icon: Eraser, key: "tools.eraser" },
+  { id: "hand", icon: Hand, key: "tools.hand" },
 ];
 
 const DASHES: DashStyle[] = ["solid", "dashed", "dotted"];
@@ -81,9 +93,17 @@ export default defineComponent({
     const tool = computed(() => props.store.tool.value);
     const style = computed(() => props.store.style.value);
     const isDrawTool = computed(() =>
-      ["pen", "line", "arrow", "rect", "ellipse", "markerShip", "markerPlane", "pinPath"].includes(
-        tool.value,
-      ),
+      [
+        "pen",
+        "line",
+        "arrow",
+        "rect",
+        "ellipse",
+        "markerShip",
+        "markerPlane",
+        "markerRoute",
+        "pinPath",
+      ].includes(tool.value),
     );
 
     return () => (
@@ -105,6 +125,14 @@ export default defineComponent({
               </HTooltip>
             );
           })}
+        </div>
+
+        <div class="tac-rail__group">
+          <HTooltip text={i18nT("replay.tactical.view.reset")} placement="left">
+            <HIconButton size={32} onClick={() => props.actions.resetView()}>
+              <Maximize2 size={15} />
+            </HIconButton>
+          </HTooltip>
         </div>
 
         <div class="tac-rail__sep" />
@@ -200,6 +228,16 @@ export default defineComponent({
               onClick={() => props.store.redo()}
             >
               <Redo2 size={15} />
+            </HIconButton>
+          </HTooltip>
+          <HTooltip text={i18nT("replay.tactical.action.exportJson")} placement="left">
+            <HIconButton size={32} disabled={props.busy} onClick={() => props.actions.exportJson()}>
+              <Download size={15} />
+            </HIconButton>
+          </HTooltip>
+          <HTooltip text={i18nT("replay.tactical.action.importJson")} placement="left">
+            <HIconButton size={32} disabled={props.busy} onClick={() => props.actions.importJson()}>
+              <Upload size={15} />
             </HIconButton>
           </HTooltip>
           {props.hasSelection ? (

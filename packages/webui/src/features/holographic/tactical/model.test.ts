@@ -4,12 +4,15 @@ import { describe, expect, it } from "vitest";
 import type { TacticalDoc, TacticalElement } from "./types";
 import {
   commitFreehand,
+  commitMarker,
+  commitRouteMarker,
   commitShape,
   commitStep,
   commitText,
   docStorageKey,
   elementProgress,
   hitTestElement,
+  markerPoseAt,
   moveElement,
   parseDoc,
   presentParkTarget,
@@ -91,6 +94,71 @@ describe("moveElement", () => {
     expect(moved.points).toEqual([p(5, -2), p(15, -2)]);
     const note = moveElement(commitText(p(1, 1), "a", "#fff", 0), 5, -2);
     expect(note.at).toEqual(p(6, -1));
+  });
+});
+
+describe("commitRouteMarker / markerPoseAt", () => {
+  const route = [p(0, 0), p(100, 0), p(100, 100)];
+  it("creates a scripted marker riding its route over moveDur seconds", () => {
+    const el = commitRouteMarker(route, "#fff", 10, 0.5, 50);
+    expect(el).not.toBeNull();
+    const m = el!;
+    expect(m.route).toHaveLength(3);
+    expect(m.moveDur).toBe(50);
+    expect(markerPoseAt(m, 10).at).toEqual(p(0, 0));
+    // halfway of a 200 m route at 50 % of 50 s → the corner (100, 0)
+    expect(markerPoseAt(m, 35).at).toEqual(p(100, 0));
+    expect(markerPoseAt(m, 60).at).toEqual(p(100, 100));
+    // heading follows the tangent: first leg is east, final leg is north
+    expect(markerPoseAt(m, 12).heading).toBeCloseTo(Math.PI / 2);
+    expect(markerPoseAt(m, 55).heading).toBeCloseTo(0);
+  });
+
+  it("degenerates to a static marker when the route is too short", () => {
+    expect(commitRouteMarker([p(0, 0)], "#fff", 0, 1)).toBeNull();
+  });
+
+  it("static markers ignore route interpolation", () => {
+    const m = commitMarker(p(5, 5), 1, "ship", "#fff", 0);
+    expect(markerPoseAt(m, 100)).toEqual({ at: p(5, 5), heading: 1 });
+  });
+
+  it("moving a scripted marker translates the route too", () => {
+    const m = moveElement(commitRouteMarker(route, "#fff", 0, 0.5, 30)!, 10, -5);
+    expect(m.kind === "marker" && m.route?.[0]).toEqual(p(10, -5));
+    expect(m.kind === "marker" && m.route?.[2]).toEqual(p(110, 95));
+  });
+});
+
+describe("step camera (view) persistence", () => {
+  it("addStep captures and normalizeSteps round-trips the view", async () => {
+    const { useTactical } = await import("./useTactical");
+    const { ref } = await import("vue");
+    const s = useTactical(ref("D:\\t.wowsreplay"));
+    s.addStep(20, { cx: 100, cz: 200, scale: 3.5 });
+    const stored = s.steps.value[0];
+    expect(stored.view).toEqual({ cx: 100, cz: 200, scale: 3.5 });
+    const doc = parseDoc(
+      serializeDoc({ version: 1, elements: [], steps: s.steps.value }),
+    )!;
+    expect(doc.steps[0].view).toEqual({ cx: 100, cz: 200, scale: 3.5 });
+  });
+
+  it("normalizeSteps drops broken views and clamps wild scales", () => {
+    const doc = parseDoc(
+      JSON.stringify({
+        version: 1,
+        elements: [],
+        steps: [
+          { id: "a", t: 1, name: "", view: { cx: 1, cz: 2, scale: 99 } },
+          { id: "b", t: 2, name: "", view: { cx: Number.NaN, cz: 2, scale: 2 } },
+          { id: "c", t: 3, name: "" },
+        ],
+      }),
+    )!;
+    expect(doc.steps[0].view?.scale).toBe(12);
+    expect(doc.steps[1].view).toBeUndefined();
+    expect(doc.steps[2].view).toBeUndefined();
   });
 });
 
