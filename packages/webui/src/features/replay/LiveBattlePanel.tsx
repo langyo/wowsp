@@ -299,7 +299,7 @@ export default defineComponent({
               <span class="live-battle__player-ship">{shipName}</span>
               <span class="live-battle__player-stat">{statLine(v)}</span>
             </span>
-            {stamp && prefs.prefs.sealsEnabled ? (
+            {stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
               <RatingStamp
                 kind={stamp}
                 size={26}

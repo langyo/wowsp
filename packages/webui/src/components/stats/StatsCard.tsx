@@ -56,12 +56,17 @@ export default defineComponent({
       () => props.stats.accountId,
       () => props.stats.realm,
     );
-    // The seals render nothing outside zh locales (RatingStamp's own rule)
-    // nor when the user turned them off — two AND-composed gates; gating the
-    // cluster too keeps non-zh / no-seal heroes from growing an empty slot.
+    // The seals render nothing outside zh locales (RatingStamp's own rule),
+    // while the PR rating is off (the seals toggle is the master switch's
+    // sub-control in settings — off master, no seals), nor when the user
+    // turned them off — three AND-composed gates; gating the cluster too
+    // keeps non-zh / no-seal heroes from growing an empty slot.
     const { uiLocale } = useLanguage();
     const sealsVisible = computed(
-      () => uiLocale.value.startsWith("zh") && prefs.prefs.sealsEnabled,
+      () =>
+        uiLocale.value.startsWith("zh") &&
+        prefs.prefs.prEnabled &&
+        prefs.prefs.sealsEnabled,
     );
     const wrTier = computed(() => winrateTier(props.stats.winrate));
     const wrColor = computed(() => winrateColor(props.stats.winrate));

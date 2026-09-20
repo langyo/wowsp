@@ -140,24 +140,30 @@ const realm = new URLSearchParams(window.location.search).get("realm") ?? "";
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
 
 // ── Seals (career/composition stamp bitmaps beside the chip numbers) ────
-// Local one-knob mirror of stores/statsPrefs.ts (STATS_PREFS_STORAGE_KEY =
-// "wowsp-stats-prefs", DEFAULT_STATS_PREFS.sealsEnabled = true): the bare-DOM
-// page must not import the pinia store, so the pref is re-read here with the
-// same contract as parsePrefs — a corrupt blob or unavailable localStorage
-// falls back to the default (on).
-const SEALS_ENABLED = (() => {
+// Local two-knob mirror of stores/statsPrefs.ts (STATS_PREFS_STORAGE_KEY =
+// "wowsp-stats-prefs", DEFAULT_STATS_PREFS.prEnabled = false,
+// DEFAULT_STATS_PREFS.sealsEnabled = true): the bare-DOM page must not import
+// the pinia store, so the prefs are re-read here with the same contract as
+// parsePrefs — a corrupt blob or unavailable localStorage falls back to the
+// defaults. The seals toggle is the PR master switch's sub-control in
+// settings, so the chips follow the same AND-composition as the webui
+// surfaces: no PR rating, no seals.
+const SEALS_ON = (() => {
+  const fallback = { pr: false, seals: true };
   try {
     const raw = localStorage.getItem("wowsp-stats-prefs");
-    if (raw == null) return true;
-    const j = JSON.parse(raw) as { sealsEnabled?: unknown };
-    return typeof j?.sealsEnabled === "boolean" ? j.sealsEnabled : true;
+    if (raw == null) return fallback.pr && fallback.seals;
+    const j = JSON.parse(raw) as { prEnabled?: unknown; sealsEnabled?: unknown };
+    const pr = typeof j?.prEnabled === "boolean" ? j.prEnabled : fallback.pr;
+    const seals = typeof j?.sealsEnabled === "boolean" ? j.sealsEnabled : fallback.seals;
+    return pr && seals;
   } catch {
-    return true;
+    return fallback.pr && fallback.seals;
   }
 })();
 // The seal glyphs are Chinese calligraphy bitmaps — RatingStamp.tsx renders
 // nothing under a non-zh UI locale, and the overlay chips follow suit.
-const SEALS_ON = SEALS_ENABLED && locale.startsWith("zh");
+const SEALS_SHOWN = SEALS_ON && locale.startsWith("zh");
 
 // kind → bitmap + Chinese label, copied from RatingStamp.tsx's STAMP_GLYPHS
 // (bare DOM cannot reuse that Vue component).
@@ -236,7 +242,7 @@ function chipContent(name: string): string {
         : `<b class="muted">—</b>`;
     core = `${wr}<span class="sep">·</span>${dmg}`;
   }
-  if (!SEALS_ON) return core;
+  if (!SEALS_SHOWN) return core;
   // Seals flank the numbers: career verdict left, composition tags right
   // (air before sub). A name without stats yet shows no seal at all — the
   // verdicts are derived from data the stats/composition batches bring.
@@ -496,7 +502,7 @@ async function runBatch() {
  *  already landed but whose verdict is not cached yet. Seals off (or an
  *  empty realm) never queue, so the whole pipeline stays dormant. */
 function scheduleCompBatch() {
-  if (!arena || !tauri || !SEALS_ON || !realm) return;
+  if (!arena || !tauri || !SEALS_SHOWN || !realm) return;
   // A failed seal batch owns its retry cadence (backoff below) — fresh
   // events must not bypass it and hammer the API, same contract as stats.
   if (compRetryTimer) return;
