@@ -18,6 +18,8 @@
 | E8 | 烟雾/消耗品/点亮事件协议逆向 | 三类语义事件能否从 EntityMethod/EntityProperty 流解出 | ✅ | 烟雾确证；消耗品/点亮排除 |
 | E9 | 模型交付闭环原型（`train_fire_model.py`） | 样本导出→PyTorch 训练→ONNX→int8→Rust ort 实模型推理的全链路 | ✅ | 闭环（165µs/次） |
 | E10 | def 机器生成完整 method 表 | 15.8.0 权威 def 能否精确复算 EntityMethod id 排序 | ✅ | 精确复算，100% 覆盖 |
+| E11 | 点亮/消耗品/引擎事件重评估 | E10 定出 id 后，E8 排除的事件能否解出 | ✅ | 点亮/消耗品/引擎确证 |
+| E12 | 批量摄取 + 多局训练 + 烟雾进 tick | G2/G3：规模化数据与训练管线 | ✅ | 全部打通 |
 
 > 另有训练侧三主题网络调研（数据规模化获取 / 无环境评估协议 / 可导出 ONNX 的
 > 实体编码结构），结论见文末「研究纪要」。
@@ -26,10 +28,10 @@
 
 | Goal | 内容 | 完成标准 | 状态 |
 |------|------|---------|------|
-| G1 | 视野与状态特征完备 | tick 快照含：烟雾遮挡、消耗品状态、可见性事件、全船节速意图 | 🔬 E11 进行中 |
-| G2 | 数据规模化就绪 | 任意录像文件夹 → 一键聚合数据集（容错跳坏文件）+ 按局切分 | 🔬 E12 进行中 |
-| G3 | 训练工程化 | 多局训练 + 纪要 B 评估指标全实现（分层 κ / ECE / decile lift / GroupKFold） | 🔬 E12 进行中 |
-| G4 | 分发与端上集成 | `decisions` 模型包（含 LOS 栅格）+ 端上加载真模型 + 战术板建议层 | ⏸ 排队 |
+| G1 | 视野与状态特征完备 | tick 快照含：烟雾遮挡、消耗品状态、可见性事件、全船节速意图 | ✅ E8/E11/E12（节速意图仅录制者，全船为引擎输出档） |
+| G2 | 数据规模化就绪 | 任意录像文件夹 → 一键聚合数据集（容错跳坏文件）+ 按局切分 | ✅ E12 |
+| G3 | 训练工程化 | 多局训练 + 纪要 B 评估指标全实现（分层 κ / ECE / decile lift / GroupKFold） | ✅ E12 |
+| G4 | 分发与端上集成 | `decisions` 模型包（含 LOS 栅格）+ 端上加载真模型 + 战术板建议层 | ⏸ 排队（下一波） |
 | G5 | 第一个可用开火决策模型 | 炮船录像 ≥ 数百局 → 弱监督预训练+本船微调 → 纪要 B 验收门槛 → 随包分发 | ⛔ 等数据（需炮船录制录像） |
 
 **待用户决策**：15.8.0 两个陈旧 pin（`explosions` 128→131、`wardRemoved` 50→51，见 E10）是否采纳为解码行为变更；炮船录像采集方式（自己打 / 授权采集）。
@@ -241,6 +243,51 @@ tick 快照可算「敌舰已知位置是否在某活跃烟云内」；视野特
 - 生成器可重现性：`gen_method_tables.py --defs` 离线校验模式（快照 diff
   硬失败、pin 分歧报 stderr）；重生成两次字节一致，15.8.0 行与全部历史行
   逐字节不变。290 测试通过（+5），fmt/clippy 绿。
+
+### E11 · 点亮/消耗品/引擎事件确证（G1 核心）✅
+
+- **`updateMinimapVisionInfo`=155 = 显式点亮事件流**（最高优先级候选拿下）：
+  布局 `MINIMAPINFO×2`（每项 `[u8 n]{[u32 vehicleID][u32 packedData]}`）；
+  **bit31=1（哨兵 0x80000000）= 未点亮标记**。与 E3 间隙语义的对齐率：
+  **间隙起点 89/89、终点 89/89（双双 100%）**，其中 84/89 起点的最后一条
+  恰为哨兵——E3 的「间隙=未点亮」从推断升级为直接验证，且从此有显式事件
+  可用。packedData 低 31 位疑似位置量子（相关拟合 ~0.2 未解出编码，按红线
+  保留原始值）。
+- **`onConsumableUsed`=72 确证**（布局镜像 vendored wows-replays 的
+  UsageConverter）：104 次全 7 字节变体 1，跨 22 船双方阵营，ids
+  {0,1,3,4,6,8,9,10,65}，时长 5–600s（id0=5s≈损管、id8=28s≈修理小组；
+  id→名称映射留给 GameParams 侧）。
+- **`enginePower`(idx9)/`engineDir`(idx10) 确证，语义修正**：是**引擎当前
+  输出档（0-10 十分位）与力方向符号**，不是节速意图——满功率窗口中位速度
+  0.842×p95（n=699）vs 低功率窗口 0.000（n=226）；录制者 7/7 次减油门
+  ~1s 内 engineDir 翻 −1（制动）。覆盖 23/24 船。**意图标签仍只有录制者
+  可得（E2 CruiseState）**。
+- **排除/半确证**：`receive_squadronVisibilityChanged` 布局解出（PLANE_ID+u16）
+  但 u16 与中队在场/缺席无判别力，排除；`clientInsideSmoke`/`ownSmokeCreated`/
+  `vehicleLeaveSmoke`/`notifyAboutSmokePenalty` def 签名明确但本场零调用，
+  半确证待样本。
+- 门禁：300 测试通过（+6，零回归）。新事件进 `DecodedReplay`（私有），
+  `ReplayStream` 未动；`E11MethodIds` 版本门控仅 15.8.x（晋升进生成表留后续）。
+
+### E12 · 批量摄取 + 多局训练 + 烟雾进 tick（G2/G3）✅
+
+- **G2 批量摄取**（fire_dataset.rs）：`export_decision_dataset_dir` 文件夹
+  →聚合数据集，坏/空/非 replay 文件记录原因跳过不中断；每行带 `replayId`
+  （walker 统一盖章）；LOS 栅格按 `<los_dir>/<地图短名>/terrain_los.npz`
+  逐局解析、缺图降级。真实录像验证：3 seen/1 exported/2 failed（容错生效），
+  3584 行与 E9 逐位一致。
+- **G3 训练工程化**（train_fire_model.py）：`--data` 多文件 + `--data-dir`
+  递归；按 replayId 的确定性 GroupKFold + 留一局评估（单局回退随机切分并
+  高声标注）；**纪要 B 指标全实现**：log loss/Brier/PR-AUPRC/ROC-AUC/
+  ECE+reliability/分层 Cohen's κ（距离桶×observed 敌舰数，n<30 如实 None）/
+  decile lift（Spearman ρ）/「物理不能打」子集假阳性计数。`--selftest`
+  无 torch 可跑。真实运行：held-out 头 B AUPRC 0.319、decile ρ=0.673、
+  cannot-fire FP 40/454（一局数据，管线证据）。顺带修了 E9 的一个潜伏
+  bug（ORT prefix 长度数组错配）。
+- **烟雾进 tick**（decision_tick.rs）：`DecisionTickSmokeState`（flatten
+  扩展，零共享 crate 改动）——活跃烟 {radiusM(GP×30)、remainingS、漂移
+  中心} + 实体级 `entities_inside_smoke` 并行数组（米制统一比较）。真实
+  对照：9 朵烟与 E8 逐条一致；t=300 恰 1 朵活跃、t=600 有 4 朵重叠。
 
 ## 对总体可行性的意义
 
