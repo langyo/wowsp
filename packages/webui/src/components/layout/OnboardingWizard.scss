@@ -1,57 +1,35 @@
-// First-launch onboarding wizard. A full-window overlay (below the fixed
-// 32px title bar so window controls stay reachable, above the sidebar/main
-// chrome, below hikari's modal/toast popup bands — --z-modal is 1000 and
-// hikari hands out 1000+ dynamically, so 990 slots in underneath). The
-// scrim is a light translucent fill + backdrop blur, NOT an opaque color:
-// the theme/wallpaper steps preview their changes live through it.
+// First-launch onboarding wizard. The wizard rides the shared HModal
+// window shell (surface-machine open/close motion, delayed unmount,
+// content hold) so it folds in and out like every other window in the
+// app. What stays wizard-specific is the WINDOW TINT, overridden through
+// the modal's token hooks scoped to this one surface:
+//   - the scrim is a light translucent fill + backdrop blur, NOT the
+//     standard dark curtain — the theme/wallpaper steps preview their
+//     changes live through it;
+//   - the panel keeps its translucent glass surface.
+// The `:has` scope keys off the contentClass the wizard passes to HModal,
+// so no other modal in the app picks these up.
 
+.hk-modal-root:has(> .hk-modal-content.onboarding-wizard) {
+  --hk-modal-overlay-bg: rgb(var(--color-background) / 45%);
+  --hk-modal-overlay-blur: blur(var(--blur-sm));
+}
+
+.hk-modal-content.onboarding-wizard {
+  --hk-modal-bg: rgb(var(--color-surface) / 82%);
+  --hk-modal-border-color: rgb(var(--color-border) / 20%);
+}
+
+/* Step bodies live inside the modal's scroll container; the tall notice
+   step keeps its own inner scroll region (nested on purpose: the step
+   must not grow the window every frame). */
 .onboarding {
-  position: fixed;
-  inset: 32px 0 0 0;
-  z-index: 990;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  box-sizing: border-box;
-  background: rgb(var(--color-background) / 45%);
-  backdrop-filter: blur(var(--blur-sm));
-  -webkit-backdrop-filter: blur(var(--blur-sm));
-
-  &__panel {
-    display: flex;
-    flex-direction: column;
-    width: min(40rem, 100%);
-    max-height: 100%;
-    padding: 1.25rem 1.5rem 1.25rem;
-    box-sizing: border-box;
-    background: rgb(var(--color-surface) / 82%);
-    border: 1px solid rgb(var(--color-border) / 20%);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
-  }
-
-  &__head {
-    flex: none;
-    padding-bottom: 0.5rem;
-  }
-
-  &__title {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: 600;
-    color: rgb(var(--color-text));
-  }
-
-  /* Step bodies scroll inside the panel when short viewports squeeze them
-     (the notice step's four language blocks are the tall case). */
   &__body {
     min-height: 14rem;
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
     padding: 0.25rem 0.25rem 0.5rem;
-    overflow-y: auto;
 
     &--welcome {
       min-height: 16rem;
@@ -180,16 +158,5 @@
     height: 100%;
     background-size: cover;
     background-position: center;
-  }
-
-  /* ── footer nav ── */
-
-  &__nav {
-    flex: none;
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.6rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid rgb(var(--color-border) / 12%);
   }
 }

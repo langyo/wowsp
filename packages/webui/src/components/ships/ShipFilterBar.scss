@@ -108,6 +108,14 @@
    teleport, glass surface) so overflow ancestors can never clip it — the
    old absolute-position `.ship-filter-bar__pop` / `[data-edge]` rules died
    with that move. Only the panel's INNER content is styled here. */
+/* HPopover paints the panel chrome (glass surface, border, shadow) but
+   no inner spacing — the slot content owns it. This restores the padding
+   the pre-portal absolute-positioned panel carried, lost in the HPopover
+   migration (content sat flush against the panel edge). */
+.ship-filter-bar__pop {
+  padding: 10px 12px 8px;
+}
+
 .ship-filter-bar__pop-head {
   display: flex;
   align-items: center;

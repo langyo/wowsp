@@ -46,6 +46,13 @@
    position `.async-search-combo__panel` rule (and its --left/--right edge
    modifiers, now HPopover placements) died with that move. Only the
    panel's INNER content is styled below. */
+/* HPopover paints the panel chrome but no inner spacing — the slot
+   content owns it (restores the padding the retired absolute-positioned
+   panel rule carried). */
+.async-search-combo__panel {
+  padding: 10px 12px 12px;
+}
+
 .async-search-combo__panel-head {
   display: flex;
   align-items: center;

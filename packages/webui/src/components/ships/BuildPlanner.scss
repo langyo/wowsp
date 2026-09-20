@@ -642,6 +642,15 @@
   line-height: 1.45;
   box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
   pointer-events: none;
+  // Fade in on show; the fade-out rides the transition below with the
+  // component holding the DOM through the 0.18s leave (delayed unmount).
+  animation: flag-card-in 0.16s ease-out;
+  transition: opacity 0.18s ease-in;
+
+  &--leave {
+    opacity: 0;
+  }
+
 
   &__name {
     font-weight: 700;
@@ -685,6 +694,25 @@
     &--bad {
       color: #e57373;
     }
+  }
+}
+
+@keyframes flag-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flag-card {
+    animation: none;
+    transition: none;
   }
 }
 
