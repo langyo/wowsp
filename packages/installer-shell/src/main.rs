@@ -71,10 +71,12 @@ const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-conf
 const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wowsp-payload.shun"));
 /// Build flavor identity (model-pack + WebView2 bundling), stamped by build.rs.
 const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.txt"));
-/// res-latest asset updated_at the staged models were packed from
-/// ("" when unknown — e.g. plain `cargo build`); written as the
-/// app's model-cache version stamp after relocation.
+/// Content tree hash of the staged resource pack ("" when unknown — e.g.
+/// plain `cargo build` or an unreachable res-latest manifest); written
+/// with the version below into the app's `.res-version.json` stamp after
+/// relocation, so first launch treats the shipped pack as current.
 const SHUN_RES_TREE_SHA256: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-tree.txt"));
+/// The published-at timestamp that shipped with that tree hash.
 const SHUN_RES_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-version.txt"));
 /// License texts per wizard locale (SySL + official translations).
 const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"));

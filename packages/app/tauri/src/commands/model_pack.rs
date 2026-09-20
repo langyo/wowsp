@@ -762,8 +762,11 @@ async fn full_install(
     .map_err(|e| format!("extract task: {e}"))
     .and_then(|r| r);
     // Either way the staging tree itself is disposable: on success its
-    // sub-directories have been renamed into the cache root, on failure
-    // the previous pack under the cache root was never touched.
+    // sub-directories have been renamed into the cache root; on an
+    // extraction failure the previous pack was never touched. A SWAP
+    // mid-failure can leave a half-replaced cache (one sub-directory new,
+    // the other old) — the stamp is only written after a full success, so
+    // the next pass re-runs and converges.
     let _ = fs::remove_dir_all(&staging);
     let _ = fs::remove_file(&tmp);
     outcome?;
@@ -1069,7 +1072,10 @@ pub async fn check_res_update() -> Result<ResUpdate, String> {
         },
         None => (None, None, false),
     };
-    let delta_steps = if update_available && local.tree_sha256.is_some() {
+    let delta_steps = if update_available
+        && local.tree_sha256.is_some()
+        && dir_populated(&cache.join("models"))
+    {
         match fetch_delta_edges(&client).await {
             Ok(edges) => {
                 let chain = delta_chain(
@@ -1167,14 +1173,14 @@ pub async fn clear_res() -> Result<(), String> {
         for name in SUBDIRS
             .iter()
             .map(|s| s.to_string())
-            .chain(std::iter::once(STAGING_DIR.to_string()))
+            .chain([STAGING_DIR, DELTA_STAGING_DIR].map(|s| s.to_string()))
         {
             let dir = cache.join(&name);
             if dir.exists() {
                 fs::remove_dir_all(&dir).map_err(|e| format!("remove {name}: {e}"))?;
             }
         }
-        for file in [VERSION_FILE, PACK_TMP, DELTA_TMP, DELTA_STAGING_DIR] {
+        for file in [VERSION_FILE, PACK_TMP, DELTA_TMP] {
             let p = cache.join(file);
             if p.is_file() {
                 let _ = fs::remove_file(&p);
