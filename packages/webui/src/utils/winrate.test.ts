@@ -45,6 +45,12 @@ describe("careerStamp", () => {
     expect(careerStamp(749, null, null)).toBe("ape");
   });
 
+  it("stamps 过街老鼠 on hidden profiles regardless of anything else", () => {
+    expect(careerStamp(null, null, null, true)).toBe("rat");
+    expect(careerStamp(2600, 3000, 60, true)).toBe("rat");
+    expect(careerStamp(400, 30, 39.9, true)).toBe("rat");
+  });
+
   it("stamps 神了 only on sustained purple-tier+ careers", () => {
     expect(careerStamp(2100, 500, 55)).toBe("miracle");
     expect(careerStamp(2600, 3000, 60)).toBe("miracle");

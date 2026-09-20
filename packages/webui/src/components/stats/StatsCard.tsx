@@ -38,7 +38,7 @@ export default defineComponent({
       pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`),
     );
     const stamp = computed(() =>
-      careerStamp(props.stats.pr, props.stats.battles, props.stats.winrate),
+      careerStamp(props.stats.pr, props.stats.battles, props.stats.winrate, props.stats.hidden),
     );
     /** 成分 tags (空中小人 / 水下小人) from the shared per-ship cache — the
      *  same lookup flow that fills the ship distribution below this card. */

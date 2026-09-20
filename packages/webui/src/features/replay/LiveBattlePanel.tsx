@@ -261,10 +261,11 @@ export default defineComponent({
         // edge (same "pressed onto the card" look as the account card), so it
         // needs its own copy of the career guard statLine uses above.
         const st = clickable ? stats.get(v.id) : null;
+        // Hidden profiles earn the 过街老鼠 seal instead of a stat verdict —
+        // careerStamp's hidden branch handles that; everything else grades
+        // from the numbers (unknown winrate → 海猴 fallback).
         const stamp =
-          st && !st.loading && !st.hidden && st.winrate != null
-            ? careerStamp(st.pr, st.battles, st.winrate)
-            : null;
+          st && !st.loading ? careerStamp(st.pr, st.battles, st.winrate, st.hidden) : null;
         const classes = [
           "live-battle__player",
           { "live-battle__player--link": clickable },
