@@ -1,6 +1,6 @@
 {
   "productName": "WoWSP Installer",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "identifier": "com.langyo.wowsp.installer",
   "build": {
     "beforeBuildCommand": "pnpm --filter @wowsp/installer-web build",
