@@ -513,12 +513,10 @@ export default defineComponent({
                               ) : null}
                             </span>
                             <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
-                            <span class="lookup-view__ship-name">
-                              {off?.tier != null ? (
-                                <em class="lookup-view__ship-tier">{tierToRoman(off.tier)}</em>
-                              ) : null}
-                              {displayName(s)}
-                            </span>
+                            <em class="lookup-view__ship-tier">
+                              {off?.tier != null ? tierToRoman(off.tier) : ""}
+                            </em>
+                            <span class="lookup-view__ship-name">{displayName(s)}</span>
                             <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
                             <span
                               class="lookup-view__ship-wr"
