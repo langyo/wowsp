@@ -12,7 +12,10 @@
     align-items: center;
     gap: 0.5rem;
     padding: 1.25rem 1.25rem 1rem;
-    font-size: var(--text-lg);
+    /* Literal rem, NOT var(--text-lg): the app title is intentionally
+       excluded from the font-scale setting (brand identity must not
+       scale — see theme/fontScalePreference). */
+    font-size: 1.125rem;
     font-weight: 700;
     color: rgb(var(--color-primary));
     letter-spacing: 0.02em;

@@ -202,11 +202,14 @@
     filter: grayscale(0.9);
   }
 
+  /* Player-entry text runs ONE step up the --text-* scale (xs→sm,
+     2xs→xs) so the live roster reads slightly larger than the chrome
+     around it — head title, pills and column titles stay untouched. */
   &__player-name {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -227,7 +230,7 @@
 
   &__player-ship {
     color: rgb(var(--color-text) / 0.45);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -236,7 +239,7 @@
   &__player-stat {
     display: flex;
     align-items: center;
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.7);
 
     /* WR / PR values carry their tier color inline (winrateColor / prTier). */

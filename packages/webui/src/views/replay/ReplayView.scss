@@ -198,7 +198,7 @@
     justify-content: space-between;
     padding: 0.6rem 1rem;
     border-bottom: 1px solid rgb(var(--color-text) / 0.1);
-    font-size: var(--text-sm);
+    font-size: var(--text-base);
   }
   &__modal-title {
     display: flex;
@@ -207,7 +207,7 @@
     min-width: 0;
   }
   &__results-note {
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     font-weight: 400;
     letter-spacing: 0.02em;
     color: #ffd93d;
@@ -217,7 +217,7 @@
     background: transparent;
     color: rgb(var(--color-text) / 0.7);
     cursor: pointer;
-    font-size: var(--text-sm);
+    font-size: var(--text-base);
     &:hover { color: rgb(var(--color-text)); }
   }
   &__modal-body {
@@ -281,10 +281,12 @@
     white-space: pre-wrap;
   }
 
-  /* Post-battle: two-column team matrix + drill-down panel */
+  /* Post-battle: two-column team matrix + drill-down panel. The stats
+     content runs ONE step up the --text-* scale (2xs→xs, sm→base) so the
+     result sheet reads slightly larger than the replay list around it. */
   &__postbattle-cell-status {
     flex: 0 0 auto;
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.45);
   }
   &__postbattle-bot {
@@ -319,7 +321,7 @@
   }
   &__postbattle-col-title {
     color: rgb(var(--color-text) / 0.55);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     letter-spacing: 0.08em;
     padding: 0 2px 2px;
     border-bottom: 1px solid rgb(var(--color-text) / 0.1);
@@ -336,7 +338,7 @@
     color: rgb(var(--color-text));
     text-align: left;
     cursor: pointer;
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     transition: background 0.15s;
     &:hover { background: rgb(var(--color-text) / 0.1); }
     &:disabled {
@@ -407,7 +409,7 @@
     background: none;
     color: rgb(var(--color-text) / 0.6);
     cursor: pointer;
-    font-size: var(--text-sm);
+    font-size: var(--text-base);
   }
   &__postbattle-detail-head {
     display: flex;
@@ -418,17 +420,17 @@
   &__postbattle-detail-ico { display: inline-flex; }
   &__postbattle-detail-name {
     font-weight: 600;
-    font-size: var(--text-sm);
+    font-size: var(--text-base);
   }
   &__postbattle-detail-ship {
     font-style: normal;
     color: rgb(var(--color-text) / 0.5);
     margin-left: 8px;
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
   }
   &__postbattle-killed {
     color: #ff6b6b;
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     margin-bottom: 6px;
   }
   &__postbattle-detail-body {
@@ -444,14 +446,14 @@
   }
   &__postbattle-detail-damage-num {
     font-family: var(--font-mono);
-    font-size: 26px;
+    font-size: 1.75rem;
     font-weight: 700;
     color: rgb(var(--color-text));
     line-height: 1;
   }
   &__postbattle-detail-damage-label {
     color: rgb(var(--color-text) / 0.5);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     margin-top: 2px;
   }
   &__postbattle-detail-ribbons {
@@ -469,7 +471,7 @@
       right: -4px;
       bottom: -4px;
       font-style: normal;
-      font-size: 9px;
+      font-size: 0.625rem;
       font-weight: 700;
       color: #111;
       background: #ffd93d;
@@ -481,7 +483,7 @@
   &__postbattle-damage-unknown {
     font-style: normal;
     color: #ffd93d;
-    font-size: 16px;
+    font-size: 1.0625rem;
     vertical-align: super;
     cursor: help;
   }
@@ -491,7 +493,7 @@
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px solid rgb(var(--color-text) / 0.1);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.7);
     b { color: #ffd93d; font-family: var(--font-mono); margin-left: 4px; }
   }
@@ -505,7 +507,7 @@
       padding: 6px;
       background: rgba(0, 0, 0, 0.35);
       border-radius: 4px;
-      font-size: 10px;
+      font-size: 0.6875rem;
     }
   }
   &__postbattle-rawbtn {
@@ -515,7 +517,7 @@
     border-radius: 4px;
     background: rgb(var(--color-text) / 0.08);
     color: rgb(var(--color-text) / 0.7);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     cursor: pointer;
     &:hover { background: rgb(var(--color-text) / 0.14); }
   }
@@ -554,7 +556,7 @@
       background: none;
       color: rgb(var(--color-text) / 0.6);
       cursor: pointer;
-      font-size: var(--text-sm);
+      font-size: var(--text-base);
     }
   }
   /* Player-detail body scrolls between the fixed head and the jump button —
@@ -571,7 +573,7 @@
     padding: 6px;
     background: rgba(0, 0, 0, 0.35);
     border-radius: 4px;
-    font-size: 10px;
+    font-size: 0.6875rem;
     white-space: pre-wrap;
     word-break: break-all;
   }
@@ -582,7 +584,7 @@
   }
   &__postbattle-global-note {
     color: rgb(var(--color-text) / 0.5);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
 
     &--loading {
       display: flex;
@@ -594,7 +596,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px 14px;
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.7);
     b { color: rgb(var(--color-text)); font-family: var(--font-mono); margin-right: 3px; }
   }
@@ -606,7 +608,7 @@
     border-radius: 5px;
     background: rgb(var(--color-accent) / 22%);
     color: rgb(var(--color-accent));
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     cursor: pointer;
     align-self: flex-start;
     &:hover { background: rgb(var(--color-accent) / 35%); }
@@ -618,7 +620,7 @@
   }
   &__postbattle-dist-title {
     color: rgb(var(--color-text) / 0.55);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     margin-bottom: 5px;
   }
   &__postbattle-dist-row {
@@ -628,7 +630,7 @@
     margin-bottom: 3px;
   }
   &__postbattle-dist-item {
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.7);
     b { color: #ffd93d; font-family: var(--font-mono); margin-right: 2px; }
   }
