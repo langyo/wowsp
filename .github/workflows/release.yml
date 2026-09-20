@@ -71,7 +71,14 @@ jobs:
         # full flavors embed the complete 2D/3D payload (fresh installs
         # never touch the network for resources). The default flavor set
         # also builds the lite artifact (no pack; downloaded on demand).
-        run: python scripts/build_installers.py --models fetch
+        # The rm clears installer exes restored by the cargo cache from a
+        # PREVIOUS release build — without it the upload glob below sweeps
+        # the stale artifacts into the new release (observed on v0.3.0,
+        # which initially carried both 0.2.0 and 0.3.0 installers).
+        shell: bash
+        run: |
+          rm -rf target/release/bundle/installer
+          python scripts/build_installers.py --models fetch
 
       - name: Upload release artifacts (draft)
         # Only tag pushes publish: a workflow_dispatch on a branch has no

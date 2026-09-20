@@ -9,6 +9,8 @@ mismatched app/site bundle.
 Checked fields (all must be equal):
   - Cargo.toml                → [workspace.package] version
   - packages/app/tauri/tauri.conf.json → version
+  - packages/installer-shell/tauri.conf.json → version (the installer
+    exe's Windows version resource — was pinned at 0.1.0 through v0.3.0)
   - package.json              → version (root)
   - packages/{webui,website,holo}/package.json → version
 """
@@ -30,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCES: list[tuple[str, str]] = [
     ("Cargo.toml [workspace.package]", "Cargo.toml"),
     ("tauri.conf.json", "packages/app/tauri/tauri.conf.json"),
+    ("installer-shell tauri.conf.json", "packages/installer-shell/tauri.conf.json"),
     ("package.json (root)", "package.json"),
     ("packages/webui/package.json", "packages/webui/package.json"),
     ("packages/website/package.json", "packages/website/package.json"),
