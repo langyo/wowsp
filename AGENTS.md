@@ -105,10 +105,11 @@
   3. **PR 节约**：不要为每个琐碎变更单独开 PR 立即合并——PR 号是有限资源。
      一个 PR 应打包一批可合并的功能（一个连贯的功能/修复波次）；只有确实
      无可打包内容时（紧急 hotfix、孤立单条规则变更）才允许小 PR。
-- **版本号随主 PR 走**：改版本就在功能/修复 PR 里一并 bump 五处
+- **版本号随主 PR 走**：改版本就在功能/修复 PR 里一并 bump 七处
   （`Cargo.toml` workspace version、`packages/app/tauri/tauri.conf.json`、
-  根 `package.json`、`packages/webui`、`packages/website`、`packages/holo`
-  的 `version`），由 `scripts/check_versions.py` 在 CI 里强制一致；
+  `packages/installer-shell/tauri.conf.json`、根 `package.json`、
+  `packages/webui`、`packages/website`、`packages/holo` 的 `version`），
+  由 `scripts/check_versions.py` 在 CI 里强制一致；
   **不要**单独开纯 bump PR（除非用户明确要求）。
 - **只在被要求或已批准的工作流步骤里创建 PR**；未经许可不得自发开 PR。
 
