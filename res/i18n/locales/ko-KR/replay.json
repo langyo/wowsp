@@ -155,5 +155,93 @@
   "selfFrags": "격침",
   "selfDamage": "가한 피해",
   "selfTaken": "받은 피해",
-  "selfPlane": "항공"
+  "selfPlane": "항공",
+  "tactical": {
+    "toggle": "택티컬 보드",
+    "tools": {
+      "select": "선택 / 이동",
+      "pen": "펜(자동 스무딩)",
+      "line": "직선",
+      "arrow": "화살표",
+      "rect": "사각형",
+      "ellipse": "타원",
+      "text": "텍스트 메모",
+      "markerShip": "함선 마커",
+      "markerPlane": "항공기 마커",
+      "pinPath": "실제 항적 고정",
+      "markerRoute": "이동 마커(항로를 드래그)",
+      "eraser": "지우개",
+      "hand": "화면 이동(Space 길게 누르기)"
+    },
+    "style": {
+      "color": "색상",
+      "width": "선 두께",
+      "dash": {
+        "solid": "실선",
+        "dashed": "대시",
+        "dotted": "점선"
+      }
+    },
+    "time": {
+      "anchor": "재생 시점에 고정",
+      "ghost": "미등장 항목 흐리게"
+    },
+    "action": {
+      "undo": "실행 취소",
+      "redo": "다시 실행",
+      "delete": "선택 삭제",
+      "clear": "모두 지우기",
+      "exportJson": "주석 JSON 내보내기",
+      "importJson": "주석 JSON 가져오기"
+    },
+    "hint": {
+      "pin": "함선을 클릭해 실제 항적을 고정",
+      "region": "드래그하여 내보낼 영역 선택(Esc 취소)"
+    },
+    "text": {
+      "placeholder": "메모 입력 후 Enter"
+    },
+    "export": {
+      "format": "형식",
+      "scale": "해상도",
+      "timestamp": "타임스탬프",
+      "full": "현재 보기 스냅샷 내보내기",
+      "region": "영역 지정 스냅샷",
+      "regionRun": "선택 영역 내보내기",
+      "range": "범위",
+      "rangeNow": "현재부터",
+      "rangeFull": "전체 경기",
+      "fps": "프레임률",
+      "offline": "오프라인 빠른 내보내기(실시간보다 빠름)",
+      "offlineRunning": "렌더링 중",
+      "cancel": "취소"
+    },
+    "record": {
+      "start": "녹화 시작(리플레이 재생)",
+      "stop": "녹화 중지 후 저장",
+      "recording": "녹화 중",
+      "unsupported": "이 환경에서는 녹화를 지원하지 않습니다"
+    },
+    "toast": {
+      "saved": "저장됨: {path}",
+      "pinned": "{name}의 항적을 고정했습니다",
+      "empty": "저장할 내용이 없습니다",
+      "imported": "주석 문서를 가져왔습니다",
+      "importBad": "유효한 주석 파일이 아닙니다"
+    },
+    "count": "주석 {n}개",
+    "steps": {
+      "add": "현재 시점을 단계로 추가([ ] 탐색)",
+      "prev": "이전 단계",
+      "next": "다음 단계",
+      "present": "프레젠테이션 재생(단계 간 자동 진행)",
+      "presentStop": "프레젠테이션 중지",
+      "empty": "단계 없음 — ＋로 설명 지점을 표시",
+      "duplicate": "이 시점에는 이미 단계가 있습니다",
+      "updateView": "클릭: 이동 · Shift+클릭: 이 단계의 카메라 갱신"
+    },
+    "view": {
+      "reset": "보기 확대 초기화"
+    }
+  }
 }

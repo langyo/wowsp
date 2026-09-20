@@ -200,6 +200,13 @@ import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import { HSwitch } from "@celestia-island/hikari";
+import TacticalBoard from "./tactical/TacticalBoard";
+import {
+  TACTICAL_MAX_SCALE,
+  TACTICAL_SIZE,
+  viewWindow,
+  type TacticalView,
+} from "./tactical/render";
 import { t as i18nT } from "@/i18n";
 import "./HolographicMap.scss";
 
@@ -317,6 +324,7 @@ export default defineComponent({
   setup(props) {
     const container = ref<HTMLElement | null>(null);
     const { ready, api } = useThreeScene(container, (_dt) => {
+      advanceMmViewTween();
       updateLabelPositions();
       drawMinimap();
       if (originalView.value) applyOriginalCamera(current.value);
@@ -396,6 +404,15 @@ export default defineComponent({
     // 2D minimap enlarged overlay state.
     const minimapZoom = ref(props.initialMinimapZoom);
     const minimapShowTrails = ref(true);
+    /** Tactical board editing on the enlarged 2D map (annotations stay
+     *  rendered read-only when off, so a composed view survives toggling). */
+    const tacticalOn = ref(false);
+    /** Enlarged-2D-map viewport: world-space center + zoom (1 = full map,
+     *  clamped 12×). Owned here because drawMinimap paints through it; the
+     *  tactical board pans/zooms via the `viewApi` prop. */
+    const mmView = ref<TacticalView>({ cx: 0, cz: 0, scale: 1 });
+    /** In-flight camera tween for step flyovers (eased in the scene RAF). */
+    let mmViewTween: { from: TacticalView; to: TacticalView; startedAt: number; durMs: number } | null = null;
     /** Roster assignment per ship entity — THE single source of truth for
      *  team roles, shared by 3D markers, minimap trails, shell-arc targets
      *  and self-stats. Rebuilt in rebuildActors; empty before first build. */
@@ -930,16 +947,173 @@ export default defineComponent({
       };
     }
 
-    function drawMinimap() {
-      // Effective bounds in WORLD coordinates: the map's minimap bounds when
-      // known (matches the base art), else the trajectory bounds converted
-      // back from scene space (scene z = -world z) so the dots at least fit
-      // the canvas.
-      const full: MapBounds | null =
+    /** Effective bounds in WORLD coordinates: the map's minimap bounds when
+     *  known (matches the base art), else the trajectory bounds converted
+     *  back from scene space (scene z = -world z) so the dots at least fit
+     *  the canvas. Shared by drawMinimap and the tactical board layer so
+     *  annotations and map art can never drift apart. */
+    function computeFullMapBounds(): MapBounds | null {
+      return (
         minimapBounds ??
         (bounds
           ? { minX: bounds.minX, maxX: bounds.maxX, minZ: -bounds.maxZ, maxZ: -bounds.minZ }
-          : null);
+          : null)
+      );
+    }
+
+    /** Nearest LIVE ship marker to a world point (tactical board path
+     *  pinning): scene markers store scene coords (z = -worldZ), live means
+     *  observed (past firstT) and not yet sunk. Radius in world units so the
+     *  hit box scales with the map. */
+    function pickShipAt(x: number, z: number): { entityId: number; label: string } | null {
+      // Hit radius follows the on-screen scale (the tactical viewport), so
+      // zoomed-in pinning doesn't swallow neighbouring ships.
+      const view = computeTacticalBounds();
+      const radiusWorld = view
+        ? (Math.abs(view.maxX - view.minX) / TACTICAL_SIZE) * 22
+        : 400;
+      const t = current.value;
+      let best: { entityId: number; label: string; d: number } | null = null;
+      for (const m of shipMarkers) {
+        const firstT = m.userData.firstT as number | undefined;
+        if (t < (firstT ?? Infinity)) continue;
+        const deathTime = m.userData.deathTime as number | null;
+        if (deathTime != null && t >= deathTime) continue;
+        const d = Math.hypot(m.position.x - x, m.position.z + z);
+        if (d <= radiusWorld && (!best || d < best.d)) {
+          const entityId = m.userData.entityId as number;
+          const vehicle = props.vehicles.find((v) => v.id === entityId);
+          best = {
+            entityId,
+            label: vehicle?.shipName ?? vehicle?.name ?? String(entityId),
+            d,
+          };
+        }
+      }
+      return best ? { entityId: best.entityId, label: best.label } : null;
+    }
+
+    /** Pause + jump the battle clock to `t` and paint synchronously (markers
+     *  AND the 2D map canvases). Used by the tactical board for step
+     *  navigation and the offline video exporter's frame-by-frame render,
+     *  which steps the clock faster than realtime without waiting on the
+     *  RAF loop or the pre-flush `current` watcher. */
+    function seekBattleTime(t: number): void {
+      playing.value = false;
+      const clamped = Math.max(0, Math.min(duration.value || t, t));
+      current.value = clamped;
+      updateMarkersAt(clamped);
+      drawMinimap();
+    }
+
+    /** ── Enlarged-2D viewport (pan / zoom / camera tweens) ─────────────
+     *  The window keeps the map's aspect (square), never leaves `full`, and
+     *  at scale 1 snaps back to the full map. `drawMinimap` paints the zoom
+     *  canvas through it; the tactical board's projection uses the SAME
+     *  window so annotations track the camera exactly. */
+    function computeViewBounds(full: MapBounds): MapBounds {
+      return viewWindow(mmView.value, full);
+    }
+
+    /** Effective view window for the tactical layer (null before bounds). */
+    function computeTacticalBounds(): MapBounds | null {
+      const full = computeFullMapBounds();
+      return full ? computeViewBounds(full) : null;
+    }
+
+    function advanceMmViewTween(): void {
+      const tw = mmViewTween;
+      if (!tw) return;
+      const p = Math.min(1, (performance.now() - tw.startedAt) / tw.durMs);
+      if (p >= 1) {
+        // Land exactly on the captured view (no 1-ulp float drift).
+        mmView.value = { ...tw.to };
+        mmViewTween = null;
+        return;
+      }
+      const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
+      mmView.value = {
+        cx: tw.from.cx + (tw.to.cx - tw.from.cx) * e,
+        cz: tw.from.cz + (tw.to.cz - tw.from.cz) * e,
+        scale: tw.from.scale + (tw.to.scale - tw.from.scale) * e,
+      };
+    }
+
+    /** Viewport handle handed to the tactical board (pan/zoom/wheel/tweens). */
+    const viewApi = {
+      snapshot(): TacticalView {
+        const full = computeFullMapBounds();
+        const v = computeViewBounds(full ?? { minX: 0, maxX: 1, minZ: 0, maxZ: 1 });
+        return { cx: (v.minX + v.maxX) / 2, cz: (v.minZ + v.maxZ) / 2, scale: mmView.value.scale };
+      },
+      zoomAt(lx: number, ly: number, factor: number): void {
+        mmViewTween = null;
+        const full = computeFullMapBounds();
+        if (!full) return;
+        const vb = computeViewBounds(full);
+        // Resync the RAW center to the effective clamped one first — the
+        // anchor math below must not carry drift from before a reset or
+        // from over-pans that the clamp absorbed.
+        mmView.value = {
+          cx: (vb.minX + vb.maxX) / 2,
+          cz: (vb.minZ + vb.maxZ) / 2,
+          scale: mmView.value.scale,
+        };
+        const wx = vb.minX + (lx / TACTICAL_SIZE) * (vb.maxX - vb.minX);
+        const wz = vb.maxZ - (ly / TACTICAL_SIZE) * (vb.maxZ - vb.minZ);
+        const s0 = mmView.value.scale;
+        const s1 = Math.min(TACTICAL_MAX_SCALE, Math.max(1, s0 * factor));
+        if (s1 === s0) return;
+        // Keep the world point under the cursor at the same logical px:
+        // the window shrinks around the cursor, so the center moves toward
+        // it by the zoom ratio.
+        mmView.value = {
+          scale: s1,
+          cx: wx - (wx - mmView.value.cx) * (s0 / s1),
+          cz: wz - (wz - mmView.value.cz) * (s0 / s1),
+        };
+      },
+      panByLogical(dxL: number, dyL: number): void {
+        mmViewTween = null;
+        const full = computeFullMapBounds();
+        if (!full) return;
+        const vb = computeViewBounds(full);
+        // Same raw→effective resync as zoomAt (prevents clamp dead zones).
+        mmView.value = {
+          cx: (vb.minX + vb.maxX) / 2,
+          cz: (vb.minZ + vb.maxZ) / 2,
+          scale: mmView.value.scale,
+        };
+        const wxPerL = (vb.maxX - vb.minX) / TACTICAL_SIZE;
+        const wzPerL = (vb.maxZ - vb.minZ) / TACTICAL_SIZE;
+        mmView.value = {
+          ...mmView.value,
+          cx: mmView.value.cx - dxL * wxPerL,
+          cz: mmView.value.cz + dyL * wzPerL,
+        };
+      },
+      reset(): void {
+        mmViewTween = null;
+        mmView.value = { cx: 0, cz: 0, scale: 1 };
+      },
+      /** Eased camera move to a captured view (presentation "运镜"). */
+      tweenTo(target: TacticalView, durMs = 450): void {
+        const cur = viewApi.snapshot();
+        mmViewTween = {
+          from: cur,
+          to: {
+            cx: target.cx,
+            cz: target.cz,
+            scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, target.scale)),
+          },
+          startedAt: performance.now(),
+          durMs: Math.max(60, durMs),
+        };
+      },
+    };
+
+    function drawMinimap() {
+      const full: MapBounds | null = computeFullMapBounds();
       if (!full) return;
       // Crop to the active battle area when the match plays out in a small
       // region of the map (brawls/events with a restricted border): the
@@ -1190,21 +1364,33 @@ export default defineComponent({
           const dispZ = Math.round(Math.max(1, rectZ.width));
           const pxZ = Math.round(dispZ * dprZ);
           if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
-          zctx.setTransform(pxZ / 760, 0, 0, pxZ / 760, 0, 0);
-          const zw = 760;
+          zctx.setTransform(pxZ / TACTICAL_SIZE, 0, 0, pxZ / TACTICAL_SIZE, 0, 0);
+          const zw = TACTICAL_SIZE;
+          // Pan/zoom viewport: everything below projects through the view
+          // window (a sub-rect of the full map with the same aspect), so
+          // zooming magnifies terrain while ship glyphs/text keep their
+          // logical sizes — the tactical layer projects through the SAME
+          // window (computeTacticalBounds).
+          const vfull = computeViewBounds(full);
           // The 2D map art NEVER changes with the theme (the game's own
           // bitmap, shown as-is in both modes); only the overlay chrome —
           // scrim, head pill, frame — follows the app theme.
           zctx.clearRect(0, 0, zw, zw);
           if (minimapImage) {
             zctx.imageSmoothingEnabled = true;
-            zctx.drawImage(minimapImage, 0, 0, zw, zw);
+            // Crop the art to the view window (source rect in image px).
+            const img = minimapImage;
+            const fx = ((vfull.minX - full.minX) / (full.maxX - full.minX || 1)) * img.width;
+            const fw = ((vfull.maxX - vfull.minX) / (full.maxX - full.minX || 1)) * img.width;
+            const fy = ((full.maxZ - vfull.maxZ) / (full.maxZ - full.minZ || 1)) * img.height;
+            const fh = ((vfull.maxZ - vfull.minZ) / (full.maxZ - full.minZ || 1)) * img.height;
+            zctx.drawImage(img, fx, fy, fw, fh, 0, 0, zw, zw);
           } else {
             zctx.fillStyle = "rgba(5, 8, 15, 0.9)";
             zctx.fillRect(0, 0, zw, zw);
           }
-          const zwx = (x: number) => ((x - full.minX) / (full.maxX - full.minX || 1)) * zw;
-          const zwz = (zScene: number) => ((full.maxZ + zScene) / (full.maxZ - full.minZ || 1)) * zw;
+          const zwx = (x: number) => ((x - vfull.minX) / (vfull.maxX - vfull.minX || 1)) * zw;
+          const zwz = (zScene: number) => ((vfull.maxZ + zScene) / (vfull.maxZ - vfull.minZ || 1)) * zw;
           // Capture rings + letters (same rendering as the small thumb, at
           // the enlarged scale).
           const zcapR = (radius: number) =>
@@ -4465,6 +4651,8 @@ export default defineComponent({
           // (clearActors no longer resets it so a deep-link ?mm=1 open and
           // mid-session rebuilds keep the overlay alive).
           minimapZoom.value = false;
+          mmView.value = { cx: 0, cz: 0, scale: 1 };
+          mmViewTween = null;
           clearActors();
           shipLabels.value = [];
           bounds = null;
@@ -4732,8 +4920,45 @@ export default defineComponent({
                   {i18nT("replay.minimap.trails")}
                 </HSwitch>
               </span>
+              <span onClick={(e: MouseEvent) => e.stopPropagation()}>
+                <HSwitch
+                  modelValue={tacticalOn.value}
+                  onUpdate:modelValue={(v: boolean) => { tacticalOn.value = v; }}
+                >
+                  {i18nT("replay.tactical.toggle")}
+                </HSwitch>
+              </span>
             </div>
-            <canvas ref={zoomCanvas} width={760} height={760} class="holo-map__mmzoom-canvas" />
+            {/* Stage: base map canvas + tactical annotation layer. Clicks on
+                the map no longer close the overlay (drawing/selection needs
+                them); the scrim around it still does. */}
+            <div class="holo-map__mmzoom-stage" onClick={(e: MouseEvent) => e.stopPropagation()}>
+              <canvas
+                ref={zoomCanvas}
+                width={TACTICAL_SIZE}
+                height={TACTICAL_SIZE}
+                class={[
+                  "holo-map__mmzoom-canvas",
+                  tacticalOn.value ? "holo-map__mmzoom-canvas--tac" : "",
+                ]}
+              />
+              <TacticalBoard
+                replayPath={props.replayPath}
+                mapTag={(props.mapName || props.mapId || "map").replace(/[^\w-]+/g, "_")}
+                editMode={tacticalOn.value}
+                getBounds={() => computeTacticalBounds()}
+                viewApi={viewApi}
+                getTime={() => current.value}
+                getDuration={() => duration.value}
+                getPlaying={() => playing.value}
+                play={() => { if (!playing.value) togglePlay(); }}
+                pause={() => { if (playing.value) togglePlay(); }}
+                seekTo={seekBattleTime}
+                trajectories={() => props.trajectories}
+                pickShipAt={pickShipAt}
+                baseCanvas={() => zoomCanvas.value}
+              />
+            </div>
           </div>
         ) : null}
         {props.replayPath ? (

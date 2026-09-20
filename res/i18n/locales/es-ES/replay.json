@@ -155,5 +155,93 @@
   "selfFrags": "Hundimientos",
   "selfDamage": "Daño",
   "selfTaken": "Recibido",
-  "selfPlane": "Aéreo"
+  "selfPlane": "Aéreo",
+  "tactical": {
+    "toggle": "Pizarra táctica",
+    "tools": {
+      "select": "Seleccionar / mover",
+      "pen": "Lápiz (suavizado auto)",
+      "line": "Línea",
+      "arrow": "Flecha",
+      "rect": "Rectángulo",
+      "ellipse": "Elipse",
+      "text": "Nota de texto",
+      "markerShip": "Marcador de barco",
+      "markerPlane": "Marcador de avión",
+      "pinPath": "Fijar trayectoria real",
+      "markerRoute": "Marcador móvil (dibuja su ruta)",
+      "eraser": "Borrador",
+      "hand": "Mover vista (o mantén Espacio)"
+    },
+    "style": {
+      "color": "Color",
+      "width": "Grosor",
+      "dash": {
+        "solid": "Sólida",
+        "dashed": "Discontinua",
+        "dotted": "Punteada"
+      }
+    },
+    "time": {
+      "anchor": "Anclar al tiempo actual",
+      "ghost": "Mostrar futuras como fantasma"
+    },
+    "action": {
+      "undo": "Deshacer",
+      "redo": "Rehacer",
+      "delete": "Eliminar selección",
+      "clear": "Borrar todo",
+      "exportJson": "Exportar anotaciones a JSON",
+      "importJson": "Importar anotaciones de JSON"
+    },
+    "hint": {
+      "pin": "Haz clic en un barco para fijar su trayectoria real",
+      "region": "Arrastra para elegir la zona de exportación (Esc para cancelar)"
+    },
+    "text": {
+      "placeholder": "Escribe una nota y pulsa Intro"
+    },
+    "export": {
+      "format": "Formato",
+      "scale": "Resolución",
+      "timestamp": "Marca de tiempo",
+      "full": "Exportar la vista actual",
+      "region": "Captura de zona",
+      "regionRun": "Exportar la zona seleccionada",
+      "range": "Tramo",
+      "rangeNow": "Desde ahora",
+      "rangeFull": "Partida completa",
+      "fps": "FPS",
+      "offline": "Exportar vídeo sin conexión (más rápido que en tiempo real)",
+      "offlineRunning": "Renderizando",
+      "cancel": "Cancelar"
+    },
+    "record": {
+      "start": "Iniciar grabación (reproduce la repetición)",
+      "stop": "Detener y guardar",
+      "recording": "GRAB",
+      "unsupported": "Grabación no disponible en este entorno"
+    },
+    "toast": {
+      "saved": "Guardado: {path}",
+      "pinned": "Trayectoria de {name} fijada",
+      "empty": "Nada que guardar",
+      "imported": "Documento de anotaciones importado",
+      "importBad": "No es un archivo de anotaciones válido"
+    },
+    "count": "{n} anotaciones",
+    "steps": {
+      "add": "Añadir el momento actual como paso ([ ] para navegar)",
+      "prev": "Paso anterior",
+      "next": "Paso siguiente",
+      "present": "Reproducción tipo presentación (avanza solo)",
+      "presentStop": "Detener presentación",
+      "empty": "Sin pasos — marca los momentos clave con ＋",
+      "duplicate": "Ya existe un paso en este momento",
+      "updateView": "Clic: saltar · Mayús+clic: recapturar la cámara del paso"
+    },
+    "view": {
+      "reset": "Restablecer el zoom"
+    }
+  }
 }

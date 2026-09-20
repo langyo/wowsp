@@ -155,5 +155,93 @@
   "selfFrags": "Frags",
   "selfDamage": "Damage",
   "selfTaken": "Taken",
-  "selfPlane": "Aircraft"
+  "selfPlane": "Aircraft",
+  "tactical": {
+    "toggle": "Tactical board",
+    "tools": {
+      "select": "Select / move",
+      "pen": "Pen (auto-smooth)",
+      "line": "Line",
+      "arrow": "Arrow",
+      "rect": "Rectangle",
+      "ellipse": "Ellipse",
+      "text": "Text note",
+      "markerShip": "Ship marker",
+      "markerPlane": "Plane marker",
+      "pinPath": "Pin real track",
+      "markerRoute": "Moving marker (drag its route)",
+      "eraser": "Eraser",
+      "hand": "Pan view (or hold Space)"
+    },
+    "style": {
+      "color": "Color",
+      "width": "Width",
+      "dash": {
+        "solid": "Solid",
+        "dashed": "Dashed",
+        "dotted": "Dotted"
+      }
+    },
+    "time": {
+      "anchor": "Anchor to playhead",
+      "ghost": "Ghost future items"
+    },
+    "action": {
+      "undo": "Undo",
+      "redo": "Redo",
+      "delete": "Delete selected",
+      "clear": "Clear all",
+      "exportJson": "Export annotations as JSON",
+      "importJson": "Import annotations from JSON"
+    },
+    "hint": {
+      "pin": "Click a ship to pin its real track",
+      "region": "Drag to select the export region (Esc to cancel)"
+    },
+    "text": {
+      "placeholder": "Type a note, press Enter"
+    },
+    "export": {
+      "format": "Format",
+      "scale": "Resolution",
+      "timestamp": "Timestamp",
+      "full": "Export view snapshot",
+      "region": "Crop-region snapshot",
+      "regionRun": "Export selected region",
+      "range": "Range",
+      "rangeNow": "From now",
+      "rangeFull": "Full match",
+      "fps": "FPS",
+      "offline": "Export video offline (faster than realtime)",
+      "offlineRunning": "Rendering",
+      "cancel": "Cancel"
+    },
+    "record": {
+      "start": "Start recording (plays the replay)",
+      "stop": "Stop and save recording",
+      "recording": "REC",
+      "unsupported": "Recording is not supported in this environment"
+    },
+    "toast": {
+      "saved": "Saved: {path}",
+      "pinned": "Pinned the track of {name}",
+      "empty": "Nothing to save",
+      "imported": "Annotation document imported",
+      "importBad": "Not a valid annotation file"
+    },
+    "count": "{n} annotations",
+    "steps": {
+      "add": "Bookmark the current moment as a step ([ ] navigate)",
+      "prev": "Previous step",
+      "next": "Next step",
+      "present": "Play presentation (auto-advance between steps)",
+      "presentStop": "Stop presentation",
+      "empty": "No steps yet — mark explanation beats with ＋",
+      "duplicate": "A step already exists at this moment",
+      "updateView": "Click: jump here · Shift+click: re-capture this step's camera"
+    },
+    "view": {
+      "reset": "Reset view zoom"
+    }
+  }
 }

@@ -19,6 +19,20 @@ export interface Transport {
    * mode has no push source).
    */
   listen?<T = unknown>(event: string, handler: (payload: T) => void): Promise<() => void>;
+
+  /**
+   * Invoke a command with a RAW binary body (Uint8Array) plus header metadata.
+   * Used for large exports (tactical-board PNG/WebP/MP4) where a JSON body
+   * would balloon the IPC message. The Rust side reads the bytes via
+   * `tauri::ipc::Request` (`InvokeBody::Raw`) and the header via
+   * `request.headers()`. Rejects outside the Tauri shell — callers are
+   * expected to offer a browser-download fallback when this rejects.
+   */
+  invokeRaw?<T = unknown>(
+    cmd: string,
+    body: Uint8Array,
+    headers: Record<string, string>,
+  ): Promise<T>;
 }
 
 export class RpcError extends Error {

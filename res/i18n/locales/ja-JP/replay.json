@@ -155,5 +155,93 @@
   "selfFrags": "撃沈",
   "selfDamage": "与ダメージ",
   "selfTaken": "被ダメージ",
-  "selfPlane": "航空"
+  "selfPlane": "航空",
+  "tactical": {
+    "toggle": "タクティカルボード",
+    "tools": {
+      "select": "選択 / 移動",
+      "pen": "ペン（自動スムージング）",
+      "line": "直線",
+      "arrow": "矢印",
+      "rect": "矩形",
+      "ellipse": "楕円",
+      "text": "テキストメモ",
+      "markerShip": "艦艇マーカー",
+      "markerPlane": "航空機マーカー",
+      "pinPath": "実航跡をピン留め",
+      "markerRoute": "移動マーカー（航路をドラッグ）",
+      "eraser": "消しゴム",
+      "hand": "ビュー移動（Space 長押し）"
+    },
+    "style": {
+      "color": "色",
+      "width": "線幅",
+      "dash": {
+        "solid": "実線",
+        "dashed": "破線",
+        "dotted": "点線"
+      }
+    },
+    "time": {
+      "anchor": "再生位置にアンカー",
+      "ghost": "未出現を薄表示"
+    },
+    "action": {
+      "undo": "元に戻す",
+      "redo": "やり直す",
+      "delete": "選択を削除",
+      "clear": "すべて消去",
+      "exportJson": "注釈を JSON へ書き出す",
+      "importJson": "注釈を JSON から読み込む"
+    },
+    "hint": {
+      "pin": "艦艇をクリックして実航跡をピン留め",
+      "region": "ドラッグで書き出し範囲を選択（Esc でキャンセル）"
+    },
+    "text": {
+      "placeholder": "メモを入力し Enter"
+    },
+    "export": {
+      "format": "形式",
+      "scale": "解像度",
+      "timestamp": "タイムスタンプ",
+      "full": "現在のビューのスナップショットを書き出す",
+      "region": "範囲を選択してスナップショット",
+      "regionRun": "選択範囲を書き出す",
+      "range": "範囲",
+      "rangeNow": "現在位置から",
+      "rangeFull": "試合全体",
+      "fps": "フレームレート",
+      "offline": "オフライン高速書き出し（リアルタイムより速い）",
+      "offlineRunning": "レンダリング中",
+      "cancel": "キャンセル"
+    },
+    "record": {
+      "start": "録画開始（リプレイを再生）",
+      "stop": "録画を停止して保存",
+      "recording": "録画中",
+      "unsupported": "この環境では録画できません"
+    },
+    "toast": {
+      "saved": "保存しました：{path}",
+      "pinned": "{name} の航跡をピン留めしました",
+      "empty": "保存するものがありません",
+      "imported": "注釈ドキュメントを読み込みました",
+      "importBad": "有効な注釈ファイルではありません"
+    },
+    "count": "注釈 {n} 件",
+    "steps": {
+      "add": "現在時刻をステップとして追加（[ ] で移動）",
+      "prev": "前のステップ",
+      "next": "次のステップ",
+      "present": "プレゼン再生（ステップ間を自動進行）",
+      "presentStop": "プレゼン停止",
+      "empty": "ステップなし——＋で解説ポイントを登録",
+      "duplicate": "この時刻には既にステップがあります",
+      "updateView": "クリックで移動 · Shift+クリックでこのステップのカメラを更新"
+    },
+    "view": {
+      "reset": "ズームをリセット"
+    }
+  }
 }
