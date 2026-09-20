@@ -7,12 +7,15 @@
    the single-file installer pattern; see packages/installer-shell/build.rs).
    Flavor split:
 
-   - ``full`` (default) — application + the current 2D/3D model pack, so an
-     install never touches the network for resources. The pack comes from a
-     local bake (``packages/webui/src/res/models`` — ``scripts/fetch_models.py``
-     output) when present, and is otherwise fetched ONCE from the published
-     ``res-latest`` release and extracted into the same layout — which is
-     what release CI does on its clean runners.
+     - ``full`` (default) — application + the current 2D/3D model pack, so an
+       install never touches the network for resources. The pack comes from a
+       local bake (``packages/webui/src/res/models`` — ``scripts/fetch_models.py``
+       output) when present, and is otherwise fetched ONCE from the published
+       ``res-latest`` release and extracted into the same layout — which is
+       what release CI does on its clean runners. The ship preview portraits
+       (``wowsp-images.tar.gz``, gitignored derived downloads) are likewise
+       fetched from ``res-latest`` BEFORE the webui build, because they embed
+       into the app binary itself via the frontend dist.
    - ``webview2`` — the full payload with the Evergreen offline runtime
      embedded for machines without the WebView2 runtime.
    - ``lite`` — the bare application, NO model pack: most features work
@@ -50,6 +53,7 @@ REPO = Path(__file__).resolve().parent.parent
 TAURI = REPO / "packages" / "app" / "tauri"
 SHELL = REPO / "packages" / "installer-shell"
 MODELS = REPO / "packages" / "webui" / "src" / "res" / "models"
+IMAGES = REPO / "packages" / "webui" / "src" / "res" / "images"
 SHELL_WEB = REPO / "packages" / "installer-shell" / "web"
 SHELL_ENTRY = REPO / "packages" / "installer-shell" / "src" / "main.rs"
 VENDOR = SHELL / "vendor"
@@ -60,14 +64,17 @@ TARGET = REPO / "target" / "release"
 OUT = TARGET / "bundle" / "installer"
 SHELL_BUILD_DIR = TARGET / "build"
 
-# Model-pack fetch (release CI runners hold no local bake): the published
-# res-latest archive and where the one-time download caches itself.
+# Resource-pack fetch (release CI runners hold no local bake): the published
+# res-latest archives and where the one-time downloads cache themselves.
 MODELS_CACHE = TARGET / "model-pack"
 MODELS_ARCHIVE = "wowsp-models.tar.gz"
-MODELS_ASSET_URL = (
+IMAGES_ARCHIVE = "wowsp-images.tar.gz"
+RES_RELEASE_API = "repos/langyo/wowsp/releases/tags/res-latest"
+RES_RELEASE_DL = (
     "https://github.com/langyo/wowsp/releases/download/res-latest/"
-    "wowsp-models.tar.gz"
 )
+MODELS_ASSET_URL = RES_RELEASE_DL + MODELS_ARCHIVE
+IMAGES_ASSET_URL = RES_RELEASE_DL + IMAGES_ARCHIVE
 
 
 def app_version() -> str:
@@ -80,44 +87,51 @@ def run(cmd: list[str], **kwargs) -> None:
     subprocess.run([str(c) for c in cmd], check=True, **kwargs)
 
 
-def model_pack_version() -> str:
-    """The res-latest asset's updated_at — the version stamp the app
-    compares its model cache against. Fetched from the release the staged
-    models were published in; empty (no stamp) when unreachable."""
+def release_asset_field(name: str, field: str) -> str:
+    """One field of a res-latest asset via the release API ("" when the
+    query fails — callers treat that as "unknown")."""
     try:
         out = subprocess.run(
-            ["gh", "api",
-             "repos/langyo/wowsp/releases/tags/res-latest",
-             "--jq", '[.assets[] | select(.name == "wowsp-models.tar.gz") | .updated_at] | first // ""'],
+            ["gh", "api", RES_RELEASE_API,
+             "--jq", f'[.assets[] | select(.name == "{name}") | .{field}] | first // ""'],
             capture_output=True, text=True, check=True, timeout=60,
         )
         return out.stdout.strip()
     except Exception as exc:
-        print(f"[warn] model pack version fetch failed: {exc}")
+        print(f"[warn] res-latest {name} {field} fetch failed: {exc}")
         return ""
+
+
+def model_pack_version() -> str:
+    """The res-latest models asset's updated_at — the version stamp the app
+    compares its model cache against. Fetched from the release the staged
+    models were published in; empty (no stamp) when unreachable."""
+    return release_asset_field(MODELS_ARCHIVE, "updated_at")
 
 
 def model_pack_asset_size() -> int | None:
     """Expected archive size in bytes per the release API, or None when the
     query fails (the download then simply skips its final size check)."""
+    raw = release_asset_field(MODELS_ARCHIVE, "size")
     try:
-        out = subprocess.run(
-            ["gh", "api",
-             "repos/langyo/wowsp/releases/tags/res-latest",
-             "--jq", '[.assets[] | select(.name == "wowsp-models.tar.gz") | .size] | first // 0'],
-            capture_output=True, text=True, check=True, timeout=60,
-        )
-        return int(out.stdout.strip() or 0) or None
-    except Exception:
+        return int(raw) if raw else None
+    except ValueError:
         return None
 
 
-def download_model_pack(archive: Path) -> None:
-    """Download the pack with HTTP Range resume and a BOUNDED retry count —
+def images_asset_size() -> int | None:
+    raw = release_asset_field(IMAGES_ARCHIVE, "size")
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def download_asset(url: str, archive: Path, expected: int | None) -> None:
+    """Download an asset with HTTP Range resume and a BOUNDED retry count —
     never an unbounded loop. A server that ignores the Range header answers
     200 instead of 206; that restarts the file from zero rather than
     appending a corrupted tail."""
-    expected = model_pack_asset_size()
     attempts = 5
     for attempt in range(1, attempts + 1):
         have = archive.stat().st_size if archive.exists() else 0
@@ -126,7 +140,7 @@ def download_model_pack(archive: Path) -> None:
             headers["Range"] = f"bytes={have}-"
         try:
             with urllib.request.urlopen(
-                urllib.request.Request(MODELS_ASSET_URL, headers=headers),
+                urllib.request.Request(url, headers=headers),
                 timeout=120,
             ) as resp:
                 resume = have > 0 and getattr(resp, "status", None) == 206
@@ -141,14 +155,14 @@ def download_model_pack(archive: Path) -> None:
                         fh.write(chunk)
                         copied += len(chunk)
                         if copied % (64 << 20) < (1 << 20):
-                            print(f"[models] {start + copied:,} / {total or '?':,} bytes")
+                            print(f"[res] {start + copied:,} / {total or '?':,} bytes")
             size = archive.stat().st_size
             if expected is not None and size != expected:
                 raise IOError(f"downloaded size {size:,} != release size {expected:,}")
             return
         except Exception as exc:
-            print(f"[warn] model pack download attempt {attempt}/{attempts} failed: {exc}")
-    sys.exit("model pack download failed after bounded retries")
+            print(f"[warn] asset download attempt {attempt}/{attempts} failed: {exc}")
+    sys.exit(f"asset download failed after bounded retries: {url}")
 
 
 def has_baked_glb() -> bool:
@@ -178,13 +192,61 @@ def ensure_models(force_fetch: bool = False) -> None:
         and (model_pack_asset_size() in (None, archive.stat().st_size))
     ):
         print(f"[models] no local bake — fetching {MODELS_ASSET_URL}")
-        download_model_pack(archive)
+        download_asset(MODELS_ASSET_URL, archive, model_pack_asset_size())
     else:
         print(f"[models] reusing cached archive: {archive}")
     print(f"[models] extracting into {MODELS.parent}")
     run(["tar", "-xzf", str(archive), "-C", str(MODELS.parent)])
     if not has_baked_glb():
         sys.exit(f"model pack extraction left {MODELS} without any baked glb")
+
+
+def has_ship_images() -> bool:
+    """Whether the gitignored ship preview portraits are present. They are
+    derived downloads (scripts/extract/download_ship_images.py), so a fresh
+    checkout — including release CI's — never carries them; without the
+    fetch the webui build embeds a frontend with no ship previews and the
+    app binary silently shrinks ~21 MB vs a machine that has them."""
+    ships = IMAGES / "ships"
+    if not ships.is_dir():
+        return False
+    return any(
+        p.name == "_index.json"
+        or (p.suffix == ".png" and p.name[:1].isdigit())
+        for p in ships.iterdir()
+    )
+
+
+def ensure_images(mode: str = "auto") -> None:
+    """Guarantee the ship preview portraits exist before the webui build.
+
+    The portraits ride publicDir into the frontend dist and the Tauri shell
+    embeds the whole dist into wowsp.exe, so they must be on disk BEFORE
+    ``build_app`` runs — fetching them later (like the model pack) would
+    ship a portrait-less binary. Sources mirror the model pack: local files
+    win in auto mode, otherwise the res-latest wowsp-images.tar.gz archive
+    is fetched once and extracted over res/ (top-level ``images/``).
+    ``skip`` never touches the network (offline dev builds)."""
+    if mode == "skip":
+        print("[images] skipped (--images skip)")
+        return
+    if mode == "auto" and has_ship_images():
+        print(f"[images] using local portraits: {IMAGES / 'ships'}")
+        return
+    MODELS_CACHE.mkdir(parents=True, exist_ok=True)
+    archive = MODELS_CACHE / IMAGES_ARCHIVE
+    if not (
+        archive.exists()
+        and (images_asset_size() in (None, archive.stat().st_size))
+    ):
+        print(f"[images] no local portraits — fetching {IMAGES_ASSET_URL}")
+        download_asset(IMAGES_ASSET_URL, archive, images_asset_size())
+    else:
+        print(f"[images] reusing cached archive: {archive}")
+    print(f"[images] extracting into {IMAGES.parent}")
+    run(["tar", "-xzf", str(archive), "-C", str(IMAGES.parent)])
+    if not has_ship_images():
+        sys.exit(f"portrait pack extraction left {IMAGES / 'ships'} empty")
 
 
 def build_app() -> Path:
@@ -328,6 +390,16 @@ def main() -> int:
         "passes, since its checkout holds only the tracked 2D subset",
     )
     ap.add_argument(
+        "--images",
+        choices=("auto", "fetch", "skip"),
+        default="auto",
+        help="ship portrait source: auto uses local portraits when present "
+        "and otherwise fetches the res-latest wowsp-images archive; fetch "
+        "ALWAYS fetches-and-extracts it — what release CI passes, since the "
+        "portraits are gitignored and absent from every checkout; skip never "
+        "touches the network",
+    )
+    ap.add_argument(
         "--flavors",
         default="full,full-webview2,lite",
         help="comma list of artifacts to build: full, full-webview2, lite "
@@ -341,6 +413,11 @@ def main() -> int:
         sys.exit(f"unknown flavor(s): {', '.join(unknown)} — expected full, full-webview2, lite")
 
     version = app_version()
+
+    # The portraits ride publicDir into the webui dist and from there into
+    # the app binary itself — they must be on disk BEFORE build_app, which
+    # is why this runs unconditionally (all flavors embed the same dist).
+    ensure_images(args.images)
 
     app_exe = TARGET / "wowsp.exe"
     if args.skip_app_build:

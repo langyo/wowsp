@@ -8,16 +8,24 @@ the tag rotation so at most 2 old packs are kept as fallbacks.
 Workflow:
   1. Run `just extract models && just bake-ships` to produce the GLBs.
      Run `just extract dogtags` to refresh the dog-tag map + PNGs.
+     Run `just extract ship-images` (scripts/extract/download_ship_images.py)
+     to refresh the ship preview portraits.
   2. Run this script: `python scripts/release_models.py`.
   3. It packages models/ into wowsp-models.tar.gz (plus a .shun variant),
-     packages the dog-tag snapshot into wowsp-dogtags.tar.gz, deletes the
-     current `res-latest` release, recreates it, and uploads the archives.
+     the ship preview portraits into wowsp-images.tar.gz, packages the
+     dog-tag snapshot into wowsp-dogtags.tar.gz, deletes the current
+     `res-latest` release, recreates it, and uploads the archives.
 
 `--dogtags-only` instead re-uploads just wowsp-dogtags.tar.gz onto the
 existing res-latest release (no rotation): the models asset keeps its
 upload timestamp, so installed apps re-download only the small dog-tag
 pack. That is the right mode for the periodic medal refresh after
 `just extract dogtags` — the full rebuild is for model changes.
+
+`--images-only` works the same way for wowsp-images.tar.gz: refresh the
+ship portraits without touching the models asset's timestamp (installed
+model caches stay current; release CI's `build_installers.py --images
+fetch` picks the new portraits up on the next app build).
 
 Both archives ride the same release rotation; the dog-tag pack is small
 (~3 MB) and changes on every game content update, which is why it is a
@@ -45,10 +53,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models"
 DOGTAGS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "dogtags"
 DOGTAGS_MAP = REPO_ROOT / "packages" / "webui" / "src" / "data" / "dogtags_map.json"
+SHIP_IMAGES_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "images" / "ships"
 REPO = "langyo/wowsp"
 ARCHIVE_NAME = "wowsp-models.tar.gz"
 SHUN_ARCHIVE_NAME = "wowsp-models.shun"
 DOGTAGS_ARCHIVE_NAME = "wowsp-dogtags.tar.gz"
+IMAGES_ARCHIVE_NAME = "wowsp-images.tar.gz"
 PRIMARY_TAG = "res-latest"
 FALLBACK_TAGS = ["res-latest-old-1", "res-latest-old-2"]
 
@@ -121,6 +131,62 @@ def package_dogtags(tmp: str) -> Path | None:
     return archive
 
 
+def package_ship_images(tmp: str) -> Path | None:
+    """Stage the gitignored ship preview portraits into wowsp-images.tar.gz.
+
+    The portraits (`images/ships/[0-9]*.png` + `_index.json`) are derived
+    downloads (scripts/extract/download_ship_images.py) and gitignored, so
+    release CI cannot get them from a checkout — they ride this archive
+    instead, land in `src/res/images/ships/` on extraction, and the webui
+    build then embeds them into the app binary via publicDir. Only the
+    gitignored subset is packed: the 32 tracked portraits (named specials)
+    keep coming from git, and a stale pack can never overwrite them.
+    """
+    if not SHIP_IMAGES_DIR.is_dir():
+        print(f"  ship images dir not found ({SHIP_IMAGES_DIR}) — skip")
+        return None
+    stage = Path(tmp) / "images-pkg" / "images" / "ships"
+    stage.mkdir(parents=True)
+    packed = 0
+    for entry in sorted(SHIP_IMAGES_DIR.iterdir()):
+        if entry.is_file() and (
+            entry.name == "_index.json" or (entry.name.endswith(".png") and entry.name[0].isdigit())
+        ):
+            shutil.copy2(entry, stage / entry.name)
+            packed += 1
+    if packed == 0:
+        print("  no ship preview portraits found — skip")
+        return None
+    archive = Path(tmp) / IMAGES_ARCHIVE_NAME
+    run([
+        "tar", "-czf", str(archive),
+        "-C", str(stage.parent.parent),
+        "images",
+    ])
+    print(f"  archive: {archive.stat().st_size / 1024 / 1024:.1f} MB ({packed} files)")
+    return archive
+
+
+def images_only() -> None:
+    """Refresh just the ship-portrait asset on the existing res-latest release.
+
+    Same timestamp-preserving logic as `--dogtags-only`: the models asset
+    (whose updated_at doubles as the installed model-cache version stamp)
+    is left untouched, so installed apps keep their cached packs.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = package_ship_images(tmp)
+        if archive is None:
+            sys.exit(1)
+        run([
+            "gh", "release", "upload", PRIMARY_TAG,
+            str(archive),
+            "--repo", REPO,
+            "--clobber",
+        ])
+    print(f"done. ship-portrait pack refreshed on https://github.com/{REPO}/releases/tag/{PRIMARY_TAG}")
+
+
 def dogtags_only() -> None:
     """Refresh just the dog-tag asset on the existing res-latest release.
 
@@ -149,9 +215,19 @@ def main() -> None:
         help="re-upload only wowsp-dogtags.tar.gz onto the existing "
              "res-latest release (no rotation, models asset untouched)",
     )
+    ap.add_argument(
+        "--images-only",
+        action="store_true",
+        help="re-upload only wowsp-images.tar.gz (ship preview portraits) "
+             "onto the existing res-latest release (no rotation, models "
+             "asset untouched)",
+    )
     args = ap.parse_args()
     if args.dogtags_only:
         dogtags_only()
+        return
+    if args.images_only:
+        images_only()
         return
 
     if not MODELS_DIR.is_dir():
@@ -183,8 +259,9 @@ def main() -> None:
             run([shun, "pack", str(MODELS_DIR), "--out", str(tmp_shun)])
             print(f"  shun archive: {tmp_shun.stat().st_size / 1024 / 1024:.1f} MB")
 
-        # ── Package dog tags ──────────────────────────────────────────
+        # ── Package dog tags + ship portraits ─────────────────────────
         tmp_dogtags = package_dogtags(tmp)
+        tmp_images = package_ship_images(tmp)
 
         # ── Rotate tags ─────────────────────────────────────────────────
         print(f"[3/4] rotating release tags ...")
@@ -251,6 +328,8 @@ def main() -> None:
         uploads = [str(tmp_archive)]
         if tmp_shun.exists():
             uploads.append(str(tmp_shun))
+        if tmp_images is not None:
+            uploads.append(str(tmp_images))
         if tmp_dogtags is not None:
             uploads.append(str(tmp_dogtags))
         run([
