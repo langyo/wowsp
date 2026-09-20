@@ -246,5 +246,12 @@
     }
   },
   "chatLog": "채팅 기록",
+  "chat": {
+    "team": "팀",
+    "all": "전체",
+    "division": "분대",
+    "private": "개인",
+    "copy": "메시지 복사"
+  },
   "achieved": "업적 달성"
 }
