@@ -9,6 +9,7 @@ import { techTreeNode } from "@/utils/techTreeData";
 import type { ShipInfo } from "@/api";
 import {
   classSkills,
+  recommendedSkills,
   SKILL_BUDGET,
   TIER_UNLOCK,
   skillClassFor,
@@ -379,6 +380,12 @@ export default defineComponent({
       const codes = new Set(tree.value.map((s) => s.code));
       return new Set(epic.filter((c) => codes.has(c)));
     });
+    /** Skills the game itself recommends for THIS ship (crew-presets table,
+     *  most specific of exact ship / group / class) — the amber corner
+     *  ribbon. */
+    const recommended = computed(() =>
+      recommendedSkills(techTreeNode(props.ship.shipId)?.index ?? null, props.ship.type),
+    );
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
      *  when their *UI twin is present, internal enums and activation
      *  plumbing (tier-scaling / regen-cap switches, the dead GSMShotDelay)
@@ -619,12 +626,16 @@ export default defineComponent({
         return <p class="planner-v__empty">{t("ships.skills.noTree")}</p>;
       }
       const columns = skillColumns.value;
-      const legend =
-        epicSkills.value.size > 0 ? (
-          <p class="planner-v__note" key="epic-legend">
-            {t("ships.skills.epicLegend")}
-          </p>
-        ) : null;
+      const legend = (
+        <div key="ribbon-legend">
+          {epicSkills.value.size > 0 ? (
+            <p class="planner-v__note">{t("ships.skills.epicLegend")}</p>
+          ) : null}
+          {recommended.value.size > 0 ? (
+            <p class="planner-v__note">{t("ships.skills.recLegend")}</p>
+          ) : null}
+        </div>
+      );
       const tierRows = [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
@@ -643,10 +654,14 @@ export default defineComponent({
           const picked = !!props.build.skills[skill.code];
           const banned = skillBan(skill);
           const enhanced = epicSkills.value.has(skill.code);
+          const rec = recommended.value.has(skill.code);
           const name = skillName(skill);
-          const hint = enhanced
-            ? `${skillHint(skill)} — ${t("ships.skills.epicRibbon")}`
-            : skillHint(skill);
+          const hints = [
+            skillHint(skill),
+            enhanced ? t("ships.skills.epicRibbon") : "",
+            rec ? t("ships.skills.recRibbon") : "",
+          ].filter(Boolean);
+          const hint = hints.join(" — ");
           cells.push(
             <div
               class={[
@@ -676,6 +691,9 @@ export default defineComponent({
                   wash the ribbon out. */}
               {enhanced ? (
                 <span class="skill-tile-v__ribbon skill-tile-v__ribbon--epic" />
+              ) : null}
+              {rec ? (
+                <span class="skill-tile-v__ribbon skill-tile-v__ribbon--rec" />
               ) : null}
               {banned ? (
                 <span class="skill-tile-v__ban">

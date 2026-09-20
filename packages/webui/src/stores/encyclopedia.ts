@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
+import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
@@ -143,13 +144,42 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
           loadedLanguage.value = lang; // stay as user's preference
           console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
         } catch (e2) {
-          error.value = ((e2 as Error).message || String(e2)).slice(0, 300);
+          if (!(await loadBundled(realm, lang, seq))) {
+            error.value = ((e2 as Error).message || String(e2)).slice(0, 300);
+          }
         }
+      } else if (await loadBundled(realm, lang, seq)) {
+        // Bundled basics took over — no error surface, the UI is fully
+        // populated (just without the online-only realm cache semantics).
       } else {
         error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
       }
     } finally {
       if (seq === loadSeq) loading.value = false;
+    }
+  }
+
+  /** Offline fallback: build the roster from the bundled ship-basics asset
+   *  (shipped with every install, lite included). Used when the WG API is
+   *  unreachable so 舰艇百科 / specs / the planner keep working; returns
+   *  false when even the bundle is unavailable. Note the bundle satisfies
+   *  the loadedRealm/loadedLanguage early-return, so the store stays on
+   *  offline data until a realm/language switch re-kicks the online load. */
+  async function loadBundled(realm: string, lang: string, seq: number): Promise<boolean> {
+    try {
+      const basics = await loadShipsBasics();
+      if (seq !== loadSeq) return true;
+      const list = Object.entries(basics.ships).map(([shipId, entry]) =>
+        basicsToShipInfo(Number(shipId), basics, entry),
+      );
+      version.value = { gameVersion: basics.gameVersion, shipsTotal: list.length, timestamp: 0 };
+      ships.value = localizeShipNames(list, lang);
+      loadedRealm.value = realm;
+      loadedLanguage.value = lang;
+      console.warn("[encyclopedia] WG API unreachable — bundled ship basics in use");
+      return true;
+    } catch {
+      return false;
     }
   }
 

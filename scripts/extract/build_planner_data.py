@@ -60,6 +60,14 @@ WOWSFT_SKILLS_URL = (
     "WoWSFT-App/src/main/resources/json/live/skills.json"
 )
 WOWSINFO_LANG_URL = "https://raw.githubusercontent.com/wowsinfo/data/master/live/app/lang/lang.json"
+# WG online encyclopedia (ship basics for the offline fallback bundle) —
+# application id mirrors wg_realm.rs (asia realm; CN is served from ASIA).
+WG_SHIPS_URL = (
+    "https://api.worldofwarships.asia/wows/encyclopedia/ships/"
+    "?application_id=447ec579e994976e39dec0e7d0bac644&language=en&limit=100"
+    "&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,"
+    "default_profile,images"
+)
 # Real square skill/flag icons (the live client ships unusable 122×22 strips
 # at gui/crew_commander/skills — the square art lives in the UI pak).
 SHIPBUILDER_RAW = "https://raw.githubusercontent.com/WoWs-Builder-Team/WoWs-ShipBuilder/master/src/WoWsShipBuilder.Common/wwwroot/assets"
@@ -405,7 +413,7 @@ def main() -> int:
     ap.add_argument("--no-icons", action="store_true", help="data only, skip icon downloads/scan")
     ap.add_argument("--no-net", action="store_true", help="data only from GameParams (skip upstream names/layout)")
     ap.add_argument("--only", choices=("signals", "modernizations", "commanders", "skilltree",
-                                       "consumables"),
+                                       "consumables", "crew-presets", "ship-basics"),
                     help="regenerate a single dataset (skip the rest and all icon work)")
     args = ap.parse_args()
 
@@ -450,6 +458,76 @@ def main() -> int:
         (OUT_DATA / "skilltree.json").write_text(
             json.dumps(skilltree, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(f"[planner] skilltree.json: " + ", ".join(f"{c}={len(v)}" for c, v in skilltree.items()))
+
+    if args.only in (None, "crew-presets"):
+        # The committed crew-presets bundle was decoded from the client's
+        # scripts.zip with the pyc_deob reference toolchain (see
+        # scripts/pyc_deob/crew_presets.py — the mini-VM validates but does
+        # not regenerate the constructor-built step values). Re-validate it
+        # against the current GameParams on every extraction pass.
+        sys.path.insert(0, str(HERE.parent / "pyc_deob"))
+        import crew_presets
+
+        presets_path = OUT_DATA / "crew_presets.json"
+        if not presets_path.exists():
+            if args.only == "crew-presets":
+                print("error: %s not found" % presets_path, file=sys.stderr)
+                return 1
+            print("[planner] no crew_presets.json — skipping validation", flush=True)
+        else:
+            presets = json.loads(presets_path.read_text(encoding="utf-8"))
+            problems = crew_presets.validate(txt, presets)
+            for problem in problems:
+                print("!! %s" % problem, file=sys.stderr)
+            if problems:
+                return 1
+            print("[planner] crew_presets.json validated: %d presets, %d groups"
+                  % (len(presets["presets"]), len(presets["groups"])))
+
+    if args.only in (None, "ship-basics"):
+        # Full WG-API ship basics (default_profile included) as the offline
+        # fallback bundle: ~4 MB covering every ship, shipped with lite
+        # installs so the encyclopedia works without the WG API reachable.
+        def wg_get(url: str):
+            import time
+            import urllib.request
+
+            for attempt in range(4):
+                try:
+                    with urllib.request.urlopen(url, timeout=120) as r:
+                        return json.load(r)
+                except Exception:
+                    if attempt == 3:
+                        raise
+                    time.sleep(2 * (attempt + 1))
+
+        # Version-stamped: a game patch changes ship data, so the cache must
+        # not serve a stale bundle to the next extraction.
+        version = wg_get(
+            "https://api.worldofwarships.asia/wows/encyclopedia/info/"
+            "?application_id=447ec579e994976e39dec0e7d0bac644&language=en"
+        )["data"]["game_version"]
+        basics_cache = GAMEPARAMS_JSON.parent / ("ships_basics_en_%s.json" % version)
+        if basics_cache.exists():
+            basics = json.loads(basics_cache.read_text(encoding="utf-8"))
+        else:
+            page1 = wg_get(WG_SHIPS_URL + "&page_no=1")
+            pages = page1["meta"]["page_total"]
+            ships = dict(page1["data"])
+            for p in range(2, pages + 1):
+                print("[planner] ships page %d/%d" % (p, pages), flush=True)
+                ships.update(wg_get(WG_SHIPS_URL + "&page_no=%d" % p)["data"])
+            basics = {"gameVersion": version, "ships": ships}
+            basics_cache.write_text(json.dumps(basics, ensure_ascii=False), encoding="utf-8")
+        res_data = WEBUI / "res" / "data"
+        res_data.mkdir(parents=True, exist_ok=True)
+        (res_data / "ships_basics.json").write_text(
+            json.dumps(basics, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print("[planner] ships_basics.json: %d ships (%.1f MB)"
+              % (len(basics["ships"]),
+                 (res_data / "ships_basics.json").stat().st_size / 1e6))
+        if args.only == "ship-basics":
+            return 0
 
     if args.only in (None, "consumables"):
         consumables = extract_ship_consumables(txt)
