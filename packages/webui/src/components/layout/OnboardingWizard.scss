@@ -79,6 +79,19 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
     gap: 0.6rem;
+
+    /* Theme modes and wallpapers both read as one row of three — the
+       fixed count keeps the merged appearance step scannable. */
+    &--three {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  &__subtitle {
+    margin: 0.25rem 0 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
   }
 
   &__option {
@@ -106,6 +119,13 @@
 
     &--on {
       border-color: rgb(var(--color-primary));
+    }
+
+    /* Import card while its dialog round-trip is in flight. */
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+      transform: none;
     }
   }
 

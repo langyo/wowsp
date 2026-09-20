@@ -1,19 +1,23 @@
 /**
- * WoWSP wallpaper types + presets. Adapted from shittim-chest's wallpaper.ts,
- * simplified to solid + image types only (no video/slang shader).
+ * WoWSP wallpaper types + presets.
  *
- * Solid: plain color background (black/white/auto-follows-theme).
- * Image: a picture background with an overlay tint for readability.
+ * The wallpaper choice is deliberately two-dimensional and nothing more:
+ *   - Solid: a plain background that FOLLOWS the theme mode (light theme can
+ *     never end up on a black background) — the single built-in preset.
+ *   - Custom: image files the user imported, stored in the fixed
+ *     `<data_dir>/wallpapers/` folder (see commands::wallpaper). The
+ *     directory IS the list — ids are file names, so there is no metadata
+ *     blob to keep in sync.
  *
  * The wallpaper is applied to <body> via CSS custom properties consumed by
- * theme.scss: --wallpaper-image, --wallpaper-solid-color, --wallpaper-overlay-opacity.
+ * theme.scss: --wallpaper-image, --wallpaper-solid-color,
+ * --wallpaper-overlay-opacity.
  */
 
 export type WallpaperType = "solid" | "image";
 
 export type SolidSource = {
   type: "solid";
-  color: "black" | "white" | "auto";
 };
 
 export type ImageSource = {
@@ -30,94 +34,59 @@ export type WallpaperAuthor = {
 
 export type WallpaperPreset = {
   id: string;
+  /** i18n key for built-in presets; custom entries carry a literal name. */
+  nameKey?: string;
   name: string;
-  thumbnail?: string;
   source: WallpaperSource;
-  /** Force this wallpaper to only show in dark/light mode (e.g. a bright
-   *  photo only suitable for light mode). null = no restriction. */
-  modeRestriction?: "dark" | "light" | null;
   /** Art credit — surfaced by the desktop corner mark and the settings
    *  attributions section. */
   author?: WallpaperAuthor | null;
 };
 
-export type CustomWallpaper = {
-  id: string;
-  name: string;
-  source: WallpaperSource;
-  addedAt: number;
-};
-
 export const DEFAULT_WALLPAPER_ID = "solid-auto";
 
-// A naval-themed image background can be added here when we ship one.
-// For now the default is solid-auto (follows theme mode).
-const bgUrl = ""; // placeholder — set to an imported image URL when available
+/** The single built-in background: plain color, follows the theme mode. */
+export const SOLID_WALLPAPER: WallpaperPreset = {
+  id: DEFAULT_WALLPAPER_ID,
+  nameKey: "settings.wallpaperSolid",
+  name: "Solid",
+  source: { type: "solid" },
+  author: null,
+};
 
-export const DEFAULT_PRESETS: WallpaperPreset[] = [
-  {
-    id: "solid-auto",
-    name: "Solid (auto)",
-    source: { type: "solid", color: "auto" },
-    modeRestriction: null,
-  },
-  {
-    id: "solid-black",
-    name: "Solid black",
-    source: { type: "solid", color: "black" },
-    modeRestriction: "dark",
-  },
-  {
-    id: "solid-white",
-    name: "Solid white",
-    source: { type: "solid", color: "white" },
-    modeRestriction: "light",
-  },
-  ...(bgUrl
-    ? [
-        {
-          id: "naval-bg",
-          name: "Naval",
-          source: { type: "image" as const, url: bgUrl },
-          modeRestriction: "light" as const,
-          author: { name: "正弦线", url: "https://space.bilibili.com/97738727" },
-        },
-      ]
-    : []),
-];
+// A naval-themed image background can be added here when we ship one.
+// (Give it an `author` credit — see attributions.ts.)
 
 // ── localStorage helpers ────────────────────────────────────────────────
+// Only the active id persists here; the custom list itself lives on disk
+// in the wallpapers folder and is read through commands::wallpaper.
 
 const STORAGE_BG_KEY = "wowsp-wallpaper";
-const STORAGE_CUSTOM_KEY = "wowsp-custom-wallpapers";
+/** Pre-AppData custom list (JSON in localStorage) — swept on first read. */
+const LEGACY_CUSTOM_KEY = "wowsp-custom-wallpapers";
 
 export function loadActiveWallpaperId(): string {
-  return localStorage.getItem(STORAGE_BG_KEY) || DEFAULT_WALLPAPER_ID;
-}
-
-export function saveActiveWallpaperId(id: string): void {
-  localStorage.setItem(STORAGE_BG_KEY, id);
-}
-
-export function loadCustomWallpapers(): CustomWallpaper[] {
   try {
-    const raw = localStorage.getItem(STORAGE_CUSTOM_KEY);
-    return raw ? (JSON.parse(raw) as CustomWallpaper[]) : [];
+    // Custom wallpapers moved to the wallpapers folder; drop the dead list.
+    localStorage.removeItem(LEGACY_CUSTOM_KEY);
+    const raw = localStorage.getItem(STORAGE_BG_KEY);
+    if (raw == null) return DEFAULT_WALLPAPER_ID;
+    // Old installs may carry ids of removed presets (solid-black/white) or
+    // of the old localStorage custom list ("custom-…") — those entries no
+    // longer exist, so they fall back to the solid default. useWallpaper
+    // also self-heals when a custom file disappears from disk.
+    return raw === DEFAULT_WALLPAPER_ID || raw.startsWith("wallpaper-")
+      ? raw
+      : DEFAULT_WALLPAPER_ID;
   } catch {
-    return [];
+    return DEFAULT_WALLPAPER_ID;
   }
 }
 
-export function saveCustomWallpapers(list: CustomWallpaper[]): void {
-  localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(list));
-}
-
-export function addCustomWallpaper(wp: CustomWallpaper): void {
-  const list = loadCustomWallpapers();
-  list.push(wp);
-  saveCustomWallpapers(list);
-}
-
-export function removeCustomWallpaper(id: string): void {
-  saveCustomWallpapers(loadCustomWallpapers().filter((w) => w.id !== id));
+export function saveActiveWallpaperId(id: string): void {
+  try {
+    localStorage.setItem(STORAGE_BG_KEY, id);
+  } catch {
+    // storage unavailable — the choice holds for the session
+  }
 }

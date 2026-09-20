@@ -7,16 +7,17 @@ import {
   FolderCog,
   FolderOpen,
   Globe,
+  ImagePlus,
   Info,
   Languages,
   Layers,
-  Monitor,
   MonitorPlay,
   Moon,
   Palette,
   RefreshCw,
   Sun,
   SunMoon,
+  Trash2,
   UserRound,
 } from "@lucide/vue";
 
@@ -42,6 +43,7 @@ import {
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type GameInstall, type NetworkConfig } from "@/api";
+import { isTauri } from "@/transport";
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -168,6 +170,32 @@ export default defineComponent({
     // Shares the theme clock's resolution — no extra geo lookup here.
     const { geo, period } = theme;
 
+    // ── wallpaper management (import + two-step delete) ───────────────────
+    const importingWallpaper = ref(false);
+    /** Two-step delete confirm per custom wallpaper (id of the armed row). */
+    const wallpaperArmed = ref<string | null>(null);
+
+    async function importWallpaper() {
+      if (importingWallpaper.value) return;
+      importingWallpaper.value = true;
+      try {
+        await wallpaper.importCustom();
+      } catch (e) {
+        toast.error(`${t("settings.wallpaperImportFailed")}\n${(e as Error).message || e}`);
+      } finally {
+        importingWallpaper.value = false;
+      }
+    }
+
+    async function removeWallpaper(id: string) {
+      wallpaperArmed.value = null;
+      try {
+        await wallpaper.removeCustomById(id);
+      } catch (e) {
+        toast.error(`${t("settings.wallpaperRemoveFailed")}\n${(e as Error).message || e}`);
+      }
+    }
+
     function periodLabel(p: string): string {
       if (p === "day") return t("settings.periodDay");
       if (p === "dusk") return t("settings.periodDusk");
@@ -269,6 +297,10 @@ export default defineComponent({
         // Leaving the section disarms any pending two-step confirm.
         clearArmed.value = null;
         auxArmed.value = null;
+        wallpaperArmed.value = null;
+        // Re-sync the wallpaper list with the AppData folder (also heals a
+        // failed boot-time listing instead of staying empty all session).
+        if (id === "appearance") void wallpaper.refreshCustom();
         if (id !== "cache") return;
         void cacheStore.refreshStatus();
         void cacheStore.loadMirror().then(() => {
@@ -455,10 +487,10 @@ export default defineComponent({
           {/* appearance — mode, color preset, wallpaper, solar indicator */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.themeMode")}</h2>
-            {/* Four-way mode preference (wowsp's own key — see
+            {/* Three-way mode preference (wowsp's own key — see
                 theme/themeModePreference): dark/light verbatim, solar =
-                daylight-following (hikari "system"), system = OS
-                prefers-color-scheme. Selection applies immediately. */}
+                daylight-following (hikari "system"). The retired OS-follower
+                mode migrates onto solar. Selection applies immediately. */}
             <HTabs
               block
               variant="segmented"
@@ -470,7 +502,6 @@ export default defineComponent({
                 { key: "dark", label: t("settings.themeModeDark"), icon: <Moon size={14} /> },
                 { key: "light", label: t("settings.themeModeLight"), icon: <Sun size={14} /> },
                 { key: "solar", label: t("settings.themeModeSolar"), icon: <SunMoon size={14} /> },
-                { key: "system", label: t("settings.themeModeSystem"), icon: <Monitor size={14} /> },
               ]}
             />
 
@@ -504,44 +535,86 @@ export default defineComponent({
               </div>
             </div>
 
-            {/* wallpaper / background */}
+            {/* wallpaper / background — solid follows the theme mode; custom
+                entries are files in the AppData wallpapers folder and can be
+                deleted (two-step confirm per card). */}
             <div class="settings-modal__sub">
               <h3 class="settings-modal__sub-title">{t("settings.wallpaper")}</h3>
               <div class="settings-modal__wallpapers">
                 {wallpaper.allWallpapers.value.map((w) => {
                   const on = wallpaper.activeWallpaperId.value === w.id;
+                  const custom = w.nameKey == null;
                   return (
-                    <button
-                      type="button"
-                      aria-pressed={on}
-                      class={["settings-modal__wallpaper", on ? "settings-modal__wallpaper--on" : ""]}
-                      onClick={() => wallpaper.setActiveWallpaper(w.id)}
+                    <div
+                      key={w.id}
+                      class={[
+                        "settings-modal__wallpaper",
+                        on ? "settings-modal__wallpaper--on" : "",
+                      ]}
                     >
-                      <span class="settings-modal__wallpaper-preview">
-                        {w.source.type === "solid" ? (
-                          <span
-                            class="settings-modal__wallpaper-swatch"
-                            style={{
-                              background:
-                                w.source.color === "black"
-                                  ? "#0b1220"
-                                  : w.source.color === "white"
-                                    ? "#f8fafc"
-                                    : "linear-gradient(135deg, #0b1220 50%, #f8fafc 50%)",
-                            }}
-                          />
+                      <button
+                        type="button"
+                        aria-pressed={on}
+                        class="settings-modal__wallpaper-pick"
+                        onClick={() => wallpaper.setActiveWallpaper(w.id)}
+                      >
+                        <span class="settings-modal__wallpaper-preview">
+                          {w.source.type === "solid" ? (
+                            // Live swatch: the theme's own background.
+                            <span
+                              class="settings-modal__wallpaper-swatch"
+                              style={{ background: "rgb(var(--color-background))" }}
+                            />
+                          ) : (
+                            <span
+                              class="settings-modal__wallpaper-swatch settings-modal__wallpaper-swatch--image"
+                              style={{ backgroundImage: `url(${w.source.url})` }}
+                            />
+                          )}
+                        </span>
+                        <span class="settings-modal__wallpaper-name">
+                          {w.nameKey ? t(w.nameKey) : w.name}
+                        </span>
+                        {on ? <Check size={12} class="settings-modal__wallpaper-check" /> : null}
+                      </button>
+                      {custom ? (
+                        wallpaperArmed.value === w.id ? (
+                          <button
+                            type="button"
+                            class="settings-modal__wallpaper-delete settings-modal__wallpaper-delete--confirm"
+                            onClick={() => void removeWallpaper(w.id)}
+                          >
+                            {t("settings.wallpaperDeleteConfirm")}
+                          </button>
                         ) : (
-                          <span
-                            class="settings-modal__wallpaper-swatch settings-modal__wallpaper-swatch--image"
-                            style={{ backgroundImage: `url(${w.source.url})` }}
-                          />
-                        )}
-                      </span>
-                      <span class="settings-modal__wallpaper-name">{w.name}</span>
-                    </button>
+                          <button
+                            type="button"
+                            class="settings-modal__wallpaper-delete"
+                            title={t("settings.wallpaperDelete")}
+                            aria-label={t("settings.wallpaperDelete")}
+                            onClick={() => (wallpaperArmed.value = w.id)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
+              {isTauri() ? (
+                <div class="settings-modal__wallpaper-actions">
+                  <HButton
+                    variant="secondary"
+                    size="sm"
+                    loading={importingWallpaper.value}
+                    onClick={() => void importWallpaper()}
+                  >
+                    <ImagePlus size={14} /> {t("settings.wallpaperImport")}
+                  </HButton>
+                </div>
+              ) : null}
+              <p class="settings-modal__hint">{t("settings.wallpaperHint")}</p>
             </div>
 
             {/* solar status — what "Auto (sun)" currently resolves to */}

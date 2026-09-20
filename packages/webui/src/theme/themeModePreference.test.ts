@@ -43,11 +43,18 @@ describe("readStoredThemeModePreference", () => {
     expect(localStorage.getItem(THEME_MODE_PREFERENCE_STORAGE_KEY)).toBe("solar");
   });
 
-  it("keeps the new key authoritative once written and ignores the legacy one", async () => {
+  it("migrates the retired wowsp-side 'system' value onto solar", async () => {
     localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, "system");
+    const { readStoredThemeModePreference } = await freshModule();
+    expect(readStoredThemeModePreference()).toBe("solar");
+    expect(localStorage.getItem(THEME_MODE_PREFERENCE_STORAGE_KEY)).toBe("solar");
+  });
+
+  it("keeps the new key authoritative once written and ignores the legacy one", async () => {
+    localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, "light");
     localStorage.setItem(LEGACY_KEY, "dark");
     const { readStoredThemeModePreference } = await freshModule();
-    expect(readStoredThemeModePreference()).toBe("system");
+    expect(readStoredThemeModePreference()).toBe("light");
   });
 
   it("falls back to solar on a corrupt value", async () => {
@@ -73,51 +80,13 @@ describe("setThemeModePreference", () => {
     expect(localStorage.getItem(LEGACY_KEY)).toBe("system");
   });
 
-  it("maps the system preference onto the OS prefers-color-scheme", async () => {
+  it("maps light verbatim", async () => {
     const { setThemeModePreference } = await freshModule();
-    setThemeModePreference("system");
-    // happy-dom's matchMedia reports no dark preference by default.
+    setThemeModePreference("light");
     expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
     // Re-applying the same preference does not churn hikari's key.
-    setThemeModePreference("system");
+    setThemeModePreference("light");
     expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
-  });
-
-  it("follows OS changes and leaves no listener behind after leaving system", async () => {
-    // happy-dom exposes no MediaQueryList constructor to spy on, so the
-    // matchMedia call is stubbed with a hand-rolled list whose listener
-    // bookkeeping doubles as the assertion surface.
-    const listeners: ((e: { matches: boolean }) => void)[] = [];
-    const fake = {
-      matches: false,
-      addEventListener: (_t: string, fn: (e: { matches: boolean }) => void) => {
-        listeners.push(fn);
-      },
-      removeEventListener: (
-        _t: string,
-        fn: (e: { matches: boolean }) => void,
-      ) => {
-        const i = listeners.indexOf(fn);
-        if (i >= 0) listeners.splice(i, 1);
-      },
-    };
-    const spy = vi
-      .spyOn(window, "matchMedia")
-      .mockReturnValue(fake as unknown as MediaQueryList);
-
-    const { setThemeModePreference } = await freshModule();
-    setThemeModePreference("system");
-    expect(listeners.length).toBe(1);
-
-    // An OS flip onto dark re-drives hikari's mode live.
-    (fake as { matches: boolean }).matches = true;
-    listeners[0]!({ matches: true });
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("dark");
-
-    // Leaving the system preference detaches the module-level listener.
-    setThemeModePreference("solar");
-    expect(listeners.length).toBe(0);
-    spy.mockRestore();
   });
 });
 
