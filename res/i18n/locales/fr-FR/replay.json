@@ -92,6 +92,7 @@
     "viewProfile": "Voir les statistiques de ce joueur",
     "detectedRows": "Localisé · {n} lignes",
     "searching": "Localisation…",
+    "updating": "Mise à jour des équipes…",
     "manualLocate": "Positionnement manuel",
     "manualClear": "Effacer le positionnement",
     "manualRows": "Positionné manuellement · {n} lignes",

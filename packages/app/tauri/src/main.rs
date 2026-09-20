@@ -284,6 +284,7 @@ fn main() {
             commands::network::set_network_config,
             commands::wg_api::lookup_player_stats,
             commands::wg_api::lookup_players_stats_batch,
+            commands::wg_composition::lookup_players_composition,
             commands::wg_api::suggest_players,
             commands::wg_api::suggest_clans,
             commands::wg_api::lookup_clan_info,

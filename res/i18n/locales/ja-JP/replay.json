@@ -92,6 +92,7 @@
     "viewProfile": "このプレイヤーの戦績を見る",
     "detectedRows": "位置特定済み · {n} 行",
     "searching": "位置特定中…",
+    "updating": "編成を更新中…",
     "manualLocate": "手動で位置合わせ",
     "manualClear": "配置を解除",
     "manualRows": "手動配置済み · {n} 行",

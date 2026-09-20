@@ -92,6 +92,7 @@
     "viewProfile": "이 플레이어의 전적 보기",
     "detectedRows": "위치 확인됨 · {n}행",
     "searching": "위치 확인 중…",
+    "updating": "편성 갱신 중…",
     "manualLocate": "수동 위치 지정",
     "manualClear": "위치 지정 해제",
     "manualRows": "수동 위치 지정됨 · {n}행",

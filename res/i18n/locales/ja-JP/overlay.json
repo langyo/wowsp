@@ -2,5 +2,7 @@
   "hint": "対局中に Tab キーを押し続けると戦績を表示します。",
   "locateHint": "検出は有効ですが、チーム表の位置をまだ特定できていません。戦闘に入ってからもう一度お試しください。",
   "locatingHint": "Tab を押し続けてください — 名簿を認識しています…",
-  "recognizingBadge": "名簿を認識中…"
+  "recognizingBadge": "名簿を認識中…",
+  "queryingBadge": "戦績を取得中…",
+  "staleBadge": "編成を更新中…"
 }

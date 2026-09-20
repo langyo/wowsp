@@ -217,9 +217,10 @@ fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
 // ── account resolution ────────────────────────────────────────────────────
 
 /// One resolved CN account (vortex search result or a direct id hit).
-struct CnAccountRef {
-    account_id: i64,
-    nickname: String,
+/// Fields are crate-visible so `wg_composition` can reuse the resolver.
+pub(crate) struct CnAccountRef {
+    pub(crate) account_id: i64,
+    pub(crate) nickname: String,
 }
 
 /// Search one nickname on the CN vortex (limit=10) and resolve the EXACT
@@ -227,8 +228,9 @@ struct CnAccountRef {
 /// match", "no exact hit" and "unsearchable query" — the server rejects
 /// anything shorter than 3 characters with `Bad Request` (two-character
 /// Chinese nicknames cannot be searched on the official profile site either;
-/// they stay reachable by numeric id through `resolve_entry`).
-async fn account_list_one(
+/// they stay reachable by numeric id through `resolve_entry`). Shared with
+/// `wg_composition`'s batch resolution.
+pub(crate) async fn account_list_one(
     client: &reqwest::Client,
     name: &str,
 ) -> Result<Option<CnAccountRef>, String> {

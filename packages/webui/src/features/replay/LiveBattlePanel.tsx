@@ -129,9 +129,14 @@ export default defineComponent({
         return { cls: "manual", text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
       }
       if (s.state === "idle") return null;
-      return s.state === "detected"
-        ? { cls: "detected", text: t("replay.live.detectedRows", { n: s.rows ?? 0 }) }
-        : { cls: "searching", text: t("replay.live.searching") };
+      if (s.state === "detected") {
+        // A sink just reshuffled the anchored rows and the watcher is
+        // re-mapping them at the accelerated cadence — badge "updating"
+        // instead of the row count until the mapping lands (stale clears).
+        if (s.stale) return { cls: "detected", text: t("replay.live.updating") };
+        return { cls: "detected", text: t("replay.live.detectedRows", { n: s.rows ?? 0 }) };
+      }
+      return { cls: "searching", text: t("replay.live.searching") };
     });
 
     /** A manual anchor is in force: the badge turns green and the button

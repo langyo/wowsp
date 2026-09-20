@@ -2,5 +2,7 @@
   "hint": "對局中按住 Tab 鍵顯示雙方水表數據。",
   "locateHint": "目前偵測已開啟，但尚未定位到表格，請進入遊戲後再試",
   "locatingHint": "請按住 Tab，正在辨識名單…",
-  "recognizingBadge": "正在辨識名單…"
+  "recognizingBadge": "正在辨識名單…",
+  "queryingBadge": "戰績查詢中…",
+  "staleBadge": "陣容更新中…"
 }
