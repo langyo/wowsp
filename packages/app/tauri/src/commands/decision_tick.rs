@@ -79,7 +79,7 @@ const LEXINGTON_TOP_SPEED_MS: f32 = LEXINGTON_TOP_SPEED_KT * KT_MS;
 /// as the stock-33.5-kt assumption (± a few percent).
 pub const METERS_PER_UNIT: f32 = 5.86;
 
-/// Median of a non-empty f32 slice (sorted copy; lower middle on even len).
+/// Median of a non-empty f32 slice (sorted copy; upper middle on even len).
 fn median_f32(values: &mut [f32]) -> Option<f32> {
     if values.is_empty() {
         return None;
@@ -207,8 +207,10 @@ pub fn calibrate_meters_per_unit(stream: &ReplayStream) -> ScaleCalibration {
         let mut speeds = Vec::new();
         let mut tt = first.time + 60.0;
         while tt < last.time - 60.0 {
-            // Level at tt and 20 s earlier both full ahead -> held long
-            // enough for the ship to have settled at its speed plateau.
+            // Telegraph sampled at tt and 20 s earlier only — a mid-window
+            // drop below full is invisible to the two-point check, but level
+            // 4 is the top setting so any pollution only drags speeds down,
+            // which the p90 absorbs.
             if throttle_at(tt) == Some(4) && throttle_at(tt - 20.0) == Some(4) {
                 if let Some(v) = windowed_speed(samples, tt, 8.0) {
                     speeds.push(v);
@@ -923,6 +925,46 @@ mod tests {
         let e = state.entities.iter().find(|e| e.entity_id == 9).unwrap();
         assert!(e.observed_now, "1 s old sample counts as spotted");
         assert_eq!(e.speed_kt, None, "lone post-gap sample has no speed");
+    }
+
+    /// The visibility boundary is inclusive: a sample exactly GAP_THRESHOLD
+    /// old still counts as spotted; one slightly older does not (gap stats
+    /// elsewhere need a strictly-greater gap to call an unseen window).
+    #[test]
+    fn observed_now_boundary_is_inclusive_at_gap_threshold() {
+        let stream = ReplayStream {
+            trajectories: vec![
+                trajectory(
+                    7,
+                    kind(2, Some(111)),
+                    (0..160)
+                        .map(|i| sample(i as f32 * 0.5, 7, 0.0, 0.0))
+                        .collect(),
+                ),
+                trajectory(
+                    9,
+                    kind(2, Some(222)),
+                    vec![sample(96.0, 9, 0.0, 0.0)], // exactly 4 s before t
+                ),
+                trajectory(
+                    10,
+                    kind(2, Some(333)),
+                    vec![sample(95.0, 10, 0.0, 0.0)], // 5 s stale
+                ),
+            ],
+            recorder_vehicle_id: Some(7),
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 111),
+            roster_entry(2, 2, 222),
+            roster_entry(3, 2, 333),
+        ];
+        let state = build_tick_state(&stream, &vehicles, 100.0, None, DEFAULT_EYE_HEIGHT)
+            .expect("tick builds");
+        let at = |id: i32| state.entities.iter().find(|e| e.entity_id == id).unwrap();
+        assert!(at(9).observed_now, "exactly 4 s old sample is spotted");
+        assert!(!at(10).observed_now, "5 s old sample is stale");
     }
 
     /// Terrain LOS wiring: observed enemy ships get a verdict from the raster,
