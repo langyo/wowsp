@@ -171,8 +171,10 @@ export interface OverlayStatus {
   manual: boolean;
   /** Mirrors `OverlayAnchor.stale`: true while the anchored rows' data just
    *  changed (a ship sank) and the row→name re-mapping is catching up —
-   *  the panel can badge "updating". Always false in every non-detected
-   *  state. */
+   *  the panel can badge "updating". Only meaningful while `state` is
+   *  "detected": the flag rides the watcher's pin state, so a stale pin
+   *  that gets hidden (Tab released, focus lost) may leave `stale` true on
+   *  a later idle/searching payload until the next battle resets it. */
   stale?: boolean;
 }
 

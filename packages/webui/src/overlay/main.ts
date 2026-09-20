@@ -371,14 +371,16 @@ function render() {
     });
   }
 
-  // Badge stack over the table's top edge, rebuilt on every render. Up to
+  // Badge stack on the table's top edge, rebuilt on every render. Up to
   // three states can be live at once (mapping pending + stats querying +
   // roster churning), so the pills share one flex-column container instead
-  // of overlapping each other. Placement is the single badge's old spot:
-  // centered over the table's top edge — the chips live OUTSIDE the
-  // left/right edges, so nothing is covered but the table's own header
-  // band. Disappears with its trigger on the next event (render() rebuilds
-  // from scratch each time).
+  // of overlapping each other. The stack is ANCHORED at the table's top
+  // edge and grows DOWNWARD (CSS translateX only): sitting a few px onto
+  // the table's decorative header band is fine — the chips live OUTSIDE
+  // the left/right edges, so nothing readable is covered. (The earlier
+  // bottom-anchored, upward-growing variant clipped against the window's
+  // top edge on small rosters / high DPR.) Disappears with its trigger on
+  // the next event (render() rebuilds from scratch each time).
   const badges: HTMLDivElement[] = [];
   if (anchor.rowPlayersPending) {
     badges.push(makeBadge(localized("recognizingBadge"), null));
@@ -398,9 +400,11 @@ function render() {
     const stack = document.createElement("div");
     stack.className = "overlay-badges";
     stack.style.left = `${(anchor.rosterRect.x + anchor.rosterRect.width / 2) / dpr}px`;
-    // `top` is the stack's BOTTOM edge (translateY(-100%) in CSS); clamp
-    // so a thin top padding (small roster / high DPR) cannot clip it.
-    stack.style.top = `${Math.max(26, anchor.rosterRect.y / dpr - gap)}px`;
+    // Top edge of the table (header band top) + a small offset so the
+    // first pill's border sits just inside the band. No bottom clamp: the
+    // stack grows down into the table area and can never leave the window
+    // upward.
+    stack.style.top = `${anchor.rosterRect.y / dpr + 2}px`;
     for (const b of badges) stack.appendChild(b);
     root.appendChild(stack);
   }

@@ -60,7 +60,11 @@
 //!   immediately updates the pin, re-places the chips (they gray out and
 //!   re-sort), re-emits the tab order and raises the wire's `stale` flag
 //!   while the OCR re-map chases at the accelerated
-//!   [`SINK_CATCHUP_INTERVAL`] cadence.
+//!   [`SINK_CATCHUP_INTERVAL`] cadence. The flip is direction-sensitive
+//!   ([`sink_probe_confirm`]): a SINK applies at once, while a pure
+//!   REVIVAL flip — usually one frame of glare/explosion pushing a sunk
+//!   row's strip over the luma threshold — must survive two consecutive
+//!   probes before the pin believes it.
 //!
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
@@ -193,8 +197,9 @@ const SINK_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 /// flipped alive flags and the row→name mapping needs re-reading): a full
 /// OCR pass runs every 500 ms instead of the usual [`CAPTURE_MIN_INTERVAL`]
 /// so the re-map lands within a second or two of the sink. The stale flag
-/// clears as soon as a trusted mapping transplants (or a move replacement
-/// carries one).
+/// clears as soon as a trusted mapping produced by FRESH OCR lands — a move
+/// replacement that merely CARRIES the old pin's mapping keeps the flag
+/// (the carried order still describes the pre-sink rows).
 const SINK_CATCHUP_INTERVAL: Duration = Duration::from_millis(500);
 /// Consecutive header-band verify misses before the geometry cache is
 /// retired and the next capture runs a full detection again. One miss is a
@@ -204,6 +209,13 @@ const SINK_CATCHUP_INTERVAL: Duration = Duration::from_millis(500);
 /// accumulates the misses in ~1 s; in the acquisition arm they accumulate
 /// per rate-limited capture attempt instead.
 const GEOMETRY_VERIFY_MAX_FAILS: u32 = 3;
+/// How long an unconfirmed sink-probe REVIVAL candidate (see
+/// [`sink_probe_confirm`]) stays confirmable: two agreeing probes at the
+/// normal [`SINK_CHECK_INTERVAL`] cadence land ~500 ms apart; past this TTL
+/// the candidate expires and the next flip starts a fresh two-probe count.
+/// Generous enough to ride out a skipped probe, tight enough that a stale
+/// reading can never confirm a much later flip.
+const SINK_CANDIDATE_TTL: Duration = Duration::from_millis(1500);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Window management
@@ -878,6 +890,12 @@ struct WatchFsm {
     /// up: rides the wire on every status + anchor emission until a trusted
     /// mapping lands.
     stale: bool,
+    /// Pending sink-probe REVIVAL candidate (pure-debounce state, see
+    /// [`sink_probe_confirm`]): a probe read that only flipped sunk rows
+    /// back to alive — almost always a single-frame glare/explosion
+    /// artifact — waits here for the NEXT probe to agree before the pin is
+    /// updated. `None` when nothing is pending.
+    sink_candidate: Option<(Vec<bool>, Instant)>,
     /// Per-game-window-mode table geometry (see [`GeometryCacheEntry`]).
     geometry_cache: Option<GeometryCacheEntry>,
     /// Consecutive band-verify misses on the current cache entry.
@@ -1015,6 +1033,7 @@ fn apply_watch_command(
             // rebuilt from the cached band without a rescan.
             let had_pin = fsm.pinned_anchor.take().is_some();
             fsm.stale = false;
+            fsm.sink_candidate = None;
             fsm.last_catch_up = None;
             fsm.last_revalidate = None;
             fsm.last_sink_check = None;
@@ -1286,6 +1305,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 // A fresh pin restarts the stale lifecycle: brand-new
                 // recognition, nothing to re-map yet.
                 fsm.stale = false;
+                fsm.sink_candidate = None;
                 fsm.last_sink_check = Some(Instant::now());
             }
             if let Some(anchor) = computed {
@@ -1456,16 +1476,41 @@ fn carry_mapping_into_fresh(fresh: &OverlayAnchor, pinned: &OverlayAnchor) -> Ov
     out
 }
 
-/// Pure stale lifecycle on the OCR side (unit-tested): a transplant (or a
-/// mapping-carrying move replacement) that landed a TRUSTED mapping means
-/// the re-map has caught up — clear the stale flag. An all-`None` landing
-/// (honest silence) or an absent mapping keeps the flag: the chips'
-/// attribution is still in flux and the fast catch-up must stay armed.
-fn stale_after_mapping(stale: bool, mapping: &Option<Vec<Option<String>>>) -> bool {
+/// Where a mapping that just landed on the pin came from — decides whether
+/// it may clear the sink-lifecycle `stale` flag ([`stale_after_mapping`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MappingOrigin {
+    /// This frame's own OCR produced the trusted mapping: the attribution on
+    /// screen is CURRENT, so a set stale flag has done its job and clears.
+    FreshOcr,
+    /// The mapping was CARRIED from the OLD pin
+    /// ([`carry_mapping_into_fresh`]): the names are battle-accurate, but
+    /// the row order they describe is the PRE-sink one — exactly the
+    /// mis-attribution `stale` exists to flag. Carrying it onto new
+    /// geometry must never launder the flag away (and must never SET it
+    /// either — carrying is not a data change, just a re-print).
+    CarriedFromPin,
+}
+
+/// Pure stale lifecycle on the OCR side (unit-tested): only a TRUSTED
+/// mapping produced by THIS frame's OCR ([`MappingOrigin::FreshOcr`]) means
+/// the re-map has caught up — clear the stale flag. A trusted mapping
+/// CARRIED from the old pin keeps the flag exactly as it was, and an
+/// all-`None` landing (honest silence) or an absent mapping keeps it too:
+/// the chips' attribution is still in flux and the fast catch-up must stay
+/// armed.
+fn stale_after_mapping(
+    stale: bool,
+    mapping: &Option<Vec<Option<String>>>,
+    origin: MappingOrigin,
+) -> bool {
     if mapping_untrusted(mapping) {
         stale
     } else {
-        false
+        match origin {
+            MappingOrigin::FreshOcr => false,
+            MappingOrigin::CarriedFromPin => stale,
+        }
     }
 }
 
@@ -1479,6 +1524,57 @@ fn alive_changed(pinned: Option<&[bool]>, fresh: &[bool]) -> bool {
         Some(p) => p.len() == fresh.len() && p.iter().zip(fresh).any(|(a, b)| a != b),
         None => false,
     }
+}
+
+/// Outcome pair of one sink probe against the pinned alive state
+/// ([`sink_probe_confirm`]): what to apply to the pin NOW, and the candidate
+/// state to carry into the next probe (`None` = nothing pending).
+type SinkProbeResult = (Option<Vec<bool>>, Option<(Vec<bool>, Instant)>);
+
+/// Pure sink-probe hysteresis (unit-tested; time injected): sinks apply
+/// IMMEDIATELY, revives need two agreeing probes.
+///
+/// A sinking ship must re-sort the chips within a probe interval (the
+/// user-facing point of the fast path), so any alive→false flip applies at
+/// once. A false→true flip, however, is almost always a single-frame
+/// artifact — an explosion flash or water glare pushing a SUNK row's name
+/// strip over the alive-luma threshold — and applying it would flip a chip
+/// back to colored for one probe and re-sort the rows around nothing. So a
+/// pure-revive read is only CANDIDATE-armed; it applies when the NEXT probe
+/// (≈ [`SINK_CHECK_INTERVAL`] later, within [`SINK_CANDIDATE_TTL`]) reads
+/// the same vector. Any disagreeing read — the pin itself, a different
+/// vector, an expired candidate — resets the count to the newest reading.
+///
+/// Returns `(apply_now, next_candidate)`: `apply_now` is the alive vector
+/// to write onto the pin (already re-placed by the caller), `next_candidate`
+/// the debounce state for the following probe.
+fn sink_probe_confirm(
+    pinned: Option<&[bool]>,
+    candidate: Option<(&[bool], Instant)>,
+    fresh: &[bool],
+    now: Instant,
+) -> SinkProbeResult {
+    // Not comparable (recognition never produced a baseline, length
+    // mismatch) or the read equals the pin: nothing to do — and a pending
+    // candidate was just contradicted by the pin-matching read, so drop it.
+    if !alive_changed(pinned, fresh) {
+        return (None, None);
+    }
+    let pinned = pinned.unwrap_or_default();
+    // Any alive→false flip is a genuine sink signal: apply immediately.
+    if pinned.iter().zip(fresh).any(|(a, b)| *a && !*b) {
+        return (Some(fresh.to_vec()), None);
+    }
+    // Pure revival: confirm only a second, consistent reading.
+    if let Some((c, first_seen)) = candidate
+        && c == fresh
+        && now.duration_since(first_seen) <= SINK_CANDIDATE_TTL
+    {
+        return (Some(fresh.to_vec()), None);
+    }
+    // First observation, a differing re-read, or an expired candidate:
+    // (re)arm with this reading and apply nothing yet.
+    (None, Some((fresh.to_vec(), now)))
 }
 
 /// Pure transplant decision (unit-testable): a fresh detection carries a
@@ -1580,8 +1676,11 @@ fn tab_order_from_anchor(
 /// the move-replacement (whose row count may change); a transplant keeps the
 /// `detected` state and merely re-renders the chips. `last_revalidate` is
 /// bumped unconditionally: the pass costs a full capture attempt regardless
-/// of its outcome. A trusted mapping landing through either path clears the
-/// FSM's stale flag (the re-map caught up).
+/// of its outcome. A trusted mapping landing from FRESH OCR clears the FSM's
+/// stale flag ([`MappingOrigin::FreshOcr`]); a mapping CARRIED from the old
+/// pin onto a moved grid does not — it still describes the pre-sink row
+/// order, so the stale flag survives until this frame's own OCR confirms
+/// the new order.
 ///
 /// Note that `compute_anchor` already drops a tab dump on every CONFIRMED
 /// detection (`tab_dump`): the pass that discovers a NEW layout leaves a
@@ -1616,13 +1715,19 @@ fn revalidate_pinned_anchor(app: &AppHandle, fsm: &mut WatchFsm, game: Option<Ga
             game_rect: rect_from_win32(g.rect),
             anchor: carried.clone(),
         });
-        // A trusted mapping on the replacement (fresh's own, or the pin's
-        // carried one) means attribution is current — the stale flag's job
-        // is done. The replacement is always CONFIRMED (a fallback fresh
-        // anchor can never move past `anchor_meaningfully_moved` against a
-        // confirmed pin) — but its row count may differ from the old pin's;
-        // report_status dedups an unchanged layout for free.
-        fsm.stale = stale_after_mapping(fsm.stale, &carried.row_players);
+        // Only a trusted mapping produced by THIS frame's OCR clears the
+        // stale flag. When the replacement CARRIED the old pin's mapping
+        // (fresh recognition not landed yet), the on-screen row order still
+        // describes the pre-sink state — the flag must survive the move so
+        // the accelerated catch-up keeps chasing until fresh OCR confirms
+        // the new order. (A carried mapping never SETS the flag either.)
+        let fresh_ocr = !mapping_untrusted(&fresh.row_players);
+        let origin = if fresh_ocr {
+            MappingOrigin::FreshOcr
+        } else {
+            MappingOrigin::CarriedFromPin
+        };
+        fsm.stale = stale_after_mapping(fsm.stale, &carried.row_players, origin);
         place_and_show(app, &carried, fsm.stale);
         report_status(
             app,
@@ -1646,7 +1751,9 @@ fn revalidate_pinned_anchor(app: &AppHandle, fsm: &mut WatchFsm, game: Option<Ga
                 .unwrap_or(0),
             "row recognition caught up — transplanting the mapping onto the pin"
         );
-        fsm.stale = stale_after_mapping(fsm.stale, &updated.row_players);
+        // A transplant always copies THIS frame's OCR (see
+        // `should_transplant_rows`): a trusted landing clears stale.
+        fsm.stale = stale_after_mapping(fsm.stale, &updated.row_players, MappingOrigin::FreshOcr);
         if let Some(pin) = fsm.pinned_anchor.as_mut() {
             pin.anchor = updated.clone();
         }
@@ -1657,8 +1764,9 @@ fn revalidate_pinned_anchor(app: &AppHandle, fsm: &mut WatchFsm, game: Option<Ga
 /// One SINK FAST-PATH pass (overlay shown + confirmed pin): capture the
 /// game window once and read every row's alive flag straight off the
 /// PINNED geometry — strip crops + brightest-glyph luma only, no OCR, no
-/// detection, no roster read ([`overlay_detect::read_row_alive`]). An
-/// alive-flag flip (a ship sank) immediately:
+/// detection, no roster read ([`overlay_detect::read_row_alive`]). A
+/// settled alive-flag flip (see [`sink_probe_confirm`]: a SINK applies
+/// immediately, a pure revival needs two agreeing probes) then:
 ///
 /// - updates the pin's `row_alive` and re-places the anchor (the chips
 ///   gray out and re-sort; a trusted mapping also re-emits the tab order
@@ -1706,7 +1814,14 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
         let rows: Vec<i32> = anchor.row_centers.iter().map(|c| c + dy).collect();
         // The ally-block count the strips key on: the roster is static for
         // the battle, so the current atomic read is the same value the grid
-        // was built from.
+        // was built from. RACE WINDOW (accepted): a BattleChanged command
+        // can land between this read and the next tick's FIFO drain, so
+        // this ONE probe may split the strips with the NEW roster's ally
+        // count against the OLD pin's grid. Worst case is a single
+        // mis-split probe (unreadable strips default to alive — no false
+        // "sunk"), and the drain voids the pin at the top of the very next
+        // tick, so nothing downstream can build on it. Self-healing by
+        // ordering; not worth a lock.
         let ally_rows = super::arena_info::last_known_team_sizes().0;
         (roster, rows, anchor.team_split, ally_rows)
     };
@@ -1734,11 +1849,20 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
         .pinned_anchor
         .as_ref()
         .and_then(|p| p.anchor.row_alive.clone());
-    if !alive_changed(pinned_alive.as_deref(), &fresh) {
+    // Hysteresis: sinks apply at once, pure revives wait for a second
+    // agreeing probe (see `sink_probe_confirm`).
+    let (apply_now, next_candidate) = sink_probe_confirm(
+        pinned_alive.as_deref(),
+        fsm.sink_candidate.as_ref().map(|(v, t)| (v.as_slice(), *t)),
+        &fresh,
+        Instant::now(),
+    );
+    fsm.sink_candidate = next_candidate;
+    let Some(alive) = apply_now else {
         return;
-    }
-    let sunk = fresh.iter().filter(|&&v| !v).count();
-    // A row's alive flag flipped: update the pin, re-place (chips gray out
+    };
+    let sunk = alive.iter().filter(|&&v| !v).count();
+    // A row's alive flag settled: update the pin, re-place (chips gray out
     // + re-sort + tab-order re-emitted when the mapping is trusted), flag
     // stale, and arm the fast OCR re-map.
     let mut updated = fsm
@@ -1747,7 +1871,7 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
         .expect("checked above")
         .anchor
         .clone();
-    updated.row_alive = Some(fresh);
+    updated.row_alive = Some(alive);
     fsm.stale = true;
     fsm.last_catch_up = None;
     if let Some(pin) = fsm.pinned_anchor.as_mut() {
@@ -3118,17 +3242,64 @@ mod tests {
         let after = vec![true, true, true];
         assert!(alive_changed(before.as_deref(), &after), "a flip fires");
         // …and the OCR side of the lifecycle clears it exactly when a
-        // TRUSTED mapping lands; an all-None landing (honest silence) keeps
-        // the flag and the fast catch-up armed.
+        // TRUSTED mapping produced by THIS FRAME's OCR lands; an all-None
+        // landing (honest silence) keeps the flag and the fast catch-up
+        // armed.
         let trusted = Some(vec![Some("Alpha".into()), None, Some("Delta".into())]);
         let all_none = Some(vec![None, None, None]);
-        assert!(!stale_after_mapping(true, &trusted));
-        assert!(stale_after_mapping(true, &all_none));
-        assert!(stale_after_mapping(true, &None));
+        assert!(!stale_after_mapping(
+            true,
+            &trusted,
+            MappingOrigin::FreshOcr
+        ));
+        assert!(stale_after_mapping(
+            true,
+            &all_none,
+            MappingOrigin::FreshOcr
+        ));
+        assert!(stale_after_mapping(true, &None, MappingOrigin::FreshOcr));
         // A trusted landing keeps stale cleared; a missing mapping never
         // sets it on its own.
-        assert!(!stale_after_mapping(false, &trusted));
-        assert!(!stale_after_mapping(false, &None));
+        assert!(!stale_after_mapping(
+            false,
+            &trusted,
+            MappingOrigin::FreshOcr
+        ));
+        assert!(!stale_after_mapping(false, &None, MappingOrigin::FreshOcr));
+    }
+
+    #[test]
+    fn carried_mapping_never_touches_the_stale_flag() {
+        // A mapping CARRIED from the old pin onto a moved grid still
+        // describes the PRE-sink row order — it must not launder a set
+        // stale flag, and carrying is not a data change, so it must not
+        // set one either. Only this frame's own OCR may clear.
+        let trusted = Some(vec![Some("Alpha".into()), None, Some("Delta".into())]);
+        let all_none = Some(vec![None, None, None]);
+        assert!(
+            stale_after_mapping(true, &trusted, MappingOrigin::CarriedFromPin),
+            "carry + stale → stays stale"
+        );
+        assert!(
+            !stale_after_mapping(false, &trusted, MappingOrigin::CarriedFromPin),
+            "carry + fresh → stays fresh (never sets)"
+        );
+        // Untrusted mappings keep the flag regardless of origin.
+        assert!(stale_after_mapping(
+            true,
+            &all_none,
+            MappingOrigin::CarriedFromPin
+        ));
+        assert!(!stale_after_mapping(
+            false,
+            &all_none,
+            MappingOrigin::CarriedFromPin
+        ));
+        assert!(stale_after_mapping(
+            true,
+            &None,
+            MappingOrigin::CarriedFromPin
+        ));
     }
 
     #[test]
@@ -3142,6 +3313,64 @@ mod tests {
         // Any single flipped row fires (a ship sank, or a row re-read).
         assert!(alive_changed(Some(&[true, true]), &[true, false]));
         assert!(alive_changed(Some(&[false, false]), &[false, true]));
+    }
+
+    #[test]
+    fn sink_probe_applies_sinks_now_and_debounces_revivals() {
+        let t0 = Instant::now();
+        // Two sunk rows so several distinct pure-revival reads exist.
+        let pinned = [true, false, false];
+        // A SINK (alive→false) applies on the FIRST probe, candidate cleared.
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), None, &[false, false, false], t0);
+        assert_eq!(apply.as_deref(), Some(&[false, false, false][..]));
+        assert!(cand.is_none(), "sinks never arm a candidate");
+
+        // A pure REVIVAL (glare on a sunk row) only arms a candidate.
+        let revived_a = [true, true, false];
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), None, &revived_a, t0);
+        assert_eq!(apply, None, "first revival read is not applied");
+        let (cvec, cseen) = cand.expect("revival arms a candidate");
+        assert_eq!(cvec, revived_a.to_vec());
+
+        // A second agreeing probe within the TTL confirms it.
+        let t1 = t0 + SINK_CANDIDATE_TTL;
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), Some((&cvec, cseen)), &revived_a, t1);
+        assert_eq!(apply.as_deref(), Some(&[true, true, false][..]));
+        assert!(cand.is_none(), "confirmation clears the candidate");
+
+        // A DISAGREEING revival re-read resets the count to the newest
+        // reading (the first glare described a different row)…
+        let revived_b = [true, false, true];
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), Some((&cvec, cseen)), &revived_b, t1);
+        assert_eq!(apply, None, "conflicting reads stay unapplied");
+        let (nv, ns) = cand.expect("the newest reading re-arms the candidate");
+        assert_eq!(nv, revived_b.to_vec());
+        assert_eq!(ns, t1);
+        // …and the re-armed candidate still needs its own second probe.
+        let (apply, _) = sink_probe_confirm(Some(&pinned), Some((&nv, ns)), &revived_a, t1);
+        assert_eq!(apply, None);
+
+        // A read matching the pin drops a pending candidate (the glare
+        // never repeated — nothing happened).
+        let (apply, cand) = sink_probe_confirm(Some(&pinned), Some((&nv, ns)), &pinned, t1);
+        assert_eq!(apply, None);
+        assert!(cand.is_none(), "pin-matching read resets the debounce");
+
+        // An EXPIRED candidate does not confirm a later agreeing read.
+        let late = t0 + SINK_CANDIDATE_TTL + Duration::from_millis(1);
+        let (apply, cand) =
+            sink_probe_confirm(Some(&pinned), Some((&cvec, cseen)), &revived_a, late);
+        assert_eq!(apply, None, "past the TTL the count restarts");
+        assert_eq!(cand.unwrap().0, revived_a.to_vec());
+
+        // Non-comparable data (no baseline / length mismatch) is quiet and
+        // clears any pending candidate.
+        let (apply, cand) = sink_probe_confirm(None, Some((&cvec, cseen)), &revived_a, t1);
+        assert_eq!(apply, None);
+        assert!(cand.is_none());
+        let (apply, cand) = sink_probe_confirm(Some(&[true]), Some((&cvec, cseen)), &revived_a, t1);
+        assert_eq!(apply, None);
+        assert!(cand.is_none());
     }
 
     // ── FIFO command pipeline ────────────────────────────────────────────

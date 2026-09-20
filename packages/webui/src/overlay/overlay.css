@@ -78,16 +78,18 @@ html.overlay-hidden body {
   white-space: normal;
 }
 
-/* Badge stack over the table's top edge: up to three state pills can be
+/* Badge stack on the table's top edge: up to three state pills can be
    live at once (mapping pending + stats querying + roster churning), so
-   they share a flex column instead of overlapping each other. The stack
-   carries the absolute placement the single badge used to own — centered
-   over the table's top edge, its BOTTOM edge pinned via translateY(-100%);
-   the chips render outside the left/right edges, so the pills only ever
-   overlap the table's own header band. */
+   they share a flex column instead of overlapping each other. The stack is
+   ANCHORED at its top (TS pins `top` to the table's header-band top edge
+   + 2 px) and grows DOWNWARD — translateX only, no Y component. The
+   earlier bottom-anchored, upward-growing variant (translateY(-100%)) had
+   its upper pills clipped by the window's top edge on small rosters /
+   high DPR. Overlapping the decorative header band is acceptable; the
+   chips render outside the left/right edges either way. */
 .overlay-badges {
   position: absolute;
-  transform: translate(-50%, -100%);
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;

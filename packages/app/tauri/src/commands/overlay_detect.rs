@@ -442,14 +442,31 @@ fn sample_working(rgba: &[u8], width: u32, scale: u32, x: usize, y: usize) -> (i
     )
 }
 
+/// Counter-evidence columns sit this many working px OUTSIDE each end of
+/// the cached header band (see [`verify_header_band`]): close enough that
+/// any real horizontal slide of the table puts a bar over them, far enough
+/// that a pixel or two of edge anti-aliasing on an unmoved table cannot.
+const BAND_EDGE_COUNTER_OFFSETS_PX: usize = 2;
+
 /// Cheap re-verification of a cached detection: sample ONLY the cached
 /// header band region (the six bar sample columns × the band's rows — the
 /// same points the height scan used) and confirm the teal/brick team-header
-/// colors are still there. O(band area) with no full-frame downscale: this
-/// is what every capture pays INSTEAD of a full `detect_roster` while the
-/// cached geometry is trusted. `false` (band gone from its cached spot)
-/// means the table moved or the scene changed — the cached geometry must
-/// not anchor that frame.
+/// colors are still there, PLUS a few counter-evidence columns just outside
+/// the band's left/right ends. O(band area) with no full-frame downscale:
+/// this is what every capture pays INSTEAD of a full `detect_roster` while
+/// the cached geometry is trusted.
+///
+/// The positive half alone proves "the bars are still HERE" but not "the
+/// table did not slide horizontally": the bars are ~24% of the width each
+/// and the sample columns sit at their quarter points, so a shift of a few
+/// pixels keeps every interior sample on bar color. The counter columns
+/// (1–2 working px outside each end) must stay bar-COLOR-FREE — a maximal
+/// color run's neighborhood is by construction not bar color on the frame
+/// the band was detected on — and a shift lights them on essentially every
+/// band row. Failure of either half means the table moved or the scene
+/// changed: the cached geometry must not anchor that frame. A lone noisy
+/// counter row is tolerated (the positive half has the same tolerance for
+/// caption text punching holes); two or more mean the band drifted.
 pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &HeaderBand) -> bool {
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let w_work = (width / scale) as usize;
@@ -460,6 +477,12 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
     if band.green.1 <= band.green.0 || band.red.1 <= band.red.0 {
         return false;
     }
+    let bar_color_at = |x: usize, y: usize| -> bool {
+        x < w_work && {
+            let (r, g, b) = sample_working(rgba, width, scale, x, y);
+            is_header_green(r, g, b) || is_header_red(r, g, b)
+        }
+    };
     let samples = header_samples(band.green, band.red);
     let rows = band.height.max(1);
     let mut hits = 0usize;
@@ -468,24 +491,39 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
         if y >= h_work {
             break;
         }
-        let bar_hits = samples
-            .iter()
-            .filter(|&&sx| {
-                sx < w_work && {
-                    let (r, g, b) = sample_working(rgba, width, scale, sx, y);
-                    is_header_green(r, g, b) || is_header_red(r, g, b)
-                }
-            })
-            .count();
+        let bar_hits = samples.iter().filter(|&&sx| bar_color_at(sx, y)).count();
         if bar_hits >= 2 {
             hits += 1;
+        }
+    }
+    // Counter-evidence columns outside both ends of the band (a bar at the
+    // frame's edge simply loses that side's columns — nothing to contradict
+    // there).
+    let mut counter_cols = Vec::with_capacity(4);
+    for off in 1..=BAND_EDGE_COUNTER_OFFSETS_PX {
+        if band.green.0 >= off {
+            counter_cols.push(band.green.0 - off);
+        }
+        counter_cols.push(band.red.1 + off);
+    }
+    let mut counter_rows = 0usize;
+    for dy in 0..rows {
+        let y = band.top + dy;
+        if y >= h_work {
+            break;
+        }
+        if counter_cols.iter().any(|&x| bar_color_at(x, y)) {
+            counter_rows += 1;
         }
     }
     // At least half the cached band rows must still read as header bars.
     // A perfect score is not required (the white captions punch holes into
     // individual rows — the height scan tolerates the same), but a moved or
-    // vanished table loses most rows at once.
-    hits * 2 >= rows
+    // vanished table loses most rows at once. AND the band edges must stay
+    // clean: header-colored columns outside the cached band mean the table
+    // slid horizontally (the interior samples above would miss it) and the
+    // cached x must be re-detected.
+    hits * 2 >= rows && counter_rows < 2
 }
 
 /// Geometric rebuild of the row grid from a CACHED header band for NEW team
@@ -616,6 +654,19 @@ mod tests {
     /// Geometry mirrors the real client (~47% × table around 22% from top).
     /// Returns the frame plus the table rect in physical px.
     fn synth_header_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
+        synth_header_table_at(w, h, rows, 0)
+    }
+
+    /// [`synth_header_table`] with the whole table drawn `x_shift` physical
+    /// px to the (right when positive / left when negative) side — the
+    /// horizontal-slide scenario the band verify's counter-evidence
+    /// columns exist to catch.
+    fn synth_header_table_at(
+        w: u32,
+        h: u32,
+        rows: usize,
+        x_shift: i32,
+    ) -> (Vec<u8>, Rect, Vec<f32>) {
         let mut img = vec![0u8; (w * h * 4) as usize];
         let mut noise = Noise(0x1234_5678);
         for y in 0..h {
@@ -628,7 +679,7 @@ mod tests {
                 img[i + 3] = 255;
             }
         }
-        let tx = (w as f32 * 0.26) as u32;
+        let tx = ((w as f32 * 0.26) as i32 + x_shift).max(0) as u32;
         let tw = (w as f32 * 0.47) as u32;
         let ty = (h as f32 * 0.22) as u32;
         let seam = tx + tw / 2;
@@ -1420,6 +1471,32 @@ mod tests {
         );
     }
 
+    /// Horizontal slide of the whole table: the interior quarter-point
+    /// samples still sit on the (wide) bars, so only the counter-evidence
+    /// columns OUTSIDE the cached band's ends can catch the drift — the
+    /// verify must fail so the next capture re-detects the x instead of
+    /// anchoring chips on the old geometry.
+    #[test]
+    fn verify_header_band_rejects_horizontal_shift() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_header_table(w, h, 6);
+        let (band, _) = detect_roster_with_band(&img, w, h, (6, 6)).expect("detect");
+        assert!(verify_header_band(&img, w, h, &band), "baseline verifies");
+        // 16 physical px = 8 working px right: the brick bar now covers the
+        // cached band's right counter columns.
+        let (right, _, _) = synth_header_table_at(w, h, 6, 16);
+        assert!(
+            !verify_header_band(&right, w, h, &band),
+            "rightward slide must fail"
+        );
+        // Same distance left: the teal bar covers the left counter columns.
+        let (left, _, _) = synth_header_table_at(w, h, 6, -16);
+        assert!(
+            !verify_header_band(&left, w, h, &band),
+            "leftward slide must fail"
+        );
+    }
+
     #[test]
     fn rebuild_roster_from_band_resizes_the_grid_without_a_rescan() {
         let (w, h) = (1280u32, 720u32);
@@ -1695,6 +1772,10 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
 /// Horizontal padding (physical px): WIDER than vertical because the stat
 /// chips render OUTSIDE the table's left/right edges (inside they cover the
 /// ship names) — the window must reserve a full chip width per side.
+/// Observation point (accepted cosmetic): at this function's 150 px floor
+/// (narrow tables) a chip carrying its full seal set can reach the window
+/// edge and clip its outermost 1–5 px. Revisit the floor only if a wider
+/// chip (bigger seals / font scale) ever lands.
 pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
     (roster.width / 5).clamp(150, 280)
 }

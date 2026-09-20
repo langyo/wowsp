@@ -338,7 +338,13 @@ pub struct OverlayStatus {
     /// Mirrors [`OverlayAnchor::stale`]: true while the anchored rows' data
     /// just changed (a ship sank) and the row→name re-mapping is catching
     /// up at the accelerated cadence — the main window can badge the panel
-    /// "updating". Always `false` in every non-detected state.
+    /// "updating". CONSUME ONLY WHILE `state` IS DETECTED: the flag rides
+    /// the watcher's pin state across the whole pin lifetime, so a pin
+    /// that went stale and was then hidden (Tab released, focus lost) can
+    /// report `idle`/`searching` with `stale` still true — on a
+    /// non-detected payload the field is residual carry-over, not a
+    /// statement about what is (or is not) on screen. It resets with the
+    /// next battle / fresh pin.
     pub stale: bool,
 }
 
