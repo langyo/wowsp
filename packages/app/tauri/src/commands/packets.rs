@@ -1535,11 +1535,12 @@ fn parse_camera_mode(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::Hp
 /// Despite the module's entity-centric packets, the first u32 is NOT a
 /// BigWorld entity id — observed values are only 0/1, with 0 verified as the
 /// engine telegraph (throttle) and 1 as the rudder via position/yaw
-/// correlation on the reference replay (see
-/// [`wowsp_tauri_shared::CruiseSample`] for the full evidence). Levels with
-/// no confirmed meaning decode with `value: None` rather than a guess.
-/// Payloads that are not exactly 8 bytes are skipped (never observed, but a
-/// future layout change must not silently misparse).
+/// correlation on the reference replay. Levels with no confirmed meaning
+/// decode with `value: None`; among confirmed levels the rudder magnitude
+/// mapping is itself inferred (5-mark scaling), not separately confirmed —
+/// see [`wowsp_tauri_shared::CruiseSample`] for the per-branch evidence
+/// grading. Payloads that are not exactly 8 bytes are skipped (never
+/// observed, but a future layout change must not silently misparse).
 fn parse_cruise_state(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::CruiseSample> {
     if payload.len() != 8 {
         return None;
@@ -2426,6 +2427,13 @@ mod tests {
         }
         // Speed series (planar) of the recorder's ship.
         let samples = &traj.samples;
+        if samples.len() < 2 {
+            eprintln!(
+                "[e2] degenerate replay: {} position samples - skipping",
+                samples.len()
+            );
+            return;
+        }
         let speed_at = |t: f32, win: f32| -> Option<f32> {
             let a = samples.iter().find(|s| s.time >= t - win)?;
             let b = samples.iter().rev().find(|s| s.time <= t + win)?;

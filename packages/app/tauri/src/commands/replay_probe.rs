@@ -66,12 +66,15 @@ fn roster_sides(vehicles: &[VehicleEntry]) -> std::collections::BTreeMap<i64, Sh
     map
 }
 
-/// Cross-check the roster-derived sides against the battle-results payload
-/// (when the replay carries one): every `playersPublicInfo` entry is a
-/// positional array whose `[6]` is the teamId and `[7]` the shipId. A roster
-/// team that contradicts the battle results downgrades to ambiguous — the
-/// report must never claim a team the game itself disagrees with. Returns
-/// the ids whose roster side was invalidated.
+/// Cross-check ship ids against the battle-results payload (when the replay
+/// carries one): every `playersPublicInfo` entry is a positional array whose
+/// `[6]` is the teamId and `[7]` the shipId. This mirrors the roster-side
+/// ambiguity check — a shipId the results themselves place on more than one
+/// team (mirrored lineups) is flagged so those entities downgrade to
+/// ambiguous. It does NOT compare roster relations against results teamIds:
+/// relation is recorder-relative while teamId is absolute, and calibrating
+/// the two namespaces is future work. Returns the ids the results place on
+/// multiple teams.
 fn battle_results_conflicts(battle_results: Option<&str>) -> Vec<i64> {
     let Some(br) = battle_results else {
         return Vec::new();
@@ -499,14 +502,14 @@ mod tests {
     }
 
     /// E3 probe against a real replay — run with
-    /// `WOWSP_REPLAY_PATH=<path> cargo test -p wowsp_tauri replay_probe -- --nocapture --ignored`.
+    /// `WOWSP_TEST_REPLAY=<path> cargo test -p wowsp_tauri replay_probe -- --nocapture --ignored`.
     /// Skips (passes) when the env var is unset, so CI without replay files
     /// stays green.
     #[test]
-    #[ignore = "needs WOWSP_REPLAY_PATH pointing at a real .wowsreplay"]
+    #[ignore = "needs WOWSP_TEST_REPLAY pointing at a real .wowsreplay"]
     fn probe_real_replay() {
-        let Ok(path) = std::env::var("WOWSP_REPLAY_PATH") else {
-            eprintln!("[e3] WOWSP_REPLAY_PATH not set - skipping");
+        let Ok(path) = std::env::var("WOWSP_TEST_REPLAY") else {
+            eprintln!("[e3] WOWSP_TEST_REPLAY not set - skipping");
             return;
         };
         let report = replay_visibility_probe(path.clone()).expect("probe");
