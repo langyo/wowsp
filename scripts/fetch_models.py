@@ -25,6 +25,7 @@ import urllib.request
 
 REPO = "langyo/wowsp"
 ASSET = "wowsp-models.tar.gz"
+IMAGES_ASSET = "wowsp-images.tar.gz"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEST = os.path.join(REPO_ROOT, "packages", "webui", "src", "res")
 TAGS = ["res-latest", "res-latest-old-1", "res-latest-old-2"]
@@ -42,12 +43,12 @@ def api_json(path: str) -> dict:
         return json.load(resp)
 
 
-def asset_url(tag: str) -> str:
+def asset_url(tag: str, asset: str = ASSET) -> str:
     release = api_json(f"releases/tags/{tag}")
-    for asset in release.get("assets", []):
-        if asset.get("name") == ASSET:
-            return asset["browser_download_url"]
-    raise RuntimeError(f"asset {ASSET} not found in release {tag}")
+    for entry in release.get("assets", []):
+        if entry.get("name") == asset:
+            return entry["browser_download_url"]
+    raise RuntimeError(f"asset {asset} not found in release {tag}")
 
 
 def main() -> None:
@@ -72,6 +73,8 @@ def main() -> None:
         sys.exit(1)
     if dry:
         return
+
+    fetch_images()
 
     # ── Download ────────────────────────────────────────────────────────
     tmp = tempfile.mkdtemp(prefix="wowsp-models-")
@@ -107,6 +110,42 @@ def main() -> None:
             if n.endswith(".glb")
         ])
         print(f"[fetch-models] done — ships: {ships}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fetch_images() -> None:
+    """Fetch the ship-preview portrait pack (wowsp-images.tar.gz) from
+    res-latest into res/images. The portraits are gitignored derived
+    downloads; without them a local build embeds a frontend without ship
+    previews (smaller exe than release CI's — the exact drift this
+    reverses). Older packs without the asset are tolerated (skip)."""
+    try:
+        url = asset_url("res-latest", IMAGES_ASSET)
+    except Exception as exc:  # noqa: BLE001 - optional asset, absent on old packs
+        print(f"[fetch-models] {IMAGES_ASSET} unavailable ({exc}) — skipping portraits")
+        return
+    tmp = tempfile.mkdtemp(prefix="wowsp-images-")
+    archive = os.path.join(tmp, IMAGES_ASSET)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "WoWSP-model-fetch/1.0"})
+        print(f"[fetch-models] downloading {IMAGES_ASSET} ...")
+        with urllib.request.urlopen(req, timeout=120) as resp, open(archive, "wb") as fh:
+            shutil.copyfileobj(resp, fh, length=1 << 20)
+        size_mb = os.path.getsize(archive) / 1024 / 1024
+        print(f"[fetch-models] downloaded {size_mb:.1f} MB")
+        # Archive root is images/ -> DEST/images (mirrors the models layout).
+        os.makedirs(DEST, exist_ok=True)
+        print(f"[fetch-models] extracting portraits into {DEST} ...")
+        with tarfile.open(archive, "r:gz") as tf:
+            for member in tf.getmembers():
+                if member.name.startswith("../") or os.path.isabs(member.name):
+                    raise RuntimeError(f"unsafe archive member: {member.name}")
+                try:
+                    tf.extract(member, DEST, filter="data")
+                except TypeError:
+                    tf.extract(member, DEST)
+        print("[fetch-models] portraits done")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
