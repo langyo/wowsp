@@ -19,6 +19,7 @@ import { createCycleTimer, useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t, i18n } from "@/i18n";
@@ -836,6 +837,8 @@ export default defineComponent({
 
     let rafId = 0;
     let resizeObs: ResizeObserver | null = null;
+    /** Stops the applied-DPI watcher armed by initScene (null before). */
+    let stopDpiWatch: (() => void) | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
     const _allHoloUniforms: HoloUniforms[] = [];
@@ -873,7 +876,16 @@ export default defineComponent({
       cam.position.set(230, 215, 400);
 
       const rnd = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-      rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      // The root's CSS `zoom` (theme/dpiPrefs DPI preference) enlarges the
+      // canvas element visually WITHOUT adding backing-store pixels — scale
+      // the pixel ratio by the applied zoom so the stage stays crisp at
+      // non-Auto scales; stopDpiWatch below re-runs this on changes
+      // (setPixelRatio re-applies the current buffer size internally).
+      const dpiZoom = useAppliedDpiScale();
+      rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2) * dpiZoom.value);
+      stopDpiWatch = watch(dpiZoom, (zoom) => {
+        rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2) * zoom);
+      });
       rnd.setSize(w, h);
       el.appendChild(rnd.domElement);
       // Armor-mode picking: click to toggle a thickness class, hover to hint.
@@ -1145,6 +1157,8 @@ export default defineComponent({
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
+      stopDpiWatch?.();
+      stopDpiWatch = null;
       resizeObs?.disconnect();
       resizeObs = null;
       detachCanvasListeners();

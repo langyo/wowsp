@@ -12,6 +12,7 @@ import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vu
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useTheme } from "@/theme";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
 export interface ThreeScene {
   scene: THREE.Scene;
@@ -47,6 +48,7 @@ export function useThreeScene(
   let rafId = 0;
   let resizeObs: ResizeObserver | null = null;
   let stopThemeWatch: (() => void) | null = null;
+  let stopDpiWatch: (() => void) | null = null;
 
   onMounted(() => {
     const el = container.value;
@@ -63,7 +65,16 @@ export function useThreeScene(
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // The root's CSS `zoom` (theme/dpiPrefs DPI preference) enlarges the
+    // canvas element visually WITHOUT adding backing-store pixels — scale
+    // the pixel ratio by the applied zoom so the map stays crisp at
+    // non-Auto scales; stopDpiWatch below re-runs this on changes
+    // (setPixelRatio re-applies the current buffer size internally).
+    const dpiZoom = useAppliedDpiScale();
+    renderer.setPixelRatio(window.devicePixelRatio * dpiZoom.value);
+    stopDpiWatch = watch(dpiZoom, (zoom) => {
+      renderer.setPixelRatio(window.devicePixelRatio * zoom);
+    });
     renderer.setSize(width, height, true);
     el.appendChild(renderer.domElement);
 
@@ -131,6 +142,7 @@ export function useThreeScene(
   onBeforeUnmount(() => {
     cancelAnimationFrame(rafId);
     stopThemeWatch?.();
+    stopDpiWatch?.();
     resizeObs?.disconnect();
     const a = api.value;
     if (a) {

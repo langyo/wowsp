@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   BarChart3,
   Check,
@@ -26,12 +26,14 @@ import {
   HInput,
   HModal,
   HSelect,
+  HSlider,
   HTabs,
   HTag,
   getThemeTokens,
   themePresets,
   useTheme,
   useToast,
+  type ModalAction,
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
@@ -40,6 +42,18 @@ import {
   themeModePreference,
   type ThemeModePreference,
 } from "@/theme/themeModePreference";
+import {
+  DPI_MAX,
+  DPI_MIN,
+  DPI_STEP,
+  isDpiRisky,
+  keepDpiScale,
+  loadDpiScale,
+  previewDpiScale,
+  resetDpiScale,
+  revertPreviewDpiScale,
+  useDpiCountdown,
+} from "@/theme/dpiPrefs";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type GameInstall, type NetworkConfig } from "@/api";
@@ -393,6 +407,63 @@ export default defineComponent({
       return key ? t(key) : "";
     }
 
+    // ── interface scale (DPI) — staged slider over theme/dpiPrefs ────────
+    // Dragging only stages a notch; Apply previews it and starts the
+    // app-level countdown in dpiPrefs — the confirm modal rendered as a
+    // sibling HModal below is a pure view of that store (Keep persists,
+    // "Revert now" / expiry restores). Closing the settings modal or
+    // leaving the appearance section (both unmount this control) discards
+    // a staged notch and reverts a live preview.
+    const dpiScale = ref<number | null>(loadDpiScale());
+    const pendingDpi = ref<number | null>(null);
+    const dpiCountdown = useDpiCountdown();
+    const dpiAuto = computed(() => pendingDpi.value == null && dpiScale.value == null);
+
+    function onDpiScaleChange(value: number) {
+      pendingDpi.value = value;
+    }
+
+    function onDpiApply() {
+      const pct = pendingDpi.value;
+      if (pct == null) return;
+      pendingDpi.value = null;
+      previewDpiScale(pct);
+    }
+
+    function onDpiKeep() {
+      keepDpiScale();
+      dpiScale.value = loadDpiScale();
+    }
+
+    function onDpiAuto() {
+      pendingDpi.value = null;
+      dpiScale.value = null;
+      resetDpiScale();
+    }
+
+    function onDpiRevertNow() {
+      revertPreviewDpiScale();
+    }
+
+    // The control exists only while the modal is open on the appearance
+    // section; losing either is the explicit escape hatch (shittim's
+    // window-close grammar, re-expressed over the settingsUi store).
+    const dpiMounted = computed(() => ui.visible && ui.section === "appearance");
+    watch(dpiMounted, (mounted) => {
+      if (mounted) return;
+      pendingDpi.value = null;
+      if (dpiCountdown.active) revertPreviewDpiScale();
+      dpiScale.value = loadDpiScale();
+    });
+    onBeforeUnmount(() => {
+      if (dpiCountdown.active) revertPreviewDpiScale();
+    });
+
+    const dpiConfirmActions = computed<ModalAction[]>(() => [
+      { label: t("settings.dpiKeep"), variant: "primary", onClick: onDpiKeep },
+      { label: t("settings.dpiRevertNow"), variant: "secondary", onClick: onDpiRevertNow },
+    ]);
+
     // ── section rail ────────────────────────────────────────────────────────
     // The left rail mirrors the main sidebar's nav look; only the active
     // section's card renders in the content pane. Section identity lives in
@@ -423,7 +494,14 @@ export default defineComponent({
     }));
     const sections = computed(() => Object.keys(sectionLabels.value) as SettingsSection[]);
 
-    return () => (
+    return () => {
+      // Staged-or-persisted notch for the DPI slider/readout (null = Auto)
+      // and its risk flag — same locals as the reference DpiControl window.
+      const pending = pendingDpi.value;
+      const staged = pending ?? dpiScale.value;
+      const warningVisible = pending != null && isDpiRisky(pending, window.innerWidth);
+      return (
+      <>
       <HModal
         modelValue={ui.visible}
         onUpdate:modelValue={(v: boolean) => (v ? ui.show() : ui.hide())}
@@ -625,6 +703,58 @@ export default defineComponent({
               <h3 class="settings-modal__sub-title">{t("settings.fontSize")}</h3>
               <FontSizeControl ns="settings" />
               <p class="settings-modal__hint">{t("settings.fontSizeHint")}</p>
+            </div>
+
+            {/* interface scale (DPI) — root CSS `zoom` over everything (see
+                theme/dpiPrefs): dragging stages a notch, Apply previews it
+                under the app-level countdown; the confirm dialog lives at
+                the bottom of this component as a sibling modal. The risk
+                warning flags scales that squeeze the viewport under the
+                usable layout-width floor. */}
+            <div class="settings-modal__sub">
+              <h3 class="settings-modal__sub-title">{t("settings.dpiTitle")}</h3>
+              <div class="settings-modal__dpi-row">
+                <HSlider
+                  class="settings-modal__dpi-slider"
+                  min={DPI_MIN}
+                  max={DPI_MAX}
+                  step={DPI_STEP}
+                  showTicks
+                  modelValue={staged ?? DPI_MIN}
+                  onUpdate:modelValue={onDpiScaleChange}
+                  ariaLabel={t("settings.dpiTitle")}
+                  formatValue={(v: number) => `${v}%`}
+                />
+                <span class="settings-modal__dpi-value">
+                  {staged == null ? t("settings.dpiAuto") : `${staged}%`}
+                </span>
+              </div>
+              {warningVisible ? (
+                <p class="settings-modal__dpi-warning">
+                  {t("settings.dpiRiskyWarning", { scale: pending })}
+                </p>
+              ) : null}
+              <div class="settings-modal__dpi-actions">
+                <HButton
+                  variant="secondary"
+                  size="sm"
+                  disabled={dpiAuto.value}
+                  onClick={onDpiAuto}
+                >
+                  {t("settings.dpiAuto")}
+                </HButton>
+                {pendingDpi.value != null ? (
+                  <HButton variant="primary" size="sm" onClick={onDpiApply}>
+                    {t("settings.dpiApply")}
+                  </HButton>
+                ) : null}
+              </div>
+              <p class="settings-modal__hint">{t("settings.dpiHint")}</p>
+              {/* The guaranteed way back, readable even at a scale that
+                  breaks the modal itself: the keyboard hatch works anywhere
+                  (capture-phase, dpiPrefs), so the reset never depends on
+                  this UI being reachable. */}
+              <p class="settings-modal__hint">{t("settings.dpiResetHint")}</p>
             </div>
 
             {/* solar status — what "Auto (sun)" currently resolves to */}
@@ -1061,6 +1191,30 @@ export default defineComponent({
           </div>
         </div>
       </HModal>
-    );
+
+      {/* DPI preview confirm — a pure view over dpiPrefs' app-level
+          countdown store (all keep/revert logic lives there): it floats
+          above the settings modal while a preview is live, closing it via
+          X/backdrop counts as Keep, "Revert now" restores the persisted
+          value, and expiry reverts by itself. */}
+      <HModal
+        modelValue={dpiCountdown.active}
+        onUpdate:modelValue={(v: boolean) => {
+          if (!v && dpiCountdown.active) onDpiKeep();
+        }}
+        title={t("settings.dpiConfirmTitle")}
+        width="22rem"
+        footerActions={dpiConfirmActions.value}
+      >
+        <p class="settings-modal__hint">
+          {t("settings.dpiRevertCountdown", {
+            scale: dpiCountdown.scale,
+            seconds: dpiCountdown.remaining,
+          })}
+        </p>
+      </HModal>
+      </>
+      );
+    };
   },
 });
