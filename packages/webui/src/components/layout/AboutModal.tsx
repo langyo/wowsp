@@ -29,9 +29,10 @@ const TECH_LINKS = [
   { label: "UnoCSS", url: "https://unocss.dev" },
 ];
 
-/** The About body — logo, version + updater, tech tags, links, the mandatory
- *  free & open-source notice, license footer, QQ line. Rendered inside the
- *  AboutModal and inline in the settings modal's 关于 section. */
+/** The About body — logo, version + updater, tech tags, links, license
+ *  footer, QQ line, then the mandatory free & open-source notice as the
+ *  last card. Rendered inside the AboutModal and inline in the settings
+ *  modal's 关于 section. */
 export const AboutContent = defineComponent({
   name: "AboutContent",
   setup() {
@@ -110,12 +111,6 @@ export const AboutContent = defineComponent({
             </button>
           </div>
 
-          {/* Mandatory free & open-source notice: permanent content here —
-              no ack button, the card simply always shows. */}
-          <div class="about-modal__notice">
-            <AnnouncementContent />
-          </div>
-
           <footer class="about-modal__footer">
             <button
               type="button"
@@ -140,6 +135,13 @@ export const AboutContent = defineComponent({
             <span>{t("about.qqGroupNotice")}</span>
             <strong>{t("about.qqGroupNumber")}</strong>
           </p>
+
+          {/* Mandatory free & open-source notice: rendered in full as the
+              very last card — all info first, warning last, no inner
+              scrollbar (the host scroller is the only one). */}
+          <div class="about-modal__notice">
+            <AnnouncementContent />
+          </div>
         </div>
     );
   },

@@ -40,13 +40,13 @@
     "unset": "未設定",
     "detected": "検出されたインストール",
     "browse": "フォルダーを選択…",
-    "pick": "ゲームフォルダーを選択…",
     "redetect": "再検出",
     "runningHint": "実行中のゲームを検出しました：{path}",
     "useRunning": "このパスを使用",
     "noneFound": "ゲームのインストールが検出されませんでした。インストールフォルダーを手動で選択してください（WorldOfWarships.exe と bin/ フォルダーを含む必要があります）。",
     "applied": "ゲームパスを更新しました",
     "invalid": "選択されたフォルダーは無効です",
-    "setAction": "ゲームパスを設定"
+    "setAction": "ゲームパスを設定",
+    "inUse": "使用中"
   }
 }

@@ -3,32 +3,52 @@ import {
   Check,
   Copyright,
   FolderCog,
+  FolderOpen,
   Globe,
   Info,
   Languages,
   Layers,
   Monitor,
+  MonitorPlay,
   Moon,
   Palette,
+  RefreshCw,
   Sun,
+  UserRound,
 } from "@lucide/vue";
 
-import { HButton, HInput, HModal, HSelect, HTabs, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
+import {
+  HButton,
+  HInput,
+  HModal,
+  HSelect,
+  HTabs,
+  HTag,
+  getThemeTokens,
+  themePresets,
+  useTheme,
+  useToast,
+} from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
-import { api, type NetworkConfig } from "@/api";
+import { api, type GameInstall, type NetworkConfig } from "@/api";
 import { useConfigStore } from "@/stores/config";
+import { useAccountStore } from "@/stores/account";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import {
   useOverlayConfigStore,
   type RosterRecognitionMode,
   type TableAnchorMode,
 } from "@/stores/overlayConfig";
+import { useSettingsUiStore, type SettingsSection } from "@/stores/settingsUi";
 import { AboutContent } from "@/components/layout/AboutModal";
+import AccountManagerContent from "@/components/account/AccountManagerContent";
+import RealmFlag from "@/components/base/RealmFlag";
 import AuthorMark from "@/components/base/AuthorMark";
 import { ATTRIBUTIONS } from "@/data/attributions";
-import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
+import { kindLabel } from "@/utils/installLabel";
 import "./SettingsModal.scss";
 
 /** Hikari token → CSS rgb() color. */
@@ -36,71 +56,103 @@ function css(rgb: { r: number; g: number; b: number }): string {
   return `rgb(${rgb.r} ${rgb.g} ${rgb.b})`;
 }
 
+// Brand default first, then hikari's built-ins (incl. the shared
+// nord/gruvbox/tokyonight presets and any user custom themes).
+const presetIds = Object.keys(themePresets).sort((a, b) =>
+  a === "ocean" ? -1 : b === "ocean" ? 1 : 0,
+);
+
 /**
- * Settings modal (opened from the sidebar gear): language, appearance
- * (theme mode + color preset + wallpaper + solar indicator), network proxy,
- * and About. Sections live in titled cards stacked in the scrolling modal
- * body; every control rows up with its card so nothing floats mid-air.
+ * Settings modal (app-singleton, driven by the settingsUi store — the
+ * title-bar gear and the sidebar's client / account buttons all open it,
+ * optionally landing on a section): language, appearance (theme mode +
+ * color preset + wallpaper + solar indicator), game path (ALL known
+ * installs as rich cards with a realm flag — click to activate), account
+ * management, network proxy, and About. Sections live in titled cards
+ * stacked in the modal body; every control rows up with its card so
+ * nothing floats mid-air.
  *
  * The solar line under Appearance shows the current sun-based classification
  * so users understand what "Auto (sun)" does.
  */
 export default defineComponent({
   name: "SettingsModal",
-  props: {
-    modelValue: { type: Boolean, default: false },
-  },
-  emits: {
-    "update:modelValue": (_v: boolean) => true,
-  },
-  setup(props, { emit }) {
+  setup() {
+    const ui = useSettingsUiStore();
     const theme = useTheme();
     const wallpaper = useWallpaper();
     const lang = useLanguage();
     const overlayCfg = useOverlayConfigStore();
     const configStore = useConfigStore();
-    const showGamePath = ref(false);
+    const accounts = useAccountStore();
+    const gameStatus = useGameStatusStore();
+    const toast = useToast();
 
-    // Section navigation — the left rail mirrors the main sidebar's nav look;
-    // only the active section's card renders in the content pane.
-    type SectionId =
-      | "language"
-      | "appearance"
-      | "gamePath"
-      | "network"
-      | "overlay"
-      | "about"
-      | "attributions";
-    const SECTION_ICONS = {
-      language: Languages,
-      appearance: Palette,
-      gamePath: FolderCog,
-      network: Globe,
-      overlay: Layers,
-      about: Info,
-      attributions: Copyright,
-    } as const;
-    const sectionLabels: Record<SectionId, string> = {
-      language: t("settings.language"),
-      appearance: t("settings.themeMode"),
-      gamePath: t("settings.gamePath"),
-      network: t("settings.network"),
-      overlay: t("settings.overlay"),
-      about: t("settings.about"),
-      attributions: t("settings.attributions"),
-    };
-    const sections = Object.keys(sectionLabels) as SectionId[];
-    const section = ref<SectionId>("language");
+    // ── game-path table (see the 游戏路径 section) ────────────────────────
+    const pickingPath = ref(false);
 
-    onMounted(() => {
-      void overlayCfg.load();
+    const installRows = computed<GameInstall[]>(() => configStore.installs);
+    const activePath = computed(() => configStore.activeInstall?.path ?? "");
+    const detecting = computed(() => configStore.detecting);
+
+    // The process watcher synthesizes an install for a running exe that no
+    // detected install claims — a one-click fallback row above the actions.
+    const runningInstall = computed<GameInstall | null>(() => {
+      const p = gameStatus.process;
+      if (!p.running || !p.matchedInstall) return null;
+      if (installRows.value.some((i) => i.path === p.matchedInstall!.path)) return null;
+      if (p.matchedInstall.path === activePath.value) return null;
+      return p.matchedInstall;
     });
 
-    // Brand default first, then hikari's built-ins (incl. the shared
-    // nord/gruvbox/tokyonight presets and any user custom themes).
-    const presetIds = Object.keys(themePresets).sort((a, b) =>
-      a === "ocean" ? -1 : b === "ocean" ? 1 : 0,
-    );
+    /** Follow a client switch to that realm's preferred account. */
+    async function followRealm(realm?: string | null) {
+      if (!realm) return;
+      const switched = await accounts.autoSwitchRealm(realm);
+      if (switched) {
+        toast.info(t("account.autoSwitched", { name: switched.nickname }));
+      }
+    }
+
+    async function activateInstall(i: GameInstall) {
+      if (i.path === activePath.value) return;
+      await configStore.selectInstall(i.path);
+      await followRealm(i.realm);
+      toast.info(t("common.gamePath.applied"));
+    }
+
+    /** Native folder picker → validate → pin as the active install. */
+    async function browseFolder() {
+      if (pickingPath.value) return;
+      pickingPath.value = true;
+      try {
+        // Null = the user closed the native dialog — not an error.
+        const picked = await api.pickGameFolder();
+        if (!picked) return;
+        await configStore.setManualPath(picked.path);
+        await followRealm(picked.realm);
+        toast.info(t("common.gamePath.applied"));
+      } catch (e) {
+        toast.error(`${t("common.gamePath.invalid")}\n${(e as Error).message || e}`);
+      } finally {
+        pickingPath.value = false;
+      }
+    }
+
+    async function useRunning() {
+      const i = runningInstall.value;
+      if (!i) return;
+      pickingPath.value = true;
+      try {
+        await configStore.setManualPath(i.path);
+        await followRealm(i.realm);
+        toast.info(t("common.gamePath.applied"));
+      } catch (e) {
+        toast.error(`${t("common.gamePath.invalid")}\n${(e as Error).message || e}`);
+      } finally {
+        pickingPath.value = false;
+      }
+    }
 
     // ── Solar clock indicator (informational) ──────────────────────────────
     // Shares the theme clock's resolution — no extra geo lookup here.
@@ -133,6 +185,7 @@ export default defineComponent({
     });
 
     onMounted(async () => {
+      void overlayCfg.load();
       try {
         const cfg = await api.getNetworkConfig();
         netCfg.value = { ...cfg };
@@ -166,36 +219,62 @@ export default defineComponent({
       }
     }
 
+    // ── section rail ────────────────────────────────────────────────────────
+    // The left rail mirrors the main sidebar's nav look; only the active
+    // section's card renders in the content pane. Section identity lives in
+    // the settingsUi store so openers can land on a specific one.
+    const SECTION_ICONS = {
+      language: Languages,
+      appearance: Palette,
+      gamePath: FolderCog,
+      account: UserRound,
+      network: Globe,
+      overlay: Layers,
+      about: Info,
+      attributions: Copyright,
+    };
+    const sectionLabels = computed<Record<SettingsSection, string>>(() => ({
+      language: t("settings.language"),
+      appearance: t("settings.themeMode"),
+      gamePath: t("settings.gamePath"),
+      account: t("settings.account"),
+      network: t("settings.network"),
+      overlay: t("settings.overlay"),
+      about: t("settings.about"),
+      attributions: t("settings.attributions"),
+    }));
+    const sections = computed(() => Object.keys(sectionLabels.value) as SettingsSection[]);
+
     return () => (
       <HModal
-        modelValue={props.modelValue}
-        onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
+        modelValue={ui.visible}
+        onUpdate:modelValue={(v: boolean) => (v ? ui.show() : ui.hide())}
         title={t("settings.title")}
         width="58rem"
       >
         <div class="settings-modal">
           {/* section rail — same visual language as the main sidebar's nav */}
           <nav class="settings-modal__rail">
-            {sections.map((id) => {
+            {sections.value.map((id) => {
               const Icon = SECTION_ICONS[id];
               return (
                 <button
                   key={id}
                   type="button"
-                  class={["settings-modal__rail-item", section.value === id ? "is-active" : ""]}
-                  onClick={() => (section.value = id)}
+                  class={["settings-modal__rail-item", ui.section === id ? "is-active" : ""]}
+                  onClick={() => (ui.section = id)}
                 >
                   <span class="settings-modal__rail-icon">
                     <Icon size={16} />
                   </span>
-                  <span>{sectionLabels[id]}</span>
+                  <span>{sectionLabels.value[id]}</span>
                 </button>
               );
             })}
           </nav>
 
           <div class="settings-modal__pane">
-          {section.value === "language" ? (
+          {ui.section === "language" ? (
           <>
           {/* language — two independent dropdowns: UI (app interface) vs data
               (game-asset names: ships/captains/maps). The same language can have
@@ -226,7 +305,7 @@ export default defineComponent({
 
           </>
           ) : null}
-          {section.value === "appearance" ? (
+          {ui.section === "appearance" ? (
           <>
           {/* appearance — mode, color preset, wallpaper, solar indicator */}
           <section class="settings-modal__group">
@@ -329,28 +408,91 @@ export default defineComponent({
 
           </>
           ) : null}
-          {section.value === "gamePath" ? (
+          {ui.section === "gamePath" ? (
           <>
-          {/* game path — where the armor/ballistics loader + replay list
-              read from; opens the same setup modal the first-launch prompt
-              uses (detected installs, running-game shortcut, manual pick) */}
+          {/* game path — every known install (detected clients + manual pins)
+              as a rich card mirroring the 账户 list: realm flag on the left,
+              client + realm tag + path in the body; clicking a card
+              activates it, which switches the app-wide client context
+              (replay list, armor/ballistics loader, stats realm) and follows
+              that realm's preferred account. Detection and the native
+              folder picker live here too. */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.gamePath")}</h2>
-            <p class={["settings-modal__hint", configStore.activeInstall ? "" : "is-warning"].filter(Boolean).join(" ")}>
-              {configStore.activeInstall
-                ? configStore.activeInstall.path
-                : t("common.gamePath.unset")}
-            </p>
-            <div>
-              <HButton variant="secondary" onClick={() => (showGamePath.value = true)}>
-                {t("settings.gamePathChange")}
+            <p class="settings-modal__hint">{t("common.gamePath.desc")}</p>
+            {installRows.value.length === 0 ? (
+              <p class="settings-modal__hint">{t("common.gamePath.noneFound")}</p>
+            ) : (
+              <div class="settings-modal__installs">
+                {installRows.value.map((i) => {
+                  const active = i.path === activePath.value;
+                  return (
+                    <button
+                      key={i.path}
+                      type="button"
+                      class={["install-card", active ? "install-card--active" : ""]}
+                      onClick={() => void activateInstall(i)}
+                    >
+                      <RealmFlag realm={i.realm} kind={i.kind} />
+                      <span class="install-card__body">
+                        <span class="install-card__head">
+                          <span class="install-card__name">{kindLabel(i.kind)}</span>
+                          {i.realm ? (
+                            <HTag variant="default" size="sm">{i.realm.toUpperCase()}</HTag>
+                          ) : null}
+                          {active ? <Check size={12} class="install-card__check" /> : null}
+                        </span>
+                        <span class="install-card__path" title={i.path}>{i.path}</span>
+                      </span>
+                      {active ? (
+                        <HTag variant="success" size="sm">{t("common.gamePath.inUse")}</HTag>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {runningInstall.value ? (
+              <div class="settings-modal__running">
+                <MonitorPlay size={14} />
+                <span class="settings-modal__hint">
+                  {t("common.gamePath.runningHint", { path: runningInstall.value.path })}
+                </span>
+                <HButton size="sm" variant="secondary" onClick={() => void useRunning()}>
+                  {t("common.gamePath.useRunning")}
+                </HButton>
+              </div>
+            ) : null}
+            <div class="settings-modal__install-actions">
+              <HButton
+                variant="secondary"
+                loading={detecting.value}
+                onClick={() => void configStore.detect()}
+              >
+                <RefreshCw size={14} /> {t("common.gamePath.redetect")}
+              </HButton>
+              <HButton variant="secondary" loading={pickingPath.value} onClick={() => void browseFolder()}>
+                <FolderOpen size={14} /> {t("common.gamePath.browse")}
               </HButton>
             </div>
           </section>
 
           </>
           ) : null}
-          {section.value === "network" ? (
+          {ui.section === "account" ? (
+          <>
+          {/* account — the binder/switcher body shared with the dashboard's
+              modal entry: search → bind, rich cards for every bound account,
+              click to activate. Switching here leaves the modal open (the
+              wrapper modal closes instead). */}
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.account")}</h2>
+            <p class="settings-modal__hint">{t("settings.accountHint")}</p>
+            <AccountManagerContent />
+          </section>
+          </>
+          ) : null}
+          {ui.section === "network" ? (
           <>
           {/* network proxy — applies to every outbound request (stats, model
               pack, updates); resource CDN mirrors remote resources
@@ -398,7 +540,7 @@ export default defineComponent({
 
           </>
           ) : null}
-          {section.value === "overlay" ? (
+          {ui.section === "overlay" ? (
           <>
           {/* in-game overlay (Mode 2) — pre-creates the transparent window
               + Tab watcher while the game runs; hold Tab in battle to see
@@ -446,7 +588,7 @@ export default defineComponent({
 
           </>
           ) : null}
-          {section.value === "about" ? (
+          {ui.section === "about" ? (
           <>
           {/* about */}
           <section class="settings-modal__group">
@@ -458,7 +600,7 @@ export default defineComponent({
           {/* attributions — partner + asset credits (seal calligraphy fonts,
               wallpaper art). The same AuthorMark component annotates the
               desktop wallpaper. */}
-          {section.value === "attributions" ? (
+          {ui.section === "attributions" ? (
           <>
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.attributions")}</h2>
@@ -476,11 +618,6 @@ export default defineComponent({
           ) : null}
           </div>
         </div>
-
-        <GamePathSetupModal
-          modelValue={showGamePath.value}
-          onUpdate:modelValue={(v: boolean) => (showGamePath.value = v)}
-        />
       </HModal>
     );
   },

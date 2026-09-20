@@ -40,13 +40,13 @@
     "unset": "未設定",
     "detected": "檢測到的安裝",
     "browse": "瀏覽資料夾…",
-    "pick": "選擇遊戲路徑…",
     "redetect": "重新檢測",
     "runningHint": "檢測到正在執行的遊戲：{path}",
     "useRunning": "使用此路徑",
     "noneFound": "未檢測到遊戲安裝。請手動選擇安裝目錄（應包含 WorldOfWarships.exe 與 bin/ 資料夾）。",
     "applied": "遊戲路徑已更新",
     "invalid": "所選目錄無效",
-    "setAction": "指定遊戲路徑"
+    "setAction": "指定遊戲路徑",
+    "inUse": "使用中"
   }
 }

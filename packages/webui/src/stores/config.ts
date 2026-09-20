@@ -74,8 +74,9 @@ export const useConfigStore = defineStore("config", () => {
     }
   }
 
-  /** Switch the active client. Used by the replay-view client selector + the
-   *  sidebar. Persists the choice so it survives a restart. */
+  /** Switch the active client. Used by the replay-view client selector and
+   *  the settings 游戏路径 table. Persists the choice so it survives a
+   *  restart. */
   async function selectInstall(path: string) {
     const found = installs.value.find((i) => i.path === path);
     if (found) {
@@ -84,14 +85,19 @@ export const useConfigStore = defineStore("config", () => {
     }
   }
 
-  async function setManualPath(path: string) {
+  /** Validate a folder through the backend and pin it as the active install
+   *  (manual paths live in `installs` too). Returns the resolved install so
+   *  callers can react to its realm. */
+  async function setManualPath(path: string): Promise<GameInstall> {
     const resolved = await api.setGamePath(path);
     activeInstall.value = resolved;
-    // Keep the manual install selectable in the sidebar's server dropdown.
+    // Keep the manual install listed alongside the detected ones (settings
+    // 游戏路径 table + replay-view selector).
     if (!installs.value.some((i) => i.path === resolved.path)) {
       installs.value = [...installs.value, resolved];
     }
     await persist();
+    return resolved;
   }
 
   /** Persist the active install's path (just the path — `detect()` re-resolves

@@ -41,7 +41,8 @@
   "overlayRosterOcr": "OCR recognition",
   "overlayRosterOff": "Off (roster order)",
   "overlayFullscreenNote": "※ Unavailable in exclusive fullscreen: in that mode GDI screen capture only returns black frames, and the overlay window cannot sit on top of a fullscreen swap chain. Set the game's display mode to borderless or windowed.",
-  "gamePathChange": "Change…",
   "attributions": "Attributions",
-  "attributionsHint": "Partner assets, upstream projects, and acknowledgements used by this app."
+  "attributionsHint": "Partner assets, upstream projects, and acknowledgements used by this app.",
+  "account": "Account",
+  "accountHint": "The active account drives My Stats and record lookups. Click a card to switch; search a nickname above to bind a new one."
 }
