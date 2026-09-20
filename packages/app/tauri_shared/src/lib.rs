@@ -781,8 +781,10 @@ pub struct ReplayStream {
     pub trajectories: Vec<EntityTrajectory>,
     /// Entity id of the recorder's own vehicle (the type-2 entity the avatar
     /// links to in its PlayerPosition 0x2c stream) — the trajectory that
-    /// carries `cruiseSamples`. `None` when the replay carries no PlayerPosition
-    /// link (pre-modern-layout replays or a truncated capture).
+    /// carries `cruiseSamples`. `None` when the replay carries no trusted
+    /// PlayerPosition link: pre-modern-layout replays or a truncated capture,
+    /// plus legacy (<12.6.0) replays whose 0x2b link field exists but is not
+    /// yet trusted by the join — their cruise samples are currently dropped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recorder_vehicle_id: Option<i32>,
     /// Artillery launches (`receiveArtilleryShots`) — the primary shell data:

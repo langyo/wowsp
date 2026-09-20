@@ -45,7 +45,7 @@
 ### E3 · 「间隙 = 未点亮」证实：训练数据天然是不完全信息 ✅
 
 真实录像统计（`replay_visibility_probe` command，或
-`WOWSP_REPLAY_PATH=<replay> cargo test -p wowsp_tauri replay_probe -- --ignored --nocapture`）：
+`WOWSP_TEST_REPLAY=<replay> cargo test -p wowsp_tauri replay_probe -- --ignored --nocapture`）：
 
 | 分组 | 实体数 | 首样本时刻 | >4s 间隙 | 观测占比 |
 |---|---|---|---|---|
@@ -58,10 +58,11 @@
   **训练管线不会泄漏隐藏敌舰真值**；可见性本身需从样本间隙隐式推断
   （无显式 spotted 事件）。
 - 实体→team 映射可用但非完备：EntityCreate shipId→rooster relation，
-  可用 BattleResults JSON 交叉验证（实测一致）；两队同船时 shipId 撞车
-  （本场 24 船中 2 个 shipId 撞车波及 5 实体）→ 如实输出
-  `teamId=null + shipIdAmbiguous=true`。entity 级玩家身份不在数据流中，
-  确定性 join 是待补能力。
+  另用 BattleResults JSON 做镜像撞船交叉核验（同一 shipId 出现在多个
+  teamId 时降级；roster 相对值与 teamId 绝对值两个命名空间的标定是待办）；
+  两队同船时 shipId 撞车（本场 24 船中 2 个 shipId 撞车波及 5 实体）→
+  如实输出 `teamId=null + shipIdAmbiguous=true`。entity 级玩家身份不在
+  数据流中，确定性 join 是待补能力。
 
 ### E4 · LOS 栅格可从已分发地图 GLB 离线烘焙，无需游戏安装 ✅
 

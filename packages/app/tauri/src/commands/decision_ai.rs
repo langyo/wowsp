@@ -25,8 +25,9 @@ use ort::{session::Session, value::Tensor};
 use wowsp_tauri_shared::{DecisionAiStatus, DecisionDummyState, DecisionDummySuggestion};
 
 /// The `ort` crate pin from the root Cargo.toml. Dependency versions are not
-/// exposed through `env!` at compile time, so this is kept in sync by the
-/// test below.
+/// exposed through `env!` at compile time and ort publishes no public
+/// version constant, so this is synced manually — the test below only echoes
+/// it, it cannot detect drift.
 const ORT_CRATE_VERSION: &str = "2.0.0-rc.13";
 
 /// Fixture model bytes: the ONNX graph described in the module docs (369
