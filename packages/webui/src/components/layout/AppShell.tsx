@@ -247,8 +247,8 @@ export default defineComponent({
           }}
         </HModal>
 
-        {/* First-launch setup wizard — covers the shell below the popup
-            bands; the only way forward is finishing it (its first step
+        {/* First-launch setup wizard — a non-closable window on the shared
+            modal shell; the only way forward is finishing it (its first step
             carries the old notice's countdown-gated ack). */}
         <OnboardingWizard
           modelValue={showOnboarding.value}

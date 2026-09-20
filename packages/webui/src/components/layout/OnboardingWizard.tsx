@@ -1,6 +1,6 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
-import { HButton, HStepFlow, useToast } from "@celestia-island/hikari";
+import { HButton, HModal, HStepFlow, useToast } from "@celestia-island/hikari";
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -49,10 +49,13 @@ const THEME_OPTIONS: {
  * AnnouncementDialog — the notice content is now the wizard's first step
  * with the same 5-second blind-click guard on its confirm button.
  *
- * The overlay sits ABOVE the sidebar/main chrome but BELOW hikari's popup
- * bands (modals/toasts), and uses a light scrim + backdrop blur instead of
- * an opaque fill so the appearance choices preview live through it.
- * Every choice applies immediately and can be re-changed later in Settings.
+ * Rides the shared HModal window shell (surface-machine open/close motion,
+ * delayed unmount, content hold) so the wizard folds in and out like every
+ * other window in the app instead of snapping. Non-closable and without a
+ * back guard: the only way forward is finishing it. The scrim stays light
+ * (see OnboardingWizard.scss) so the appearance choices preview live
+ * through it, and every choice applies immediately — re-changeable later
+ * in Settings.
  */
 export default defineComponent({
   name: "OnboardingWizard",
@@ -103,11 +106,17 @@ export default defineComponent({
       }, 1000);
     }
 
-    onMounted(() => {
-      // The welcome step is where the wizard opens, so the blind-click
-      // countdown runs from mount — exactly the old dialog's behavior.
-      startCountdown();
-    });
+    // The welcome step is where the wizard opens, so the blind-click
+    // countdown runs from the moment the wizard becomes visible (the
+    // component itself stays mounted at the shell level — gate on the
+    // model value, not on component mount).
+    watch(
+      () => props.modelValue,
+      (v) => {
+        if (v && timer === undefined) startCountdown();
+      },
+      { immediate: true },
+    );
     onBeforeUnmount(() => {
       if (timer !== undefined) {
         window.clearInterval(timer);
@@ -222,15 +231,17 @@ export default defineComponent({
       }),
     );
 
-    return () => {
-      if (!props.modelValue) return null;
-      return (
-        <div class="onboarding" role="dialog" aria-modal="true" aria-label={t("onboarding.title")}>
-          <div class="onboarding__panel">
-            <header class="onboarding__head">
-              <h2 class="onboarding__title">{t("onboarding.title")}</h2>
-            </header>
-
+    return () => (
+      <HModal
+        modelValue={props.modelValue}
+        onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
+        title={t("onboarding.title")}
+        width="md"
+        closable={false}
+        backGuard={false}
+        contentClass="onboarding-wizard"
+        v-slots={{
+          default: () => (
             <HStepFlow
               steps={steps.value}
               modelValue={step.value}
@@ -291,10 +302,13 @@ export default defineComponent({
                 ),
               }}
             />
-
-            <footer class="onboarding__nav">
+          ),
+          footer: () => (
+            <>
               {/* Prev is hidden (not disabled) on the first step so the
-                  welcome confirm reads as the only way forward. */}
+                  welcome confirm reads as the only way forward. The
+                  .hk-modal-footer strip supplies the nav chrome (border,
+                  padding, right alignment) the old __nav block painted. */}
               {isWelcome.value ? null : (
                 <HButton variant="secondary" onClick={() => go(-1)}>
                   {t("onboarding.prev")}
@@ -307,10 +321,10 @@ export default defineComponent({
               >
                 {primaryLabel.value}
               </HButton>
-            </footer>
-          </div>
-        </div>
-      );
-    };
+            </>
+          ),
+        }}
+      />
+    );
   },
 });

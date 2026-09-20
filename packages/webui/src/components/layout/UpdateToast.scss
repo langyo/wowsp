@@ -24,6 +24,23 @@
   pointer-events: auto;
   animation: update-toast-in var(--hi-duration-normal, 0.3s)
     cubic-bezier(0.22, 0.61, 0.36, 1);
+  // Leave counterpart of the enter keyframe: the card fades and slides
+  // out instead of snapping away when the pass ends (the component holds
+  // itself mounted for this duration — a delayed unmount).
+  transition: opacity 260ms ease, transform 260ms ease;
+
+  &--leave {
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-toast {
+    animation: none;
+    transition: none;
+  }
 }
 
 @keyframes update-toast-in {
