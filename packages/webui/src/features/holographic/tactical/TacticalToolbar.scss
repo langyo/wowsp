@@ -1,0 +1,179 @@
+/* Tactical-board rail: the floating toolbar beside the enlarged 2D map.
+ * hikari buttons render on the chip surface so both themes read correctly
+ * over the dark map scrim. */
+
+.tac-rail {
+  position: absolute;
+  top: 0;
+  /* Sits in the gutter the mmzoom stage reserves to the right of the map. */
+  left: calc(100% + 10px);
+  /* Wide enough for the 5-column tool grid (5×32px buttons + gaps). */
+  width: 204px;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem 0.6rem 0.5rem;
+  background: var(--holo-hud-chip);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  color: var(--holo-hud-text);
+  cursor: default;
+  z-index: 5;
+  scrollbar-width: thin;
+}
+
+.tac-rail__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Tool buttons keep an even 5-wide grid; the other groups (history, export)
+ * size to their content instead of stretching 2–3 buttons across 5 slots. */
+.tac-rail__tools {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.3rem;
+  justify-items: stretch;
+}
+
+.tac-rail__sep {
+  height: 1px;
+  background: var(--holo-hud-border);
+  margin: 0.1rem 0;
+}
+
+.tac-rail__swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.35rem;
+}
+
+.tac-rail__swatch {
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.08s ease;
+  &:hover {
+    transform: scale(1.08);
+  }
+  &--on {
+    outline: 2px solid rgba(0, 195, 255, 0.95);
+    outline-offset: 1px;
+  }
+}
+
+.tac-rail__widths {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+}
+
+.tac-rail__width {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  background: transparent;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0;
+  > span {
+    display: block;
+    border-radius: 999px;
+    background: var(--holo-hud-text);
+  }
+  &--on {
+    border-color: rgba(0, 195, 255, 0.9);
+    background: rgba(0, 195, 255, 0.12);
+  }
+}
+
+.tac-rail__dash {
+  height: 22px;
+  background: transparent;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0;
+  &::after {
+    content: "";
+    display: block;
+    margin: 0 6px;
+    border-top: 2px solid var(--holo-hud-text);
+  }
+  &--solid::after {
+    border-top-style: solid;
+  }
+  &--dashed::after {
+    border-top-style: dashed;
+  }
+  &--dotted::after {
+    border-top-style: dotted;
+  }
+  &--on {
+    border-color: rgba(0, 195, 255, 0.9);
+    background: rgba(0, 195, 255, 0.12);
+  }
+}
+
+.tac-rail__toggles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  label {
+    /* The rail sits on a dark chip — keep switch labels light in both themes
+       (same override as the mmzoom head). */
+    color: var(--holo-hud-text);
+    font-size: var(--text-xs);
+  }
+}
+
+.tac-rail__export {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.3rem;
+  align-items: center;
+  label {
+    /* HSwitch renders a <label>; keep it readable on the dark chip. */
+    color: var(--holo-hud-text);
+    font-size: var(--text-xs);
+  }
+}
+
+.tac-rail__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.tac-rail__field-label {
+  font-size: var(--text-xs);
+  color: var(--holo-hud-dim);
+}
+
+.tac-rail__select {
+  width: 100%;
+  padding: 0.22rem 0.35rem;
+  font-size: var(--text-xs);
+  color: var(--holo-hud-text);
+  background: rgba(5, 8, 15, 0.7);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.tac-rail__count {
+  font-size: var(--text-xs);
+  color: var(--holo-hud-dim);
+  text-align: center;
+}

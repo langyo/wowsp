@@ -155,5 +155,93 @@
   "selfFrags": "击沉",
   "selfDamage": "伤害",
   "selfTaken": "承伤",
-  "selfPlane": "航空"
+  "selfPlane": "航空",
+  "tactical": {
+    "toggle": "战术板",
+    "tools": {
+      "select": "选择 / 移动",
+      "pen": "画笔（自动平滑）",
+      "line": "直线",
+      "arrow": "箭头",
+      "rect": "矩形",
+      "ellipse": "椭圆",
+      "text": "文字备注",
+      "markerShip": "舰船标记",
+      "markerPlane": "飞机标记",
+      "pinPath": "钉取真实航迹",
+      "markerRoute": "移动标记（拖出航路）",
+      "eraser": "橡皮擦",
+      "hand": "平移视图（或按住空格）"
+    },
+    "style": {
+      "color": "颜色",
+      "width": "线宽",
+      "dash": {
+        "solid": "实线",
+        "dashed": "虚线",
+        "dotted": "点线"
+      }
+    },
+    "time": {
+      "anchor": "锚定当前时间",
+      "ghost": "显示未出场虚影"
+    },
+    "action": {
+      "undo": "撤销",
+      "redo": "重做",
+      "delete": "删除所选",
+      "clear": "清空全部",
+      "exportJson": "导出注解 JSON",
+      "importJson": "导入注解 JSON"
+    },
+    "hint": {
+      "pin": "点击一艘舰船以钉取其真实航迹",
+      "region": "拖拽选择导出区域（Esc 取消）"
+    },
+    "text": {
+      "placeholder": "输入备注，回车确认"
+    },
+    "export": {
+      "format": "格式",
+      "scale": "分辨率",
+      "timestamp": "时间戳",
+      "full": "导出当前视图截图",
+      "region": "框选区域截图",
+      "regionRun": "导出所选区域",
+      "range": "范围",
+      "rangeNow": "从当前时刻",
+      "rangeFull": "整场",
+      "fps": "帧率",
+      "offline": "离线快进导出视频（快于实时）",
+      "offlineRunning": "正在渲染",
+      "cancel": "取消"
+    },
+    "record": {
+      "start": "开始录制（播放并录制画面）",
+      "stop": "停止并保存录制",
+      "recording": "录制中",
+      "unsupported": "当前环境不支持录制"
+    },
+    "toast": {
+      "saved": "已导出：{path}",
+      "pinned": "已钉取 {name} 的航迹",
+      "empty": "没有可保存的内容",
+      "imported": "注解文档已导入",
+      "importBad": "不是有效的注解文件"
+    },
+    "count": "{n} 项注解",
+    "steps": {
+      "add": "把当前时刻加为步骤（[ ] 切换）",
+      "prev": "上一步",
+      "next": "下一步",
+      "present": "演示播放（步骤间自动推进）",
+      "presentStop": "停止演示",
+      "empty": "暂无步骤——用 ＋ 标记讲解节点",
+      "duplicate": "该时刻已有步骤",
+      "updateView": "点击跳转 · Shift+点击更新该步运镜"
+    },
+    "view": {
+      "reset": "重置视图缩放"
+    }
+  }
 }
