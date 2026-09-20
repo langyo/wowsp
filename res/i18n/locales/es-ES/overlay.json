@@ -2,5 +2,7 @@
   "hint": "Mantén Tab en batalla para mostrar estadísticas.",
   "locateHint": "La detección está activa, pero aún no se ha localizado la tabla de equipos: entra en una batalla e inténtalo de nuevo.",
   "locatingHint": "Mantén pulsado Tab: reconociendo la lista de jugadores…",
-  "recognizingBadge": "Reconociendo la lista…"
+  "recognizingBadge": "Reconociendo la lista…",
+  "queryingBadge": "Consultando estadísticas…",
+  "staleBadge": "Actualizando equipos…"
 }

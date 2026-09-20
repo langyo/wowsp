@@ -92,6 +92,7 @@
     "viewProfile": "View this player's stats",
     "detectedRows": "Located · {n} rows",
     "searching": "Locating…",
+    "updating": "Roster updating…",
     "manualLocate": "Manual locate",
     "manualClear": "Clear locate",
     "manualRows": "Manually located · {n} rows",

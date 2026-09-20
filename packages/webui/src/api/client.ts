@@ -141,6 +141,12 @@ export interface OverlayAnchor {
    *  mapping onto the pin once it lands. Always false for manual anchors
    *  and when recognition is off. */
   rowPlayersPending?: boolean;
+  /** True when a detected sink JUST changed the rows (alive flags flipped,
+   *  the in-game table re-sorted) and the row→name re-mapping is still
+   *  catching up at the accelerated OCR cadence: the current chips' row
+   *  attribution may change again within seconds. Purely informational;
+   *  always false for manual anchors and when recognition is off. */
+  stale?: boolean;
 }
 
 /** Mirrors `wowsp_tauri_shared::CaptureResult`. */
@@ -163,6 +169,11 @@ export interface OverlayStatus {
   state: OverlayState;
   rows?: number | null;
   manual: boolean;
+  /** Mirrors `OverlayAnchor.stale`: true while the anchored rows' data just
+   *  changed (a ship sank) and the row→name re-mapping is catching up —
+   *  the panel can badge "updating". Always false in every non-detected
+   *  state. */
+  stale?: boolean;
 }
 
 /** One row of the in-game Tab panel as recognized off the live frame
@@ -602,6 +613,14 @@ export interface PlayerStats {
 export interface PlayerSuggestion {
   accountId: number;
   nickname: string;
+}
+
+/** 空中小人/水下小人 composition verdict for one player (Tab overlay seals).
+ *  Mirrors `wowsp_tauri_shared::PlayerComposition`; the thresholds (career
+ *  battles > 200, class share > 20%) are enforced backend-side. */
+export interface PlayerComposition {
+  air: boolean;
+  sub: boolean;
 }
 
 /** Clan autocomplete item (WG clans/list). Mirrors `wowsp_tauri_shared::ClanSuggestion`. */
@@ -1150,6 +1169,15 @@ export const api = {
       names,
       realm,
       prAlgo: prAlgo ?? null,
+    }),
+  /** Composition-seal verdicts (Tab overlay seals): one entry per input
+   *  name, in order; null = not found / hidden profile / insufficient data
+   *  / that player's lookup failed (the backend degrades per-name failures
+   *  instead of failing the whole batch). */
+  lookupPlayersComposition: (names: string[], realm: string) =>
+    transport.invoke<(PlayerComposition | null)[]>(RPC.lookup_players_composition, {
+      names,
+      realm,
     }),
   /** Live player autocomplete (nickname substring or numeric UID). */
   suggestPlayers: (search: string, realm: string) =>
