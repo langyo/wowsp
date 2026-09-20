@@ -65,16 +65,18 @@ OUT = TARGET / "bundle" / "installer"
 SHELL_BUILD_DIR = TARGET / "build"
 
 # Resource-pack fetch (release CI runners hold no local bake): the published
-# res-latest archives and where the one-time downloads cache themselves.
+# res-latest assets and where the one-time downloads cache themselves.
 MODELS_CACHE = TARGET / "model-pack"
-MODELS_ARCHIVE = "wowsp-models.tar.gz"
+RES_ARCHIVE = "wowsp-res.tar.gz"
+RES_MANIFEST = "wowsp-res.json"
 IMAGES_ARCHIVE = "wowsp-images.tar.gz"
 RES_RELEASE_API = "repos/langyo/wowsp/releases/tags/res-latest"
 RES_RELEASE_DL = (
     "https://github.com/langyo/wowsp/releases/download/res-latest/"
 )
-MODELS_ASSET_URL = RES_RELEASE_DL + MODELS_ARCHIVE
+RES_ASSET_URL = RES_RELEASE_DL + RES_ARCHIVE
 IMAGES_ASSET_URL = RES_RELEASE_DL + IMAGES_ARCHIVE
+GH_REPO = "langyo/wowsp"
 
 
 def app_version() -> str:
@@ -102,21 +104,50 @@ def release_asset_field(name: str, field: str) -> str:
         return ""
 
 
-def model_pack_version() -> str:
-    """The res-latest models asset's updated_at — the version stamp the app
-    compares its model cache against. Fetched from the release the staged
-    models were published in; empty (no stamp) when unreachable."""
-    return release_asset_field(MODELS_ARCHIVE, "updated_at")
-
-
-def model_pack_asset_size() -> int | None:
-    """Expected archive size in bytes per the release API, or None when the
-    query fails (the download then simply skips its final size check)."""
-    raw = release_asset_field(MODELS_ARCHIVE, "size")
-    try:
-        return int(raw) if raw else None
-    except ValueError:
+def res_manifest() -> dict | None:
+    """The res-latest wowsp-res.json manifest, fetched through gh (None on
+    failure — callers treat that as "unknown")."""
+    out = MODELS_CACHE / RES_MANIFEST
+    out.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(
+        ["gh", "release", "download", "res-latest", "--repo", GH_REPO,
+         "--pattern", RES_MANIFEST, "--output", str(out)],
+        capture_output=True, text=True, timeout=120,
+    )
+    if r.returncode != 0:
+        print(f"[warn] res-latest {RES_MANIFEST} fetch failed — {r.stderr.strip()[:160]}")
         return None
+    try:
+        return json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[warn] res manifest unreadable: {exc}")
+        return None
+
+
+def res_stamp() -> tuple[str, str]:
+    """(treeSha256, publishedAt) the installer stamps the shipped pack
+    with, so first launch treats it as current instead of re-downloading;
+    empty strings when the manifest is unreachable."""
+    manifest = res_manifest()
+    if not manifest:
+        return "", ""
+    return str(manifest.get("treeSha256", "")), str(manifest.get("version", ""))
+
+
+def res_asset_meta() -> tuple[int | None, str]:
+    """(expected size, expected sha256) for the res archive, from the
+    manifest; the size falls back to the release API and both degrade to
+    None/"" when unreachable (the download then skips its checks)."""
+    manifest = res_manifest()
+    size = manifest.get("assetSize") if manifest else None
+    sha = str(manifest.get("assetSha256", "")) if manifest else ""
+    if size is None:
+        raw = release_asset_field(RES_ARCHIVE, "size")
+        try:
+            size = int(raw) if raw else None
+        except ValueError:
+            size = None
+    return size, sha
 
 
 def images_asset_size() -> int | None:
@@ -127,7 +158,8 @@ def images_asset_size() -> int | None:
         return None
 
 
-def download_asset(url: str, archive: Path, expected: int | None) -> None:
+def download_asset(url: str, archive: Path, expected: int | None,
+                   expected_sha: str = "") -> None:
     """Download an asset with HTTP Range resume and a BOUNDED retry count —
     never an unbounded loop. A server that ignores the Range header answers
     200 instead of 206; that restarts the file from zero rather than
@@ -159,10 +191,26 @@ def download_asset(url: str, archive: Path, expected: int | None) -> None:
             size = archive.stat().st_size
             if expected is not None and size != expected:
                 raise IOError(f"downloaded size {size:,} != release size {expected:,}")
+            if expected_sha:
+                got = _sha256(archive)
+                if got.lower() != expected_sha.lower():
+                    raise IOError(
+                        f"sha256 mismatch: got {got[:12]}..., "
+                        f"manifest says {expected_sha[:12]}..."
+                    )
             return
         except Exception as exc:
             print(f"[warn] asset download attempt {attempt}/{attempts} failed: {exc}")
     sys.exit(f"asset download failed after bounded retries: {url}")
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def has_baked_glb() -> bool:
@@ -186,13 +234,20 @@ def ensure_models(force_fetch: bool = False) -> None:
         print(f"[models] using local bake: {MODELS}")
         return
     MODELS_CACHE.mkdir(parents=True, exist_ok=True)
-    archive = MODELS_CACHE / MODELS_ARCHIVE
-    if not (
-        archive.exists()
-        and (model_pack_asset_size() in (None, archive.stat().st_size))
-    ):
-        print(f"[models] no local bake — fetching {MODELS_ASSET_URL}")
-        download_asset(MODELS_ASSET_URL, archive, model_pack_asset_size())
+    archive = MODELS_CACHE / RES_ARCHIVE
+    expected_size, expected_sha = res_asset_meta()
+    reusable = archive.exists() and (
+        expected_size is None or archive.stat().st_size == expected_size
+    )
+    if reusable and expected_sha:
+        # A size match alone can hide a truncated-then-padded copy — the
+        # cached archive re-verifies against the manifest hash before use.
+        reusable = _sha256(archive).lower() == expected_sha.lower()
+    if not reusable:
+        if archive.exists():
+            print("[models] cached archive failed verification — refetching")
+        print(f"[models] no local bake — fetching {RES_ASSET_URL}")
+        download_asset(RES_ASSET_URL, archive, expected_size, expected_sha)
     else:
         print(f"[models] reusing cached archive: {archive}")
     print(f"[models] extracting into {MODELS.parent}")
@@ -297,26 +352,33 @@ def stage_payload(app_exe: Path) -> Path:
     return stage
 
 
-def stage_models(stage: Path) -> None:
-    """Stage the baked model pack (2D/3D resources) into the payload. The
-    shell relocates it into the app's model-pack cache after extraction, so
-    a fresh install has ships/maps/planes models without touching the
-    network."""
+def stage_res(stage: Path) -> None:
+    """Stage the resource pack (models + dog-tag art) into the payload. The
+    shell relocates both sub-directories into the app's resource cache
+    after extraction (replacing, not merging), so a fresh install ships
+    with ships/maps/planes models AND the dog-tag snapshot — and existing
+    caches never keep files a newer pack dropped."""
     dest = stage / "models"
     shutil.copytree(MODELS, dest)
     print(f"[stage] model pack: {dest}")
+    dogtags = REPO / "packages" / "webui" / "src" / "res" / "dogtags"
+    if dogtags.is_dir():
+        shutil.copytree(dogtags, stage / "dogtags")
+        print(f"[stage] dog-tag art: {stage / 'dogtags'}")
 
 
-def build_installer(stage: Path, flavor: str = "lite", model_version: str = "") -> Path:
+def build_installer(stage: Path, flavor: str = "lite",
+                    res_tree: str = "", res_version: str = "") -> Path:
     print(f"[installer:{flavor}] cargo build -p wowsp_installer_shell --release …")
     env = {
         **os.environ,
         "SHUN_PAYLOAD": str(stage),
         "SHUN_FLAVOR": flavor,
-        # Baked into the shell so it can stamp the relocated model pack
-        # with the res-latest version it was packed from (empty → no
-        # stamp, the app falls back to its normal update check).
-        "SHUN_MODEL_VERSION": model_version,
+        # Baked into the shell so it can stamp the relocated pack with the
+        # content tree hash it was packed from (empty → no stamp, the app
+        # falls back to its normal update check).
+        "SHUN_RES_TREE_SHA256": res_tree,
+        "SHUN_RES_VERSION": res_version,
         # The multi-hundred-MB embedded payload defeats LTO (the link step
         # fail-fasts with STATUS_STACK_BUFFER_OVERRUN under thin LTO) and
         # gains nothing from it; skip LTO and any rustc wrapper cache.
@@ -432,10 +494,10 @@ def main() -> int:
     build_shell_web()
     reset_shell_codegen()
 
-    # The res-latest stamp baked into the shell so relocated model packs
-    # count as current on first launch (empty when GitHub is unreachable —
-    # the app then re-downloads as usual).
-    model_version = model_pack_version()
+    # The res-latest stamp baked into the shell so relocated packs count
+    # as current on first launch (empty when GitHub is unreachable — the
+    # app then re-downloads as usual).
+    res_tree, res_version = res_stamp()
 
     # One shared staging directory: application + full model pack; the
     # webview2 variant just adds the offline runtime subdirectory. The
@@ -452,18 +514,18 @@ def main() -> int:
     # The lite installer packs the BARE app: build it before the model pack
     # is staged into the shared directory, so its payload stays slim.
     if "lite" in flavors:
-        exe = build_installer(stage, "lite", model_version)
+        exe = build_installer(stage, "lite", res_tree, res_version)
         emit(version, exe, suffixes["lite"])
 
     full_flavors = [f for f in flavors if f != "lite"]
     if full_flavors:
         ensure_models(force_fetch=args.models == "fetch")
-        stage_models(stage)
+        stage_res(stage)
     for flavor in full_flavors:
         flavor_stage = stage
         if flavor.endswith("webview2"):
             flavor_stage = stage_webview2(stage, wv2)
-        exe = build_installer(flavor_stage, flavor, model_version)
+        exe = build_installer(flavor_stage, flavor, res_tree, res_version)
         # Copy right after the build: the next variant overwrites the
         # shared output binary.
         emit(version, exe, suffixes[flavor])
