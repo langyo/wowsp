@@ -1,8 +1,16 @@
 //! Resource-pack downloader + cache manager.
 //!
 //! Packs (each a top-level `<dir>/` subtree of its tar.gz):
-//!   `models`  baked GLB models (~1.2 GB)  → 3D ships/maps/planes
-//!   `dogtags` dog-tag map + part PNGs (~3 MB)
+//!   `models`    baked GLB models (~1.2 GB)    → 3D ships/maps/planes
+//!   `dogtags`   dog-tag map + part PNGs (~3 MB)
+//!   `decisions` decision-AI model + LOS rasters (G4; small, MBs)
+//!
+//! The `decisions` pack's on-disk layout (what the release asset MUST
+//! contain — see the release-side notes at the bottom of this comment):
+//!   decisions/fire_model.onnx                  trained fire model (E9 export)
+//!   decisions/<map short name>/terrain_los.npz E4 LOS rasters, one dir per
+//!                                              map ("spaces/50_Gold_harbor"
+//!                                              → decisions/50_Gold_harbor/)
 //!
 //! Tag convention (shared by every pack):
 //!   `res-latest`           — newest pack (primary download target)
@@ -27,6 +35,42 @@
 //! counts as present), while `pack_download` is the panel's explicit
 //! download: streaming, progress events (`wowsp://pack-progress`) and
 //! cancellable.
+//!
+//! # `decisions` pack: pre-release + release-side notes (G4)
+//!
+//! The `decisions` pack is registered here but NOT yet published to any
+//! release — there is no trained model worth shipping until G5 (the
+//! experiment pipeline produced `out/fire_model/fp32.onnx` from a single
+//! replay as a delivery proof, not a model). The graceful pre-release
+//! behaviour falls out of the existing code paths:
+//!   * `get_pack_status` is pure local state → `{id: "decisions",
+//!     present: false, version: None, …}`, no network, no panic;
+//!   * `check_pack_updates` resolves the asset per pack and flattens any
+//!     lookup failure (404 release / missing asset / offline) to
+//!     `remote_version: None` + `update_available: false` — a missing
+//!     `wowsp-decisions.tar.gz` asset is indistinguishable from being
+//!     offline, so it can never be misreported as an update;
+//!   * `pack_download("decisions")` WOULD fail with "failed to resolve
+//!     wowsp-decisions.tar.gz: asset … not found" — the panel only enables
+//!     the download button when `update_available` is true, which is false
+//!     pre-release, so the error is unreachable from the UI.
+//!
+//! Publishing (release side, `scripts/release_models.py` — to be extended
+//! when G5 lands, do NOT ship the single-replay proof model):
+//!   1. collect the trained `fire_model.onnx` (E9 export: inputs
+//!      entity[1,24,10] / global_feat[1,14] / mask[1,24], outputs
+//!      logitA/logitB) and the E4 LOS rasters baked per distributed map;
+//!   2. stage a top-level `decisions/` directory containing
+//!      `fire_model.onnx` plus one `<map short name>/terrain_los.npz` per
+//!      map (the E12 `los_for_replay` lookup convention);
+//!   3. `tar -czf wowsp-decisions.tar.gz -C <stage parent> decisions` and
+//!      upload it onto the rotating `res-latest` release alongside the
+//!      models/dogtags assets (same tag ladder, same `updated_at` stamp
+//!      semantics — see `release_models.py` for the rotation ritual).
+//!
+//! The runtime consumer is `commands::decision_ai` (model, via the pack
+//! cache ladder) and `commands::decision_serve` (LOS rasters, via the same
+//! `<dir>/<map>/terrain_los.npz` lookup).
 
 use std::fs;
 use std::fs::File;
@@ -60,7 +104,7 @@ const BUILTIN_MIRRORS: [&str; 4] = [
 
 /// One downloadable pack's identity: cache layout + release asset.
 struct PackSpec {
-    /// Cache-management id: `models` | `dogtags`.
+    /// Cache-management id: `models` | `dogtags` | `decisions`.
     id: &'static str,
     /// Release asset file name.
     asset: &'static str,
@@ -70,7 +114,7 @@ struct PackSpec {
     subdir: &'static str,
 }
 
-const PACKS: [PackSpec; 2] = [
+const PACKS: [PackSpec; 3] = [
     PackSpec {
         id: "models",
         asset: "wowsp-models.tar.gz",
@@ -82,6 +126,14 @@ const PACKS: [PackSpec; 2] = [
         asset: "wowsp-dogtags.tar.gz",
         version_file: ".version-dogtags",
         subdir: "dogtags",
+    },
+    // G4 decisions pack — see the module docs for the pre-release behaviour
+    // and the release-side packaging recipe.
+    PackSpec {
+        id: "decisions",
+        asset: "wowsp-decisions.tar.gz",
+        version_file: ".version-decisions",
+        subdir: "decisions",
     },
 ];
 
@@ -774,6 +826,52 @@ mod tests {
     fn pack_ids_roundtrip() {
         assert_eq!(spec_by_id("models").unwrap().subdir, "models");
         assert_eq!(spec_by_id("dogtags").unwrap().subdir, "dogtags");
+        assert_eq!(spec_by_id("decisions").unwrap().subdir, "decisions");
+        assert_eq!(
+            spec_by_id("decisions").unwrap().asset,
+            "wowsp-decisions.tar.gz"
+        );
+        assert_eq!(
+            spec_by_id("decisions").unwrap().version_file,
+            ".version-decisions"
+        );
         assert!(spec_by_id("nope").is_err());
+    }
+
+    /// The PACKS table must stay internally consistent and aligned with the
+    /// index-based `ensure_*` commands: unique ids/assets/stamps/subdirs,
+    /// every subdir prefixed by its asset's pack family, and the first two
+    /// entries pinned to the ids the ensure commands hardcode.
+    #[test]
+    fn packs_table_is_consistent() {
+        let mut ids: Vec<&str> = PACKS.iter().map(|p| p.id).collect();
+        let mut assets: Vec<&str> = PACKS.iter().map(|p| p.asset).collect();
+        let mut stamps: Vec<&str> = PACKS.iter().map(|p| p.version_file).collect();
+        let mut subdirs: Vec<&str> = PACKS.iter().map(|p| p.subdir).collect();
+        for (label, vals) in [
+            ("id", &mut ids),
+            ("asset", &mut assets),
+            ("stamp", &mut stamps),
+            ("subdir", &mut subdirs),
+        ] {
+            let n = vals.len();
+            vals.sort_unstable();
+            vals.dedup();
+            assert_eq!(vals.len(), n, "duplicate pack {label}s: {vals:?}");
+        }
+        for p in &PACKS {
+            assert_eq!(
+                p.asset,
+                format!("wowsp-{}.tar.gz", p.id),
+                "asset naming convention"
+            );
+            // The pack installs into `<cache>/<subdir>/` and stamps into
+            // `<cache>/<version_file>` — a collision would make packs
+            // clobber each other's state.
+            assert_ne!(p.version_file, p.subdir);
+        }
+        // ensure_model_pack / ensure_dogtag_pack index into PACKS by position.
+        assert_eq!(PACKS[0].id, "models");
+        assert_eq!(PACKS[1].id, "dogtags");
     }
 }

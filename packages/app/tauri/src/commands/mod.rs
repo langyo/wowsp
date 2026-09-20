@@ -7,6 +7,7 @@
 pub mod appdata;
 pub mod arena_info;
 pub mod decision_ai;
+pub mod decision_serve;
 pub mod decision_tick;
 pub mod encyclopedia;
 pub mod exports;
