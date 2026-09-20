@@ -10,7 +10,9 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useOverlayStore } from "@/stores/overlay";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
+  AchievementEvent,
   CameraSample,
+  ChatEvent,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -406,7 +408,7 @@ const PostBattlePanel = defineComponent({
               >
                 <div class="replay-view__postbattle-modal-head">
                   <span>{t("replay.postbattle.rawData")}</span>
-                  <button onClick={() => (rawOpen.value = false)}>✕</button>
+                  <button onClick={() => (rawOpen.value = false)}><X size={12} /></button>
                 </div>
                 <pre class="replay-view__postbattle-modal-raw">{props.raw}</pre>
               </div>
@@ -439,7 +441,7 @@ const PostBattlePanel = defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
                 </div>
                 <div class="replay-view__postbattle-modal-scroll">
                   {!sel.alive && sel.killerName ? (
@@ -792,7 +794,7 @@ const PostBattleFallbackPanel = defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
                 </div>
                 <div class="replay-view__postbattle-modal-scroll">
                   <div class="replay-view__postbattle-detail-body">
@@ -1249,7 +1251,10 @@ export default defineComponent({
     const wardRemoves = ref<WardRemoveEvent[]>([]);
     const shotKills = ref<ShotKillEvent[]>([]);
     const damageStats = ref<DamageStatSample[]>([]);
+    const chatMessages = ref<ChatEvent[]>([]);
+    const achievements = ref<AchievementEvent[]>([]);
     const showResults = ref(false);
+    const showChat = ref(false);
     /** True while the packet stream is decoding (post-battle results pending). */
     const resultsLoading = ref(false);
     const trajectoryError = ref<string | null>(null);
@@ -1281,6 +1286,9 @@ export default defineComponent({
         wardRemoves.value = [];
         shotKills.value = [];
         damageStats.value = [];
+        chatMessages.value = [];
+        achievements.value = [];
+        showChat.value = false;
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -1309,6 +1317,8 @@ export default defineComponent({
           wardRemoves.value = stream.wardRemoves ?? [];
           shotKills.value = stream.shotKills ?? [];
           damageStats.value = stream.damageStats ?? [];
+          chatMessages.value = stream.chatMessages ?? [];
+          achievements.value = stream.achievements ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1333,6 +1343,28 @@ export default defineComponent({
       return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
     }
 
+    /** Match-time stamp (M:SS) for chat/achievement rows. */
+    function formatClock(sec: number): string {
+      const s = Math.max(0, Math.round(sec));
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }
+
+    /** Chat log rows joined to the roster (sender name + team relation),
+     *  oldest first. System rows (playerId ≤ 0 — the client itself ignores
+     *  those) and unjoinable ids fall back to a raw-id label. */
+    const chatLog = computed(() =>
+      chatMessages.value
+        .filter((c) => c.playerId > 0)
+        .map((c) => {
+          const roster = parser.current.value?.vehicles.find((v) => v.id === c.playerId);
+          return {
+            ...c,
+            sender: roster?.name ?? `#${c.playerId}`,
+            enemy: (roster?.relation ?? 0) >= 2,
+          };
+        }),
+    );
+
     const refreshing = ref(false);
     async function onRefresh() {
       refreshing.value = true;
@@ -1345,7 +1377,7 @@ export default defineComponent({
 
     /** One replay info card. `external` cards are session-temporary picks
      *  from outside the game folder — they carry an "external" pill and a
-     *  corner ✕ (a sibling of the card button, so no nested buttons). Their
+     *  corner X icon (a sibling of the card button, so no nested buttons). Their
      *  key is namespaced so a pick that also exists in the scanned folder
      *  can't collide with the regular card's key. */
     function renderReplayCard(r: ReplayMetaLite, external: boolean) {
@@ -1605,6 +1637,14 @@ export default defineComponent({
                     {t("replay.results")}
                   </button>
                 ) : null}
+                {chatLog.value.length > 0 ? (
+                  <button
+                    class="replay-view__meta-item replay-view__pill"
+                    onClick={() => (showChat.value = !showChat.value)}
+                  >
+                    {t("replay.chatLog")}
+                  </button>
+                ) : null}
               </header>
               {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                 <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
@@ -1626,7 +1666,7 @@ export default defineComponent({
                         onClick={() => (showResults.value = false)}
                         aria-label="Close"
                       >
-                        ✕
+                        <X size={14} />
                       </button>
                     </div>
                     <div class="replay-view__modal-body">
@@ -1646,6 +1686,45 @@ export default defineComponent({
                           onClose={() => (showResults.value = false)}
                         />
                       )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {showChat.value && chatLog.value.length > 0 ? (
+                <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
+                  <div
+                    class="replay-view__modal-panel replay-view__chat-panel"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div class="replay-view__modal-head">
+                      <div class="replay-view__modal-title">
+                        <strong>{t("replay.chatLog")}</strong>
+                      </div>
+                      <button
+                        class="replay-view__modal-close"
+                        onClick={() => (showChat.value = false)}
+                        aria-label="Close"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div class="replay-view__modal-body">
+                      <ul class="replay-view__chat-list">
+                        {chatLog.value.map((c, i) => (
+                          <li
+                            key={i}
+                            class={[
+                              "replay-view__chat-row",
+                              c.enemy ? "replay-view__chat-row--enemy" : "replay-view__chat-row--ally",
+                            ]}
+                          >
+                            <span class="replay-view__chat-time">{formatClock(c.time)}</span>
+                            <span class="replay-view__chat-sender">{c.sender}</span>
+                            <span class="replay-view__chat-text">{c.message}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 </div>
@@ -1682,6 +1761,8 @@ export default defineComponent({
                       wardRemoves={wardRemoves.value}
                       shotKills={shotKills.value}
                       damageStats={damageStats.value}
+                      chatMessages={chatMessages.value}
+                      achievements={achievements.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}

@@ -701,6 +701,38 @@ pub struct SquadronPlane {
     pub yaw: f32,
 }
 
+/// One battle-chat message (`onChatMessage` on the avatar): the server
+/// broadcasts every player's chat through the recorder's avatar entity, so the
+/// stream carries the whole match's chat timeline. `player_id` joins the
+/// descriptor's `vehicles` roster (`vehicle.id` — account DB ids), NOT the
+/// vehicle entity ids.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEvent {
+    pub time: f32,
+    /// Sender's roster player id (descriptor `vehicles[].id`).
+    pub player_id: i32,
+    /// Channel namespace, e.g. `battle_team` (team chat), `battle_all`….
+    pub namespace: String,
+    /// Plaintext message body (UTF-8).
+    pub message: String,
+}
+
+/// One in-battle achievement award (`onAchievementEarned` on the avatar): a
+/// player earned a medal/achievement during the match. `achievement_id` is
+/// the GameParams Achievement entry id (matches the `playersPublicInfo`
+/// achievement list in the battle results; joins the bundled
+/// `achievement_names.json` for display names).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AchievementEvent {
+    pub time: f32,
+    /// Earner's roster player id (descriptor `vehicles[].id`).
+    pub player_id: i32,
+    /// GameParams Achievement entry id.
+    pub achievement_id: u32,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -774,6 +806,13 @@ pub struct ReplayStream {
     /// emitted every few seconds during engagements.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub damage_stats: Vec<DamageStatSample>,
+    /// Battle chat timeline (avatar onChatMessage) — every player's messages
+    /// with match timestamps.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chat_messages: Vec<ChatEvent>,
+    /// In-battle achievement awards (avatar onAchievementEarned).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub achievements: Vec<AchievementEvent>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

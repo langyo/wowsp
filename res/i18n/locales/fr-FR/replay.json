@@ -243,5 +243,7 @@
     "view": {
       "reset": "Réinitialiser le zoom"
     }
-  }
+  },
+  "chatLog": "Chat de bataille",
+  "achieved": "a obtenu le succès"
 }

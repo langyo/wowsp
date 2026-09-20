@@ -38,7 +38,7 @@
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PlayerShipStats } from "@/api";
-import { ArrowDown, ArrowUp, GripHorizontal, Search } from "@lucide/vue";
+import { ArrowDown, ArrowUp, GripHorizontal, Search, X } from "@lucide/vue";
 
 import { HPopover, HSearchInput } from "@celestia-island/hikari";
 
@@ -660,7 +660,7 @@ export default defineComponent({
                       class="ship-filter-bar__pop-close"
                       onClick={() => (openPop.value = null)}
                     >
-                      ✕
+                      <X size={12} />
                     </button>
                   </div>
                   {/* Option group in the segmented track look (multi-select
@@ -736,7 +736,7 @@ export default defineComponent({
                   class="ship-filter-bar__search-close"
                   onClick={() => (searchOpen.value = false)}
                 >
-                  ✕
+                  <X size={12} />
                 </button>
               </div>
               <HSearchInput

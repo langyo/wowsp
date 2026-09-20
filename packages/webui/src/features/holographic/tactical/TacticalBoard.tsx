@@ -16,6 +16,7 @@ import {
   type PropType,
 } from "vue";
 import { useToast } from "@celestia-island/hikari";
+import { Pause, Play } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { EntityTrajectory } from "@/api/client";
 import type { MapBounds } from "../modelLoader";
@@ -1185,7 +1186,7 @@ export default defineComponent({
                 }
                 onClick={togglePresent}
               >
-                {presentMode.value ? "❚❚" : "▶"}
+                {presentMode.value ? <Pause size={14} /> : <Play size={14} />}
               </button>
             </div>
           ) : null}

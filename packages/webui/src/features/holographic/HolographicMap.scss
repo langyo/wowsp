@@ -454,6 +454,63 @@
 .holo-map__kill--ally { border-left: 3px solid #3cb478; }
 .holo-map__kill--enemy { border-left: 3px solid #cc3333; }
 
+/* ── Event feed: chat bubbles + achievement awards (same bottom-left column
+   as the kill feed, sharing its card chrome) ─── */
+.holo-map__chat,
+.holo-map__ach {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: var(--text-xs);
+  background: var(--holo-hud-menu);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 4px;
+  animation: holo-kill-in 0.25s ease-out;
+}
+.holo-map__chat-ico,
+.holo-map__ach-ico {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--holo-hud-dim);
+}
+.holo-map__chat--ally,
+.holo-map__ach--ally { border-left: 3px solid #3cb478; }
+.holo-map__chat--enemy,
+.holo-map__ach--enemy { border-left: 3px solid #cc3333; }
+.holo-map__chat-sender,
+.holo-map__ach-sender {
+  flex: 0 1 auto;
+  font-weight: 600;
+  color: var(--holo-hud-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holo-map__chat-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--holo-hud-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holo-map__ach-verb {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--holo-hud-dim);
+  white-space: nowrap;
+}
+.holo-map__ach-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  color: #ffd93d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Selected ship (first-person follow) ─────────────────────────────── */
 /* ── Camera-mode dropdown (upward-opening) ───────────────────────────── */
 .holo-map__camera {

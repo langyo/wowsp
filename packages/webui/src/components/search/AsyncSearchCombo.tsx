@@ -22,7 +22,7 @@ import {
 } from "vue";
 
 import { HPopover, HSearchInput } from "@celestia-island/hikari";
-import { Search } from "@lucide/vue";
+import { Search, X } from "@lucide/vue";
 
 import "./AsyncSearchCombo.scss";
 
@@ -171,7 +171,7 @@ export default defineComponent({
                   class="async-search-combo__close"
                   onClick={() => (open.value = false)}
                 >
-                  ✕
+                  <X size={12} />
                 </button>
               </div>
             ) : null}
