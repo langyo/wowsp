@@ -26,7 +26,8 @@
       "cn360": "中国サーバー（360）",
       "cnKongzhong": "中国サーバー（KongZhong）",
       "manual": "手動設定"
-    }
+    },
+    "versionLabel": "クライアントバージョン"
   },
   "search": {
     "fuzzy": "あいまい検索",

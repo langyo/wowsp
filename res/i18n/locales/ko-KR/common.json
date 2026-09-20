@@ -26,7 +26,8 @@
       "cn360": "중국 서버(360)",
       "cnKongzhong": "중국 서버(KongZhong)",
       "manual": "직접 지정"
-    }
+    },
+    "versionLabel": "클라이언트 버전"
   },
   "search": {
     "fuzzy": "퍼지 검색",

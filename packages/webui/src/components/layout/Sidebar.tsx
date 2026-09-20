@@ -1,26 +1,31 @@
-import { computed, defineComponent } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { BarChart3, Search, Ship, Film, Package } from "@lucide/vue";
 
-import { HTooltip } from "@celestia-island/hikari";
+import { HTag, HTooltip } from "@celestia-island/hikari";
 
+import PlayerBadge from "@/components/base/PlayerBadge";
+import PlatformIcon from "@/components/base/PlatformIcon";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useSettingsUiStore } from "@/stores/settingsUi";
+import { useStatsStore } from "@/stores/stats";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
-import { installLabel, kindLabel } from "@/utils/installLabel";
+import { kindLabel } from "@/utils/installLabel";
+import type { PlayerStats } from "@/api";
 import "./Sidebar.scss";
 
 /**
  * Left sidebar: brand + nav links + spacer + footer.
  *
  * Nav links (top): Dashboard / Lookup / Ships / Replay / Resources.
- * Footer (bottom): game-status indicator, then two full-width buttons in
- * the same style — the active game client (opens settings on 游戏路径)
- * and the active account (opens settings on 账户). Management itself lives
- * in the settings modal; the footer only mirrors the current state.
+ * Footer (bottom): game-status indicator, then two full-width key/value
+ * buttons in the same style — the active game client (opens settings on
+ * 游戏路径) and the active account (opens settings on 账户). Management
+ * itself lives in the settings modal; the footer only mirrors the current
+ * state.
  *
  * The active client is the app-wide context — the replay list, mod hub and
  * account auto-switching all follow it — so its tooltip shows the full
@@ -32,14 +37,25 @@ export default defineComponent({
     const accounts = useAccountStore();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
+    const stats = useStatsStore();
     const ui = useSettingsUiStore();
     const { copy } = useClipboard();
 
-    const accountLabel = computed(() => {
-      const a = accounts.activeAccount;
-      if (!a) return t("account.notBound");
-      return `${a.nickname} [${a.realm.toUpperCase()}]`;
-    });
+    // Cached stats for the active account — only the emblem (dog tag /
+    // service-record tier) feeds the sidebar avatar. Hydrated from the
+    // local cache, never the API (same policy as the account cards). The
+    // token drops stale results when the account switches mid-hydration.
+    const activeStats = ref<PlayerStats | null>(null);
+    let activeStatsToken = 0;
+    watch(
+      () => accounts.activeAccount,
+      async (a) => {
+        const token = ++activeStatsToken;
+        const cached = a ? await stats.loadCached(a.realm, a.accountId) : null;
+        if (token === activeStatsToken) activeStats.value = cached;
+      },
+      { immediate: true },
+    );
 
     const running = computed(() => gameStatus.process.running);
     const proc = computed(() => gameStatus.process);
@@ -53,11 +69,8 @@ export default defineComponent({
 
     // Footer button: the ACTIVE install (what data reads use), not the
     // running process — they can differ while another client is playing.
-    const activeInstallLabel = computed(() => {
-      const i = config.activeInstall;
-      return i ? installLabel(i.kind, i.realm) : "";
-    });
-    const activeInstallPath = computed(() => config.activeInstall?.path ?? "");
+    const activeInstall = computed(() => config.activeInstall ?? null);
+    const activeInstallPath = computed(() => activeInstall.value?.path ?? "");
 
     function copyPid() {
       if (proc.value.pid != null) {
@@ -141,21 +154,55 @@ export default defineComponent({
 
           {/* active client — same button style as the account below; opens
               settings on the 游戏路径 table where clients are switched */}
-          <HTooltip text={activeInstallPath.value || t("common.gamePath.noneFound")} placement="right">
+          <HTooltip
+            class="sidebar__footer-slot"
+            text={activeInstallPath.value || t("common.gamePath.noneFound")}
+            placement="right"
+          >
             <button
               type="button"
               class="sidebar__footer-btn"
               onClick={() => ui.show("gamePath")}
             >
-              <span class="sidebar__footer-btn-label">
-                {activeInstallLabel.value || t("replay.client")}
+              <span class="sidebar__footer-btn-key">{t("common.game.versionLabel")}</span>
+              <span class="sidebar__footer-btn-value">
+                <PlatformIcon kind={activeInstall.value?.kind} size={18} />
+                <span class="sidebar__footer-btn-text">
+                  {activeInstall.value
+                    ? kindLabel(activeInstall.value.kind)
+                    : t("common.gamePath.unset")}
+                </span>
+                {activeInstall.value?.realm ? (
+                  <HTag variant="default" size="sm">
+                    {activeInstall.value.realm.toUpperCase()}
+                  </HTag>
+                ) : null}
               </span>
             </button>
           </HTooltip>
 
           {/* active account — opens settings on the 账户 section */}
           <button type="button" class="sidebar__footer-btn" onClick={() => ui.show("account")}>
-            <span class="sidebar__footer-btn-label">{accountLabel.value}</span>
+            <span class="sidebar__footer-btn-key">{t("settings.account")}</span>
+            <span class="sidebar__footer-btn-value">
+              {accounts.activeAccount ? (
+                <>
+                  <PlayerBadge
+                    tier={activeStats.value?.levelingTier ?? 0}
+                    dogTag={activeStats.value?.dogTag ?? null}
+                    size={22}
+                  />
+                  <span class="sidebar__footer-btn-text">
+                    {accounts.activeAccount.nickname}
+                  </span>
+                  <HTag variant="default" size="sm">
+                    {accounts.activeAccount.realm.toUpperCase()}
+                  </HTag>
+                </>
+              ) : (
+                <span class="sidebar__footer-btn-text">{t("account.notBound")}</span>
+              )}
+            </span>
           </button>
         </div>
       </aside>

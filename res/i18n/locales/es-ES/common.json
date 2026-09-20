@@ -26,7 +26,8 @@
       "cn360": "CN (360)",
       "cnKongzhong": "CN (KongZhong)",
       "manual": "Manual"
-    }
+    },
+    "versionLabel": "Versión del cliente"
   },
   "search": {
     "fuzzy": "Búsqueda difusa",
