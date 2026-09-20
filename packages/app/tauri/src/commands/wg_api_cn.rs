@@ -410,6 +410,9 @@ fn player_stats_of(
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
+        solo_battles: p.solo_battles,
+        div2_battles: p.div2_battles,
+        div3_battles: p.div3_battles,
     }
 }
 
@@ -921,6 +924,9 @@ mod tests {
         assert!((p.solo_wr.unwrap() - 51.4728).abs() < 0.01);
         assert!((p.div2_wr.unwrap() - 66.67).abs() < 0.01);
         assert_eq!(p.div3_wr, None);
+        assert_eq!(p.solo_battles, Some(16193));
+        assert_eq!(p.div2_battles, Some(3));
+        assert_eq!(p.div3_battles, None);
 
         // Dog tag parses through the shared helper.
         assert!(node.get("dog_tag").and_then(parse_dog_tag).is_some());

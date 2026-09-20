@@ -17,6 +17,14 @@ export const useRankedStore = defineStore("ranked", () => {
   /** Combined winrate across the loaded seasons (null = no ranked battles). */
   const winrate = computed(() => aggregateRankedWinrate(seasons.value));
 
+  /** Combined ranked battles across the loaded seasons (tooltip data).
+   *  Null until a load actually wrote the slot (empty = not loaded / failed /
+   *  reset — "unknown", not "zero battles"; a successful load with 0 ranked
+   *  battles still reports 0). */
+  const battles = computed(() =>
+    accountId.value == null ? null : seasons.value.reduce((n, s) => n + s.battles, 0),
+  );
+
   /** Supersedence token: the store is a single slot (not keyed per player),
    *  so only the newest load (or a reset) may write state — a slow response
    *  for a previous player must never clobber the current one's data. */
@@ -49,5 +57,5 @@ export const useRankedStore = defineStore("ranked", () => {
     accountId.value = null;
   }
 
-  return { seasons, loading, error, accountId, winrate, load, reset };
+  return { seasons, loading, error, accountId, winrate, battles, load, reset };
 });

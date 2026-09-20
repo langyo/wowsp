@@ -65,6 +65,11 @@ export default defineComponent({
       ranked.accountId != null && ranked.accountId === props.accountId ? ranked.winrate : null,
     );
 
+    /** Ranked battles, under the same slot-ownership guard as `rankedWr`. */
+    const rankedBattles = computed(() =>
+      ranked.accountId != null && ranked.accountId === props.accountId ? ranked.battles : null,
+    );
+
     /** Stamp: the ship's own PR verdict (神了 / 海猴 / 蛆). The career composition
      *  tags (空中小人 / 水下小人) stay on the account card — they describe the
      *  player's career, not this ship, and read as a ship verdict here. */
@@ -79,14 +84,37 @@ export default defineComponent({
 
     const pr = computed(() => prTier(props.stats?.pr ?? null));
 
+    /** "场次: 12,345" tooltip body for a split (null = count unknown — the
+     *  slot then falls back to the shared context hint in the JSX). */
+    const battlesHint = (battles: number | null | undefined) =>
+      battles != null ? `${t("stats.battles")}: ${battles.toLocaleString()}` : null;
+
     /** The account-wide four-division winrates (same numbers as the account
      *  card). WG's per-ship endpoint serves no battle-type split, so this row
      *  is context, not per-ship — hinted as such. */
-    const divisions = computed<{ label: string; wr: number | null }[]>(() => [
-      { label: t("stats.solo"), wr: accountStats.value?.soloWr ?? null },
-      { label: t("stats.div2"), wr: accountStats.value?.div2Wr ?? null },
-      { label: t("stats.div3"), wr: accountStats.value?.div3Wr ?? null },
-      { label: t("stats.ranked"), wr: rankedWr.value },
+    const divisions = computed<{ label: string; wr: number | null; hint: string | null }[]>(() => [
+      {
+        label: t("stats.solo"),
+        wr: accountStats.value?.soloWr ?? null,
+        hint: battlesHint(accountStats.value?.soloBattles),
+      },
+      {
+        label: t("stats.div2"),
+        wr: accountStats.value?.div2Wr ?? null,
+        hint: battlesHint(accountStats.value?.div2Battles),
+      },
+      {
+        label: t("stats.div3"),
+        wr: accountStats.value?.div3Wr ?? null,
+        hint: battlesHint(accountStats.value?.div3Battles),
+      },
+      {
+        label: t("stats.ranked"),
+        wr: rankedWr.value,
+        hint: [t("stats.rankedHint"), battlesHint(rankedBattles.value)]
+          .filter(Boolean)
+          .join(" · "),
+      },
     ]);
 
     /** Career KPIs — the per-ship slice of the account card's KPI strip. */
@@ -193,7 +221,7 @@ export default defineComponent({
                 <div
                   class="ship-my-stats__division"
                   key={d.label}
-                  data-hint={t("ships.detail.my.divisionsHint")}
+                  data-hint={d.hint ?? t("ships.detail.my.divisionsHint")}
                 >
                   <span
                     class="ship-my-stats__division-wr"

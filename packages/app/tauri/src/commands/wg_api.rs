@@ -339,6 +339,9 @@ fn player_stats_from_info(
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
+        solo_battles: p.solo_battles,
+        div2_battles: p.div2_battles,
+        div3_battles: p.div3_battles,
     }
 }
 
@@ -1093,6 +1096,9 @@ pub(crate) struct PvpStats {
     pub(crate) solo_wr: Option<f32>,
     pub(crate) div2_wr: Option<f32>,
     pub(crate) div3_wr: Option<f32>,
+    pub(crate) solo_battles: Option<i64>,
+    pub(crate) div2_battles: Option<i64>,
+    pub(crate) div3_battles: Option<i64>,
 }
 
 impl PvpStats {
@@ -1185,6 +1191,9 @@ impl PvpStats {
             solo_wr: solo.map(|(wr, _)| wr),
             div2_wr: div2.map(|(wr, _)| wr),
             div3_wr: div3.map(|(wr, _)| wr),
+            solo_battles: solo.map(|(_, b)| b),
+            div2_battles: div2.map(|(_, b)| b),
+            div3_battles: div3.map(|(_, b)| b),
         }
     }
 
@@ -1202,6 +1211,9 @@ impl PvpStats {
             solo_wr: None,
             div2_wr: None,
             div3_wr: None,
+            solo_battles: None,
+            div2_battles: None,
+            div3_battles: None,
         }
     }
 }
@@ -1554,6 +1566,9 @@ mod tests {
         assert_eq!(p.solo_wr, Some(55.0));
         assert_eq!(p.div2_wr, Some(55.0));
         assert_eq!(p.div3_wr, Some(55.0));
+        assert_eq!(p.solo_battles, Some(600));
+        assert_eq!(p.div2_battles, Some(200));
+        assert_eq!(p.div3_battles, Some(200));
         assert!(p.pr.is_some());
     }
 
@@ -1564,6 +1579,7 @@ mod tests {
         assert_eq!(p.battles, None);
         assert_eq!(p.winrate, None);
         assert_eq!(p.pr, None);
+        assert_eq!(p.solo_battles, None);
     }
 
     #[test]

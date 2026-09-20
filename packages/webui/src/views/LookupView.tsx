@@ -432,6 +432,7 @@ export default defineComponent({
                 <StatsCard
                   stats={result.value}
                   rankedWr={ranked.winrate}
+                  rankedBattles={ranked.battles}
                   onClanClick={
                     result.value.clanId != null
                       ? () => void doClanLookup(result.value!.clanId!, realm.value)
