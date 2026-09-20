@@ -1098,10 +1098,16 @@ def main(argv: list[str] | None = None) -> int:
     q_la, q_lb = run_ort(sess_int8, data["entity"], data["global"], data["mask"])
 
     # 1. PyTorch vs ORT fp32 parity over the first parity_samples rows
-    #    (deterministic prefix).
+    #    (deterministic prefix). Like-for-like on CPU: pt_* came from the
+    #    training device (GPU kernels differ by sub-ulp), so recompute the
+    #    compared rows on the already-moved-to-CPU model.
     check = np.arange(min(args.parity_samples, n))
-    parity_a = float(np.max(np.abs(sigmoid(ort_la[check]) - pt_pa[check])))
-    parity_b = float(np.max(np.abs(sigmoid(ort_lb[check]) - pt_pb[check])))
+    _dev = device
+    device = torch.device("cpu")
+    _la, _lb = predict_all(model, check)
+    device = _dev
+    parity_a = float(np.max(np.abs(sigmoid(ort_la[check]) - sigmoid(_la.numpy()))))
+    parity_b = float(np.max(np.abs(sigmoid(ort_lb[check]) - sigmoid(_lb.numpy()))))
     print(f"[e12] parity fp32 PyTorch vs ORT over {len(check)} rows: max|dp| A {parity_a:.2e}, B {parity_b:.2e}")
 
     # 2. int8 vs fp32 (probabilities + PR-AUPRC / log loss on head B among A+).

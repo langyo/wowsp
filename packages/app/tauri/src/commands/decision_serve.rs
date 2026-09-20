@@ -51,9 +51,9 @@ use super::terrain_los::{LosGrid, los_blocked};
 pub struct DecisionSuggestion {
     pub entity_id: i32,
     pub ship_id: Option<i64>,
-    /// Recorder-relative team: 0 = recorder's side, 1 = enemy. `null` when
-    /// the shipId could not be attributed (mirror lineups) — only possible
-    /// on the recorder row, deciders require a known team.
+    /// Recorder-relative team: 0 = recorder's side, 1 = enemy. Never null on
+    /// the wire today — the recorder row's mirror ambiguity is resolved to
+    /// the recorder's own side (0), deciders require a known team.
     pub team_id: Option<i8>,
     /// Whether this row is the replay's recorder (the webui highlights it).
     pub is_recorder: bool,
@@ -518,7 +518,11 @@ struct EnemySighting {
 }
 
 fn nearest_enemy(
-    ship: &ShipRow<'_>,
+    // The decider's EFFECTIVE team (after the recorder mirror-ambiguity
+    // override) — not ShipRow::team_id, which stays None for ambiguous
+    // mirror ships and would let teammates into the candidate set.
+    effective_team: i8,
+    own_entity_id: i32,
     ships: &[ShipRow<'_>],
     own: &PositionSample,
     t: f32,
@@ -526,10 +530,10 @@ fn nearest_enemy(
 ) -> Option<EnemySighting> {
     let mut best: Option<EnemySighting> = None;
     for other in ships {
-        if other.traj.entity_id == ship.traj.entity_id
+        if other.traj.entity_id == own_entity_id
             || other.team_id.is_none()
             || other.team_ambiguous
-            || other.team_id == ship.team_id
+            || other.team_id == Some(effective_team)
         {
             continue;
         }
@@ -677,7 +681,14 @@ impl<'a> ServeState<'a> {
             .iter()
             .filter(|s| s.main_battery)
             .any(|s| s.start <= t && t - s.start < effective_reload);
-        let target = nearest_enemy(ship, &self.ships, own, t, ctx.range_m);
+        let target = nearest_enemy(
+            team_id,
+            ship.traj.entity_id,
+            &self.ships,
+            own,
+            t,
+            ctx.range_m,
+        );
         let last_main_salvo = ctx
             .salvos
             .iter()

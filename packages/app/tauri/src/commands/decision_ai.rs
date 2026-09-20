@@ -181,6 +181,9 @@ impl DecisionModel {
     /// CACHED PER PROCESS — replacing the pack file mid-session needs an app
     /// restart (the stamp-checked pack download replaces the whole directory
     /// atomically, so a torn read is impossible, only a stale session).
+    /// A load ERROR is sticky the same way: a corrupt pack model disables
+    /// suggestions (with the error surfaced) until restart rather than
+    /// silently falling back to the fixture.
     pub fn load_pack_or_fixture() -> Result<Self, String> {
         let pack_path = crate::paths::cache_dir()
             .map_err(|e| format!("resolve cache dir: {e}"))?
@@ -276,8 +279,16 @@ impl DecisionModel {
                 .try_extract_array::<f32>()
                 .map_err(|e| format!("extract {name}: {e}"))?;
             let flat: Vec<f32> = view.iter().copied().collect();
-            // The exported heads squeeze to [1]; accept [1] or [1,1].
-            assert_eq!(flat.len(), 1, "output {name} shape {:?}", view.shape());
+            // The exported heads squeeze to [1]; accept [1] or [1,1]. A bad
+            // pack model must error, never panic (a panic here would poison
+            // the shared session mutex for the rest of the process).
+            if flat.len() != 1 {
+                return Err(format!(
+                    "output {name} has {} values, expected 1 (shape {:?})",
+                    flat.len(),
+                    view.shape()
+                ));
+            }
             logits[idx] = flat[0];
         }
         Ok((logits[0], logits[1]))
