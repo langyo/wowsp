@@ -16,6 +16,8 @@
 | E6 | 决策 tick 状态（`decision_tick.rs` + `terrain_los.rs`） | 能否产出「录制者视角不完全信息快照」作为模型输入表示，含地形遮挡标志 | ✅ | 可行 |
 | E7 | 开火样本构造分析（`fire_dataset.rs`） | 开火决策的 (状态, 标签) 监督样本能否从录像构造、规模如何 | ✅ | 可行，需炮船录像 |
 | E8 | 烟雾/消耗品/点亮事件协议逆向 | 三类语义事件能否从 EntityMethod/EntityProperty 流解出 | ✅ | 烟雾确证；消耗品/点亮排除 |
+| E9 | 模型交付闭环原型（`train_fire_model.py`） | 样本导出→PyTorch 训练→ONNX→int8→Rust ort 实模型推理的全链路 | ✅ | 闭环（165µs/次） |
+| E10 | def 机器生成完整 method 表 | 15.8.0 权威 def 能否精确复算 EntityMethod id 排序 | ✅ | 精确复算，100% 覆盖 |
 
 > 另有训练侧三主题网络调研（数据规模化获取 / 无环境评估协议 / 可导出 ONNX 的
 > 实体编码结构），结论见文末「研究纪要」。
@@ -172,6 +174,61 @@
 **对视野特征的意义**：烟雾遮挡升级为定量几何（半径米数 + 高度档 + 硬起止），
 tick 快照可算「敌舰已知位置是否在某活跃烟云内」；视野特征 = E3 间隙语义 +
 烟雾几何 + 地形 LOS（E4/E6）的组合，边界已探明。
+
+### E9 · 模型交付闭环：训练→导出→量化→端上推理全链路打通 ✅
+
+> 目标是**管线验证而非模型质量**——训练数据只有一局录像，过拟合是预期且
+> 被接受的；以下全部指标只证明机器运转正常。
+
+- **样本导出**（`export_decision_dataset`，fire_dataset.rs）：真实录像
+  **3584 行 / labelA(可打)=1330 / labelB(开火)=171 / 正类率 0.129**——与
+  E7 参考数字逐位一致（测试内强制断言相等）。特征=固定槽位（敌 16+友 8+
+  padding mask，观测优先距离排序）+ 全局特征（时间/本船状态/占点/事件窗），
+  装填 censored 行也导出（头 A 需要负样本，头 B 在 Python 侧 mask）。
+- **模型**（纪要 C 首选结构）：上下文化 DeepSets two-head，**316,802 参数**
+  （0.32M，预算内），纯 MatMul/ReLU/masked-mean，无 attention/LayerNorm。
+  BCE 两头分开 + 手工 label smoothing ε=0.05（`BCEWithLogitsLoss` 无此参数，
+  是坑）；60 epoch CPU 48s，损失 1.135→0.513。
+- **导出与量化**：静态 shape（batch=1）opset 17 导出，fp32 **1.27MB** →
+  int8 动态量化 **330KB（3.8×）**。
+- **三项一致性验证**（纪要 C 清单，全量 3584 行）：PyTorch↔ORT fp32
+  max|Δp| = **2.7e-07**（门槛 1e-5，超一个量级余量）；int8 量化前后
+  PR-AUPRC 0.5669→0.5670 / logloss 0.2762→0.2765（排序质量零损伤，概率
+  平移 ≤7pp）；槽位 shuffle 置换不变 |Δlogit|<1e-6；全空 mask 无 NaN。
+- **Rust ort 加载真实模型**（decision_ai.rs 的 `#[ignore]` 测试）：
+  fp32/int8 均加载成功，**p50 延迟 165µs / 136µs**——比 1Hz 决策建议的
+  预算低四个数量级。至此 E1 的推理壳吃上了 PyTorch 真实导出的模型。
+- 依赖：训练侧 torch CPU 539MB + onnxruntime 46MB（实验性、未进
+  requirements.txt）；**Rust 推理侧零新依赖**。
+- 坑：onnxruntime 量化器在非 ASCII 路径（本仓库的 `源代码`）下写中间件
+  会 FileNotFoundError——ASCII 临时目录量化再拷回；torch 2.14 导出需
+  显式 `dynamo=False`。
+
+### E10 · method 表从权威 def 精确复算，覆盖率 100% ✅
+
+- **排序规则解出**（`exposed_index.py`，复刻 wowsunpack `rpc/entitydefs.rs`
+  语义）：alias.xml 顺序解别名 → 按 Implements 声明序拼接（父接口一层在
+  前）→ 同名保留首个 → 按参数 wire size 稳定排序（可变类型饱和 0xffff +
+  VariableLengthHeaderSize），0 基索引即暴露 id。**54 个历史版本 × 12 个
+  已钉方法 = 648/648 锚点精确复现**（离线对照本地参考 checkout）。
+- **E8「+1→+4 漂移」之谜解开：不是规则错，是两个陈旧 pin**——
+  explosions def=**131**（战斗效果簇 15.7→15.8 整体 +3，128 是未随迁旧值；
+  本场录像 128–131 全静默故从未被证伪）；wardRemoved def=**51**（id 50
+  实为 receive_removeSquadron——49/50 两 id 以 237 个 PLANE_ID 1:1 成对
+  触发为铁证）。**两处 pin 按红线原样保留**（15.8.0 解码行逐字节不变），
+  分歧以注释+测试固化，是否修 pin 属解码行为变更，留人工决策。
+- **覆盖率**：15.8.0 完整表（Avatar 180 / Vehicle 84 方法）入 tests 模块
+  （研究工件，不进解码路径）；真实录像实测 **Avatar 64/64 ids、Vehicle
+  30/30 ids、77,364/77,364 次调用 100% 可解析**。
+- **候选事件 id 全部定出（下迭代解析的钥匙）**：
+  `updateMinimapVisionInfo`=155（本场 1,821 次调用！）、`clientInsideSmoke`=33、
+  `ownSmokeCreated`=32、`vehicleLeaveSmoke`=10、`notifyAboutSmokePenalty`=11、
+  `squadronConsumableUsed`=149、`receive_squadronVisibilityChanged`=79、
+  Vehicle `onConsumableUsed`=72、`updateCoolDown`=167、`onChatMessage`=151 等。
+  ——E8 排除掉的「消耗品/点亮」在拿到正确 id 后可以重新评估。
+- 生成器可重现性：`gen_method_tables.py --defs` 离线校验模式（快照 diff
+  硬失败、pin 分歧报 stderr）；重生成两次字节一致，15.8.0 行与全部历史行
+  逐字节不变。290 测试通过（+5），fmt/clippy 绿。
 
 ## 对总体可行性的意义
 
