@@ -1077,6 +1077,393 @@ fn trailing_speed_kt(ships: &[ShipInfo<'_>], entity_id: i32, t: f32) -> Option<f
     Some(v * METERS_PER_UNIT / super::decision_tick::KT_MS)
 }
 
+// ── E9 step 1: supervision-sample export (the training-data delivery loop) ─
+//
+// Turns the E7 decision-point analysis into concrete training rows: for every
+// ship WITH a fire history (the E7 weak-supervision decider set — reload and
+// engagement range are only meaningful for owners that fired), at the 2 s
+// decision cadence, one JSON-serialisable row per OBSERVABLE decision point:
+// own-view global features, fixed enemy/friend entity slots with a padding
+// mask, and the two-head labels from research note B:
+//   labelA "physically can fire" — hard rule: the main-battery reload
+//        completes within the label window AND an observed-now enemy sits
+//        inside the decider's own engagement range (exactly the E7
+//        eligibility test, so labelA rows == E7's eligible count);
+//   labelB "expert fired"        — a MAIN-battery salvo starts in
+//        (t, t+label_window]; censored (None) whenever labelA is false
+//        (a hold during reload is not a decision, it is physics).
+// Rows with labelA=0 are exported TOO: head A needs negatives, head B's loss
+// masks them out on the training side.
+
+/// Fixed enemy-slot count of the exported feature rows.
+pub const ENEMY_SLOTS: usize = 16;
+/// Fixed friend-slot count of the exported feature rows.
+pub const FRIEND_SLOTS: usize = 8;
+
+/// Trailing combat-event window (seconds) — E6 semantics.
+const EXPORT_EVENT_WINDOW_S: f32 = 30.0;
+/// "Near the decider" explosion radius (metres) — E6 semantics.
+const EXPORT_EXPLOSION_NEAR_RADIUS_M: f32 = 500.0;
+/// InteractiveZone entity types (13 pre-14.5.0, 14 after) — E6 semantics.
+const EXPORT_ZONE_TYPES: [i16; 2] = [13, 14];
+
+/// One entity slot of the export row. Ordered per ship list: observed-now
+/// slots first (by distance), then stale intel (by distance) — slot ORDER is
+/// deterministic, truncation (16 enemies / 8 friends) keeps the nearest.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FireDatasetSlot {
+    pub entity_id: i32,
+    /// EntityCreate type index (ships are 2; the one-hot summary on the
+    /// training side is over this vocabulary).
+    pub entity_type: i16,
+    pub ship_id: Option<i64>,
+    /// Planar distance from the decider's position at t (metres, E5 scale).
+    pub dist_m: f32,
+    /// Bearing to the entity relative to the decider's heading, wrapped to
+    /// [-pi, pi] (radians) — the polar-coordinate half of the slot features.
+    pub bearing_rel_rad: f32,
+    /// Trailing-streak speed estimate (kt); `None` when the streak is too
+    /// short to differentiate (E6 gap semantics — never across a gap).
+    pub speed_kt: Option<f32>,
+    /// HP fraction vs the entity's FIRST observed HP sample (a max-HP proxy —
+    /// the stream carries no max), clamped to [0, 1]; `None` without HP data.
+    pub hp_frac: Option<f32>,
+    /// Age of the entity's last position sample at t (seconds).
+    pub obs_age_s: f32,
+    pub observed_now: bool,
+    /// Terrain-LOS verdict from the E4 raster at the decider's eye height —
+    /// only observed-now enemies get one (E6 semantics); `None` without a
+    /// grid or for stale/friendly slots.
+    pub terrain_blocked: Option<bool>,
+}
+
+/// One exported decision point (one JSONL line).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FireDatasetRow {
+    // ── metadata ──
+    pub replay_version: Option<String>,
+    pub map_name: Option<String>,
+    pub owner_entity_id: i32,
+    pub ship_id: Option<i64>,
+    /// Recorder-relative team of the decider (0 = recorder side, 1 = enemy).
+    pub team_id: i8,
+    /// Decision time (seconds since match start).
+    pub t: f32,
+    // ── own/global features (the "own ship" is the decider itself) ──
+    pub own_speed_kt: Option<f32>,
+    pub own_hp_frac: Option<f32>,
+    /// `(t - last main salvo) / estimated reload`, clamped to [0, 1]; 1.0
+    /// before the first salvo (guns spawn loaded).
+    pub own_reload_frac: f32,
+    /// Engagement range used by the eligibility test (metres).
+    pub own_range_m: f32,
+    /// Zone counts at t. NOTE: zone owner values are in the game's absolute
+    /// team namespace (cap_samples 0/1/2 + other), NOT recorder-relative —
+    /// they are emitted verbatim; the own/enemy mapping is left to training.
+    pub zones_owned_0: u32,
+    pub zones_owned_1: u32,
+    pub zones_owned_2: u32,
+    pub zones_owned_other: u32,
+    /// Zones with a capture progress strictly inside (0, 1) at t.
+    pub zones_active_progress: u32,
+    /// Combat-event counts in the trailing 30 s window at t.
+    pub events_shells_30s: u32,
+    pub events_torps_30s: u32,
+    pub events_explosions_30s: u32,
+    pub events_explosions_near_30s: u32,
+    // ── entity slots (fixed max length; shorter = padding on the consumer) ──
+    pub enemies: Vec<FireDatasetSlot>,
+    pub friends: Vec<FireDatasetSlot>,
+    // ── labels ──
+    pub label_a_can_fire: bool,
+    /// `None` (censored) whenever `label_a_can_fire` is false.
+    pub label_b_fired: Option<bool>,
+}
+
+/// Export totals (one per replay).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FireDatasetExportStats {
+    pub owners: usize,
+    pub rows: usize,
+    /// Rows with labelA=1 — must equal E7's `total_eligible_with_history`.
+    pub rows_can_fire: usize,
+    /// Rows with labelB=1 (a main-battery salvo in the label window).
+    pub rows_fired: usize,
+    pub positive_rate_among_can_fire: f32,
+}
+
+/// HP fraction at `t` vs the entity's first observed HP sample (max proxy).
+fn hp_frac_at(traj: &wowsp_tauri_shared::EntityTrajectory, t: f32) -> Option<f32> {
+    let first = traj.hp_samples.first()?;
+    let cur = traj.hp_samples.iter().rev().find(|s| s.time <= t)?;
+    if first.value == 0 {
+        return None;
+    }
+    Some((cur.value as f32 / first.value as f32).clamp(0.0, 1.0))
+}
+
+/// Wrap an angle to [-pi, pi].
+fn wrap_angle(a: f32) -> f32 {
+    let r = a.rem_euclid(std::f32::consts::TAU);
+    if r > std::f32::consts::PI {
+        r - std::f32::consts::TAU
+    } else {
+        r
+    }
+}
+
+/// Build the enemy or friend slot list for one decider position at `t`.
+/// Candidates: ships with a KNOWN team on the queried side that have been
+/// observed at least once by t and are alive at t. Ordering: observed-now
+/// first, then stale, each by ascending distance; truncated to `max_slots`.
+#[allow(clippy::too_many_arguments)]
+fn build_slots(
+    decider: &ShipInfo<'_>,
+    ships: &[ShipInfo<'_>],
+    own: &PositionSample,
+    t: f32,
+    los: Option<&LosGrid>,
+    eye_height: f32,
+    enemy_side: bool,
+    max_slots: usize,
+) -> Vec<FireDatasetSlot> {
+    let mut candidates: Vec<(bool, f32, &ShipInfo<'_>, &PositionSample)> = Vec::new();
+    for other in ships {
+        if other.traj.entity_id == decider.traj.entity_id {
+            continue;
+        }
+        let Some(team) = other.team_id else {
+            continue;
+        };
+        let is_side = if enemy_side {
+            team != decider.team_id.unwrap_or(0)
+        } else {
+            team == decider.team_id.unwrap_or(-1)
+        };
+        if !is_side {
+            continue;
+        }
+        let Some(last) = last_sample_before(&other.traj.samples, t) else {
+            continue; // never observed by t — not in the decider's world
+        };
+        if other.traj.death_time.is_some_and(|d| d <= t) {
+            continue;
+        }
+        let dist_m = planar_dist((own.x, own.z), (last.x, last.z)) * METERS_PER_UNIT;
+        let observed_now = t - last.time <= GAP_THRESHOLD;
+        candidates.push((!observed_now, dist_m, other, last));
+    }
+    candidates.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    candidates
+        .into_iter()
+        .take(max_slots)
+        .map(|(_stale, dist_m, other, last)| {
+            // Bearing convention matches `bearing_offset_deg`: atan2(dz, dx).
+            let bearing = (last.z - own.z).atan2(last.x - own.x);
+            let terrain_blocked = if enemy_side && t - last.time <= GAP_THRESHOLD {
+                los.map(|g| {
+                    los_blocked(
+                        g,
+                        (own.x as f64, own.z as f64, eye_height as f64),
+                        (last.x as f64, last.z as f64, 0.0),
+                    )
+                })
+            } else {
+                None
+            };
+            FireDatasetSlot {
+                entity_id: other.traj.entity_id,
+                entity_type: other.traj.kind.as_ref().map_or(-1, |k| k.entity_type),
+                ship_id: other.traj.kind.as_ref().and_then(|k| k.ship_id),
+                dist_m,
+                bearing_rel_rad: wrap_angle(bearing - own.yaw),
+                speed_kt: trailing_speed_kt(ships, other.traj.entity_id, t),
+                hp_frac: hp_frac_at(other.traj, t),
+                obs_age_s: t - last.time,
+                observed_now: t - last.time <= GAP_THRESHOLD,
+                terrain_blocked,
+            }
+        })
+        .collect()
+}
+
+/// Zone + trailing-event summary at `t` (E6 semantics, decider-centric).
+fn zone_and_event_summary(
+    stream: &ReplayStream,
+    own: &PositionSample,
+    t: f32,
+) -> (u32, u32, u32, u32, u32, u32, u32, u32, u32) {
+    let (mut z0, mut z1, mut z2, mut zo, mut zp) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    for traj in &stream.trajectories {
+        let Some(kind) = traj.kind.as_ref() else {
+            continue;
+        };
+        if !EXPORT_ZONE_TYPES.contains(&kind.entity_type) {
+            continue;
+        }
+        let owner = traj
+            .cap_samples
+            .iter()
+            .rev()
+            .find(|s| s.time <= t)
+            .map(|s| s.value)
+            .or_else(|| kind.initial_team.map(|v| v as u32));
+        match owner {
+            Some(0) => z0 += 1,
+            Some(1) => z1 += 1,
+            Some(2) => z2 += 1,
+            Some(_) => zo += 1,
+            None => {},
+        }
+        if let Some(p) = traj.cap_progress.iter().rev().find(|s| s.time <= t) {
+            if p.value > 0 && p.value < 1000 {
+                zp += 1;
+            }
+        }
+    }
+    let in_window = |tt: f32| tt > t - EXPORT_EVENT_WINDOW_S && tt <= t;
+    let near_units = EXPORT_EXPLOSION_NEAR_RADIUS_M / METERS_PER_UNIT;
+    let shells = stream
+        .shell_launches
+        .iter()
+        .filter(|e| in_window(e.time))
+        .count() as u32;
+    let torps = stream
+        .torpedoes
+        .iter()
+        .filter(|e| in_window(e.time))
+        .count() as u32;
+    let explosions = stream
+        .explosions
+        .iter()
+        .filter(|e| in_window(e.time))
+        .count() as u32;
+    let near = stream
+        .explosions
+        .iter()
+        .filter(|e| in_window(e.time) && (e.x - own.x).hypot(e.z - own.z) <= near_units)
+        .count() as u32;
+    (z0, z1, z2, zo, zp, shells, torps, explosions, near)
+}
+
+/// Build every exportable decision row of the replay (E9 step 1). The decider
+/// set is ships with a fire history and a known team; rows follow the E7
+/// cadence/gates exactly so `rows_can_fire` reproduces E7's eligible count.
+pub fn export_decision_dataset(
+    stream: &ReplayStream,
+    ships: &[ShipInfo<'_>],
+    los: Option<&LosGrid>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> (Vec<FireDatasetRow>, FireDatasetExportStats) {
+    let contexts = fire_contexts(stream, ships, params);
+    let mut rows = Vec::new();
+    let mut owners = 0usize;
+    for ship in ships {
+        if ship.team_ambiguous || ship.team_id.is_none() {
+            continue;
+        }
+        let id = ship.traj.entity_id;
+        let Some(ctx) = contexts.get(&id) else {
+            continue;
+        };
+        if !ctx.has_fire_history {
+            continue;
+        }
+        owners += 1;
+        let (from, to) = alive_window(ship);
+        let mut t = from + 5.0;
+        while t <= to {
+            // Own state must be observable (recorder view) — the E7 gate.
+            let Some(own) = last_sample_before(&ship.traj.samples, t) else {
+                t += params.decision_interval_s;
+                continue;
+            };
+            if t - own.time > GAP_THRESHOLD {
+                t += params.decision_interval_s;
+                continue;
+            }
+            // labelA = the E7 eligibility test verbatim: reload completes
+            // within the label window AND an observed-now enemy is in range.
+            let effective_reload = (ctx.reload_s - params.decision_interval_s).max(0.0);
+            let is_reloaded = !ctx
+                .salvos
+                .iter()
+                .filter(|s| s.main_battery)
+                .any(|s| s.start <= t && t - s.start < effective_reload);
+            let has_target = nearest_enemy(ship, ships, own, t, ctx.range_m).is_some();
+            let label_a = is_reloaded && has_target;
+            // labelB: MAIN battery only, salvo starts in (t, t+label_window].
+            let label_b = label_a.then(|| {
+                ctx.salvos
+                    .iter()
+                    .filter(|s| s.main_battery)
+                    .any(|s| s.start > t && s.start <= t + params.label_window_s)
+            });
+            let last_main_salvo = ctx
+                .salvos
+                .iter()
+                .rfind(|s| s.main_battery && s.start <= t)
+                .map(|s| s.start);
+            let reload_frac = match last_main_salvo {
+                Some(s) => ((t - s) / ctx.reload_s.max(0.001)).clamp(0.0, 1.0),
+                None => 1.0, // guns spawn loaded
+            };
+            let (z0, z1, z2, zo, zp, shells, torps, expl, near) =
+                zone_and_event_summary(stream, own, t);
+            rows.push(FireDatasetRow {
+                replay_version: stream.version.clone(),
+                map_name: stream.map_name.clone(),
+                owner_entity_id: id,
+                ship_id: ship.traj.kind.as_ref().and_then(|k| k.ship_id),
+                team_id: ship.team_id.unwrap_or(-1),
+                t,
+                own_speed_kt: trailing_speed_kt(ships, id, t),
+                own_hp_frac: hp_frac_at(ship.traj, t),
+                own_reload_frac: reload_frac,
+                own_range_m: ctx.range_m,
+                zones_owned_0: z0,
+                zones_owned_1: z1,
+                zones_owned_2: z2,
+                zones_owned_other: zo,
+                zones_active_progress: zp,
+                events_shells_30s: shells,
+                events_torps_30s: torps,
+                events_explosions_30s: expl,
+                events_explosions_near_30s: near,
+                enemies: build_slots(ship, ships, own, t, los, eye_height, true, ENEMY_SLOTS),
+                friends: build_slots(ship, ships, own, t, los, eye_height, false, FRIEND_SLOTS),
+                label_a_can_fire: label_a,
+                label_b_fired: label_b,
+            });
+            t += params.decision_interval_s;
+        }
+    }
+    let rows_can_fire = rows.iter().filter(|r| r.label_a_can_fire).count();
+    let rows_fired = rows
+        .iter()
+        .filter(|r| r.label_b_fired == Some(true))
+        .count();
+    let stats = FireDatasetExportStats {
+        owners,
+        rows: rows.len(),
+        rows_can_fire,
+        rows_fired,
+        positive_rate_among_can_fire: if rows_can_fire == 0 {
+            0.0
+        } else {
+            rows_fired as f32 / rows_can_fire as f32
+        },
+    };
+    (rows, stats)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::decision_tick::DEFAULT_EYE_HEIGHT;
@@ -1654,5 +2041,235 @@ mod tests {
             (1.0e6 / per_gun_ship).ceil(),
             (1.0e7 / per_gun_ship).ceil()
         );
+    }
+
+    /// E9 step 1 synthetic: one firing gun ship + one enemy + one ally + one
+    /// zone — slot geometry, labels (including the reload-censored rows) and
+    /// the with-history decider gate must all line up.
+    #[test]
+    fn synthetic_dataset_export_slots_and_labels() {
+        let params = FireSampleParams::default();
+        // Gun ship 9 (enemy of recorder side) stationary at (10, 0), firing
+        // 4-shell main salvos at t=100 and t=124 at target 8 (50, 0); ally 7
+        // (recorder side, never fires — must produce NO rows).
+        let mk = |eid: i32, x: f32, sid: i64| {
+            trajectory(
+                eid,
+                Some(sid),
+                (0..400)
+                    .map(|i| sample(i as f32 * 0.5, eid, x, 0.0))
+                    .collect(),
+            )
+        };
+        let zone = wowsp_tauri_shared::EntityTrajectory {
+            entity_id: 21,
+            kind: kind(14, Some(999)),
+            samples: Vec::new(),
+            death_time: None,
+            hp_samples: Vec::new(),
+            cap_samples: vec![wowsp_tauri_shared::HpSample {
+                time: 0.0,
+                value: 1,
+            }],
+            cap_progress: vec![wowsp_tauri_shared::HpSample {
+                time: 90.0,
+                value: 350,
+            }],
+            cruise_samples: Vec::new(),
+        };
+        let mut shells = Vec::new();
+        for k in 0..2u32 {
+            for b in 0..4u16 {
+                shells.push(shell(
+                    100.0 + k as f32 * 24.0,
+                    9,
+                    k as i32,
+                    b,
+                    (10.0, 0.5),
+                    (50.0, 0.0),
+                ));
+            }
+        }
+        let stream = ReplayStream {
+            trajectories: vec![mk(9, 10.0, 222), mk(8, 50.0, 111), mk(7, 0.0, 110), zone],
+            recorder_vehicle_id: Some(8),
+            shell_launches: shells,
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 111),
+            roster_entry(2, 2, 222),
+            roster_entry(3, 0, 110),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let (rows, stats) =
+            export_decision_dataset(&stream, &ships, None, DEFAULT_EYE_HEIGHT, &params);
+        // Only ship 9 has a fire history — it is the sole decider.
+        assert_eq!(stats.owners, 1);
+        assert!(rows.iter().all(|r| r.owner_entity_id == 9));
+        assert!(!rows.is_empty());
+        // labelB is censored exactly where labelA is false.
+        for r in &rows {
+            assert_eq!(r.label_b_fired.is_some(), r.label_a_can_fire);
+        }
+        // labelA=1 rows must equal the E7 eligible count for the same input.
+        let e7 = count_decision_samples(&stream, &ships, &params);
+        assert_eq!(stats.rows_can_fire, e7.total_eligible_with_history);
+        assert_eq!(stats.rows_fired, e7.total_fired_with_history);
+        // The cadence starts at first-sample+5 s and steps 2 s → odd decision
+        // times. t=99: reloaded (no salvo before), target 8 observed in the
+        // ~47-unit range → labelA=1, and the salvo at t=100 lands in (99,
+        // 101] → labelB=Some(true).
+        let r99 = rows
+            .iter()
+            .find(|r| (r.t - 99.0).abs() < 0.1)
+            .expect("t=99 row");
+        assert!(r99.label_a_can_fire);
+        assert_eq!(r99.label_b_fired, Some(true));
+        // Slots: 9's (team 1) enemies = {7, 8} (team 0, both observed —
+        // ordered by distance: 7 at 10 units ahead-behind, 8 at 40 units dead
+        // ahead from 9's yaw-0 heading), friends = {} (no other team-1 ship).
+        assert_eq!(r99.enemies.len(), 2);
+        assert!(r99.friends.is_empty());
+        let e7slot = &r99.enemies[0];
+        assert_eq!(e7slot.entity_id, 7);
+        assert!(
+            (e7slot.dist_m - 10.0 * METERS_PER_UNIT).abs() < 0.5,
+            "{}",
+            e7slot.dist_m
+        );
+        assert!((e7slot.bearing_rel_rad - std::f32::consts::PI).abs() < 1e-5);
+        let e = &r99.enemies[1];
+        assert_eq!(e.entity_id, 8);
+        assert!(
+            (e.dist_m - 40.0 * METERS_PER_UNIT).abs() < 0.5,
+            "{}",
+            e.dist_m
+        );
+        assert!(e.bearing_rel_rad.abs() < 1e-5);
+        assert!(e.observed_now);
+        assert_eq!(e.terrain_blocked, None, "no grid -> no verdict");
+        // Reload windows are exported with labelA=0 (censoring rows for head
+        // A's negatives): right after the t=100 salvo the reload (~24 s) is
+        // far from completing within the 2 s label window.
+        let r103 = rows
+            .iter()
+            .find(|r| (r.t - 103.0).abs() < 0.1)
+            .expect("t=103");
+        assert!(!r103.label_a_can_fire);
+        assert_eq!(r103.label_b_fired, None);
+        assert!(r103.own_reload_frac < 0.15, "frac {}", r103.own_reload_frac);
+        // A row before the first salvo reports loaded guns and the zone block
+        // (progress strictly inside (0,1) counts as active at t=91).
+        let r91 = rows
+            .iter()
+            .find(|r| (r.t - 91.0).abs() < 0.1)
+            .expect("t=91");
+        assert!((r91.own_reload_frac - 1.0).abs() < 1e-6);
+        assert_eq!(r91.zones_owned_1, 1);
+        assert_eq!(r91.zones_active_progress, 1);
+        // Serialization: every row is one JSON line with camelCase keys.
+        let line = serde_json::to_string(&r99).expect("serialize row");
+        assert!(line.contains("\"labelACanFire\":true"));
+        assert!(line.contains("\"ownerEntityId\":9"));
+    }
+
+    /// E9 step 1 against the real reference replay — run with
+    /// `WOWSP_TEST_REPLAY=<path> [WOWSP_DATASET_OUT=<file>] [WOWSP_TEST_LOS_GRID=<path>]
+    /// cargo test -p wowsp_tauri e9_export -- --nocapture`. Writes the JSONL
+    /// training set when `WOWSP_DATASET_OUT` is set, prints the export totals
+    /// (must reproduce the E7 eligible numbers) and skips when the env var is
+    /// unset.
+    #[test]
+    fn e9_dataset_export_on_real_replay() {
+        let Ok(path) = std::env::var("WOWSP_TEST_REPLAY") else {
+            eprintln!("[e9] WOWSP_TEST_REPLAY not set - skipping");
+            return;
+        };
+        let params = FireSampleParams::default();
+        let stream =
+            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+        let vehicles = read_roster(&path).expect("roster");
+        let ships = ship_infos(&stream, &vehicles);
+        let grid_path = match std::env::var("WOWSP_TEST_LOS_GRID") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out/50_Gold_harbor/terrain_los.npz");
+                default.exists().then_some(default)
+            },
+        };
+        let grid = grid_path
+            .map(|p| LosGrid::load_npz(&p))
+            .transpose()
+            .expect("load LOS raster when present");
+        let (rows, stats) =
+            export_decision_dataset(&stream, &ships, grid.as_ref(), DEFAULT_EYE_HEIGHT, &params);
+        // Cross-check against E7: labelA=1 rows == eligible-with-history.
+        let e7 = count_decision_samples(&stream, &ships, &params);
+        assert_eq!(
+            stats.rows_can_fire, e7.total_eligible_with_history,
+            "labelA rows must reproduce E7 eligible"
+        );
+        assert_eq!(
+            stats.rows_fired, e7.total_fired_with_history,
+            "labelB rows must reproduce E7 fired"
+        );
+        assert!(stats.rows > stats.rows_can_fire, "censoring rows exported");
+        assert!(
+            stats.rows_can_fire > 500,
+            "can-fire rows {}",
+            stats.rows_can_fire
+        );
+        assert!(
+            (0.01..=0.60).contains(&stats.positive_rate_among_can_fire),
+            "positive rate {}",
+            stats.positive_rate_among_can_fire
+        );
+        for r in &rows {
+            assert!(r.enemies.len() <= ENEMY_SLOTS);
+            assert!(r.friends.len() <= FRIEND_SLOTS);
+            assert_eq!(r.label_b_fired.is_some(), r.label_a_can_fire);
+        }
+        // labelA=1 rows must carry at least one observed-now in-range enemy.
+        for r in rows.iter().filter(|r| r.label_a_can_fire) {
+            assert!(
+                r.enemies.iter().any(|e| e.observed_now),
+                "can-fire row without an observed enemy at t={}",
+                r.t
+            );
+        }
+        eprintln!(
+            "[e9] export: {} deciders, {} rows ({} can-fire, {} fired, rate {:.3}); E7 eligible {} fired {}",
+            stats.owners,
+            stats.rows,
+            stats.rows_can_fire,
+            stats.rows_fired,
+            stats.positive_rate_among_can_fire,
+            e7.total_eligible_with_history,
+            e7.total_fired_with_history
+        );
+        match std::env::var("WOWSP_DATASET_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create dataset parent dir");
+                }
+                use std::io::Write;
+                let mut f = std::fs::File::create(&out_path).expect("create dataset file");
+                for r in &rows {
+                    writeln!(f, "{}", serde_json::to_string(r).expect("serialize row"))
+                        .expect("write row");
+                }
+                let bytes = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+                eprintln!(
+                    "[e9] wrote {} rows to {} ({:.1} KiB)",
+                    rows.len(),
+                    out,
+                    bytes as f32 / 1024.0
+                );
+            },
+            Err(_) => eprintln!("[e9] WOWSP_DATASET_OUT not set - dataset not written"),
+        }
     }
 }
