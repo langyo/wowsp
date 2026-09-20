@@ -641,6 +641,9 @@
   justify-content: center;
   gap: 0.5rem;
   cursor: zoom-out;
+  /* Reserve the playback bar's footprint (bottom 12px + ~42px tall) so the
+     centered map + tactical step strip never slide behind it. */
+  padding-bottom: 64px;
 }
 .holo-map__mmzoom-head {
   display: flex;
@@ -670,7 +673,9 @@
   }
 }
 .holo-map__mmzoom-canvas {
-  width: min(80vw, 80vh, 720px);
+  /* Cap by height minus the head pill + reserved playback-bar strip so the
+     whole stack (pill + map + step strip above the controls) always fits. */
+  width: min(calc(100vh - 110px), 80vw, 720px);
   height: auto;
   border: 1px solid var(--holo-hud-border);
   border-radius: 6px;
@@ -680,7 +685,7 @@
   /* With the tactical board on, the toolbar rail takes the gutter to the
      right — shrink the map so canvas + rail always fit the viewport. */
   &--tac {
-    width: min(calc(80vw - 224px), 80vh, 720px);
+    width: min(calc(100vh - 110px), calc(80vw - 224px), 720px);
   }
 }
 
