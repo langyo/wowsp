@@ -460,6 +460,24 @@ export interface DamageStatSample {
   total: number;
 }
 
+/** One battle-chat message (avatar onChatMessage). `playerId` joins the
+ *  descriptor roster (`vehicles[].id` — account ids), not entity ids. */
+export interface ChatEvent {
+  time: number;
+  playerId: number;
+  /** Channel namespace, e.g. `battle_team` (team chat). */
+  namespace: string;
+  message: string;
+}
+
+/** One in-battle achievement award (avatar onAchievementEarned).
+ *  `achievementId` joins `data/achievement_names.json`. */
+export interface AchievementEvent {
+  time: number;
+  playerId: number;
+  achievementId: number;
+}
+
 /** Aircraft weapon ids (DamageStatWeapon): carrier rockets / bombers /
  *  torpedo bombers / skip bombers plus the Alt-/Tb- variants. Burn (17) and
  *  flood (20) are DoT categories shared with ship weapons, so they stay out. */
@@ -544,6 +562,10 @@ export interface ReplayStream {
    *  the recorder — exact per-weapon damage incl. aircraft weapons. Absent
    *  on versions whose exposed method id isn't pinned yet. */
   damageStats?: DamageStatSample[];
+  /** Battle chat timeline (avatar onChatMessage). */
+  chatMessages?: ChatEvent[];
+  /** In-battle achievement awards (avatar onAchievementEarned). */
+  achievements?: AchievementEvent[];
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

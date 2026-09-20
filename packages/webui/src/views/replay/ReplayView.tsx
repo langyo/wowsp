@@ -10,7 +10,9 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useOverlayStore } from "@/stores/overlay";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
+  AchievementEvent,
   CameraSample,
+  ChatEvent,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -1249,7 +1251,10 @@ export default defineComponent({
     const wardRemoves = ref<WardRemoveEvent[]>([]);
     const shotKills = ref<ShotKillEvent[]>([]);
     const damageStats = ref<DamageStatSample[]>([]);
+    const chatMessages = ref<ChatEvent[]>([]);
+    const achievements = ref<AchievementEvent[]>([]);
     const showResults = ref(false);
+    const showChat = ref(false);
     /** True while the packet stream is decoding (post-battle results pending). */
     const resultsLoading = ref(false);
     const trajectoryError = ref<string | null>(null);
@@ -1281,6 +1286,9 @@ export default defineComponent({
         wardRemoves.value = [];
         shotKills.value = [];
         damageStats.value = [];
+        chatMessages.value = [];
+        achievements.value = [];
+        showChat.value = false;
         trajectoryError.value = null;
         duration.value = 0;
         if (!path) return;
@@ -1309,6 +1317,8 @@ export default defineComponent({
           wardRemoves.value = stream.wardRemoves ?? [];
           shotKills.value = stream.shotKills ?? [];
           damageStats.value = stream.damageStats ?? [];
+          chatMessages.value = stream.chatMessages ?? [];
+          achievements.value = stream.achievements ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1332,6 +1342,28 @@ export default defineComponent({
       const pad = (n: number) => String(n).padStart(2, "0");
       return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
     }
+
+    /** Match-time stamp (M:SS) for chat/achievement rows. */
+    function formatClock(sec: number): string {
+      const s = Math.max(0, Math.round(sec));
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }
+
+    /** Chat log rows joined to the roster (sender name + team relation),
+     *  oldest first. System rows (playerId ≤ 0 — the client itself ignores
+     *  those) and unjoinable ids fall back to a raw-id label. */
+    const chatLog = computed(() =>
+      chatMessages.value
+        .filter((c) => c.playerId > 0)
+        .map((c) => {
+          const roster = parser.current.value?.vehicles.find((v) => v.id === c.playerId);
+          return {
+            ...c,
+            sender: roster?.name ?? `#${c.playerId}`,
+            enemy: (roster?.relation ?? 0) >= 2,
+          };
+        }),
+    );
 
     const refreshing = ref(false);
     async function onRefresh() {
@@ -1605,6 +1637,14 @@ export default defineComponent({
                     {t("replay.results")}
                   </button>
                 ) : null}
+                {chatLog.value.length > 0 ? (
+                  <button
+                    class="replay-view__meta-item replay-view__pill"
+                    onClick={() => (showChat.value = !showChat.value)}
+                  >
+                    {t("replay.chatLog")}
+                  </button>
+                ) : null}
               </header>
               {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                 <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
@@ -1651,6 +1691,45 @@ export default defineComponent({
                 </div>
               ) : null}
 
+              {showChat.value && chatLog.value.length > 0 ? (
+                <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
+                  <div
+                    class="replay-view__modal-panel replay-view__chat-panel"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div class="replay-view__modal-head">
+                      <div class="replay-view__modal-title">
+                        <strong>{t("replay.chatLog")}</strong>
+                      </div>
+                      <button
+                        class="replay-view__modal-close"
+                        onClick={() => (showChat.value = false)}
+                        aria-label="Close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div class="replay-view__modal-body">
+                      <ul class="replay-view__chat-list">
+                        {chatLog.value.map((c, i) => (
+                          <li
+                            key={i}
+                            class={[
+                              "replay-view__chat-row",
+                              c.enemy ? "replay-view__chat-row--enemy" : "replay-view__chat-row--ally",
+                            ]}
+                          >
+                            <span class="replay-view__chat-time">{formatClock(c.time)}</span>
+                            <span class="replay-view__chat-sender">{c.sender}</span>
+                            <span class="replay-view__chat-text">{c.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div class="replay-view__detail">
                 <div class="replay-view__map-wrap">
                   {trajectoryError.value ? (
@@ -1682,6 +1761,8 @@ export default defineComponent({
                       wardRemoves={wardRemoves.value}
                       shotKills={shotKills.value}
                       damageStats={damageStats.value}
+                      chatMessages={chatMessages.value}
+                      achievements={achievements.value}
                       vehicles={parser.current.value.vehicles}
                       encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}

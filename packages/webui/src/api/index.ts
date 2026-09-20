@@ -54,6 +54,8 @@ export type {
   WardRemoveEvent,
   ShotKillEvent,
   DamageStatSample,
+  ChatEvent,
+  AchievementEvent,
   ReplayStream,
   PlayerStats,
   PlayerSuggestion,

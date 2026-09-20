@@ -569,6 +569,9 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "wards": dump.get("wards", []),
             "wardRemoves": dump.get("wardRemoves", []),
             "shotKills": dump.get("shotKills", []),
+            "damageStats": dump.get("damageStats", []),
+            "chatMessages": dump.get("chatMessages", []),
+            "achievements": dump.get("achievements", []),
         }
     return {
         "trajectories": [],
@@ -593,6 +596,9 @@ async def cmd_read_replay_positions(request: Request) -> dict:
         "wards": [],
         "wardRemoves": [],
         "shotKills": [],
+        "damageStats": [],
+        "chatMessages": [],
+        "achievements": [],
     }
 
 

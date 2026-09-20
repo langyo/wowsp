@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
-import { Crosshair, Plane, Shield, Skull, Swords } from "@lucide/vue";
+import { Crosshair, MessageSquare, Plane, Shield, Skull, Swords, Trophy } from "@lucide/vue";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
@@ -29,7 +29,9 @@ import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerC
 import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
 import type {
+  AchievementEvent,
   CameraSample,
+  ChatEvent,
   DamageStatSample,
   EntityTrajectory,
   ExplosionEvent,
@@ -72,6 +74,14 @@ for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   });
 }
 import { parsePostBattle } from "@/features/replay/postBattle";
+import achievementNamesRaw from "@/data/achievement_names.json";
+
+/** Achievement id → localized display name (GameParams-derived bundle; the
+ *  same per-locale shape as ribbon_names.json). Falls back to the raw id. */
+const achievementNames = achievementNamesRaw as Record<
+  string,
+  { key: string; type: string; names: Partial<Record<string, string>> }
+>;
 
 /** Per-plane local offsets inside ONE flight group (the group's own wedge):
  *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front
@@ -303,6 +313,12 @@ export default defineComponent({
      *  exact per-weapon damage incl. aircraft weapons, tracked live against
      *  the playhead. Absent on versions without a pinned method id. */
     damageStats: { type: Array as () => DamageStatSample[], default: () => [] },
+    /** Battle chat timeline (avatar onChatMessage) — fired into the event
+     *  feed as the playhead crosses each message's time. */
+    chatMessages: { type: Array as () => ChatEvent[], default: () => [] },
+    /** In-battle achievement awards (avatar onAchievementEarned) — same
+     *  playhead-crossing feed treatment as chat. */
+    achievements: { type: Array as () => AchievementEvent[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -582,8 +598,36 @@ export default defineComponent({
       /** Role of the KILLER (the card tint is the killer's side). */
       role: TeamRole;
     }
-    const killFeed = ref<KillEvent[]>([]);
-    let killSeq = 0;
+    /** A battle-chat bubble (sender joined from the roster). */
+    interface ChatFeedEntry {
+      id: number;
+      sender: string;
+      /** Sender is on the enemy side (roster relation ≥ 2) — drives the tint. */
+      enemy: boolean;
+      message: string;
+    }
+    /** An achievement award (localized name resolved from the bundle). */
+    interface AchievementFeedEntry {
+      id: number;
+      sender: string;
+      enemy: boolean;
+      /** Display name (raw id fallback when unmapped). */
+      name: string;
+      /** Game's achievement class (heroic/honorable/squad/...) — empty if unknown. */
+      grade: string;
+    }
+    type FeedEntry =
+      | ({ kind: "kill" } & KillEvent)
+      | ({ kind: "chat" } & ChatFeedEntry)
+      | ({ kind: "achievement" } & AchievementFeedEntry);
+    /** Unified bottom-left event feed (sinks + chat + achievements), newest
+     *  first; entries auto-expire after a few seconds. */
+    const feed = ref<FeedEntry[]>([]);
+    let feedSeq = 0;
+    /** Widest of the per-kind caps — chat can burst, so keep a little headroom
+     *  over the old kill-only limit of 4. */
+    const FEED_CAP = 6;
+    const FEED_TTL_MS = 4000;
     /** Lazily parsed post-battle payload (killer resolution + self team). */
     let pbCache: ReturnType<typeof parsePostBattle> | null = null;
     /** The recorder's own 0/1 side from the post-battle payload — maps a
@@ -595,6 +639,60 @@ export default defineComponent({
     });
     // Entity ids already reported as sunk (avoid double-counting on scrub).
     const reportedSinks = new Set<number>();
+    /** Roster entry by player id — chat/achievement events carry roster ids
+     *  (descriptor `vehicles[].id`), not vehicle entity ids. */
+    function rosterById(pid: number): VehicleEntry | undefined {
+      return props.vehicles.find((v) => v.id === pid);
+    }
+    /** Push one feed entry (newest first) and schedule its expiry. */
+    function pushFeed(entry: FeedEntry) {
+      feed.value.unshift(entry);
+      if (feed.value.length > FEED_CAP) feed.value.pop();
+      window.setTimeout(() => {
+        feed.value = feed.value.filter((e) => e.id !== entry.id);
+      }, FEED_TTL_MS);
+    }
+    // Per-stream cursors into the time-ordered chat/achievement events: each
+    // entry fires once when the playhead first reaches it (scrubbing back does
+    // not replay them — same semantics as the sink feed).
+    let chatPtr = 0;
+    let achPtr = 0;
+    /** Fire chat + achievement feed entries crossed by playhead `t`. */
+    function advanceEventFeed(t: number) {
+      const chats = props.chatMessages;
+      while (chatPtr < chats.length && chats[chatPtr].time <= t) {
+        const c = chats[chatPtr++];
+        if (c.playerId <= 0) continue; // system rows the client itself ignores
+        const roster = rosterById(c.playerId);
+        pushFeed({
+          kind: "chat",
+          id: ++feedSeq,
+          sender: roster?.name ?? `#${c.playerId}`,
+          enemy: (roster?.relation ?? 0) >= 2,
+          message: c.message,
+        });
+      }
+      const achs = props.achievements;
+      const dataLang = useLanguage().dataLanguage.value;
+      while (achPtr < achs.length && achs[achPtr].time <= t) {
+        const a = achs[achPtr++];
+        if (a.playerId <= 0) continue;
+        const roster = rosterById(a.playerId);
+        const bundle = achievementNames[String(a.achievementId)];
+        pushFeed({
+          kind: "achievement",
+          id: ++feedSeq,
+          sender: roster?.name ?? `#${a.playerId}`,
+          enemy: (roster?.relation ?? 0) >= 2,
+          name:
+            bundle?.names[dataLang] ??
+            bundle?.names["en-US"] ??
+            bundle?.key ??
+            `#${a.achievementId}`,
+          grade: bundle?.type ?? "",
+        });
+      }
+    }
     // The capture-zone entities + their ownership timelines. InteractiveZone
     // (type 14) covers ALL interactive areas — capture points, strike zones,
     // event regions. The AUTHORITATIVE discriminator is the create packet's
@@ -1841,8 +1939,10 @@ export default defineComponent({
       capDisplay.value = [];
       allyScore.value = 0;
       enemyScore.value = 0;
-      killFeed.value = [];
       reportedSinks.clear();
+      feed.value = [];
+      chatPtr = 0;
+      achPtr = 0;
       selectedEntityId.value = null;
       rosterAssignments = new Map();
       shipEntityIds = [];
@@ -3359,6 +3459,9 @@ export default defineComponent({
      *  destroyed (time ≥ deathTime) are frozen at their last position and
      *  their materials desaturated to a faint grey tint. */
     function updateMarkersAt(t: number) {
+      // Chat + achievement feed events fire here too — the playhead is the
+      // single clock every bottom-left notification hangs off.
+      advanceEventFeed(t);
       const labels = shipLabels.value;
       // Alive counts are recomputed every frame from the markers' death times
       // (not incremented) so scrubbing backward restores sunk ships.
@@ -3498,8 +3601,9 @@ export default defineComponent({
                   "";
                 killerShipType = kinfo?.type ?? koff?.type ?? null;
               }
-              const feedId = ++killSeq;
-              killFeed.value.unshift({
+              const feedId = ++feedSeq;
+              feed.value.unshift({
+                kind: "kill",
                 id: feedId,
                 text: who,
                 shipName: label?.shipName ?? "",
@@ -3509,10 +3613,10 @@ export default defineComponent({
                 killerName,
                 role,
               });
-              if (killFeed.value.length > 4) killFeed.value.pop();
+              if (feed.value.length > FEED_CAP) feed.value.pop();
               window.setTimeout(() => {
-                killFeed.value = killFeed.value.filter((k) => k.id !== feedId);
-              }, 4000);
+                feed.value = feed.value.filter((k) => k.id !== feedId);
+              }, FEED_TTL_MS);
             }
           }
           continue;
@@ -4838,53 +4942,83 @@ export default defineComponent({
           <div class="holo-map__scorebar-wrap"><HoloScorebar state={scorebarState.value} /></div>
           </>
         ) : null}
-        {/* Kill feed (sink notifications) — bottom-left. Each entry shows
-            both ships: killer ship + nickname on the left (left-aligned),
-            "击沉了" centred, victim ship + nickname on the right
-            (right-aligned). The card's accent is the killer's side. */}
-        {killFeed.value.length > 0 ? (
+        {/* Bottom-left event feed — sink notifications + player chat +
+            achievement awards, newest first. Kill cards keep the 3-column
+            layout (killer | "击沉了" | victim); chat and achievement cards
+            are single rows with the sender's side tint. */}
+        {feed.value.length > 0 ? (
           <div class="holo-map__killfeed">
-            {killFeed.value.map((k) => (
-              <div key={k.id} class={["holo-map__kill", `holo-map__kill--${k.role}`]}>
-                <div class="holo-map__kill-side holo-map__kill-side--killer">
-                  <span class="holo-map__kill-ship">
-                    <span class="holo-map__kill-ico">
-                      {k.killerShipType ? (
-                        <BattleIcon
-                          kind="ship"
-                          type={k.killerShipType}
-                          variant={k.role === "enemy" ? "enemy" : "ally"}
-                          size={13}
-                        />
-                      ) : null}
-                    </span>
-                    {k.killerShipName || k.killerName || "?"}
-                  </span>
-                  <span class="holo-map__kill-name">
-                    {k.killerName ?? ""}
-                  </span>
+            {feed.value.map((e) => {
+              if (e.kind === "kill") {
+                return (
+                  <div key={e.id} class={["holo-map__kill", `holo-map__kill--${e.role}`]}>
+                    <div class="holo-map__kill-side holo-map__kill-side--killer">
+                      <span class="holo-map__kill-ship">
+                        <span class="holo-map__kill-ico">
+                          {e.killerShipType ? (
+                            <BattleIcon
+                              kind="ship"
+                              type={e.killerShipType}
+                              variant={e.role === "enemy" ? "enemy" : "ally"}
+                              size={13}
+                            />
+                          ) : null}
+                        </span>
+                        {e.killerShipName || e.killerName || "?"}
+                      </span>
+                      <span class="holo-map__kill-name">
+                        {e.killerName ?? ""}
+                      </span>
+                    </div>
+                    <span class="holo-map__kill-verb">{i18nT("replay.killVerb")}</span>
+                    <div class="holo-map__kill-side holo-map__kill-side--victim">
+                      <span class="holo-map__kill-ship">
+                        <span class="holo-map__kill-ico">
+                          {e.shipType ? (
+                            <BattleIcon
+                              kind="ship"
+                              type={e.shipType}
+                              variant={e.role === "ally" ? "enemy" : "ally"}
+                              size={13}
+                            />
+                          ) : null}
+                        </span>
+                        {e.shipName}
+                      </span>
+                      <span class="holo-map__kill-name">
+                        {e.text}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+              if (e.kind === "chat") {
+                return (
+                  <div
+                    key={e.id}
+                    class={["holo-map__chat", e.enemy ? "holo-map__chat--enemy" : "holo-map__chat--ally"]}
+                  >
+                    <MessageSquare size={12} class="holo-map__chat-ico" />
+                    <span class="holo-map__chat-sender">{e.sender}</span>
+                    <span class="holo-map__chat-text">{e.message}</span>
+                  </div>
+                );
+              }
+              return (
+                <div
+                  key={e.id}
+                  class={[
+                    "holo-map__ach",
+                    e.enemy ? "holo-map__ach--enemy" : "holo-map__ach--ally",
+                  ]}
+                >
+                  <Trophy size={12} class="holo-map__ach-ico" />
+                  <span class="holo-map__ach-sender">{e.sender}</span>
+                  <span class="holo-map__ach-verb">{i18nT("replay.achieved")}</span>
+                  <span class="holo-map__ach-name">{e.name}</span>
                 </div>
-                <span class="holo-map__kill-verb">{i18nT("replay.killVerb")}</span>
-                <div class="holo-map__kill-side holo-map__kill-side--victim">
-                  <span class="holo-map__kill-ship">
-                    <span class="holo-map__kill-ico">
-                      {k.shipType ? (
-                        <BattleIcon
-                          kind="ship"
-                          type={k.shipType}
-                          variant={k.role === "ally" ? "enemy" : "ally"}
-                          size={13}
-                        />
-                      ) : null}
-                    </span>
-                    {k.shipName}
-                  </span>
-                  <span class="holo-map__kill-name">
-                    {k.text}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : null}
         <canvas

@@ -243,5 +243,7 @@
     "view": {
       "reset": "Reset view zoom"
     }
-  }
+  },
+  "chatLog": "Battle chat",
+  "achieved": "earned"
 }
