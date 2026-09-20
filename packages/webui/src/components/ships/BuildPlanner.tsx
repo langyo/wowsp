@@ -24,6 +24,7 @@ import DataObserver from "./DataObserver";
 import signalsData from "../../data/signals.json";
 import modernizationsData from "../../data/modernizations.json";
 import commandersData from "../../data/commanders.json";
+import shipConsumablesData from "../../data/ship_consumables.json";
 import "./BuildPlanner.scss";
 
 /**
@@ -131,6 +132,10 @@ const MODERNIZATIONS = modernizationsData as ModernizationEntry[];
 const COMMANDERS = (commandersData as CommanderEntry[])
   .slice()
   .sort((a, b) => (b.talents.length > 0 ? 1 : 0) - (a.talents.length > 0 ? 1 : 0) || a.person.localeCompare(b.person));
+/** Tech-tree index → consumable ability families (Spotter / Fighter / …)
+ *  extracted from GameParams ShipAbilities (the WG API hides loadouts);
+ *  backs the consumable-gated skill bans. */
+const SHIP_CONSUMABLES = shipConsumablesData as Record<string, string[]>;
 
 /** WG lowercase nation code → GameParams nation name used by modernizations. */
 const GP_NATION: Record<string, string> = {
@@ -272,8 +277,17 @@ export default defineComponent({
       return n;
     });
 
+    /** Consumable ability families of THIS hull, keyed by its tech-tree
+     *  index; null when the hull is missing from ship_consumables.json —
+     *  the consumable-skill gate then never bans (conservative). */
+    const consumableFamilies = computed<ReadonlySet<string> | null>(() => {
+      const idx = techTreeNode(props.ship.shipId)?.index;
+      const fams = idx ? SHIP_CONSUMABLES[idx] : undefined;
+      return fams ? new Set(fams) : null;
+    });
+
     function skillBan(skill: Skill): SkillRequirement | null {
-      return skillUnavailable(skill.code, props.ship.defaultProfile as Record<string, any> | null);
+      return skillUnavailable(skill.code, props.ship.defaultProfile as Record<string, any> | null, consumableFamilies.value);
     }
 
     // A build restored against another hull may carry skills this ship can
@@ -285,7 +299,7 @@ export default defineComponent({
         const skills = { ...props.build.skills };
         let pruned = false;
         for (const code of Object.keys(skills)) {
-          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, any> | null)) {
+          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, any> | null, consumableFamilies.value)) {
             delete skills[code];
             pruned = true;
           }

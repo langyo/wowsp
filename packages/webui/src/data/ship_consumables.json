@@ -1,0 +1,6788 @@
+{
+ "PASA002": [
+  "CrashCrew"
+ ],
+ "PASA004": [
+  "CrashCrew"
+ ],
+ "PASA006": [
+  "CrashCrew"
+ ],
+ "PASA010": [
+  "CrashCrew"
+ ],
+ "PASA012": [
+  "CrashCrew"
+ ],
+ "PASA013": [
+  "CrashCrew"
+ ],
+ "PASA015": [
+  "CrashCrew"
+ ],
+ "PASA020": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA026": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA028": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA104": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA106": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA108": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA110": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA111": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA507": [
+  "CrashCrew"
+ ],
+ "PASA508": [
+  "CrashCrew"
+ ],
+ "PASA510": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA518": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA528": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA538": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA598": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA898": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA908": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA910": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA915": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASA920": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PASB001": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB004": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB006": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB008": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB012": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB013": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB017": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB018": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB034": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB111": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB208": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PASB209": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PASB210": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PASB505": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB506": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB507": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB508": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB509": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew"
+ ],
+ "PASB510": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB517": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB518": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB519": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB527": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB528": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB538": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB539": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB598": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB599": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB705": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB707": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB708": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB710": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PASB718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASB720": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PASB729": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PASB730": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB740": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter",
+  "SupportAux",
+  "SupportHealConsumableReload",
+  "SupportMG"
+ ],
+ "PASB808": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB810": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB818": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB820": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB889": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB891": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PASB899": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB908": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB909": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PASB910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB917": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB918": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB919": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB920": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB930": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PASB940": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB990": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB997": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASB998": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASC001": [
+  "CrashCrew"
+ ],
+ "PASC002": [
+  "CrashCrew"
+ ],
+ "PASC003": [
+  "CrashCrew"
+ ],
+ "PASC004": [
+  "CrashCrew"
+ ],
+ "PASC005": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PASC006": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC007": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PASC011": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC012": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PASC014": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "SonarSearch"
+ ],
+ "PASC016": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC017": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC019": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC020": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC024": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PASC044": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PASC045": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PASC106": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC111": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC206": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC207": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC208": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC209": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC503": [
+  "CrashCrew"
+ ],
+ "PASC505": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PASC507": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PASC510": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC518": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC519": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC528": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC538": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PASC548": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC587": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC597": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC599": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC610": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC707": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PASC708": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC728": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC729": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC810": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC891": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC909": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASC920": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PASC998": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PASD002": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD005": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD006": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD008": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD013": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD014": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD019": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD021": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD027": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD029": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD037": [
+  "CrashCrew",
+  "SmokeGeneratorPremium_TimeBased",
+  "SpeedBooster"
+ ],
+ "PASD038": [
+  "CrashCrew",
+  "SmokeGeneratorPremium_TimeBased",
+  "SpeedBooster"
+ ],
+ "PASD039": [
+  "CrashCrew",
+  "SmokeGeneratorPremium_TimeBased",
+  "SpeedBooster"
+ ],
+ "PASD040": [
+  "CrashCrew",
+  "SmokeGeneratorPremium_TimeBased",
+  "SpeedBooster"
+ ],
+ "PASD111": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD502": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD505": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD506": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PASD508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD510": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD519": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD529": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD597": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD610": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PASD704": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD709": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGeneratorPremium_TimeBased"
+ ],
+ "PASD719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PASD810": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD819": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD891": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD899": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASD913": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PASS106": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS108": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS110": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS206": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS208": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS210": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS510": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASS710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PASS910": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PASX001": [
+  "CrashCrew"
+ ],
+ "PASX003": [
+  "CrashCrew"
+ ],
+ "PASX004": [
+  "CrashCrew"
+ ],
+ "PASX005": [
+  "CrashCrew"
+ ],
+ "PASX904": [
+  "CrashCrew"
+ ],
+ "PBSA106": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA108": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA111": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA204": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA210": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA508": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA510": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA518": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA528": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA710": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA718": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSA910": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PBSB002": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB103": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB104": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB105": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB106": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB107": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB108": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB109": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB110": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB111": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB203": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB204": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB205": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB206": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB207": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB208": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB209": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB503": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB505": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB507": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB508": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB509": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB510": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB517": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB526": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PBSB527": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSB536": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PBSB537": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSB547": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PBSB609": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB610": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PBSB708": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PBSB717": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB727": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSB737": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PBSB747": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSB810": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB909": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB910": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB920": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSB998": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PBSC020": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC101": [
+  "CrashCrew"
+ ],
+ "PBSC102": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSC103": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PBSC104": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC105": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC106": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC107": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC108": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC109": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC110": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC111": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC205": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC206": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC207": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC208": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC209": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC505": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC507": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC510": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC516": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC518": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PBSC526": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PBSC528": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC538": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC548": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC558": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC610": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC707": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC708": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC716": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PBSC718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PBSC719": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PBSC810": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC888": [
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PBSC909": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSC910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PBSC920": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD102": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PBSD103": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PBSD104": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PBSD105": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PBSD106": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD107": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD108": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD109": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD110": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD503": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PBSD506": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PBSD510": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD517": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PBSD519": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PBSD598": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PBSD605": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PBSD717": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PBSD718": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PBSD719": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PBSS106": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PBSS108": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PBSS110": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PBSS508": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PBSS710": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PBSS910": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PFSA506": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PFSB103": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB104": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB105": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB106": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB107": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB108": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB109": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB110": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB111": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB506": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PFSB507": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PFSB508": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PFSB510": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB518": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB528": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PFSB538": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB548": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PFSB596": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PFSB599": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB709": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PFSB898": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB908": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSB909": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSC101": [
+  "CrashCrew"
+ ],
+ "PFSC102": [
+  "CrashCrew"
+ ],
+ "PFSC103": [
+  "CrashCrew"
+ ],
+ "PFSC104": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PFSC105": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PFSC106": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC107": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC108": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC109": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PFSC110": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC111": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC208": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC209": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC210": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC506": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC507": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC508": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PFSC510": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC516": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC708": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSC716": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PFSC719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC730": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PFSC810": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC819": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSC896": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PFSD010": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD015": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD016": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD017": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD018": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD019": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD102": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD103": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD104": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD105": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD106": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD107": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD108": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD109": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD110": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD504": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD506": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PFSD508": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD605": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PFSD710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PFSD718": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD808": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD810": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSD820": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PFSD895": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PFSS710": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster",
+  "SpotterPremium_TimeBased",
+  "SubmarineLocator"
+ ],
+ "PGSA104": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA106": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA108": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA110": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA506": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA508": [
+  "CrashCrew"
+ ],
+ "PGSA510": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA518": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA598": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA610": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA910": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSA990": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PGSB002": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB103": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB104": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB105": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB106": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB107": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB108": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB109": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB110": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB111": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB203": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB204": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB205": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB206": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB207": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB208": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB209": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB210": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB310": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB503": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB506": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PGSB507": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB508": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB509": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB517": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB518": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB528": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB538": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB597": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB598": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB599": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB610": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB708": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PGSB717": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PGSB719": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSB818": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB828": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSB898": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB908": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB910": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSB918": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PGSB920": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB928": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PGSB930": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSB989": [
+  "CrashCrew",
+  "RegenCrew",
+  "TorpedoReloader"
+ ],
+ "PGSB999": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC001": [
+  "CrashCrew"
+ ],
+ "PGSC002": [
+  "CrashCrew"
+ ],
+ "PGSC010": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC016": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC017": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC018": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC019": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC103": [
+  "CrashCrew"
+ ],
+ "PGSC104": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PGSC105": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PGSC106": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC111": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC502": [
+  "CrashCrew"
+ ],
+ "PGSC506": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC507": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC516": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC517": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PGSC518": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC519": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC528": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC529": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSC598": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC706": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC717": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PGSC718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC728": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PGSC729": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PGSC809": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC817": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC890": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC891": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC899": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PGSC908": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC920": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PGSC996": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PGSD102": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD103": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD104": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD105": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD106": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD107": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD108": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD109": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD110": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD111": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD207": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD208": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD209": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD506": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD508": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD516": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PGSD518": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PGSD519": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD529": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD610": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD707": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PGSD709": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD717": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PGSD719": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD727": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD737": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSD910": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PGSD990": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PGSS106": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PGSS108": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PGSS110": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PGSS206": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PGSS208": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PGSS210": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PGSS510": [
+  "CrashCrew",
+  "Hydrophone",
+  "RegenCrew",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PHSB710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PHSC010": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PHSC018": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PHSC019": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PHSC101": [
+  "CrashCrew"
+ ],
+ "PHSC102": [
+  "CrashCrew"
+ ],
+ "PHSC103": [
+  "CrashCrew"
+ ],
+ "PHSC104": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PHSC105": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PHSC106": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PHSC107": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PHSC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC508": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PHSC509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC708": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PHSC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC730": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PHSC988": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PHSC990": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PHSC998": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PHSD509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PHSD610": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PHSD708": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PHSS710": [
+  "CrashCrew",
+  "FastDeepRudders",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PISA508": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PISB011": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PISB104": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PISB105": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PISB106": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PISB107": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PISB108": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PISB109": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PISB110": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PISB505": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PISB508": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB509": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB510": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB519": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISB708": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB709": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB710": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISB718": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PISB719": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISB720": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISB805": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PISB810": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB818": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PISB908": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB909": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PISB990": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISC101": [
+  "CrashCrew"
+ ],
+ "PISC102": [
+  "CrashCrew"
+ ],
+ "PISC103": [
+  "CrashCrew"
+ ],
+ "PISC104": [
+  "CrashCrew",
+  "Fighter"
+ ],
+ "PISC105": [
+  "CrashCrew",
+  "Fighter",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC106": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC107": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC108": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC109": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC110": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC111": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SubmarineLocator"
+ ],
+ "PISC505": [
+  "CrashCrew",
+  "Fighter",
+  "Spotter"
+ ],
+ "PISC506": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PISC507": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC510": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISC517": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISC519": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PISC590": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISC607": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PISC707": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PISC717": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PISC719": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISC729": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PISC739": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PISC897": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PISC908": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISC990": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PISD102": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD103": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD104": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD105": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD106": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD107": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD108": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD109": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD110": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD506": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD507": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD509": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISD710": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PISS106": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SubmarineLocator"
+ ],
+ "PISS108": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SubmarineLocator"
+ ],
+ "PISS110": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SubmarineLocator"
+ ],
+ "PJSA002": [
+  "CrashCrew"
+ ],
+ "PJSA006": [
+  "CrashCrew"
+ ],
+ "PJSA009": [
+  "CrashCrew"
+ ],
+ "PJSA011": [
+  "CrashCrew"
+ ],
+ "PJSA012": [
+  "CrashCrew"
+ ],
+ "PJSA015": [
+  "CrashCrew"
+ ],
+ "PJSA017": [
+  "CrashCrew"
+ ],
+ "PJSA104": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA106": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA108": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA110": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA111": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA507": [
+  "CrashCrew"
+ ],
+ "PJSA518": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA598": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA710": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA908": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA910": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA917": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA920": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSB001": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB003": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB006": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB007": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB008": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB010": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB011": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB013": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB018": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB021": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB111": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB208": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB209": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB210": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB506": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB507": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB508": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB509": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB510": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB517": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PJSB519": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB526": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB529": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB539": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB549": [
+  "CrashCrew",
+  "RegenCrew",
+  "TorpedoReloader"
+ ],
+ "PJSB559": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB700": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB705": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB706": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB707": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB708": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB710": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB715": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB719": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PJSB720": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB730": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB799": [
+  "CrashCrew"
+ ],
+ "PJSB878": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB888": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB891": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB906": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB916": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB918": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSB920": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PJSB999": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PJSC004": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew"
+ ],
+ "PJSC005": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC007": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC008": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC009": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC012": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PJSC013": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch"
+ ],
+ "PJSC014": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSC015": [
+  "CrashCrew"
+ ],
+ "PJSC018": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC021": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PJSC026": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PJSC034": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PJSC035": [
+  "CrashCrew"
+ ],
+ "PJSC037": [
+  "CrashCrew"
+ ],
+ "PJSC038": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC205": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC206": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC207": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC208": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC209": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC503": [
+  "CrashCrew",
+  "Fighter"
+ ],
+ "PJSC505": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PJSC507": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "TorpedoReloader"
+ ],
+ "PJSC510": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC517": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC519": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC520": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC590": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC598": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC610": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSC705": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC707": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC708": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC709": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC717": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PJSC720": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC727": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC729": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PJSC737": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC739": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC749": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC759": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC810": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PJSC819": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC829": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PJSC890": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PJSC905": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PJSC918": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC919": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PJSC929": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PJSC934": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter",
+  "SubmarineLocator"
+ ],
+ "PJSD001": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD002": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD003": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD004": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD005": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD006": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD007": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD010": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD012": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD014": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD017": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD024": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD025": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD026": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD105": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD106": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD107": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD108": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD111": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD206": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD207": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD208": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD209": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD210": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD219": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD507": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD510": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD518": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD528": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PJSD596": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD598": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD706": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD708": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD710": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PJSD718": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD719": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD728": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD889": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PJSD890": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD891": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSD912": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PJSS508": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PJSS518": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze"
+ ],
+ "PJSS720": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PJSS820": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ],
+ "PJSX701": [
+  "CrashCrew"
+ ],
+ "PJSX702": [
+  "CrashCrew"
+ ],
+ "PRSA104": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSA106": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSA108": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSA110": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSA508": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSA598": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSA990": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PRSB001": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB103": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB104": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB105": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB106": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB107": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB108": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB109": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB110": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB111": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB505": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB508": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB509": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB510": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB516": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB518": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB528": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew"
+ ],
+ "PRSB538": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB709": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB710": [
+  "CrashCrew",
+  "RegenCrewPremium_TimeBased"
+ ],
+ "PRSB717": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSB719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB729": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB739": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB818": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew"
+ ],
+ "PRSB819": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB909": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PRSC001": [
+  "CrashCrew"
+ ],
+ "PRSC002": [
+  "CrashCrew"
+ ],
+ "PRSC003": [
+  "CrashCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC010": [
+  "CrashCrew"
+ ],
+ "PRSC101": [
+  "CrashCrew"
+ ],
+ "PRSC102": [
+  "CrashCrew"
+ ],
+ "PRSC103": [
+  "CrashCrew"
+ ],
+ "PRSC104": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PRSC105": [
+  "CrashCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC106": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC111": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC208": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC209": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC215": [
+  "CrashCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC310": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC503": [
+  "CrashCrew"
+ ],
+ "PRSC505": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PRSC506": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PRSC509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PRSC510": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew"
+ ],
+ "PRSC513": [
+  "CrashCrew"
+ ],
+ "PRSC515": [
+  "CrashCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC518": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC520": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew"
+ ],
+ "PRSC523": [
+  "CrashCrew"
+ ],
+ "PRSC525": [
+  "CrashCrew",
+  "Fighter",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC528": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC530": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PRSC538": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC548": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC558": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PRSC568": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PRSC606": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC610": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PRSC709": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PRSC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PRSC719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PRSC810": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC818": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PRSC910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC920": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC980": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC990": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PRSC999": [
+  "CrashCrew"
+ ],
+ "PRSD001": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD102": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD103": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD104": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD105": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD106": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD108": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD109": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD110": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD111": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD205": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD206": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD207": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD208": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD210": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD308": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD409": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD410": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD505": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD507": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PRSD517": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PRSD709": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PRSD718": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PRSD810": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD909": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSD919": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PRSS106": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PRSS108": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PRSS110": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PRSS508": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineLocator"
+ ],
+ "PRSS999": [
+  "CrashCrew"
+ ],
+ "PSSB709": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PSSB719": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PSSC101": [
+  "CrashCrew"
+ ],
+ "PSSC102": [
+  "CrashCrew"
+ ],
+ "PSSC103": [
+  "CrashCrew"
+ ],
+ "PSSC104": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PSSC105": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PSSC106": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PSSC107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PSSC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PSSC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PSSC110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PSSC506": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PSSC508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PSSC719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PSSC729": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PSSD510": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PUSB507": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PUSB710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PUSC001": [
+  "CrashCrew"
+ ],
+ "PUSC010": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PUSC012": [
+  "CrashCrew"
+ ],
+ "PUSC013": [
+  "CrashCrew"
+ ],
+ "PUSC014": [
+  "CrashCrew",
+  "SonarSearch"
+ ],
+ "PUSC015": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PUSC016": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PUSC017": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PUSC018": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PUSC019": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SubmarineLocator"
+ ],
+ "PUSC506": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PUSC509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PUSC510": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PUSC516": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PUSC710": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SubmarineLocator"
+ ],
+ "PUSC717": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PUSC810": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PUSC997": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PUSD503": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PUSD507": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PUSD510": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PUSD517": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PUSD709": [
+  "CrashCrew",
+  "SmokeGeneratorPremium_TimeBased",
+  "SpeedBooster"
+ ],
+ "PVSA710": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PVSB010": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSB018": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSB019": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSB505": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSB508": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSB710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PVSB719": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSB720": [
+  "CrashCrew",
+  "RegenCrew",
+  "SupportAux",
+  "SupportHealConsumableReload",
+  "SupportMG"
+ ],
+ "PVSB990": [
+  "CrashCrew",
+  "RegenCrew",
+  "SupportAux",
+  "SupportHealConsumableReload",
+  "SupportMG"
+ ],
+ "PVSB999": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSC101": [
+  "CrashCrew"
+ ],
+ "PVSC102": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSC103": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PVSC104": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC105": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC106": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PVSC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PVSC110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PVSC502": [
+  "CrashCrew"
+ ],
+ "PVSC507": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC708": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PVSC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PVSD010": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD013": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD014": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD015": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD016": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD017": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD018": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD019": [
+  "ArtilleryBoosterPremium_TimeBased",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PVSD506": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PVSD710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PWSB010": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSB014": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PWSB015": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSB016": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSB017": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSB018": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSB019": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSB504": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PWSB509": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PWSB707": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PWSB718": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew"
+ ],
+ "PWSB719": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PWSB909": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PWSC010": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC016": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC017": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC018": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC019": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC101": [
+  "CrashCrew"
+ ],
+ "PWSC506": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PWSC710": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSC718": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster",
+  "Spotter"
+ ],
+ "PWSD102": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PWSD103": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PWSD104": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PWSD105": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD106": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD107": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD111": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD205": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD206": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD207": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD208": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD209": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD210": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD501": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD508": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD509": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD510": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PWSD519": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD610": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD705": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD708": [
+  "CrashCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PWSD710": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD717": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PWSD719": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD907": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PWSD910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD920": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSD990": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PWSS710": [
+  "AirstrikeCountermeasures",
+  "CrashCrew",
+  "SpeedBooster",
+  "SubmarineLocator"
+ ],
+ "PXSA001": [
+  "CrashCrew"
+ ],
+ "PXSA002": [
+  "CrashCrew"
+ ],
+ "PXSA003": [
+  "CrashAll",
+  "CrashCrew",
+  "HealAll"
+ ],
+ "PXSA004": [
+  "CrashCrew"
+ ],
+ "PXSA005": [
+  "CrashCrew"
+ ],
+ "PXSA008": [
+  "CrashCrewAuto"
+ ],
+ "PXSA010": [
+  "CrashCrewAuto"
+ ],
+ "PXSA807": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PXSB001": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSB002": [
+  "CrashCrew_PVP",
+  "FilthPower_PVP",
+  "Silence_PVP"
+ ],
+ "PXSB003": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSB004": [
+  "CrashCrew",
+  "HealAura",
+  "Protection"
+ ],
+ "PXSB005": [
+  "CrashCrew_PVP",
+  "Invulnerable_PVP",
+  "LifeDrain_PVP"
+ ],
+ "PXSB006": [
+  "CrashCrew"
+ ],
+ "PXSB007": [
+  "CrashCrew"
+ ],
+ "PXSB008": [
+  "CrashCrew_PVP",
+  "HealZone_PVP",
+  "Sniper_PVP"
+ ],
+ "PXSB009": [
+  "CrashCrew_PVP",
+  "HealZone_H2019",
+  "InvulnerableZone_H2019"
+ ],
+ "PXSB010": [
+  "CrashCrew_PVP",
+  "RegenCrew_H2019",
+  "Resist_H2019"
+ ],
+ "PXSB011": [
+  "CrashCrew_PVP",
+  "Invulnerable_PVP",
+  "LifeDrain_H2019"
+ ],
+ "PXSB015": [
+  "CrashCrew_H2020",
+  "DrainZone_H2020",
+  "ResistAllBuff_H2020"
+ ],
+ "PXSB016": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSB017": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSB027": [
+  "CrashCrew",
+  "CrashCrewSuper",
+  "GMShotDelay",
+  "Mass_Heal",
+  "Mass_Target",
+  "ReconnaissanceSquad_AFD2024",
+  "RegenCrew",
+  "SpeedBooster",
+  "Taunt"
+ ],
+ "PXSB030": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PXSB053": [
+  "ArmorBuff",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSB054": [
+  "ArmorBuff",
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PXSB055": [
+  "RegenCrew"
+ ],
+ "PXSB056": [
+  "RegenCrew"
+ ],
+ "PXSB101": [
+  "CrashCrew"
+ ],
+ "PXSB103": [
+  "CrashCrew"
+ ],
+ "PXSB504": [
+  "CrashCrew_FA2022",
+  "RegenCrew_FA2022",
+  "SpeedBooster_FA2022"
+ ],
+ "PXSB506": [
+  "CrashCrew_FA2022",
+  "RegenCrew_FA2022",
+  "SpeedBooster_FA2022"
+ ],
+ "PXSC001": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSC002": [
+  "CrashCrew_PVP",
+  "LivingArmor_PVP",
+  "SonarSearch_PVP",
+  "Vampiric_PVP"
+ ],
+ "PXSC003": [
+  "CrashCrew",
+  "HolyWeapon",
+  "RLSSearch"
+ ],
+ "PXSC004": [
+  "CrashCrew"
+ ],
+ "PXSC005": [
+  "CrashCrew"
+ ],
+ "PXSC006": [
+  "SmokeGenerator"
+ ],
+ "PXSC007": [
+  "CircleWave_H2020",
+  "CrashCrew_H2020"
+ ],
+ "PXSC009": [
+  "CrashCrew_PVP",
+  "HealAll_PVP",
+  "RLSSearch_PVP"
+ ],
+ "PXSC010": [
+  "CrashCrew"
+ ],
+ "PXSC011": [
+  "CrashCrew_PVP",
+  "HealAll_H2019",
+  "HealShell_H2019",
+  "RLSSearch_PVP"
+ ],
+ "PXSC012": [
+  "ArtilleryBooster_H2019",
+  "CrashCrew_PVP",
+  "RegenCrew_H2019",
+  "SonarSearch_PVP"
+ ],
+ "PXSC013": [
+  "CrashCrew_PVP",
+  "RegenResist_H2019",
+  "SonarSearch_PVP",
+  "Vampiric_H2019"
+ ],
+ "PXSC016": [
+  "CircleWave_H2020",
+  "CrashCrew_H2020",
+  "Regen_H2020"
+ ],
+ "PXSC027": [
+  "CrashCrew",
+  "CrashCrewSuper",
+  "Orbital_Strike",
+  "RLSSearch",
+  "RegenCrew",
+  "RegenCrewSuper",
+  "SmokeGenerator",
+  "SmokeGeneratorSuper",
+  "SpeedBooster"
+ ],
+ "PXSC050": [
+  "ArmorBuff",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "Spotter"
+ ],
+ "PXSC051": [
+  "ArmorBuff",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSC052": [
+  "RegenCrew"
+ ],
+ "PXSC057": [
+  "RegenCrew"
+ ],
+ "PXSC101": [
+  "CrashCrew"
+ ],
+ "PXSC102": [
+  "CrashCrew"
+ ],
+ "PXSC121": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PXSC122": [
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PXSC123": [
+  "CrashCrew"
+ ],
+ "PXSC501": [
+  "CrashCrew_FA2022",
+  "RegenCrew_FA2022",
+  "SpeedBooster_FA2022"
+ ],
+ "PXSC502": [
+  "CrashCrew_FA2022",
+  "RegenCrew_FA2022",
+  "SpeedBooster_FA2022"
+ ],
+ "PXSC503": [
+  "CrashCrew"
+ ],
+ "PXSD001": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PXSD002": [
+  "CrashCrew_PVP",
+  "Immortal_PVP",
+  "SpeedBooster_PVP"
+ ],
+ "PXSD003": [
+  "CrashCrew",
+  "MindControl",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PXSD004": [
+  "CrashCrew"
+ ],
+ "PXSD005": [
+  "SmokeGenerator"
+ ],
+ "PXSD007": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PXSD008": [
+  "AddConsumable_PVP",
+  "CrashCrew_PVP",
+  "HealShell_PVP",
+  "SmokeGenerator_PVP"
+ ],
+ "PXSD009": [
+  "CrashCrew_PVP",
+  "MindControl_PVP",
+  "TurnAround_PVP"
+ ],
+ "PXSD010": [
+  "CrashCrew"
+ ],
+ "PXSD011": [
+  "CrashCrew"
+ ],
+ "PXSD012": [
+  "SmokeGenerator"
+ ],
+ "PXSD013": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PXSD014": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PXSD015": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSD016": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PXSD017": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PXSD018": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSD019": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PXSD020": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSD021": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PXSD022": [
+  "CrashCrew_PVP",
+  "ImproveRegen_H2019",
+  "ImproveSpeed_H2019",
+  "Improve_H2019"
+ ],
+ "PXSD023": [
+  "CrashCrew_PVP",
+  "RegenCrew_H2019",
+  "SpeedBoosterH18",
+  "TorpedoReloader_PVP"
+ ],
+ "PXSD024": [
+  "CrashCrew_PVP",
+  "Immortal_H2019",
+  "SpeedBooster_H2019",
+  "TurnAround_H2019"
+ ],
+ "PXSD025": [
+  "CrashCrew_H2020",
+  "GoDeep",
+  "InvisibleRegen_H2020"
+ ],
+ "PXSD027": [
+  "CrashCrew",
+  "CrashCrewSuper",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SmokeGeneratorSuper",
+  "SpeedBooster",
+  "SpeedBuff",
+  "Stealth_Debuff",
+  "TorpedoReloader"
+ ],
+ "PXSD031": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PXSD032": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PXSD041": [
+  "ArmorBuff",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSD042": [
+  "ArmorBuff",
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SmokeGeneratorPremium_TimeBased"
+ ],
+ "PXSD043": [
+  "CrashCrew"
+ ],
+ "PXSD056": [
+  "CrashCrew"
+ ],
+ "PXSD102": [
+  "CrashCrew"
+ ],
+ "PXSD103": [
+  "CrashCrew"
+ ],
+ "PXSD502": [
+  "CrashCrew_FA2022",
+  "RegenCrew_FA2022",
+  "SpeedBooster_FA2022"
+ ],
+ "PXSD503": [
+  "CrashCrew_FA2022",
+  "RegenCrew_FA2022",
+  "SpeedBooster_FA2022"
+ ],
+ "PXSS107": [
+  "CrashCrew"
+ ],
+ "PXSS207": [
+  "CrashCrew"
+ ],
+ "PXSS307": [
+  "CrashCrew"
+ ],
+ "PXSS407": [
+  "CrashCrew"
+ ],
+ "PXSS507": [
+  "CrashCrew"
+ ],
+ "PXSX001": [
+  "CrashCrew"
+ ],
+ "PXSX016": [
+  "CrashCrew"
+ ],
+ "PXSX017": [
+  "CrashCrew"
+ ],
+ "PXSX023": [
+  "CrashCrew"
+ ],
+ "PXSX024": [
+  "CrashCrew"
+ ],
+ "PXSX025": [
+  "CrashCrew"
+ ],
+ "PXSX026": [
+  "CrashCrew"
+ ],
+ "PXSX033": [
+  "CrashCrew"
+ ],
+ "PXSX034": [
+  "CrashCrew"
+ ],
+ "PXSX035": [
+  "CrashCrew"
+ ],
+ "PXSX037": [
+  "CrashCrew"
+ ],
+ "PXSX039": [
+  "CrashCrew"
+ ],
+ "PXSX040": [
+  "CrashCrew"
+ ],
+ "PXSX043": [
+  "CrashCrew"
+ ],
+ "PXSX044": [
+  "CrashCrew"
+ ],
+ "PXSX045": [
+  "CrashCrew"
+ ],
+ "PXSX047": [
+  "CrashCrew"
+ ],
+ "PXSX501": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PXSX502": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PXSX743": [
+  "CrashCrew"
+ ],
+ "PXSX815": [
+  "CrashCrew"
+ ],
+ "PZSA508": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PZSB509": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PZSB519": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PZSB529": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PZSB539": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PZSB707": [
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PZSB708": [
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
+ "PZSB709": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PZSB719": [
+  "AirstrikeCountermeasures",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PZSB909": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PZSC101": [
+  "CrashCrew"
+ ],
+ "PZSC105": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
+ "PZSC106": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PZSC107": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PZSC108": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PZSC109": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PZSC110": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PZSC503": [
+  "CrashCrew"
+ ],
+ "PZSC506": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "TorpedoReloader"
+ ],
+ "PZSC508": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "TorpedoReloader"
+ ],
+ "PZSC509": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator"
+ ],
+ "PZSC518": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "Spotter",
+  "TorpedoReloader"
+ ],
+ "PZSC529": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PZSC710": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PZSC717": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PZSC718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PZSC719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "Spotter"
+ ],
+ "PZSC720": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PZSC729": [
+  "CrashCrew",
+  "RegenCrew",
+  "TorpedoReloader"
+ ],
+ "PZSC730": [
+  "CrashCrew",
+  "RLSSearch",
+  "RegenCrew",
+  "SpeedBooster"
+ ],
+ "PZSC908": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch",
+  "TorpedoReloader"
+ ],
+ "PZSC918": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "TorpedoReloader"
+ ],
+ "PZSD102": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD103": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD104": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD105": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD106": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD107": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD108": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PZSD109": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PZSD110": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PZSD111": [
+  "CrashCrew",
+  "RLSSearch",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PZSD208": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch"
+ ],
+ "PZSD506": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD508": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PZSD510": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PZSD518": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PZSD598": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "SpeedBooster"
+ ],
+ "PZSD708": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD718": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "TorpedoReloader"
+ ],
+ "PZSD719": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD728": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
+ "PZSD729": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "SpeedBooster"
+ ],
+ "PZSD910": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
+ ],
+ "PZSS716": [
+  "CrashCrew",
+  "Hydrophone",
+  "SubmarineEnergyFreeze",
+  "SubmarineLocator"
+ ]
+}

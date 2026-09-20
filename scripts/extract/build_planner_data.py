@@ -20,6 +20,7 @@ Data sources:
 Outputs (under packages/webui/src/):
   data/signals.json         data/modernizations.json
   data/commanders.json      data/skilltree.json
+  data/ship_consumables.json
   res/images/signals/       res/images/skills/ (full refresh)
   res/images/commanders/    (downscaled portraits)
 
@@ -320,6 +321,38 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
     return out
 
 
+def extract_ship_consumables(txt: str) -> dict[str, list[str]]:
+    """Per-hull consumable ability families, keyed by the ship's index token
+    (the tech-tree `index`, which prefixes GameParams ship entry names).
+
+    The WG API does not expose consumable loadouts, so the build planner
+    cannot gate consumable-gated skills (空中之眼 needs a Spotter/Fighter
+    catapult aircraft) without this table: every ShipAbilities slot carries
+    `abils` pairs of `[abilityName, currency]`; the ability name's numeric
+    prefix (`PCY010_` regular / `PXY117_` special-hull variants) is stripped
+    and a trailing `Premium` collapsed, leaving the family (`Spotter`,
+    `CrashCrew`, …). Mode-specific clones (Halloween/PVP/…) surface as their
+    own suffixed families — the planner only matches exact `Spotter` /
+    `Fighter`, so extra families are inert and missing hulls stay ungated.
+    """
+    out: dict[str, set[str]] = {}
+    for name, e in entries_of(txt, '"ShipAbilities"',
+                              lambda x: isinstance(x.get("ShipAbilities"), dict)):
+        families: set[str] = set()
+        for slot in (e.get("ShipAbilities") or {}).values():
+            if not isinstance(slot, dict):
+                continue
+            for pair in slot.get("abils") or []:
+                if not isinstance(pair, list) or not pair or not isinstance(pair[0], str):
+                    continue  # defensive: abils entries are [name, currency] pairs
+                family = re.sub(r"^P[XC]Y[0-9]+_", "", pair[0]).removesuffix("Premium")
+                if family:
+                    families.add(family)
+        if families:
+            out[name.split("_", 1)[0]] = families
+    return {idx: sorted(fams) for idx, fams in sorted(out.items())}
+
+
 # ── icon extraction (PNG blob slicing matched by size+crc against metadata) ──
 
 def find_pkg_png(pkg_data: bytes, size: int, crc: int | None) -> bytes | None:
@@ -364,7 +397,8 @@ def main() -> int:
     ap.add_argument("--portrait-size", type=int, default=256)
     ap.add_argument("--no-icons", action="store_true", help="data only, skip icon downloads/scan")
     ap.add_argument("--no-net", action="store_true", help="data only from GameParams (skip upstream names/layout)")
-    ap.add_argument("--only", choices=("signals", "modernizations", "commanders", "skilltree"),
+    ap.add_argument("--only", choices=("signals", "modernizations", "commanders", "skilltree",
+                                       "consumables"),
                     help="regenerate a single dataset (skip the rest and all icon work)")
     args = ap.parse_args()
 
@@ -377,7 +411,8 @@ def main() -> int:
 
     lang: dict = {}
     wowsft: dict = {}
-    if not args.no_net and args.only != "commanders":
+    # commanders/consumables are pure GameParams datasets — no upstream names needed.
+    if not args.no_net and args.only not in ("commanders", "consumables"):
         lang = load_lang()
         if args.only in (None, "skilltree"):
             wowsft = json.loads(
@@ -408,6 +443,12 @@ def main() -> int:
         (OUT_DATA / "skilltree.json").write_text(
             json.dumps(skilltree, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(f"[planner] skilltree.json: " + ", ".join(f"{c}={len(v)}" for c, v in skilltree.items()))
+
+    if args.only in (None, "consumables"):
+        consumables = extract_ship_consumables(txt)
+        (OUT_DATA / "ship_consumables.json").write_text(
+            json.dumps(consumables, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(f"[planner] ship_consumables.json: {len(consumables)} hulls")
 
     if args.no_icons or args.only:
         return 0
