@@ -22,7 +22,7 @@ import "./ShipMyStatsPanel.scss";
 /**
  * "My Stats" tab of the ship detail modal — the water-table header (StatsCard)
  * re-cut for a single ship, mirroring the account card's layout: centered hero
- * winrate with the PR block behind a divider, the per-ship 神了/海猴 PR
+ * winrate with the PR block behind a divider, the per-ship 神了/海猴/蛆 PR
  * verdict stamp, the account-wide four-division winrate row, the KPI strip,
  * and the 1/7/30-day recent windows against the locally recorded per-ship
  * history baselines. Works for any viewed player (the modal passes the
@@ -62,11 +62,15 @@ export default defineComponent({
       ranked.accountId != null && ranked.accountId === props.accountId ? ranked.winrate : null,
     );
 
-    /** Stamp: the ship's own PR verdict (神了 / 海猴). The career composition
+    /** Stamp: the ship's own PR verdict (神了 / 海猴 / 蛆). The career composition
      *  tags (空中小人 / 水下小人) stay on the account card — they describe the
      *  player's career, not this ship, and read as a ship verdict here. */
     const stamps = computed<StampKind[]>(() => {
-      const career = careerStamp(props.stats?.pr ?? null, props.stats?.battles ?? null);
+      const career = careerStamp(
+        props.stats?.pr ?? null,
+        props.stats?.battles ?? null,
+        props.stats?.winrate ?? null,
+      );
       return career ? [career] : [];
     });
 

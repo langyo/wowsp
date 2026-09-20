@@ -33,23 +33,30 @@ describe("prTier", () => {
 });
 
 describe("careerStamp", () => {
-  it("stamps 海猴 on red-tier careers regardless of battles", () => {
-    expect(careerStamp(400, 30)).toBe("ape");
-    expect(careerStamp(749, null)).toBe("ape");
+  it("stamps 海猴 on red-tier careers with a 40%+ winrate", () => {
+    expect(careerStamp(400, 30, 45)).toBe("ape");
+    expect(careerStamp(749, null, 40)).toBe("ape");
+  });
+
+  it("stamps 蛆 instead when the red-tier winrate is sub-40%", () => {
+    expect(careerStamp(400, 30, 39.9)).toBe("maggot");
+    expect(careerStamp(749, 3000, 20)).toBe("maggot");
+    // An unknown winrate falls back to 海猴 rather than assuming the worst.
+    expect(careerStamp(749, null, null)).toBe("ape");
   });
 
   it("stamps 神了 only on sustained purple-tier+ careers", () => {
-    expect(careerStamp(2100, 500)).toBe("miracle");
-    expect(careerStamp(2600, 3000)).toBe("miracle");
+    expect(careerStamp(2100, 500, 55)).toBe("miracle");
+    expect(careerStamp(2600, 3000, 60)).toBe("miracle");
     // Short purple careers are not 长期 yet.
-    expect(careerStamp(2300, 200)).toBeNull();
-    expect(careerStamp(2300, null)).toBeNull();
+    expect(careerStamp(2300, 200, 55)).toBeNull();
+    expect(careerStamp(2300, null, 55)).toBeNull();
   });
 
   it("leaves mid bands and unknown careers unstamped", () => {
-    expect(careerStamp(750, 10000)).toBeNull();
-    expect(careerStamp(2099, 10000)).toBeNull();
-    expect(careerStamp(null, 10000)).toBeNull();
+    expect(careerStamp(750, 10000, 30)).toBeNull();
+    expect(careerStamp(2099, 10000, 55)).toBeNull();
+    expect(careerStamp(null, 10000, 50)).toBeNull();
   });
 });
 
