@@ -274,6 +274,15 @@ pub struct OverlayAnchor {
     /// tables anyway.
     #[serde(default)]
     pub row_players_pending: bool,
+    /// True when the rows' data JUST changed under the chips (a ship sank —
+    /// the sink fast-probe flipped `row_alive`, grayed + re-sorted the
+    /// chips) and the row→name re-mapping is still catching up at the
+    /// accelerated OCR cadence: the current chips' row attribution may
+    /// change again within seconds. Purely informational — consumers keep
+    /// rendering the current chips. `#[serde(default)]` keeps older
+    /// frontends deserializing the payload unchanged.
+    #[serde(default)]
+    pub stale: bool,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.
@@ -326,6 +335,11 @@ pub struct OverlayStatus {
     /// the battle or the game-window geometry changes (or the user clears
     /// it). Every automatic state carries `false`.
     pub manual: bool,
+    /// Mirrors [`OverlayAnchor::stale`]: true while the anchored rows' data
+    /// just changed (a ship sank) and the row→name re-mapping is catching
+    /// up at the accelerated cadence — the main window can badge the panel
+    /// "updating". Always `false` in every non-detected state.
+    pub stale: bool,
 }
 
 /// One row of the in-game Tab panel, as recognized off the live frame:
