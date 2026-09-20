@@ -150,6 +150,9 @@ def add_to_tar(tar: tarfile.TarFile, arcname: str, full: Path, is_dir: bool):
     info.gname = ""
     info.mode = 0o755 if is_dir else 0o644
     if is_dir:
+        # TarInfo defaults to REGTYPE — without DIRTYPE the entry lands as
+        # a 0-byte FILE and extraction dies on the first child path.
+        info.type = tarfile.DIRTYPE
         tar.addfile(info)
     else:
         info.size = full.stat().st_size
@@ -157,9 +160,10 @@ def add_to_tar(tar: tarfile.TarFile, arcname: str, full: Path, is_dir: bool):
             tar.addfile(info, fh)
 
 
-def build_deterministic_tar(archive: Path, stage: Path, subdirs: list[str]):
-    """Reproducible tar.gz over the staged sub-directories: sorted walks,
-    zeroed metadata, gzip mtime 0. Same tree in → same bytes out, so a
+def build_deterministic_tar(archive: Path, stage: Path, entries: list[str]):
+    """Reproducible tar.gz over the staged top-level entries: a directory
+    walks in sorted order, a plain file lands as-is. Zeroed metadata,
+    gzip mtime 0. Same tree in → same bytes out, so a
     republished-but-unchanged pack keeps its asset sha256 (and clients
     keep their caches)."""
     seen_dirs: set[str] = set()
@@ -173,21 +177,24 @@ def build_deterministic_tar(archive: Path, stage: Path, subdirs: list[str]):
                 add_to_tar(tar, d, stage / d, is_dir=True)
 
     with open(archive, "wb") as raw:
-        with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+        # filename="" keeps the gzip FNAME header empty — a named fileobj
+        # would otherwise leak this build's temp path into the bytes.
+        with gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz:
             with tarfile.open(fileobj=gz, mode="w") as tar:
-                for subdir in subdirs:
-                    root = stage / subdir
+                for entry in entries:
+                    root = stage / entry
                     if not root.is_dir():
+                        add_to_tar(tar, entry, root, is_dir=False)
                         continue
-                    if subdir not in seen_dirs:
-                        seen_dirs.add(subdir)
-                        add_to_tar(tar, subdir, root, is_dir=True)
-                    entries = []
+                    if entry not in seen_dirs:
+                        seen_dirs.add(entry)
+                        add_to_tar(tar, entry, root, is_dir=True)
+                    files = []
                     for dirpath, _dirnames, filenames in os.walk(root):
                         for name in filenames:
                             full = Path(dirpath) / name
-                            entries.append((full, full.relative_to(stage).as_posix()))
-                    for full, rel in sorted(entries, key=lambda e: e[1]):
+                            files.append((full, full.relative_to(stage).as_posix()))
+                    for full, rel in sorted(files, key=lambda e: e[1]):
                         add_parents(rel)
                         add_to_tar(tar, rel, full, is_dir=False)
     print(f"  archive: {archive.name} = {archive.stat().st_size / 1024 / 1024:.1f} MB")
@@ -357,7 +364,7 @@ def build_delta(stage: Path, new_files: dict[str, str], old_manifest: dict,
         json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     archive = Path(tmp) / DELTA_ARCHIVE
-    build_deterministic_tar(archive, delta_dir, ["files"])
+    build_deterministic_tar(archive, delta_dir, [DELTA_MANIFEST, "files"])
     total = sum(e["size"] for e in manifest["changed"])
     print(
         f"  delta {old_tree_hash[-6:]}→{new_tree_hash[-6:]}: "

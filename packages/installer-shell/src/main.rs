@@ -74,10 +74,8 @@ const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.tx
 /// res-latest asset updated_at the staged models were packed from
 /// ("" when unknown — e.g. plain `cargo build`); written as the
 /// app's model-cache version stamp after relocation.
-const SHUN_RES_TREE_SHA256: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/shun-res-tree.txt"));
-const SHUN_RES_VERSION: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/shun-res-version.txt"));
+const SHUN_RES_TREE_SHA256: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-tree.txt"));
+const SHUN_RES_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-version.txt"));
 /// License texts per wizard locale (SySL + official translations).
 const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"));
 const LICENSE_ZH_HANS: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hans.txt"));
@@ -986,23 +984,18 @@ fn relocate_res_pack(install_dir: &Path, portable: bool) {
     let tree = SHUN_RES_TREE_SHA256.trim();
     let version = SHUN_RES_VERSION.trim();
     if !tree.is_empty() {
-        let stamp = format!(
-            "{{\"treeSha256\":\"{tree}\",\"version\":\"{version}\"}}"
-        );
+        let stamp = format!("{{\"treeSha256\":\"{tree}\",\"version\":\"{version}\"}}");
         let _ = std::fs::write(cache.join(".res-version.json"), stamp);
     }
 }
 
 /// Stages the install flavor (`full` / `full-webview2` / `lite`) next to the
-/// app as `wowsp-flavor.txt`. The app's updater reads it to pick its own
-/// update artifact — a lite install must keep updating with the `-lite`
-/// installer instead of silently ballooning to the full payload. Failures
-/// are ignored: the app then falls back to the full artifact name.
+/// app as `wowsp-flavor.txt`. Since 0.4 the app updater always picks the
+/// `-lite` artifact (the resource pack rides its own channel), so this is
+/// now a diagnostic marker; it stays for older builds that still read it
+/// to pick their update artifact. Failures are ignored.
 fn write_flavor_marker(install_dir: &Path) {
-    let _ = std::fs::write(
-        install_dir.join("wowsp-flavor.txt"),
-        SHUN_FLAVOR.trim().to_string(),
-    );
+    let _ = std::fs::write(install_dir.join("wowsp-flavor.txt"), SHUN_FLAVOR.trim());
 }
 
 /// Recursively copies `from` into `to` (creating directories as needed).

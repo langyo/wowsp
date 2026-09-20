@@ -53,12 +53,10 @@ fn main() {
     //    relocated pack so the app treats the shipped resources as
     //    current instead of re-downloading them on first launch.
     let res_tree = std::env::var("SHUN_RES_TREE_SHA256").unwrap_or_default();
-    std::fs::write(out_dir.join("shun-res-tree.txt"), res_tree)
-        .expect("write res tree hash");
+    std::fs::write(out_dir.join("shun-res-tree.txt"), res_tree).expect("write res tree hash");
     println!("cargo:rerun-if-env-changed=SHUN_RES_TREE_SHA256");
     let res_version = std::env::var("SHUN_RES_VERSION").unwrap_or_default();
-    std::fs::write(out_dir.join("shun-res-version.txt"), res_version)
-        .expect("write res version");
+    std::fs::write(out_dir.join("shun-res-version.txt"), res_version).expect("write res version");
     println!("cargo:rerun-if-env-changed=SHUN_RES_VERSION");
 
     // 5. License: the SySL text plus official translations. The zh texts

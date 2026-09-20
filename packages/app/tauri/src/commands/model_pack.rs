@@ -131,19 +131,15 @@ fn read_local_version(cache: &Path) -> LocalVersion {
 }
 
 fn write_local_version(cache: &Path, tree_sha256: &str, version: &str) -> Result<(), String> {
-    let raw = serde_json::json!({ "treeSha256": tree_sha256, "version": version })
-        .to_string();
-    fs::write(cache.join(VERSION_FILE), raw)
-        .map_err(|e| format!("write version stamp: {e}"))
+    let raw = serde_json::json!({ "treeSha256": tree_sha256, "version": version }).to_string();
+    fs::write(cache.join(VERSION_FILE), raw).map_err(|e| format!("write version stamp: {e}"))
 }
 
 /// Whether a LEGACY stamp exists without a hash stamp — the cache predates
 /// the hash scheme and its content hash is unknowable.
 fn has_legacy_stamp(cache: &Path) -> bool {
     read_local_version(cache).tree_sha256.is_none()
-        && LEGACY_STAMPS
-            .iter()
-            .any(|s| cache.join(s).is_file())
+        && LEGACY_STAMPS.iter().any(|s| cache.join(s).is_file())
 }
 
 // ── Mirror ladder ─────────────────────────────────────────────────────────
@@ -278,7 +274,9 @@ async fn fetch_delta_edges(client: &Client) -> Result<Vec<DeltaEdge>, String> {
         };
         let mut edges = Vec::new();
         for release in resp.as_array().into_iter().flatten() {
-            let Some(tag) = release["tag_name"].as_str() else { continue };
+            let Some(tag) = release["tag_name"].as_str() else {
+                continue;
+            };
             let Some((from, to)) = parse_delta_tag(tag) else {
                 continue;
             };
@@ -304,11 +302,7 @@ async fn fetch_delta_edges(client: &Client) -> Result<Vec<DeltaEdge>, String> {
 /// chain (BFS — the publisher retains only a linear run, but the walk
 /// stays correct for any shape). Empty when `local == latest`; the graph
 /// may simply have no path (→ full download).
-fn delta_chain(
-    edges: &[DeltaEdge],
-    local: &str,
-    latest: &str,
-) -> Vec<DeltaEdge> {
+fn delta_chain(edges: &[DeltaEdge], local: &str, latest: &str) -> Vec<DeltaEdge> {
     if local == latest {
         return Vec::new();
     }
@@ -321,10 +315,7 @@ fn delta_chain(
         .map(|(i, _)| i)
         .collect();
     let mut head = 0;
-    let mut goal: Option<usize> = queue
-        .iter()
-        .copied()
-        .find(|i| edges[*i].to == latest);
+    let mut goal: Option<usize> = queue.iter().copied().find(|i| edges[*i].to == latest);
     while head < queue.len() && goal.is_none() {
         let cur = queue[head];
         head += 1;
@@ -415,24 +406,34 @@ fn emit_progress(app: Option<&AppHandle>, progress: &ResProgress) {
     }
 }
 
-/// Stream `url` into `dest`, emitting throttled download progress and
-/// honouring the cancel flag. When `expected_sha256` is given the stream
-/// is hashed and verified, so a truncated or corrupted mirror copy fails
-/// BEFORE extraction instead of as a mid-unpack error. The generous overall
-/// timeout only caps a stalled transfer — a healthy slow link streams well
-/// within it.
-async fn download_to_file(
-    client: &Client,
-    url: &str,
-    dest: &Path,
-    app: Option<&AppHandle>,
-    expected_sha256: Option<&str>,
+/// Everything a streaming download needs besides the client + progress
+/// sink: where it goes, what it must verify as, and where it sits in the
+/// multi-segment progress display (full download = segment 1 of 1; a
+/// chain patch = its index over the total, with `base_received`/`base_total`
+/// carrying the segments already accounted for).
+struct DownloadCtx<'a> {
+    url: &'a str,
+    dest: &'a Path,
+    expected_sha256: Option<&'a str>,
     expected_size: u64,
     segment: u32,
     segments: u32,
     base_received: u64,
     base_total: u64,
+}
+
+/// Stream `ctx.url` into `ctx.dest`, emitting throttled download progress
+/// and honouring the cancel flag. When `expected_sha256` is given the
+/// stream is hashed and verified, so a truncated or corrupted mirror copy
+/// fails BEFORE extraction instead of as a mid-unpack error. The generous
+/// overall timeout only caps a stalled transfer — a healthy slow link
+/// streams well within it.
+async fn download_to_file(
+    client: &Client,
+    ctx: &DownloadCtx<'_>,
+    app: Option<&AppHandle>,
 ) -> Result<(), String> {
+    let url = ctx.url;
     let mut resp = client
         .get(url)
         .timeout(Duration::from_secs(3600))
@@ -446,19 +447,20 @@ async fn download_to_file(
     let total = if content_length > 0 {
         content_length
     } else {
-        expected_size
+        ctx.expected_size
     };
-    let mut file = File::create(dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
+    let mut file =
+        File::create(ctx.dest).map_err(|e| format!("create {}: {e}", ctx.dest.display()))?;
     let mut hasher = Sha256::new();
     let mut received = 0u64;
     let mut since_emit = 0u64;
     while let Some(chunk) = resp.chunk().await.map_err(|e| format!("{url}: {e}"))? {
         if DOWNLOAD_CANCEL.load(Ordering::Relaxed) {
-            let _ = fs::remove_file(dest);
+            let _ = fs::remove_file(ctx.dest);
             return Err("cancelled".to_string());
         }
         file.write_all(&chunk).map_err(|e| format!("write: {e}"))?;
-        if expected_sha256.is_some() {
+        if ctx.expected_sha256.is_some() {
             hasher.update(&chunk);
         }
         received += chunk.len() as u64;
@@ -469,20 +471,20 @@ async fn download_to_file(
                 app,
                 &ResProgress {
                     phase: "download".into(),
-                    received: base_received + received,
-                    total: if total > 0 { base_total + total } else { 0 },
-                    segment,
-                    segments,
+                    received: ctx.base_received + received,
+                    total: if total > 0 { ctx.base_total + total } else { 0 },
+                    segment: ctx.segment,
+                    segments: ctx.segments,
                     error: None,
                 },
             );
         }
     }
     file.flush().map_err(|e| format!("flush: {e}"))?;
-    if let Some(expected) = expected_sha256 {
+    if let Some(expected) = ctx.expected_sha256 {
         let got = hex::encode(hasher.finalize());
         if !got.eq_ignore_ascii_case(expected) {
-            let _ = fs::remove_file(dest);
+            let _ = fs::remove_file(ctx.dest);
             return Err(format!(
                 "{url}: sha256 mismatch (got {}, expected {expected}) — likely a truncated or corrupted mirror copy",
                 &got[..got.len().min(12)]
@@ -496,44 +498,28 @@ async fn download_to_file(
 /// progress stream from zero on the next candidate.
 async fn download_asset(
     client: &Client,
-    url: &str,
-    dest: &Path,
+    ctx: &DownloadCtx<'_>,
     app: Option<&AppHandle>,
-    expected_sha256: Option<&str>,
-    expected_size: u64,
-    segment: u32,
-    segments: u32,
-    base_received: u64,
-    base_total: u64,
 ) -> Result<(), String> {
     let mut last_err = String::from("no mirror attempted");
-    for candidate in mirror_candidates(url) {
-        match download_to_file(
-            client,
-            &candidate,
-            dest,
-            app,
-            expected_sha256,
-            expected_size,
-            segment,
-            segments,
-            base_received,
-            base_total,
-        )
-        .await
-        {
+    for candidate in mirror_candidates(ctx.url) {
+        let attempt = DownloadCtx {
+            url: &candidate,
+            ..*ctx
+        };
+        match download_to_file(client, &attempt, app).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 if e == "cancelled" {
-                    let _ = fs::remove_file(dest);
+                    let _ = fs::remove_file(ctx.dest);
                     return Err(e);
                 }
                 last_err = e;
             },
         }
     }
-    let _ = fs::remove_file(dest);
-    Err(format!("download {url}: {last_err}"))
+    let _ = fs::remove_file(ctx.dest);
+    Err(format!("download {}: {last_err}", ctx.url))
 }
 
 // ── Staging / atomic swap ─────────────────────────────────────────────────
@@ -567,8 +553,7 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> Result<(), String> {
         }
         let final_dir = cache.join(subdir);
         if final_dir.exists() {
-            fs::remove_dir_all(&final_dir)
-                .map_err(|e| format!("replace old {subdir} dir: {e}"))?;
+            fs::remove_dir_all(&final_dir).map_err(|e| format!("replace old {subdir} dir: {e}"))?;
         }
         fs::rename(&staged, &final_dir)
             .map_err(|e| format!("move staged {subdir} into place: {e}"))?;
@@ -624,11 +609,17 @@ struct DeltaEntry {
     sha256: String,
 }
 
-/// Apply one extracted delta (`delta_dir`, holding `delta-manifest.json`
-/// + `files/**`) to the staged tree. Every changed file is verified
-/// against its manifest sha256 BEFORE being copied over the staging tree,
-/// and every listed path is validated to stay inside the pack root.
-fn apply_delta_blocking(delta_dir: &Path, staging: &Path, expect_from: &str, expect_to: &str) -> Result<(), String> {
+/// Apply one extracted delta (`delta_dir`, holding the delta manifest and
+/// the `files/**` payload) to the staged tree. Every changed file is
+/// verified against its manifest sha256 BEFORE being copied over the
+/// staging tree, and every listed path is validated to stay inside the
+/// pack root.
+fn apply_delta_blocking(
+    delta_dir: &Path,
+    staging: &Path,
+    expect_from: &str,
+    expect_to: &str,
+) -> Result<(), String> {
     let manifest_raw = fs::read_to_string(delta_dir.join(DELTA_MANIFEST_FILE))
         .map_err(|e| format!("read {DELTA_MANIFEST_FILE}: {e}"))?;
     let manifest: DeltaManifest = serde_json::from_str(&manifest_raw)
@@ -679,8 +670,7 @@ fn unpack_delta_blocking(archive: &Path, dest: &Path) -> Result<(), String> {
     let gz = GzDecoder::new(file);
     let mut tar = Archive::new(gz);
     tar.set_preserve_permissions(true);
-    tar.unpack(dest)
-        .map_err(|e| format!("extract delta: {e}"))
+    tar.unpack(dest).map_err(|e| format!("extract delta: {e}"))
 }
 
 // ── Install passes ────────────────────────────────────────────────────────
@@ -705,17 +695,20 @@ async fn full_install(
             error: None,
         },
     );
+    let asset_url = release_download_url(RES_ARCHIVE);
     download_asset(
         client,
-        &release_download_url(RES_ARCHIVE),
-        &tmp,
+        &DownloadCtx {
+            url: &asset_url,
+            dest: &tmp,
+            expected_sha256: Some(&manifest.asset_sha256),
+            expected_size: manifest.asset_size,
+            segment: 1,
+            segments: 1,
+            base_received: 0,
+            base_total: 0,
+        },
         app,
-        Some(&manifest.asset_sha256),
-        manifest.asset_size,
-        1,
-        1,
-        0,
-        0,
     )
     .await?;
 
@@ -796,19 +789,21 @@ async fn delta_install(
         let segments = chain.len() as u32;
         for (idx, edge) in chain.iter().enumerate() {
             let segment = idx as u32 + 1;
+            // The delta archive itself is not pre-hashed on the wire;
+            // every file inside it IS, and apply verifies each one.
             download_asset(
                 client,
-                &edge.url,
-                &delta_tmp,
+                &DownloadCtx {
+                    url: &edge.url,
+                    dest: &delta_tmp,
+                    expected_sha256: None,
+                    expected_size: edge.size,
+                    segment,
+                    segments,
+                    base_received: done_bytes,
+                    base_total: 0,
+                },
                 app,
-                // The delta archive itself is not pre-hashed on the wire;
-                // every file inside it IS, and apply verifies each one.
-                None,
-                edge.size,
-                segment,
-                segments,
-                done_bytes,
-                0,
             )
             .await?;
             emit_progress(
@@ -888,12 +883,13 @@ async fn install_latest(
     // Chain patches require a known local hash AND a healthy staged tree —
     // a missing models/ directory means the stamp is stale and the chain
     // would patch a ghost.
-    if prefer_delta
-        && local.tree_sha256.is_some()
-        && dir_populated(&cache.join("models"))
-    {
+    if prefer_delta && local.tree_sha256.is_some() && dir_populated(&cache.join("models")) {
         let edges = fetch_delta_edges(client).await?;
-        let chain = delta_chain(&edges, local.tree_sha256.as_deref().unwrap_or(""), &manifest.tree_sha256);
+        let chain = delta_chain(
+            &edges,
+            local.tree_sha256.as_deref().unwrap_or(""),
+            &manifest.tree_sha256,
+        );
         if !chain.is_empty() {
             tracing::info!(steps = chain.len(), "applying resource-pack chain patches");
             return delta_install(&chain, &manifest, app, client).await;
@@ -956,7 +952,10 @@ async fn ensure_pack() -> Result<String, String> {
             // one-time migration download; only a MISSING pack pulls the
             // full archive here.
             if dir_populated(&cache.join("models")) {
-                tracing::info!(?cache, "resource pack present (hash unknown) — deferring to panel");
+                tracing::info!(
+                    ?cache,
+                    "resource pack present (hash unknown) — deferring to panel"
+                );
                 break Ok(());
             }
             break install_latest(None, &client, false).await;
@@ -979,7 +978,10 @@ async fn ensure_pack() -> Result<String, String> {
     // disk still serves — otherwise the frontend falls back to the
     // embedded publicDir snapshot.
     if installed.is_err() && dir_populated(&cache.join("models")) {
-        tracing::warn!(?cache, "using on-disk resource pack (install failed or offline)");
+        tracing::warn!(
+            ?cache,
+            "using on-disk resource pack (install failed or offline)"
+        );
         return Ok(cache.to_string_lossy().to_string());
     }
 
@@ -1036,7 +1038,10 @@ pub async fn check_res_update() -> Result<ResUpdate, String> {
                 let chain = delta_chain(
                     &edges,
                     local.tree_sha256.as_deref().unwrap_or(""),
-                    manifest.as_ref().map(|m| m.tree_sha256.as_str()).unwrap_or(""),
+                    manifest
+                        .as_ref()
+                        .map(|m| m.tree_sha256.as_str())
+                        .unwrap_or(""),
                 );
                 Some(chain.iter().map(Into::into).collect())
             },
@@ -1127,8 +1132,7 @@ pub async fn clear_res() -> Result<(), String> {
         {
             let dir = cache.join(&name);
             if dir.exists() {
-                fs::remove_dir_all(&dir)
-                    .map_err(|e| format!("remove {name}: {e}"))?;
+                fs::remove_dir_all(&dir).map_err(|e| format!("remove {name}: {e}"))?;
             }
         }
         for file in [VERSION_FILE, PACK_TMP, DELTA_TMP, DELTA_STAGING_DIR] {
@@ -1265,20 +1269,14 @@ mod tests {
     #[test]
     fn delta_tags_parse_into_hash_pairs() {
         let tag = format!("res-delta-{}-{}", hash(1), hash(2));
-        assert_eq!(
-            parse_delta_tag(&tag),
-            Some((hash(1), hash(2)))
-        );
+        assert_eq!(parse_delta_tag(&tag), Some((hash(1), hash(2))));
     }
 
     #[test]
     fn delta_tags_reject_malformed_shapes() {
         assert_eq!(parse_delta_tag("res-latest"), None);
         assert_eq!(parse_delta_tag("res-delta-short-short"), None);
-        assert_eq!(
-            parse_delta_tag(&format!("res-delta-{}-xyz", hash(1))),
-            None
-        );
+        assert_eq!(parse_delta_tag(&format!("res-delta-{}-xyz", hash(1))), None);
         assert_eq!(
             parse_delta_tag(&format!("res-delta-{}-{}-extra", hash(1), hash(2))),
             None
