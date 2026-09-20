@@ -13,7 +13,13 @@
  * Every label is an i18n key (resolved by the component via `t()`), so this
  * module emits keys + raw values; formatting (units, rounding) is done here
  * so the component stays declarative.
+ *
+ * Anti-Air needs the raw GameParams entry: WG's default_profile only carries
+ * the opaque `anti_aircraft.defense` rating (slot DPS/range always null/-1),
+ * so the per-band rows come from `buildAntiAirRows(gameparams)` when the
+ * caller has unpacked one.
  */
+import { buildAntiAirRows } from "./antiAir";
 export interface SpecRow {
   /** i18n key under `ships.spec.*`, e.g. "hp" → "ships.spec.hp". */
   key: string;
@@ -119,8 +125,11 @@ function mainGunCaliber(art: any): number | null {
  * Build the player-friendly spec tree from a raw WG `default_profile`.
  * Returns groups in display order; empty groups (no rows) are omitted so a
  * destroyer simply has no "Anti-Air" group rather than showing "—".
+ * `gameparams` is the raw GameParams entry the modal unpacked (optional —
+ * without it the AA group is simply absent, matching the WG API's lack of
+ * usable AA numbers).
  */
-export function buildShipSpecs(profile: Profile, nation?: string): SpecGroup[] {
+export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: unknown): SpecGroup[] {
   if (!profile || typeof profile !== "object") return [];
   const p = profile as Record<string, any>;
   const groups: SpecGroup[] = [];
@@ -214,38 +223,10 @@ export function buildShipSpecs(profile: Profile, nation?: string): SpecGroup[] {
   if (torpRows.length) groups.push({ group: "torpedoes", icon: "Target", rows: torpRows });
 
   // ── Anti-Aircraft ─────────────────────────────────────────────────────
-  const aa = p.anti_aircraft as object | undefined;
-  const aaRows: SpecRow[] = [];
-  if (aa && typeof aa === "object") {
-    const rating = num((aa as any).defense);
-    if (rating != null && rating > 0) aaRows.push({ key: "aaRating", value: String(rating) });
-    // WG slots are keyed by range bucket; split into short/mid/long by distance.
-    const slots = (aa as any).slots as Record<string, any> | undefined;
-    if (slots && typeof slots === "object") {
-      const slotList = Object.values(slots)
-        .map((s) => ({
-          dist: num((s as any).distance),
-          dmg: num((s as any).avg_damage),
-          guns: num((s as any).guns),
-        }))
-        .filter((s) => s.dist != null && s.dist > 0 && s.dmg != null);
-      slotList.sort((a, b) => (a.dist ?? 0) - (b.dist ?? 0));
-      // <3.0 short, 3.0–5.0 mid, >5.0 long (rough aura split).
-      const bandOf = (d: number): "short" | "mid" | "long" =>
-        d <= 3.0 ? "short" : d <= 5.0 ? "mid" : "long";
-      const bands: Record<string, { dmg: number; dist: number }> = {};
-      for (const s of slotList) {
-        const b = bandOf(s.dist!);
-        if (!bands[b] || s.dist! > bands[b].dist) bands[b] = { dmg: s.dmg!, dist: s.dist! };
-      }
-      if (bands.long)
-        aaRows.push({ key: "aaLongRange", value: `${bands.long.dmg.toFixed(0)} DPS · ${bands.long.dist} km` });
-      if (bands.mid)
-        aaRows.push({ key: "aaMidRange", value: `${bands.mid.dmg.toFixed(0)} DPS · ${bands.mid.dist} km` });
-      if (bands.short)
-        aaRows.push({ key: "aaShortRange", value: `${bands.short.dmg.toFixed(0)} DPS · ${bands.short.dist} km` });
-    }
-  }
+  // WG's default_profile only carries the opaque `defense` rating (its slot
+  // DPS/range fields are always null/-1); the real per-aura numbers come
+  // from the raw GameParams entry the modal already unpacks.
+  const aaRows = buildAntiAirRows(gameparams);
   if (aaRows.length) groups.push({ group: "antiAir", icon: "Plane", rows: aaRows });
 
   // ── Mobility ──────────────────────────────────────────────────────────

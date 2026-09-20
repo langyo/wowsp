@@ -48,6 +48,9 @@ export default defineComponent({
   props: {
     ship: { type: Object as PropType<ShipInfo>, required: true },
     build: { type: Object as PropType<PlannerBuild>, required: true },
+    /** Raw GameParams entry (lazy-fetched by the modal) — feeds the
+     *  per-band AA rows; null keeps the AA group absent. */
+    gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
   },
   setup(props) {
     const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, any>);
@@ -61,7 +64,9 @@ export default defineComponent({
      * rows with modified values + delta formatting where applicable.
      */
     const observerGroups = computed(() => {
-      const groups = buildShipSpecs(profile.value, props.ship.nation);
+      // computeDelta has no cases for the new per-band AA row keys — those
+      // rows render statically, exactly like the old rating row did.
+      const groups = buildShipSpecs(profile.value, props.ship.nation, props.gameparams);
       if (groups.length === 0) return [];
       const { base, modified } = stats.value;
       return groups.map((g) => ({

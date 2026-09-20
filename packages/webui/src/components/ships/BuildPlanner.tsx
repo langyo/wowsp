@@ -244,6 +244,9 @@ export default defineComponent({
     build: { type: Object as PropType<PlannerBuild>, required: true },
     /** Install root — feeds the GameParams price walk for cost calc. */
     gameRoot: { type: String, default: "" },
+    /** Raw GameParams entry the modal unpacked — forwarded to DataObserver
+     *  for the per-band AA rows (WG's profile carries no usable AA data). */
+    gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
   },
   emits: {
     "update:build": (_v: PlannerBuild) => true,
@@ -1151,7 +1154,7 @@ export default defineComponent({
                   onInput={(e) => setBuild({ healthPct: Number((e.target as HTMLInputElement).value) / 100 })}
                 />
               </div>
-              <DataObserver ship={props.ship} build={b} />
+              <DataObserver ship={props.ship} build={b} gameparams={props.gameparams} />
             </aside>
           </div>
         </div>
