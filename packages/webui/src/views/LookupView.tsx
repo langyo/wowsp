@@ -18,6 +18,7 @@ import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
+import { tierToRoman } from "@/utils/tierRoman";
 import { winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
@@ -513,10 +514,10 @@ export default defineComponent({
                             </span>
                             <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
                             <span class="lookup-view__ship-name">
-                              {displayName(s)}
                               {off?.tier != null ? (
-                                <em class="lookup-view__ship-tier">{off.tier}</em>
+                                <em class="lookup-view__ship-tier">{tierToRoman(off.tier)}</em>
                               ) : null}
+                              {displayName(s)}
                             </span>
                             <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
                             <span
