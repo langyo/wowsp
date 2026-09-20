@@ -131,6 +131,10 @@
     ]
    }
   ],
+  "epicSkills": [
+   "GmShellReload",
+   "GmTurn"
+  ],
   "portrait": "Halsey.webp"
  },
  {
@@ -325,6 +329,10 @@
     ]
    }
   ],
+  "epicSkills": [
+   "ConsumablesReload",
+   "PlanesDefenseDamageConstant"
+  ],
   "portrait": "CUNNINGHAM.webp"
  },
  {
@@ -489,6 +497,10 @@
     ]
    }
   ],
+  "epicSkills": [
+   "DefenseHp",
+   "PlanesHp"
+  ],
   "portrait": "AUBOYNEAU.webp"
  },
  {
@@ -591,6 +603,11 @@
     ]
    }
   ],
+  "epicSkills": [
+   "DefenseCritProbability",
+   "GmTurn",
+   "PlanesForsageDuration"
+  ],
   "portrait": "LUTJENS.webp"
  },
  {
@@ -679,6 +696,10 @@
      }
     ]
    }
+  ],
+  "epicSkills": [
+   "HeFireProbability",
+   "HeFireProbabilityCv"
   ],
   "portrait": "Helfrich.webp"
  },
@@ -790,6 +811,11 @@
      }
     ]
    }
+  ],
+  "epicSkills": [
+   "GmShellReload",
+   "PlanesTorpedoSpeed",
+   "TorpedoSpeed"
   ],
   "portrait": "SANSONETTI.webp"
  },
@@ -983,6 +1009,10 @@
     ]
    }
   ],
+  "epicSkills": [
+   "DefenseCritProbability",
+   "GmTurn"
+  ],
   "portrait": "Yamamoto.webp"
  },
  {
@@ -1113,6 +1143,9 @@
     ]
    }
   ],
+  "epicSkills": [
+   "ConsumablesReload"
+  ],
   "portrait": "KUZNETSOV.webp"
  },
  {
@@ -1215,6 +1248,13 @@
      }
     ]
    }
+  ],
+  "epicSkills": [
+   "ApDamageBb",
+   "ApDamageCa",
+   "HeFireProbability",
+   "PlanesTorpedoSpeed",
+   "TorpedoSpeed"
   ],
   "portrait": "Topete.webp"
  },
@@ -1331,6 +1371,10 @@
     ]
    }
   ],
+  "epicSkills": [
+   "ArmamentReloadAaDamage",
+   "PlanesDefenseDamageConstant"
+  ],
   "portrait": "Collins.webp"
  },
  {
@@ -1397,6 +1441,11 @@
     ]
    }
   ],
+  "epicSkills": [
+   "DefenseHp",
+   "PlanesHp",
+   "TriggerSpeedBb"
+  ],
   "portrait": "Lisboa.webp"
  },
  {
@@ -1449,6 +1498,9 @@
      }
     ]
    }
+  ],
+  "epicSkills": [
+   "ArmamentReloadAaDamage"
   ],
   "portrait": "SWIRSKI.webp"
  },
@@ -1622,6 +1674,12 @@
     ]
    }
   ],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "ConsumablesDuration",
+   "DetectionTorpedoRange",
+   "PlanesForsageDuration"
+  ],
   "portrait": "Sa_Zhenbing.webp"
  },
  {
@@ -1631,6 +1689,10 @@
    "USA"
   ],
   "talents": [],
+  "epicSkills": [
+   "GmShellReload",
+   "GmTurn"
+  ],
   "portrait": "Seagal.webp"
  },
  {
@@ -1640,6 +1702,10 @@
    "USA"
   ],
   "talents": [],
+  "epicSkills": [
+   "GmShellReload",
+   "GmTurn"
+  ],
   "portrait": "USACAP.webp"
  },
  {
@@ -1649,6 +1715,10 @@
    "USA"
   ],
   "talents": [],
+  "epicSkills": [
+   "GmShellReload",
+   "GmTurn"
+  ],
   "portrait": "John_Paul_Jones.webp"
  },
  {
@@ -1658,6 +1728,11 @@
    "USA"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "GmTurn",
+   "PlanesHp"
+  ],
   "portrait": "USAOVECHKIN.webp"
  },
  {
@@ -1668,6 +1743,11 @@
    "Russia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "GmTurn",
+   "PlanesHp"
+  ],
   "portrait": "USAOVECHKINPREM.webp"
  },
  {
@@ -1678,6 +1758,11 @@
    "Russia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "GmTurn",
+   "PlanesHp"
+  ],
   "portrait": "USAOVECHKINPREMHELL.webp"
  },
  {
@@ -1696,6 +1781,10 @@
    "USA"
   ],
   "talents": [],
+  "epicSkills": [
+   "GmShellReload",
+   "GmTurn"
+  ],
   "portrait": "Ernest_E_Evans.webp"
  },
  {
@@ -1705,6 +1794,10 @@
    "USA"
   ],
   "talents": [],
+  "epicSkills": [
+   "GmShellReload",
+   "GmTurn"
+  ],
   "portrait": "David_Farragut.webp"
  },
  {
@@ -1714,6 +1807,11 @@
    "United_Kingdom"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesDuration",
+   "ConsumablesReload",
+   "GmTurn"
+  ],
   "portrait": "Dunk_Capn.webp"
  },
  {
@@ -1723,6 +1821,11 @@
    "United_Kingdom"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesDuration",
+   "ConsumablesReload",
+   "GmTurn"
+  ],
   "portrait": "UKCAP.webp"
  },
  {
@@ -1750,6 +1853,11 @@
    "United_Kingdom"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesDuration",
+   "ConsumablesReload",
+   "GmTurn"
+  ],
   "portrait": "David_Beatty.webp"
  },
  {
@@ -1759,6 +1867,10 @@
    "France"
   ],
   "talents": [],
+  "epicSkills": [
+   "ArmamentReloadAaDamage",
+   "GmTurn"
+  ],
   "portrait": "FRANCE_CAP.webp"
  },
  {
@@ -1768,6 +1880,10 @@
    "France"
   ],
   "talents": [],
+  "epicSkills": [
+   "ArmamentReloadAaDamage",
+   "GmTurn"
+  ],
   "portrait": "FRANCECAPPREM.webp"
  },
  {
@@ -1777,6 +1893,10 @@
    "Germany"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesReload",
+   "DetectionTorpedoRange"
+  ],
   "portrait": "GERCAP.webp"
  },
  {
@@ -1786,6 +1906,10 @@
    "Germany"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesReload",
+   "DetectionTorpedoRange"
+  ],
   "portrait": "GERCAPPREM.webp"
  },
  {
@@ -1820,6 +1944,10 @@
    "Germany"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesReload",
+   "DetectionTorpedoRange"
+  ],
   "portrait": "Ernst_Lindemann.webp"
  },
  {
@@ -1829,6 +1957,10 @@
    "Germany"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesReload",
+   "DetectionTorpedoRange"
+  ],
   "portrait": "Franz_von_Hipper.webp"
  },
  {
@@ -1838,6 +1970,10 @@
    "Netherlands"
   ],
   "talents": [],
+  "epicSkills": [
+   "AaPrioritysectorDamageConstant",
+   "HeFireProbability"
+  ],
   "portrait": "De_Ruyter.webp"
  },
  {
@@ -1847,6 +1983,10 @@
    "Netherlands"
   ],
   "talents": [],
+  "epicSkills": [
+   "AaPrioritysectorDamageConstant",
+   "HeFireProbability"
+  ],
   "portrait": "De_Jong.webp"
  },
  {
@@ -1856,6 +1996,11 @@
    "Italy"
   ],
   "talents": [],
+  "epicSkills": [
+   "GmShellReload",
+   "PlanesTorpedoSpeed",
+   "TorpedoSpeed"
+  ],
   "portrait": "Carlo_Bergamini.webp"
  },
  {
@@ -1865,6 +2010,11 @@
    "Japan"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseHp",
+   "PlanesHp"
+  ],
   "portrait": "Raizo_Suzuki.webp"
  },
  {
@@ -1874,6 +2024,11 @@
    "Japan"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseHp",
+   "PlanesHp"
+  ],
   "portrait": "Takeo_Suzuki.webp"
  },
  {
@@ -1883,6 +2038,11 @@
    "Japan"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseHp",
+   "PlanesHp"
+  ],
   "portrait": "Keizo_Komura.webp"
  },
  {
@@ -1917,6 +2077,11 @@
    "Japan"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseHp",
+   "PlanesHp"
+  ],
   "portrait": "Seiichi_Ito.webp"
  },
  {
@@ -1926,6 +2091,11 @@
    "Japan"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseHp",
+   "PlanesHp"
+  ],
   "portrait": "Kosaku_Aruga.webp"
  },
  {
@@ -1935,6 +2105,11 @@
    "Russia"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseCritProbability",
+   "GmTurn"
+  ],
   "portrait": "MayCap.webp"
  },
  {
@@ -1944,6 +2119,11 @@
    "Russia"
   ],
   "talents": [],
+  "epicSkills": [
+   "ConsumablesCrashcrewRegencrewReload",
+   "DefenseCritProbability",
+   "GmTurn"
+  ],
   "portrait": "RUSCAP.webp"
  },
  {
@@ -1953,6 +2133,11 @@
    "Russia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "GmTurn",
+   "PlanesHp"
+  ],
   "portrait": "USSROVECHKIN.webp"
  },
  {
@@ -2042,6 +2227,12 @@
    "Pan_Asia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "HeFireProbability",
+   "HeFireProbabilityCv",
+   "PlanesHp"
+  ],
   "portrait": "Da_Rong.webp"
  },
  {
@@ -2051,6 +2242,12 @@
    "Pan_Asia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "HeFireProbability",
+   "HeFireProbabilityCv",
+   "PlanesHp"
+  ],
   "portrait": "Quan_Rong.webp"
  },
  {
@@ -2079,6 +2276,11 @@
    "Pan_Asia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "GmTurn",
+   "PlanesHp"
+  ],
   "portrait": "CNBANNY.webp"
  },
  {
@@ -2088,6 +2290,11 @@
    "Pan_Asia"
   ],
   "talents": [],
+  "epicSkills": [
+   "DefenseHp",
+   "GmTurn",
+   "PlanesHp"
+  ],
   "portrait": "CNRABBIT.webp"
  }
 ]

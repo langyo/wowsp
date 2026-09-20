@@ -249,12 +249,19 @@ def extract_commanders(txt: str) -> list[dict]:
                 "actions": actions,
             })
         ships = p.get("ships") or {}
-        rows.append({
+        # The captain's personal copy of the Crew Skills table flags the skill
+        # codes they teach at enhanced ("epic") values — the in-game green
+        # corner ribbon on the skill tree.
+        epic = sorted(code for code, sk in (e.get("Skills") or {}).items() if sk.get("isEpic"))
+        row = {
             "name": name,
             "person": p["personName"],
             "nations": ships.get("nation") or [],
             "talents": talents,
-        })
+        }
+        if epic:
+            row["epicSkills"] = epic
+        rows.append(row)
     rows.sort(key=lambda r: (not r["talents"], r["name"]))
     return rows
 

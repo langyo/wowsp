@@ -117,6 +117,9 @@ interface CommanderEntry {
   nations: string[];
   portrait?: string;
   talents: CommanderTalent[];
+  /** Skill codes this captain teaches at enhanced ("epic") values — the
+   *  green corner ribbon on the skill tree. */
+  epicSkills?: string[];
 }
 
 /** One rendered line of the flag hover card. */
@@ -367,6 +370,15 @@ export default defineComponent({
         ? COMMANDERS.find((c) => c.name === props.build.commander) ?? null
         : null,
     );
+    /** Skills the selected legendary captain teaches at enhanced ("epic")
+     *  values, restricted to the current class tree — the green corner
+     *  ribbon on the skill grid. */
+    const epicSkills = computed(() => {
+      const epic = selectedCommander.value?.epicSkills;
+      if (!epic?.length) return new Set<string>();
+      const codes = new Set(tree.value.map((s) => s.code));
+      return new Set(epic.filter((c) => codes.has(c)));
+    });
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
      *  when their *UI twin is present, internal enums and activation
      *  plumbing (tier-scaling / regen-cap switches, the dead GSMShotDelay)
@@ -607,7 +619,13 @@ export default defineComponent({
         return <p class="planner-v__empty">{t("ships.skills.noTree")}</p>;
       }
       const columns = skillColumns.value;
-      return [1, 2, 3, 4].map((tier) => {
+      const legend =
+        epicSkills.value.size > 0 ? (
+          <p class="planner-v__note" key="epic-legend">
+            {t("ships.skills.epicLegend")}
+          </p>
+        ) : null;
+      const tierRows = [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
         // Dense column map — sparse tiers (DD tier-4, the SS tree) carry
@@ -624,7 +642,11 @@ export default defineComponent({
           }
           const picked = !!props.build.skills[skill.code];
           const banned = skillBan(skill);
+          const enhanced = epicSkills.value.has(skill.code);
           const name = skillName(skill);
+          const hint = enhanced
+            ? `${skillHint(skill)} — ${t("ships.skills.epicRibbon")}`
+            : skillHint(skill);
           cells.push(
             <div
               class={[
@@ -639,7 +661,7 @@ export default defineComponent({
                 class="skill-tile-v__btn"
                 disabled={!unlocked || !!banned}
                 onClick={() => (unlocked && !banned ? toggleSkill(skill) : null)}
-                data-hint={banned ? t("ships.skills.notApplicable") : skillHint(skill)}
+                data-hint={banned ? t("ships.skills.notApplicable") : hint}
               >
                 <span class="skill-tile-v__icon">
                   <AssetImage
@@ -650,6 +672,11 @@ export default defineComponent({
                   />
                 </span>
               </button>
+              {/* Sibling of the button so the active/banned filters never
+                  wash the ribbon out. */}
+              {enhanced ? (
+                <span class="skill-tile-v__ribbon skill-tile-v__ribbon--epic" />
+              ) : null}
               {banned ? (
                 <span class="skill-tile-v__ban">
                   <Ban size={18} />
@@ -680,6 +707,7 @@ export default defineComponent({
           </div>
         );
       });
+      return legend ? [legend, ...tierRows] : tierRows;
     }
 
     function renderCommanders() {

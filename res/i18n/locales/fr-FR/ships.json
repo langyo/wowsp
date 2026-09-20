@@ -307,6 +307,8 @@
     "noCommandersForNation": "Aucun commandant spécial disponible pour cette nation.",
     "slotEmpty": "Aucune amélioration disponible",
     "commanderLegend": "Badge « Légendaire » = commandant légendaire avec des talents uniques ; « Élite » = commandant d'élite/spécial.",
+    "epicRibbon": "Améliorée par le commandant légendaire",
+    "epicLegend": "Ruban vert = compétence enseignée par le commandant légendaire sélectionné avec des valeurs améliorées.",
     "activator": {
       "DamageDoneActivator": "Dégâts infligés",
       "TargetsDamagedActivator": "Cibles touchées",
