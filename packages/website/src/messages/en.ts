@@ -305,6 +305,7 @@ lookup: {
     loadFailed: "Couldn't load the latest release — grab it from GitHub Releases",
     assets: "Release assets",
     notes: "All assets are published on GitHub Releases",
+    mirrorNote: "File downloads will be served from the gh-proxy.com mirror",
   },
   footer: {
     license: "Licensed under SySL-1.0",

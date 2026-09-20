@@ -305,6 +305,7 @@ lookup: {
     loadFailed: "最新リリースを取得できませんでした。GitHub Releases から直接ダウンロードしてください",
     assets: "リリースアセット",
     notes: "すべてのアセットは GitHub Releases で公開されています",
+    mirrorNote: "ダウンロードは gh-proxy.com ミラー経由で行われます",
   },
   footer: {
     license: "SySL-1.0 ライセンス",

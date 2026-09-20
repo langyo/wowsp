@@ -1,7 +1,7 @@
-import { defineComponent, onMounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
-  HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check,
+  HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check, Zap,
 } from "@lucide/vue";
 import { LinkButton, Reveal } from "@/components/ui";
 import "./DownloadView.scss";
@@ -10,6 +10,11 @@ const GITHUB = "https://github.com/langyo/wowsp";
 const RELEASES = `${GITHUB}/releases/latest`;
 const API_LATEST = "https://api.github.com/repos/langyo/wowsp/releases/latest";
 const API_LIST = "https://api.github.com/repos/langyo/wowsp/releases?per_page=10";
+
+/* GitHub asset downloads are commonly unreachable from mainland China;
+ * the zh-Hans locale routes them through the gh-proxy.com mirror (the
+ * raw github.com URL is appended verbatim after the prefix). */
+const GH_PROXY = "https://gh-proxy.com/";
 
 interface ReleaseAsset {
   name: string;
@@ -85,7 +90,11 @@ function formatSize(bytes: number): string {
 export default defineComponent({
   name: "DownloadView",
   setup() {
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
+
+    // Mirrored asset links for the Simplified-Chinese locale (GH_PROXY);
+    // computed so the language switcher toggles it live.
+    const mirror = computed(() => locale.value === "zh-Hans");
 
     // Latest release — fetched live so version numbers never go stale.
     // `phase` keeps the pending fetch (placeholder row) apart from a real
@@ -170,14 +179,25 @@ export default defineComponent({
         {/* ── assets ── */}
         <section class="download__assets container">
           <Reveal>
-            <h2>{t("download.assets")}</h2>
+            <div class="download__assets-head">
+              <h2>{t("download.assets")}</h2>
+              {/* Hidden on a failed fetch: then the only link left goes
+               * straight to the releases page, and the mirror promise
+               * would no longer match what actually downloads. */}
+              {mirror.value && phase.value !== "failed" && (
+                <span class="accent-pill download__mirror">
+                  <Zap size={12} />
+                  {t("download.mirrorNote")}
+                </span>
+              )}
+            </div>
           </Reveal>
           <Reveal delay={80}>
             <ul class="download__list glass-panel">
               {phase.value === "ready" && release.value
                 ? release.value.assets.map((a) => (
                   <li key={a.name}>
-                    <a href={a.url} target="_blank" rel="noopener">
+                    <a href={mirror.value ? GH_PROXY + a.url : a.url} target="_blank" rel="noopener">
                       <span class="download__file">
                         <FileDown size={14} />
                         {a.name}
