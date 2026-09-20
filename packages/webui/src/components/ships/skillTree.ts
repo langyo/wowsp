@@ -19,6 +19,7 @@
  * The commander budget is 21 pts, matching the in-game system.
  */
 import skilltreeData from "../../data/skilltree.json";
+import crewPresetsData from "../../data/crew_presets.json";
 
 export type SkillClass = "BB" | "CA" | "DD" | "CV" | "SS";
 
@@ -57,6 +58,46 @@ export const TIER_UNLOCK: Record<2 | 3 | 4, number> = { 2: 1, 3: 2, 4: 3 };
 
 /** Total commander budget. */
 export const SKILL_BUDGET = 21;
+
+// ── In-game recommended builds (yellow corner ribbon) ─────────────────────
+// `crew_presets.json` mirrors the client's CrewSkillRecomendationPresets
+// table: ordered build steps keyed by exact GameParams ship name, ship-group
+// name or ship class. Resolution is most-specific-wins (exact ship → group →
+// class), matching the in-game cascade; the ribbon marks every skill the
+// winning preset teaches.
+interface CrewPresetData {
+  presets: Record<string, string[][]>;
+  groups: Record<string, string[]>;
+}
+const CREW_PRESETS = crewPresetsData as CrewPresetData;
+
+const GP_CLASS_BY_SKILL_CLASS: Record<SkillClass, string> = {
+  BB: "Battleship",
+  CA: "Cruiser",
+  DD: "Destroyer",
+  CV: "AirCarrier",
+  SS: "Submarine",
+};
+
+/** Most specific preset key naming this ship, or null. GameParams names and
+ *  group members match by leading tech-tree index token. */
+function presetKeyFor(index: string, cls: SkillClass): string | null {
+  for (const name of Object.keys(CREW_PRESETS.presets)) {
+    if (name.split("_")[0] === index) return name;
+  }
+  for (const [group, members] of Object.entries(CREW_PRESETS.groups)) {
+    if (members.some((m) => m.split("_")[0] === index)) return group;
+  }
+  const byClass = GP_CLASS_BY_SKILL_CLASS[cls];
+  return byClass in CREW_PRESETS.presets ? byClass : null;
+}
+
+/** Skill codes taught by the ship's in-game recommended build. */
+export function recommendedSkills(index: string | null, shipType: string): Set<string> {
+  const key = index ? presetKeyFor(index, skillClassFor(shipType)) : null;
+  if (!key) return new Set();
+  return new Set((CREW_PRESETS.presets[key] ?? []).flat());
+}
 
 /** Per-class skill list from skilltree.json (tier-ascending, stable order). */
 const CLASS_SKILLS = skilltreeData as Record<SkillClass, Skill[]>;

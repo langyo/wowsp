@@ -309,6 +309,8 @@
     "commanderLegend": "Insignia \"Legendario\" = comandante legendario con talentos únicos; \"Élite\" = comandante de élite/especial.",
     "epicRibbon": "Mejorada por el comandante legendario",
     "epicLegend": "Cinta verde = habilidad que el comandante legendario seleccionado enseña con valores mejorados.",
+    "recRibbon": "Recomendada por el juego",
+    "recLegend": "Cinta ámbar = habilidad de la build recomendada por el juego para este barco.",
     "activator": {
       "DamageDoneActivator": "Daño infligido",
       "TargetsDamagedActivator": "Objetivos alcanzados",
