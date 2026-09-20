@@ -166,7 +166,9 @@ export default defineComponent({
             >
               <span class="sidebar__footer-btn-key">{t("common.game.versionLabel")}</span>
               <span class="sidebar__footer-btn-value">
-                <PlatformIcon kind={activeInstall.value?.kind} size={18} />
+                {/* 22px matches the PlayerBadge on the account row below so
+                    the two text columns share one left edge. */}
+                <PlatformIcon kind={activeInstall.value?.kind} size={22} />
                 <span class="sidebar__footer-btn-text">
                   {activeInstall.value
                     ? kindLabel(activeInstall.value.kind)
