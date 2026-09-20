@@ -6,6 +6,8 @@
 
 pub mod appdata;
 pub mod arena_info;
+pub mod decision_ai;
+pub mod decision_tick;
 pub mod encyclopedia;
 pub mod exports;
 pub mod game_detect;
@@ -24,12 +26,14 @@ pub mod overlay_detect;
 pub mod packets;
 pub mod ranked;
 pub mod replay;
+pub mod replay_probe;
 pub mod res_mods;
 pub mod row_match;
 pub mod row_recognize;
 pub mod screenshot;
 pub mod ship_stats;
 pub mod tab_dump;
+pub mod terrain_los;
 pub mod trends;
 pub mod update;
 pub mod wg_api;

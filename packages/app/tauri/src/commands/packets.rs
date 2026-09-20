@@ -104,6 +104,10 @@ const PACKET_ENTITY_CONTROL: u32 = 0x02;
 const PACKET_CAMERA_MODE: u32 = 0x27;
 const PACKET_CAMERA_FREELOOK: u32 = 0x2f;
 const PACKET_SUB_CONTROLLER: u32 = 0x31;
+/// CruiseState (0x32): the recorder's own discrete control presets —
+/// `u32 controller, i32 level` (8-byte payload; see [`parse_cruise_state`]
+/// and [`wowsp_tauri_shared::CruiseSample`] for the reverse-engineered
+/// semantics). Legacy (<12.6.0) wire id is 0x31 via [`remap_legacy_packet_id`].
 const PACKET_CRUISE_STATE: u32 = 0x32;
 const PACKET_SHOT_TRACKING: u32 = 0x33;
 const PACKET_GUN_MARKER: u32 = 0x18;
@@ -214,6 +218,14 @@ pub struct DecodedReplay {
     /// authoritative per-weapon totals for the recorder, incl. aircraft
     /// weapons. Empty on versions whose exposed method id isn't pinned.
     pub damage_stats: Vec<wowsp_tauri_shared::DamageStatSample>,
+    /// Recorder control-input timeline (CruiseState, 0x32) — engine telegraph
+    /// and rudder presets (experiment E2). Recorder-scoped, like `camera`.
+    pub cruise: Vec<wowsp_tauri_shared::CruiseSample>,
+    /// Entity id of the recorder's own vehicle — recovered from the avatar's
+    /// PlayerPosition (0x2c) packets: a subset of them link the avatar entity
+    /// (created by CellPlayerCreate) to the vehicle it occupies. `None` when
+    /// no link was seen.
+    pub recorder_vehicle: Option<i32>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -406,6 +418,11 @@ fn walk_frames(
     let mut ward_removes: Vec<wowsp_tauri_shared::WardRemoveEvent> = Vec::new();
     let mut shot_kills: Vec<wowsp_tauri_shared::ShotKillEvent> = Vec::new();
     let mut damage_stats: Vec<wowsp_tauri_shared::DamageStatSample> = Vec::new();
+    let mut cruise: Vec<wowsp_tauri_shared::CruiseSample> = Vec::new();
+    // The recorder's avatar (CellPlayerCreate) and, once its 0x2c stream
+    // links to the occupied vehicle, the recorder's own ship entity id.
+    let mut avatar_id: Option<i32> = None;
+    let mut recorder_vehicle: Option<i32> = None;
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -440,6 +457,19 @@ fn walk_frames(
             // PACKET_PLAYER_POSITION, and modern clients never emit it.
             PACKET_PLAYER_POSITION | PACKET_POSITION_AUX => {
                 if let Some(sample) = parse_player_position(payload, time) {
+                    // The avatar's own 0x2c stream occasionally links to the
+                    // vehicle it occupies (linked != 0) — the only
+                    // deterministic recorder-vehicle join in the stream.
+                    // Only 0x2c is trusted for it: the 0x2a aux stream also
+                    // carries the avatar (spectate/aircraft following) and
+                    // its links were not verified.
+                    if ptype == PACKET_PLAYER_POSITION
+                        && recorder_vehicle.is_none()
+                        && Some(sample.entity_id) == avatar_id
+                        && sample.vehicle_id != 0
+                    {
+                        recorder_vehicle = Some(sample.vehicle_id);
+                    }
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
@@ -461,6 +491,9 @@ fn walk_frames(
                     let mut kind = created.clone_into_kind();
                     kind.entity_type = ENTITY_TYPE_AVATAR;
                     kinds.entry(eid).or_insert(kind);
+                    if avatar_id.is_none() {
+                        avatar_id = Some(eid);
+                    }
                 }
             },
             PACKET_ENTITY_DESTROY => {
@@ -568,6 +601,9 @@ fn walk_frames(
             },
             PACKET_CRUISE_STATE => {
                 diagnostics.cruise_states += 1;
+                if let Some(sample) = parse_cruise_state(payload, time) {
+                    cruise.push(sample);
+                }
             },
             PACKET_SHOT_TRACKING => {
                 diagnostics.shot_trackings += 1;
@@ -694,6 +730,11 @@ fn walk_frames(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
+    cruise.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     DecodedReplay {
         positions,
         kinds,
@@ -724,6 +765,8 @@ fn walk_frames(
         ward_removes,
         shot_kills,
         damage_stats,
+        cruise,
+        recorder_vehicle,
     }
 }
 
@@ -1480,6 +1523,35 @@ fn parse_camera_mode(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::Hp
     Some(wowsp_tauri_shared::HpSample {
         time,
         value: u32::from_le_bytes(payload[0..4].try_into().ok()?),
+    })
+}
+
+/// Parse a CruiseState (0x32) payload — the recorder's discrete control
+/// presets (experiment E2). Reverse-engineered layout (every packet on the
+/// 15.8.0 reference replay was exactly 8 bytes):
+///
+///   `u32 controller, i32 level` (both little-endian)
+///
+/// Despite the module's entity-centric packets, the first u32 is NOT a
+/// BigWorld entity id — observed values are only 0/1, with 0 verified as the
+/// engine telegraph (throttle) and 1 as the rudder via position/yaw
+/// correlation on the reference replay. Levels with no confirmed meaning
+/// decode with `value: None`; among confirmed levels the rudder magnitude
+/// mapping is itself inferred (5-mark scaling), not separately confirmed —
+/// see [`wowsp_tauri_shared::CruiseSample`] for the per-branch evidence
+/// grading. Payloads that are not exactly 8 bytes are skipped (never
+/// observed, but a future layout change must not silently misparse).
+fn parse_cruise_state(payload: &[u8], time: f32) -> Option<wowsp_tauri_shared::CruiseSample> {
+    if payload.len() != 8 {
+        return None;
+    }
+    let controller = u32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let level = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    Some(wowsp_tauri_shared::CruiseSample {
+        time,
+        controller,
+        level,
+        value: wowsp_tauri_shared::CruiseSample::map_value(controller, level),
     })
 }
 
@@ -2252,6 +2324,199 @@ mod tests {
             }
             pos = payload_end;
         }
+    }
+
+    /// CruiseState (0x32): the 8-byte `u32 controller, i32 level` layout
+    /// decodes for both controllers, maps confirmed levels to normalized
+    /// values, leaves unconfirmed ones as `None`, and rejects non-8-byte
+    /// payloads outright.
+    #[test]
+    fn decodes_cruise_state_payload() {
+        let mk = |controller: u32, level: i32| {
+            let mut p = Vec::new();
+            p.extend_from_slice(&controller.to_le_bytes());
+            p.extend_from_slice(&level.to_le_bytes());
+            p
+        };
+        // Throttle: battle-start W W W W burst (real bytes from the reference
+        // replay): 0 -> 1 -> 2 -> 3 -> 4.
+        for (level, want) in [(0, 0.0f32), (1, 0.25), (2, 0.5), (3, 0.75), (4, 1.0)] {
+            let s = parse_cruise_state(&mk(0, level), 7.2).expect("must parse");
+            assert_eq!(s.controller, 0);
+            assert_eq!(s.level, level);
+            assert!((s.value.expect("ahead presets map") - want).abs() < 1e-6);
+        }
+        // Astern tap (real bytes: ff ff ff ff): sign mapped, depth kept at
+        // -1.0 with the documented uncertainty.
+        let s = parse_cruise_state(&mk(0, -1), 483.14).expect("must parse");
+        assert_eq!(s.value, Some(-1.0));
+        // Deeper astern levels were never observed — must stay unmapped.
+        assert_eq!(
+            parse_cruise_state(&mk(0, -2), 0.0)
+                .expect("structure decodes")
+                .value,
+            None
+        );
+        // Rudder: the t=112 hard-over burst 1 -> 0 -> -1 -> -2 (real bytes).
+        for (level, want) in [(1, 0.5f32), (0, 0.0), (-1, -0.5), (-2, -1.0)] {
+            let s = parse_cruise_state(&mk(1, level), 112.9).expect("must parse");
+            assert_eq!(s.controller, 1);
+            assert!((s.value.expect("rudder marks map") - want).abs() < 1e-6);
+        }
+        // Unknown controller id — structure decodes, semantics stay None.
+        let s = parse_cruise_state(&mk(3, 1), 1.0).expect("must parse");
+        assert_eq!(s.value, None);
+        // Length discipline: 7 or 9 bytes never observed — rejected.
+        assert!(parse_cruise_state(&mk(0, 4)[..7], 0.0).is_none());
+        let mut nine = mk(0, 4);
+        nine.push(0);
+        assert!(parse_cruise_state(&nine, 0.0).is_none());
+    }
+
+    /// E2 verification against a real replay (skips without
+    /// `WOWSP_TEST_REPLAY`): the decoded throttle timeline must be consistent
+    /// with position-differentiated speed of the recorder's own ship —
+    /// sustained full-ahead reaches (at least) half the ship's top observed
+    /// speed, and sustained stop events bring it to a near standstill — and
+    /// the recorder-vehicle join (avatar's 0x2c link) must resolve to the
+    /// type-2 entity whose cruise samples are attached.
+    #[test]
+    fn cruise_state_consistent_with_speed_on_real_replay() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            return;
+        };
+        let stream = crate::commands::replay::read_replay_positions(path.clone())
+            .expect("decode real replay");
+        let recorder_id = stream
+            .recorder_vehicle_id
+            .expect("modern replay must carry the avatar->vehicle link");
+        let traj = stream
+            .trajectories
+            .iter()
+            .find(|t| t.entity_id == recorder_id)
+            .expect("recorder trajectory");
+        assert_eq!(
+            traj.kind.as_ref().map(|k| k.entity_type),
+            Some(2),
+            "recorder vehicle must be a type-2 ship"
+        );
+        let cruise = &traj.cruise_samples;
+        assert!(
+            !cruise.is_empty(),
+            "a real replay must carry CruiseState packets"
+        );
+        // Every sample must be one of the two known controllers with
+        // dynamics-confirmed level ranges.
+        for s in cruise {
+            assert!(s.controller <= 1, "unexpected controller {}", s.controller);
+            if s.controller == 0 {
+                assert!((-1..=4).contains(&s.level), "throttle level {}", s.level);
+            } else {
+                assert!((-2..=2).contains(&s.level), "rudder level {}", s.level);
+            }
+        }
+        // No other entity carries cruise samples.
+        for t in &stream.trajectories {
+            if t.entity_id != recorder_id {
+                assert!(
+                    t.cruise_samples.is_empty(),
+                    "cruise samples leaked onto entity {}",
+                    t.entity_id
+                );
+            }
+        }
+        // Speed series (planar) of the recorder's ship.
+        let samples = &traj.samples;
+        if samples.len() < 2 {
+            eprintln!(
+                "[e2] degenerate replay: {} position samples - skipping",
+                samples.len()
+            );
+            return;
+        }
+        let speed_at = |t: f32, win: f32| -> Option<f32> {
+            let a = samples.iter().find(|s| s.time >= t - win)?;
+            let b = samples.iter().rev().find(|s| s.time <= t + win)?;
+            let dt = b.time - a.time;
+            if dt < 0.5 {
+                return None;
+            }
+            Some(((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt() / dt)
+        };
+        // Ship's top observed speed: 95th percentile of the 30s-window series
+        // (robust against any stray jumps).
+        let mut speeds = Vec::new();
+        let mut t = samples.first().unwrap().time;
+        let t_end = samples.last().unwrap().time;
+        while t < t_end {
+            if let Some(v) = speed_at(t + 15.0, 15.0) {
+                speeds.push(v);
+            }
+            t += 10.0;
+        }
+        speeds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p95 = speeds[(speeds.len() as f32 * 0.95) as usize].max(1e-3);
+        // Step-hold the throttle timeline; check quasi-steady consistency.
+        let throttle_at = |tt: f32| -> Option<i32> {
+            cruise
+                .iter()
+                .filter(|s| s.controller == 0 && s.time <= tt)
+                .next_back()
+                .map(|s| s.level)
+        };
+        let mut full_ok = 0usize;
+        let mut stop_ok = 0usize;
+        let mut full_total = 0usize;
+        let mut stop_total = 0usize;
+        let mut tt = samples.first().unwrap().time + 60.0;
+        while tt < t_end - 60.0 {
+            let level = throttle_at(tt);
+            let held = |target: i32| -> bool {
+                // The level at tt and 20 s earlier match -> held long enough
+                // for the ship to have settled towards it.
+                level == Some(target) && throttle_at(tt - 20.0) == Some(target)
+            };
+            if held(4) {
+                full_total += 1;
+                if let Some(v) = speed_at(tt, 8.0) {
+                    if v >= 0.5 * p95 {
+                        full_ok += 1;
+                    }
+                }
+            } else if held(0) {
+                stop_total += 1;
+                if let Some(v) = speed_at(tt, 8.0) {
+                    if v <= 0.25 * p95 {
+                        stop_ok += 1;
+                    }
+                }
+            }
+            tt += 5.0;
+        }
+        eprintln!(
+            "[e2] {} cruise samples ({} throttle / {} rudder); p95 speed {:.2}; full-ahead settled {}/{} windows >= 50% p95; stop settled {}/{} windows <= 25% p95",
+            cruise.len(),
+            cruise.iter().filter(|s| s.controller == 0).count(),
+            cruise.iter().filter(|s| s.controller == 1).count(),
+            p95,
+            full_ok,
+            full_total,
+            stop_ok,
+            stop_total
+        );
+        // The reference Lexington replay: 17/31 throttle, 14/31 rudder. Both
+        // behaviors must have been exercised and held at least 80% of the
+        // settled windows.
+        assert!(full_total > 0, "no sustained full-ahead window observed");
+        assert!(stop_total > 0, "no sustained stop window observed");
+        assert!(
+            full_ok as f32 / full_total as f32 >= 0.8,
+            "full-ahead windows inconsistent with speed ({full_ok}/{full_total})"
+        );
+        assert!(
+            stop_ok as f32 / stop_total as f32 >= 0.8,
+            "stop windows inconsistent with speed ({stop_ok}/{stop_total})"
+        );
     }
 
     /// receiveArtilleryShots: a 1-pack, 2-shot salvo decodes muzzle + aim
