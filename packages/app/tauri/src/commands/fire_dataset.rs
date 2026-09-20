@@ -1143,6 +1143,12 @@ pub struct FireDatasetSlot {
 #[serde(rename_all = "camelCase")]
 pub struct FireDatasetRow {
     // ── metadata ──
+    /// Replay identity for the training side's per-replay grouping
+    /// (GroupKFold over replays — entity ids REPEAT across replays, so
+    /// `ownerEntityId` must never be the group key). `None` keeps the E9
+    /// single-replay export shape forward-compatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_id: Option<String>,
     pub replay_version: Option<String>,
     pub map_name: Option<String>,
     pub owner_entity_id: i32,
@@ -1355,12 +1361,15 @@ fn zone_and_event_summary(
 /// Build every exportable decision row of the replay (E9 step 1). The decider
 /// set is ships with a fire history and a known team; rows follow the E7
 /// cadence/gates exactly so `rows_can_fire` reproduces E7's eligible count.
+/// `replay_id` (E12) tags every row with the replay's identity for
+/// per-replay grouping on the training side — `None` preserves the E9 shape.
 pub fn export_decision_dataset(
     stream: &ReplayStream,
     ships: &[ShipInfo<'_>],
     los: Option<&LosGrid>,
     eye_height: f32,
     params: &FireSampleParams,
+    replay_id: Option<&str>,
 ) -> (Vec<FireDatasetRow>, FireDatasetExportStats) {
     let contexts = fire_contexts(stream, ships, params);
     let mut rows = Vec::new();
@@ -1418,6 +1427,7 @@ pub fn export_decision_dataset(
             let (z0, z1, z2, zo, zp, shells, torps, expl, near) =
                 zone_and_event_summary(stream, own, t);
             rows.push(FireDatasetRow {
+                replay_id: replay_id.map(str::to_string),
                 replay_version: stream.version.clone(),
                 map_name: stream.map_name.clone(),
                 owner_entity_id: id,
@@ -1462,6 +1472,221 @@ pub fn export_decision_dataset(
         },
     };
     (rows, stats)
+}
+
+// ── E12 / G2: folder → dataset batch ingestion ─────────────────────────────
+//
+// Scales the E9 single-replay export to "point at a folder, get a dataset":
+// every `*.wowsreplay` under the root (recursively — the game nests replays
+// by date) is decoded and exported through the same `export_decision_dataset`
+// path; single-file failures (unreadable bytes, bad magic, corrupt packet
+// stream, unparseable roster, unsupported layouts) are RECORDED PER FILE and
+// skipped, never aborting the batch. Per-replay terrain LOS is resolved from
+// an optional directory of E4 rasters (`<los_dir>/<map name>/terrain_los.npz`),
+// so mixed-map folders degrade per file exactly like a single export without
+// a grid.
+
+/// One file's outcome in a batch ingestion.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FireDatasetBatchFile {
+    /// Replay identity = path relative to the batch root with forward
+    /// slashes (unique across nested subfolders). This is the GroupKFold
+    /// grouping key on the training side.
+    pub replay_id: String,
+    /// File name without directory components (for human-readable reports).
+    pub file_name: String,
+    pub outcome: FireDatasetBatchOutcome,
+}
+
+/// What happened to one replay file in a batch.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum FireDatasetBatchOutcome {
+    /// Decoded and exported; `stats` is the file's own export summary.
+    Exported { stats: FireDatasetExportStats },
+    /// Skipped after `reason` (read/decode/roster error). The batch went on.
+    Failed { reason: String },
+}
+
+/// Aggregate summary of one batch ingestion.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FireDatasetBatchSummary {
+    pub root_dir: String,
+    /// `*.wowsreplay` files found under the root (live `temp.wowsreplay`
+    /// excluded, mirroring the replay listing walk).
+    pub files_seen: usize,
+    pub files_exported: usize,
+    pub files_failed: usize,
+    /// Summed over exported files.
+    pub deciders: usize,
+    pub rows: usize,
+    pub rows_can_fire: usize,
+    pub rows_fired: usize,
+    pub positive_rate_among_can_fire: f32,
+    pub per_file: Vec<FireDatasetBatchFile>,
+}
+
+/// Fault-tolerant aggregation core (E12): process each `files` entry with
+/// `process`; success contributes its rows (stamped with the file's
+/// `replay_id` — overriding whatever the closure left there — so summary and
+/// rows can never disagree), failure is recorded and the batch CONTINUES.
+/// Split from the directory walk so the tolerance/aggregation logic is
+/// unit-testable without real replay bytes.
+pub fn ingest_replay_files<I, F>(
+    root: &std::path::Path,
+    files: I,
+    mut process: F,
+) -> (Vec<FireDatasetRow>, FireDatasetBatchSummary)
+where
+    I: IntoIterator<Item = std::path::PathBuf>,
+    F: FnMut(&std::path::Path) -> Result<(Vec<FireDatasetRow>, FireDatasetExportStats), String>,
+{
+    let mut summary = FireDatasetBatchSummary {
+        root_dir: root.to_string_lossy().into_owned(),
+        files_seen: 0,
+        files_exported: 0,
+        files_failed: 0,
+        deciders: 0,
+        rows: 0,
+        rows_can_fire: 0,
+        rows_fired: 0,
+        positive_rate_among_can_fire: 0.0,
+        per_file: Vec::new(),
+    };
+    let mut rows = Vec::new();
+    for path in files {
+        summary.files_seen += 1;
+        let replay_id = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| replay_id.clone());
+        let outcome = match process(&path) {
+            Ok((mut file_rows, stats)) => {
+                for r in &mut file_rows {
+                    r.replay_id = Some(replay_id.clone());
+                }
+                summary.files_exported += 1;
+                summary.deciders += stats.owners;
+                summary.rows += stats.rows;
+                summary.rows_can_fire += stats.rows_can_fire;
+                summary.rows_fired += stats.rows_fired;
+                rows.extend(file_rows);
+                FireDatasetBatchOutcome::Exported { stats }
+            },
+            Err(reason) => {
+                summary.files_failed += 1;
+                FireDatasetBatchOutcome::Failed { reason }
+            },
+        };
+        summary.per_file.push(FireDatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        });
+    }
+    summary.positive_rate_among_can_fire = if summary.rows_can_fire == 0 {
+        0.0
+    } else {
+        summary.rows_fired as f32 / summary.rows_can_fire as f32
+    };
+    (rows, summary)
+}
+
+/// Walk `dir` recursively collecting `*.wowsreplay` paths, sorted for
+/// deterministic batches. Mirrors the replay-listing walk: the live
+/// `temp.wowsreplay` is skipped.
+fn collect_replay_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for ent in rd.flatten() {
+        let path = ent.path();
+        let Ok(meta) = ent.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            collect_replay_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("wowsreplay") {
+            if path.file_name().and_then(|n| n.to_str()) == Some("temp.wowsreplay") {
+                continue;
+            }
+            out.push(path);
+        }
+    }
+}
+
+/// Per-replay terrain raster for the batch: `<los_dir>/<map short name>/
+/// terrain_los.npz` when it exists ("spaces/50_Gold_harbor" →
+/// "<los_dir>/50_Gold_harbor/terrain_los.npz"). Absent file / absent map
+/// name / unparsable raster → `None` (rows lose only the `terrainBlocked`
+/// feature, exactly like a single export without a grid).
+fn los_for_replay(map_name: Option<&str>, los_dir: Option<&std::path::Path>) -> Option<LosGrid> {
+    let short = map_name?.rsplit('/').next()?.trim();
+    if short.is_empty() {
+        return None;
+    }
+    LosGrid::load_npz(&los_dir?.join(short).join("terrain_los.npz")).ok()
+}
+
+/// Decode + export ONE replay file (the `process` closure used by
+/// [`export_decision_dataset_dir`]). Every failure mode surfaces as
+/// `Err(reason)` for the batch to record: unreadable file, bad magic /
+/// truncated header (no packet stream), decrypt/inflate/decode errors on
+/// corrupt bytes, unparseable roster. Version-drifted replays do NOT land
+/// here — the decoder warns and falls back to its closest layout, so they
+/// export (with whatever the fallback yields) rather than aborting.
+pub fn export_replay_file(
+    path: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> Result<(Vec<FireDatasetRow>, FireDatasetExportStats), String> {
+    let path_str = path.to_string_lossy().into_owned();
+    let stream = super::replay::read_replay_positions(path_str.clone())?;
+    let vehicles = super::replay_probe::read_roster(&path_str)?;
+    let ships = ship_infos(&stream, &vehicles);
+    let los = los_for_replay(stream.map_name.as_deref(), los_dir);
+    Ok(export_decision_dataset(
+        &stream,
+        &ships,
+        los.as_ref(),
+        eye_height,
+        params,
+        None, // stamped by ingest_replay_files from the path
+    ))
+}
+
+/// Folder → dataset (E12 / G2). Walks `dir` recursively, exports every
+/// `*.wowsreplay` through [`export_replay_file`], aggregates rows and
+/// per-file summaries. Fails (Err) only when `dir` itself is unusable — a
+/// root that does not exist or is not a directory; everything after that is
+/// per-file tolerance.
+pub fn export_decision_dataset_dir(
+    dir: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> Result<(Vec<FireDatasetRow>, FireDatasetBatchSummary), String> {
+    if !dir.is_dir() {
+        return Err(format!(
+            "batch root {} is not a directory",
+            dir.to_string_lossy()
+        ));
+    }
+    let mut files = Vec::new();
+    collect_replay_files(dir, &mut files);
+    files.sort();
+    let (rows, summary) = ingest_replay_files(dir, files, |path| {
+        export_replay_file(path, los_dir, eye_height, params)
+    });
+    Ok((rows, summary))
 }
 
 #[cfg(test)]
@@ -2103,7 +2328,7 @@ mod tests {
         ];
         let ships = ship_infos(&stream, &vehicles);
         let (rows, stats) =
-            export_decision_dataset(&stream, &ships, None, DEFAULT_EYE_HEIGHT, &params);
+            export_decision_dataset(&stream, &ships, None, DEFAULT_EYE_HEIGHT, &params, None);
         // Only ship 9 has a fire history — it is the sole decider.
         assert_eq!(stats.owners, 1);
         assert!(rows.iter().all(|r| r.owner_entity_id == 9));
@@ -2203,8 +2428,16 @@ mod tests {
             .map(|p| LosGrid::load_npz(&p))
             .transpose()
             .expect("load LOS raster when present");
-        let (rows, stats) =
-            export_decision_dataset(&stream, &ships, grid.as_ref(), DEFAULT_EYE_HEIGHT, &params);
+        let (rows, stats) = export_decision_dataset(
+            &stream,
+            &ships,
+            grid.as_ref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            std::path::Path::new(&path)
+                .file_stem()
+                .and_then(|s| s.to_str()),
+        );
         // Cross-check against E7: labelA=1 rows == eligible-with-history.
         let e7 = count_decision_samples(&stream, &ships, &params);
         assert_eq!(
@@ -2270,6 +2503,290 @@ mod tests {
                 );
             },
             Err(_) => eprintln!("[e9] WOWSP_DATASET_OUT not set - dataset not written"),
+        }
+    }
+
+    /// E12 synthetic: the batch core tolerates per-file failures, aggregates
+    /// rows/stats only from successes, stamps every row with the file's
+    /// replay id (path relative to the root, forward slashes — also through
+    /// nested subfolders), and never aborts. Uses a fake `process` closure so
+    /// no real replay bytes are needed: the decoding path itself is covered by
+    /// the env-gated real-replay test below.
+    #[test]
+    fn synthetic_batch_ingestion_tolerance_and_aggregation() {
+        let root = std::env::temp_dir().join(format!(
+            "wowsp_fire_batch_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        // Empty file (0 rows is a legal success), a "corrupt" file (random
+        // bytes — here simulated by the closure failing), a nested success,
+        // and a non-replay file that must be ignored by the walker.
+        std::fs::write(root.join("a_empty.wowsreplay"), b"").expect("write");
+        std::fs::write(
+            root.join("b_corrupt.wowsreplay"),
+            [0x12u8, 0x32, 0x34, 0x11, 0xFF],
+        )
+        .expect("write");
+        std::fs::write(root.join("sub/c_good.wowsreplay"), b"good").expect("write");
+        std::fs::write(root.join("notes.txt"), b"not a replay").expect("write");
+        let mut files = Vec::new();
+        collect_replay_files(&root, &mut files);
+        files.sort();
+        assert_eq!(files.len(), 3, "walker must skip non-replay files");
+        assert!(files[0].ends_with("a_empty.wowsreplay"));
+
+        // Fake exporter: one file yields 2 rows (1 can-fire / 1 fired), one
+        // fails with a reason, one succeeds with zero rows.
+        let mk_rows = || -> Vec<FireDatasetRow> {
+            let base = FireDatasetRow {
+                replay_id: None,
+                replay_version: None,
+                map_name: None,
+                owner_entity_id: 9,
+                ship_id: None,
+                team_id: 1,
+                t: 10.0,
+                own_speed_kt: None,
+                own_hp_frac: None,
+                own_reload_frac: 1.0,
+                own_range_m: 10_000.0,
+                zones_owned_0: 0,
+                zones_owned_1: 0,
+                zones_owned_2: 0,
+                zones_owned_other: 0,
+                zones_active_progress: 0,
+                events_shells_30s: 0,
+                events_torps_30s: 0,
+                events_explosions_30s: 0,
+                events_explosions_near_30s: 0,
+                enemies: Vec::new(),
+                friends: Vec::new(),
+                label_a_can_fire: true,
+                label_b_fired: Some(true),
+            };
+            let mut negative = base.clone();
+            negative.t = 12.0;
+            negative.label_a_can_fire = false;
+            negative.label_b_fired = None;
+            vec![base, negative]
+        };
+        let stats2 = FireDatasetExportStats {
+            owners: 1,
+            rows: 2,
+            rows_can_fire: 1,
+            rows_fired: 1,
+            positive_rate_among_can_fire: 1.0,
+        };
+        let empty_stats = FireDatasetExportStats {
+            owners: 0,
+            rows: 0,
+            rows_can_fire: 0,
+            rows_fired: 0,
+            positive_rate_among_can_fire: 0.0,
+        };
+        let (rows, summary) = ingest_replay_files(&root, files, |path| {
+            match path.file_name().and_then(|n| n.to_str()) {
+                Some("a_empty.wowsreplay") => Ok((Vec::new(), empty_stats.clone())),
+                Some("b_corrupt.wowsreplay") => {
+                    Err("not a valid wowsreplay (magic mismatch or truncated)".into())
+                },
+                _ => Ok((mk_rows(), stats2.clone())),
+            }
+        });
+
+        // Aggregation: 3 seen / 2 exported / 1 failed; rows only from the
+        // success, all stamped with its replay id (nested, forward slashes).
+        assert_eq!(summary.files_seen, 3);
+        assert_eq!(summary.files_exported, 2);
+        assert_eq!(summary.files_failed, 1);
+        assert_eq!(summary.rows, 2);
+        assert_eq!(summary.rows_can_fire, 1);
+        assert_eq!(summary.rows_fired, 1);
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|r| r.replay_id.as_deref() == Some("sub/c_good.wowsreplay"))
+        );
+        // Per-file report carries both outcomes with the failure reason.
+        let failed = summary
+            .per_file
+            .iter()
+            .find(|f| f.file_name == "b_corrupt.wowsreplay")
+            .expect("failed entry");
+        match &failed.outcome {
+            FireDatasetBatchOutcome::Failed { reason } => {
+                assert!(reason.contains("not a valid wowsreplay"));
+            },
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        let ok = summary
+            .per_file
+            .iter()
+            .find(|f| f.file_name == "a_empty.wowsreplay")
+            .expect("empty entry");
+        assert!(matches!(
+            ok.outcome,
+            FireDatasetBatchOutcome::Exported { .. }
+        ));
+        assert_eq!(ok.replay_id, "a_empty.wowsreplay");
+        // Rows serialize with the replayId key.
+        let line = serde_json::to_string(&rows[0]).expect("serialize");
+        assert!(line.contains("\"replayId\":\"sub/c_good.wowsreplay\""));
+        // Root errors (not a directory) surface as Err before any walking.
+        assert!(
+            export_decision_dataset_dir(
+                &root.join("does_not_exist"),
+                None,
+                DEFAULT_EYE_HEIGHT,
+                &FireSampleParams::default()
+            )
+            .is_err()
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// E12 / G2 against real replay bytes — run with
+    /// `WOWSP_TEST_REPLAY_DIR=<dir>` (a folder of replays) or
+    /// `WOWSP_TEST_REPLAY=<file>` (copied into a temp folder next to a
+    /// corrupt and an empty file, proving the tolerance on real bytes).
+    /// `WOWSP_DATASET_OUT` additionally writes the aggregated JSONL (the
+    /// multi-replay training input). Skips when neither env var is set.
+    #[test]
+    fn e12_batch_export_on_real_replays() {
+        let replay_dir = match std::env::var("WOWSP_TEST_REPLAY_DIR") {
+            Ok(dir) => std::path::PathBuf::from(dir),
+            Err(_) => match std::env::var("WOWSP_TEST_REPLAY") {
+                Ok(file) => {
+                    let root = std::env::temp_dir().join(format!(
+                        "wowsp_fire_batch_real_{}_{}",
+                        std::process::id(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0)
+                    ));
+                    std::fs::create_dir_all(&root).expect("mkdir");
+                    let name = std::path::Path::new(&file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "real.wowsreplay".into());
+                    std::fs::copy(&file, root.join(&name)).expect("copy real replay");
+                    // A corrupt (random bytes) and an empty replay planted
+                    // next to the real one: the batch must record both and
+                    // still export the real one.
+                    std::fs::write(
+                        root.join("zz_corrupt.wowsreplay"),
+                        [0x5Au8, 0x01, 0xFF, 0x00, 0x33, 0x77, 0x11, 0x42, 0x00, 0x99],
+                    )
+                    .expect("write corrupt");
+                    std::fs::write(root.join("zz_empty.wowsreplay"), b"").expect("write empty");
+                    root
+                },
+                Err(_) => {
+                    eprintln!("[e12] WOWSP_TEST_REPLAY_DIR / WOWSP_TEST_REPLAY not set - skipping");
+                    return;
+                },
+            },
+        };
+        let params = FireSampleParams::default();
+        // Per-map LOS raster directory: defaults to the experiments output
+        // layout (<out>/<map name>/terrain_los.npz).
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let (rows, summary) = export_decision_dataset_dir(
+            &replay_dir,
+            los_dir.as_deref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+        )
+        .expect("batch runs");
+        eprintln!(
+            "[e12] batch {}: {} seen / {} exported / {} failed -> {} rows ({} can-fire, {} fired, rate {:.3}), {} deciders",
+            summary.root_dir,
+            summary.files_seen,
+            summary.files_exported,
+            summary.files_failed,
+            summary.rows,
+            summary.rows_can_fire,
+            summary.rows_fired,
+            summary.positive_rate_among_can_fire,
+            summary.deciders
+        );
+        for f in &summary.per_file {
+            match &f.outcome {
+                FireDatasetBatchOutcome::Exported { stats } => eprintln!(
+                    "[e12] OK   {} -> {} rows / {} can-fire / {} fired / {} owners",
+                    f.replay_id, stats.rows, stats.rows_can_fire, stats.rows_fired, stats.owners
+                ),
+                FireDatasetBatchOutcome::Failed { reason } => {
+                    eprintln!("[e12] FAIL {} -> {}", f.replay_id, reason)
+                },
+            }
+        }
+        // At least one file exported; every exported row carries a replay id
+        // that exists in the per-file report (the GroupKFold key).
+        assert!(summary.files_exported >= 1, "nothing exported");
+        assert!(summary.rows > 0);
+        let ids: std::collections::BTreeSet<&str> = summary
+            .per_file
+            .iter()
+            .filter(|f| matches!(f.outcome, FireDatasetBatchOutcome::Exported { .. }))
+            .map(|f| f.replay_id.as_str())
+            .collect();
+        assert!(
+            rows.iter()
+                .all(|r| r.replay_id.as_deref().is_some_and(|id| ids.contains(id)))
+        );
+        // Failure reasons are recorded, never swallowed.
+        for f in &summary.per_file {
+            if let FireDatasetBatchOutcome::Failed { reason } = &f.outcome {
+                assert!(!reason.is_empty());
+            }
+        }
+        // Reference-replay sanity: the known export lands byte-exact (rows
+        // are LOS-invariant — the grid only fills terrainBlocked).
+        if rows.iter().any(|r| {
+            r.replay_id
+                .as_deref()
+                .is_some_and(|id| id.contains("50_Gold_harbor"))
+        }) {
+            assert!(
+                summary.rows_can_fire >= 500,
+                "can-fire {}",
+                summary.rows_can_fire
+            );
+            assert!(
+                (0.01..=0.60).contains(&summary.positive_rate_among_can_fire),
+                "positive rate {}",
+                summary.positive_rate_among_can_fire
+            );
+        }
+        match std::env::var("WOWSP_DATASET_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create dataset parent dir");
+                }
+                use std::io::Write;
+                let mut f = std::fs::File::create(&out_path).expect("create dataset file");
+                for r in &rows {
+                    writeln!(f, "{}", serde_json::to_string(r).expect("serialize row"))
+                        .expect("write row");
+                }
+                eprintln!("[e12] wrote {} rows to {}", rows.len(), out);
+            },
+            Err(_) => eprintln!("[e12] WOWSP_DATASET_OUT not set - dataset not written"),
         }
     }
 }
