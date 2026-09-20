@@ -26,7 +26,8 @@
       "cn360": "国服（360）",
       "cnKongzhong": "国服（空中网）",
       "manual": "手动指定"
-    }
+    },
+    "versionLabel": "客户端版本"
   },
   "search": {
     "fuzzy": "模糊搜索",
