@@ -14,8 +14,10 @@
 //! then dies, a runner-up is resumed from its part-file offset via a Range
 //! request (no Range support → restart from byte 0). The winner's part file
 //! becomes `WoWSP-update-<version>-<pid>.exe`, spawned detached with
-//! `--silent --dir=<install dir>` — the naming `scripts/build_installers.py`
-//! produces is `WoWSP_<version>_x64-installer.exe` under each mirror base.
+//! `--silent --dir=<install dir>` — the artifact names
+//! `scripts/build_installers.py` produces are `WoWSP_<version>_x64-installer.exe`
+//! (full) / `WoWSP_<version>_x64-installer-lite.exe` (lite installs; see
+//! `artifact_url`) under each mirror base.
 //! The hardened installer kills the running app and installs over its
 //! directory, so the frontend treats the command's promise never resolving
 //! (app death) or resolving (installer spawned) as success by design; the
@@ -84,12 +86,32 @@ const SPEED_EWMA_ALPHA: f64 = 0.3;
 const CANCEL_MSG: &str = "update cancelled";
 
 /// The installer artifact URL under a mirror base — the exact name
-/// `scripts/build_installers.py::emit` produces for the suffix-less flavor
-/// (`WoWSP_<version>_x64-installer.exe`; updates never use the -full /
-/// -webview2 variants).
+/// `scripts/build_installers.py::emit` produces. A lite install (no bundled
+/// model pack) updates with the `-lite` artifact so a slim install never
+/// silently balloons to the full payload; the flavor is staged by the
+/// installer as `wowsp-flavor.txt` beside the app exe. Dev/unmarked builds
+/// use the suffix-less full artifact.
 fn artifact_url(base: &str, version: &str) -> String {
+    artifact_url_for_flavor(base, version, &app_flavor())
+}
+
+/// `artifact_url` with an explicit flavor — the pure, testable core.
+fn artifact_url_for_flavor(base: &str, version: &str, flavor: &str) -> String {
     let base = base.trim().trim_end_matches('/');
-    format!("{base}/WoWSP_{version}_x64-installer.exe")
+    let suffix = if flavor == "lite" { "-lite" } else { "" };
+    format!("{base}/WoWSP_{version}_x64-installer{suffix}.exe")
+}
+
+/// The install flavor marker staged by the installer shell next to the app
+/// (`wowsp-flavor.txt`, values like `full` / `full-webview2` / `lite`).
+/// Empty when absent (plain cargo build / older installers).
+fn app_flavor() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("wowsp-flavor.txt")))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// The parsed update-watch config (mirrors `shun::config::UpdateWatchConfig`;
@@ -974,16 +996,27 @@ mod tests {
 
     #[test]
     fn artifact_url_matches_build_script_emission() {
+        // Unmarked (dev / full) installs fetch the suffix-less artifact.
         assert_eq!(
-            artifact_url(
+            artifact_url_for_flavor(
                 "https://github.com/langyo/wowsp/releases/latest/download",
-                "0.1.0"
+                "0.1.0",
+                ""
             ),
             "https://github.com/langyo/wowsp/releases/latest/download/WoWSP_0.1.0_x64-installer.exe"
         );
+        // Lite installs fetch the -lite artifact their installer shipped as.
+        assert_eq!(
+            artifact_url_for_flavor(
+                "https://github.com/langyo/wowsp/releases/latest/download",
+                "0.1.0",
+                "lite"
+            ),
+            "https://github.com/langyo/wowsp/releases/latest/download/WoWSP_0.1.0_x64-installer-lite.exe"
+        );
         // Trailing slashes and stray whitespace on a mirror base are trimmed.
         assert_eq!(
-            artifact_url("https://mirror.example.test/files/", "1.2.3"),
+            artifact_url_for_flavor("https://mirror.example.test/files/", "1.2.3", ""),
             "https://mirror.example.test/files/WoWSP_1.2.3_x64-installer.exe"
         );
     }

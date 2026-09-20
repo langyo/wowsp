@@ -67,9 +67,10 @@ jobs:
 
       - name: Build shun installers
         # --models fetch: the runner's checkout holds only the tracked 2D
-        # model subset — force-fetch the published res-latest pack so every
-        # installer embeds the full 2D/3D payload (fresh installs never
-        # touch the network for resources).
+        # model subset — force-fetch the published res-latest pack so the
+        # full flavors embed the complete 2D/3D payload (fresh installs
+        # never touch the network for resources). The default flavor set
+        # also builds the lite artifact (no pack; downloaded on demand).
         run: python scripts/build_installers.py --models fetch
 
       - name: Upload release artifacts (draft)
