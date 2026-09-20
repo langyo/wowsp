@@ -40,13 +40,13 @@
     "unset": "Not set",
     "detected": "Detected installs",
     "browse": "Browse folder…",
-    "pick": "Choose game folder…",
     "redetect": "Re-detect",
     "runningHint": "Running game detected: {path}",
     "useRunning": "Use this path",
     "noneFound": "No game install detected. Pick the install folder manually (it should contain WorldOfWarships.exe and a bin/ folder).",
     "applied": "Game path updated",
     "invalid": "The selected folder is not a valid install",
-    "setAction": "Set game path"
+    "setAction": "Set game path",
+    "inUse": "In use"
   }
 }

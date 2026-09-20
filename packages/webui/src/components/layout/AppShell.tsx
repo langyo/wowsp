@@ -19,6 +19,7 @@ import { api } from "@/api";
 import { isTauri } from "@/transport";
 import AnnouncementDialog from "./AnnouncementDialog";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
+import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import UpdateToast from "./UpdateToast";
 import WallpaperRenderer from "./WallpaperRenderer";
@@ -222,12 +223,17 @@ export default defineComponent({
         />
 
         {/* Game-path first-launch prompt — fires whenever the detect pass
-            ends without an active install; also reachable from Settings and
-            the ship-detail armor-error banner. */}
+            ends without an active install; also reachable from the
+            ship-detail armor-error banner. */}
         <GamePathSetupModal
           modelValue={showGamePathSetup.value}
           onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
         />
+
+        {/* Settings modal — app-singleton, opened from the title-bar gear or
+            the sidebar's client / account buttons (optionally landing on a
+            section); state lives in the settingsUi store. */}
+        <SettingsModal />
       </div>
     );
   },

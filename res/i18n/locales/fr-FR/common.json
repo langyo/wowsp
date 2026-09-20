@@ -40,13 +40,13 @@
     "unset": "Non défini",
     "detected": "Installations détectées",
     "browse": "Parcourir…",
-    "pick": "Choisir le dossier du jeu…",
     "redetect": "Relancer la détection",
     "runningHint": "Jeu en cours d'exécution détecté : {path}",
     "useRunning": "Utiliser ce chemin",
     "noneFound": "Aucune installation du jeu détectée. Sélectionnez manuellement le dossier d'installation (il doit contenir WorldOfWarships.exe et un dossier bin/).",
     "applied": "Chemin du jeu mis à jour",
     "invalid": "Le dossier sélectionné n'est pas valide",
-    "setAction": "Définir le chemin du jeu"
+    "setAction": "Définir le chemin du jeu",
+    "inUse": "Utilisé"
   }
 }

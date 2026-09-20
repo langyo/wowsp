@@ -41,7 +41,8 @@
   "overlayRosterOcr": "Reconnaissance OCR",
   "overlayRosterOff": "Désactivé (ordre de la liste)",
   "overlayFullscreenNote": "※ Indisponible en plein écran exclusif : dans ce mode, la capture d'écran GDI ne renvoie que des images noires et la fenêtre de superposition ne peut pas s'afficher au-dessus d'une chaîne d'échange plein écran. Réglez le mode d'affichage du jeu sur sans bordure ou fenêtré.",
-  "gamePathChange": "Modifier…",
   "attributions": "Attributions",
-  "attributionsHint": "Ressources des partenaires, projets upstream et remerciements utilisés par cette application."
+  "attributionsHint": "Ressources des partenaires, projets upstream et remerciements utilisés par cette application.",
+  "account": "Compte",
+  "accountHint": "Le compte actif alimente « Mes statistiques » et les recherches de données. Cliquez sur une carte pour changer ; recherchez un pseudo ci-dessus pour en lier un nouveau."
 }

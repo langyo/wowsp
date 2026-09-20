@@ -153,12 +153,10 @@
   }
 
   /* Mandatory free & open-source notice card: always visible (no ack
-     button here), accent-bordered, and scrolls internally when the four
-     language blocks overflow. */
+     button here), accent-bordered, rendered in full — the host scroller
+     (modal body / settings pane) is the only scrollbar. */
   &__notice {
     width: 100%;
-    max-height: 14rem;
-    overflow-y: auto;
     box-sizing: border-box;
     padding: 0.15rem 0.75rem;
     border: 1px solid rgb(var(--color-primary) / 35%);
@@ -196,7 +194,7 @@
     }
   }
 
-  /* QQ feedback group pill — the very last row of the modal. */
+  /* QQ feedback group pill — last row before the notice card. */
   &__qq {
     display: inline-flex;
     align-items: center;
