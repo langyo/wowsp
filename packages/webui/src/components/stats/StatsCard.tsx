@@ -35,6 +35,8 @@ export default defineComponent({
     stats: { type: Object as () => PlayerStats, required: true },
     /** Combined ranked winrate across the loaded seasons (null = unknown). */
     rankedWr: { type: Number as PropType<number | null>, default: null },
+    /** Combined ranked battles across the loaded seasons (null = unknown). */
+    rankedBattles: { type: Number as PropType<number | null>, default: null },
     /** Clan tag clicked → jump to the clan view. Rendered as a link only
      *  when the stats carry a clan id. */
     onClanClick: Function as PropType<() => void>,
@@ -92,14 +94,38 @@ export default defineComponent({
       },
     ]);
 
+    /** "场次: 12,345" tooltip body for a split (null = count unknown —
+     *  cache files written before the counts were added carry none). */
+    const battlesHint = (battles: number | null | undefined) =>
+      battles != null ? `${t("stats.battles")}: ${battles.toLocaleString()}` : null;
+
     /** Division splits: solo / div2 / div3 / ranked winrates. Ranked is fed
      *  from the ranked store via the `rankedWr` prop (null = no data).
-     *  Displayed in a compact row below the main winrate. */
-    const divisions = computed<{ label: string; wr: number | null; hint?: string }[]>(() => [
-      { label: t("stats.solo"), wr: props.stats.soloWr ?? null },
-      { label: t("stats.div2"), wr: props.stats.div2Wr ?? null },
-      { label: t("stats.div3"), wr: props.stats.div3Wr ?? null },
-      { label: t("stats.ranked"), wr: props.rankedWr, hint: t("stats.rankedHint") },
+     *  Displayed in a compact row below the main winrate; the tooltip on
+     *  each slot names how many battles the split is built from. */
+    const divisions = computed<{ label: string; wr: number | null; hint?: string | null }[]>(() => [
+      {
+        label: t("stats.solo"),
+        wr: props.stats.soloWr ?? null,
+        hint: battlesHint(props.stats.soloBattles),
+      },
+      {
+        label: t("stats.div2"),
+        wr: props.stats.div2Wr ?? null,
+        hint: battlesHint(props.stats.div2Battles),
+      },
+      {
+        label: t("stats.div3"),
+        wr: props.stats.div3Wr ?? null,
+        hint: battlesHint(props.stats.div3Battles),
+      },
+      {
+        label: t("stats.ranked"),
+        wr: props.rankedWr,
+        hint: [t("stats.rankedHint"), battlesHint(props.rankedBattles)]
+          .filter(Boolean)
+          .join(" · "),
+      },
     ]);
 
     return () => (

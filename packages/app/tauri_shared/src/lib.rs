@@ -932,6 +932,15 @@ pub struct PlayerStats {
     pub solo_wr: Option<f32>,
     pub div2_wr: Option<f32>,
     pub div3_wr: Option<f32>,
+    /// Battle counts behind each division winrate (the split tooltips).
+    /// `#[serde(default)]` keeps cache files written before these fields
+    /// existed deserializable (same rationale as `clan_id`).
+    #[serde(default)]
+    pub solo_battles: Option<i64>,
+    #[serde(default)]
+    pub div2_battles: Option<i64>,
+    #[serde(default)]
+    pub div3_battles: Option<i64>,
 }
 
 /// One player name suggestion from the WG account/list autocomplete

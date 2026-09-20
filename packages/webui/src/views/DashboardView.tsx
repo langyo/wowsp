@@ -189,6 +189,7 @@ export default defineComponent({
               <StatsCard
                 stats={currentStats.value}
                 rankedWr={ranked.winrate}
+                rankedBattles={ranked.battles}
                 onClanClick={
                   currentStats.value.clanId != null
                     ? () =>
