@@ -4,5 +4,6 @@
   "locatingHint": "Tab を押し続けてください — 名簿を認識しています…",
   "recognizingBadge": "名簿を認識中…",
   "queryingBadge": "戦績を取得中…",
-  "staleBadge": "編成を更新中…"
+  "staleBadge": "編成を更新中",
+  "staleHint": "変更を検出、再スキャンで修正しています"
 }

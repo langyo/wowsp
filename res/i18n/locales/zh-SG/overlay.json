@@ -4,5 +4,6 @@
   "locatingHint": "请按住 Tab，正在识别名单…",
   "recognizingBadge": "正在识别名单…",
   "queryingBadge": "战绩查询中…",
-  "staleBadge": "阵容更新中…"
+  "staleBadge": "阵容更新中",
+  "staleHint": "检测到发生变更，正在重新扫描矫正"
 }

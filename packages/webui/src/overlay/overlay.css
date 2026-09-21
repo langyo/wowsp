@@ -62,7 +62,12 @@ html.overlay-hidden body {
 
 .overlay-hint {
   position: absolute;
-  top: 50%;
+  /* Lower third, not the vertical center: the hint box otherwise sits right
+   * on top of where the team table lives (the overlay window wraps the
+   * table area + padding), hiding the very rows the player is trying to
+   * line the chips up with. 82% keeps it below the table in every geometry
+   * the fallback builds while staying clear of the window's bottom edge. */
+  top: 82%;
   left: 50%;
   transform: translate(-50%, -50%);
   max-width: 72%;

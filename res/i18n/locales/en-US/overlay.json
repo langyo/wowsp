@@ -4,5 +4,6 @@
   "locatingHint": "Hold Tab — recognizing the roster…",
   "recognizingBadge": "Recognizing roster…",
   "queryingBadge": "Fetching stats…",
-  "staleBadge": "Roster updating…"
+  "staleBadge": "Roster updating",
+  "staleHint": "Change detected, rescanning to correct."
 }
