@@ -17,16 +17,18 @@ import "./AboutModal.scss";
  * — the dismissable twin is the onboarding wizard's welcome step).
  * Includes a "check for updates" action when the updater is available.
  * Every link opens through the Rust backend so the system default browser
- * is used (the webview itself never navigates remotely).
+ * is used (the webview itself never navigates remotely). Link URLs live
+ * only in the en-US locale (`about.links.*`) — they are language-invariant
+ * values shared by every locale via the en-US fallback.
  */
 
 const TECH_LINKS = [
-  { label: "Rust", url: "https://www.rust-lang.org" },
-  { label: "Vue 3", url: "https://vuejs.org" },
-  { label: "Tauri 2", url: "https://tauri.app" },
-  { label: "Three.js", url: "https://threejs.org" },
-  { label: "Pinia", url: "https://pinia.vuejs.org" },
-  { label: "UnoCSS", url: "https://unocss.dev" },
+  { label: "Rust", link: "about.links.techRust" },
+  { label: "Vue 3", link: "about.links.techVue3" },
+  { label: "Tauri 2", link: "about.links.techTauri2" },
+  { label: "Three.js", link: "about.links.techThreejs" },
+  { label: "Pinia", link: "about.links.techPinia" },
+  { label: "UnoCSS", link: "about.links.techUnocss" },
 ];
 
 /** The About body — logo, version + updater, tech tags, links, license
@@ -86,8 +88,8 @@ export const AboutContent = defineComponent({
                 key={tech.label}
                 type="button"
                 class="about-modal__tech-tag"
-                data-hint={tech.url}
-                onClick={() => void openExternal(tech.url)}
+                data-hint={t(tech.link)}
+                onClick={() => void openExternal(t(tech.link))}
               >
                 {tech.label}
               </button>
@@ -98,14 +100,14 @@ export const AboutContent = defineComponent({
             <button
               type="button"
               class="about-modal__link"
-              onClick={() => void openExternal("https://github.com/langyo/wowsp")}
+              onClick={() => void openExternal(t("about.links.repo"))}
             >
               GitHub
             </button>
             <button
               type="button"
               class="about-modal__link"
-              onClick={() => void openExternal("https://github.com/langyo/wowsp/issues")}
+              onClick={() => void openExternal(t("about.links.issues"))}
             >
               {t("about.issues")}
             </button>
@@ -116,7 +118,7 @@ export const AboutContent = defineComponent({
               type="button"
               class="about-modal__license"
               data-hint="Synthetic Source License 1.0"
-              onClick={() => void openExternal("https://github.com/celestia-island/sysl")}
+              onClick={() => void openExternal(t("about.links.license"))}
             >
               SySL-1.0 {t("about.license")}
             </button>
@@ -124,7 +126,7 @@ export const AboutContent = defineComponent({
             <button
               type="button"
               class="about-modal__license"
-              onClick={() => void openExternal("https://github.com/langyo")}
+              onClick={() => void openExternal(t("about.links.author"))}
             >
               © langyo
             </button>
@@ -133,7 +135,14 @@ export const AboutContent = defineComponent({
           <p class="about-modal__qq">
             <MessageCircle size={12} />
             <span>{t("about.qqGroupNotice")}</span>
-            <strong>{t("about.qqGroupNumber")}</strong>
+            <button
+              type="button"
+              class="about-modal__qq-number"
+              data-hint={t("about.links.qqGroup")}
+              onClick={() => void openExternal(t("about.links.qqGroup"))}
+            >
+              {t("about.qqGroupNumber")}
+            </button>
           </p>
 
           {/* Mandatory free & open-source notice: rendered in full as the
