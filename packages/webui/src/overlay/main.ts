@@ -37,6 +37,10 @@ interface OverlayMessages {
   /** Badge while a detected sink reshuffled the rows and the row→name
    *  re-mapping is still catching up. */
   staleBadge: string;
+  /** Hint-box copy shown INSTEAD of the locating copy when the update
+   *  itself is why the table is not on screen (the stale mark survived a
+   *  lost pin — a change was detected and a full re-scan is running). */
+  staleHint: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -274,7 +278,9 @@ function render() {
   root.textContent = "";
   if (!anchor) return;
   // Battle is on but the table itself wasn't located — show a centered hint
-  // box instead of chips that would sit on guessed rows. Two copy levels:
+  // box instead of chips that would sit on guessed rows. Three copy levels:
+  // a surviving stale mark means the update itself is underway (a change
+  // was detected, full re-scan running) and gets the change-specific copy;
   // `fallback` is the one state that means a detection was TRIED and
   // failed (the centered box IS the failure) — the old failure-tone copy;
   // still-searching (or no status event yet) gets the softer "hold Tab,
@@ -282,7 +288,9 @@ function render() {
   if (!anchor.tableDetected) {
     const box = document.createElement("div");
     box.className = "overlay-hint";
-    box.textContent = localized(statusState === "fallback" ? "locateHint" : "locatingHint");
+    box.textContent = localized(
+      anchor.stale ? "staleHint" : statusState === "fallback" ? "locateHint" : "locatingHint",
+    );
     root.appendChild(box);
     return;
   }

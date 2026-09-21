@@ -4,5 +4,6 @@
   "locatingHint": "Tab 키를 누른 채 기다리면 명단을 인식합니다…",
   "recognizingBadge": "명단 인식 중…",
   "queryingBadge": "전적 조회 중…",
-  "staleBadge": "편성 갱신 중…"
+  "staleBadge": "편성 갱신 중",
+  "staleHint": "변경 감지됨, 재스캔으로 보정 중"
 }

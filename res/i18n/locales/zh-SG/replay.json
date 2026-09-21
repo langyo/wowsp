@@ -92,7 +92,7 @@
     "viewProfile": "查看该玩家的水表",
     "detectedRows": "已定位 · {n} 行",
     "searching": "定位中…",
-    "updating": "阵容更新中…",
+    "updating": "阵容更新中",
     "manualLocate": "手动定位",
     "manualClear": "清除定位",
     "manualRows": "已手动定位 · {n} 行",
