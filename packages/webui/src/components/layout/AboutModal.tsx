@@ -138,7 +138,7 @@ export const AboutContent = defineComponent({
             <button
               type="button"
               class="about-modal__qq-number"
-              data-hint={t("about.links.qqGroup")}
+              data-hint={t("about.qqGroupHint")}
               onClick={() => void openExternal(t("about.links.qqGroup"))}
             >
               {t("about.qqGroupNumber")}

@@ -18,6 +18,7 @@
   "license": "License",
   "qqGroupNotice": "For testing feedback, join our QQ group:",
   "qqGroupNumber": "1125770228",
+  "qqGroupHint": "Click to join the group chat",
   "links": {
     "repo": "https://github.com/langyo/wowsp",
     "issues": "https://github.com/langyo/wowsp/issues",
