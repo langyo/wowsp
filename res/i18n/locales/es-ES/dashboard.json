@@ -24,6 +24,7 @@
   "avgFrags": "Hundimientos medios",
   "lastBattle": "Última batalla",
   "noShipsInRange": "No hay batallas en este periodo.",
+  "noShipsMatchFilter": "No hay buques que coincidan con los filtros actuales.",
   "shipType": {
     "Battleship": "Acorazado",
     "Cruiser": "Crucero",

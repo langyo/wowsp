@@ -24,6 +24,7 @@
   "avgFrags": "Среднее число фрагов",
   "lastBattle": "Последний бой",
   "noShipsInRange": "За этот период боёв нет.",
+  "noShipsMatchFilter": "Нет кораблей, подходящих под текущие фильтры.",
   "shipType": {
     "Battleship": "Линкор",
     "Cruiser": "Крейсер",

@@ -356,12 +356,15 @@ export default defineComponent({
         : null;
     };
 
-    /** Option rows per category. Type lists only types present in the data
-     *  so dead buttons never show up. */
+    /** Option rows per category. All four lists are RESIDENT: the selectable
+     *  range never shrinks with the queried data, so a pick that matches
+     *  nothing in the current range stays visible and re-clickable and just
+     *  yields an empty result (the hosting view shows the no-match empty
+     *  state) instead of degrading the popup. */
     const catOptions = computed<Record<CatKey, { value: string; label: string }[]>>(() => ({
       type: [
         { value: "", label: t(CAT_DEFS.type.allLabel) },
-        ...TYPE_ORDER.filter((k) => k && props.ships.some((s) => (infoOf(s.shipId)?.type ?? "").startsWith(k))).map(
+        ...TYPE_ORDER.filter((k) => k !== "").map(
           (k) => ({ value: k, label: t(`dashboard.shipType.${k}`, {}) }),
         ),
       ],
