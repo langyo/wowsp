@@ -486,9 +486,17 @@ export default defineComponent({
                   </div>
                 ) : null}
                 {/* Flat ship table — multi-key sorted by the filter chips'
-                    drag order (leftmost active chip = primary key). */}
+                    drag order (leftmost active chip = primary key). Two
+                    empty states: the range itself played nothing vs. the
+                    range has ships that the filters/search all exclude. */}
                 <div class="lookup-view__ships">
-                  {filteredShips.value.length > 0 ? (
+                  {filteredShips.value.length === 0 ? (
+                    <p class="lookup-view__ships-empty">
+                      {dateFiltered.value.length === 0
+                        ? t("dashboard.noShipsInRange")
+                        : t("dashboard.noShipsMatchFilter")}
+                    </p>
+                  ) : (
                     <div class="lookup-view__shiplist">
                       {filteredShips.value.map((s) => {
                         const off = shipOfflineEntry(s.shipId);
@@ -538,7 +546,7 @@ export default defineComponent({
                         );
                       })}
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </div>
             ) : null}

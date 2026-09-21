@@ -14,6 +14,10 @@
  *    direction, further clicks flip it) — the chip wears the --sort style;
  *  - concrete ship types are pure filters: no arrows anywhere, re-clicking
  *    a type deselects it, and only 全部舰种 can make the category sort;
+ *  - every category's option group is RESIDENT: it never shrinks with the
+ *    queried data, so a pick with no matches in the current range keeps its
+ *    popup entry, chip label and re-click deselect (an empty result is the
+ *    hosting view's business);
  *  - the chip drag order (persisted, hence seedable via localStorage) is
  *    the multi-key sort priority: leftmost sorting chip is the primary key;
  *  - stale multi-select storage of the now-single categories is clamped
@@ -79,11 +83,11 @@ const META = [
   { shipId: 5, name: "Ship 5", tier: 10, type: "Cruiser", nation: "uk" },
 ] as unknown as ShipInfo[];
 
-function mountBar() {
+function mountBar(ships: PlayerShipStats[] = SHIPS) {
   const pinia = createPinia();
   useEncyclopediaStore(pinia).ships = META;
   return mount(ShipFilterBar, {
-    props: { ships: SHIPS, realm: "" },
+    props: { ships, realm: "" },
     global: { plugins: [pinia] },
   });
 }
@@ -242,7 +246,9 @@ describe("ShipFilterBar chips", () => {
 
     await chip(wrapper, "type").trigger("click");
     await waitPops(1);
-    // Option order: 全部舰种, Battleship, Cruiser, Destroyer (present only).
+    // Option order: 全部舰种, Battleship, AirCarrier, Cruiser, Destroyer,
+    // Submarine — the full resident list, independent of the data.
+    expect(popOpts().length).toBe(6);
     await popOpts()[1]!.trigger("click"); // Battleship
     await flushPromises();
 
@@ -267,6 +273,68 @@ describe("ShipFilterBar chips", () => {
     await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([4, 3, 5, 1, 2]); // DD → CA → BB
+  });
+
+  it("keeps every type option resident when the queried data lacks the type", async () => {
+    // 1-day-range reproduction: no destroyer was played in the range while
+    // the selection still asks for one — the popup must not lose the
+    // Destroyer option and the empty result must stay recoverable in place.
+    const wrapper = mountBar(SHIPS.filter((s) => s.shipId !== 4));
+    await flushPromises();
+
+    await chip(wrapper, "type").trigger("click");
+    await waitPops(1);
+    // All five concrete types remain listed (plus 全部舰种), Destroyer
+    // included, even though the data holds no destroyer.
+    expect(popOpts().length).toBe(6);
+
+    await popOpts()[4]!.trigger("click"); // Destroyer
+    await flushPromises();
+    // The filter applies normally and yields the empty result…
+    expect(lastState(wrapper).ships).toEqual([]);
+    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--on");
+    // …while the chip keeps its resolved label and the pick stays active
+    // and re-clickable in the popup (no degradation, no dead state).
+    expect(chip(wrapper, "type").text()).toContain("Destroyer");
+    expect(activeOpts().map((o) => o.text())).toEqual(["Destroyer"]);
+
+    // Re-click the still-listed Destroyer option → deselect → list returns.
+    await popOpts()[4]!.trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--all");
+    expect(order(wrapper)).toEqual([1, 2, 3, 5]);
+  });
+
+  it("keeps a resident type pick selectable when props.ships swaps to data lacking it", async () => {
+    // The other half of the 1-day switch: the selection is made on full
+    // data first, THEN the range swap removes the type — the option group
+    // must not shrink under the open or reopened popup.
+    const wrapper = mountBar();
+    await flushPromises();
+
+    await chip(wrapper, "type").trigger("click");
+    await waitPops(1);
+    await popOpts()[4]!.trigger("click"); // Destroyer → id 4 only
+    await flushPromises();
+    expect(order(wrapper)).toEqual([4]);
+
+    // Range swap: the 1-day delta only covers non-destroyers.
+    await wrapper.setProps({ ships: SHIPS.filter((s) => s.shipId !== 4) });
+    await flushPromises();
+    expect(lastState(wrapper).ships).toEqual([]);
+    expect(chip(wrapper, "type").text()).toContain("Destroyer");
+
+    // Reopening the popup still shows the full resident group; deselect
+    // recovers the range's ships. (The popup stayed open through the swap,
+    // so the first chip click closes it and the second reopens.)
+    await chip(wrapper, "type").trigger("click");
+    await waitPops(0);
+    await chip(wrapper, "type").trigger("click");
+    await waitPops(1);
+    expect(popOpts().length).toBe(6);
+    await popOpts()[4]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([1, 2, 3, 5]);
   });
 
   it("uses the persisted chip order as the multi-key sort priority", async () => {

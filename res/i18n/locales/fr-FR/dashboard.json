@@ -24,6 +24,7 @@
   "avgFrags": "Destructions moyennes",
   "lastBattle": "Dernière bataille",
   "noShipsInRange": "Aucune bataille sur cette période.",
+  "noShipsMatchFilter": "Aucun navire ne correspond aux filtres actuels.",
   "shipType": {
     "Battleship": "Cuirassé",
     "Cruiser": "Croiseur",
