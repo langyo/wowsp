@@ -73,5 +73,57 @@
   "unitDisabled": "« {name} » désactivé — fichiers renommés avec le suffixe .bak.",
   "confirmUnitUninstall": "Désinstaller « {name} » ? Tous ses fichiers (y compris les copies .bak désactivées) sont supprimés ; les originaux écrasés sont restaurés.",
   "manifestOnly": "Aucun fichier correspondant sous res_mods (entrée du manifeste uniquement).",
-  "manifestOnlyShort": "manifeste seul"
+  "manifestOnlyShort": "manifeste seul",
+  "experimental": "Cette fonctionnalité est instable et encore en développement — son fonctionnement n'est pas garanti.",
+  "tex": {
+    "files": "{count} fichiers",
+    "filesOver": "{count}+ fichiers",
+    "moreShips": "+{count}",
+    "cat": {
+      "gameplay": "Textures de navires et composants",
+      "unlocks": "Camouflages et icônes",
+      "content": "Ressources du jeu",
+      "particles": "Effets de particules",
+      "spaces": "Scènes de cartes",
+      "texts": "Textes et polices",
+      "system": "Ressources système",
+      "camouflage": "Textures de camouflage"
+    },
+    "nation": {
+      "japan": "Japon",
+      "usa": "États-Unis",
+      "germany": "Allemagne",
+      "russia": "URSS",
+      "uk": "Royaume-Uni",
+      "france": "France",
+      "italy": "Italie",
+      "poland": "Pologne",
+      "sweden": "Suède",
+      "netherlands": "Pays-Bas",
+      "spain": "Espagne",
+      "pan_asia": "Pan-Asie",
+      "pan_america": "Pan-Amérique",
+      "europe": "Europe",
+      "commonwealth": "Commonwealth",
+      "china": "Chine",
+      "ussr": "URSS",
+      "common": "Commun"
+    },
+    "species": {
+      "ship": "Navires",
+      "battleship": "Cuirassés",
+      "cruiser": "Croiseurs",
+      "destroyer": "Destroyers",
+      "carrier": "Porte-avions",
+      "aircarrier": "Porte-avions",
+      "submarine": "Sous-marins",
+      "gun": "Canons",
+      "projectile": "Projectiles",
+      "torpedo": "Torpilles",
+      "superstructure": "Superstructures",
+      "plane": "Avions",
+      "sensor": "Capteurs",
+      "misc": "Divers"
+    }
+  }
 }

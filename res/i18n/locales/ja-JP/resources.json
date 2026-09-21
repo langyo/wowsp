@@ -73,5 +73,57 @@
   "unitDisabled": "「{name}」を無効にしました（ファイルに .bak を付与）。",
   "confirmUnitUninstall": "「{name}」をアンインストールしますか？ファイル（無効な .bak コピーを含む）を削除し、上書きされた元のファイルを復元します。",
   "manifestOnly": "res_mods 以下に対応するファイルが見つかりません（マニフェストの記録のみ）。",
-  "manifestOnlyShort": "マニフェストのみ"
+  "manifestOnlyShort": "マニフェストのみ",
+  "experimental": "この機能は不安定で、まだ開発中です。動作は保証できません。",
+  "tex": {
+    "files": "{count} ファイル",
+    "filesOver": "約 {count}+ ファイル",
+    "moreShips": "他 {count} 件",
+    "cat": {
+      "gameplay": "艦船・パーツ用テクスチャ",
+      "unlocks": "迷彩・アンロックアイコン",
+      "content": "ゲームコンテンツ",
+      "particles": "パーティクル演出",
+      "spaces": "マップシーン",
+      "texts": "テキスト・フォント",
+      "system": "システムリソース",
+      "camouflage": "迷彩テクスチャ"
+    },
+    "nation": {
+      "japan": "日本",
+      "usa": "アメリカ",
+      "germany": "ドイツ",
+      "russia": "ソ連",
+      "uk": "イギリス",
+      "france": "フランス",
+      "italy": "イタリア",
+      "poland": "ポーランド",
+      "sweden": "スウェーデン",
+      "netherlands": "オランダ",
+      "spain": "スペイン",
+      "pan_asia": "汎アジア",
+      "pan_america": "汎アメリカ",
+      "europe": "ヨーロッパ",
+      "commonwealth": "イギリス連邦",
+      "china": "中国",
+      "ussr": "ソ連",
+      "common": "共通"
+    },
+    "species": {
+      "ship": "艦艇",
+      "battleship": "戦艦",
+      "cruiser": "巡洋艦",
+      "destroyer": "駆逐艦",
+      "carrier": "航空母艦",
+      "aircarrier": "航空母艦",
+      "submarine": "潜水艦",
+      "gun": "主砲",
+      "projectile": "弾薬",
+      "torpedo": "魚雷",
+      "superstructure": "上部構造",
+      "plane": "艦載機",
+      "sensor": "センサー",
+      "misc": "その他"
+    }
+  }
 }

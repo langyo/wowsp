@@ -22,12 +22,13 @@
 //! Archives (.zip/.7z) land with M10.2's unpack step — this round accepts
 //! already-unpacked directories and returns a structured error for files.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use wowsp_tauri_shared::{
     InstallReport, InstalledMod, ModInstallRecord, ModKind, PackagePlan, PackagePlanEntry,
-    UnitToggleReport,
+    TextureAnalysis, TextureFileKind, UnitToggleReport,
 };
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
@@ -294,6 +295,8 @@ struct UnitCandidate {
     kind: ModKind,
     name: String,
     detail: Option<String>,
+    /// Structured content breakdown for texture-override units.
+    analysis: Option<TextureAnalysis>,
     /// res_mods-relative roots — directories or single files (files may be
     /// physical `.bak` twins when the unit is disabled).
     paths: Vec<String>,
@@ -341,6 +344,7 @@ fn gather_candidates(res_mods: &Path) -> Vec<UnitCandidate> {
                 kind: ModKind::Patch,
                 name: display_file_name(&name),
                 detail: None,
+                analysis: None,
                 paths: vec![name],
             });
             continue;
@@ -350,6 +354,7 @@ fn gather_candidates(res_mods: &Path) -> Vec<UnitCandidate> {
                 kind: ModKind::Textures,
                 name: name.clone(),
                 detail: None,
+                analysis: analyze_override_tree(&path, Some(&name)),
                 paths: vec![name],
             });
         }
@@ -396,6 +401,7 @@ fn bank_candidates(banks: &Path) -> Vec<UnitCandidate> {
                 kind: ModKind::Voice,
                 name,
                 detail,
+                analysis: None,
                 paths: vec![format!(
                     "banks/{}/{}",
                     root.file_name().to_string_lossy(),
@@ -432,6 +438,7 @@ fn pnf_candidates(pnf: &Path) -> Vec<UnitCandidate> {
             },
             name,
             detail,
+            analysis: None,
             paths: vec![format!("PnFMods/{}", dir.file_name().to_string_lossy())],
         });
     }
@@ -468,6 +475,7 @@ fn gui_candidates(gui: &Path) -> Vec<UnitCandidate> {
                     kind: ModKind::Gui,
                     name: sub_name,
                     detail: None,
+                    analysis: None,
                     paths: vec![format!("gui/{name}/{}", sub.file_name().to_string_lossy())],
                 });
             }
@@ -477,6 +485,7 @@ fn gui_candidates(gui: &Path) -> Vec<UnitCandidate> {
             kind: ModKind::Gui,
             name,
             detail: None,
+            analysis: None,
             paths: vec![format!("gui/{}", child.file_name().to_string_lossy())],
         });
     }
@@ -486,10 +495,259 @@ fn gui_candidates(gui: &Path) -> Vec<UnitCandidate> {
             kind: ModKind::Gui,
             name: "gui".into(),
             detail: None,
+            analysis: None,
             paths: loose,
         });
     }
     out
+}
+
+// ── Texture-override content analysis ───────────────────────────────────────
+
+/// Upper bound on files inspected per override tree — keeps the best-effort
+/// analysis fast on mega-pack trees (integration installs reach tens of
+/// thousands of files).
+const ANALYSIS_FILE_BUDGET: u64 = 20_000;
+/// Directory depth beyond which the walk stops digging.
+const ANALYSIS_DEPTH_LIMIT: usize = 16;
+/// Collected ship-unit names per tree — enough for display.
+const ANALYSIS_SHIP_CAP: usize = 24;
+
+/// `_`-segments that END the readable ship-unit name of a texture file name:
+/// `JSB039_Yamato_1945_Hull_a` stops at `Hull`, leaving `JSB039 Yamato 1945`.
+const COMPONENT_WORDS: &[&str] = &[
+    "hull",
+    "hulls",
+    "gun",
+    "guns",
+    "turret",
+    "turrets",
+    "superstructure",
+    "torpedo",
+    "plane",
+    "planes",
+    "float",
+    "floats",
+    "modern",
+    "scope",
+    "radar",
+    "searchlight",
+    "propeller",
+    "rudder",
+    "fire",
+    "smoke",
+    "water",
+    "wake",
+    "flag",
+    "flags",
+    "pendant",
+    "camouflage",
+    "mast",
+    "deck",
+    "bridge",
+    "launcher",
+    "trunk",
+    "ammo",
+    "tower",
+    "antenna",
+    "crane",
+    "catapult",
+    "damaged",
+    "wreck",
+    "geometry",
+    "visual",
+    "model",
+    "texture",
+    "textures",
+];
+
+/// Folder names at the species level that are asset-type dirs, not ship or
+/// component classes (`content/gameplay/<nation>/textures/…` skips the
+/// species level entirely) — never recorded as species.
+const ASSET_DIRS: &[&str] = &[
+    "textures", "texture", "model", "models", "visual", "visuals", "geometry", "sounds", "sound",
+];
+
+/// A path segment that names a folder, not a stray file (`foo.dds` directly
+/// under `spaces/` or `content/gameplay/<nation>/` must not pollute the
+/// collected names).
+fn dir_like(seg: &str) -> bool {
+    !seg.contains('.')
+}
+
+/// Best-effort breakdown of what an override tree actually covers, so a unit
+/// can say more than its bare top folder name (`content`, `particles`, …).
+/// `top_name` is the res_mods-relative top folder of an installed unit
+/// (`Some("content")` — paths below it start one level in); package analysis
+/// passes `None` because walked paths already start at the top folders.
+/// Returns `None` for a tree without files.
+///
+/// Path conventions mirror the game's content layout (mod-formats.md,
+/// wowsunpack's export/texture.rs): `content/gameplay/<nation>/ship/<class>/…`
+/// for ship & component textures, `content/unlocks/<nation>/…` for permanent
+/// camouflages, `spaces/<map>/…` for scene overrides. Ship identity comes
+/// from the texture file names — `JSB039_Yamato_1945_Hull_a.dds` carries the
+/// unit code `JSB039` plus its readable name.
+fn analyze_override_tree(root: &Path, top_name: Option<&str>) -> Option<TextureAnalysis> {
+    let mut file_count = 0u64;
+    let mut truncated = false;
+    let mut exts: BTreeMap<String, u64> = BTreeMap::new();
+    let mut cats: BTreeSet<String> = BTreeSet::new();
+    let mut nations: BTreeSet<String> = BTreeSet::new();
+    let mut species: BTreeSet<String> = BTreeSet::new();
+    let mut ships: BTreeMap<String, String> = BTreeMap::new();
+    let mut space_names: BTreeSet<String> = BTreeSet::new();
+
+    let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+    'walk: while let Some((dir, depth)) = stack.pop() {
+        if depth > ANALYSIS_DEPTH_LIMIT {
+            // Files deeper than the limit exist but stay uncounted.
+            truncated = true;
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let path = ent.path();
+            if path.is_dir() {
+                stack.push((path, depth + 1));
+                continue;
+            }
+            if file_count >= ANALYSIS_FILE_BUDGET {
+                truncated = true;
+                break 'walk;
+            }
+            file_count += 1;
+
+            // `.bak` twins of disabled units are toggle state, not content.
+            let raw_name = ent.file_name().to_string_lossy().into_owned();
+            let bare = raw_name.strip_suffix(".bak").unwrap_or(&raw_name);
+            let ext = Path::new(bare)
+                .extension()
+                .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                .unwrap_or_else(|| "none".into());
+            *exts.entry(ext).or_default() += 1;
+
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let mut segs: Vec<String> = top_name.map(|t| vec![t.to_string()]).unwrap_or_default();
+            segs.extend(
+                rel.components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+            );
+            let lower: Vec<String> = segs.iter().map(|s| s.to_ascii_lowercase()).collect();
+
+            let category = match lower.first().map(String::as_str) {
+                Some("particles") => Some("particles"),
+                Some("spaces") => {
+                    if let Some(space) = segs.get(1).filter(|s| dir_like(s)) {
+                        space_names.insert(space.clone());
+                    }
+                    Some("spaces")
+                },
+                Some("texts") => Some("texts"),
+                Some("system") => Some("system"),
+                Some("camouflage") => Some("camouflage"),
+                Some("content") => match lower.get(1).map(String::as_str) {
+                    Some("gameplay") => {
+                        if let Some(nation) = lower.get(2).filter(|n| dir_like(n)) {
+                            nations.insert(nation.clone());
+                        }
+                        match lower.get(3).map(String::as_str) {
+                            // ship/<class>/… — the class says far more than "ship".
+                            Some("ship") => {
+                                let sp = lower
+                                    .get(4)
+                                    .filter(|s| dir_like(s))
+                                    .cloned()
+                                    .unwrap_or_else(|| "ship".into());
+                                if !ASSET_DIRS.contains(&sp.as_str()) {
+                                    species.insert(sp);
+                                }
+                            },
+                            Some(sp) if !ASSET_DIRS.contains(&sp) && dir_like(sp) => {
+                                species.insert(sp.to_string());
+                            },
+                            // `None` and asset-type dirs (textures/, model/, …)
+                            // carry no species level.
+                            _ => {},
+                        }
+                        Some("gameplay")
+                    },
+                    Some("unlocks") => {
+                        if let Some(nation) = lower.get(2).filter(|n| dir_like(n)) {
+                            nations.insert(nation.clone());
+                        }
+                        Some("unlocks")
+                    },
+                    _ => Some("content"),
+                },
+                _ => None,
+            };
+            if let Some(cat) = category {
+                cats.insert(cat.to_string());
+            }
+
+            if category == Some("gameplay") && ships.len() < ANALYSIS_SHIP_CAP {
+                if let Some(stem) = Path::new(bare).file_stem().and_then(|s| s.to_str()) {
+                    if let Some((code, display)) = ship_unit_name(stem) {
+                        ships.entry(code).or_insert(display);
+                    }
+                }
+            }
+        }
+    }
+
+    if file_count == 0 {
+        return None;
+    }
+    let mut file_kinds: Vec<TextureFileKind> = exts
+        .into_iter()
+        .map(|(ext, count)| TextureFileKind { ext, count })
+        .collect();
+    file_kinds.sort_by(|a, b| b.count.cmp(&a.count).then(a.ext.cmp(&b.ext)));
+    file_kinds.truncate(10);
+
+    Some(TextureAnalysis {
+        file_count,
+        file_kinds,
+        categories: cats.into_iter().collect(),
+        nations: nations.into_iter().take(16).collect(),
+        species: species.into_iter().take(16).collect(),
+        ships: ships.into_values().take(ANALYSIS_SHIP_CAP).collect(),
+        space_names: space_names.into_iter().take(12).collect(),
+        truncated,
+    })
+}
+
+/// `JSB039_Yamato_1945_Hull_a` → (`JSB039`, `JSB039 Yamato 1945`): the first
+/// `_`-segment is a unit code (2–6 capitals + 2–4 digits, e.g. `PJSB011`),
+/// the readable name runs until a component word or the length cap. Returns
+/// `None` when the stem carries no code (`default_ao`, `wake_01`, …).
+fn ship_unit_name(stem: &str) -> Option<(String, String)> {
+    let mut segs = stem.split('_');
+    let code = segs.next()?;
+    let letters = code.chars().take_while(|c| c.is_ascii_uppercase()).count();
+    let digits = code[letters..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
+    if !(2..=6).contains(&letters) || !(2..=4).contains(&digits) || letters + digits != code.len() {
+        return None;
+    }
+    let mut display = vec![code.to_string()];
+    for seg in segs {
+        if seg.is_empty() {
+            continue;
+        }
+        if COMPONENT_WORDS.contains(&seg.to_ascii_lowercase().as_str()) || display.len() > 4 {
+            break;
+        }
+        display.push(seg.to_string());
+    }
+    Some((code.to_string(), display.join(" ")))
 }
 
 /// Classify one installed res_mods root into typed plugin units. When
@@ -539,10 +797,12 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             .min_by_key(|k| *k as u8)
             .unwrap_or(ModKind::Patch);
         let detail = owned.iter().find_map(|c| c.detail.clone());
+        let texture_analysis = owned.iter().find_map(|c| c.analysis.clone());
         mods.push(InstalledMod {
             kind,
             name: m.name.clone(),
             detail,
+            texture_analysis,
             // Manifest-only rows key on the (unique) row name instead of a
             // path so uninstall can still resolve — and clean — them.
             rel_path: paths.first().cloned().unwrap_or_else(|| m.name.clone()),
@@ -562,6 +822,7 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             kind: cand.kind,
             name: cand.name.clone(),
             detail: cand.detail.clone(),
+            texture_analysis: cand.analysis.clone(),
             rel_path: cand.paths.first().cloned().unwrap_or_default(),
             paths: cand.paths.clone(),
             disabled,
@@ -963,6 +1224,9 @@ pub(crate) fn classify_package(src: &Path) -> Result<PackagePlan, String> {
                 if plan.detail.is_none() {
                     plan.detail = candidate.detail;
                 }
+                if plan.texture_analysis.is_none() {
+                    plan.texture_analysis = candidate.texture_analysis;
+                }
                 plan.warnings.extend(candidate.warnings);
                 plan.warnings
                     .push(format!("unwrapped single-layer folder \"{wrapper}\""));
@@ -1021,6 +1285,7 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
                 to_rel: format!("banks/mods/{safe_bank}"),
             }],
             warnings: vec!["bare voice pack wrapped into banks/mods".into()],
+            texture_analysis: None,
         });
     }
 
@@ -1033,6 +1298,7 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
         detail: None,
         entries: Vec::new(),
         warnings: Vec::new(),
+        texture_analysis: None,
     };
 
     let mut kinds_seen: Vec<ModKind> = Vec::new();
@@ -1101,6 +1367,13 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
             ModKind::Textures,
         );
     }
+    // The other override signature roots the installed-scan treats as
+    // texture-override catch-alls (real Aslain installs ship these tops).
+    for top in ["particles", "spaces", "texts", "system", "camouflage"] {
+        if has(top) {
+            push_entry(&mut plan, &mut kinds_seen, top, top, ModKind::Textures);
+        }
+    }
     if has("gui") {
         push_entry(&mut plan, &mut kinds_seen, "gui", "gui", ModKind::Gui);
     }
@@ -1114,7 +1387,28 @@ fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
     if !kinds_seen.is_empty() {
         plan.kind = kinds_seen[0];
     }
+
+    // Override trees (standalone or shipped alongside a PnF skin) get the
+    // same structured breakdown the installed list shows.
+    if plan.kind == ModKind::Textures || plan.entries.iter().any(|e| is_override_top(&e.to_rel)) {
+        plan.texture_analysis = analyze_override_tree(src, None);
+    }
     Ok(plan)
+}
+
+/// Does a plan destination name an override top-level folder (the
+/// texture-override signature roots outside `gui/` / `PnFMods/` / `banks/`)?
+fn is_override_top(to_rel: &str) -> bool {
+    matches!(
+        to_rel
+            .trim_end_matches('/')
+            .split('/')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "content" | "particles" | "spaces" | "texts" | "system" | "camouflage"
+    )
 }
 
 /// Filesystem-safe folder slug for auto-wrapped bank names.
@@ -1489,6 +1783,117 @@ mod tests {
             mods.iter()
                 .any(|m| m.kind == ModKind::Patch && m.rel_path == "ime_config.xml")
         );
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn ship_unit_name_parses_codes_and_readable_parts() {
+        assert_eq!(
+            ship_unit_name("JSB039_Yamato_1945_Hull_a"),
+            Some(("JSB039".into(), "JSB039 Yamato 1945".into()))
+        );
+        // Premium prefix is just part of the code; the component word ends
+        // the readable name.
+        assert_eq!(
+            ship_unit_name("PJSB011_Yamato_Hull_a"),
+            Some(("PJSB011".into(), "PJSB011 Yamato".into()))
+        );
+        assert_eq!(
+            ship_unit_name("RSC110_Pr_66_Moskva_1948"),
+            Some(("RSC110".into(), "RSC110 Pr 66 Moskva 1948".into()))
+        );
+        // No unit code — nothing to infer a model from.
+        assert_eq!(ship_unit_name("default_ao"), None);
+        assert_eq!(ship_unit_name("wake_01"), None);
+        assert_eq!(ship_unit_name("Gun_barrel"), None);
+    }
+
+    #[test]
+    fn scan_reports_texture_analysis_for_override_trees() {
+        let tmp = std::env::temp_dir().join("wowsp_texanalysis_test");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("bin/12668706/res_mods");
+        // content/: one identified ship unit, a gun-class texture without a
+        // code, and a nation-wide unlock icon.
+        touch(
+            &rm.join(
+                "content/gameplay/japan/ship/battleship/textures/JSB039_Yamato_1945_Hull_a.dds",
+            ),
+        );
+        touch(&rm.join("content/gameplay/usa/gun/main/textures/default_ao.dds"));
+        touch(&rm.join("content/unlocks/germany/texture/camo_icon.dds"));
+        touch(&rm.join("particles/smoke_flare.prt"));
+        touch(&rm.join("spaces/35_neighbors/env_water.dds"));
+        // Loose files dropped directly under gameplay/ or spaces/ must not
+        // leak into the nation / map-name collections.
+        touch(&rm.join("content/gameplay/ussr_stray.dds"));
+        touch(&rm.join("spaces/root_level.dds"));
+        // Disabled twin: the `.bak` suffix must not leak into the extension.
+        touch(&rm.join("texts/HUD_font_01.dds.bak"));
+
+        let mods = classify_installed_root(&rm);
+        let find = |name: &str| {
+            mods.iter()
+                .find(|m| m.kind == ModKind::Textures && m.name == name)
+                .unwrap_or_else(|| panic!("{name} unit missing"))
+        };
+
+        let content = find("content");
+        let a = content.texture_analysis.as_ref().expect("content analyzed");
+        assert_eq!(a.categories, ["gameplay", "unlocks"]);
+        // `ussr_stray.dds` directly under gameplay/ is a file, not a nation.
+        assert_eq!(a.nations, ["germany", "japan", "usa"]);
+        assert_eq!(a.species, ["battleship", "gun"]);
+        assert_eq!(a.ships, ["JSB039 Yamato 1945"]);
+        assert_eq!(a.file_count, 4);
+        assert!(!a.truncated);
+
+        let a = find("particles").texture_analysis.as_ref().unwrap();
+        assert_eq!(a.categories, ["particles"]);
+        assert_eq!(a.file_kinds[0].ext, "prt");
+
+        let a = find("spaces").texture_analysis.as_ref().unwrap();
+        assert_eq!(a.categories, ["spaces"]);
+        // `root_level.dds` directly under spaces/ is a file, not a map.
+        assert_eq!(a.space_names, ["35_neighbors"]);
+
+        let a = find("texts").texture_analysis.as_ref().unwrap();
+        assert_eq!(a.file_kinds[0].ext, "dds");
+
+        // Every other kind carries no analysis.
+        touch(&rm.join("gui/ribbons/ribbon_citadel.png"));
+        let mods = classify_installed_root(&rm);
+        assert!(
+            mods.iter()
+                .filter(|m| m.kind != ModKind::Textures)
+                .all(|m| m.texture_analysis.is_none())
+        );
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn classify_package_reports_texture_analysis() {
+        let tmp = std::env::temp_dir().join("wowsp_pkgtex_test");
+        let _ = fs::remove_dir_all(&tmp);
+        touch(
+            &tmp.join(
+                "content/gameplay/japan/ship/battleship/textures/JSB039_Yamato_1945_Hull_a.dds",
+            ),
+        );
+        touch(&tmp.join("particles/flak.prt"));
+
+        let plan = classify_package(&tmp).unwrap();
+        let tos: Vec<_> = plan.entries.iter().map(|e| e.to_rel.as_str()).collect();
+        assert!(tos.contains(&"content"), "{tos:?}");
+        assert!(tos.contains(&"particles"), "{tos:?}");
+        let a = plan
+            .texture_analysis
+            .as_ref()
+            .expect("override plan analyzed");
+        assert_eq!(a.categories, ["gameplay", "particles"]);
+        assert_eq!(a.ships, ["JSB039 Yamato 1945"]);
 
         fs::remove_dir_all(&tmp).ok();
     }

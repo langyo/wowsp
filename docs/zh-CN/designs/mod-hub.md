@@ -121,6 +121,8 @@ Discussions 资源帖模板（节选）：
 
 已安装列表以 **Aslain 的 `bin/<build>/res_mods/installed_mods.xml`**（`<mod name version installer/>` 平铺行）为锚：文件系统分组（`banks/<bank>`、`PnFMods/<dir>`、`gui/unbound2/<mod>`、`gui/<child>`、顶层 `*.xml` 补丁、其余顶层目录）按"归一化名称相似度"（精确 > 包含 > 公共前缀）挂到清单行上，App 展示的是安装器真正装过的插件，而不是裸目录。找不到对应文件的清单行仍以"仅清单记录"形式列出；没有被任何清单行认领的分组保留启发式身份。
 
+贴图覆盖类单元（`content/`、`particles/`、`spaces/` 等兜底分组，含被清单行认领后的合并单元）附带一份**结构化内容分析**（`textureAnalysis` 字段，有界遍历 ≤2 万文件）：按路径签名归类（`content/gameplay/<国家>/<舰种>/…` 舰船与部件贴图、`content/unlocks/…` 涂装图标、`spaces/<地图>/…` 场景、粒子/文本/系统资源），并从贴图文件名解析出覆盖的模型单元（`JSB039_Yamato_1945_Hull_a.dds` → `JSB039 Yamato 1945`；首位段为 2–6 个大写字母 + 2–4 位数字的单元码，可读名截到 Hull/Gun 等部件词为止）。国家/舰种/类别均为语言无关代码，由前端按 locale 本地化展示；本地文件夹安装的预检计划复用同一分析器，`particles`/`spaces` 等贴图根目录在包布局识别中同样被认作覆盖签名。
+
 每个插件单元支持两种操作：
 
 - **临时停用** —— 单元内每个文件改名为 `*.bak`；重新启用则去掉后缀。扫描器能识别 `.bak` 文件（`mod.xml.bak`、`Main.py.bak`、`x.xml.bak`），停用的单元仍然可见、可再启用。目录名永不改动——游戏不再加载这些文件，PnF 加载器也找不到可导入的 `Main.py`。
