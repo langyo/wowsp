@@ -74,6 +74,13 @@ export function prTierLabel(key: string): string {
   return key === "unknown" ? "—" : t(`stats.${key}`);
 }
 
+/** Clan aggregate winrate above which a hidden profile is EXCUSED from the
+ *  过街老鼠 stamp (percent 0–100, same scale as `ClanInfo.winrate`): a clan
+ *  this strong makes the hidden profile read as privacy, not as hiding a
+ *  bad career. Below or at the threshold — or with no verdict at all — the
+ *  stamp stays on (fail-open). */
+export const RAT_CLAN_WINRATE_MAX = 53;
+
 export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";
 
 /** Composition stamps (ApeRadar's 成分 tags): 空中小人 marks CV mains, 水下小人
@@ -88,14 +95,22 @@ export type StampKind = CareerStamp | CompositionStamp;
  *  different beast); a sustained purple-tier+ career earns 神了 — gated on
  *  500+ battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
  *  short hot streak). A hidden profile earns the 过街老鼠 mark no matter
- *  what — there are no stats to grade, and hiding is the tell. An unknown
- *  winrate falls back to 海猴. Null when no stamp applies. */
+ *  what — there are no stats to grade, and hiding is the tell — unless the
+ *  clan gate excuses it: when `clanWinrate` carries the player's clan's
+ *  aggregate winrate and it beats RAT_CLAN_WINRATE_MAX, the clan is strong
+ *  enough that the hidden profile is not read as hiding a bad career and no
+ *  stamp is earned. Fail-open: a missing (`undefined`) or failed (`null`)
+ *  clan verdict never suppresses the stamp — only a RESOLVED strong-clan
+ *  verdict does. An unknown winrate falls back to 海猴. Null when no stamp
+ *  applies. */
 export function careerStamp(
   pr: number | null | undefined,
   battles: number | null | undefined,
   winrate: number | null | undefined,
   hidden = false,
+  clanWinrate?: number | null,
 ): CareerStamp | null {
+  if (hidden && clanWinrate != null && clanWinrate > RAT_CLAN_WINRATE_MAX) return null;
   if (hidden) return "rat";
   if (pr == null) return null;
   if (pr >= 2100) return battles != null && battles >= 500 ? "miracle" : null;

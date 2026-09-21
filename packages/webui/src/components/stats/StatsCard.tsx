@@ -1,4 +1,4 @@
-import { computed, defineComponent, type PropType } from "vue";
+import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
 import { HTag } from "@celestia-island/hikari";
 import IdentityHead from "@/components/stats/IdentityHead";
@@ -13,6 +13,7 @@ import {
   winrateColor,
   winrateTier,
 } from "@/utils/winrate";
+import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useCompositionStamps } from "@/composables/useCompositionStamps";
@@ -47,9 +48,42 @@ export default defineComponent({
     // Localized fun wording (夯/人上人…) or the standard English band word,
     // per the stats prefs (see prTierLabel).
     const prLabel = computed(() => prTierLabel(pr.value.key));
-    const stamp = computed(() =>
-      careerStamp(props.stats.pr, props.stats.battles, props.stats.winrate, props.stats.hidden),
+    // ── Hidden-profile clan gate ──
+    // The 过街老鼠 stamp waits for the player's clan winrate: a clan beating
+    // RAT_CLAN_WINRATE_MAX excuses the hidden profile. Tri-state ref:
+    // undefined = verdict in flight, number | null = resolved (null = the
+    // lookup failed → fail-open stamp).
+    const clanWinrate = ref<number | null | undefined>(undefined);
+    // Generation guard: only the lookup fired for the LATEST (clanId, realm)
+    // pair may write the ref back — a fast string of lookups must not let a
+    // stale response win.
+    let clanGen = 0;
+    watch(
+      () => [props.stats.clanId, props.stats.realm] as const,
+      ([clanId, realm]) => {
+        const gen = ++clanGen;
+        if (clanId == null) {
+          // No clan to query — a terminal "no verdict needed" state, so a
+          // clanless hidden profile stamps at once instead of waiting.
+          clanWinrate.value = null;
+          return;
+        }
+        clanWinrate.value = undefined;
+        void lookupClanWinrate(realm, clanId).then((wr) => {
+          if (gen !== clanGen) return;
+          clanWinrate.value = wr;
+        });
+      },
+      { immediate: true },
     );
+    const stamp = computed(() => {
+      const s = props.stats;
+      // A hidden profile with a clan holds its stamp until the clan verdict
+      // lands (undefined) — the gate must never flash 老鼠 first and retract
+      // it a beat later; clanless hidden profiles stamp immediately.
+      if (s.hidden && s.clanId != null && clanWinrate.value === undefined) return null;
+      return careerStamp(s.pr, s.battles, s.winrate, s.hidden, clanWinrate.value);
+    });
     /** 成分 tags (空中小人 / 水下小人) from the shared per-ship cache — the
      *  same lookup flow that fills the ship distribution below this card. */
     const composition = useCompositionStamps(

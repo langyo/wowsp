@@ -4,6 +4,7 @@ import { statsPrefsState } from "@/stores/statsPrefs";
 
 import {
   PR_TIER_STANDARD_LABELS,
+  RAT_CLAN_WINRATE_MAX,
   careerStamp,
   compositionStamps,
   prTier,
@@ -99,6 +100,35 @@ describe("careerStamp", () => {
     expect(careerStamp(null, null, null, true)).toBe("rat");
     expect(careerStamp(2600, 3000, 60, true)).toBe("rat");
     expect(careerStamp(400, 30, 39.9, true)).toBe("rat");
+  });
+
+  it("excuses a hidden profile whose clan beats the winrate gate", () => {
+    expect(careerStamp(null, null, null, true, 53.4)).toBeNull();
+    expect(careerStamp(null, null, null, true, 60)).toBeNull();
+    // The gate keys on the clan alone — even a red-tier career is excused.
+    expect(careerStamp(400, 30, 39.9, true, 55)).toBeNull();
+    expect(careerStamp(null, null, null, true, RAT_CLAN_WINRATE_MAX + 0.1)).toBeNull();
+  });
+
+  it("keeps the rat stamp at or below the clan gate threshold", () => {
+    expect(careerStamp(null, null, null, true, 51)).toBe("rat");
+    // Exactly 53.0 is not ABOVE the threshold — still stamped.
+    expect(careerStamp(null, null, null, true, 53)).toBe("rat");
+    expect(careerStamp(null, null, null, true, 0)).toBe("rat");
+    expect(careerStamp(null, null, null, true, RAT_CLAN_WINRATE_MAX)).toBe("rat");
+  });
+
+  it("stamps fail-open when the clan verdict is missing or failed", () => {
+    expect(careerStamp(null, null, null, true, null)).toBe("rat");
+    expect(careerStamp(null, null, null, true, undefined)).toBe("rat");
+  });
+
+  it("ignores the clan verdict for visible profiles", () => {
+    // A strong-clan verdict must not change any non-hidden verdict.
+    expect(careerStamp(2600, 3000, 60, false, 90)).toBe("miracle");
+    expect(careerStamp(400, 30, 39.9, false, 90)).toBe("maggot");
+    expect(careerStamp(750, 10000, 30, false, 90)).toBeNull();
+    expect(careerStamp(null, null, null, false, 90)).toBeNull();
   });
 
   it("stamps 神了 only on sustained purple-tier+ careers", () => {
