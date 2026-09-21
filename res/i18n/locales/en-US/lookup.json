@@ -17,6 +17,22 @@
   "memberName": "Member",
   "roleLabel": "Role",
   "jumpClan": "View clan",
+  "error": {
+    "playerNotFoundTitle": "Player not found",
+    "clanNotFoundTitle": "Clan not found",
+    "playerNotFoundDesc": "No account exactly matching “{name}” exists on the {realm} server.",
+    "clanNotFoundDesc": "No clan with ID {query} exists on the {realm} server.",
+    "clanNotFoundCause": "The clan may have been disbanded, or the ID may be wrong.",
+    "causesTitle": "Possible reasons",
+    "causeTypo": "The nickname is misspelled, or the player renamed their account recently.",
+    "causeDeleted": "The account has been deleted — by the player, or reclaimed after long inactivity.",
+    "causeRealm": "The wrong server is selected — this query searched {realm}; try another server above.",
+    "seenBefore": "This player was looked up successfully before, but can no longer be found — the account has most likely been deleted.",
+    "apiErrorTitle": "Lookup failed",
+    "apiErrorDesc": "The official API could not complete this lookup. Please try again later.",
+    "rateLimitHint": "Too many requests in a short time — the official API is rate-limiting this network. Wait a moment and retry.",
+    "rawDetail": "Raw error details"
+  },
   "role": {
     "commander": "Commander",
     "executive_officer": "Executive Officer",

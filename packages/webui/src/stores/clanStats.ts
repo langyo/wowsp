@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type ClanInfo } from "@/api";
+import { LookupError, type LookupErrorPayload } from "@/transport/types";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
 
 /** Clan lookups for the /lookup page. In-memory only: route switches keep
@@ -22,6 +23,10 @@ export const useClanStatsStore = defineStore("clanStats", () => {
   const cache = ref<Map<string, ClanInfo>>(new Map());
   const loading = ref(false);
   const error = ref<string | null>(null);
+  /** Structured payload of the last rejected interactive lookup (null once
+   *  a new attempt starts) — the lookup page's friendly error notice. The
+   *  plain `error` string stays for any raw-text consumer. */
+  const lookupError = ref<LookupErrorPayload | null>(null);
 
   /** Look up a clan by id. `force: true` (explicit user query) always
    *  re-pulls from the WG API; otherwise an in-memory hit is returned. */
@@ -37,11 +42,13 @@ export const useClanStatsStore = defineStore("clanStats", () => {
     }
     loading.value = true;
     error.value = null;
+    lookupError.value = null;
     try {
       const info = await api.lookupClanInfo(clanId, realm, prAlgoForRequest());
       cache.value.set(key, info);
       return info;
     } catch (e) {
+      if (e instanceof LookupError) lookupError.value = e.payload;
       error.value = (e as Error).message;
       throw e;
     } finally {
@@ -49,5 +56,5 @@ export const useClanStatsStore = defineStore("clanStats", () => {
     }
   }
 
-  return { cache, loading, error, lookup };
+  return { cache, loading, error, lookupError, lookup };
 });

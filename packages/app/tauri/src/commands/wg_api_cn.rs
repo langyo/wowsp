@@ -24,7 +24,8 @@
 //! Server quirks handled here:
 //!   - queries shorter than 3 characters answer `{"status":"error","error":"Bad
 //!     Request"}` (the official profile site enforces the same 3–24 floor in
-//!     its own UI); they surface as "no account found",
+//!     its own UI); the interactive lookups surface them as a structured
+//!     account-not-found error (see `lookup_error`),
 //!   - the clan endpoint answers 404 for clanless accounts (the API realms
 //!     return an empty object instead),
 //!   - occasional 503s on autocomplete degrade to an empty suggestion list.
@@ -36,6 +37,7 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
+use super::lookup_error::LookupError;
 use super::wg_api::{PrAlgo, PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
@@ -417,8 +419,15 @@ fn player_stats_of(
 }
 
 /// Resolve + fully assemble one player. `Ok(None)` = not found (or an
-/// unsearchable short nickname); transport-level failures propagate.
-async fn lookup_one(client: &reqwest::Client, name: &str) -> Result<Option<PlayerStats>, String> {
+/// unsearchable short nickname); transport-level failures propagate. The
+/// edge case where the account vanishes between search hit and info fetch
+/// rejects with a structured account-not-found [`LookupError`] — shared
+/// with the batch path, which degrades it back to its message string
+/// (rosters render "no data", never a reason).
+async fn lookup_one(
+    client: &reqwest::Client,
+    name: &str,
+) -> Result<Option<PlayerStats>, LookupError> {
     let Some(entry) = resolve_entry(client, name).await? else {
         return Ok(None);
     };
@@ -426,7 +435,7 @@ async fn lookup_one(client: &reqwest::Client, name: &str) -> Result<Option<Playe
         account_info(client, entry.account_id),
         clan_for_account(client, entry.account_id)
     );
-    let node = info?.ok_or_else(|| format!("no account found for '{name}' on cn"))?;
+    let node = info?.ok_or_else(|| LookupError::not_found_account(name, "cn"))?;
     Ok(Some(player_stats_of(entry, &node, clan, true)))
 }
 
@@ -434,12 +443,15 @@ async fn lookup_one(client: &reqwest::Client, name: &str) -> Result<Option<Playe
 /// here too: the vortex serves the per-ship endpoint
 /// (`fetch_expected_pr_rows` routes "cn" to it), so the CN card aggregates
 /// the wows-numbers PR exactly like the API realms — one transport-agnostic
-/// code path.
-pub(crate) async fn lookup_player_stats(name: String, algo: PrAlgo) -> Result<PlayerStats, String> {
+/// code path. Rejects with a structured [`LookupError`] like the WG arm.
+pub(crate) async fn lookup_player_stats(
+    name: String,
+    algo: PrAlgo,
+) -> Result<PlayerStats, LookupError> {
     let client = vortex_client()?;
     let mut stats = lookup_one(&client, &name)
         .await?
-        .ok_or_else(|| format!("no account found for '{name}' on cn"))?;
+        .ok_or_else(|| LookupError::not_found_account(name.clone(), "cn"))?;
     // Unavailable inputs (expected table or ship rows) yield None — the card
     // renders "--"; the lookup itself must not fail over a rating.
     if algo == PrAlgo::Expected {
@@ -460,7 +472,7 @@ pub(crate) async fn lookup_players_stats_batch(
     algo: PrAlgo,
 ) -> Result<Vec<Option<PlayerStats>>, String> {
     let client = vortex_client()?;
-    let results: Vec<Result<Option<PlayerStats>, String>> = {
+    let results: Vec<Result<Option<PlayerStats>, LookupError>> = {
         let client_ref = &client;
         stream::iter(names)
             .map(|name| async move { lookup_one(client_ref, &name).await })
@@ -469,7 +481,10 @@ pub(crate) async fn lookup_players_stats_batch(
             .await
     };
     if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
-        return Err(e.clone());
+        // The batch keeps the plain-String contract (its consumers render
+        // "no data", never a reason) — the structured error degrades to its
+        // historical message.
+        return Err(e.to_string());
     }
     Ok(results
         .into_iter()
@@ -629,12 +644,13 @@ async fn clan_info_node(
 /// members endpoint for the roster. The members response carries pre-aggregated
 /// per-member stats (battles/wr/avg damage/avg xp/frags per battle) instead
 /// of raw WG counters — survival and K/D inputs aren't served, so those stay
-/// `None` rather than being approximated.
-pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanInfo, String> {
+/// `None` rather than being approximated. Rejects with a structured
+/// [`LookupError`] like the WG arm.
+pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanInfo, LookupError> {
     let client = vortex_client()?;
     let clan_node = clan_info_node(&client, clan_id)
         .await?
-        .ok_or_else(|| format!("no clan found for id {clan_id} on cn"))?;
+        .ok_or_else(|| LookupError::not_found_clan(clan_id.to_string(), "cn"))?;
 
     // Roster (best-effort: a failed members fetch still renders the card).
     let host = wg_realm::cn_clans_host();

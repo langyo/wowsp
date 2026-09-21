@@ -17,6 +17,22 @@
   "memberName": "メンバー",
   "roleLabel": "役職",
   "jumpClan": "クランを見る",
+  "error": {
+    "playerNotFoundTitle": "プレイヤーが見つかりません",
+    "clanNotFoundTitle": "クランが見つかりません",
+    "playerNotFoundDesc": "{realm} サーバーに「{name}」と完全一致するアカウントが存在しません。",
+    "clanNotFoundDesc": "{realm} サーバーに ID {query} のクランが存在しません。",
+    "clanNotFoundCause": "クランが解散したか、ID が誤っている可能性があります。",
+    "causesTitle": "考えられる原因",
+    "causeTypo": "ニックネームの綴りが誤っているか、最近変更された可能性があります。",
+    "causeDeleted": "アカウントが削除された可能性があります。本人による削除か、長期間のログイン停止による回収です。",
+    "causeRealm": "サーバーの選択が誤っている可能性があります。この検索は {realm} サーバーを対象にしました。上部でサーバーを切り替えて再試行してください。",
+    "seenBefore": "このプレイヤーは以前検索に成功しましたが、現在は見つかりません。アカウントが削除された可能性が高いです。",
+    "apiErrorTitle": "検索に失敗しました",
+    "apiErrorDesc": "公式 API が今回の検索を完了できませんでした。しばらくしてから再試行してください。",
+    "rateLimitHint": "短時間にリクエストが集中しており、公式 API のレート制限中です。しばらくお待ちください。",
+    "rawDetail": "エラーの詳細"
+  },
   "role": {
     "commander": "司令官",
     "executive_officer": "副司令官",

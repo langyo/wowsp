@@ -17,6 +17,22 @@
   "memberName": "成員",
   "roleLabel": "角色",
   "jumpClan": "查看軍團",
+  "error": {
+    "playerNotFoundTitle": "找不到該玩家",
+    "clanNotFoundTitle": "找不到該公會",
+    "playerNotFoundDesc": "在 {realm} 服沒有找到與「{name}」完全一致的帳號。",
+    "clanNotFoundDesc": "在 {realm} 服沒有找到 ID 為 {query} 的公會。",
+    "clanNotFoundCause": "公會可能已經解散，或者 ID 有誤。",
+    "causesTitle": "可能的原因",
+    "causeTypo": "暱稱拼寫有誤，或玩家近期更改過暱稱。",
+    "causeDeleted": "帳號可能已被註銷——玩家主動刪除，或長期未登入被官方回收。",
+    "causeRealm": "伺服器可能選錯了——本次查詢的是 {realm} 服，可切換左上角的伺服器後重查。",
+    "seenBefore": "此前查詢成功過該玩家，現在卻查不到了——帳號很可能已被註銷。",
+    "apiErrorTitle": "查詢失敗",
+    "apiErrorDesc": "官方介面暫時無法完成這次查詢，請稍後再試。",
+    "rateLimitHint": "短時間內查詢過於頻繁，官方介面正在限流，請稍候片刻再試。",
+    "rawDetail": "原始錯誤訊息"
+  },
   "role": {
     "commander": "指揮官",
     "executive_officer": "副指揮官",
