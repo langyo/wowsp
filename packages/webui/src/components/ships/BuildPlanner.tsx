@@ -11,10 +11,13 @@ import {
   classSkills,
   recommendedSkills,
   SKILL_BUDGET,
-  TIER_UNLOCK,
   skillClassFor,
+  skillCost,
   skillIconUrl,
+  skillPointsBelow,
+  skillPointsSpent,
   skillUnavailable,
+  TIER_UNLOCK,
   type Skill,
   type SkillRequirement,
 } from "./skillTree";
@@ -266,13 +269,14 @@ export default defineComponent({
       return dict?.[dataLangKey.value] || dict?.en || fallback;
     }
 
-    // ── Top bar ────────────────────────────────────────────────────────────
-    const usedPoints = computed(() => Object.keys(props.build.skills).length);
-    const remaining = computed(() => SKILL_BUDGET - usedPoints.value);
-
     // ── Skills section ─────────────────────────────────────────────────────
     const cls = computed(() => skillClassFor(props.ship.type));
     const tree = computed(() => classSkills(cls.value));
+
+    // ── Top bar ────────────────────────────────────────────────────────────
+    // Weighted by tier row: a tier-2 skill costs 2 pts, tier-3 → 3, tier-4 → 4.
+    const usedPoints = computed(() => skillPointsSpent(props.build.skills, tree.value));
+    const remaining = computed(() => SKILL_BUDGET - usedPoints.value);
 
     const tiers = computed(() => {
       const out: Record<number, Skill[]> = { 1: [], 2: [], 3: [], 4: [] };
@@ -323,7 +327,7 @@ export default defineComponent({
     );
 
     function pointsBelowTier(tier: number): number {
-      return tree.value.filter((s) => s.tier < tier && props.build.skills[s.code]).length;
+      return skillPointsBelow(props.build.skills, tree.value, tier);
     }
     function tierUnlocked(tier: number): boolean {
       if (tier === 1) return true;
@@ -336,7 +340,7 @@ export default defineComponent({
         setBuild({ skills });
       } else if (
         !skillBan(skill) &&
-        remaining.value > 0 &&
+        remaining.value >= skillCost(skill.tier) &&
         tierUnlocked(skill.tier)
       ) {
         setBuild({ skills: { ...props.build.skills, [skill.code]: 1 } });
