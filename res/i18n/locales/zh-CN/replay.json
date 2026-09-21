@@ -91,7 +91,7 @@
     "hiddenProfile": "该玩家隐藏了水表",
     "viewProfile": "查看该玩家的水表",
     "detectedRows": "已定位 · {n} 行",
-    "searching": "定位中…",
+    "searching": "定位中",
     "updating": "阵容更新中",
     "manualLocate": "手动定位",
     "manualClear": "清除定位",
