@@ -38,10 +38,12 @@
   white-space: nowrap;
   cursor: grab;
   touch-action: none;
-  /* One-button echo of the hk-tabs track chrome. */
+  /* Track-chrome border, but a solid HkButton-style surface fill: a lone
+     chip must carry its own opaque body — the track's 60% glass fill lets
+     the wallpaper bleed through and the chip reads as a hole in the strip. */
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
-  background: rgb(var(--color-surface) / 60%);
+  background: rgb(var(--color-surface));
   transition:
     color var(--duration-short) ease,
     background var(--duration-short) var(--ease-standard),
@@ -60,10 +62,11 @@
     box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
   }
 
-  /* Concrete selection — the active trigger's primary ink + indicator tint. */
+  /* Concrete selection — the active trigger's primary ink + indicator tint,
+     mixed into the solid surface (a bare alpha tint would go translucent). */
   &--on {
     color: rgb(var(--color-primary));
-    background: rgb(var(--color-primary) / 12%);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
     border-color: rgb(var(--color-primary) / 25%);
 
     &:hover {
@@ -76,7 +79,7 @@
      faint primary chrome mark the engagement. */
   &--sort {
     color: rgb(var(--color-text));
-    background: rgb(var(--color-primary) / 6%);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 6%, rgb(var(--color-surface)));
     border-color: rgb(var(--color-primary) / 25%);
 
     .ship-filter-bar__dir {
@@ -212,7 +215,8 @@
   padding: var(--space-4) var(--space-12);
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
-  background: rgb(var(--color-surface) / 60%);
+  /* Same solid fill as the chips — no wallpaper bleed-through. */
+  background: rgb(var(--color-surface));
   color: rgb(var(--color-muted));
   font-size: var(--text-sm);
   font-weight: 600;
@@ -226,7 +230,56 @@
   &--on {
     color: rgb(var(--color-primary));
     border-color: rgb(var(--color-primary) / 25%);
-    background: rgb(var(--color-primary) / 12%);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
+  }
+}
+
+/* HPopover paints the panel chrome (glass surface, border, shadow) but no
+   inner spacing — the slot content owns it. This restores the padding AND
+   the roomy fixed width the pre-portal absolute-positioned panel carried,
+   both lost in the HPopover migration (content sat flush against the panel
+   edge; the input hugged its placeholder). The px width is position-
+   independent, so it cannot re-enter HkPopover's resize feedback loop. */
+.ship-filter-bar__search-panel {
+  width: min(360px, 70vw);
+  padding: 10px 12px 12px;
+}
+
+/* Fuzzy-match candidates under the input — same row-button spec as
+   AsyncSearchCombo's candidate list. */
+.ship-filter-bar__candidates {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.ship-filter-bar__candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: rgb(var(--color-text));
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--color-primary) / 10%);
+  }
+
+  /* Secondary tag (the hull's tier, e.g. T10). */
+  em {
+    margin-left: auto;
+    font-style: normal;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
   }
 }
 
