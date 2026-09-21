@@ -1785,24 +1785,26 @@ fn scan_state_for_ship_id(
 }
 
 /// Scan an EntityCreate state stream for the capture-zone radius: a f32 with
-/// an integral value in the 20..700 m range. Empirically the radius is the
-/// LAST such field (observed at offset ~98 on domination, ~94 on two-brothers
-/// domination, ~18 on the 1v1 brawl layout) and every mode's state packs it
-/// as a trailing plain float, so the highest-offset candidate wins. Note the
-/// range: classic points are 20..150 m but modern domination points carry
-/// ~490 m rings ("Zone_in_port_ally"), so the scan must not cap at 150.
+/// an integral value in the 20..700 m range. The state packs three integral
+/// floats at stable offsets on current clients (verified across 30 replays /
+/// 6 maps on 15.8: offsets 18/98/102 in every state): the per-zone RADIUS
+/// first (80 m Atlantic … 140 m Britain, 100/120 m Shards — matches the
+/// rings traced off the in-game minimap), then a mode-wide constant 40 and a
+/// flag 1. The FIRST candidate is therefore the radius; taking the last one
+/// used to grab the 40 m constant and drew every ring ~2.5× too small.
+/// Classic points are 20..150 m and the scan must not cap there (bigger
+/// layouts exist), but the range has to stay clear of the trailing 1.0.
 fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
     if state.len() < 4 {
         return None;
     }
-    let mut best: Option<(usize, f32)> = None;
     for off in 0..=state.len() - 4 {
         let f = f32::from_le_bytes(state[off..off + 4].try_into().ok()?);
         if f.is_finite() && (20.0..=700.0).contains(&f) && (f - f.round()).abs() < 0.01 {
-            best = Some((off, f));
+            return Some(f);
         }
     }
-    best.map(|(_, f)| f)
+    None
 }
 
 /// Parse an EntityCreate (0x05) payload. WoWS layout (from
@@ -2697,5 +2699,29 @@ mod tests {
         assert!(decode_damage_stat(0.0, &[64, 0x80]).is_empty());
         assert!(decode_damage_stat(0.0, &[2, 0x4b, 0x01]).is_empty());
         assert!(decode_damage_stat(0.0, &[]).is_empty());
+    }
+
+    /// The radius scan takes the FIRST integral f32 in 20..700. The state
+    /// stream of a domination zone packs three integral floats at stable
+    /// offsets on current clients (verified across 30 replays / 6 maps on
+    /// 15.8): per-zone radius first (~18), a mode-wide 40 constant (~98),
+    /// a flag 1 (~102) — the old last-candidate rule grabbed the 40 and
+    /// drew every ring ~2.5× too small. Bytes below mirror that shape.
+    #[test]
+    fn scans_state_for_zone_radius() {
+        let mut state = vec![0u8; 106];
+        state[18..22].copy_from_slice(&120.0f32.to_le_bytes());
+        state[98..102].copy_from_slice(&40.0f32.to_le_bytes());
+        state[102..106].copy_from_slice(&1.0f32.to_le_bytes());
+        let r = scan_state_for_radius(&state).expect("radius present");
+        assert!((r - 120.0).abs() < 0.01, "first candidate wins, got {r}");
+        // A different zone on the same map carries its own radius.
+        state[18..22].copy_from_slice(&100.0f32.to_le_bytes());
+        assert!((scan_state_for_radius(&state).unwrap() - 100.0).abs() < 0.01);
+        // Out-of-range leading values are skipped; only the flag 1.0 left
+        // (below the 20 m floor) yields no radius at all.
+        state[18..22].copy_from_slice(&0.5f32.to_le_bytes());
+        state[98..102].copy_from_slice(&[0; 4]);
+        assert!(scan_state_for_radius(&state).is_none());
     }
 }
