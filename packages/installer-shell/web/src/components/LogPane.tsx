@@ -1,5 +1,7 @@
-import { defineComponent, nextTick, ref, watch } from "vue";
+import { defineComponent, nextTick, ref, watch, type PropType } from "vue";
 import { ChevronDown, ChevronUp } from "lucide-vue-next";
+
+import type { LogPaneStrings } from "../i18n";
 
 import "./LogPane.scss";
 
@@ -24,7 +26,9 @@ export default defineComponent({
   name: "LogPane",
   props: {
     lines: { type: Array<LogLine>, required: true },
-    title: { type: String, default: "安装日志" },
+    /** Localized chrome (title + toggle tooltips), resolved by the host
+     *  from the wizard locale each render. */
+    labels: { type: Object as PropType<LogPaneStrings>, required: true },
     order: { type: String as () => "newest" | "oldest", default: "newest" },
     expanded: { type: Boolean, default: false },
     onToggleExpanded: { type: Function, default: undefined },
@@ -69,13 +73,13 @@ export default defineComponent({
       <section class={`log-pane log-pane--${props.order}`}>
         <header class="log-pane__bar" onClick={() => props.onToggleExpanded?.()}>
           <span class="log-pane__title">
-            {props.title} · {props.lines.length}
+            {props.labels.title} · {props.lines.length}
           </span>
           <span class="log-pane__preview">{previewText()}</span>
           <button
             type="button"
             class="log-pane__toggle"
-            title={props.expanded ? "收起安装日志" : "展开安装日志"}
+            title={props.expanded ? props.labels.collapse : props.labels.expand}
             onClick={(event) => {
               event.stopPropagation();
               props.onToggleExpanded?.();

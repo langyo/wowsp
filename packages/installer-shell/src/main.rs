@@ -687,6 +687,83 @@ struct ShellPrefs {
     log_order: String,
 }
 
+/// Installer wizard preferences, persisted under the local data home —
+/// the convention shun's own demo shell established:
+/// `%LOCALAPPDATA%\WoWSP\installer-prefs.json` = `{ "language": "zh-Hans" }`.
+/// Portable (USB) runs never write the file, so a copy that moves between
+/// machines carries no machine-local state; a corrupt file degrades to
+/// the defaults instead of failing the wizard.
+const PREFS_DIR_NAME: &str = "WoWSP";
+const PREFS_FILE: &str = "installer-prefs.json";
+
+#[derive(Serialize, Deserialize, Default)]
+struct InstallerPrefs {
+    /// The wizard locale last chosen on the mode step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+}
+
+/// The prefs file under a data root: `<root>\WoWSP\installer-prefs.json`.
+fn prefs_file_in(root: &Path) -> PathBuf {
+    root.join(PREFS_DIR_NAME).join(PREFS_FILE)
+}
+
+/// Reads the saved wizard language under `root`. A missing file or corrupt
+/// JSON yields `None` (the defaults) — never a panic.
+fn read_saved_language_in(root: &Path) -> Option<String> {
+    let bytes = std::fs::read(prefs_file_in(root)).ok()?;
+    let prefs: InstallerPrefs = serde_json::from_slice(&bytes).ok()?;
+    prefs.language.filter(|l| !l.trim().is_empty())
+}
+
+/// Persists the wizard language under `root`. Portable runs (`portable`)
+/// are a no-op; I/O failures are silently ignored — a pref write must
+/// never fail the wizard.
+fn write_saved_language_in(root: &Path, language: &str, portable: bool) {
+    if portable {
+        return;
+    }
+    let file = prefs_file_in(root);
+    let Some(dir) = file.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let prefs = InstallerPrefs {
+        language: Some(language.to_string()),
+    };
+    if let Ok(json) = serde_json::to_vec(&prefs) {
+        let _ = std::fs::write(file, json);
+    }
+}
+
+/// The wizard language saved by a previous run of this shell, if any —
+/// the frontend's locale resolution consults it before the system locale.
+#[tauri::command]
+fn get_saved_language() -> Option<String> {
+    read_saved_language_in(&local_appdata())
+}
+
+/// Remembers the wizard language for the next run. `portable` (the USB
+/// mode) skips the write entirely: the removable copy must not scatter
+/// state onto the host machine.
+#[tauri::command]
+fn save_language(language: String, portable: bool) {
+    write_saved_language_in(&local_appdata(), &language, portable);
+}
+
+/// The wizard language a previous install recorded in its on-disk
+/// manifest (`shun-manifest.json`, shun 0.4.1+). Re-install passes feed
+/// this back into the flow so a repair/update keeps the language the
+/// original install ran under; `None` when absent or unparsable.
+fn manifest_language_of(install_dir: &Path) -> Option<String> {
+    shun::targets::install::read_manifest(install_dir)
+        .ok()
+        .and_then(|m| m.language)
+        .filter(|l| !l.trim().is_empty())
+}
+
 /// Install-pane preferences from the manifest's `[shun.shell]` table —
 /// log verbosity and line ordering (newest-first is the default).
 #[tauri::command]
@@ -964,6 +1041,7 @@ async fn start_install(
     state: tauri::State<'_, AppState>,
     mode: String,
     dir: String,
+    language: Option<String>,
 ) -> Result<(), String> {
     let dir = dir.trim().trim_end_matches('\\').to_string();
     if dir.is_empty() {
@@ -982,7 +1060,19 @@ async fn start_install(
         launch_after_install: false,
         machine: false,
     };
-    let ctx = state.install_context(&mode, &dir, answers)?;
+    let mut ctx = state.install_context(&mode, &dir, answers)?;
+    // The wizard language rides into the on-disk manifest (shun 0.4.1) so
+    // later passes — and the installed app — can see it. An explicit
+    // answer from the wizard wins; when none is passed (the uninstall
+    // page's repair path) fall back to what the previous install recorded,
+    // so a repair keeps the language the original install ran under.
+    ctx.language = match language {
+        Some(l) if !l.trim().is_empty() => Some(l),
+        _ => current_exe_dir()
+            .ok()
+            .as_deref()
+            .and_then(manifest_language_of),
+    };
 
     let payload = state.payload.clone();
     let install_dir = ctx.install_dir.clone();
@@ -1198,6 +1288,12 @@ fn run_headless(
     }
     let product = config.product.name.clone();
     let dir = dir.unwrap_or_else(|| install_dir_for(&mode));
+    // Preserve the wizard language a previous install recorded in its
+    // manifest: a silent update must not wipe the installed app's
+    // language seed. Fresh installs have no previous manifest, so this
+    // stays None (the manifest then carries no language at all). Read
+    // before `dir` moves into the context.
+    let previous_language = manifest_language_of(&dir);
     let mut ctx = InstallContext::new(
         product,
         config.product.version.clone(),
@@ -1223,6 +1319,7 @@ fn run_headless(
     }) {
         ctx.apply_config(install, answers);
     }
+    ctx.language = previous_language;
 
     if uninstall_mode {
         shun::targets::install::uninstall(&ctx, &WindowsRegistration).map_err(|e| e.to_string())?;
@@ -1382,6 +1479,8 @@ fn main() {
             nest_root_dir,
             get_identity,
             get_shell_prefs,
+            get_saved_language,
+            save_language,
             get_license_docs,
             list_drives,
             check_dir_writable,
@@ -1583,5 +1682,71 @@ mod tests {
             "nothing is removed when the current manifest is unreadable"
         );
         assert!(dir.join("a.txt").is_file());
+    }
+
+    #[test]
+    fn saved_language_roundtrips_through_the_prefs_file() {
+        let guard = scratch("prefs-roundtrip");
+        let dir = guard.path();
+
+        assert!(
+            read_saved_language_in(dir).is_none(),
+            "no prefs file yet — the default applies"
+        );
+        write_saved_language_in(dir, "zh-Hant", false);
+        assert_eq!(read_saved_language_in(dir), Some("zh-Hant".to_string()));
+        // A later run overwrites the choice.
+        write_saved_language_in(dir, "en", false);
+        assert_eq!(read_saved_language_in(dir), Some("en".to_string()));
+        assert!(dir.join(PREFS_DIR_NAME).join(PREFS_FILE).is_file());
+    }
+
+    #[test]
+    fn portable_runs_never_write_the_prefs_file() {
+        let guard = scratch("prefs-portable");
+        let dir = guard.path();
+
+        write_saved_language_in(dir, "zh-Hans", true);
+        assert!(
+            read_saved_language_in(dir).is_none(),
+            "portable runs leave nothing behind"
+        );
+        assert!(
+            !dir.join(PREFS_DIR_NAME).exists(),
+            "not even the directory is created"
+        );
+    }
+
+    #[test]
+    fn corrupt_prefs_fall_back_to_the_default() {
+        let guard = scratch("prefs-corrupt");
+        let dir = guard.path();
+        let file = dir.join(PREFS_DIR_NAME).join(PREFS_FILE);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "{ not json").unwrap();
+
+        assert!(read_saved_language_in(dir).is_none());
+    }
+
+    #[test]
+    fn repair_language_comes_from_the_previous_manifest() {
+        let guard = scratch("manifest-language");
+        let dir = guard.path();
+
+        assert!(
+            manifest_language_of(dir).is_none(),
+            "no manifest — nothing to preserve"
+        );
+        // Legacy bare-array manifest (pre-0.4.1 installs): parses back as
+        // entries, but carries no language.
+        std::fs::write(dir.join(MANIFEST_PATH), "[]").unwrap();
+        assert!(manifest_language_of(dir).is_none());
+        // 0.4.1 wrapper: the language rides alongside the entries.
+        std::fs::write(
+            dir.join(MANIFEST_PATH),
+            r#"{"language":"zh-Hans","entries":[{"path":"wowsp.exe","size":1,"sha256":"0"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(manifest_language_of(dir), Some("zh-Hans".to_string()));
     }
 }
