@@ -10,8 +10,9 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@lucide/vue@1.38.0'
   - '@celestia-island/hikari@0.40.18'
-  # Own-org package published the same day — trusted past the cooldown.
+  # Own-org packages published the same day — trusted past the cooldown.
   - '@celestia-island/hikari@0.55.34'
+  - '@celestia-island/hikari@0.55.36'
 overrides:
   postcss: ^8.5.18
   "brace-expansion@<1.1.18": 1.1.18
