@@ -81,7 +81,7 @@ export default defineComponent({
 
     return () => (
       <div
-        class="app-titlebar"
+        class={["app-titlebar", { "app-titlebar--maximized": maximized.value }]}
         onPointerdown={onPointerDown}
         onDblclick={onDblClick}
       >
