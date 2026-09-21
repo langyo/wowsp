@@ -64,16 +64,63 @@ fn main() {
     //    the SySL agreement, and the usage-telemetry notice. Every locale
     //    vendors its copyright notice (licenses/copyright-*.txt); the
     //    agreement is fetched fresh from celestia-island/sysl when the
-    //    network is reachable, falling back to the vendored copies
-    //    (licenses/*.txt) and finally to a one-line stub — a build must
-    //    never fail over a missing translation. The telemetry notice is
-    //    the canonical docs/{lang}/license/usage-telemetry.md document
-    //    (en / zh-CN / zh-TW), embedded verbatim so the installer and the
-    //    website always present the same wording.
+    //    network is reachable (shun's locale mapping covers all eight
+    //    tags below), falling back to the vendored copies (licenses/*.txt)
+    //    and finally to a one-line stub — a build must never fail over a
+    //    missing translation. The telemetry notice is the canonical
+    //    docs/{lang}/license/usage-telemetry.md document, embedded
+    //    verbatim so the installer and the website always present the
+    //    same wording. English stays the universal fallback for the
+    //    runtime's unknown-locale path.
     let license_locales = [
-        ("en", "WoWSP Copyright Notice", "Synthetic Source License 1.0", "Usage Telemetry Notice"),
-        ("zh-Hans", "WoWSP 版权声明", "合成源码协议 1.0", "使用量遥测告知"),
-        ("zh-Hant", "WoWSP 版權聲明", "合成原始碼協議 1.0", "使用量遙測告知"),
+        (
+            "en",
+            "WoWSP Copyright Notice",
+            "Synthetic Source License 1.0",
+            "Usage Telemetry Notice",
+        ),
+        (
+            "zh-Hans",
+            "WoWSP 版权声明",
+            "合成源码协议 1.0",
+            "使用量遥测告知",
+        ),
+        (
+            "zh-Hant",
+            "WoWSP 版權聲明",
+            "合成原始碼協議 1.0",
+            "使用量遙測告知",
+        ),
+        (
+            "ja",
+            "WoWSP 著作権表示",
+            "合成ソースライセンス 1.0",
+            "利用統計（テレメトリー）に関する通知",
+        ),
+        (
+            "ko",
+            "WoWSP 저작권 고지",
+            "합성 소스 라이선스 1.0",
+            "사용량 원격 측정(텔레메트리) 안내",
+        ),
+        (
+            "ru",
+            "Уведомление об авторских правах WoWSP",
+            "Лицензия на синтетический исходный код 1.0",
+            "Уведомление о телеметрии использования",
+        ),
+        (
+            "fr",
+            "Avis de droit d'auteur WoWSP",
+            "Licence de Source Synthétique 1.0",
+            "Avis de télémétrie d'utilisation",
+        ),
+        (
+            "es",
+            "Aviso de derechos de autor de WoWSP",
+            "Licencia de Código Sintético 1.0",
+            "Aviso de telemetría de uso",
+        ),
     ];
     let mut docs = serde_json::Map::new();
     for (locale, notice_title, license_title, telemetry_title) in license_locales {
@@ -81,17 +128,19 @@ fn main() {
         let doc_lang = match locale {
             "zh-Hans" => "zh-CN",
             "zh-Hant" => "zh-TW",
-            _ => "en",
+            other => other,
         };
         let notice_path = manifest_dir.join(format!("licenses/copyright-{locale}.txt"));
         println!("cargo:rerun-if-changed={}", notice_path.display());
         let notice = std::fs::read_to_string(&notice_path)
             .unwrap_or_else(|_| String::from("WoWSP — Copyright (c) 2026 langyo."));
-        // Fresh-from-upstream first, vendored file second, stub last.
+        // Fresh-from-upstream first, vendored file second, stub last. The
+        // vendored file is a build input regardless of whether the fetch
+        // succeeds, so its rerun-if-changed is declared up front.
+        let vendored = manifest_dir.join(format!("licenses/{locale}.txt"));
+        println!("cargo:rerun-if-changed={}", vendored.display());
         let agreement = shun::license_sysl::fetch_locale("celestia-island/sysl", "main", locale)
             .unwrap_or_else(|_| {
-                let vendored = manifest_dir.join(format!("licenses/{locale}.txt"));
-                println!("cargo:rerun-if-changed={}", vendored.display());
                 std::fs::read_to_string(&vendored).unwrap_or_else(|_| {
                     String::from("Licensed under the Synthetic Source License 1.0.")
                 })

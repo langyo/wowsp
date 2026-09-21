@@ -79,7 +79,8 @@ const SHUN_RES_TREE_SHA256: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-
 /// The published-at timestamp that shipped with that tree hash.
 const SHUN_RES_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-version.txt"));
 /// License documents per wizard locale (copyright notice + SySL
-/// agreement), assembled by build.rs into one JSON map.
+/// agreement + usage-telemetry notice), assembled by build.rs into one
+/// JSON map.
 const LICENSE_DOCS_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/license-docs.json"));
 
 /// One document of the license step: a titled, selectable text block.
@@ -796,23 +797,35 @@ fn get_identity(state: tauri::State<'_, AppState>) -> Identity {
 
 /// The wizard's `navigator.language` → license-docs.json key. Traditional
 /// Chinese locales read the zh-Hant documents, any other zh prefix reads
-/// zh-Hans, everything else reads English.
+/// zh-Hans, and each of the other offered languages matches its BCP-47
+/// prefix (ja-JP → ja, fr-CA → fr, …). Unmapped languages (pt, de, ar, …)
+/// read the English set.
 fn license_locale_key(locale: &str) -> &'static str {
     let lower = locale.to_lowercase();
     if lower.starts_with("zh-hant") || lower.starts_with("zh-tw") || lower.starts_with("zh-hk") {
         "zh-Hant"
     } else if lower.starts_with("zh") {
         "zh-Hans"
+    } else if lower.starts_with("ja") {
+        "ja"
+    } else if lower.starts_with("ko") {
+        "ko"
+    } else if lower.starts_with("ru") {
+        "ru"
+    } else if lower.starts_with("fr") {
+        "fr"
+    } else if lower.starts_with("es") {
+        "es"
     } else {
         "en"
     }
 }
 
-/// The license documents for the requested locale: a copyright notice
-/// followed by the SySL agreement, both resolved at build time. An
-/// unknown locale falls back to the English set; a missing entry yields
-/// an empty list rather than an error — the license step must always
-/// render.
+/// The license documents for the requested locale: the copyright notice,
+/// SySL agreement and usage-telemetry notice, all resolved at build
+/// time. An unknown locale falls back to the English set; a missing
+/// entry yields an empty list rather than an error — the license step
+/// must always render.
 #[tauri::command]
 fn get_license_docs(state: tauri::State<'_, AppState>, locale: String) -> Vec<LicenseDoc> {
     let key = license_locale_key(&locale);
@@ -1538,6 +1551,58 @@ mod tests {
             serde_json::to_vec(entries).unwrap(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn license_locale_keys_follow_bcp47_prefixes() {
+        // The eight offered locales map by prefix, region tags included.
+        assert_eq!(license_locale_key("zh-Hans"), "zh-Hans");
+        assert_eq!(license_locale_key("zh-SG"), "zh-Hans");
+        assert_eq!(license_locale_key("zh-Hant-TW"), "zh-Hant");
+        assert_eq!(license_locale_key("zh-TW"), "zh-Hant");
+        assert_eq!(license_locale_key("zh-HK"), "zh-Hant");
+        assert_eq!(license_locale_key("en-US"), "en");
+        assert_eq!(license_locale_key("ja-JP"), "ja");
+        assert_eq!(license_locale_key("ko"), "ko");
+        assert_eq!(license_locale_key("ru-RU"), "ru");
+        assert_eq!(license_locale_key("fr-CA"), "fr");
+        assert_eq!(license_locale_key("es-MX"), "es");
+        // Unmapped languages read the English set — the universal fallback.
+        assert_eq!(license_locale_key("pt-BR"), "en");
+        assert_eq!(license_locale_key("de-DE"), "en");
+        assert_eq!(license_locale_key("ar"), "en");
+        assert_eq!(license_locale_key(""), "en");
+        assert_eq!(license_locale_key("not-a-locale"), "en");
+    }
+
+    /// The build-time license-docs assembly stays in lockstep with the
+    /// runtime contract: every offered wizard locale resolves a full set
+    /// of three titled documents (copyright notice, SySL agreement,
+    /// telemetry notice), each with non-empty body text — an empty or
+    /// partial set here means a build.rs regression, and the English set
+    /// remains the universal fallback for unmapped locales.
+    #[test]
+    fn embedded_license_docs_cover_all_wizard_locales() {
+        let docs: std::collections::BTreeMap<String, Vec<LicenseDoc>> =
+            serde_json::from_str(LICENSE_DOCS_JSON).expect("embedded license docs decode");
+        assert_eq!(
+            docs.len(),
+            8,
+            "one document set per wizard locale: {:#?}",
+            docs.keys().collect::<Vec<_>>()
+        );
+        for locale in ["en", "zh-Hans", "zh-Hant", "ja", "ko", "ru", "fr", "es"] {
+            let set = docs.get(locale).unwrap_or_else(|| {
+                panic!("license docs missing the `{locale}` set");
+            });
+            assert_eq!(set.len(), 3, "`{locale}` must carry all three documents");
+            for doc in set {
+                assert!(!doc.title.trim().is_empty(), "`{locale}` doc has a title");
+                assert!(!doc.body.trim().is_empty(), "`{locale}` doc has a body");
+            }
+        }
+        // The English set stays resolvable as the universal fallback.
+        assert!(docs.contains_key("en"));
     }
 
     #[test]

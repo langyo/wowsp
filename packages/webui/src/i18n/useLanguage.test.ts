@@ -69,19 +69,24 @@ describe("determineDataLanguage", () => {
 });
 
 describe("installerLocaleToUi", () => {
-  it("maps the installer's four wizard locales onto canonical UI locales", () => {
-    // The installer shell offers exactly these (shun's wizard set); each
-    // seeds the UI locale whose copy matches it.
+  it("maps the installer's eight wizard locales onto canonical UI locales", () => {
+    // The installer shell offers exactly these; each seeds the UI locale
+    // whose copy matches it.
     expect(installerLocaleToUi("zh-Hans")).toBe("zh-CN");
     expect(installerLocaleToUi("zh-Hant")).toBe("zh-TW");
     expect(installerLocaleToUi("en")).toBe("en-US");
     expect(installerLocaleToUi("ru")).toBe("ru-RU");
+    expect(installerLocaleToUi("ja")).toBe("ja-JP");
+    expect(installerLocaleToUi("ko")).toBe("ko-KR");
+    expect(installerLocaleToUi("fr")).toBe("fr-FR");
+    expect(installerLocaleToUi("es")).toBe("es-ES");
   });
 
   it("ignores anything the installer cannot send", () => {
     expect(installerLocaleToUi("zh-TW")).toBeNull();
     expect(installerLocaleToUi("zh-Hans-X")).toBeNull();
-    expect(installerLocaleToUi("ja")).toBeNull();
+    expect(installerLocaleToUi("pt-BR")).toBeNull();
+    expect(installerLocaleToUi("de")).toBeNull();
     expect(installerLocaleToUi("")).toBeNull();
   });
 });
