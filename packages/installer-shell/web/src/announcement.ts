@@ -86,9 +86,9 @@ export const ANNOUNCEMENT_VARIANTS: Record<string, AnnouncementVariant> = {
 /** Mandatory blocks every surface shows, in display order. */
 const MANDATORY_IDS = ["zh-CN", "en", "ru"] as const;
 
-/** Short usage-telemetry disclosure, one per language id (en / zh only —
- *  the same three locales the license documents resolve to). The wording
- *  mirrors the short form of docs/{lang}/license/usage-telemetry.md. */
+/** Short usage-telemetry disclosure, one per language id (en / zh-CN /
+ *  zh-TW keyed; every other locale falls back to the en entry). The
+ *  wording mirrors the short form of docs/{lang}/license/usage-telemetry.md. */
 export const TELEMETRY_NOTICES: Record<string, { label: string; text: string }> = {
   en: {
     label: "English",

@@ -254,9 +254,10 @@ export default defineComponent({
     });
 
     // The license documents are backend-resolved per wizard locale
-    // (build-time artifacts; ru has no dedicated set and gets the English
-    // fallback). A locale switch re-fetches; a response from a superseded
-    // request is dropped so a slow earlier locale can never win.
+    // (build-time artifacts; every offered locale has a dedicated set,
+    // and anything else still lands the English fallback). A locale
+    // switch re-fetches; a response from a superseded request is dropped
+    // so a slow earlier locale can never win.
     function refreshLicenseDocs() {
       const requested = locale.value;
       invoke<LicenseDoc[]>("get_license_docs", { locale: requested })
