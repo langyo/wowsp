@@ -28,3 +28,15 @@ export const router = createRouter({
     },
   ],
 });
+
+// SPA page-view tracking: gtag.js in index.html only records the initial
+// load, so forward every client-side navigation to Analytics as well.
+router.afterEach((to) => {
+  const gtag = (window as { gtag?: (...args: unknown[]) => void }).gtag;
+  gtag?.("event", "page_view", {
+    page_title: String(to.name ?? to.path),
+    page_path: to.fullPath,
+  });
+});
+
+export default router;

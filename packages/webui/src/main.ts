@@ -5,6 +5,7 @@ import App from "./App";
 import router from "@/router";
 import { i18n } from "@/i18n";
 import { bootstrap } from "./bootstrap";
+import { initAnalytics, trackPageView } from "@/utils/analytics";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
 import "@/styles/image-asset.scss";
@@ -20,6 +21,12 @@ import "virtual:uno.css";
  * hikari theme/font init, deep-link theme forcing, hikari i18n seeding).
  */
 bootstrap();
+// Google Analytics (Tauri shell + release only, see utils/analytics).
+initAnalytics();
+// Forward SPA route changes as page_views on the virtual canonical host.
+router.afterEach((to) => {
+  trackPageView(String(to.name ?? to.path), to.fullPath);
+});
 const app = createApp(App);
 app.use(createPinia());
 app.use(router);
