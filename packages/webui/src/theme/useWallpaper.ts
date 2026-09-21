@@ -9,6 +9,10 @@ import { computed, ref } from "vue";
 
 import { useTheme } from "@/theme";
 import { SOLID_WALLPAPER, DEFAULT_WALLPAPER_ID, loadActiveWallpaperId, saveActiveWallpaperId, type WallpaperPreset } from "./wallpaper";
+import {
+  setWallpaperOverlayPercent,
+  wallpaperOverlayPercent,
+} from "./wallpaperOverlay";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
 
@@ -125,11 +129,11 @@ export function useWallpaper() {
     return effectiveMode.value === "light" ? "white" : "black";
   });
 
-  /** Overlay opacity — dims image backgrounds for readability. Solid has 0. */
+  /** Scrim strength over image wallpapers — the user's transparency
+   *  preference (see wallpaperOverlay.ts). Solid never draws a scrim. */
   const overlayOpacity = computed(() => {
     if (isSolid.value) return 0;
-    // Image: stronger overlay in dark mode, lighter in light mode.
-    return effectiveMode.value === "dark" ? 0.7 : 0.55;
+    return wallpaperOverlayPercent.value / 100;
   });
 
   return {
@@ -145,6 +149,8 @@ export function useWallpaper() {
     mediaUrl,
     solidColor,
     overlayOpacity,
+    overlayPercent: wallpaperOverlayPercent,
+    setOverlayPercent: setWallpaperOverlayPercent,
     setActiveWallpaper,
     importCustom,
     removeCustomById,

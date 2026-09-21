@@ -1,4 +1,4 @@
-import { computed, defineComponent, watchEffect } from "vue";
+import { defineComponent, onBeforeUnmount, watchEffect } from "vue";
 
 import { getThemeTokens, useTheme } from "@celestia-island/hikari";
 
@@ -7,53 +7,85 @@ import { useWallpaper } from "@/theme/useWallpaper";
 import { t } from "@/i18n";
 
 /**
- * Applies the active wallpaper to <body> via CSS custom properties, and —
- * when the active wallpaper carries an art credit — renders the desktop
- * corner author mark (the same shared AuthorMark component the settings
+ * Paints the active wallpaper, shittim-chest's way: a dedicated fixed media
+ * element PREPENDED to <body> (z-index -1, below every app surface) instead
+ * of a body background-image — a body background paints at the canvas level,
+ * so any opaque surface anywhere in the chrome would hide it, which is
+ * exactly how the first cut of this feature ended up invisible. The
+ * readability scrim is body::before at z-index 0: above the wallpaper,
+ * below #app (z-index 1, see theme.scss) — so the dim only ever applies to
+ * the wallpaper itself, and translucent chrome (sidebar, cards, modals)
+ * samples the scrim-adjusted image. Solid wallpapers skip the layer
+ * entirely and fall back to body's background-color.
+ *
+ * Writes (consumed by theme.scss):
+ *   html[data-wallpaper-art]     scrim gate, only true for image wallpapers
+ *   --wallpaper-solid-color      body background color (solid path / backdrop
+ *                                behind the image before it decodes)
+ *   --wallpaper-overlay-opacity  scrim strength, 0..1 (user preference)
+ *
+ * When the active wallpaper carries an art credit, the desktop corner author
+ * mark renders (the same shared AuthorMark component the settings
  * attributions list uses).
- *
- * Writes:
- *   --wallpaper-solid-color: #000 / #fff / transparent
- *   --wallpaper-image: url(...) or none
- *   --wallpaper-overlay-opacity: 0..1
- *
- * These are consumed by theme.scss's body + body::before rules.
  */
+
+const WALLPAPER_LAYER_ID = "wowsp-wallpaper-layer";
+
+function ensureLayer(): HTMLImageElement {
+  let el = document.getElementById(WALLPAPER_LAYER_ID) as HTMLImageElement | null;
+  if (!el) {
+    el = document.createElement("img");
+    el.id = WALLPAPER_LAYER_ID;
+    el.className = "wallpaper-layer";
+    el.alt = "";
+    el.draggable = false;
+    document.body.prepend(el);
+  }
+  return el;
+}
+
+function removeLayer() {
+  document.getElementById(WALLPAPER_LAYER_ID)?.remove();
+}
+
 export default defineComponent({
   name: "WallpaperRenderer",
   setup() {
     const wp = useWallpaper();
     const theme = useTheme();
 
-    const style = computed(() => {
+    watchEffect(() => {
+      const html = document.documentElement;
+      const body = document.body;
       const tokens = getThemeTokens(theme.currentTheme.value, theme.effectiveMode.value);
+      const backdrop = tokens
+        ? `rgb(${tokens.background.r} ${tokens.background.g} ${tokens.background.b})`
+        : "transparent";
+      const url = wp.mediaUrl.value;
 
-      const s: Record<string, string> = {};
-
-      if (wp.solidColor.value) {
-        s["--wallpaper-solid-color"] = wp.solidColor.value === "white" ? "#f8fafc" : "#0b1220";
-        s["--wallpaper-image"] = "none";
-      } else if (wp.mediaUrl.value) {
-        s["--wallpaper-image"] = `url(${wp.mediaUrl.value})`;
-        s["--wallpaper-solid-color"] = tokens
-          ? `rgb(${tokens.background.r} ${tokens.background.g} ${tokens.background.b})`
-          : "transparent";
-      } else {
-        // Fallback: theme background.
-        s["--wallpaper-solid-color"] = tokens
-          ? `rgb(${tokens.background.r} ${tokens.background.g} ${tokens.background.b})`
-          : "transparent";
-        s["--wallpaper-image"] = "none";
+      if (wp.isSolid.value || !url) {
+        // Solid (or nothing to paint): no layer, no scrim — body's own
+        // background color is the whole show.
+        html.removeAttribute("data-wallpaper-art");
+        removeLayer();
+        body.style.setProperty("--wallpaper-solid-color", wp.solidColor.value === "white" ? "#f8fafc" : backdrop);
+        body.style.setProperty("--wallpaper-overlay-opacity", "0");
+        return;
       }
-      s["--wallpaper-overlay-opacity"] = String(wp.overlayOpacity.value);
-      return s;
+
+      html.dataset.wallpaperArt = "true";
+      ensureLayer().src = url;
+      // Theme-colored backdrop behind the image (visible while it decodes,
+      // and what the scrim tints toward).
+      body.style.setProperty("--wallpaper-solid-color", backdrop);
+      body.style.setProperty("--wallpaper-overlay-opacity", String(wp.overlayOpacity.value));
     });
 
-    watchEffect(() => {
-      const body = document.body;
-      for (const [k, v] of Object.entries(style.value)) {
-        body.style.setProperty(k, v);
-      }
+    onBeforeUnmount(() => {
+      // The renderer is app-singleton and never unmounts in practice, but
+      // leave no orphan layer if a future refactor does.
+      document.documentElement.removeAttribute("data-wallpaper-art");
+      removeLayer();
     });
 
     return () => {

@@ -11,7 +11,7 @@
   "themeModeDark": "Always dark",
   "themeModeLight": "Always light",
   "themeModeSolar": "Follow daylight",
-  "wallpaperSolid": "Solid (follows theme)",
+  "wallpaperSolid": "Solid (dark)",
   "themePreset": "Color preset",
   "geolocation": "Location",
   "geolocationHint": "Used for solar-based auto theme. Native fix when the shell provides one, otherwise IP — cached for the session.",
@@ -27,7 +27,7 @@
   "wallpaperDelete": "Delete wallpaper",
   "wallpaperDeleteConfirm": "Confirm delete",
   "wallpaperRemoveFailed": "Wallpaper removal failed",
-  "wallpaperHint": "The solid background follows the theme mode above; custom images are stored in the wallpapers folder of the data directory.",
+  "wallpaperHint": "The solid background always presents dark with light text; custom images are kept in the wallpapers folder of the data directory.",
   "fontSize": "Font size",
   "fontSizeHint": "Applies to all interface text except the title bar and app title.",
   "fontSizeXS": "Smallest",
@@ -144,5 +144,6 @@
   "resFullDownload": "Full download required",
   "resAfterApp": "Update the application first — the resource pack follows after the restart.",
   "resSegment": "Patch {current} / {total}",
-  "cacheApplying": "Applying…"
+  "cacheApplying": "Applying…",
+  "wallpaperOverlay": "Overlay opacity"
 }
