@@ -66,6 +66,12 @@
     &--three {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+
+    /* Color presets: four cards in a 2×2 grid — a 3+1 wrap reads lopsided,
+       and 4-up squeezes each under the 9.5rem legibility floor. */
+    &--four {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   &__subtitle {

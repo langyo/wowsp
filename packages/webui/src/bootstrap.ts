@@ -16,7 +16,6 @@ import {
   useTheme,
 } from "@celestia-island/hikari";
 
-import { registerBrandThemes } from "./theme/brandThemes";
 import { installGlobalTooltip } from "./composables/globalTooltip";
 import { initDpiPrefs } from "./theme/dpiPrefs";
 import { initFontScalePreference } from "./theme/fontScalePreference";
@@ -36,11 +35,6 @@ export function bootstrap(): void {
   // the browser window honest on phones.
   applyViewportPolicy();
 
-  // Brand presets must be in hikari's registry before initTheme resolves
-  // the stored/default theme id ("ocean"). index.html additionally declares
-  // window.__celestiaThemes/__celestiaDefaultTheme pre-module so the
-  // stored-id resolver accepts "ocean" even before this line evaluates.
-  registerBrandThemes();
   initTheme();
   // WoWSP's own three-way mode preference (dark/light/solar) sits on top of
   // hikari's mode and must run AFTER initTheme so the authoritative

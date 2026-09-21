@@ -76,7 +76,13 @@
     height: 1.25rem;
   }
 
-  /* ── content pane: one section card at a time ── */
+  /* ── content pane: one section card at a time ──
+     The pane is the scroll container, so its scrollbar renders at the
+     pane's border edge. Cancelling the modal body's right padding
+     (hikari's fixed 1.5rem --hk-modal-padding-body) with a negative
+     margin puts that edge — and therefore the scrollbar — flush with
+     the modal window's right edge; the padding-right then re-applies
+     the content inset BETWEEN the scrollbar and the cards. */
   &__pane {
     flex: 1;
     min-width: 0;
@@ -84,7 +90,15 @@
     flex-direction: column;
     gap: 1rem;
     overflow-y: auto;
-    padding-right: 0.25rem;
+    margin-right: -1.5rem;
+    padding-right: 1.75rem;
+
+    /* hikari's sheet layout retunes the modal body padding to 1rem under
+       768px — follow it or the pane overshoots the edge. */
+    @media (max-width: 767px) {
+      margin-right: -1rem;
+      padding-right: 1.25rem;
+    }
   }
 
   /* Attributions (版权信息): one AuthorMark row + note per partner. */
@@ -393,6 +407,15 @@
     font-size: var(--text-sm);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-text));
+  }
+
+  /* Overlay-strength slider row (wallpaper transparency): the same slider
+     grammar as the DPI row, with a leading label instead of a trailing
+     Auto action. */
+  &__overlay-label {
+    flex: none;
+    font-size: var(--text-sm);
     color: rgb(var(--color-text));
   }
 
