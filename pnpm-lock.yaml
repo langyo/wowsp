@@ -74,8 +74,8 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.34
-        version: 0.55.34(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.36
+        version: 0.55.36(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.38.0
         version: 1.38.0(vue@3.5.42(typescript@7.0.2))
@@ -114,8 +114,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.34
-        version: 0.55.34(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.36
+        version: 0.55.36(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
         version: 1.47.0(vue@3.5.42(typescript@7.0.2))
@@ -311,8 +311,8 @@ packages:
     peerDependencies:
       vue: ^*
 
-  '@celestia-island/hikari@0.55.34':
-    resolution: {integrity: sha512-6anTTBLgj6cDamPqRwP2LAhhqspbksGWV+PU8mmFfRhcPSUH5RWn9eFM1PLdKDfgYDBLIj8sJy+XmfyVJIifKg==}
+  '@celestia-island/hikari@0.55.36':
+    resolution: {integrity: sha512-NPKzyukYBJHMautZIbVh0b8j5qIVZFeSYKGWWIf9P+QieflcJhWDnd5zZl/IyLfkitD08TuWAUxckuiolpqcVw==}
     peerDependencies:
       vue: ^*
 
@@ -1446,6 +1446,9 @@ packages:
   dompurify@3.4.14:
     resolution: {integrity: sha512-dVoH9z+MY+C9IilgGCk3YfFqjLi3fChm2OiKJMzh6axrJ5qwxqWaZamgmHrpv22CN/KdbZJuGEGgfQoL00LTdg==}
 
+  dompurify@3.4.15:
+    resolution: {integrity: sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==}
+
   duplexer@0.1.2:
     resolution: {integrity: sha512-jtD6YG370ZCIi/9GTaJKQxWTZD045+4R4hTk/x1UyoqadyJ9x9CgSi1RlVDQF8U2sxLLSnFkCaMihqljHIWgMg==}
 
@@ -1681,6 +1684,11 @@ packages:
 
   marked@18.0.11:
     resolution: {integrity: sha512-HnslJfsZkRPBDJRHvVtAaWlZHEpSu7u8LgQuJCELjRKuWR+hpq4A7sLq3p8HaI9ypVoXDXxV34CsQJEe1+J5Aw==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
+  marked@18.0.13:
+    resolution: {integrity: sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -2369,13 +2377,13 @@ snapshots:
       marked: 18.0.11
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.34(vue@3.5.42(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.36(vue@3.5.42(typescript@7.0.2))':
     dependencies:
-      dompurify: 3.4.14
+      dompurify: 3.4.15
       echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.42(typescript@7.0.2))
-      marked: 18.0.11
+      marked: 18.0.13
       vue: 3.5.42(typescript@7.0.2)
 
   '@dimforge/rapier3d-compat@0.12.0': {}
@@ -3278,6 +3286,10 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
+  dompurify@3.4.15:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
+
   duplexer@0.1.2: {}
 
   echarts@6.1.0:
@@ -3500,6 +3512,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   marked@18.0.11: {}
+
+  marked@18.0.13: {}
 
   mdn-data@2.27.1: {}
 
