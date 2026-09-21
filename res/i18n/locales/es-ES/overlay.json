@@ -4,5 +4,6 @@
   "locatingHint": "Mantén pulsado Tab: reconociendo la lista de jugadores…",
   "recognizingBadge": "Reconociendo la lista…",
   "queryingBadge": "Consultando estadísticas…",
-  "staleBadge": "Actualizando equipos…"
+  "staleBadge": "Actualizando equipos",
+  "staleHint": "Cambio detectado, reescaneando para corregir"
 }
