@@ -80,7 +80,7 @@ html {
 
   &__actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
     gap: var(--space-16);
@@ -244,11 +244,11 @@ html {
   --holo-stage-bg: rgb(3 6 12);
 }
 
-/* Light scheme: light frosted backdrop so the cyan hologram still reads. */
-@media (prefers-color-scheme: light) {
-  .ship-stage {
-    --holo-stage-bg: rgb(240 245 252);
-  }
+/* Light mode: light frosted backdrop so the cyan hologram still reads.
+   Keyed off hikari's root data-mode attribute — the site theme switch,
+   not the OS preference. */
+[data-mode="light"] .ship-stage {
+  --holo-stage-bg: rgb(240 245 252);
 }
 
 /* ── FEATURES ─────────────────────────────────────────────── */
@@ -367,7 +367,7 @@ html {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--space-16);
     margin-top: var(--space-40);
   }
