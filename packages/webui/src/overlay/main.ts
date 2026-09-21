@@ -14,6 +14,9 @@
  * origin; CSS px = physical / devicePixelRatio.
  */
 import { careerStamp, damageColor, winrateColor, type StampKind } from "@/utils/winrate";
+// Pure-TS transport wrapper (no Vue/Pinia) — safe for this bare-DOM page,
+// same as @/utils/winrate above.
+import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 import stampAir from "../res/stamps/stamp-air.png";
 import stampApe from "../res/stamps/stamp-ape.png";
 import stampMaggot from "../res/stamps/stamp-maggot.png";
@@ -118,6 +121,9 @@ interface Stat {
   /** Career PR + battle count — only consumed by the career seal below. */
   pr: number | null;
   battles: number | null;
+  /** Clan id from the batch answer (null = clanless / not found) — joins
+   *  the hidden-profile 过街老鼠 clan gate below. */
+  clanId: number | null;
   hidden: boolean;
 }
 
@@ -220,6 +226,39 @@ let compInFlight = false;
 let compRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let compRetryDelayMs = 2000;
 
+// Hidden-profile 过街老鼠 clan gate: the verdict map is keyed by
+// `${realm}:${clanId}` (not by name — two hidden clanmates share one
+// verdict, and the shared lookupClanWinrate module dedupes them onto one
+// clans/info request too). An ABSENT key = verdict not in yet → the chip
+// holds its rat stamp; a stored null = the lookup failed → fail-open stamp;
+// a number goes straight into careerStamp's gate.
+const clanWinrates = new Map<string, number | null>();
+const clanGateOut = new Set<string>();
+
+/** Resolve the clan gate for every roster name whose stats already landed
+ *  hidden with a clan. Gated on SEALS_SHOWN like the composition pipeline:
+ *  with seals off no stamp ever renders, so the verdict would be dead
+ *  weight. Verdicts land asynchronously and re-render — battle switches
+ *  don't invalidate them (clan aggregate winrates don't churn mid-session). */
+function scheduleClanGates() {
+  if (!SEALS_SHOWN || !realm || !arena) return;
+  for (const v of arena.vehicles) {
+    if (AI_NAME.test(v.name)) continue;
+    const st = stats.get(cacheKey(v.name));
+    if (!st?.hidden || st.clanId == null) continue;
+    const key = clanWinrateKey(realm, st.clanId);
+    if (clanWinrates.has(key) || clanGateOut.has(key)) continue;
+    clanGateOut.add(key);
+    void lookupClanWinrate(realm, st.clanId).then((wr) => {
+      clanGateOut.delete(key);
+      // Only the first verdict for a clan wins the slot — later duplicates
+      // (there shouldn't be any) must not resurrect a failed verdict.
+      if (!clanWinrates.has(key)) clanWinrates.set(key, wr);
+      render();
+    });
+  }
+}
+
 const cacheKey = (name: string) => `${realm}:${name}`;
 
 function fmtDamage(avg: number): string {
@@ -250,7 +289,22 @@ function chipContent(name: string): string {
   // Seals flank the numbers: career verdict left, composition tags right
   // (air before sub). A name without stats yet shows no seal at all — the
   // verdicts are derived from data the stats/composition batches bring.
-  const career = st ? careerStamp(st.pr, st.battles, st.winrate, st.hidden) : null;
+  // Hidden profiles with a clan additionally HOLD their seal until the clan
+  // verdict lands (absent map entry): a strong clan (beating the 53% gate)
+  // excuses them, and a stamp that flashes first and retracts a beat later
+  // would be worse than none. A failed verdict arrives as null and stamps
+  // fail-open, same as a clanless profile.
+  let career: StampKind | null = null;
+  if (st) {
+    // Non-null clanId on a hidden profile = gated: an absent verdict
+    // (undefined) holds the seal; a landed one (number, or null = failed
+    // lookup) goes into the gate.
+    const clanId = st.hidden ? st.clanId : null;
+    const verdict = clanId != null ? clanWinrates.get(clanWinrateKey(realm, clanId)) : undefined;
+    if (!(clanId != null && verdict === undefined)) {
+      career = careerStamp(st.pr, st.battles, st.winrate, st.hidden, verdict);
+    }
+  }
   const comp = compositions.get(cacheKey(name)) ?? null;
   const left = career ? stampImg(career) : "";
   const right = (comp?.air ? stampImg("air") : "") + (comp?.sub ? stampImg("sub") : "");
@@ -428,10 +482,12 @@ const RETRY_DELAY_MAX_MS = 30000;
 
 function scheduleBatch() {
   if (!arena || !tauri) return;
-  // Names whose stats already landed may still owe a composition verdict —
-  // give the seal pipeline its trigger here too, before the stats-specific
-  // guards below (they are about the STATS cadence, not the seal's).
+  // Names whose stats already landed may still owe a composition verdict or
+  // a hidden-profile clan gate — give both pipelines their trigger here,
+  // before the stats-specific guards below (they are about the STATS
+  // cadence, not the seals').
   scheduleCompBatch();
+  scheduleClanGates();
   // No detected realm → no lookups; chips stay muted ("…") rather than
   // showing numbers fetched from a guessed realm.
   if (!realm) return;
@@ -465,6 +521,7 @@ async function runBatch() {
           avgDamage: r.avgDamage ?? null,
           pr: r.pr ?? null,
           battles: r.battles ?? null,
+          clanId: r.clanId ?? null,
           hidden: r.hidden,
         });
       } else {
@@ -473,6 +530,7 @@ async function runBatch() {
           avgDamage: null,
           pr: null,
           battles: null,
+          clanId: null,
           hidden: false,
         });
       }
@@ -480,8 +538,10 @@ async function runBatch() {
     // Success: restore the initial cadence for any future failure.
     retryDelayMs = 2000;
     // Freshly landed stats unlock the composition-seal lookups for those
-    // names (seals only queue names that already have their stats).
+    // names (seals only queue names that already have their stats) and the
+    // hidden-profile clan gates alike.
     scheduleCompBatch();
+    scheduleClanGates();
     render();
   } catch {
     // Transient WG hiccup: retry the same (still-uncached) names after a

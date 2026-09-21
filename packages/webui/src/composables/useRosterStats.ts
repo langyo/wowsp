@@ -16,6 +16,7 @@
 import { onBeforeUnmount, reactive, watch } from "vue";
 
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
+import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
 
 /** The client renders bots as `:NAME:`. */
@@ -30,6 +31,14 @@ export interface RosterStat {
   pr: number | null;
   avgDamage: number | null;
   battles: number | null;
+  /** Clan id from the batch answer (null = clanless / not found) — joins
+   *  the hidden-profile 过街老鼠 clan gate. */
+  clanId: number | null;
+  /** Resolved clan winrate for the rat gate: undefined = not judged yet
+   *  (a hidden + clanful entry holds its stamp until this lands) or no
+   *  judgment needed; a number passes to careerStamp's gate; null = the
+   *  lookup failed → fail-open stamp. */
+  clanWinrate?: number | null;
   hidden: boolean;
   loading: boolean;
 }
@@ -52,9 +61,32 @@ const emptyStat = (loading: boolean): RosterStat => ({
   pr: null,
   avgDamage: null,
   battles: null,
+  clanId: null,
   hidden: false,
   loading,
 });
+
+/** Kick the hidden-profile clan gate for one landed stat: hidden + clanful +
+ *  not-yet-judged entries resolve the clan's winrate (cached and deduped in
+ *  utils/clanWinrate — one clans/info call per clan per window) and write
+ *  the verdict back into THIS cache's entry in place, so a later lookup
+ *  seeding the name from cache carries the verdict instantly. `onResolved`
+ *  lets the live pipeline mirror the verdict into its reactive slots (it
+ *  owns the battle-generation guard); the one-shot name-keyed pipeline
+ *  passes none — its consumers already hold the same object. */
+function resolveClanGate(
+  st: RosterStat,
+  key: string,
+  realm: string,
+  onResolved?: (wr: number | null) => void,
+): void {
+  if (!st.hidden || st.clanId == null || st.clanWinrate !== undefined) return;
+  void lookupClanWinrate(realm, st.clanId).then((wr) => {
+    const cached = statCache.get(key);
+    if (cached && cached.clanWinrate === undefined) cached.clanWinrate = wr;
+    onResolved?.(wr);
+  });
+}
 
 export interface UseRosterStatsOptions {
   /** Reactive realm getter (account store / game process / overlay URL). */
@@ -89,6 +121,12 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       const cached = statCache.get(cacheKey(v.name));
       if (cached) {
         stats.set(v.id, { ...cached });
+        // A cached entry whose clan verdict is still out (its gate fired in
+        // an earlier battle and the lookup is in flight or was superseded
+        // by a battle switch) re-fires here under the CURRENT generation,
+        // so the verdict reaches this battle's reactive slots too; already
+        // judged entries are a no-op.
+        gateClanWinrate(v.name, cached, battleGen);
         continue;
       }
       if (stats.has(v.id)) continue;
@@ -112,6 +150,29 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     }
   }
 
+  /** Resolve the rat-stamp clan gate for a landed roster entry and mirror
+   *  the verdict into every same-name reactive slot. `gen` pins the verdict
+   *  to the battle it was fired under: if the battle switched while the
+   *  lookup was out, the verdict still lands in the module cache
+   *  (resolveClanGate) but the reactive map is left alone — vehicle ids
+   *  repeat across battles, and a new battle's slots must only carry its
+   *  own lookups. */
+  function gateClanWinrate(name: string, st: RosterStat, gen: number) {
+    const key = cacheKey(name);
+    resolveClanGate(st, key, options.realm(), (wr) => {
+      if (gen !== battleGen) return;
+      const clanId = st.clanId;
+      if (clanId == null) return;
+      for (const v of options.arena()?.vehicles ?? []) {
+        if (v.name !== name || AI_NAME.test(name)) continue;
+        const slot = stats.get(v.id);
+        if (slot && slot.hidden && slot.clanId === clanId && slot.clanWinrate === undefined) {
+          slot.clanWinrate = wr;
+        }
+      }
+    });
+  }
+
   async function runBatch() {
     batchTimer = null;
     if (pendingNames.size === 0) return;
@@ -133,21 +194,21 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       if (gen !== battleGen) return;
       names.forEach((name, i) => {
         const r = results[i];
-        applyStat(
-          name,
-          r
-            ? {
-                winrate: r.winrate ?? null,
-                pr: r.pr ?? null,
-                avgDamage: r.avgDamage ?? null,
-                battles: r.battles ?? null,
-                hidden: r.hidden,
-                loading: false,
-              }
-            : // Not found on this realm — resolve to "no data" so the card
-              // doesn't spin forever.
-              emptyStat(false),
-        );
+        const st = r
+          ? {
+              winrate: r.winrate ?? null,
+              pr: r.pr ?? null,
+              avgDamage: r.avgDamage ?? null,
+              battles: r.battles ?? null,
+              clanId: r.clanId ?? null,
+              hidden: r.hidden,
+              loading: false,
+            }
+          : // Not found on this realm — resolve to "no data" so the card
+            // doesn't spin forever.
+            emptyStat(false);
+        applyStat(name, st);
+        gateClanWinrate(name, st, gen);
       });
     } catch {
       if (gen !== battleGen) return;
@@ -254,6 +315,12 @@ export async function fetchRosterStatsByNames(
   const misses: string[] = [];
   for (const name of names) {
     if (isAiName(name)) continue;
+    // Cache hits are NOT re-fired through the clan gate (unlike ensureStats):
+    // no current consumer renders career stamps off this one-shot map, and a
+    // hit returns the cached object itself, so an in-flight verdict still
+    // lands on it via resolveClanGate's writeback. A future stamp-rendering
+    // consumer must re-fire the gate here or a pending verdict (undefined)
+    // would hold its stamp forever.
     const cached = statCache.get(rosterCacheKey(realm, name));
     if (cached) out.set(name, cached);
     else misses.push(name);
@@ -269,13 +336,18 @@ export async function fetchRosterStatsByNames(
             pr: r.pr ?? null,
             avgDamage: r.avgDamage ?? null,
             battles: r.battles ?? null,
+            clanId: r.clanId ?? null,
             hidden: r.hidden,
             loading: false,
           }
         : emptyStat(false);
+      const key = rosterCacheKey(realm, name);
       if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
-      statCache.set(rosterCacheKey(realm, name), st);
+      statCache.set(key, st);
       out.set(name, st);
+      // No battle generation to guard here — the verdict only needs the
+      // module-cache writeback (callers already hold the same object).
+      resolveClanGate(st, key, realm);
     });
   } catch {
     /* transient lookup failure — leave the misses out; cells show "—" */

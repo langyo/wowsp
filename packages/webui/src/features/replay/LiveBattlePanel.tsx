@@ -283,10 +283,18 @@ export default defineComponent({
         // needs its own copy of the career guard statLine uses above.
         const st = clickable ? stats.get(v.id) : null;
         // Hidden profiles earn the 过街老鼠 seal instead of a stat verdict —
-        // careerStamp's hidden branch handles that; everything else grades
-        // from the numbers (unknown winrate → 海猴 fallback).
+        // careerStamp's hidden branch handles that — but only once the clan
+        // gate has spoken: a hidden profile WITH a clan holds the seal while
+        // its clan verdict is still out (clanWinrate undefined), and
+        // careerStamp excuses a clan beating the 53% gate (a failed verdict
+        // arrives as null and stamps fail-open). Everything else grades from
+        // the numbers (unknown winrate → 海猴 fallback).
         const stamp =
-          st && !st.loading ? careerStamp(st.pr, st.battles, st.winrate, st.hidden) : null;
+          st &&
+          !st.loading &&
+          !(st.hidden && st.clanId != null && st.clanWinrate === undefined)
+            ? careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate)
+            : null;
         const classes = [
           "live-battle__player",
           { "live-battle__player--link": clickable },
