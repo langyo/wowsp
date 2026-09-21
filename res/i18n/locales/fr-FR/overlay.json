@@ -1,9 +1,9 @@
 {
   "hint": "Maintenez Tab en bataille pour afficher les statistiques.",
   "locateHint": "La détection est active, mais la liste des équipes n'a pas encore été localisée — entrez en bataille et réessayez.",
-  "locatingHint": "Maintenez Tab — reconnaissance de la liste des joueurs…",
-  "recognizingBadge": "Reconnaissance de la liste…",
-  "queryingBadge": "Récupération des stats…",
+  "locatingHint": "Maintenez Tab — reconnaissance de la liste des joueurs",
+  "recognizingBadge": "Reconnaissance de la liste",
+  "queryingBadge": "Récupération des stats",
   "staleBadge": "Mise à jour des équipes",
   "staleHint": "Changement détecté, nouvelle analyse en cours"
 }
