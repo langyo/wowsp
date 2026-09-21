@@ -208,10 +208,21 @@
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
 
-    strong {
+    /* The group number opens the QQ join link through the backend. */
+    .about-modal__qq-number {
+      border: none;
+      background: transparent;
+      padding: 0;
       color: rgb(var(--color-primary));
       font-weight: 700;
       letter-spacing: 0.02em;
+      font-family: inherit;
+      font-size: inherit;
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
     }
   }
 }

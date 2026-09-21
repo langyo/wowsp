@@ -7,6 +7,11 @@ en-US baseline across every namespace JSON, and that `{placeholder}` sets
 match per key (a translation that drops `{name}` breaks vue-i18n params at
 runtime, not at build time).
 
+Link URLs (baseline values matching `^https?://`) are language-invariant:
+they are required only in the en-US baseline — other locales may omit them
+(every locale falls back to en-US at runtime) but must copy the baseline
+value verbatim when present.
+
 Exit codes: 0 = parity, 1 = missing keys / placeholder drift (unless --no-fail).
 
 Usage:
@@ -27,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCALES_DIR = REPO_ROOT / "res" / "i18n" / "locales"
 BASELINE_LANG = "en-US"
 PLACEHOLDER_RE = re.compile(r"\{\w+\}")
+URL_VALUE_RE = re.compile(r"^https?://")
 
 
 def flatten(obj, prefix="") -> dict:
@@ -86,11 +92,23 @@ def main() -> int:
         if lang == BASELINE_LANG:
             continue
         lang_keys = set(values[lang])
-        items = sorted(baseline_keys - lang_keys) + sorted(
+        # Link URLs are language-invariant (see module docstring): exempt
+        # from the missing-key requirement, but pinned to the baseline
+        # value whenever a locale does carry them.
+        missing = [
+            k
+            for k in baseline_keys - lang_keys
+            if not URL_VALUE_RE.match(str(baseline[k]))
+        ]
+        items = sorted(missing) + sorted(
             f"+{k}" for k in lang_keys - baseline_keys
         )
         # Placeholder drift: the translation must interpolate the same names.
         for key in sorted(baseline_keys & lang_keys):
+            if URL_VALUE_RE.match(str(baseline[key])):
+                if values[lang][key] != baseline[key]:
+                    items.append(f"~{key}: link URL differs from baseline")
+                continue
             want = sorted(PLACEHOLDER_RE.findall(str(baseline[key])))
             got = sorted(PLACEHOLDER_RE.findall(str(values[lang][key])))
             if want != got:
