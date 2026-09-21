@@ -1,0 +1,66 @@
+/* Friendly lookup-failure notice (LookupErrorNotice) — lives in the lookup
+   main column where the raw red backend string used to render. Theme
+   tokens only (no hardcoded surface colors) so light/dark both stay
+   readable; the alert chrome itself (background, border, icon tint) comes
+   from HAlert's variant styling. */
+.lookup-error-notice {
+  .lookup-error-notice__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .lookup-error-notice__desc,
+  .lookup-error-notice__cause,
+  .lookup-error-notice__rate {
+    margin: 0;
+  }
+
+  .lookup-error-notice__causes-title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  /* Tighter than a default list — the causes read as one compact block. */
+  .lookup-error-notice__causes {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* "Looked up successfully before but gone now" — the strongest signal on
+     this card, so it gets the theme's warning color and bold weight. */
+  .lookup-error-notice__seen {
+    margin: 0;
+    font-weight: 700;
+    color: rgb(var(--color-warning));
+  }
+
+  /* Raw English backend message: collapsed until asked for, monospace,
+     dimmed, scrollable when a long API error lands in it. */
+  .lookup-error-notice__raw {
+    font-size: var(--text-2xs);
+
+    summary {
+      cursor: pointer;
+      user-select: none;
+      color: rgb(var(--color-muted));
+    }
+
+    code {
+      display: block;
+      max-height: 96px;
+      overflow-y: auto;
+      margin-top: 4px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgb(var(--color-text) / 6%);
+      font-family: var(--font-mono);
+      color: rgb(var(--color-text) / 75%);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
+}

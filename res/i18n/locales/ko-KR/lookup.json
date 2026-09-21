@@ -17,6 +17,22 @@
   "memberName": "멤버",
   "roleLabel": "역할",
   "jumpClan": "클랜 보기",
+  "error": {
+    "playerNotFoundTitle": "플레이어를 찾을 수 없음",
+    "clanNotFoundTitle": "클랜을 찾을 수 없음",
+    "playerNotFoundDesc": "{realm} 서버에 “{name}”와(과) 정확히 일치하는 계정이 없습니다.",
+    "clanNotFoundDesc": "{realm} 서버에 ID가 {query}인 클랜이 없습니다.",
+    "clanNotFoundCause": "클랜이 해산했거나 ID가 잘못되었을 수 있습니다.",
+    "causesTitle": "가능한 원인",
+    "causeTypo": "닉네임 철자가 틀렸거나 최근에 변경되었을 수 있습니다.",
+    "causeDeleted": "계정이 삭제되었을 수 있습니다. 본인이 삭제했거나 장기 미접속으로 회수되었을 수 있습니다.",
+    "causeRealm": "잘못된 서버가 선택되었을 수 있습니다. 이 검색은 {realm} 서버를 대상으로 했습니다. 상단에서 서버를 변경해 다시 시도해 보세요.",
+    "seenBefore": "이전에 이 플레이어 조회에 성공했지만 지금은 찾을 수 없습니다. 계정이 삭제되었을 가능성이 높습니다.",
+    "apiErrorTitle": "조회 실패",
+    "apiErrorDesc": "공식 API가 이번 조회를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    "rateLimitHint": "짧은 시간에 요청이 너무 많습니다. 공식 API가 이 네트워크의 요청을 제한하고 있습니다. 잠시 후 다시 시도하세요.",
+    "rawDetail": "원본 오류 정보"
+  },
   "role": {
     "commander": "클랜장",
     "executive_officer": "부클랜장",

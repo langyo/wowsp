@@ -17,6 +17,22 @@
   "memberName": "成员",
   "roleLabel": "角色",
   "jumpClan": "查看公会",
+  "error": {
+    "playerNotFoundTitle": "没有找到该玩家",
+    "clanNotFoundTitle": "没有找到该公会",
+    "playerNotFoundDesc": "在 {realm} 服没有找到与「{name}」完全一致的账号。",
+    "clanNotFoundDesc": "在 {realm} 服没有找到 ID 为 {query} 的公会。",
+    "clanNotFoundCause": "公会可能已经解散，或者 ID 有误。",
+    "causesTitle": "可能的原因",
+    "causeTypo": "昵称拼写有误，或玩家近期更改过昵称。",
+    "causeDeleted": "账号可能已被注销——玩家主动删除，或长期未登录被官方回收。",
+    "causeRealm": "服务器可能选错了——本次查询的是 {realm} 服，可切换左上角的服务器后重查。",
+    "seenBefore": "此前查询成功过该玩家，现在却查不到了——账号很可能已被注销。",
+    "apiErrorTitle": "查询失败",
+    "apiErrorDesc": "官方接口暂时未能完成这次查询，请稍后重试。",
+    "rateLimitHint": "短时间内查询过于频繁，官方接口正在限流，请稍等片刻再试。",
+    "rawDetail": "原始错误信息"
+  },
   "role": {
     "commander": "指挥官",
     "executive_officer": "副指挥官",

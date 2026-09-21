@@ -11,6 +11,7 @@ pub mod exports;
 pub mod game_detect;
 pub mod gameparams;
 pub mod installer;
+pub mod lookup_error;
 pub mod media;
 pub mod method_tables;
 pub mod mod_catalog;
