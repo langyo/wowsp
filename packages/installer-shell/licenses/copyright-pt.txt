@@ -1,0 +1,27 @@
+WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
+
+AVISO: este software inclui código gerado por inteligência artificial. Os
+termos integrais da Licença de Código Sintético (incluindo os requisitos de
+divulgação de modelos) constam do ficheiro LICENSE anexo.
+
+Este software é licenciado ao abrigo da «Licença de Código Sintético»
+versão 1.0 (a «Licença»); não o pode utilizar salvo em conformidade com a
+Licença. Uma cópia da Licença está disponível em:
+
+    https://github.com/celestia-island/sysl
+
+Salvo exigência da lei aplicável ou acordo escrito em contrário, o software
+distribuído ao abrigo desta Licença é distribuído «como está», sem qualquer
+garantia ou condição, expressa ou implícita. Os direitos e limitações
+aplicáveis constam do texto integral da Licença.
+
+====================================================================
+
+              Divulgação de modelos (MODEL DISCLOSURE)
+
+Autor humano:
+  langyo <langyo.china@gmail.com>
+
+Principais modelos de IA utilizados:
+  GLM 5 / 5.1 / 5.2 / 5v Turbo — Zhipu AI — https://zhipu.ai
+  DeepSeek V4 Flash / Pro — DeepSeek — https://deepseek.ai

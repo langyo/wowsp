@@ -63,14 +63,16 @@ fn main() {
     //    JSON map (`license-docs.json`): a localized copyright notice,
     //    the SySL agreement, and the usage-telemetry notice. Every locale
     //    vendors its copyright notice (licenses/copyright-*.txt); the
-    //    agreement is fetched fresh from celestia-island/sysl when the
-    //    network is reachable (shun's locale mapping covers all eight
-    //    tags below), falling back to the vendored copies (licenses/*.txt)
-    //    and finally to a one-line stub — a build must never fail over a
-    //    missing translation. The telemetry notice is the canonical
-    //    docs/{lang}/license/usage-telemetry.md document, embedded
-    //    verbatim so the installer and the website always present the
-    //    same wording. English stays the universal fallback for the
+    //    agreement is fetched fresh from celestia-island/sysl's default
+    //    branch `master` when the network is reachable (shun's locale
+    //    mapping covers all ten tags below), falling back to the vendored
+    //    copies (licenses/*.txt) and finally to a one-line stub — a build
+    //    must never fail over a missing translation. The telemetry notice
+    //    is the canonical docs/{lang}/license/usage-telemetry.md document,
+    //    embedded verbatim so the installer and the website always present
+    //    the same wording; de / pt have no localized telemetry page yet, so
+    //    their telemetry document reads the English one under the
+    //    English title. English stays the universal fallback for the
     //    runtime's unknown-locale path.
     let license_locales = [
         (
@@ -121,13 +123,32 @@ fn main() {
             "Licencia de Código Sintético 1.0",
             "Aviso de telemetría de uso",
         ),
+        (
+            "de",
+            "Urheberrechtshinweis von WoWSP",
+            "SYNTETISCHE-QUELLCODE-LIZENZ 1.0",
+            // No docs/de telemetry page exists yet — the telemetry doc
+            // reads the English one, titled to match its H1.
+            "Usage Telemetry Notice",
+        ),
+        (
+            "pt",
+            "Aviso de direitos de autor do WoWSP",
+            "LICENÇA DE CÓDIGO SINTÉTICO 1.0",
+            // No docs/pt telemetry page exists yet — the telemetry doc
+            // reads the English one, titled to match its H1.
+            "Usage Telemetry Notice",
+        ),
     ];
     let mut docs = serde_json::Map::new();
     for (locale, notice_title, license_title, telemetry_title) in license_locales {
-        // docs/ locale directory backing this installer locale.
+        // docs/ locale directory backing this installer locale. de / pt
+        // have no localized telemetry page yet, so their telemetry doc
+        // reads the English one (the title above matches its H1).
         let doc_lang = match locale {
             "zh-Hans" => "zh-CN",
             "zh-Hant" => "zh-TW",
+            "de" | "pt" => "en",
             other => other,
         };
         let notice_path = manifest_dir.join(format!("licenses/copyright-{locale}.txt"));
@@ -135,19 +156,21 @@ fn main() {
         let notice = std::fs::read_to_string(&notice_path)
             .unwrap_or_else(|_| String::from("WoWSP — Copyright (c) 2026 langyo."));
         // Fresh-from-upstream first, vendored file second, stub last. The
-        // vendored file is a build input regardless of whether the fetch
-        // succeeds, so its rerun-if-changed is declared up front.
+        // branch is the sysl repo's DEFAULT branch `master` — the repo has
+        // no `main`, so a wrong ref here would silently degrade every
+        // build to the vendored fallback. The vendored file is a build
+        // input regardless of whether the fetch succeeds, so its
+        // rerun-if-changed is declared up front.
         let vendored = manifest_dir.join(format!("licenses/{locale}.txt"));
         println!("cargo:rerun-if-changed={}", vendored.display());
-        let agreement = shun::license_sysl::fetch_locale("celestia-island/sysl", "main", locale)
+        let agreement = shun::license_sysl::fetch_locale("celestia-island/sysl", "master", locale)
             .unwrap_or_else(|_| {
                 std::fs::read_to_string(&vendored).unwrap_or_else(|_| {
                     String::from("Licensed under the Synthetic Source License 1.0.")
                 })
             });
-        let telemetry_path = manifest_dir.join(format!(
-            "../../docs/{doc_lang}/license/usage-telemetry.md"
-        ));
+        let telemetry_path =
+            manifest_dir.join(format!("../../docs/{doc_lang}/license/usage-telemetry.md"));
         println!("cargo:rerun-if-changed={}", telemetry_path.display());
         let telemetry = std::fs::read_to_string(&telemetry_path)
             .unwrap_or_else(|_| String::from("Usage telemetry notice unavailable."));

@@ -1,0 +1,214 @@
+                          LICENÇA DE CÓDIGO SINTÉTICO
+                           (Synthetic Source License)
+                                   Versão 1.0
+                                 Junho de 2026
+
+Copyright (c) 2026 langyo <sysl.contact@celestia.world>
+
+Concede-se permissão para reproduzir e distribuir este documento de licença, sem modificações, para fins de licenciamento de software.
+
+[AVISO: Esta tradução para o português é fornecida apenas para fins informativos. A versão em inglês, disponível no repositório oficial em <https://github.com/celestia-island/sysl>, é a única juridicamente vinculativa.]
+
+--------------------------------------------------------------------
+
+                                   PREÂMBULO
+
+A Licença de Código Sintético (Synthetic Source License — SySL) foi concebida para software cujo código-fonte é substancial ou integralmente gerado por modelos de inteligência artificial. As licenças de código aberto tradicionais pressupõem um autor humano que detém os direitos autorais sobre a obra. A SySL reconhece que o código gerado por IA ocupa uma posição jurídica inédita — na qual a proteção por direitos autorais pode ser incerta, ausente ou contestada — e fornece um arcabouço que funciona independentemente disso.
+
+A SySL estabelece três novas normas para a era da IA:
+
+  1. TRANSPARÊNCIA. Todo usuário e todo trabalho derivado devem divulgar que o código foi gerado por IA e quais modelos foram utilizados.
+
+  2. CERTEZA JURÍDICA. A licença opera como um contrato vinculativo independente dos direitos autorais, de modo que a incerteza sobre a situação dos direitos autorais não gere incerteza sobre o uso permitido.
+
+  3. RECONHECIMENTO DE RISCO. O código gerado por IA apresenta modos de falha distintos do código escrito por humanos. Os usuários aceitam isso explicitamente.
+
+Estas normas não são restrições à liberdade. Elas são o fundamento de um novo contrato social: podemos construir software com IA, mas devemos declarar isso.
+
+--------------------------------------------------------------------
+
+                               TERMOS E CONDIÇÕES
+
+1. DEFINIÇÕES
+
+   "Software" significa o código-fonte, código-objeto, documentação e materiais associados disponibilizados sob esta licença.
+
+   "Gerado por IA" significa produzido por um modelo ou sistema de inteligência artificial, incluindo grandes modelos de linguagem, modelos de geração de código e qualquer outro sistema de aprendizado de máquina.
+
+   "Autor" significa:
+
+        (a) o ser humano ou seres humanos que dirigiram diretamente o processo de geração por IA por meio de projeto de arquitetura, engenharia de prompts, especificação de restrições, garantia de qualidade e integração; ou
+
+        (b) se nenhum ser humano dirigiu diretamente a geração por IA, o ser humano ou seres humanos que projetaram, configuraram ou implantaram o sistema de IA que dirigiu autonomamente a geração (o "Operador"); ou
+
+        (c) se nenhum ser humano esteve envolvido em qualquer nível na direção da geração, a pessoa física ou jurídica que primeiro Distribuiu o Software sob esta licença.
+
+   "Modelo" significa o sistema ou sistemas específicos de IA utilizados para gerar o Software.
+
+   "Você" significa a pessoa física ou jurídica que exerce as permissões concedidas por esta licença.
+
+   "Contribuição" significa qualquer modificação, adição, tradução, adaptação ou trabalho derivado do Software.
+
+   "Trabalho Derivado" tem o significado atribuído pela lei de direitos autorais aplicável ou, quando os direitos autorais não se aplicarem, significa qualquer trabalho que incorpore, modifique ou seja baseado no Software.
+
+   "Distribuir" significa fornecer uma cópia do Software ou de um Trabalho Derivado a qualquer terceiro, seja por meio físico, transferência em rede ou disponibilização para download.
+
+2. DIVULGAÇÃO DE GERAÇÃO POR IA
+
+   2.1  MANUTENÇÃO DO AVISO. Você deve manter, em todas as cópias do Software e em todos os Trabalhos Derivados distribuídos na forma de código-fonte, o seguinte aviso em local de destaque (como o arquivo README na raiz ou um arquivo LICENSE dedicado):
+
+          "AVISO: Este software inclui código gerado por inteligência artificial. Consulte o arquivo LICENSE para os termos da Licença de Código Sintético, incluindo os requisitos de divulgação de modelo."
+
+   2.2  DIVULGAÇÃO ORIGINAL. A divulgação original do Autor sobre os modelos utilizados e o contexto de geração deve ser preservada literalmente no Software. Esta divulgação deve ser colocada em um final do arquivo LICENSE (consulte a seção DIVULGAÇÃO DE MODELOS no final deste documento). Não é necessário um arquivo separado.
+
+   2.3  DIVULGAÇÃO DE CONTRIBUIÇÃO. Toda Contribuição distribuída como código-fonte deve incluir, em nível de arquivo ou de commit, uma divulgação declarando:
+
+        (a) se a Contribuição foi Gerada por IA, escrita por humanos ou uma combinação de ambas;
+
+        (b) qual Modelo ou Modelos foram utilizados, se houver;
+
+        Apenas os principais modelos de IA dos quais o corpo principal do Software depende devem ser divulgados no arquivo LICENSE (consulte a Seção 2.2). Outros modelos utilizados pelos contribuidores — independentemente do tamanho ou natureza de suas contribuições — podem ser divulgados apenas nas mensagens de commit associadas.
+
+   2.4  AVISO EM CÓDIGO-OBJETO. Se Você distribuir o Software ou um Trabalho Derivado exclusivamente na forma de código-objeto ou executável, Você deve incluir o aviso exigido pela Seção 2.1 em um local visível para os usuários finais (como uma caixa de diálogo "Sobre" ou na documentação que acompanha).
+
+   2.5  IRRENUNCIABILIDADE. As obrigações de divulgação desta Seção 2 não podem ser renunciadas, removidas ou contornadas por contrato. Elas constituem a contraprestação fundamental para as concessões desta licença.
+
+3. CONCESSÃO DE DIREITOS AUTORAIS
+
+   3.1  CONCESSÃO CONDICIONAL. Na medida em que o Software ou qualquer parte dele seja protegido por direitos autorais, o Autor concede a Você uma licença de direitos autorais perpétua, mundial, não exclusiva, isenta de royalties, irrevogável (exceto conforme disposto na Seção 3.3) para reproduzir, preparar Trabalhos Derivados, exibir publicamente, executar publicamente, sublicenciar e Distribuir o Software e os Trabalhos Derivados, na forma de código-fonte ou código-objeto.
+
+   3.2  ESCOPO. A concessão da Seção 3.1 é equivalente em escopo à concessão de direitos autorais da Licença Apache, Versão 2.0. A SySL foi projetada para ser compatível com software licenciado sob Apache-2.0: trabalhos que combinem código licenciado sob SySL com código licenciado sob Apache-2.0 podem ser Distribuídos sob Apache-2.0, desde que os requisitos de divulgação da Seção 2 sejam cumpridos de forma independente.
+
+   3.3  RESCISÃO. Se Você iniciar um litígio de patente alegando que o Software infringe qualquer patente, todos os direitos concedidos a Você sob esta licença serão rescindidos.
+
+   3.4  AVISO DE ELEGIBILIDADE PARA DIREITOS AUTORAIS. Em muitas jurisdições, obras geradas por IA sem contribuição criativa humana suficiente não são elegíveis para proteção por direitos autorais. Se o Software for considerado não protegível por direitos autorais no todo ou em parte, a concessão de direitos autorais da Seção 3.1 não terá efeito prático para essas porções, e a relação entre as partes será, em vez disso, regida pelas disposições contratuais da Seção 5. Os Autores não devem presumir que a proteção por direitos autorais se estenda automaticamente ao código Gerado por IA; o grau de participação criativa humana na direção, seleção e refinamento da saída da IA é um fator crítico na maioria dos regimes de direitos autorais.
+
+4. CONCESSÃO DE PATENTE
+
+   4.1  Sujeito aos termos desta licença, o Autor concede a Você uma licença de patente perpétua, mundial, não exclusiva, isenta de royalties, irrevogável (exceto conforme disposto na Seção 3.3) para fazer, mandar fazer, usar, oferecer para venda, vender, importar e de outra forma transferir o Software, sendo que tal licença se aplica apenas às reivindicações de patente licenciáveis pelo Autor que sejam necessariamente infringidas pelo Software isoladamente ou pelo Software em combinação com uma Contribuição.
+
+   4.2  Esta concessão de patente é equivalente em escopo à concessão de patente da Licença Apache, Versão 2.0.
+
+   4.3  AVISO DE ELEGIBILIDADE PARA PATENTES. A concessão da Seção 4.1 é eficaz apenas na medida em que o Autor detenha ou tenha o direito de sublicenciar patentes que cubram o Software. Se o Autor não detiver quaisquer tais patentes, a Seção 4 opera apenas como um pacto contratual, e não como uma licença de patente juridicamente exigível.
+
+   4.4  RECOMENDAÇÃO DE DEPÓSITO. Os Autores são fortemente encorajados a depositar pedidos de proteção por patente sobre aspectos novos e não óbvios do Software antes de confiar na Seção 4 para a fiscalização de patentes. Sem patentes concedidas, a concessão de patente da Seção 4.1 é uma concessão vazia — ela promete direitos que não existem. Depositar patentes primeiro e, então, licenciar sob a SySL transforma a Seção 4 de uma declaração normativa em um mecanismo juridicamente exigível.
+
+   4.5  LIMITAÇÃO DE AUTORIA DE INVENÇÃO POR IA. Em muitas jurisdições, a lei de patentes exige que o inventor seja uma pessoa física. Quando o Software é gerado por IA com contribuição inventiva humana insuficiente para satisfazer os requisitos de autoria de invenção da lei de patentes aplicável, nem o Autor nem qualquer outra parte poderão obter proteção válida por patente para o Software. Nesses casos, a concessão da Seção 4.1 não terá efeito prático, independentemente de serem depositados pedidos de patente. Os Autores devem consultar um advogado de patentes qualificado para avaliar se a sua direção da geração por IA constitui contribuição inventiva suficiente sob a lei de cada jurisdição relevante.
+
+5. NATUREZA CONTRATUAL
+
+   5.1  CONTRATO INDEPENDENTE. Esta licença é um contrato entre o Autor e Você. Ao usar, copiar, modificar ou Distribuir o Software, Você aceita e concorda em vincular-se a todos os seus termos. Nenhuma contraprestação adicional é exigida.
+
+   5.2  SEPARABILIDADE DOS DIREITOS AUTORAIS. A validade e a exequibilidade desta licença não dependem da existência, do escopo ou da validade da proteção por direitos autorais sobre o Software. Se qualquer parte do Software for considerada não protegida por direitos autorais, esta licença permanecerá em pleno vigor e efeito como uma obrigação contratual.
+
+   5.3  INTERPRETAÇÃO. Esta licença deve ser interpretada tanto como uma licença de direitos autorais (na máxima extensão em que os direitos autorais se aplicarem) quanto como um pacto contratual (na medida em que os direitos autorais não se aplicarem), de modo que os usos permitidos sejam tão amplos quanto possível sob qualquer teoria jurídica aplicável.
+
+6. ISENÇÃO DE GARANTIA
+
+   6.1  O SOFTWARE É FORNECIDO "NO ESTADO EM QUE SE ENCONTRA", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU IMPLÍCITA, INCLUINDO, MAS NÃO SE LIMITANDO A, GARANTIAS DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UMA FINALIDADE ESPECÍFICA, TITULARIDADE E NÃO VIOLAÇÃO.
+
+   6.2  ISENÇÃO ESPECÍFICA PARA IA. SEM LIMITAR A GENERALIDADE DA SEÇÃO 6.1, O AUTOR ESPECIFICAMENTE SE ISENTA DE QUE O CÓDIGO GERADO POR IA POSSA APRESENTAR MODOS DE FALHA RELEVANTES E ATÍPICOS EM RELAÇÃO AO CÓDIGO ESCRITO POR HUMANOS, INCLUINDO, MAS NÃO SE LIMITANDO A:
+
+        (a) CÓDIGO DE APARÊNCIA PLAUSÍVEL, MAS LOGICAMENTE INCORRETO;
+        (b) VULNERABILIDADES DE SEGURANÇA HERDADAS DOS DADOS DE TREINAMENTO DO MODELO;
+        (c) COMPORTAMENTO NÃO DETERMINÍSTICO ENTRE DIFERENTES VERSÕES DO MODELO;
+        (d) SAÍDA QUE AFIRMA FALSIDADES COM CONVICÇÃO;
+        (e) CÓDIGO QUE VIOLA DIREITOS DE PROPRIEDADE INTELECTUAL DE TERCEIROS EM VIRTUDE DOS DADOS DE TREINAMENTO DO MODELO; E
+        (f) BUGS SUTIS QUE PASSAM EM TESTES AUTOMATIZADOS, MAS FALHAM EM PRODUÇÃO SOB CONDIÇÕES NÃO COBERTAS PELOS TESTES.
+
+   6.3  O Autor não oferece garantia de que o Software atenderá aos Seus requisitos, operará de forma ininterrupta ou será livre de erros, e o Autor não oferece garantia quanto ao uso ou aos resultados do uso do Software em termos de correção, precisão, confiabilidade ou outros aspectos.
+
+7. LIMITAÇÃO DE RESPONSABILIDADE
+
+   7.1  NA MÁXIMA EXTENSÃO PERMITIDA PELA LEI APLICÁVEL, EM NENHUMA HIPÓTESE O AUTOR SERÁ RESPONSÁVEL POR QUAISQUER DANOS DIRETOS, INDIRETOS, INCIDENTAIS, ESPECIAIS, EXEMPLARES OU CONSEQUENTES (INCLUINDO, MAS NÃO SE LIMITANDO A, AQUISIÇÃO DE BENS OU SERVIÇOS SUBSTITUTOS; PERDA DE USO, DADOS OU LUCROS; OU INTERRUPÇÃO DE NEGÓCIOS), SEJA QUAL FOR A CAUSA E SOB QUALQUER TEORIA DE RESPONSABILIDADE, SEJA CONTRATUAL, RESPONSABILIDADE OBJETIVA OU EXTRACONTRATUAL (INCLUINDO NEGLIGÊNCIA OU OUTRA FORMA), DECORRENTE DE QUALQUER FORMA DO USO DO SOFTWARE, MESMO QUE TENHA SIDO AVISADO DA POSSIBILIDADE DE TAIS DANOS.
+
+   7.2  Em jurisdições que não permitam a exclusão ou limitação de responsabilidade por determinados danos, a responsabilidade do Autor será limitada à extensão máxima permitida por lei, que poderá ser zero.
+
+8. DIVULGAÇÃO RECÍPROCA (COPYLEFT SINTÉTICO)
+
+   8.1  DISTRIBUIÇÃO DE CÓDIGO-FONTE. Se Você Distribuir o Software ou um Trabalho Derivado na forma de código-fonte, Você deve manter todas as divulgações de geração por IA exigidas pela Seção 2 e deve adicionar Suas próprias divulgações de Contribuição conforme exigido pela Seção 2.3.
+
+   8.2  DISTRIBUIÇÃO DE CÓDIGO-OBJETO. Se Você Distribuir o Software ou um Trabalho Derivado exclusivamente na forma de código-objeto ou executável, Você deve incluir, com a Distribuição:
+
+        (a) o aviso de divulgação de geração por IA exigido pela Seção 2.1, visível para os usuários finais; e
+
+        (b) uma cópia do arquivo LICENSE original (ou documentação equivalente) a partir do qual os usuários finais possam determinar quais partes do Software são Geradas por IA e quais Modelos foram utilizados.
+
+   8.3  AUSÊNCIA DE OBRIGAÇÃO DE CÓDIGO-FONTE. Esta Seção 8 não exige que Você distribua código-fonte. O copyleft sintético da SySL limita-se a preservar a cadeia de divulgação de IA. Você pode distribuir Trabalhos Derivados exclusivamente na forma de código-objeto, desde que os requisitos de divulgação das Seções 2 e 8.2 sejam cumpridos. Esta é uma escolha de projeto deliberada: o copyleft da SySL diz respeito à transparência, e não ao compartilhamento de código-fonte.
+
+   8.4  CUMPRIMENTO POR MEIO DE ACESSIBILIDADE PÚBLICA. As obrigações da Seção 8.2(b) são satisfeitas se Você tornar o arquivo LICENSE publicamente acessível (por exemplo, por meio de uma plataforma de hospedagem de código geralmente reconhecida, como GitHub, GitLab ou equivalente, ou por meio de um site publicamente acessível) e incluir a URL de acesso no código-objeto Distribuído ou em sua documentação acompanhante.
+
+9. TREINAMENTO DE IA E PERDA POR VIOLAÇÃO
+
+   9.1  PERMISSÃO DE TREINAMENTO DE IA. Esta licença permite o uso do Software, no todo ou em parte, como dados de treinamento para sistemas de inteligência artificial e aprendizado de máquina. A SySL opera como uma troca de conhecimento: a comunidade de IA pode aprender com código licenciado sob a SySL nos mesmos termos que desenvolvedores humanos. Esta permissão é concedida para promover o avanço aberto das capacidades de IA e não exige autorização separada do Autor.
+
+   9.2  PERDA POR VIOLAÇÃO. Se qualquer porção do Software ou de uma Contribuição for considerada por um tribunal de jurisdição competente, ou reconhecida pelo contribuidor, como infringindo os direitos válidos de propriedade intelectual de um terceiro — incluindo, mas não se limitando a, patentes que cubram arquiteturas inovadoras, direitos autorais ou segredos comerciais — essa porção perderá automaticamente todos os direitos e proteções concedidos por esta licença. A porção perdida será tratada como se nunca tivesse sido licenciada sob a SySL.
+
+   9.3  ESCOPO DA PERDA. A perda da Seção 9.2 aplica-se apenas às porções específicas consideradas infratoras. As porções do Software que sejam independentes do material infrator, ou separáveis dele, retêm plena proteção sob esta licença. O autor da Contribuição infratora assume a responsabilidade por identificar e remover o material infrator.
+
+   9.4  SEM LAVAGEM DE PROPRIEDADE INTELECTUAL. O código Gerado por IA que reproduza expressão protegida, métodos patenteados ou designs arquiteturais inovadores a partir dos dados de treinamento de um Modelo não ganha nenhuma proteção adicional sob esta licença em virtude de ser "Gerado por IA" ou "transformador". A SySL não cria um porto seguro para conteúdo que seria infrator se produzido por um humano. A origem do material infrator — seja de autoria humana ou Gerado por IA — é irrelevante para a análise de perda sob a Seção 9.2.
+
+   9.5  RESPEITO PELA PROPRIEDADE INTELECTUAL ANTERIOR. Quando o Software implementa ou incorpora uma arquitetura inovadora que esteja sujeita a uma patente válida de outra parte ou a outro direito de propriedade intelectual, os direitos dessa parte não são diminuídos, substituídos ou afetados por esta licença. Os Contribuidores devem realizar a devida diligência para garantir que suas Contribuições não infrinjam a propriedade intelectual de terceiros, particularmente quando uma Contribuição implementa padrões arquiteturais que possam ser patenteados. A natureza Gerada por IA de uma Contribuição não desculpa a violação, nem transfere a responsabilidade para o sistema de IA, seu provedor ou o Autor.
+
+10. MARCAS REGISTRADAS
+
+    Esta licença não concede permissão para usar nomes comerciais, marcas registradas, marcas de serviço ou nomes de produtos do Autor, exceto conforme necessário para uso razoável e costumeiro na descrição da origem do Software.
+
+11. COMPATIBILIDADE
+
+   11.1 A SySL foi projetada para ser compatível com a Licença Apache, Versão 2.0, e com a Licença MIT. Software licenciado sob a SySL pode ser combinado com software licenciado sob Apache-2.0 ou MIT, e o trabalho combinado pode ser Distribuído sob os termos da Apache-2.0 ou MIT, respectivamente, desde que os requisitos de divulgação da SySL (Seção 2) e os requisitos de divulgação recíproca (Seção 8) sejam cumpridos de forma independente. Para evitar dúvidas, distribuir sob Apache-2.0 ou MIT não exonera as obrigações de divulgação — elas acompanham o código originado sob SySL independentemente do invólucro de licença aplicado ao trabalho combinado. Um Licenciante que deseje disponibilizar Software Gerado por IA sem obrigações de divulgação não deve utilizar a SySL.
+
+   11.2 A compatibilidade com outras licenças deve ser avaliada caso a caso. O Autor poderá publicar determinações de compatibilidade para licenças adicionais em <https://sysl.celestia.world>.
+
+   11.3 LICENCIAMENTO EM CAMADAS. A SySL estabelece normas de transparência, mas não impõe restrições comerciais, períodos de não concorrência nem mecanismo de mudança de data. Um Licenciante pode oferecer o Software sob a SySL juntamente com licenças adicionais que imponham tais restrições (por exemplo, duplo licenciamento com a Business Source License 1.1). Nesses casos, Você pode escolher quais termos de licença seguir: a SySL (exigindo apenas divulgação) ou a licença adicional (impondo restrições adicionais). O texto da SySL em si permanece sem modificações. Ao utilizar a BUSL-1.1 como licença adicional, os Licenciantes de Software Gerado por IA devem especificar a SySL (não a Apache-2.0 ou MIT) como Licença de Mudança para garantir que a norma de transparência sobreviva ao período de não concorrência.
+
+12. SEPARABILIDADE
+
+    Se qualquer disposição desta licença for considerada inexequível ou inválida por um tribunal de jurisdição competente, tal disposição será reformada apenas na medida necessária para torná-la exequível, e as demais disposições desta licença permanecerão em pleno vigor e efeito.
+
+13. NÃO RENÚNCIA
+
+    A falha do Autor em exigir o cumprimento de qualquer disposição desta licença não constituirá renúncia ao direito do Autor de exigir tal disposição ou qualquer outra disposição no futuro.
+
+14. LEI APLICÁVEL E RESOLUÇÃO DE DISPUTAS
+
+   14.1 Esta licença será regida pelos princípios gerais do direito autoral internacional e interpretada para fornecer a proteção mais ampla compatível com os termos aqui contidos.
+
+   14.2 Para evitar dúvidas, quando o Software for Gerado por IA e a situação dos direitos autorais de tal código for incerta sob a lei aplicável, as disposições desta licença receberão o máximo efeito possível sob a lei contratual aplicável.
+
+   14.3 a disputa será submetida a arbitragem vinculativa de acordo com as regras de uma instituição de arbitragem internacionalmente reconhecida a ser acordada pelas partes.
+
+15. TEXTO OFICIAL E TRADUÇÕES
+
+   15.1 O texto autoritativo desta licença é a versão em inglês mantida no repositório oficial da SySL em <https://github.com/celestia-island/sysl>.
+
+   15.2 As traduções desta licença para outros idiomas são fornecidas apenas para fins informativos. Em caso de conflito entre uma tradução e a versão em inglês, a versão em inglês prevalecerá.
+
+16. VERSIONAMENTO
+
+   16.1 O Autor poderá publicar versões revisadas da Licença de Código Sintético periodicamente. Cada versão será distinguida por um número de versão.
+
+   16.2 Por padrão, o Software licenciado sob a "Licença de Código Sintético, Versão 1.0" (ou "SySL-1.0") é regido pela Versão 1.0 conforme publicada na data em que o Software foi Distribuído pela primeira vez.
+
+   16.3 O Autor poderá, na declaração de licença do Software, especificar que o Software é licenciado sob "SySL-1.0 ou qualquer versão posterior", caso em que Você poderá optar por seguir os termos da SySL-1.0 ou os termos de qualquer versão posterior publicada pelo Autor.
+
+                           FIM DOS TERMOS E CONDIÇÕES
+
+                                    APÊNDICE
+
+              Como Aplicar a SySL ao Seu Software
+
+Para aplicar a Licença de Código Sintético ao seu trabalho, anexe o seguinte aviso padronizado a cada arquivo de código-fonte. O aviso deve estar delimitado pela sintaxe de comentário apropriada para o formato do arquivo.
+
+   Copyright (c) [ano] [seu nome ou organização]
+
+   Licenciado sob a Licença de Código Sintético, Versão 1.0 (a "Licença"); você não pode usar este arquivo exceto em conformidade com a Licença. Você pode obter uma cópia da Licença em
+
+       https://github.com/celestia-island/sysl
+
+   Salvo exigência da lei aplicável ou acordo por escrito, o software distribuído sob a Licença é distribuído "NO ESTADO EM QUE SE ENCONTRA", SEM GARANTIAS OU CONDIÇÕES DE QUALQUER TIPO, expressas ou implícitas. Consulte a Licença para a redação específica que rege as permissões e limitações sob a Licença.
+
+   DIVULGAÇÃO DE MODELO DE IA: [Descreva quais modelos de IA foram utilizados para gerar este software. Consulte a Seção 2 da Licença.]
+
+
+Para licenciar seu software sob "SySL-1.0 ou qualquer versão posterior", você pode incluir a frase "ou (a seu critério) qualquer versão posterior" no aviso padronizado acima. Se você não incluir esta frase, seu software será licenciado apenas sob a Versão 1.0.

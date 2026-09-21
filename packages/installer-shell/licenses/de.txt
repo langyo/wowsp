@@ -1,0 +1,213 @@
+                          SYNTETISCHE-QUELLCODE-LIZENZ
+                                  Version 1.0
+                                   Juni 2026
+
+Copyright (c) 2026 langyo <sysl.contact@celestia.world>
+
+Die Genehmigung wird hiermit erteilt, dieses Lizenzdokument selbst unverändert zum Zwecke der Lizenzierung von Software zu vervielfältigen und zu verbreiten.
+
+[ÜBERSETZUNGSHINWEIS: Dies ist eine deutsche Übersetzung der Synthetic Source License (SySL). Der verbindliche Text ist die englische Fassung, die im offiziellen SySL-Repository unter <https://github.com/celestia-island/sysl> geführt wird. Diese Übersetzung dient ausschließlich Informationszwecken.]
+
+--------------------------------------------------------------------
+
+                                    PRÄAMBEL
+
+Die Synthetische-Quellcode-Lizenz (SySL) ist für Software konzipiert, deren Quellcode wesentlich oder vollständig durch künstliche Intelligenzmodelle generiert wurde. Traditionelle Open-Source-Lizenzen gehen von einem menschlichen Urheber aus, der das Urheberrecht an dem Werk innehat. SySL erkennt an, dass KI-generierter Code eine neuartige rechtliche Stellung einnimmt — eine, in der der Urheberrechtsschutz ungewiss, nicht vorhanden oder umstritten sein kann — und bietet einen Rahmen, der unabhängig davon funktioniert.
+
+SySL etabliert drei neue Normen für das KI-Zeitalter:
+
+  1. TRANSPARENZ. Jeder Nutzer und jedes abgeleitete Werk muss offenlegen, dass der Code KI-generiert ist und welche Modelle verwendet wurden.
+
+  2. RECHTSSICHERHEIT. Die Lizenz fungiert als verbindlicher Vertrag unabhängig vom Urheberrecht, sodass Unsicherheit über den Urheberrechtsstatus keine Unsicherheit über die zulässige Nutzung schafft.
+
+  3. RISIKOANERKENNUNG. KI-generierter Code weist Versagensmodi auf, die sich von menschengeschriebenem Code unterscheiden. Nutzer akzeptieren dies ausdrücklich.
+
+Diese Normen sind keine Freiheitsbeschränkungen. Sie sind das Fundament eines neuen Gesellschaftsvertrags: Wir dürfen Software mit KI bauen, aber wir müssen dazu stehen.
+
+--------------------------------------------------------------------
+
+                          BESTIMMUNGEN UND KONDITIONEN
+
+1. DEFINITIONEN
+
+   „Software" bezeichnet den Quellcode, Objektcode, die Dokumentation und die dazugehörigen Materialien, die unter dieser Lizenz zur Verfügung gestellt werden.
+
+   „KI-generiert" bezeichnet, dass etwas durch ein künstliches Intelligenzmodell oder -system erzeugt wurde, einschließlich großer Sprachmodelle, Codegenerierungsmodelle und anderer maschineller Lernsysteme.
+
+    „Autor" bezeichnet:
+
+         (a) den oder die Menschen, die den KI-Generierungsprozess durch Architekturgestaltung, Prompt Engineering, Vorgabenspezifikation, Qualitätssicherung und Integration unmittelbar gesteuert haben; oder
+
+         (b) falls kein Mensch die KI-Generierung unmittelbar gesteuert hat, den oder die Menschen, die das KI-System entworfen, konfiguriert oder eingesetzt haben, das die Generierung autonom gesteuert hat (der „Betreiber"); oder
+
+         (c) falls auf keiner Ebene ein Mensch an der Steuerung der Generierung beteiligt war, die natürliche oder juristische Person, die die Software zuerst unter dieser Lizenz verbreitet hat.
+
+   „Modell" bezeichnet das spezifische KI-System oder die Systeme, die zur Generierung der Software verwendet wurden.
+
+   „Sie" bezeichnet die natürliche oder juristische Person, die die von dieser Lizenz gewährten Berechtigungen ausübt.
+
+   „Beitrag" bezeichnet jede Änderung, Hinzufügung, Übersetzung, Anpassung oder jedes abgeleitete Werk der Software.
+
+   „Abgeleitetes Werk" hat die durch das anwendbare Urheberrecht vorgegebene Bedeutung oder, wo das Urheberrecht nicht anwendbar ist, jedes Werk, das die Software enthält, verändert oder auf ihr basiert.
+
+   „Verbreiten" bezeichnet die Bereitstellung einer Kopie der Software oder eines Abgeleiteten Werks an einen Dritten, sei es durch physische Medien, Netzwerkübertragung oder Bereitstellung zum Herunterladen.
+
+2. KI-GENERIERUNGS-OFFENLEGUNG
+
+   2.1  BEIBEHALTUNG DES HINWEISES. Sie müssen in jeder Kopie der Software und in jedem Abgeleiteten Werk, das in Quellcodeform verbreitet wird, den folgenden Hinweis an einer gut sichtbaren Stelle (wie der README-Stammdatei oder einer eigenen LICENSE-Datei) beibehalten:
+
+           „HINWEIS: Diese Software enthält durch künstliche Intelligenz generierten Code. Siehe die LIZENZ-Datei für die Bedingungen der Synthetische-Quellcode-Lizenz, einschließlich der Anforderungen zur Modelloffenlegung."
+
+   2.2  URSPRÜNGLICHE OFFENLEGUNG. Die ursprüngliche Offenlegung des Autors über verwendete Modelle und den Generierungskontext muss unverändert in der Software erhalten bleiben. Diese Offenlegung ist in einer Ende der LICENSE-Datei aufzunehmen (siehe MODELLOFFENLEGUNG am Ende dieses Dokuments). Eine separate Datei ist nicht erforderlich des Repositorys abzulegen.
+
+   2.3  BEITRAGS-OFFENLEGUNG. Jeder als Quellcode verbreitete Beitrag muss auf Datei- oder Commit-Ebene eine Offenlegung enthalten, aus der hervorgeht:
+
+        (a) ob der Beitrag KI-generiert, menschengeschrieben oder eine Kombination aus beidem ist;
+
+        (b) welches Modell oder welche Modelle gegebenenfalls verwendet wurden;
+
+        Nur die primären KI-Modelle, von denen der Hauptteil der Software abhängt, müssen in der LICENSE-Datei offengelegt werden (siehe Abschnitt 2.2). Andere von Mitwirkenden verwendete Modelle — unabhängig von Umfang oder Art ihrer Beiträge — können ausschließlich in den zugehörigen Commit-Nachrichten offengelegt werden.
+
+   2.4  OBJEKTCODE-HINWEIS. Wenn Sie die Software oder ein Abgeleitetes Werk ausschließlich in Objektcode oder ausführbarer Form verbreiten, müssen Sie den nach Abschnitt 2.1 erforderlichen Hinweis an einer für Endnutzer sichtbaren Stelle (wie einem „Über"-Dialog oder der Begleitdokumentation) anbringen.
+
+   2.5  UNVERZICHTBARKEIT. Die Offenlegungspflichten dieses Abschnitts 2 können nicht erlassen, entfernt oder vertraglich abbedungen werden. Sie sind die wesentliche Gegenleistung für die in dieser Lizenz gewährten Rechte.
+
+3. URHEBERRECHTSEINRÄUMUNG
+
+   3.1  BEDINGTE EINRÄUMUNG. Soweit die Software oder ein Teil davon urheberrechtlich geschützt ist, gewährt der Autor Ihnen eine unbefristete, weltweite, nicht-exklusive, vergütungsfreie, unwiderrufliche (außer wie in Abschnitt 3.3 vorgesehen) urheberrechtliche Lizenz, die Software und Abgeleitete Werke zu vervielfältigen, Abgeleitete Werke davon zu erstellen, öffentlich anzuzeigen, öffentlich aufzuführen, zu unterlizenzieren und zu verbreiten, und zwar in Quellcode- oder Objektcodeform.
+
+   3.2  UMFANG. Die Einräumung nach Abschnitt 3.1 entspricht im Umfang der Urheberrechtseinräumung der Apache License, Version 2.0. Die SySL ist so konzipiert, dass sie mit Apache-2.0-lizenzierter Software kompatibel ist: Werke, die SySL-lizenzierten Code mit Apache-2.0-lizenziertem Code kombinieren, dürfen unter Apache-2.0 verbreitet werden, sofern die Offenlegungspflichten des Abschnitts 2 unabhängig davon erfüllt werden.
+
+   3.3  BEENDIGUNG. Wenn Sie ein Patentrechtsstreitverfahren einleiten, in dem Sie geltend machen, dass die Software ein Patent verletzt, enden alle Ihnen unter dieser Lizenz gewährten Rechte.
+
+   3.4  HINWEIS ZUR URHEBERRECHTSFÄHIGKEIT. In vielen Rechtsordnungen sind Werke, die durch KI ohne ausreichenden menschlichen schöpferischen Beitrag generiert wurden, nicht für den Urheberrechtsschutz berechtigt. Sollte festgestellt werden, dass die Software ganz oder teilweise nicht urheberrechtlich schutzfähig ist, hat die Urheberrechtseinräumung in Abschnitt 3.1 für diese Teile keine praktische Wirkung, und die Beziehung der Parteien richtet sich stattdessen nach den Vertragsbestimmungen des Abschnitts 5. Autoren sollten nicht davon ausgehen, dass sich der Urheberrechtsschutz automatisch auf KI-generierten Code erstreckt; der Grad der menschlichen schöpferischen Mitwirkung bei der Steuerung, Auswahl und Verfeinerung der KI-Ausgabe ist unter den meisten Urheberrechtssystemen ein kritischer Faktor.
+
+4. PATENTEINRÄUMUNG
+
+   4.1  Vorbehaltlich der Bedingungen dieser Lizenz gewährt der Autor Ihnen eine unbefristete, weltweite, nicht-exklusive, vergütungsfreie, unwiderrufliche (außer wie in Abschnitt 3.3 vorgesehen) Patentlizenz, die Software herzustellen, herstellen zu lassen, zu nutzen, zum Verkauf anzubieten, zu verkaufen, zu importieren und anderweitig zu übertragen, wobei diese Lizenz nur für solche Patentansprüche gilt, die durch den Autor lizenzierbar sind und die durch die Software allein oder durch die Software in Kombination mit einem Beitrag notwendigerweise verletzt werden.
+
+   4.2  Diese Patenteinräumung entspricht im Umfang der Patenteinräumung der Apache License, Version 2.0.
+
+   4.3  HINWEIS ZUR PATENTFÄHIGKEIT. Die Einräumung in Abschnitt 4.1 ist nur in dem Umfang wirksam, in dem der Autor Patente besitzt oder das Recht hat, Patente zu unterlizenzieren, die die Software abdecken. Wenn der Autor keine solchen Patente besitzt, fungiert Abschnitt 4 lediglich als vertragliche Verpflichtung und nicht als rechtlich durchsetzbare Patentlizenz.
+
+   4.4  EMPFEHLUNG ZUR ANMELDUNG. Autoren wird nachdrücklich empfohlen, Patentschutz für neuartige, nicht naheliegende Aspekte der Software anzumelden, bevor sie sich für die Patentdurchsetzung auf Abschnitt 4 verlassen. Ohne erteilte Patente ist die Patenteinräumung in Abschnitt 4.1 eine leere Einräumung — sie verspricht Rechte, die nicht existieren. Die vorherige Anmeldung von Patenten mit anschließender Lizenzierung unter SySL wandelt Abschnitt 4 von einer normativen Aussage in einen rechtlich durchsetzbaren Mechanismus um.
+
+   4.5  EINSCHRÄNKUNG DER KI-ERFINDERSCHAFT. In vielen Rechtsordnungen verlangt das Patentrecht, dass ein Erfinder eine natürliche Person ist. Soweit die Software durch KI mit unzureichendem menschlichem erfinderischem Beitrag generiert wurde, um die Erfordernisse der Erfinderschaft nach dem anwendbaren Patentrecht zu erfüllen, kann weder der Autor noch eine andere Partei gültigen Patentschutz für die Software erlangen. In solchen Fällen hat die Einräumung in Abschnitt 4.1 unabhängig davon, ob Patentanmeldungen eingereicht werden, keine praktische Wirkung. Autoren sollten einen qualifizierten Patentanwalt konsultieren, um zu beurteilen, ob ihre Steuerung der KI-Generierung einen ausreichenden erfinderischen Beitrag nach dem Recht jeder einschlägigen Rechtsordnung darstellt.
+
+5. VERTRAGSSTATUS
+
+   5.1  UNABHÄNGIGER VERTRAG. Diese Lizenz ist ein Vertrag zwischen dem Autor und Ihnen. Durch die Nutzung, das Kopieren, die Änderung oder das Verbreiten der Software akzeptieren Sie alle ihre Bedingungen und erklären sich mit ihrer Einhaltung einverstanden. Eine zusätzliche Gegenleistung ist nicht erforderlich.
+
+   5.2  TRENNBARKEIT VOM URHEBERRECHT. Die Gültigkeit und Durchsetzbarkeit dieser Lizenz hängen nicht vom Bestehen, Umfang oder der Gültigkeit des Urheberrechtsschutzes an der Software ab. Sollte festgestellt werden, dass ein Teil der Software nicht urheberrechtlich geschützt ist, bleibt diese Lizenz als vertragliche Verpflichtung in vollem Umfang in Kraft.
+
+   5.3  AUSLEGUNG. Diese Lizenz ist sowohl als urheberrechtliche Lizenz (im größtmöglichen Umfang, in dem das Urheberrecht anwendbar ist) als auch als vertragliche Verpflichtung (soweit das Urheberrecht nicht anwendbar ist) auszulegen, sodass die zulässigen Nutzungen nach jeder anwendbaren Rechtstheorie so weit wie möglich gefasst sind.
+
+6. GEWÄHRLEISTUNGSAUSSCHLUSS
+
+   6.1  DIE SOFTWARE WIRD IN DER VORLIEGENDEN FORM („AS IS") ZUR VERFÜGUNG GESTELLT, OHNE JEGLICHE AUSDRÜCKLICHE ODER STILLSCHWEIGENDE GEWÄHRLEISTUNG, EINSCHLIESSLICH, ABER NICHT BESCHRÄNKT AUF DIE GEWÄHRLEISTUNG DER MARKTGÄNGIGKEIT, DER EIGNUNG FÜR EINEN BESTIMMTEN ZWECK, DES RECHTSMANGELFREIEN EIGENTUMS UND DER NICHTVERLETZUNG VON RECHTEN DRITTER.
+
+   6.2  KI-SPEZIFISCHER AUSSCHLUSS. OHNE DIE ALLGEMEINHEIT VON ABSCHNITT 6.1 EINZUSCHRÄNKEN, SCHLIESST DER AUTOR AUSDRÜCKLICH DIE HAFTUNG DAFÜR AUS, DASS KI-GENERIERTER CODE VERSAGENSMODI AUFWEISEN KANN, DIE FÜR MENSCHENGESCHRIEBENEN CODE WESENTLICH UND ATYPISCH SIND, EINSCHLIESSLICH, ABER NICHT BESCHRÄNKT AUF:
+
+        (a) PLAUSIBEL ERSCHEINENDEN, ABER LOGISCH FEHLERHAFTEN CODE;
+        (b) SICHERHEITSLÜCKEN, DIE AUS DEN TRAININGSDATEN DES MODELLS STAMMEN;
+        (c) NICHT-DETERMINISTISCHES VERHALTEN ÜBER VERSCHIEDENE MODELLVERSIONEN HINWEG;
+        (d) AUSGABEN, DIE SELBSTBEWUSST FALSCHBEHAUPTUNGEN AUFSTELLEN;
+        (e) CODE, DER AUFGRUND DER TRAININGSDATEN DES MODELLS GEISTIGES EIGENTUM DRITTER VERLETZT; UND
+        (f) SUBTILE FEHLER, DIE AUTOMATISIERTE TESTS BESTEHEN, ABER IN DER PRODUKTION UNTER BEDINGUNGEN VERSAGEN, DIE NICHT DURCH TESTS ABGEDECKT SIND.
+
+   6.3  Der Autor übernimmt keine Gewähr dafür, dass die Software Ihre Anforderungen erfüllt, ununterbrochen läuft oder fehlerfrei ist, und der Autor übernimmt keine Gewähr hinsichtlich der Nutzung oder der Ergebnisse der Nutzung der Software in Bezug auf Korrektheit, Genauigkeit, Zuverlässigkeit oder anderweitig.
+
+7. HAFTUNGSBESCHRÄNKUNG
+
+   7.1  IM GRÖSSTMÖGLICHEN NACH ANWENDBAREM RECHT ZULÄSSIGEN UMFANG HAFTET DER AUTOR IN KEINEM FALL FÜR IRGENDWELCHE DIREKTEN, INDIREKTEN, ZUFÄLLIGEN, BESONDEREN, EXEMPLARISCHEN ODER FOLGESCHÄDEN (EINSCHLIESSLICH, ABER NICHT BESCHRÄNKT AUF DIE BESCHAFFUNG VON ERSATZGÜTERN ODER -DIENSTLEISTUNGEN; NUTZUNGS-, DATEN- ODER GEWINNVERLUSTE; ODER BETRIEBSUNTERBRECHUNGEN), GLEICH AUS WELCHEM GRUND UND NACH WELCHER HAFTUNGSTHEORIE AUCH IMMER, SEI ES AUS VERTRAG, GEFÄHRDUNGSHAFTUNG ODER UNERLAUBTER HANDLUNG (EINSCHLIESSLICH FAHRLÄSSIGKEIT ODER ANDERWEITIG), DIE SICH AUS DER NUTZUNG DER SOFTWARE ERGEBEN, SELBST WENN AUF DIE MÖGLICHKEIT SOLCHER SCHÄDEN HINGEWIESEN WURDE.
+
+   7.2  In Rechtsordnungen, die den Ausschluss oder die Beschränkung der Haftung für bestimmte Schäden nicht zulassen, ist die Haftung des Autors auf das gesetzlich maximal zulässige Maß beschränkt, das Null betragen kann.
+
+8. REZIPROKE OFFENLEGUNG (SYNTHETISCHES COPYLEFT)
+
+   8.1  QUELLCODE-VERBREITUNG. Wenn Sie die Software oder ein Abgeleitetes Werk in Quellcodeform verbreiten, müssen Sie alle nach Abschnitt 2 erforderlichen KI-Generierungsoffenlegungen beibehalten und Ihre eigenen Beitragsoffenlegungen gemäß Abschnitt 2.3 hinzufügen.
+
+   8.2  OBJEKT-VERBREITUNG. Wenn Sie die Software oder ein Abgeleitetes Werk ausschließlich in Objektcode oder ausführbarer Form verbreiten, müssen Sie zusammen mit der Verbreitung Folgendes beifügen:
+
+        (a) den nach Abschnitt 2.1 erforderlichen KI-Generierungshinweis, der für Endnutzer sichtbar ist; und
+
+        (b) eine Kopie der ursprünglichen LICENSE-Datei (oder einer gleichwertigen Dokumentation), anhand derer Endnutzer feststellen können, welche Teile der Software KI-generiert sind und welche Modelle verwendet wurden.
+
+   8.3  KEINE QUELLCODE-VERPFLICHTUNG. Dieser Abschnitt 8 verpflichtet Sie nicht, Quellcode zu verbreiten. Das synthetische Copyleft von SySL beschränkt sich auf die Wahrung der KI-Offenlegungskette. Sie dürfen Abgeleitete Werke ausschließlich in Objektcodeform verbreiten, sofern die Offenlegungspflichten nach den Abschnitten 2 und 8.2 erfüllt sind. Dies ist eine bewusste Designentscheidung: Das Copyleft von SySL betrifft Transparenz, nicht die Quellcode-Teilung.
+
+   8.4  ERFÜLLUNG DURCH ÖFFENTLICHE ZUGÄNGLICHKEIT. Die Verpflichtungen nach Abschnitt 8.2(b) gelten als erfüllt, wenn Sie die LICENSE-Datei öffentlich zugänglich machen (beispielsweise über eine allgemein anerkannte Code-Hosting-Plattform wie GitHub, GitLab oder vergleichbare Dienste, oder über eine öffentlich zugängliche Website) und die Zugriffs-URL im verbreiteten Objektcode oder seiner Begleitdokumentation angeben.
+
+9. KI-TRAINING UND VERWIRKUNG BEI RECHTSVERLETZUNG
+
+   9.1  KI-TRAININGSERLAUBNIS. Diese Lizenz gestattet die Nutzung der Software, ganz oder teilweise, als Trainingsdaten für Systeme der künstlichen Intelligenz und des maschinellen Lernens. SySL fungiert als Wissensaustausch: Die KI-Community darf aus SySL-lizenziertem Code zu denselben Bedingungen lernen wie menschliche Entwickler. Diese Erlaubnis wird zur Förderung des offenen Fortschritts der KI-Fähigkeiten gewährt und bedarf keiner separaten Genehmigung durch den Autor.
+
+   9.2  VERWIRKUNG BEI RECHTSVERLETZUNG. Wenn ein Teil der Software oder ein Beitrag von einem zuständigen Gericht festgestellt oder vom Beitragsleistenden anerkannt wird, die gültigen Rechte an geistigem Eigentum eines Dritten zu verletzen — einschließlich, aber nicht beschränkt auf Patente, die innovative Architekturen abdecken, Urheberrechte oder Geschäftsgeheimnisse — verliert dieser Teil automatisch alle durch diese Lizenz gewährten Rechte und Schutzrechte. Der verwirkende Teil ist so zu behandeln, als wäre er nie unter SySL lizenziert worden.
+
+   9.3  UMFANG DER VERWIRKUNG. Die Verwirkung nach Abschnitt 9.2 betrifft nur die spezifischen Teile, deren Verletzung festgestellt wurde. Teile der Software, die unabhängig von dem verletzenden Material sind oder davon getrennt werden können, behalten den vollen Schutz unter dieser Lizenz. Der Autor des verletzenden Beitrags trägt die Verantwortung für die Identifizierung und Entfernung des verletzenden Materials.
+
+   9.4  KEINE RECHTSWÄSCHE. KI-generierter Code, der geschützte Ausdrucksformen, patentierte Verfahren oder innovative architektonische Entwürfe aus den Trainingsdaten eines Modells reproduziert, erhält durch diese Lizenz keinen zusätzlichen Schutz allein dadurch, dass er „KI-generiert" oder „transformativ" ist. SySL schafft keinen Schonraum für Inhalte, die eine Rechtsverletzung darstellen würden, wenn sie von einem Menschen erstellt worden wären. Die Herkunft des verletzenden Materials — ob menschengeschaffen oder KI-generiert — ist für die Verwirkungsanalyse nach Abschnitt 9.2 unerheblich.
+
+   9.5  ACHTUNG VOR BESTEHENDEM GEISTIGEM EIGENTUM. Soweit die Software eine innovative Architektur implementiert oder enthält, die einem gültigen Patent oder einem anderen Recht an geistigem Eigentum einer anderen Partei unterliegt, werden die Rechte dieser Partei durch diese Lizenz nicht geschmälert, verdrängt oder beeinträchtigt. Beitragsleistende müssen gebührende Sorgfalt walten lassen, um sicherzustellen, dass ihre Beiträge das geistige Eigentum anderer nicht verletzen, insbesondere wenn ein Beitrag architektonische Muster implementiert, die möglicherweise patentiert sind. Die KI-generierte Natur eines Beitrags entschuldigt keine Rechtsverletzung und verlagert auch keine Haftung auf das KI-System, seinen Anbieter oder den Autor.
+
+10. MARKEN
+
+   Diese Lizenz gewährt keine Erlaubnis zur Nutzung der Handelsnamen, Marken, Dienstleistungsmarken oder Produktnamen des Autors, außer soweit dies für eine angemessene und übliche Beschreibung der Herkunft der Software erforderlich ist.
+
+11. KOMPATIBILITÄT
+
+   11.1 Die SySL ist so konzipiert, dass sie mit der Apache License, Version 2.0, und der MIT License kompatibel ist. Software, die unter der SySL lizenziert ist, darf mit Software kombiniert werden, die unter Apache-2.0 oder MIT lizenziert ist, und das kombinierte Werk darf unter den Bedingungen von Apache-2.0 bzw. MIT verbreitet werden, sofern die Offenlegungspflichten der SySL (Abschnitt 2) und die reziproken Offenlegungspflichten (Abschnitt 8) unabhängig davon erfüllt werden. Zur Klarstellung: Die Verbreitung unter Apache-2.0 oder MIT entbindet nicht von den Offenlegungspflichten — diese haften unabhängig von der auf das kombinierte Werk angewandten Lizenzhülle an dem aus SySL stammenden Code. Ein Lizenzgeber, der KI-generierte Software ohne Offenlegungspflichten veröffentlichen möchte, sollte SySL nicht verwenden.
+
+   11.2 Die Kompatibilität mit anderen Lizenzen ist im Einzelfall zu prüfen. Der Autor kann Kompatibilitätsfeststellungen für weitere Lizenzen unter <https://sysl.celestia.world> veröffentlichen.
+
+   11.3 GESTUFTE LIZENZIERUNG. Die SySL etabliert Transparenznormen, erlegt jedoch keine kommerziellen Beschränkungen, keine Wettbewerbsverbotsfristen und keinen Änderungsdatum-Mechanismus auf. Ein Lizenzgeber kann die Software unter der SySL zusammen mit zusätzlichen Lizenzen anbieten, die solche Beschränkungen vorsehen (beispielsweise eine Doppellizenzierung mit der Business Source License 1.1). In solchen Fällen können Sie wählen, welchen Lizenzbedingungen Sie folgen: der SySL (die nur Offenlegung verlangt) oder der zusätzlichen Lizenz (die weitergehende Beschränkungen auferlegt). Der SySL-Text selbst bleibt unverändert. Wenn BUSL-1.1 als zusätzliche Lizenz verwendet wird, sollten Lizenzgeber von KI-generierter Software SySL (nicht Apache-2.0 oder MIT) als Change License angeben, um sicherzustellen, dass die Transparenznorm die Wettbewerbsverbotsfrist überdauert.
+
+12. SALVATORISCHE KLAUSEL
+
+   Sollte eine Bestimmung dieser Lizenz von einem zuständigen Gericht für undurchsetzbar oder ungültig befunden werden, so ist diese Bestimmung nur in dem Umfang anzupassen, der erforderlich ist, um sie durchsetzbar zu machen, und die übrigen Bestimmungen dieser Lizenz bleiben in vollem Umfang in Kraft.
+
+13. KEIN RECHTSVERZICHT
+
+   Das Versäumnis des Autors, eine Bestimmung dieser Lizenz durchzusetzen, stellt keinen Verzicht auf das Recht des Autors dar, diese Bestimmung oder eine andere Bestimmung in Zukunft durchzusetzen.
+
+14. ANWENDBARES RECHT UND STREITBEILEGUNG
+
+   14.1 Diese Lizenz unterliegt den allgemeinen Grundsätzen des internationalen Urheberrechts und ist so auszulegen, dass sie den weitestmöglichen Schutz im Einklang mit den hierin enthaltenen Bestimmungen bietet.
+
+   14.2 Zur Klarstellung: Soweit die Software KI-generiert ist und der urheberrechtliche Status solchen Codes nach dem anwendbaren Recht ungewiss ist, sind die Bestimmungen dieser Lizenz im größtmöglichen Umfang nach dem anwendbaren Vertragsrecht wirksam.
+
+   14.3 ist die Streitigkeit einem verbindlichen Schiedsverfahren nach den Regeln einer international anerkannten Schiedsinstitution zu unterwerfen, über die sich die Parteien einigen.
+
+15. AMTLICHER TEXT UND ÜBERSETZUNGEN
+
+   15.1 Der maßgebliche Text dieser Lizenz ist die englischsprachige Fassung, die im offiziellen SySL-Repository unter <https://github.com/celestia-island/sysl> geführt wird.
+
+   15.2 Übersetzungen dieser Lizenz in andere Sprachen werden ausschließlich zu Informationszwecken bereitgestellt. Im Falle eines Widerspruchs zwischen einer Übersetzung und der englischen Fassung ist die englische Fassung maßgeblich.
+
+16. VERSIONIERUNG
+
+   16.1 Der Autor kann von Zeit zu Zeit überarbeitete Fassungen der Synthetische-Quellcode-Lizenz veröffentlichen. Jede Fassung wird durch eine Versionsnummer gekennzeichnet.
+
+   16.2 Standardmäßig unterliegt Software, die unter der „Synthetic Source License, Version 1.0" (oder „SySL-1.0") lizenziert ist, der Version 1.0, wie sie zum Zeitpunkt der ersten Verbreitung der Software veröffentlicht war.
+
+   16.3 Der Autor kann in der Lizenzerklärung der Software festlegen, dass die Software unter „SySL-1.0 oder einer beliebigen späteren Fassung" lizenziert ist, wobei Sie in diesem Fall wählen können, ob Sie den Bedingungen von SySL-1.0 oder den Bedingungen einer späteren, vom Autor veröffentlichten Fassung folgen.
+
+                     ENDE DER BESTIMMUNGEN UND KONDITIONEN
+
+                                     ANHANG
+
+              So wenden Sie SySL auf Ihre Software an
+
+Um die Synthetische-Quellcode-Lizenz auf Ihr Werk anzuwenden, fügen Sie den folgenden Standardhinweis in jede Quelldatei ein. Der Hinweis ist in die für das Dateiformat geeignete Kommentarsyntax einzuschließen.
+
+   Copyright (c) [Jahr] [Ihr Name oder Ihre Organisation]
+
+   Lizenziert unter der Synthetic Source License, Version 1.0 (die „Lizenz"); Sie dürfen diese Datei nur in Übereinstimmung mit der Lizenz verwenden. Eine Kopie der Lizenz erhalten Sie unter
+
+       https://github.com/celestia-island/sysl
+
+   Sofern nicht gesetzlich vorgeschrieben oder schriftlich vereinbart, wird die unter der Lizenz verbreitete Software im „AS IS"-Zustand bereitgestellt, OHNE MÄNGELGEWÄHRLEISTUNG ODER BEDINGUNGEN JEDWEDER ART, weder ausdrücklich noch stillschweigend. Siehe die Lizenz für den genauen Wortlaut der Rechte und Beschränkungen.
+
+   KI-MODELL-OFFENLEGUNG: [Beschreiben Sie, welche KI-Modelle zur Generierung dieser Software verwendet wurden. Siehe Abschnitt 2 der Lizenz.]
+
+
+Um Ihre Software unter „SySL-1.0 oder einer beliebigen späteren Fassung" zu lizenzieren, können Sie den Zusatz „oder (nach Ihrer Wahl) jeder späteren Fassung" in den obigen Standardhinweis aufnehmen. Wenn Sie diesen Zusatz nicht aufnehmen, ist Ihre Software ausschließlich unter Version 1.0 lizenziert.
