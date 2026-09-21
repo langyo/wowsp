@@ -1,6 +1,6 @@
 import { defineComponent } from "vue";
 
-import { pickAnnouncementVariants } from "../announcement";
+import { pickAnnouncementVariants, pickTelemetryNotice } from "../announcement";
 import "./AnnouncementCard.scss";
 
 /**
@@ -13,11 +13,16 @@ import "./AnnouncementCard.scss";
  * the license text and the agree checkbox visible. No close button: the
  * notice is mandatory and the agree button stays disabled until its
  * countdown runs out.
+ *
+ * A short usage-telemetry disclosure follows the free-notice blocks,
+ * rendered in the language the system reports (the third agreement
+ * document carries the full notice).
  */
 export default defineComponent({
   name: "AnnouncementCard",
   setup() {
     const variants = pickAnnouncementVariants(navigator.language);
+    const telemetry = pickTelemetryNotice(navigator.language);
 
     return () => (
       <aside class="announce-card">
@@ -28,6 +33,11 @@ export default defineComponent({
             <p class="announce-card__body">{variant.body}</p>
           </section>
         ))}
+        <section key="telemetry" class="announce-card__block">
+          <span class="announce-card__lang">{telemetry.label}</span>
+          <h3 class="announce-card__title">Usage Telemetry / 使用量遥测</h3>
+          <p class="announce-card__body">{telemetry.text}</p>
+        </section>
       </aside>
     );
   },
