@@ -109,6 +109,19 @@
     "localizedTiersToggle": "Etiquetas de nivel localizadas",
     "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar (Bad/Good/Unicum, etc.)."
   },
+  "sealCustomizer": {
+    "desc": "Activa o desactiva cada sello por separado o asigna una imagen personalizada a cada uno (se guarda en la carpeta stamps del directorio de datos de la aplicación). La vista previa se actualiza al instante; restablecer elimina la imagen personalizada.",
+    "sealMiracle": "Shen Le («Milagro»)",
+    "sealApe": "Hai Hou («Mono marino»)",
+    "sealMaggot": "Qu («Cresa»)",
+    "sealRat": "Guo Jie Lao Shu («Rata»)",
+    "sealAir": "Kong Zhong Xiao Ren («Enano del cielo»)",
+    "sealSub": "Shui Xia Xiao Ren («Enano submarino»)",
+    "pickImage": "Imagen personalizada",
+    "resetDefault": "Restaurar",
+    "pickFailed": "Error al importar la imagen del sello",
+    "resetFailed": "Error al restaurar el sello"
+  },
   "updates": "Actualizaciones",
   "updatesAppTitle": "Aplicación",
   "updatesAppHint": "La aplicación sigue las etiquetas de versión de GitHub; una actualización solo descarga el instalador ligero — el paquete de recursos sigue por su propio canal.",

@@ -1,9 +1,17 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
+import type { StampKind } from "@/utils/winrate";
+
 /** Which backend formula produces the `pr` field: ApeRadar's weighted
  *  winrate (the shipped behavior) or wows-numbers expected values. */
 export type PrAlgo = "winrate" | "expected";
+
+/** Per-seal kill switches, keyed by StampKind. Absent/false = the seal
+ *  shows; true = that one seal never renders, on any surface. A Partial
+ *  on purpose: seals the user never touched carry no entry at all, so the
+ *  blob stays small and new kinds default to visible. */
+export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
 /** Water-table display preferences. Persisted as one JSON blob so the four
  *  knobs always travel together (the onboarding wizard and the settings
@@ -21,15 +29,22 @@ export interface StatsPrefs {
   /** Fun localized tier wording (夯/人上人/战舰仙人…) vs the standard
    *  English band words (Bad…Unicum). */
   localizedTiers: boolean;
+  /** Per-seal visibility toggles (settings' seal customizer). */
+  sealDisabled: SealDisableMap;
 }
 
 export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
+
+/** The canonical seal kinds — mirrored here (type-only import above) so
+ *  parsePrefs can drop junk keys from a hand-edited blob. */
+const STAMP_KINDS = ["miracle", "ape", "maggot", "rat", "air", "sub"] as const;
 
 export const DEFAULT_STATS_PREFS: StatsPrefs = {
   prEnabled: false,
   prAlgo: "winrate",
   sealsEnabled: true,
   localizedTiers: true,
+  sealDisabled: {},
 };
 
 function isPrAlgo(v: unknown): v is PrAlgo {
@@ -39,6 +54,17 @@ function isPrAlgo(v: unknown): v is PrAlgo {
 /** Validate a raw JSON blob into prefs. Corrupt/wrong-shaped input returns
  *  null so the caller falls back to defaults wholesale — a half-merged
  *  object would silently mix stored and default knobs. */
+function parseSealDisabled(v: unknown): SealDisableMap {
+  if (v == null || typeof v !== "object") return {};
+  const out: SealDisableMap = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if ((STAMP_KINDS as readonly string[]).includes(k) && typeof val === "boolean") {
+      out[k as StampKind] = val;
+    }
+  }
+  return out;
+}
+
 function parsePrefs(raw: string | null): StatsPrefs | null {
   if (raw == null) return null;
   try {
@@ -56,6 +82,7 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.localizedTiers === "boolean"
           ? j.localizedTiers
           : DEFAULT_STATS_PREFS.localizedTiers,
+      sealDisabled: parseSealDisabled(j.sealDisabled),
     };
   } catch {
     return null;
@@ -122,5 +149,20 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
-  return { prefs, setPrEnabled, setPrAlgo, setSealsEnabled, setLocalizedTiers };
+  function setSealDisabled(kind: StampKind, disabled: boolean) {
+    const next: SealDisableMap = { ...prefs.value.sealDisabled };
+    if (disabled) next[kind] = true;
+    else delete next[kind];
+    prefs.value.sealDisabled = next;
+    persist({ ...prefs.value });
+  }
+
+  return {
+    prefs,
+    setPrEnabled,
+    setPrAlgo,
+    setSealsEnabled,
+    setLocalizedTiers,
+    setSealDisabled,
+  };
 });

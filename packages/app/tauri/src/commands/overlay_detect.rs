@@ -1771,13 +1771,13 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
 
 /// Horizontal padding (physical px): WIDER than vertical because the stat
 /// chips render OUTSIDE the table's left/right edges (inside they cover the
-/// ship names) — the window must reserve a full chip width per side.
-/// Observation point (accepted cosmetic): at this function's 150 px floor
-/// (narrow tables) a chip carrying its full seal set can reach the window
-/// edge and clip its outermost 1–5 px. Revisit the floor only if a wider
-/// chip (bigger seals / font scale) ever lands.
+/// ship names) — the window must reserve a full chip width per side. The
+/// four-char seals recut onto one line (3:1 faces) roughly tripled each
+/// wide seal's footprint versus the old 2x2 face, so the floor rides up
+/// with them: at 150 px a hidden-profile 过街老鼠 chip (or any chip with a
+/// career + air + sub set) lost its outer seal flank.
 pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
-    (roster.width / 5).clamp(150, 280)
+    (roster.width / 4).clamp(240, 440)
 }
 
 /// Build the overlay-window anchor from a detection relative to the game

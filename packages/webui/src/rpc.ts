@@ -85,6 +85,9 @@ export const RPC = {
   wallpaper_list: "wallpaper_list",
   wallpaper_import: "wallpaper_import",
   wallpaper_remove: "wallpaper_remove",
+  stamp_list: "stamp_list",
+  stamp_import: "stamp_import",
+  stamp_reset: "stamp_reset",
   installer_language: "installer_language",
 } as const;
 

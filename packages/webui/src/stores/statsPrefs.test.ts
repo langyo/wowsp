@@ -37,6 +37,7 @@ describe("loadStatsPrefs", () => {
       prAlgo: "winrate",
       sealsEnabled: true,
       localizedTiers: true,
+      sealDisabled: {},
     });
   });
 
@@ -52,6 +53,17 @@ describe("loadStatsPrefs", () => {
     expect(prefs.prAlgo).toBe("winrate");
     expect(prefs.sealsEnabled).toBe(true);
     expect(prefs.localizedTiers).toBe(true);
+    expect(prefs.sealDisabled).toEqual({});
+  });
+
+  it("keeps only known boolean keys in sealDisabled", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        sealDisabled: { rat: true, air: false, voodoo: true, miracle: "yes" },
+      }),
+    );
+    expect(loadStatsPrefs().sealDisabled).toEqual({ rat: true, air: false });
   });
 
   it("rejects an unknown algorithm value", () => {
@@ -78,6 +90,7 @@ describe("statsPrefs store", () => {
       prAlgo: "expected",
       sealsEnabled: false,
       localizedTiers: false,
+      sealDisabled: {},
     });
     // Same values read back through the pure loader (the round trip).
     expect(loadStatsPrefs()).toEqual({
@@ -85,7 +98,16 @@ describe("statsPrefs store", () => {
       prAlgo: "expected",
       sealsEnabled: false,
       localizedTiers: false,
+      sealDisabled: {},
     });
+  });
+
+  it("persists a per-seal toggle and round-trips it", async () => {
+    const store = useStatsPrefsStore();
+    store.setSealDisabled("air", true);
+    store.setSealDisabled("rat", true);
+    store.setSealDisabled("air", false);
+    expect(loadStatsPrefs().sealDisabled).toEqual({ rat: true });
   });
 
   it("initializes state from persisted storage", async () => {
