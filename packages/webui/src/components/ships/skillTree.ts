@@ -7,9 +7,10 @@
  * carries:
  *   - `code`   — the GameParams skill code (e.g. `GmShellReload`); doubles as
  *                the key into `data/skills.json` for numeric effects.
- *   - `tier`   — 1..4, the row it sits on. Unlock rules: tier-2 needs ≥1 pt
- *                spent in tier-1; tier-3 needs ≥2 pts in tiers 1..2; tier-4
- *                needs ≥3 pts in tiers 1..3.
+ *   - `tier`   — 1..4, the row it sits on. A skill costs as many points as
+ *                its row (1–4 pts). Unlock rules: tier-2 needs ≥1 pt spent
+ *                in tier-1; tier-3 needs ≥2 pts in tiers 1..2; tier-4 needs
+ *                ≥3 pts in tiers 1..3.
  *   - `column` — horizontal position within the tier row.
  *   - `name` / `desc` — localized display strings keyed by language
  *                (`en` / `ja` / `zh` / `tw`); either may be blank.
@@ -58,6 +59,40 @@ export const TIER_UNLOCK: Record<2 | 3 | 4, number> = { 2: 1, 3: 2, 4: 3 };
 
 /** Total commander budget. */
 export const SKILL_BUDGET = 21;
+
+/** Points one skill costs — its tier row (tier-1 → 1 pt … tier-4 → 4 pts),
+ *  matching the in-game system. */
+export function skillCost(tier: number): number {
+  return tier;
+}
+
+/** Total points a selection consumes. Each picked skill costs its tier row;
+ *  codes outside `tree` (a build restored onto a ship of another class —
+ *  codes are not unique across classes) fall back to 1 pt, the floor for
+ *  any real skill, so stale codes still count toward the budget. */
+export function skillPointsSpent(
+  picked: Readonly<Record<string, 1>>,
+  tree: readonly Skill[],
+): number {
+  const tierOf = new Map(tree.map((s) => [s.code, s.tier] as const));
+  let spent = 0;
+  for (const code of Object.keys(picked)) spent += tierOf.get(code) ?? 1;
+  return spent;
+}
+
+/** Points spent in tiers strictly below `tier`, weighting each picked skill
+ *  by its tier row — the sum the `TIER_UNLOCK` row gates compare against. */
+export function skillPointsBelow(
+  picked: Readonly<Record<string, 1>>,
+  tree: readonly Skill[],
+  tier: number,
+): number {
+  let spent = 0;
+  for (const s of tree) {
+    if (s.tier < tier && picked[s.code]) spent += skillCost(s.tier);
+  }
+  return spent;
+}
 
 // ── In-game recommended builds (yellow corner ribbon) ─────────────────────
 // `crew_presets.json` mirrors the client's CrewSkillRecomendationPresets
