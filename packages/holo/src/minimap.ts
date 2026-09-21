@@ -108,11 +108,11 @@ export function drawHoloMinimap(opts: MinimapDrawOpts): void {
   //    a capture runs (mirrors the app's minimap + scorebar chips) ──
   if (art && caps.length) {
     const b = art.activeBounds ?? art.bounds;
-    // Ring size from the zone REAL radius: on a 160px thumb of a 30 km
-    // map even 140 m is sub-pixel, so use the app relative sqrt scale —
-    // bigger radius → visibly bigger ring (clamped like the app thumb).
+    // Ring at the zone's TRUE world radius through the same projection as
+    // the dots (a 100 m ring on a 1400 m map spans ~1/14 of the canvas),
+    // floored so a missing radius still shows a visible marker.
     const ringPx = (radius?: number) =>
-      Math.max(4, Math.min(22, 3 + Math.sqrt(Math.max(radius ?? 300, 25) / 20) * 5)) * k;
+      Math.max(3 * k, ((radius ?? 0) / Math.max(b.maxX - b.minX, 1)) * S);
     for (const c of caps) {
       const ringR = ringPx(c.radius);
       const p = project(c.x, c.z, b);
