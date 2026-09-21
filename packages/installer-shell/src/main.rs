@@ -798,8 +798,8 @@ fn get_identity(state: tauri::State<'_, AppState>) -> Identity {
 /// The wizard's `navigator.language` → license-docs.json key. Traditional
 /// Chinese locales read the zh-Hant documents, any other zh prefix reads
 /// zh-Hans, and each of the other offered languages matches its BCP-47
-/// prefix (ja-JP → ja, fr-CA → fr, …). Unmapped languages (pt, de, ar, …)
-/// read the English set.
+/// prefix (ja-JP → ja, fr-CA → fr, de-DE → de, pt-BR → pt, …). Unmapped
+/// languages read the English set.
 fn license_locale_key(locale: &str) -> &'static str {
     let lower = locale.to_lowercase();
     if lower.starts_with("zh-hant") || lower.starts_with("zh-tw") || lower.starts_with("zh-hk") {
@@ -816,6 +816,10 @@ fn license_locale_key(locale: &str) -> &'static str {
         "fr"
     } else if lower.starts_with("es") {
         "es"
+    } else if lower.starts_with("de") {
+        "de"
+    } else if lower.starts_with("pt") {
+        "pt"
     } else {
         "en"
     }
@@ -835,6 +839,73 @@ fn get_license_docs(state: tauri::State<'_, AppState>, locale: String) -> Vec<Li
         .or_else(|| state.license_docs.get("en"))
         .cloned()
         .unwrap_or_default()
+}
+
+/// OS window titles per wizard locale: `(locale, installer, uninstall)`.
+/// The webview's own AppTitleBar localizes from the frontend string
+/// table — this table covers only the native frame the user sees in the
+/// taskbar and alt-tab, so its wording mirrors `title` /
+/// `uninstallTitle` in `web/src/i18n.ts` and must be kept in sync with
+/// that table. An unmapped tag falls back to the zh-Hans pair
+/// (tauri.conf.json's static initial title).
+const WINDOW_TITLES: &[(&str, &str, &str)] = &[
+    ("zh-Hans", "WoWSP 安装器", "WoWSP 卸载"),
+    ("zh-Hant", "WoWSP 安裝器", "WoWSP 解除安裝"),
+    ("en", "WoWSP Installer", "Uninstall WoWSP"),
+    ("ru", "Установщик WoWSP", "Удаление WoWSP"),
+    ("ja", "WoWSP インストーラー", "WoWSP のアンインストール"),
+    ("ko", "WoWSP 설치 관리자", "WoWSP 제거"),
+    ("fr", "Programme d'installation WoWSP", "Désinstaller WoWSP"),
+    ("es", "Instalador de WoWSP", "Desinstalar WoWSP"),
+    ("de", "WoWSP-Installer", "WoWSP deinstallieren"),
+    ("pt", "Instalador do WoWSP", "Desinstalar o WoWSP"),
+];
+
+/// Whether `value` is one of the ten wizard locale strings (exactly what
+/// `save_language` persists) — a stale or corrupt prefs value must not
+/// leak an arbitrary tag into the title resolution.
+fn is_wizard_locale(value: &str) -> bool {
+    WINDOW_TITLES.iter().any(|(k, _, _)| *k == value)
+}
+
+/// The system UI locale as a BCP-47-ish tag (the same information the
+/// webview's navigator.language reports), read from the Windows user
+/// default locale. `None` when the API fails — callers fall back to the
+/// zh-Hans default.
+fn system_locale_tag() -> Option<String> {
+    use windows_sys::Win32::Globalization::GetUserDefaultLocaleName;
+
+    // The buffer size the locale-name API documents (LOCALE_NAME_MAX_LENGTH).
+    const LOCALE_NAME_MAX_LENGTH: usize = 85;
+    let mut buf = [0u16; LOCALE_NAME_MAX_LENGTH];
+    // SAFETY: `buf` is a valid buffer of LOCALE_NAME_MAX_LENGTH u16
+    // slots, the size the API expects.
+    let len = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32) };
+    if len <= 0 {
+        return None;
+    }
+    // The returned count includes the terminating NUL.
+    let len = (len as usize).min(buf.len());
+    let tag = String::from_utf16_lossy(&buf[..len.saturating_sub(1)]);
+    let tag = tag.trim();
+    if tag.is_empty() {
+        None
+    } else {
+        Some(tag.to_string())
+    }
+}
+
+/// The OS window title for this run: `locale_tag` (a saved wizard locale
+/// or a raw system tag) resolves through the same BCP-47 prefix rule as
+/// the license documents; `uninstall` picks the uninstall title.
+fn os_window_title(locale_tag: &str, uninstall: bool) -> &'static str {
+    let key = license_locale_key(locale_tag);
+    let (install, uninstall_title) = WINDOW_TITLES
+        .iter()
+        .find(|(k, _, _)| *k == key)
+        .map(|(_, i, u)| (*i, *u))
+        .unwrap_or(("WoWSP 安装器", "WoWSP 卸载"));
+    if uninstall { uninstall_title } else { install }
 }
 
 /// The directory holding the running executable — the install dir for
@@ -1475,14 +1546,23 @@ fn main() {
         .setup(move |app| {
             use tauri::Manager;
 
-            // The uninstall page is a compact dialog — the wizard-sized
-            // window from tauri.conf would dwarf it.
-            if uninstalling {
-                if let Some(w) = app.get_webview_window("installer") {
+            // The OS window title (title bar / taskbar) follows the saved
+            // wizard language, with the system locale as fallback and the
+            // zh-Hans pair as the last resort — the same resolution order
+            // the frontend applies, and it covers BOTH modes (the wizard
+            // and the uninstall page; the uninstall run previously pinned
+            // a hardcoded Chinese title here).
+            let saved = read_saved_language_in(&local_appdata()).filter(|l| is_wizard_locale(l));
+            let tag = saved
+                .unwrap_or_else(|| system_locale_tag().unwrap_or_else(|| "zh-Hans".to_string()));
+            if let Some(w) = app.get_webview_window("installer") {
+                let _ = w.set_title(os_window_title(&tag, uninstalling));
+                // The uninstall page is a compact dialog — the wizard-sized
+                // window from tauri.conf would dwarf it.
+                if uninstalling {
                     use tauri::LogicalSize;
                     let _ = w.set_size(LogicalSize::new(520.0, 400.0));
                     let _ = w.center();
-                    let _ = w.set_title("WoWSP 卸载");
                 }
             }
             Ok(())
@@ -1555,7 +1635,7 @@ mod tests {
 
     #[test]
     fn license_locale_keys_follow_bcp47_prefixes() {
-        // The eight offered locales map by prefix, region tags included.
+        // The ten offered locales map by prefix, region tags included.
         assert_eq!(license_locale_key("zh-Hans"), "zh-Hans");
         assert_eq!(license_locale_key("zh-SG"), "zh-Hans");
         assert_eq!(license_locale_key("zh-Hant-TW"), "zh-Hant");
@@ -1567,12 +1647,44 @@ mod tests {
         assert_eq!(license_locale_key("ru-RU"), "ru");
         assert_eq!(license_locale_key("fr-CA"), "fr");
         assert_eq!(license_locale_key("es-MX"), "es");
+        assert_eq!(license_locale_key("de"), "de");
+        assert_eq!(license_locale_key("de-DE"), "de");
+        assert_eq!(license_locale_key("de-AT"), "de");
+        assert_eq!(license_locale_key("pt"), "pt");
+        assert_eq!(license_locale_key("pt-BR"), "pt");
+        assert_eq!(license_locale_key("pt-PT"), "pt");
         // Unmapped languages read the English set — the universal fallback.
-        assert_eq!(license_locale_key("pt-BR"), "en");
-        assert_eq!(license_locale_key("de-DE"), "en");
         assert_eq!(license_locale_key("ar"), "en");
         assert_eq!(license_locale_key(""), "en");
         assert_eq!(license_locale_key("not-a-locale"), "en");
+    }
+
+    #[test]
+    fn os_window_titles_cover_every_wizard_locale() {
+        // Region tags resolve through the same prefix rule as the docs.
+        assert_eq!(os_window_title("zh-Hans", false), "WoWSP 安装器");
+        assert_eq!(os_window_title("zh-SG", false), "WoWSP 安装器");
+        assert_eq!(os_window_title("zh-Hant-TW", false), "WoWSP 安裝器");
+        assert_eq!(os_window_title("en-US", false), "WoWSP Installer");
+        assert_eq!(os_window_title("ja-JP", false), "WoWSP インストーラー");
+        assert_eq!(os_window_title("ko-KR", false), "WoWSP 설치 관리자");
+        assert_eq!(os_window_title("ru-RU", false), "Установщик WoWSP");
+        assert_eq!(
+            os_window_title("fr-FR", false),
+            "Programme d'installation WoWSP"
+        );
+        assert_eq!(os_window_title("es-MX", false), "Instalador de WoWSP");
+        assert_eq!(os_window_title("de-DE", false), "WoWSP-Installer");
+        assert_eq!(os_window_title("pt-BR", false), "Instalador do WoWSP");
+        // Uninstall picks the second column; unmapped tags read English.
+        assert_eq!(os_window_title("zh-Hant", true), "WoWSP 解除安裝");
+        assert_eq!(os_window_title("zh-Hans", true), "WoWSP 卸载");
+        assert_eq!(os_window_title("de-DE", true), "WoWSP deinstallieren");
+        assert_eq!(os_window_title("pt-PT", true), "Desinstalar o WoWSP");
+        assert_eq!(os_window_title("fr", true), "Désinstaller WoWSP");
+        assert_eq!(os_window_title("en", true), "Uninstall WoWSP");
+        assert_eq!(os_window_title("ar", true), "Uninstall WoWSP");
+        assert_eq!(os_window_title("", false), "WoWSP Installer");
     }
 
     /// The build-time license-docs assembly stays in lockstep with the
@@ -1587,11 +1699,13 @@ mod tests {
             serde_json::from_str(LICENSE_DOCS_JSON).expect("embedded license docs decode");
         assert_eq!(
             docs.len(),
-            8,
+            10,
             "one document set per wizard locale: {:#?}",
             docs.keys().collect::<Vec<_>>()
         );
-        for locale in ["en", "zh-Hans", "zh-Hant", "ja", "ko", "ru", "fr", "es"] {
+        for locale in [
+            "en", "zh-Hans", "zh-Hant", "ja", "ko", "ru", "fr", "es", "de", "pt",
+        ] {
             let set = docs.get(locale).unwrap_or_else(|| {
                 panic!("license docs missing the `{locale}` set");
             });
@@ -1603,6 +1717,16 @@ mod tests {
         }
         // The English set stays resolvable as the universal fallback.
         assert!(docs.contains_key("en"));
+        // de / pt have no localized telemetry page yet: their third
+        // document falls back to the English doc, title included.
+        for locale in ["de", "pt"] {
+            let set = docs.get(locale).unwrap();
+            assert_eq!(
+                set[2].title, "Usage Telemetry Notice",
+                "`{locale}` telemetry doc falls back to the English title"
+            );
+            assert_eq!(set[2].body, docs["en"][2].body);
+        }
     }
 
     #[test]

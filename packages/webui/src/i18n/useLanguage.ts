@@ -133,9 +133,10 @@ function loadUiLocale(): Locale {
 }
 
 /** Installer-wizard locale → canonical UI locale. The installer shell
- *  offers the same eight wizard locales the docs serve; each seeds the
- *  UI locale whose copy matches it. Anything else is unmappable and
- *  ignored by the seed. */
+ *  offers ten wizard locales; the eight with a matching webui UI copy
+ *  seed that locale, while de / pt have no UI locale here and stay
+ *  unmapped — the seed ignores them. Anything else is unmappable and
+ *  ignored too. */
 const INSTALLER_LOCALE_TO_UI: Record<string, Locale> = {
   "zh-Hans": "zh-CN",
   "zh-Hant": "zh-TW",

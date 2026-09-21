@@ -9,11 +9,15 @@
  * es) its variant is appended after the mandatory three; zh-SG deliberately
  * maps onto the zh-CN block (same script, same copy), so it adds nothing.
  *
- * The telemetry notice is shown ONCE, in the user's own language (zh-Hant /
- * zh / en), because unlike the anti-scam warning it is not a
- * fraud-prevention banner that must be legible to every buyer regardless
- * of locale — it is a disclosure aimed at this specific user. Canonical
- * long-form copy: docs/{lang}/license/usage-telemetry.md.
+ * The telemetry notice is shown ONCE, in the user's own language: every
+ * UI locale resolves its own entry (zh locales split into Simplified /
+ * Traditional, the other six offered UI locales map by code), and
+ * anything unmapped reads English. Unlike the anti-scam warning it is
+ * not a fraud-prevention banner that must be legible to every buyer
+ * regardless of locale — it is a disclosure aimed at this specific user.
+ * Canonical long-form copy: docs/{lang}/license/usage-telemetry.md (the
+ * webui offers no de / pt UI locale, so those entries only surface in
+ * the installer shell's mirror).
  *
  * This module is a mirrored copy: an identical module lives in
  * packages/installer-shell/web — keep the copy texts in sync across both.
@@ -85,9 +89,10 @@ export const ANNOUNCEMENT_VARIANTS: Record<string, AnnouncementVariant> = {
 /** Mandatory blocks every surface shows, in display order. */
 const MANDATORY_IDS = ["zh-CN", "en", "ru"] as const;
 
-/** Short usage-telemetry disclosure, one per language id (en / zh only —
- *  the same three locales the license documents resolve to). The wording
- *  mirrors the short form of docs/{lang}/license/usage-telemetry.md. */
+/** Short usage-telemetry disclosure, one per language id (the languages
+ *  the wizard offers, zh keyed as zh-CN / zh-TW; anything else falls back
+ *  to the en entry). The wording mirrors the short form of
+ *  docs/{lang}/license/usage-telemetry.md. */
 export const TELEMETRY_NOTICES: Record<string, { label: string; text: string }> = {
   en: {
     label: "English",
@@ -101,17 +106,64 @@ export const TELEMETRY_NOTICES: Record<string, { label: string; text: string }> 
     label: "繁體中文",
     text: "WoWSP 會收集極少量使用量遙測（介面語言、開啟的頁面、國家級地區），僅用於指導開發；絕不收集任何個人資料、回放或帳號資料。",
   },
+  ja: {
+    label: "日本語",
+    text: "WoWSP は最小限の使用状況テレメトリー（インターフェースの言語、開いたページ、国レベルの地域）を収集し、開発の指針にのみ利用します。個人データ、リプレイデータ、アカウントデータは一切収集しません。",
+  },
+  ko: {
+    label: "한국어",
+    text: "WoWSP는 개발 방향을 잡기 위해 최소한의 사용량 원격 측정(인터페이스 언어, 열어본 페이지, 국가 수준 지역)만 수집합니다. 개인 데이터, 리플레이 또는 계정 데이터는 절대 수집하지 않습니다.",
+  },
+  ru: {
+    label: "Русский",
+    text: "WoWSP собирает минимальную телеметрию использования (язык интерфейса, открытые страницы, регион на уровне страны) — только для направления разработки. Персональные данные, данные реплеев и аккаунтов не собираются никогда.",
+  },
+  fr: {
+    label: "Français",
+    text: "WoWSP collecte un minimum de télémétrie d'utilisation (langue de l'interface, pages ouvertes, région au niveau du pays), uniquement pour guider le développement. Aucune donnée personnelle, aucune donnée de replay ni de compte n'est collectée.",
+  },
+  es: {
+    label: "Español",
+    text: "WoWSP recoge una telemetría de uso mínima (idioma de la interfaz, páginas abiertas, región a nivel de país) solo para orientar el desarrollo. Nunca se recogen datos personales ni datos de repeticiones o cuentas.",
+  },
+  de: {
+    label: "Deutsch",
+    text: "WoWSP erfasst minimale Nutzungstelemetrie (Oberflächensprache, geöffnete Seiten, Region auf Länderebene), ausschließlich zur Orientierung für die Entwicklung. Persönliche Daten sowie Replay- oder Kontodaten werden niemals erfasst.",
+  },
+  pt: {
+    label: "Português",
+    text: "O WoWSP recolhe telemetria de utilização mínima (idioma da interface, páginas abertas, região ao nível do país), apenas para orientar o desenvolvimento. Nunca são recolhidos dados pessoais nem dados de replays ou de contas.",
+  },
+};
+
+/** UI locale → telemetry-notice key for the non-zh UI locales (exact
+ *  codes — this picker keys off the app's canonical UI locale). Codes
+ *  outside the set fall back to en. */
+const UI_LOCALE_NOTICE: Record<string, string> = {
+  "en-US": "en",
+  "ja-JP": "ja",
+  "ko-KR": "ko",
+  "ru-RU": "ru",
+  "fr-FR": "fr",
+  "es-ES": "es",
 };
 
 /** Pick the telemetry notice for a UI locale: Traditional Chinese locales
- *  read zh-TW, any other zh prefix reads zh-CN, everything else reads
- *  English. */
+ *  read zh-TW, any other zh prefix reads zh-CN, the other offered UI
+ *  locales map by code, everything else reads English. */
 export function pickTelemetryNotice(uiLocale: string): { label: string; text: string } {
   const lower = uiLocale.toLowerCase();
   const traditional =
     lower.startsWith("zh") &&
     (["-tw", "-hk", "-mo"].some((sub) => lower.includes(sub)) || lower.includes("hant"));
-  const key = traditional ? "zh-TW" : lower.startsWith("zh") ? "zh-CN" : "en";
+  let key = "en";
+  if (traditional) {
+    key = "zh-TW";
+  } else if (lower.startsWith("zh")) {
+    key = "zh-CN";
+  } else {
+    key = UI_LOCALE_NOTICE[uiLocale] ?? "en";
+  }
   return TELEMETRY_NOTICES[key];
 }
 
