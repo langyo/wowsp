@@ -126,17 +126,24 @@ export default defineComponent({
       // with it the clear button — must survive those transitions too, since
       // the anchor re-anchors on the same battle's next Tab hold.
       if (s.manual) {
-        return { cls: "manual", text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
+        return { cls: "manual", spin: false, text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
       }
       if (s.state === "idle") return null;
       if (s.state === "detected") {
         // A sink just reshuffled the anchored rows and the watcher is
         // re-mapping them at the accelerated cadence — badge "updating"
         // instead of the row count until the mapping lands (stale clears).
-        if (s.stale) return { cls: "detected", text: t("replay.live.updating") };
-        return { cls: "detected", text: t("replay.live.detectedRows", { n: s.rows ?? 0 }) };
+        if (s.stale)
+          return { cls: "detected", spin: true, text: t("replay.live.updating") };
+        return {
+          cls: "detected",
+          spin: false,
+          text: t("replay.live.detectedRows", { n: s.rows ?? 0 }),
+        };
       }
-      return { cls: "searching", text: t("replay.live.searching") };
+      // Searching/updating are settling states — carry the same inline
+      // spinner the loading roster rows use (HkSpinner, currentcolor tone).
+      return { cls: "searching", spin: true, text: t("replay.live.searching") };
     });
 
     /** A manual anchor is in force: the badge turns green and the button
@@ -352,6 +359,7 @@ export default defineComponent({
                     `live-battle__pill--status-${statusBadge.value.cls}`,
                   ]}
                 >
+                  {statusBadge.value.spin && <HSpinner size="xs" tone="current" />}
                   {statusBadge.value.text}
                 </span>
                 <button

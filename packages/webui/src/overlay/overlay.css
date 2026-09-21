@@ -60,71 +60,64 @@ html.overlay-hidden body {
   filter: grayscale(0.9);
 }
 
-.overlay-hint {
+/* The ONE transient-status card — spinner + copy, centered over the table
+   (both axes). Every settling notice renders as this card; it only ever
+   crosses the table's own columns (chips live outside the left/right
+   edges) and vanishes with its trigger on the next event. DOM twin of
+   hikari's centered HkSpinner: same circle geometry, 0.7s rotation and
+   column stacking, re-toned for a bare page over a game frame — literal
+   colors (this page loads no theme), dark-glass plate for legibility. */
+.overlay-status {
   position: absolute;
-  /* Lower third, not the vertical center: the hint box otherwise sits right
-   * on top of where the team table lives (the overlay window wraps the
-   * table area + padding), hiding the very rows the player is trying to
-   * line the chips up with. 82% keeps it below the table in every geometry
-   * the fallback builds while staying clear of the window's bottom edge. */
-  top: 82%;
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
   max-width: 72%;
-  padding: 0.7em 1.3em;
-  border: 1px dashed rgb(255 255 255 / 38%);
-  border-radius: 10px;
+  padding: 0.85em 1.5em;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 12px;
   background: rgb(10 14 20 / 72%);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* The wheel: track = faded white, arc = near-white, 0.7s linear spin —
+   hk-spinner's exact shape and timing. */
+.overlay-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgb(255 255 255 / 22%);
+  border-top-color: rgb(255 255 255 / 92%);
+  border-radius: 50%;
+  animation: overlay-spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes overlay-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion: the wheel rests as a static track + arc, still readable
+   as a loading mark (hikari's house pattern). */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-spinner {
+    animation: none;
+  }
+}
+
+.overlay-status-text {
   color: rgb(235 240 246);
   font-size: 0.875rem;
   line-height: 1.55;
   text-align: center;
   text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
   white-space: normal;
-}
-
-/* Badge stack on the table's top edge: up to three state pills can be
-   live at once (mapping pending + stats querying + roster churning), so
-   they share a flex column instead of overlapping each other. The stack is
-   ANCHORED at its top (TS pins `top` to the table's header-band top edge
-   + 2 px) and grows DOWNWARD — translateX only, no Y component. The
-   earlier bottom-anchored, upward-growing variant (translateY(-100%)) had
-   its upper pills clipped by the window's top edge on small rosters /
-   high DPR. Overlapping the decorative header band is acceptable; the
-   chips render outside the left/right edges either way. */
-.overlay-badges {
-  position: absolute;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  pointer-events: none;
-}
-
-/* One pill in the stack: deliberately low-key (small, translucent) — it
-   must be readable over the game without competing with the chips it
-   vouches for. */
-.overlay-badge {
-  padding: 0.12em 0.75em;
-  border-radius: 999px;
-  background: rgb(10 14 20 / 55%);
-  border: 1px solid rgb(255 255 255 / 12%);
-  color: rgb(198 208 220);
-  font-size: 0.75rem;
-  line-height: 1.45;
-  white-space: nowrap;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
-  pointer-events: none;
-}
-
-/* "Roster updating…" pill (a sink reshuffled the rows): the strongest of
-   the three states — amber ink on a slightly denser plate so it reads as
-   "this is settling" without shouting over the chips. */
-.overlay-badge--stale {
-  background: rgb(30 22 6 / 72%);
-  border-color: rgb(255 190 80 / 55%);
-  color: rgb(255 214 140);
 }
 
 /* Seal bitmaps flanking a chip's numbers (career verdict left, composition

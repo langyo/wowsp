@@ -264,12 +264,21 @@ function usableRowPlayers(p: (string | null)[] | null | undefined): (string | nu
   return p && p.some((n) => n != null) ? p : null;
 }
 
-/** A single pill for the badge stack over the table's top edge. */
-function makeBadge(text: string, variant: "stale" | null): HTMLDivElement {
-  const badge = document.createElement("div");
-  badge.className = "overlay-badge" + (variant ? ` overlay-badge--${variant}` : "");
-  badge.textContent = text;
-  return badge;
+/** The ONE transient-status presentation: a spinner + a single line of
+ *  copy, centered over the table. Every "something is settling" notice —
+ *  locating, rescanning, recognizing, querying, stale — renders as this
+ *  card. DOM twin of hikari's centered HkSpinner (same circle geometry,
+ *  rotation and stacking), which this bare page cannot import. */
+function statusCard(text: string): HTMLDivElement {
+  const card = document.createElement("div");
+  card.className = "overlay-status";
+  const spinner = document.createElement("div");
+  spinner.className = "overlay-spinner";
+  const label = document.createElement("span");
+  label.className = "overlay-status-text";
+  label.textContent = text;
+  card.append(spinner, label);
+  return card;
 }
 
 /** Rebuild every chip from the current roster + anchor. */
@@ -277,21 +286,22 @@ function render() {
   const root = document.body;
   root.textContent = "";
   if (!anchor) return;
-  // Battle is on but the table itself wasn't located — show a centered hint
-  // box instead of chips that would sit on guessed rows. Three copy levels:
-  // a surviving stale mark means the update itself is underway (a change
-  // was detected, full re-scan running) and gets the change-specific copy;
-  // `fallback` is the one state that means a detection was TRIED and
-  // failed (the centered box IS the failure) — the old failure-tone copy;
+  // Battle is on but the table itself wasn't located — show the centered
+  // status card instead of chips that would sit on guessed rows. Three
+  // copy levels: a surviving stale mark means the update itself is underway
+  // (a change was detected, full re-scan running) and gets the
+  // change-specific copy; `fallback` is the one state that means a
+  // detection was TRIED and failed — the old failure-tone copy;
   // still-searching (or no status event yet) gets the softer "hold Tab,
   // recognizing the roster" copy.
   if (!anchor.tableDetected) {
-    const box = document.createElement("div");
-    box.className = "overlay-hint";
-    box.textContent = localized(
-      anchor.stale ? "staleHint" : statusState === "fallback" ? "locateHint" : "locatingHint",
+    root.appendChild(
+      statusCard(
+        localized(
+          anchor.stale ? "staleHint" : statusState === "fallback" ? "locateHint" : "locatingHint",
+        ),
+      ),
     );
-    root.appendChild(box);
     return;
   }
   if (!arena) return;
@@ -385,42 +395,23 @@ function render() {
     });
   }
 
-  // Badge stack on the table's top edge, rebuilt on every render. Up to
-  // three states can be live at once (mapping pending + stats querying +
-  // roster churning), so the pills share one flex-column container instead
-  // of overlapping each other. The stack is ANCHORED at the table's top
-  // edge and grows DOWNWARD (CSS translateX only): sitting a few px onto
-  // the table's decorative header band is fine — the chips live OUTSIDE
-  // the left/right edges, so nothing readable is covered. (The earlier
-  // bottom-anchored, upward-growing variant clipped against the window's
-  // top edge on small rosters / high DPR.) Disappears with its trigger on
-  // the next event (render() rebuilds from scratch each time).
-  const badges: HTMLDivElement[] = [];
-  if (anchor.rowPlayersPending) {
-    badges.push(makeBadge(localized("recognizingBadge"), null));
-  }
-  // Stats are visibly in flight AND at least one on-screen chip still
-  // waits for its numbers. An undetected realm disables the lookups
-  // entirely, which leaves the pipeline inactive — no badge, by design.
-  if (chipsMissingStats && (pending.size > 0 || inFlight || retryTimer != null)) {
-    badges.push(makeBadge(localized("queryingBadge"), null));
-  }
-  // A sink just reshuffled the rows and re-recognition is racing to catch
-  // up — the strongest "hold on, this is settling" signal of the three.
-  if (anchor.stale) {
-    badges.push(makeBadge(localized("staleBadge"), "stale"));
-  }
-  if (badges.length > 0) {
-    const stack = document.createElement("div");
-    stack.className = "overlay-badges";
-    stack.style.left = `${(anchor.rosterRect.x + anchor.rosterRect.width / 2) / dpr}px`;
-    // Top edge of the table (header band top) + a small offset so the
-    // first pill's border sits just inside the band. No bottom clamp: the
-    // stack grows down into the table area and can never leave the window
-    // upward.
-    stack.style.top = `${anchor.rosterRect.y / dpr + 2}px`;
-    for (const b of badges) stack.appendChild(b);
-    root.appendChild(stack);
+  // Transient-status card, centered over the table, rebuilt on every
+  // render: one spinner + the copy of the STRONGEST live state (stale —
+  // rows are churning — beats recognizing — attribution unknown — beats
+  // querying — numbers in flight). The chips live OUTSIDE the left/right
+  // edges, so the card only ever crosses the table's own columns, and it
+  // disappears with its trigger on the next event (render() rebuilds from
+  // scratch each time). An undetected realm disables the lookups entirely,
+  // which leaves the query pipeline inactive — no card for it, by design.
+  const statusText = anchor.stale
+    ? localized("staleBadge")
+    : anchor.rowPlayersPending
+      ? localized("recognizingBadge")
+      : chipsMissingStats && (pending.size > 0 || inFlight || retryTimer != null)
+        ? localized("queryingBadge")
+        : null;
+  if (statusText != null) {
+    root.appendChild(statusCard(statusText));
   }
 }
 
