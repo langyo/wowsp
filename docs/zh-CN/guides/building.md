@@ -40,7 +40,7 @@ just fmt           # 格式化 Rust + TS import 分组
 just lint          # fmt-check + clippy + pnpm lint
 just check         # cargo check --workspace
 just test          # cargo test --workspace（或 `just test e2e` 跑 Playwright）
-just i18n-check    # 校验 en + zhs 的 i18n key 一致性
+just i18n-check    # 校验各语言的 i18n key 一致性（链接 URL 仅 en-US 一份，全语言共享）
 ```
 
 ## 发布构建

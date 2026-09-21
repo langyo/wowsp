@@ -18,6 +18,19 @@
   "license": "License",
   "qqGroupNotice": "For testing feedback, join our QQ group:",
   "qqGroupNumber": "1125770228",
+  "links": {
+    "repo": "https://github.com/langyo/wowsp",
+    "issues": "https://github.com/langyo/wowsp/issues",
+    "license": "https://github.com/celestia-island/sysl",
+    "author": "https://github.com/langyo",
+    "qqGroup": "https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV",
+    "techRust": "https://www.rust-lang.org",
+    "techVue3": "https://vuejs.org",
+    "techTauri2": "https://tauri.app",
+    "techThreejs": "https://threejs.org",
+    "techPinia": "https://pinia.vuejs.org",
+    "techUnocss": "https://unocss.dev"
+  },
   "attribution": {
     "fontMaoRole": "Glyphs of the “神了” seal",
     "fontLuxunRole": "Glyphs of the “海猴” / “空中小人” / “水下小人” seals",

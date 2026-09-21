@@ -75,6 +75,10 @@ export const i18n = createI18n({
   legacy: false,
   locale: detectLocale(),
   fallbackLocale: "en-US",
+  // Link URLs (about.links.*) are en-US-only by design and fall back for
+  // every other locale; key parity for all remaining messages is enforced
+  // by scripts/check_i18n.py, so per-key fallback chatter is just dev noise.
+  fallbackWarn: false,
   messages,
 });
 

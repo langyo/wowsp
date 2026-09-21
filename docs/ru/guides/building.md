@@ -52,7 +52,7 @@ just fmt           # format Rust + TS imports
 just lint          # fmt-check + clippy + pnpm lint
 just check         # cargo check --workspace
 just test          # cargo test --workspace (or `just test e2e` for Playwright)
-just i18n-check    # validate i18n key parity across en + zhs
+just i18n-check    # validate i18n key parity (link URLs are en-US-only, shared via fallback)
 ```
 
 ## Building for release
