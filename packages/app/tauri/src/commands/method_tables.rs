@@ -1012,21 +1012,21 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
     // squadron add/minimap ids keep their 15.7 values; receiveDamageStat —
     // absent from every shipped def table so far — sits at 163.
     // E10 (2026-09-20): recomputed from the authoritative entity defs of
-    // game build 13187581 — 11/13 anchors reproduce exactly (incl.
-    // damageStat 163, whose verified 137-call count lands on the same id).
-    // Two pins are stale but deliberately kept (decode behaviour must not
-    // change silently): the defs say explosions=131 (the same +3 cluster
-    // shift as artillery/torps/shotKills; 128 is the unshifted 15.7
-    // carryover) and wardRemoved=51 (id 50 is receive_removeSquadron — it
-    // fires paired with removeMinimapSquadron@49 on identical PLANE_IDs,
-    // while wardAdded@112 never fires; the def-derived full table lives in
-    // the tests module with the evidence).
+    // game build 13187581 — 13/13 anchors reproduce exactly after adopting
+    // the two def-derived corrections (2026-09-21, user-approved decode
+    // behaviour change): explosions=131 (the same +3 cluster shift as
+    // artillery/torps/shotKills; 128 was the unshifted 15.7 carryover and
+    // names updateMissileWaypoints) and wardRemoved=51 (id 50 is
+    // receive_removeSquadron — it fires paired with
+    // removeMinimapSquadron@49 on identical PLANE_IDs while wardAdded never
+    // fires; the def-derived full table lives in the tests module with the
+    // evidence).
     (
         (15, 8, 0),
         MethodIds {
             avatar_receive_artillery_shots: 126,
             avatar_receive_torpedoes: 127,
-            avatar_receive_explosions: 128,
+            avatar_receive_explosions: 131,
             avatar_receive_torpedo_direction: 113,
             avatar_receive_add_squadron: 116,
             avatar_receive_update_squadron: 145,
@@ -1034,7 +1034,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_update_minimap_squadron: 93,
             avatar_receive_remove_minimap_squadron: 49,
             avatar_receive_ward_added: 112,
-            avatar_receive_ward_removed: 50,
+            avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 130,
             avatar_receive_damage_stat: Some(163),
         },
@@ -1495,24 +1495,19 @@ mod tests {
             avatar_method_name_15_8_0(row.avatar_receive_damage_stat.unwrap()),
             Some("receiveDamageStat")
         );
-        // Stale pin #1: explosions. The row ships the 15.7 carryover 128
-        // (updateMissileWaypoints in the def-derived table); the defs place
-        // receiveExplosions at 131, +3 like every verified neighbour in the
-        // battle-effect cluster.
+        // The two former stale pins were adopted from the def-derived table
+        // (2026-09-21, user-approved): explosions rides the +3 battle-effect
+        // cluster shift at 131 (128 is updateMissileWaypoints), and
+        // wardRemoved moved to 51 (50 is receive_removeSquadron, paired 1:1
+        // with removeMinimapSquadron@49 on identical PLANE_IDs).
         assert_eq!(
             avatar_method_name_15_8_0(row.avatar_receive_explosions),
-            Some("updateMissileWaypoints")
+            Some("receiveExplosions")
         );
-        assert_eq!(avatar_method_name_15_8_0(131), Some("receiveExplosions"));
-        // Stale pin #2: wardRemoved. The row ships 50, which the defs (and
-        // the wire — it fires paired with removeMinimapSquadron on identical
-        // PLANE_IDs while wardAdded never fires) identify as
-        // receive_removeSquadron; receive_wardRemoved sits at 51.
         assert_eq!(
             avatar_method_name_15_8_0(row.avatar_receive_ward_removed),
-            Some("receive_removeSquadron")
+            Some("receive_wardRemoved")
         );
-        assert_eq!(avatar_method_name_15_8_0(51), Some("receive_wardRemoved"));
     }
 
     /// E10 against the real replay (skips without `WOWSP_TEST_REPLAY`): every

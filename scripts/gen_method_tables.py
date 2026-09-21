@@ -115,7 +115,14 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
         "avatar_receive_torpedoes": 127,
         "avatar_receive_shot_kills": 130,
         "avatar_receive_update_squadron": 145,
-        "avatar_receive_ward_removed": 50,
+        # E10 def-derived corrections, adopted 2026-09-21 (user-approved
+        # decode behaviour change): explosions rides the same +3 battle-
+        # effect cluster shift as artillery/torps/shotKills (128 is the
+        # unshifted 15.7 carryover); id 50 is receive_removeSquadron (fires
+        # paired with removeMinimapSquadron@49 on identical PLANE_IDs while
+        # wardAdded never fires), wardRemoved sits at 51.
+        "avatar_receive_explosions": 131,
+        "avatar_receive_ward_removed": 51,
         "avatar_receive_damage_stat": 163,
     },
 }
