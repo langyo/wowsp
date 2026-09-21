@@ -1051,13 +1051,19 @@ export default defineComponent({
               // Naively averaged normals turn chaotic where a vertex is shared
               // across a hard crease, and flat derivative normals read as a
               // faceted patchwork — smooth by angle instead: continuous panel
-              // runs share a normal, hard chines stay split.
+              // runs share a normal, hard chines stay split. The crease angle
+              // must sit ABOVE the mesh's quantization step (~30–50° between
+              // adjacent faces on a curved region) and BELOW the real edges
+              // (~90° chine, deck-to-side, box corners): at 80° curved runs
+              // merge into one smooth cluster while true chines stay crisp.
+              // Lower values (e.g. the 50° default) re-split the curve steps
+              // and the hull shades as per-triangle facets again.
               const posOnly = mesh.geometry.clone();
               for (const attr of Object.keys(posOnly.attributes)) {
                 if (attr !== "position") posOnly.deleteAttribute(attr);
               }
               posOnly.morphAttributes = {};
-              mesh.geometry = computeSmoothNormals(mergeVertices(posOnly, 1e-4));
+              mesh.geometry = computeSmoothNormals(mergeVertices(posOnly, 1e-4), 80);
             }
             mesh.geometry.computeBoundingBox();
             mesh.geometry.computeBoundingSphere();
