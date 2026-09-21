@@ -1,0 +1,44 @@
+// PathField — the install-location editor. The row stretches the input
+// across the free width with the browse button pinned at the right end;
+// hikari measures the affix (drive chip) width itself.
+.path-field {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+
+  .hk-input-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
+
+  // The full path reads best in the mono face, hugging the left edge
+  // behind the drive chip.
+  .hk-input-element {
+    font-family: var(--font-mono);
+  }
+}
+
+// The drive chip rides the input's prefix slot (the shared
+// .hk-affix-chip base supplies the chrome; these are content hooks).
+.path-field-chip__mount {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+
+  // No drive matched the typed path: the placeholder dims.
+  &[data-empty] {
+    color: rgb(var(--color-muted));
+    font-weight: 400;
+  }
+}
+
+.path-field-chip__caret {
+  flex: none;
+  color: rgb(var(--color-muted));
+  transition: transform var(--duration-short) var(--ease-standard);
+}
+
+.path-field-chip[aria-expanded="true"] .path-field-chip__caret {
+  transform: rotate(180deg);
+}

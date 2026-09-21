@@ -1,0 +1,147 @@
+import { computed, defineComponent, type PropType } from "vue";
+
+import { ChevronDown, FolderOpen } from "lucide-vue-next";
+
+import { HAffixPicker, HButton, HInput, type HkAffixOption } from "@celestia-island/hikari";
+
+import "./PathField.scss";
+
+/** One enumerated drive, as the backend's `list_drives` reports it. */
+export interface DriveInfo {
+  mount: string;
+  kind: string;
+  label?: string | null;
+}
+
+/** Drive-kind → picker meta text (the installer has no i18n layer). */
+const KIND_LABELS: Record<string, string> = {
+  removable: "可移动磁盘",
+  fixed: "本地磁盘",
+  network: "网络磁盘",
+  cdrom: "光盘",
+  ramdisk: "RAM 盘",
+  unknown: "未知磁盘",
+};
+
+/** Windows drive-letter prefix (`X:\` / `X:/`), case-insensitive. */
+const DRIVE_PREFIX = /^[A-Za-z]:[\\/]/;
+
+/**
+ * PathField — the install-location editor, composed like hikari's own
+ * HkPhoneInput: a mono HInput holding the full path, with the prefix
+ * slot carrying an HkAffixPicker chip for the drive the path starts
+ * with. Picking a mount rewrites the path in place (old prefix stripped,
+ * leading separators trimmed), the typed remainder stays untouched. The
+ * right end keeps the classic 浏览… directory browse.
+ *
+ * Presentational only — drives come in through props, both events go
+ * out; the field's blur re-emits so the host can run its root-dir
+ * nesting pass when the user leaves the box.
+ */
+export default defineComponent({
+  name: "PathField",
+  props: {
+    modelValue: { type: String, default: "" },
+    disabled: { type: Boolean, default: false },
+    drives: { type: Array as PropType<DriveInfo[]>, default: () => [] },
+  },
+  emits: {
+    "update:modelValue": (_value: string) => true,
+    browse: () => true,
+    blur: (_e: FocusEvent) => true,
+  },
+  setup(props, { emit }) {
+    /** The mount the current value starts with, longest match first
+     *  (a Windows drive letter, else the deepest known unix mount). */
+    const selectedMount = computed<string>(() => {
+      const value = props.modelValue;
+      if (DRIVE_PREFIX.test(value)) {
+        const letter = `${value[0].toUpperCase()}:\\`;
+        return props.drives.some((d) => d.mount.toUpperCase() === letter) ? letter : "";
+      }
+      const matches = props.drives
+        .map((d) => d.mount)
+        .filter((mount) => value.startsWith(mount))
+        .sort((a, b) => b.length - a.length);
+      return matches[0] ?? "";
+    });
+
+    const options = computed<readonly HkAffixOption[]>(() =>
+      props.drives.map((drive) => ({
+        key: drive.mount,
+        label: drive.mount,
+        meta: KIND_LABELS[drive.kind] ?? KIND_LABELS.unknown,
+        keywords: drive.label ?? "",
+      })),
+    );
+
+    /** Rewrites the path around the picked mount: strip whatever prefix
+     *  the value currently starts with, trim the leftover separators,
+     *  then join onto the new mount (which already ends with its own). */
+    function pickMount(mount: string) {
+      let rest = props.modelValue;
+      if (DRIVE_PREFIX.test(rest)) {
+        rest = rest.slice(3);
+      } else if (selectedMount.value) {
+        rest = rest.slice(selectedMount.value.length);
+      }
+      rest = rest.replace(/^[\\/]+/, "");
+      const joined = /^[\\/]$/.test(mount.slice(-1))
+        ? mount + rest
+        : `${mount}/${rest}`;
+      emit("update:modelValue", rest ? joined : mount);
+    }
+
+    return () => (
+      <div class="path-field">
+        <HInput
+          modelValue={props.modelValue}
+          onUpdate:modelValue={(v: string) => emit("update:modelValue", v)}
+          disabled={props.disabled}
+          spellcheck={false}
+          align="start"
+          id="dir-input"
+          autocomplete="off"
+          onBlur={(e: FocusEvent) => emit("blur", e)}
+        >
+          {{
+            prefix: () => (
+              <HAffixPicker
+                options={options.value}
+                mode="single"
+                side="prefix"
+                selected={selectedMount.value}
+                disabled={props.disabled}
+                chipClass="path-field-chip"
+                chipLabel="选择安装所在的磁盘"
+                title="选择磁盘"
+                searchPlaceholder="搜索磁盘或卷标"
+                emptyText="未找到匹配的磁盘"
+                onSelect={pickMount}
+              >
+                {{
+                  chip: () => (
+                    <>
+                      <span class="path-field-chip__mount" data-empty={!selectedMount.value || undefined}>
+                        {selectedMount.value || "磁盘"}
+                      </span>
+                      <ChevronDown size={12} class="path-field-chip__caret" aria-hidden="true" />
+                    </>
+                  ),
+                }}
+              </HAffixPicker>
+            ),
+          }}
+        </HInput>
+        <HButton
+          variant="ghost"
+          disabled={props.disabled}
+          onClick={() => emit("browse")}
+        >
+          <FolderOpen size={14} />
+          浏览…
+        </HButton>
+      </div>
+    );
+  },
+});

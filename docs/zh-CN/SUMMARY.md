@@ -16,3 +16,8 @@
 
 - [架构设计](./designs/architecture.md)
 - [Mod Hub 插件管理](./designs/mod-hub.md)
+
+# License
+
+- [Free & Open-Source Warning](./license/free-warning.md)
+- [Usage Telemetry Notice](./license/usage-telemetry.md)

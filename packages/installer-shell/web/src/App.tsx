@@ -1,5 +1,15 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
-import { CheckCircle2, FolderTree, Monitor, Usb, XCircle } from "lucide-vue-next";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  AppWindow,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  HardDrive,
+  Monitor,
+  TriangleAlert,
+  Usb,
+  XCircle,
+} from "lucide-vue-next";
 import {
   HAlert,
   HButton,
@@ -12,6 +22,7 @@ import {
 
 import AnnouncementCard from "./components/AnnouncementCard";
 import AppTitleBar from "./components/AppTitleBar";
+import PathField, { type DriveInfo } from "./components/PathField";
 import LogPane, { type LogLine } from "./components/LogPane";
 import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 
@@ -23,8 +34,9 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  * final confirmation runs (nothing is created during the install itself).
  * An install failure lands on the done step as a failure variant with
  * retry/close actions — nothing returns to earlier steps once the install
- * started. The license text is the repository's LICENSE document, inlined
- * at build time through Vite's ?raw import.
+ * started. The license step pages through the localized documents the
+ * backend resolves at build time (a copyright notice + the SySL
+ * agreement); agreeing covers all of them.
  *
  * When the shell runs as the uninstaller (`/uninstall`, probed via
  * `is_uninstall_mode`), the wizard layout is replaced by a standalone
@@ -36,9 +48,21 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 type Mode = "local" | "usb";
 type StepKey = "mode" | "license" | "install" | "done";
 
+interface DirCandidate {
+  kind: string;
+  path: string;
+  writable: boolean;
+}
+
 interface DirDefaults {
   dir: string;
   removable: boolean;
+  candidates: DirCandidate[];
+}
+
+interface LicenseDoc {
+  title: string;
+  body: string;
 }
 
 interface FlowEventPayload {
@@ -75,6 +99,15 @@ const FLAVOR_LABELS: Record<string, string> = {
   "full-webview2": "完整版 · 含 2D/3D 模型资源包与 WebView2 运行时",
 };
 
+// Quick-candidate row: label + glyph per candidate kind; drive
+// candidates show the path itself (a row of drive roots reads better
+// than a bare "磁盘").
+const CANDIDATE_META: Record<string, { label: string; icon: typeof HardDrive }> = {
+  appdata: { label: "AppData", icon: AppWindow },
+  "program-files": { label: "Program Files", icon: HardDrive },
+  drive: { label: "", icon: HardDrive },
+};
+
 const STEPS: { key: StepKey; label: string }[] = [
   { key: "mode", label: "安装方式" },
   { key: "license", label: "用户协议" },
@@ -96,7 +129,13 @@ export default defineComponent({
     const mode = ref<Mode>("local");
     const dir = ref("");
     const hint = ref("");
-    const licenseText = ref("");
+    const drives = ref<DriveInfo[]>([]);
+    const candidates = ref<DirCandidate[]>([]);
+    // Live writability of the shown path: null while the probe is in
+    // flight or the box is empty, true/false once the backend answered.
+    const dirWritable = ref<boolean | null>(null);
+    const licenseDocs = ref<LicenseDoc[]>([]);
+    const licenseIndex = ref(0);
     const agreed = ref(false);
     // License-step notice countdown: holds the agree button for five
     // seconds on EVERY license-step entry so the free & open-source
@@ -179,6 +218,7 @@ export default defineComponent({
     async function refreshDefaults() {
       const defaults = await invoke<DirDefaults>("default_dir", { mode: mode.value });
       dir.value = defaults.dir;
+      candidates.value = defaults.candidates;
       hint.value =
         mode.value === "usb" && defaults.removable
           ? "已检测到可移动磁盘。"
@@ -186,6 +226,35 @@ export default defineComponent({
     }
 
     const identity = ref<{ version: string; flavor: string } | null>(null);
+
+    // The first candidate the install would actually accept — the row
+    // highlights it while the current path fails the live probe.
+    const firstWritableCandidate = computed(
+      () => candidates.value.find((candidate) => candidate.writable) ?? null,
+    );
+
+    // Live writability probe, debounced so typing does not hammer the
+    // backend (the probe creates + deletes a temp file per call). The
+    // answer only lands while it is still about the current path.
+    let writableTimer: ReturnType<typeof setTimeout> | null = null;
+    watch(dir, (value) => {
+      const target = value.trim();
+      if (writableTimer !== null) clearTimeout(writableTimer);
+      if (!target) {
+        dirWritable.value = null;
+        return;
+      }
+      dirWritable.value = null;
+      writableTimer = setTimeout(() => {
+        invoke<boolean>("check_dir_writable", { dir: target })
+          .then((ok) => {
+            if (dir.value.trim() === target) dirWritable.value = ok;
+          })
+          .catch(() => {
+            if (dir.value.trim() === target) dirWritable.value = null;
+          });
+      }, 400);
+    });
 
     onMounted(() => {
       invoke<boolean>("is_uninstall_mode")
@@ -197,11 +266,15 @@ export default defineComponent({
       invoke<{ version: string; flavor: string }>("get_identity")
         .then((id) => { identity.value = id; })
         .catch(() => {});
-      invoke<string>("get_license", {
+      invoke<DriveInfo[]>("list_drives")
+        .then((list) => { drives.value = list; })
+        .catch(() => {});
+      invoke<LicenseDoc[]>("get_license_docs", {
         locale: navigator.language,
       })
-        .then((text) => {
-          licenseText.value = text;
+        .then((docs) => {
+          licenseDocs.value = docs;
+          licenseIndex.value = 0;
         })
         .catch(() => {});
       invoke<{ log_level: string; log_order: string }>("get_shell_prefs")
@@ -239,7 +312,10 @@ export default defineComponent({
       });
       // Preview hook landed directly on the license step: arm the notice
       // countdown here too, not only on the wizard's go("license").
-      if (step.value === "license") startNoticeCountdown();
+      if (step.value === "license") {
+        licenseIndex.value = 0;
+        startNoticeCountdown();
+      }
     });
 
     onBeforeUnmount(() => {
@@ -265,7 +341,10 @@ export default defineComponent({
 
     function go(next: StepKey) {
       step.value = next;
-      if (next === "license") startNoticeCountdown();
+      if (next === "license") {
+        licenseIndex.value = 0;
+        startNoticeCountdown();
+      }
       if (next === "install") {
         running.value = true;
         installFailed.value = false;
@@ -511,30 +590,55 @@ export default defineComponent({
 
             <section class="wizard-target">
               <label class="wizard-target__label" for="dir-input">安装位置</label>
-              <div class="wizard-target__row">
-                <div class="wizard-target__field">
-                  <span class="wizard-target__field-icon" aria-hidden="true">
-                    <FolderTree size={16} />
-                  </span>
-                  <input
-                    id="dir-input"
-                    type="text"
-                    spellcheck={false}
-                    v-model={dir.value}
-                    disabled={running.value}
-                    onBlur={() => {
-                      // 离开输入框即校平裸盘根目录，路径框保持真实目标。
-                      if (step.value === "mode" && !running.value) {
-                        void applyNestRootDir(dir.value).catch(() => {});
-                      }
-                    }}
-                  />
-                </div>
-                <HButton variant="ghost" disabled={running.value} onClick={browse}>
-                  浏览…
-                </HButton>
+              <PathField
+                modelValue={dir.value}
+                disabled={running.value}
+                drives={drives.value}
+                onUpdate:modelValue={(v: string) => (dir.value = v)}
+                onBrowse={browse}
+                onBlur={() => {
+                  // 离开输入框即校平裸盘根目录，路径框保持真实目标。
+                  if (step.value === "mode" && !running.value) {
+                    void applyNestRootDir(dir.value).catch(() => {});
+                  }
+                }}
+              />
+              <div class="wizard-target__quick">
+                {candidates.value.map((candidate) => {
+                  const meta = CANDIDATE_META[candidate.kind] ?? CANDIDATE_META.drive;
+                  const Icon = candidate.writable ? meta.icon : TriangleAlert;
+                  // While the current path fails the probe, steer the
+                  // user to the first location the install would accept.
+                  const accent =
+                    dirWritable.value === false &&
+                    candidate.writable &&
+                    candidate.path === firstWritableCandidate.value?.path;
+                  return (
+                    <HButton
+                      key={candidate.path}
+                      variant="ghost"
+                      size="sm"
+                      class={[
+                        "wizard-target__quick-candidate",
+                        candidate.writable ? "" : "wizard-target__quick-candidate--dim",
+                        accent ? "wizard-target__quick-candidate--accent" : "",
+                      ]}
+                      onClick={() => void applyNestRootDir(candidate.path).catch(() => {})}
+                    >
+                      <Icon size={13} />
+                      {candidate.kind === "drive" ? candidate.path : meta.label}
+                    </HButton>
+                  );
+                })}
               </div>
               <p class="wizard-target__hint">{hint.value}</p>
+              {dirWritable.value === false && (
+                <p class="wizard-target__warning">
+                  {firstWritableCandidate.value
+                    ? "当前目录不可写，安装会被拒绝——建议选择上方标亮的候选位置。"
+                    : "未检测到可写的候选位置，请手动选择有权限的目录。"}
+                </p>
+              )}
               {identity.value && (
                 <p class="wizard-identity">
                   {`WoWSP ${identity.value.version} · `}
@@ -546,14 +650,40 @@ export default defineComponent({
         ) : step.value === "license" ? (
           <section class="wizard-pane">
             <h1>用户协议</h1>
-            <p class="wizard-sub">安装前请阅读以下开源许可（Synthetic Source License 1.0）。</p>
+            <p class="wizard-sub">安装前请阅读以下协议文档；勾选即代表同意全部内容。</p>
             <AnnouncementCard />
             <HScrollContainer class="license-box" axis="vertical">
-              <pre>{licenseText.value}</pre>
+              <pre>{licenseDocs.value[licenseIndex.value]?.body ?? ""}</pre>
             </HScrollContainer>
+            {licenseDocs.value.length > 1 && (
+              <div class="license-pager">
+                <HButton
+                  variant="ghost"
+                  size="sm"
+                  disabled={licenseIndex.value <= 0}
+                  ariaLabel="上一篇协议文档"
+                  onClick={() => (licenseIndex.value -= 1)}
+                >
+                  <ChevronLeft size={15} />
+                </HButton>
+                <span class="license-pager__label">
+                  {licenseIndex.value + 1}/{licenseDocs.value.length}{" "}
+                  {licenseDocs.value[licenseIndex.value]?.title ?? ""}
+                </span>
+                <HButton
+                  variant="ghost"
+                  size="sm"
+                  disabled={licenseIndex.value >= licenseDocs.value.length - 1}
+                  ariaLabel="下一篇协议文档"
+                  onClick={() => (licenseIndex.value += 1)}
+                >
+                  <ChevronRight size={15} />
+                </HButton>
+              </div>
+            )}
             <HCheckbox
               modelValue={agreed.value}
-              label="我已阅读并同意本协议的全部条款"
+              label="我已阅读并同意上述全部协议"
               onUpdate:modelValue={(v: boolean) => (agreed.value = v)}
             />
           </section>
@@ -676,7 +806,12 @@ export default defineComponent({
             <footer class="installer__footer">
               <div class="installer__nav">
                 {running.value ? null : step.value === "mode" && (
-                  <HButton variant="primary" size="lg" onClick={() => go("license")}>
+                  <HButton
+                    variant="primary"
+                    size="lg"
+                    disabled={dirWritable.value === false}
+                    onClick={() => go("license")}
+                  >
                     下一步
                   </HButton>
                 )}

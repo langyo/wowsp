@@ -39,7 +39,7 @@ use std::iter::once;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shun::config::{ShunConfig, TargetConfig};
 use shun::flow::{Flow, FlowEvent, FlowPhase};
 use shun::payload::{ArchivePayload, MANIFEST_PATH, PayloadEntry};
@@ -78,17 +78,25 @@ const SHUN_FLAVOR: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-flavor.tx
 const SHUN_RES_TREE_SHA256: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-tree.txt"));
 /// The published-at timestamp that shipped with that tree hash.
 const SHUN_RES_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-res-version.txt"));
-/// License texts per wizard locale (SySL + official translations).
-const LICENSE_EN: &str = include_str!(concat!(env!("OUT_DIR"), "/license-en.txt"));
-const LICENSE_ZH_HANS: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hans.txt"));
-const LICENSE_ZH_HANT: &str = include_str!(concat!(env!("OUT_DIR"), "/license-zh-Hant.txt"));
+/// License documents per wizard locale (copyright notice + SySL
+/// agreement), assembled by build.rs into one JSON map.
+const LICENSE_DOCS_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/license-docs.json"));
+
+/// One document of the license step: a titled, selectable text block.
+#[derive(Serialize, Deserialize, Clone)]
+struct LicenseDoc {
+    title: String,
+    body: String,
+}
 
 /// State shared by the commands: the resolved config, the payload
-/// (cloned per install run), and whether this run drives the uninstall
-/// page instead of the install wizard.
+/// (cloned per install run), the license documents keyed by locale, and
+/// whether this run drives the uninstall page instead of the install
+/// wizard.
 struct AppState {
     config: ShunConfig,
     payload: ArchivePayload,
+    license_docs: std::collections::BTreeMap<String, Vec<LicenseDoc>>,
     uninstall_mode: bool,
 }
 
@@ -127,10 +135,21 @@ impl AppState {
 }
 
 #[derive(Serialize)]
+struct DirCandidate {
+    /// Candidate family: "appdata" | "program-files" | "drive".
+    kind: String,
+    path: String,
+    writable: bool,
+}
+
+#[derive(Serialize)]
 struct DirDefaults {
     dir: String,
     /// True when `dir` points at a removable drive (USB mode).
     removable: bool,
+    /// The candidate chain `dir` was picked from, for the wizard's
+    /// quick-pick row.
+    candidates: Vec<DirCandidate>,
 }
 
 fn local_appdata() -> PathBuf {
@@ -146,27 +165,136 @@ fn exe_dir() -> Option<PathBuf> {
         .map(|d| d.to_path_buf())
 }
 
-/// Fixed Win32 ABI value; windows-sys 0.59 only exposes it via the
-/// deprecated `Win32_System_WindowsProgramming` module.
-const DRIVE_REMOVABLE: u32 = 2;
+/// Drive roots of one kind (A..Z order as the OS enumerates them) —
+/// the building block for the candidate chains and the removable check.
+fn drive_roots(kind: shun::fs_probe::DriveKind) -> Vec<PathBuf> {
+    shun::fs_probe::list_drives()
+        .into_iter()
+        .filter(|drive| drive.kind == kind)
+        .map(|drive| drive.mount)
+        .collect()
+}
 
-/// First removable drive letter (A..Z), the USB-mode default directory.
-fn first_removable_drive() -> Option<char> {
-    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
-
-    let masks = unsafe { GetLogicalDrives() };
-    if masks == 0 {
-        return None;
+fn install_dir_for(mode: &str) -> PathBuf {
+    // The LOCAL install must not land on `%LOCALAPPDATA%\WoWSP` — that path
+    // is ALSO the application's model-pack cache root (paths.rs), and the
+    // two sharing one directory means every reinstall churns the cache and
+    // a stray uninstall can take the models with it. Per-user installs
+    // belong under `...\Programs\`; the cache stays alone.
+    let local_install = || local_appdata().join("Programs").join("WoWSP");
+    match mode {
+        "usb" => match drive_roots(shun::fs_probe::DriveKind::Removable).first() {
+            Some(drive) => drive.join("WoWSP"),
+            None => local_install(),
+        },
+        "green" => exe_dir()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+            .join("WoWSP"),
+        _ => local_install(),
     }
-    for i in 0..26u32 {
-        if masks & (1 << i) != 0 {
-            let root: [u16; 4] = [(b'A' + i as u8) as u16, b':' as u16, b'\\' as u16, 0];
-            if unsafe { GetDriveTypeW(root.as_ptr()) } == DRIVE_REMOVABLE {
-                return Some((b'A' + i as u8) as char);
+}
+
+/// The candidate chains behind each mode's default directory, in pick
+/// priority order. `local` keeps the `...\Programs\` appdata path first
+/// (the model-pack cache root rule above), then Program Files, then one
+/// root folder per fixed drive; `usb` puts every removable drive first
+/// and falls back to the whole local chain; `green` stays the single
+/// exe-relative candidate.
+fn dir_candidates_for(mode: &str) -> Vec<(&'static str, PathBuf)> {
+    let appdata = ("appdata", local_appdata().join("Programs").join("WoWSP"));
+    let program_files = (
+        "program-files",
+        std::env::var_os("ProgramFiles")
+            .filter(|v| !v.is_empty())
+            .map_or_else(|| PathBuf::from(r"C:\Program Files"), PathBuf::from)
+            .join("WoWSP"),
+    );
+    let fixed = drive_roots(shun::fs_probe::DriveKind::Fixed)
+        .into_iter()
+        .map(|mount| ("drive", mount.join("WoWSP")));
+    let local_chain = std::iter::once(appdata)
+        .chain(std::iter::once(program_files))
+        .chain(fixed);
+    match mode {
+        "usb" => drive_roots(shun::fs_probe::DriveKind::Removable)
+            .into_iter()
+            .map(|mount| ("drive", mount.join("WoWSP")))
+            .chain(local_chain)
+            .collect(),
+        "green" => vec![(
+            "drive",
+            exe_dir()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+                .join("WoWSP"),
+        )],
+        _ => local_chain.collect(),
+    }
+}
+
+#[tauri::command]
+fn default_dir(mode: String) -> DirDefaults {
+    let candidates = dir_candidates_for(&mode);
+    let paths: Vec<PathBuf> = candidates.iter().map(|(_, path)| path.clone()).collect();
+    // The default is the first candidate that passes the writability
+    // probe — the same gate `start_install` enforces, so the wizard never
+    // opens on a location the install would reject.
+    let dir = shun::fs_probe::first_writable(&paths)
+        .or_else(|| paths.first().cloned())
+        .unwrap_or_else(|| install_dir_for(&mode));
+    let removable = mode == "usb" && !drive_roots(shun::fs_probe::DriveKind::Removable).is_empty();
+    DirDefaults {
+        dir: dir.to_string_lossy().into_owned(),
+        removable,
+        candidates: candidates
+            .into_iter()
+            .map(|(kind, path)| DirCandidate {
+                kind: kind.to_string(),
+                writable: shun::fs_probe::is_dir_writable(&path),
+                path: path.to_string_lossy().into_owned(),
+            })
+            .collect(),
+    }
+}
+
+/// One enumerated drive for the wizard's prefix picker.
+#[derive(Serialize)]
+struct DriveView {
+    mount: String,
+    /// "removable" | "fixed" | "network" | "cdrom" | "ramdisk" | "unknown".
+    kind: String,
+    label: Option<String>,
+}
+
+/// Every logical drive the OS reports — the options of the path field's
+/// drive picker (volume labels feed the popup's search haystack).
+#[tauri::command]
+fn list_drives() -> Vec<DriveView> {
+    use shun::fs_probe::DriveKind;
+
+    shun::fs_probe::list_drives()
+        .into_iter()
+        .map(|drive| DriveView {
+            mount: drive.mount.to_string_lossy().into_owned(),
+            kind: match drive.kind {
+                DriveKind::Removable => "removable",
+                DriveKind::Fixed => "fixed",
+                DriveKind::Network => "network",
+                DriveKind::CdRom => "cdrom",
+                DriveKind::RamDisk => "ramdisk",
+                DriveKind::Unknown => "unknown",
             }
-        }
-    }
-    None
+            .to_string(),
+            label: drive.label,
+        })
+        .collect()
+}
+
+/// Live writability probe for the path the wizard currently shows — the
+/// same test `start_install` gates on, run ahead of the button so the
+/// user sees the rejection coming.
+#[tauri::command]
+fn check_dir_writable(dir: String) -> bool {
+    shun::fs_probe::is_dir_writable(Path::new(dir.trim()))
 }
 
 fn wide_null(s: &str) -> Vec<u16> {
@@ -307,35 +435,6 @@ fn run_offline_installer(installer: &Path) -> bool {
         return status.success() && webview2_installed();
     }
     false
-}
-
-fn install_dir_for(mode: &str) -> PathBuf {
-    // The LOCAL install must not land on `%LOCALAPPDATA%\WoWSP` — that path
-    // is ALSO the application's model-pack cache root (paths.rs), and the
-    // two sharing one directory means every reinstall churns the cache and
-    // a stray uninstall can take the models with it. Per-user installs
-    // belong under `...\Programs\`; the cache stays alone.
-    let local_install = || local_appdata().join("Programs").join("WoWSP");
-    match mode {
-        "usb" => match first_removable_drive() {
-            Some(drive) => PathBuf::from(format!("{drive}:\\WoWSP")),
-            None => local_install(),
-        },
-        "green" => exe_dir()
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
-            .join("WoWSP"),
-        _ => local_install(),
-    }
-}
-
-#[tauri::command]
-fn default_dir(mode: String) -> DirDefaults {
-    let dir = install_dir_for(&mode);
-    let removable = mode == "usb" && first_removable_drive().is_some();
-    DirDefaults {
-        dir: dir.to_string_lossy().into_owned(),
-        removable,
-    }
 }
 
 /// Pads one folder layer under a bare filesystem root target (a picked
@@ -618,18 +717,34 @@ fn get_identity(state: tauri::State<'_, AppState>) -> Identity {
     }
 }
 
-/// The license agreement text for the requested locale (SySL +
-/// official translations, resolved at build time).
-#[tauri::command]
-fn get_license(locale: String) -> String {
+/// The wizard's `navigator.language` → license-docs.json key. Traditional
+/// Chinese locales read the zh-Hant documents, any other zh prefix reads
+/// zh-Hans, everything else reads English.
+fn license_locale_key(locale: &str) -> &'static str {
     let lower = locale.to_lowercase();
     if lower.starts_with("zh-hant") || lower.starts_with("zh-tw") || lower.starts_with("zh-hk") {
-        LICENSE_ZH_HANT.to_string()
+        "zh-Hant"
     } else if lower.starts_with("zh") {
-        LICENSE_ZH_HANS.to_string()
+        "zh-Hans"
     } else {
-        LICENSE_EN.to_string()
+        "en"
     }
+}
+
+/// The license documents for the requested locale: a copyright notice
+/// followed by the SySL agreement, both resolved at build time. An
+/// unknown locale falls back to the English set; a missing entry yields
+/// an empty list rather than an error — the license step must always
+/// render.
+#[tauri::command]
+fn get_license_docs(state: tauri::State<'_, AppState>, locale: String) -> Vec<LicenseDoc> {
+    let key = license_locale_key(&locale);
+    state
+        .license_docs
+        .get(key)
+        .or_else(|| state.license_docs.get("en"))
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// The directory holding the running executable — the install dir for
@@ -853,6 +968,11 @@ async fn start_install(
     let dir = dir.trim().trim_end_matches('\\').to_string();
     if dir.is_empty() {
         return Err("安装目录不能为空".into());
+    }
+    // The writability gate behind the wizard's live probe: rejecting here
+    // (with the recommendation inline) beats a failed extraction midway.
+    if !shun::fs_probe::is_dir_writable(Path::new(&dir)) {
+        return Err("目标目录当前不可写，请更换安装位置（推荐 AppData 或 Program Files）".into());
     }
     let answers = WizardAnswers {
         desktop_shortcut: false,
@@ -1189,6 +1309,8 @@ fn main() {
     let config: ShunConfig =
         serde_json::from_str(SHUN_CONFIG_JSON).expect("embedded config decodes");
     let payload = ArchivePayload::from_bytes(EMBEDDED_PAYLOAD).expect("embedded payload decodes");
+    let license_docs: std::collections::BTreeMap<String, Vec<LicenseDoc>> =
+        serde_json::from_str(LICENSE_DOCS_JSON).expect("embedded license docs decode");
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Headless entry points: explicit `--silent` runs, and `--silent`
@@ -1237,6 +1359,7 @@ fn main() {
         .manage(AppState {
             config,
             payload,
+            license_docs,
             uninstall_mode: uninstalling,
         })
         .setup(move |app| {
@@ -1259,7 +1382,9 @@ fn main() {
             nest_root_dir,
             get_identity,
             get_shell_prefs,
-            get_license,
+            get_license_docs,
+            list_drives,
+            check_dir_writable,
             current_install_dir,
             is_uninstall_mode,
             launch_app,

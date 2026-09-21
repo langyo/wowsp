@@ -1,12 +1,19 @@
 /**
  * Content data for the mandatory "this software is free & open source"
- * notice, plus the locale-based variant picker.
+ * notice, plus the locale-based variant picker, and the usage-telemetry
+ * notice shown in the user's own language.
  *
- * The notice is ALWAYS shown in exactly three languages — Simplified
+ * The free-notice is ALWAYS shown in exactly three languages — Simplified
  * Chinese, English, and Russian — no matter which UI locale the user runs.
  * When the UI locale resolves to a fourth language (zh-TW / ja / ko / fr /
  * es) its variant is appended after the mandatory three; zh-SG deliberately
  * maps onto the zh-CN block (same script, same copy), so it adds nothing.
+ *
+ * The telemetry notice is shown ONCE, in the user's own language (zh-Hant /
+ * zh / en), because unlike the anti-scam warning it is not a
+ * fraud-prevention banner that must be legible to every buyer regardless
+ * of locale — it is a disclosure aimed at this specific user. Canonical
+ * long-form copy: docs/{lang}/license/usage-telemetry.md.
  *
  * This module is a mirrored copy: an identical module lives in
  * packages/installer-shell/web — keep the copy texts in sync across both.
@@ -77,6 +84,36 @@ export const ANNOUNCEMENT_VARIANTS: Record<string, AnnouncementVariant> = {
 
 /** Mandatory blocks every surface shows, in display order. */
 const MANDATORY_IDS = ["zh-CN", "en", "ru"] as const;
+
+/** Short usage-telemetry disclosure, one per language id (en / zh only —
+ *  the same three locales the license documents resolve to). The wording
+ *  mirrors the short form of docs/{lang}/license/usage-telemetry.md. */
+export const TELEMETRY_NOTICES: Record<string, { label: string; text: string }> = {
+  en: {
+    label: "English",
+    text: "WoWSP collects minimal usage telemetry (interface language, pages opened, country-level region) to guide development. No personal data, no replay or account data is ever collected.",
+  },
+  "zh-CN": {
+    label: "简体中文",
+    text: "WoWSP 会收集极少量使用量遥测（界面语言、打开的页面、国家级地区），仅用于指导开发；绝不收集任何个人数据、回放或账号数据。",
+  },
+  "zh-TW": {
+    label: "繁體中文",
+    text: "WoWSP 會收集極少量使用量遙測（介面語言、開啟的頁面、國家級地區），僅用於指導開發；絕不收集任何個人資料、回放或帳號資料。",
+  },
+};
+
+/** Pick the telemetry notice for a UI locale: Traditional Chinese locales
+ *  read zh-TW, any other zh prefix reads zh-CN, everything else reads
+ *  English. */
+export function pickTelemetryNotice(uiLocale: string): { label: string; text: string } {
+  const lower = uiLocale.toLowerCase();
+  const traditional =
+    lower.startsWith("zh") &&
+    (["-tw", "-hk", "-mo"].some((sub) => lower.includes(sub)) || lower.includes("hant"));
+  const key = traditional ? "zh-TW" : lower.startsWith("zh") ? "zh-CN" : "en";
+  return TELEMETRY_NOTICES[key];
+}
 
 /** UI locale → optional fourth variant id (missing entry = no fourth block). */
 const LOCALE_VARIANT: Record<string, string> = {
