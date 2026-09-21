@@ -3,6 +3,7 @@ import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
 import ClanCard from "@/components/stats/ClanCard";
+import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
 import { HTabs, useToast } from "@celestia-island/hikari";
@@ -125,6 +126,25 @@ export default defineComponent({
     const history = ref<HistoryEntry[]>(loadHistory());
     const encyclopedia = useEncyclopediaStore();
 
+    /** Query text of the most recent player / clan attempt (set before the
+     *  await) — feeds the "seen before" hint on a not-found error: the
+     *  history only records successes, so a match means the target WAS
+     *  findable and is now gone. */
+    const lastPlayerQuery = ref("");
+    const lastClanQuery = ref("");
+
+    /** Whether this exact target was looked up successfully before —
+     *  matched by displayed name (case-insensitive) or numeric id. */
+    function seenInHistory(kind: LookupKind, query: string, rlm: string): boolean {
+      const q = query.toLowerCase();
+      return history.value.some(
+        (h) =>
+          h.kind === kind &&
+          h.realm === rlm &&
+          (h.name.toLowerCase() === q || String(h.id) === query),
+      );
+    }
+
     // Ship detail popup (opened from the per-ship table rows). The player
     // context is the LOOKED-UP account, not the bound one.
     const shipDetail = useShipDetail();
@@ -223,6 +243,7 @@ export default defineComponent({
       realm.value = rl;
       result.value = null;
       ranked.reset();
+      lastPlayerQuery.value = nm;
       const toastId = toast.loading(t("account.searching"));
       try {
         // Explicit user query — always re-pull from the WG API. `nm` may be
@@ -248,6 +269,7 @@ export default defineComponent({
       mode.value = "clan";
       realm.value = rl;
       clanResult.value = null;
+      lastClanQuery.value = String(clanId);
       const toastId = toast.loading(t("account.searching"));
       try {
         const clan = await clanStats.lookup(clanId, rl, { force: true });
@@ -414,10 +436,20 @@ export default defineComponent({
         <div class="lookup-view__main">
           <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
           {mode.value === "player" && stats.error ? (
-            <div class="lookup-view__error">{stats.error}</div>
+            <LookupErrorNotice
+              payload={stats.lookupError}
+              raw={stats.error}
+              seenBefore={seenInHistory("player", lastPlayerQuery.value, realm.value)}
+            />
           ) : null}
           {mode.value === "clan" && clanStats.error ? (
-            <div class="lookup-view__error">{clanStats.error}</div>
+            <LookupErrorNotice
+              payload={clanStats.lookupError}
+              raw={clanStats.error}
+              // The fixed seenBefore copy is player-specific ("该玩家…已注
+              // 销"), so the clan notice never shows it.
+              seenBefore={false}
+            />
           ) : null}
           <Transition name="s-fade-slide" mode="out-in">
             {mode.value === "clan" && clanResult.value ? (

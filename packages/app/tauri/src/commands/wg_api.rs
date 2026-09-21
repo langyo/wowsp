@@ -22,6 +22,13 @@
 //! The cn realm (wowsgame.cn, 360-operated) has no WG public API — every
 //! command below routes realm "cn" to the vortex-based `wg_api_cn` module
 //! instead of the shared host resolution.
+//!
+//! The two INTERACTIVE commands (`lookup_player_stats` / `lookup_clan_info`)
+//! reject with the structured [`super::lookup_error::LookupError`] payload —
+//! the lookup UI localizes "not found" per kind and surfaces the official
+//! error message — while the batch/suggest commands keep plain `String`
+//! errors (their consumers render "no data", never a reason). `From<String>`
+//! bridges the shared plumbing into the structured type.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -32,6 +39,7 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
+use super::lookup_error::LookupError;
 use super::trends::ExpectedValues;
 
 /// Concurrency cap for the batch name→account resolution. WG public API
@@ -45,13 +53,14 @@ const MIN_SEARCH_CHARS: usize = 3;
 
 /// Look up one player's stats by name on the given realm. `pr_algo` selects
 /// the PR algorithm ("winrate" default / "expected" = wows-numbers); see
-/// [`PrAlgo`].
+/// [`PrAlgo`]. Rejects with a structured [`LookupError`] so the UI can
+/// localize "not found" and show the official API's error detail.
 #[tauri::command]
 pub async fn lookup_player_stats(
     name: String,
     realm: String,
     pr_algo: Option<String>,
-) -> Result<PlayerStats, String> {
+) -> Result<PlayerStats, LookupError> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     if realm == "cn" {
         return super::wg_api_cn::lookup_player_stats(name, algo).await;
@@ -80,7 +89,7 @@ pub async fn lookup_player_stats(
         },
         _ => account_list_one(&client, &app_id, host, &name).await?,
     }
-    .ok_or_else(|| format!("no account found for '{name}' on {realm}"))?;
+    .ok_or_else(|| LookupError::not_found_account(name.clone(), realm.clone()))?;
 
     // 2-4. account/info, clan tag and Vortex dog tag only need the account
     //    id — run the three requests concurrently instead of serially.
@@ -441,13 +450,18 @@ pub(crate) fn nickname_matches(query: &str, found: &str) -> bool {
 
 /// account/list (limit=10) — one nickname → account entry. The search is a
 /// prefix query, so the exact account is picked out of the hits; Ok(None)
-/// when it isn't among them. Shared with `wg_composition`'s batch resolution.
+/// when it isn't among them. Shared with `wg_composition`'s batch resolution
+/// (which discards errors via `.ok()`, so its call sites are error-type
+/// agnostic). The interactive lookup path wants the official API error
+/// message, so API-level failures reject with [`LookupError`] carrying it in
+/// `detail`; `From<String>` keeps the shared plumbing's plain strings
+/// flowing through as generic `Api` errors.
 pub(crate) async fn account_list_one(
     client: &reqwest::Client,
     app_id: &str,
     host: &str,
     name: &str,
-) -> Result<Option<AccountListEntry>, String> {
+) -> Result<Option<AccountListEntry>, LookupError> {
     let list: WgResponse<Vec<AccountListEntry>> = client
         .get(format!(
             "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
@@ -460,9 +474,10 @@ pub(crate) async fn account_list_one(
         .await
         .map_err(|e| format!("account/list parse: {e}"))?;
     if list.status != "ok" {
-        return Err(format!(
-            "account/list: {}",
-            list.error.message.unwrap_or_default()
+        let msg = list.error.message.clone().unwrap_or_default();
+        return Err(LookupError::api_with_detail(
+            format!("account/list: {msg}"),
+            list.error.message,
         ));
     }
     Ok(list
@@ -689,12 +704,13 @@ pub(crate) fn clan_suggestion_of(clan_id: i64, node: &serde_json::Value) -> Clan
 /// stats. Aggregate fields are computed across visible members — WG has no
 /// clan-wide aggregate endpoint. `pr_algo` selects the member PR algorithm;
 /// under "expected" the roster answers PR=None (see `clan_info_from_response`).
+/// Rejects with a structured [`LookupError`] like the player lookup.
 #[tauri::command]
 pub async fn lookup_clan_info(
     clan_id: i64,
     realm: String,
     pr_algo: Option<String>,
-) -> Result<ClanInfo, String> {
+) -> Result<ClanInfo, LookupError> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     if realm == "cn" {
         return super::wg_api_cn::lookup_clan_info(clan_id, algo).await;
@@ -708,7 +724,7 @@ pub async fn lookup_clan_info(
 
     let node = fetch_clan_node(&client, &app_id, host, clan_id)
         .await?
-        .ok_or_else(|| format!("no clan found for id {clan_id} on {realm}"))?;
+        .ok_or_else(|| LookupError::not_found_clan(clan_id.to_string(), realm.clone()))?;
 
     // Roster stats in ≤ ceil(n/100) batched account/info calls.
     let member_ids: Vec<i64> = node
@@ -739,10 +755,10 @@ pub async fn lookup_clan_info(
             .await
             .map_err(|e| format!("account/info parse: {e}"))?;
         if parsed.status != "ok" {
-            return Err(format!(
+            return Err(LookupError::api(format!(
                 "account/info: {}",
                 parsed.error.message.unwrap_or_default()
-            ));
+            )));
         }
         if let Some(data) = parsed.data.and_then(|d| d.as_object().cloned()) {
             for (k, v) in data {

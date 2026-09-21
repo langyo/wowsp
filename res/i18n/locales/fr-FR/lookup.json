@@ -17,6 +17,22 @@
   "memberName": "Membre",
   "roleLabel": "Rôle",
   "jumpClan": "Voir le clan",
+  "error": {
+    "playerNotFoundTitle": "Joueur introuvable",
+    "clanNotFoundTitle": "Clan introuvable",
+    "playerNotFoundDesc": "Aucun compte correspondant exactement à « {name} » n’existe sur le serveur {realm}.",
+    "clanNotFoundDesc": "Aucun clan avec l’ID {query} n’existe sur le serveur {realm}.",
+    "clanNotFoundCause": "Le clan a peut-être été dissous, ou l’ID est incorrect.",
+    "causesTitle": "Causes possibles",
+    "causeTypo": "Le pseudo est mal orthographié, ou le joueur l’a récemment changé.",
+    "causeDeleted": "Le compte a été supprimé — par le joueur, ou récupéré après une longue inactivité.",
+    "causeRealm": "Mauvais serveur sélectionné — la recherche a porté sur {realm} ; essayez un autre serveur ci-dessus.",
+    "seenBefore": "Ce joueur avait déjà été consulté avec succès, mais il est désormais introuvable — le compte a très probablement été supprimé.",
+    "apiErrorTitle": "Échec de la recherche",
+    "apiErrorDesc": "L’API officielle n’a pas pu effectuer cette recherche. Réessayez plus tard.",
+    "rateLimitHint": "Trop de requêtes en peu de temps — l’API officielle limite le débit de ce réseau. Patientez un instant puis réessayez.",
+    "rawDetail": "Détails bruts de l’erreur"
+  },
   "role": {
     "commander": "Commandant",
     "executive_officer": "Officier exécutif",

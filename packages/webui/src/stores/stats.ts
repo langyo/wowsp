@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type PlayerStats } from "@/api";
+import { LookupError, type LookupErrorPayload } from "@/transport/types";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
 
 /** Persisted-cache envelope for one player's stats (AppData). Old caches
@@ -37,6 +38,11 @@ export const useStatsStore = defineStore("stats", () => {
   const index = ref<Map<string, number>>(new Map());
   const loading = ref(false);
   const error = ref<string | null>(null);
+  /** Structured payload of the last rejected interactive lookup (null once
+   *  a new attempt starts) — the lookup page's friendly error notice. The
+   *  plain `error` string is kept in parallel for the pre-existing
+   *  consumers (dashboard / replay), which stay untouched. */
+  const lookupError = ref<LookupErrorPayload | null>(null);
 
   function cacheKey(realm: string, accountId: number) {
     return `${realm}_${accountId}`;
@@ -108,6 +114,7 @@ export const useStatsStore = defineStore("stats", () => {
     const { force = false, ttlMs = Number.POSITIVE_INFINITY } = opts;
     loading.value = true;
     error.value = null;
+    lookupError.value = null;
     try {
       if (index.value.size === 0) await readIndex();
       const nickKey = indexKey(realm, nickname);
@@ -145,6 +152,7 @@ export const useStatsStore = defineStore("stats", () => {
       ).catch(() => {});
       return stats;
     } catch (e) {
+      if (e instanceof LookupError) lookupError.value = e.payload;
       error.value = (e as Error).message;
       throw e;
     } finally {
@@ -159,5 +167,5 @@ export const useStatsStore = defineStore("stats", () => {
     return readCacheFile(realm, accountId);
   }
 
-  return { cache, fetchedAt, index, loading, error, lookup, loadCached };
+  return { cache, fetchedAt, index, loading, error, lookupError, lookup, loadCached };
 });
