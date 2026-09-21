@@ -1,18 +1,18 @@
 /**
- * Minimal i18n layer for the installer shell. The wizard offers eight
+ * Minimal i18n layer for the installer shell. The wizard offers ten
  * self-named locales (简体中文 / 繁體中文 / English / Русский / 日本語 /
- * 한국어 / Français / Español); every user-visible string in App.tsx and
- * the components resolves from `strings(locale)` per render, so a locale
- * switch re-renders everything live. zh-Hans is the original copy (kept
- * verbatim); the other seven are authored translations. The
- * AnnouncementCard (announcement.ts) carries its own per-locale content
- * and receives the wizard locale as a prop — its variant list is out of
- * this table's scope. The LogPane's structural chrome (title / expand /
- * collapse) lives in `logPane` and reaches the component as props, and
- * the composed log LINES (backend progress verbs, file echoes, script
- * starts) resolve from `install.progress` against the picked locale too
- * — unknown backend verbs still pass through verbatim (the backend's
- * flow labels are English).
+ * 한국어 / Français / Español / Deutsch / Português); every user-visible
+ * string in App.tsx and the components resolves from `strings(locale)`
+ * per render, so a locale switch re-renders everything live. zh-Hans is
+ * the original copy (kept verbatim); the other nine are authored
+ * translations. The AnnouncementCard (announcement.ts) carries its own
+ * per-locale content and receives the wizard locale as a prop — its
+ * variant list is out of this table's scope. The LogPane's structural
+ * chrome (title / expand / collapse) lives in `logPane` and reaches the
+ * component as props, and the composed log LINES (backend progress
+ * verbs, file echoes, script starts) resolve from `install.progress`
+ * against the picked locale too — unknown backend verbs still pass
+ * through verbatim (the backend's flow labels are English).
  */
 
 export const LOCALES = [
@@ -24,6 +24,8 @@ export const LOCALES = [
   "ko",
   "fr",
   "es",
+  "de",
+  "pt",
 ] as const;
 export type InstallerLocale = (typeof LOCALES)[number];
 
@@ -41,6 +43,8 @@ export const LOCALE_LABELS: Record<InstallerLocale, string> = {
   ko: "한국어",
   fr: "Français",
   es: "Español",
+  de: "Deutsch",
+  pt: "Português",
 };
 
 /** HSelect options for the picker, in display order. */
@@ -57,8 +61,8 @@ export function isInstallerLocale(value: unknown): value is InstallerLocale {
 /**
  * Map a raw BCP-47 tag (navigator.language) onto a wizard locale:
  * zh-TW / zh-HK / zh-Hant* → zh-Hant, any other zh* → zh-Hans,
- * ru* → ru, ja* → ja, ko* → ko, fr* → fr, es* → es,
- * everything else → en.
+ * ru* → ru, ja* → ja, ko* → ko, fr* → fr, es* → es, de* → de,
+ * pt* → pt, everything else → en.
  */
 export function resolveSystemLocale(tag: string): InstallerLocale {
   const lower = tag.toLowerCase();
@@ -77,6 +81,8 @@ export function resolveSystemLocale(tag: string): InstallerLocale {
   if (lower.startsWith("ko")) return "ko";
   if (lower.startsWith("fr")) return "fr";
   if (lower.startsWith("es")) return "es";
+  if (lower.startsWith("de")) return "de";
+  if (lower.startsWith("pt")) return "pt";
   return "en";
 }
 
@@ -1153,6 +1159,257 @@ const es: InstallerStrings = {
   },
 };
 
+const de: InstallerStrings = {
+  title: "WoWSP-Installer",
+  uninstallTitle: "WoWSP deinstallieren",
+  languageLabel: "Installersprache",
+  steps: { mode: "Modus", license: "Lizenz", install: "Installation", done: "Fertig" },
+  mode: {
+    title: "Wählen Sie, wie WoWSP installiert werden soll",
+    sub: "Wählen Sie, wie diese Kopie installiert wird und wo ihre Daten liegen; die 2D-/3D-Modellpakete werden mitinstalliert.",
+    local: {
+      title: "Auf diesem PC installieren",
+      description:
+        "Standardinstallation für einen einzelnen Benutzer, mit Startmenü-Verknüpfung und automatischen Updates.",
+      badge: "Empfohlen",
+    },
+    usb: {
+      title: "USB-Laufwerk (Internetcafé)",
+      description:
+        "Eine portable Kopie auf einem Wechseldatenträger — keine Registry-Einträge, alle Daten bleiben auf dem Laufwerk.",
+    },
+  },
+  target: {
+    label: "Installationsort",
+    dialogTitle: "Installationsort wählen",
+    hintLocal:
+      "Die Daten werden unter %APPDATA% abgelegt, mit automatischen Updates; der Deinstallationseintrag wird im System registriert.",
+    hintUsb:
+      "Wird automatisch gefunden, sobald ein Wechseldatenträger vorhanden ist; andernfalls wird auf einen lokalen Pfad ausgewichen.",
+    hintUsbDetected: "Wechseldatenträger erkannt.",
+    warnUnwritable:
+      "Das aktuelle Verzeichnis ist nicht beschreibbar und die Installation würde abgelehnt — wählen Sie oben einen der hervorgehobenen Kandidaten.",
+    warnNoWritable:
+      "Kein beschreibbarer Kandidatenort gefunden — wählen Sie ein Verzeichnis, auf das Sie zugreifen dürfen.",
+    nestedNote:
+      "Automatisch wurde eine Ordnerebene eingefügt, damit nichts direkt im Wurzelverzeichnis des Laufwerks landet.",
+  },
+  flavors: {
+    full: "Vollversion · inklusive der 2D-/3D-Modellpakete",
+    fullWebview2: "Vollversion · inklusive der 2D-/3D-Modellpakete und der WebView2-Laufzeit",
+  },
+  license: {
+    title: "Lizenzvereinbarung",
+    sub: "Lesen Sie vor der Installation die folgenden Vereinbarungsdokumente; das Setzen des Häkchens bedeutet, dass Sie allen zustimmen.",
+    agree: "Ich habe alle oben genannten Vereinbarungen gelesen und akzeptiere sie",
+    prevDoc: "Vorheriges Dokument",
+    nextDoc: "Nächstes Dokument",
+    agreeInstall: (countdown) =>
+      countdown > 0 ? `Zustimmen & installieren (${countdown} s)` : "Zustimmen & installieren",
+  },
+  install: {
+    preparing: "Installation wird vorbereitet…",
+    startedLog: "Installation gestartet",
+    fallback: "WoWSP wird installiert — das kann einen Moment dauern…",
+    progress: {
+      stopApp: "Laufendes WoWSP wird beendet",
+      removedStale: (count) =>
+        `${count} veraltete(n) Datei(en) der vorherigen Installation entfernt`,
+      verbs: {
+        Extracting: "Entpacken",
+        Reusing: "Wiederverwenden",
+        Downloading: "Herunterladen",
+        Registering: "Registrieren",
+        Writing: "Schreiben",
+      },
+      phases: {
+        download: "Ressourcen werden heruntergeladen",
+        extract: "Dateien werden entpackt",
+        register: "Systemeinträge werden registriert",
+        fallback: "Installation läuft",
+      },
+      writing: (path) => `Schreibe ${path}`,
+      reusing: (path) => `Wiederverwende ${path}`,
+      runningScript: (name) => `Führe ${name} aus`,
+    },
+  },
+  done: {
+    failedTitle: "Installation fehlgeschlagen",
+    title: "✔ Installation abgeschlossen",
+    hintLocal:
+      "WoWSP ist in der App-Liste des Systems registriert; die markierten Verknüpfungen werden beim Klick auf „Fertigstellen“ erstellt.",
+    hintUsb: "Die portable Kopie ist bereit: Alle Daten bleiben auf dem Wechseldatenträger.",
+    shortcutMenu: "Startmenü-Verknüpfung erstellen",
+    shortcutDesktop: "Desktop-Verknüpfung erstellen",
+    launchAfter: "WoWSP direkt nach Abschluss der Installation starten",
+    finish: "Fertigstellen",
+    retry: "Installation wiederholen",
+    close: "Schließen",
+  },
+  nav: { next: "Weiter", back: "Zurück" },
+  logPane: {
+    title: "Installationsprotokoll",
+    expand: "Installationsprotokoll ausklappen",
+    collapse: "Installationsprotokoll einklappen",
+  },
+  uninstall: {
+    heading: "WoWSP deinstallieren",
+    sub: "Damit werden WoWSP und die registrierten Systemeinträge entfernt. Modellressourcen und Benutzerdaten bleiben erhalten.",
+    cancel: "Abbrechen",
+    repair: "Installation reparieren",
+    uninstall: "Deinstallieren",
+    close: "Schließen",
+    uninstalling: "Deinstallation läuft…",
+    repairing: "Reparatur läuft…",
+    doneUninstall: "Deinstallation abgeschlossen",
+    doneRepair: "Reparatur abgeschlossen",
+    failedUninstall: "Deinstallation fehlgeschlagen",
+    failedRepair: "Reparatur fehlgeschlagen",
+  },
+  pathField: {
+    browse: "Durchsuchen…",
+    diskChip: "Laufwerk",
+    chipLabel: "Laufwerk für die Installation auswählen",
+    pickerTitle: "Laufwerk wählen",
+    searchPlaceholder: "Laufwerke oder Volumebezeichnungen suchen",
+    emptyText: "Kein passendes Laufwerk",
+    kinds: {
+      removable: "Wechseldatenträger",
+      fixed: "Lokaler Datenträger",
+      network: "Netzwerklaufwerk",
+      cdrom: "Optisches Laufwerk",
+      ramdisk: "RAM-Laufwerk",
+      unknown: "Unbekanntes Laufwerk",
+    },
+  },
+};
+
+const pt: InstallerStrings = {
+  title: "Instalador do WoWSP",
+  uninstallTitle: "Desinstalar o WoWSP",
+  languageLabel: "Idioma do instalador",
+  steps: { mode: "Modo", license: "Licença", install: "Instalar", done: "Concluído" },
+  mode: {
+    title: "Escolha como instalar o WoWSP",
+    sub: "Escolha como esta cópia é instalada e onde residem os seus dados; os pacotes de modelos 2D / 3D são instalados em conjunto.",
+    local: {
+      title: "Instalar neste PC",
+      description:
+        "Instalação mono-utilizador padrão, com atalho no menu Iniciar e atualizações automáticas.",
+      badge: "Recomendado",
+    },
+    usb: {
+      title: "Unidade USB (modo cibercafé)",
+      description:
+        "Uma cópia portátil numa unidade amovível — sem entradas no registo, todos os dados ficam na unidade.",
+    },
+  },
+  target: {
+    label: "Local de instalação",
+    dialogTitle: "Escolher o local de instalação",
+    hintLocal:
+      "Os dados são escritos em %APPDATA%, com atualizações automáticas; a entrada de desinstalação é registada no sistema.",
+    hintUsb:
+      "Detetado automaticamente quando existe uma unidade amovível; caso contrário, recua para um caminho local.",
+    hintUsbDetected: "Unidade amovível detetada.",
+    warnUnwritable:
+      "O diretório atual não permite escrita e a instalação seria recusada — escolha um dos locais sugeridos acima.",
+    warnNoWritable:
+      "Não foi encontrado nenhum local com permissão de escrita — escolha um diretório a que tenha acesso.",
+    nestedNote:
+      "Foi adicionado automaticamente um nível de pastas para que a instalação nunca caia na raiz da unidade.",
+  },
+  flavors: {
+    full: "Edição completa · inclui os pacotes de modelos 2D/3D",
+    fullWebview2:
+      "Edição completa · inclui os pacotes de modelos 2D/3D e o runtime WebView2",
+  },
+  license: {
+    title: "Acordo de licença",
+    sub: "Leia os documentos do acordo antes de instalar; marcar a caixa significa que aceita todo o seu conteúdo.",
+    agree: "Li e aceito todos os acordos acima",
+    prevDoc: "Documento anterior",
+    nextDoc: "Documento seguinte",
+    agreeInstall: (countdown) =>
+      countdown > 0 ? `Aceitar e instalar (${countdown} s)` : "Aceitar e instalar",
+  },
+  install: {
+    preparing: "A preparar a instalação…",
+    startedLog: "Instalação iniciada",
+    fallback: "A instalar o WoWSP — isto pode demorar um momento…",
+    progress: {
+      stopApp: "A parar o WoWSP em execução",
+      removedStale: (count) =>
+        `Removido(s) ${count} ficheiro(s) desatualizado(s) da instalação anterior`,
+      verbs: {
+        Extracting: "A extrair",
+        Reusing: "A reutilizar",
+        Downloading: "A transferir",
+        Registering: "A registar",
+        Writing: "A escrever",
+      },
+      phases: {
+        download: "A transferir recursos",
+        extract: "A extrair ficheiros",
+        register: "A registar entradas do sistema",
+        fallback: "A instalar",
+      },
+      writing: (path) => `A escrever ${path}`,
+      reusing: (path) => `A reutilizar ${path}`,
+      runningScript: (name) => `A executar ${name}`,
+    },
+  },
+  done: {
+    failedTitle: "Falha na instalação",
+    title: "✔ Instalação concluída",
+    hintLocal:
+      "O WoWSP está registado na lista de aplicações do sistema; os atalhos assinalados são criados quando clica em «Concluir».",
+    hintUsb: "A cópia portátil está pronta: todos os dados ficam na unidade amovível.",
+    shortcutMenu: "Criar atalho no menu Iniciar",
+    shortcutDesktop: "Criar atalho no ambiente de trabalho",
+    launchAfter: "Iniciar o WoWSP logo que a instalação termine",
+    finish: "Concluir",
+    retry: "Repetir a instalação",
+    close: "Fechar",
+  },
+  nav: { next: "Seguinte", back: "Voltar" },
+  logPane: {
+    title: "Registo de instalação",
+    expand: "Expandir o registo de instalação",
+    collapse: "Recolher o registo de instalação",
+  },
+  uninstall: {
+    heading: "Desinstalar o WoWSP",
+    sub: "Isto remove o WoWSP e as entradas de sistema registadas por ele. Os recursos de modelos e os dados do utilizador são mantidos.",
+    cancel: "Cancelar",
+    repair: "Reparar instalação",
+    uninstall: "Desinstalar",
+    close: "Fechar",
+    uninstalling: "A desinstalar…",
+    repairing: "A reparar…",
+    doneUninstall: "Desinstalação concluída",
+    doneRepair: "Reparação concluída",
+    failedUninstall: "Falha ao desinstalar",
+    failedRepair: "Falha ao reparar",
+  },
+  pathField: {
+    browse: "Procurar…",
+    diskChip: "Disco",
+    chipLabel: "Escolha o disco onde instalar",
+    pickerTitle: "Escolher um disco",
+    searchPlaceholder: "Procurar discos ou etiquetas de volume",
+    emptyText: "Nenhum disco correspondente",
+    kinds: {
+      removable: "Unidade amovível",
+      fixed: "Disco local",
+      network: "Unidade de rede",
+      cdrom: "Unidade ótica",
+      ramdisk: "Disco RAM",
+      unknown: "Disco desconhecido",
+    },
+  },
+};
+
 const TABLE: Record<InstallerLocale, InstallerStrings> = {
   "zh-Hans": zhHans,
   "zh-Hant": zhHant,
@@ -1162,6 +1419,8 @@ const TABLE: Record<InstallerLocale, InstallerStrings> = {
   ko,
   fr,
   es,
+  de,
+  pt,
 };
 
 /** The full string table for one locale. Computed per render in App.tsx,

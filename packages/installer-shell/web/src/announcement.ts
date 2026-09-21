@@ -9,11 +9,15 @@
  * es) its variant is appended after the mandatory three; other zh / en /
  * ru tags collapse onto blocks already shown, so they add nothing.
  *
- * The telemetry notice is shown ONCE, in the language the system reports
- * (zh-Hant / zh / en), because unlike the anti-scam warning it is not a
- * fraud-prevention banner that must be legible to every buyer regardless
- * of locale — it is a disclosure aimed at this specific user. Canonical
- * long-form copy: docs/{lang}/license/usage-telemetry.md.
+ * The telemetry notice is shown ONCE, in the user's own language: every
+ * language the wizard offers resolves its own entry (zh tags split into
+ * Simplified / Traditional, seven languages match by BCP-47 prefix, and
+ * English is the terminal fallback), so anything unmapped reads English. Unlike the anti-scam warning it is not
+ * a fraud-prevention banner that must be legible to every buyer
+ * regardless of locale — it is a disclosure aimed at this specific user.
+ * Canonical long-form copy: docs/{lang}/license/usage-telemetry.md (the
+ * de / pt entries translate its short form; no docs page exists there
+ * yet).
  *
  * This module is a mirrored copy: an identical module lives at
  * packages/webui/src/components/layout/announcementVariants.ts — keep the
@@ -86,9 +90,10 @@ export const ANNOUNCEMENT_VARIANTS: Record<string, AnnouncementVariant> = {
 /** Mandatory blocks every surface shows, in display order. */
 const MANDATORY_IDS = ["zh-CN", "en", "ru"] as const;
 
-/** Short usage-telemetry disclosure, one per language id (en / zh-CN /
- *  zh-TW keyed; every other locale falls back to the en entry). The
- *  wording mirrors the short form of docs/{lang}/license/usage-telemetry.md. */
+/** Short usage-telemetry disclosure, one per language id (the ten wizard
+ *  languages, zh keyed as zh-CN / zh-TW; anything else falls back to the
+ *  en entry). The wording mirrors the short form of
+ *  docs/{lang}/license/usage-telemetry.md. */
 export const TELEMETRY_NOTICES: Record<string, { label: string; text: string }> = {
   en: {
     label: "English",
@@ -102,17 +107,66 @@ export const TELEMETRY_NOTICES: Record<string, { label: string; text: string }> 
     label: "繁體中文",
     text: "WoWSP 會收集極少量使用量遙測（介面語言、開啟的頁面、國家級地區），僅用於指導開發；絕不收集任何個人資料、回放或帳號資料。",
   },
+  ja: {
+    label: "日本語",
+    text: "WoWSP は最小限の使用状況テレメトリー（インターフェースの言語、開いたページ、国レベルの地域）を収集し、開発の指針にのみ利用します。個人データ、リプレイデータ、アカウントデータは一切収集しません。",
+  },
+  ko: {
+    label: "한국어",
+    text: "WoWSP는 개발 방향을 잡기 위해 최소한의 사용량 원격 측정(인터페이스 언어, 열어본 페이지, 국가 수준 지역)만 수집합니다. 개인 데이터, 리플레이 또는 계정 데이터는 절대 수집하지 않습니다.",
+  },
+  ru: {
+    label: "Русский",
+    text: "WoWSP собирает минимальную телеметрию использования (язык интерфейса, открытые страницы, регион на уровне страны) — только для направления разработки. Персональные данные, данные реплеев и аккаунтов не собираются никогда.",
+  },
+  fr: {
+    label: "Français",
+    text: "WoWSP collecte un minimum de télémétrie d'utilisation (langue de l'interface, pages ouvertes, région au niveau du pays), uniquement pour guider le développement. Aucune donnée personnelle, aucune donnée de replay ni de compte n'est collectée.",
+  },
+  es: {
+    label: "Español",
+    text: "WoWSP recoge una telemetría de uso mínima (idioma de la interfaz, páginas abiertas, región a nivel de país) solo para orientar el desarrollo. Nunca se recogen datos personales ni datos de repeticiones o cuentas.",
+  },
+  de: {
+    label: "Deutsch",
+    text: "WoWSP erfasst minimale Nutzungstelemetrie (Oberflächensprache, geöffnete Seiten, Region auf Länderebene), ausschließlich zur Orientierung für die Entwicklung. Persönliche Daten sowie Replay- oder Kontodaten werden niemals erfasst.",
+  },
+  pt: {
+    label: "Português",
+    text: "O WoWSP recolhe telemetria de utilização mínima (idioma da interface, páginas abertas, região ao nível do país), apenas para orientar o desenvolvimento. Nunca são recolhidos dados pessoais nem dados de replays ou de contas.",
+  },
 };
+
+/** BCP-47 prefix → telemetry-notice key for the non-zh languages, in
+ *  match order (first hit wins). */
+const TELEMETRY_PREFIXES: ReadonlyArray<readonly [string, string]> = [
+  ["ja", "ja"],
+  ["ko", "ko"],
+  ["ru", "ru"],
+  ["fr", "fr"],
+  ["es", "es"],
+  ["de", "de"],
+  ["pt", "pt"],
+];
 
 /** Pick the telemetry notice for a raw BCP-47 tag (navigator.language):
  *  Traditional Chinese locales read zh-TW, any other zh prefix reads
- *  zh-CN, everything else reads English. */
+ *  zh-CN, the non-zh languages match by prefix, and everything else
+ *  reads English. */
 export function pickTelemetryNotice(tag: string): { label: string; text: string } {
   const lower = tag.toLowerCase();
   const traditional =
     lower.startsWith("zh") &&
     (["-tw", "-hk", "-mo"].some((sub) => lower.includes(sub)) || lower.includes("hant"));
-  const key = traditional ? "zh-TW" : lower.startsWith("zh") ? "zh-CN" : "en";
+  let key = "en";
+  if (traditional) {
+    key = "zh-TW";
+  } else if (lower.startsWith("zh")) {
+    key = "zh-CN";
+  } else {
+    const hit = TELEMETRY_PREFIXES.find(([prefix]) => lower.startsWith(prefix));
+    if (hit) key = hit[1];
+  }
   return TELEMETRY_NOTICES[key];
 }
 

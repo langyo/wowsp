@@ -69,9 +69,9 @@ describe("determineDataLanguage", () => {
 });
 
 describe("installerLocaleToUi", () => {
-  it("maps the installer's eight wizard locales onto canonical UI locales", () => {
-    // The installer shell offers exactly these; each seeds the UI locale
-    // whose copy matches it.
+  it("maps the eight wizard locales that have a UI copy onto canonical UI locales", () => {
+    // The installer shell offers ten wizard locales; the eight with a
+    // matching webui UI copy each seed that locale.
     expect(installerLocaleToUi("zh-Hans")).toBe("zh-CN");
     expect(installerLocaleToUi("zh-Hant")).toBe("zh-TW");
     expect(installerLocaleToUi("en")).toBe("en-US");
@@ -85,8 +85,12 @@ describe("installerLocaleToUi", () => {
   it("ignores anything the installer cannot send", () => {
     expect(installerLocaleToUi("zh-TW")).toBeNull();
     expect(installerLocaleToUi("zh-Hans-X")).toBeNull();
-    expect(installerLocaleToUi("pt-BR")).toBeNull();
+    // de / pt exist in the installer but have no webui UI locale — the
+    // seed must ignore them rather than guess a copy.
     expect(installerLocaleToUi("de")).toBeNull();
+    expect(installerLocaleToUi("de-DE")).toBeNull();
+    expect(installerLocaleToUi("pt")).toBeNull();
+    expect(installerLocaleToUi("pt-BR")).toBeNull();
     expect(installerLocaleToUi("")).toBeNull();
   });
 });
