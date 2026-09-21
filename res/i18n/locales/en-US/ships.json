@@ -86,7 +86,10 @@
       "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
       "holo": "Hologram",
       "hide": "Hide preview",
-      "show": "Show preview"
+      "show": "Show preview",
+      "rotate": "Auto-rotate",
+      "rotateOn": "Auto-rotating · click to pause",
+      "rotateOff": "Paused · click to resume"
     },
     "weapon": {
       "mainGun": "Main Battery",
@@ -135,7 +138,8 @@
         "bounce": "Bounce"
       },
       "restore": "Restore",
-      "pickHint": "Click the hull to hide a color class"
+      "solo": "Only",
+      "pickHint": "Click a swatch to isolate · click the model to hide"
     },
     "openHint": "Click to open the ship detail",
     "my": {
