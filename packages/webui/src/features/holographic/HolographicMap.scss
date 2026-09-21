@@ -656,9 +656,15 @@
   justify-content: center;
   gap: 0.5rem;
   cursor: zoom-out;
+  /* Size container for the cqh/cqw canvas caps below — the overlay is the
+     positioning context the canvas actually lives in (NOT the viewport:
+     the replay view wraps this container in its own chrome, so vh math
+     overshoots and clips the head pill off the top). Size containment is
+     free here: the absolute inset:0 overlay never sizes from content. */
+  container-type: size;
   /* Reserve the playback bar's footprint (bottom 12px + ~42px tall) so the
      centered map + tactical step strip never slide behind it. */
-  padding-bottom: 64px;
+  padding: 8px 8px 64px;
 }
 .holo-map__mmzoom-head {
   display: flex;
@@ -688,9 +694,10 @@
   }
 }
 .holo-map__mmzoom-canvas {
-  /* Cap by height minus the head pill + reserved playback-bar strip so the
-     whole stack (pill + map + step strip above the controls) always fits. */
-  width: min(calc(100vh - 110px), 80vw, 720px);
+  /* Fit the CONTAINER: height cap = container minus head pill (~37px) +
+     gap (8px) + reserved playback strip (64px) + slack; the canvas keeps
+     its 1:1 ratio from the width/height attributes. */
+  width: min(calc(100cqh - 122px), calc(100cqw - 16px), 720px);
   height: auto;
   border: 1px solid var(--holo-hud-border);
   border-radius: 6px;
@@ -698,9 +705,9 @@
      scrim around it follow the theme). */
   background: #05080f;
   /* With the tactical board on, the toolbar rail takes the gutter to the
-     right — shrink the map so canvas + rail always fit the viewport. */
+     right — shrink the map so canvas + rail always fit the container. */
   &--tac {
-    width: min(calc(100vh - 110px), calc(80vw - 224px), 720px);
+    width: min(calc(100cqh - 122px), calc(100cqw - 240px), 720px);
   }
 }
 
