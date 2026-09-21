@@ -6,6 +6,7 @@
 import { transport } from "@/transport";
 import { RPC } from "@/rpc";
 import type { PrAlgo } from "@/stores/statsPrefs";
+import type { StampKind } from "@/utils/winrate";
 
 /** Mirrors `wowsp_tauri_shared::GameInstall`. */
 export interface GameInstall {
@@ -1119,6 +1120,14 @@ export interface WallpaperFile {
   path: string;
 }
 
+/** Mirrors `commands::stamps::StampOverride` — one user-set seal picture
+ *  under `<data_dir>/stamps/`, keyed by stamp kind. */
+export interface StampOverride {
+  kind: string;
+  /** Absolute path — the frontend rewrites it into an asset-protocol URL. */
+  path: string;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
@@ -1141,6 +1150,16 @@ export const api = {
    *  user cancelled the dialog. */
   wallpaperImport: () => transport.invoke<WallpaperFile | null>(RPC.wallpaper_import),
   wallpaperRemove: (id: string) => transport.invoke<null>(RPC.wallpaper_remove, { id }),
+  /** List customized seals (kind-keyed pictures in the AppData `stamps/`
+   *  folder). Kinds without a file fall back to the bundled glyph. */
+  stampList: () => transport.invoke<StampOverride[]>(RPC.stamp_list),
+  /** Native image picker → copy into the stamps folder as `<kind>.<ext>`.
+   *  Null = the user cancelled the dialog. */
+  stampImport: (kind: StampKind) =>
+    transport.invoke<StampOverride | null>(RPC.stamp_import, { kind }),
+  /** Delete the kind's custom picture — the seal falls back to the bundled
+   *  glyph. */
+  stampReset: (kind: StampKind) => transport.invoke<null>(RPC.stamp_reset, { kind }),
   /** res_mods ribbon-skin directory for a game install (None if unmodded). */
   ribbonSkinDir: (gamePath: string) =>
     transport.invoke<string | null>(RPC.ribbon_skin_dir, { gamePath }),

@@ -273,14 +273,17 @@ export default defineComponent({
         return "—";
       };
 
-      const cell = (entry: TabOrderedVehicle) => {
+      const cell = (entry: TabOrderedVehicle, side: "ally" | "enemy") => {
         const v = entry.vehicle;
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
         const clickable = !isAiName(v.name);
-        // The career seal is a card-level element pinned to the card's right
+        // The career seal is a card-level element pinned to the card's OUTER
         // edge (same "pressed onto the card" look as the account card), so it
-        // needs its own copy of the career guard statLine uses above.
+        // needs its own copy of the career guard statLine uses above. The
+        // outer edge follows the in-game Tab table's reading direction — the
+        // seal group sits left of the text for allies, right of it for
+        // enemies, matching the overlay chips' side rule.
         const st = clickable ? stats.get(v.id) : null;
         // Hidden profiles earn the 过街老鼠 seal instead of a stat verdict —
         // careerStamp's hidden branch handles that — but only once the clan
@@ -302,26 +305,40 @@ export default defineComponent({
           // dims the same way the game grays the row.
           { "live-battle__player--sunk": entry.sunk },
         ];
+        const seal =
+          stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+            <RatingStamp
+              kind={stamp}
+              size={26}
+              variant="mini"
+              class="live-battle__player-stamp"
+            />
+          ) : null;
+        const main = (
+          <span class="live-battle__player-main">
+            <span class="live-battle__player-name">
+              {v.name}
+              {isAiName(v.name) ? (
+                <em class="live-battle__player-bot">{t("replay.bot")}</em>
+              ) : null}
+            </span>
+            <span class="live-battle__player-ship">{shipName}</span>
+            <span class="live-battle__player-stat">{statLine(v)}</span>
+          </span>
+        );
         const content = (
           <>
-            <span class="live-battle__player-main">
-              <span class="live-battle__player-name">
-                {v.name}
-                {isAiName(v.name) ? (
-                  <em class="live-battle__player-bot">{t("replay.bot")}</em>
-                ) : null}
-              </span>
-              <span class="live-battle__player-ship">{shipName}</span>
-              <span class="live-battle__player-stat">{statLine(v)}</span>
-            </span>
-            {stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
-              <RatingStamp
-                kind={stamp}
-                size={26}
-                variant="mini"
-                class="live-battle__player-stamp"
-              />
-            ) : null}
+            {side === "ally" ? (
+              <>
+                {seal}
+                {main}
+              </>
+            ) : (
+              <>
+                {main}
+                {seal}
+              </>
+            )}
           </>
         );
         return clickable ? (
@@ -392,11 +409,11 @@ export default defineComponent({
           <div class="live-battle__matrix">
             <div class="live-battle__col">
               <div class="live-battle__col-title">{t("replay.roster.allies")}</div>
-              {allies.value.map(cell)}
+              {allies.value.map((e) => cell(e, "ally"))}
             </div>
             <div class="live-battle__col">
               <div class="live-battle__col-title">{t("replay.roster.enemies")}</div>
-              {enemies.value.map(cell)}
+              {enemies.value.map((e) => cell(e, "enemy"))}
             </div>
           </div>
         </div>
