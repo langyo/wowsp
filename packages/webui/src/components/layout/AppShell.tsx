@@ -127,6 +127,14 @@ export default defineComponent({
             // while the pack is absent.
             void initDogtagPack(() => api.ensureResPack()).catch(() => {});
             const status = await api.getResStatus();
+            // Ship GLBs are pruned from the production dist, so every
+            // model URL resolves through the pack cache root — wire it
+            // even when the pack is present (local-only, no manifest
+            // fetch; missing packs wire through the ensure flow below).
+            void api
+              .resCacheRoot()
+              .then((root) => (root ? initModelPack(async () => root) : undefined))
+              .catch(() => {});
             if (!status.present) {
               await initModelPack(() => api.ensureResPack());
               return;
