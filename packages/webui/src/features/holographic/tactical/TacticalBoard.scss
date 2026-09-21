@@ -7,6 +7,9 @@
   inset: 0;
   /* Above the base map canvas, below the mmzoom head (outside the stage). */
   z-index: 2;
+  /* Selection / focus accent for every tactical chrome below (SCSS side;
+     the canvas renderer keeps its own literal). */
+  --tac-accent-rgb: 0, 195, 255;
 }
 
 .tac-layer__canvas {
@@ -51,7 +54,7 @@
     color: var(--holo-hud-dim);
   }
   &:focus {
-    border-color: rgba(0, 195, 255, 0.7);
+    border-color: rgb(var(--tac-accent-rgb) / 0.7);
   }
 }
 
