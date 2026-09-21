@@ -1079,8 +1079,9 @@ pub struct EntityKind {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ship_id: Option<i64>,
     /// Capture-zone radius in metres, recovered from the EntityCreate state
-    /// stream (only present for entityType 14 zones). Falls back to 60 on the
-    /// frontend when absent.
+    /// stream (only present for entityType 14 zones; the first integral f32
+    /// in the state — 80..140 m across current maps). The frontend floors
+    /// the drawn ring size when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius: Option<f32>,
     /// 0-based capture-point index (A=0, B=1, ...) recovered from the
