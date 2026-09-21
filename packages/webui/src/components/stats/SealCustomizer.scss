@@ -1,0 +1,60 @@
+// Per-seal customization rows (settings modal's stats section). The preview
+// reuses RatingStamp itself, so a freshly imported custom picture shows up
+// in place with zero extra state.
+
+.seal-customizer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.5rem 0 0.25rem 0.9rem;
+  border-left: 2px solid rgb(var(--color-border) / 25%);
+  margin: 0.25rem 0 0 0.35rem;
+
+  &__hint {
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2.5rem;
+
+    /* A hidden seal keeps its row (the switch stays reachable) but dims,
+       the same way the stats-prefs cluster collapses under its master. */
+    &--off {
+      opacity: 0.55;
+
+      .seal-customizer__preview {
+        filter: grayscale(0.8);
+      }
+    }
+  }
+
+  &__preview {
+    flex: none;
+    width: 7.25rem;
+    display: flex;
+    justify-content: center;
+    /* The stamps carry their own -7/-9° press; nudge them clear of the
+       row's vertical rhythm so the corners don't crowd the label. */
+    padding: 0.2rem 0;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: rgb(var(--color-text));
+  }
+
+  &__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+}

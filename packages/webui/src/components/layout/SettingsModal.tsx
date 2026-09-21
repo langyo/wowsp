@@ -74,6 +74,7 @@ import AccountManagerContent from "@/components/account/AccountManagerContent";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import AuthorMark from "@/components/base/AuthorMark";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
+import SealCustomizer from "@/components/stats/SealCustomizer";
 import FontSizeControl from "@/components/layout/FontSizeControl";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
@@ -800,6 +801,7 @@ export default defineComponent({
             <h2 class="settings-modal__group-title">{t("settings.statsSection")}</h2>
             <p class="settings-modal__hint">{t("settings.statsSectionHint")}</p>
             <StatsPrefsControls ns="settings" />
+            <SealCustomizer />
           </section>
 
           </>

@@ -31,6 +31,7 @@ pub mod row_match;
 pub mod row_recognize;
 pub mod screenshot;
 pub mod ship_stats;
+pub mod stamps;
 pub mod tab_dump;
 pub mod trends;
 pub mod update;

@@ -109,6 +109,19 @@
     "localizedTiersToggle": "本土化档位文案",
     "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。"
   },
+  "sealCustomizer": {
+    "desc": "逐个开关每枚印章，或为印章选用自定义图片（图片存储在应用数据目录的 stamps 文件夹）。预览即时生效，还原默认即删除自定义图。",
+    "sealMiracle": "神了",
+    "sealApe": "海猴",
+    "sealMaggot": "蛆",
+    "sealRat": "过街老鼠",
+    "sealAir": "空中小人",
+    "sealSub": "水下小人",
+    "pickImage": "自定义图片",
+    "resetDefault": "还原默认",
+    "pickFailed": "导入自定义印章图片失败",
+    "resetFailed": "还原默认印章失败"
+  },
   "updates": "更新",
   "updatesAppTitle": "应用更新",
   "updatesAppHint": "应用本体跟随 GitHub 版本号更新；更新时只下载精简安装包，资源包会通过自己的通道单独跟进。",

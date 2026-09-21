@@ -1,7 +1,7 @@
 /* Inked career-verdict seals (神了 / 海猴 / 蛆 / 过街老鼠 / 空中小人 / 水下小人) — geometry
    lives in RatingStamp.tsx; the glyphs are bitmap assets (see
-   scripts/gen_stamp_bitmaps.py), so this file only carries the ink color
-   and the tilt. */
+   scripts/gen_stamp_bitmaps.py + recut_stamp_bitmaps.py), so this file only
+   carries the ink color and the tilt. */
 
 .rating-stamp {
   /* Cinnabar seal ink. */
@@ -9,8 +9,21 @@
   opacity: 0.9;
   pointer-events: none;
   flex: none;
-  /* One shared −9° press for every seal — mixed tilts read as sloppiness. */
+  /* One shared −9° press for every seal — mixed tilts read as sloppiness.
+     Applies to the SVG face and to a user's custom image alike (the custom
+     branch renders a plain <img> with this same class). */
   transform: rotate(-9deg);
+
+  &--wide {
+    /* The elongated faces must keep their -9° tilt visually, but a 3:1 box
+       swings wider — a hair less rotation keeps the ends from clipping
+       neighbouring layout without changing the read. */
+    transform: rotate(-7deg);
+  }
+
+  /* Custom-image branch: the user's picture replaces the whole face, so it
+     renders as a plain <img> carrying this same class — the SVG part
+     styles below simply don't apply to it, the tilt above does. */
 
   &__frame {
     fill: none;

@@ -150,14 +150,14 @@ const realm = new URLSearchParams(window.location.search).get("realm") ?? "";
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
 
 // ── Seals (career/composition stamp bitmaps beside the chip numbers) ────
-// Local two-knob mirror of stores/statsPrefs.ts (STATS_PREFS_STORAGE_KEY =
-// "wowsp-stats-prefs", DEFAULT_STATS_PREFS.prEnabled = false,
-// DEFAULT_STATS_PREFS.sealsEnabled = true): the bare-DOM page must not import
-// the pinia store, so the prefs are re-read here with the same contract as
-// parsePrefs — a corrupt blob or unavailable localStorage falls back to the
-// defaults. The seals toggle is the PR master switch's sub-control in
-// settings, so the chips follow the same AND-composition as the webui
-// surfaces: no PR rating, no seals.
+// Local mirror of stores/statsPrefs.ts (STATS_PREFS_STORAGE_KEY =
+// "wowsp-stats-prefs"): the bare-DOM page must not import the pinia store,
+// so the prefs are re-read here with the same contract as parsePrefs — a
+// corrupt blob or unavailable localStorage falls back to the defaults.
+// The seals toggle is the PR master switch's sub-control in settings, and
+// the seal customizer adds a per-kind kill switch on top; the chips follow
+// the same AND-composition as the webui surfaces: no PR rating, no seals,
+// and a seal switched off individually never renders either.
 const SEALS_ON = (() => {
   const fallback = { pr: false, seals: true };
   try {
@@ -170,6 +170,23 @@ const SEALS_ON = (() => {
   } catch {
     return fallback.pr && fallback.seals;
   }
+})();
+// Per-kind kill switches (settings' seal customizer), read with the same
+// tolerance contract: unknown keys dropped, non-booleans ignored.
+const STAMP_KIND_LIST: readonly StampKind[] = ["miracle", "ape", "maggot", "rat", "air", "sub"];
+const SEALS_DISABLED: ReadonlySet<StampKind> = (() => {
+  const out = new Set<StampKind>();
+  try {
+    const raw = localStorage.getItem("wowsp-stats-prefs");
+    if (raw == null) return out;
+    const j = JSON.parse(raw) as { sealDisabled?: Record<string, unknown> };
+    for (const kind of STAMP_KIND_LIST) {
+      if (j?.sealDisabled?.[kind] === true) out.add(kind);
+    }
+  } catch {
+    // unreadable blob → every seal stays visible
+  }
+  return out;
 })();
 // The seal glyphs are Chinese calligraphy bitmaps — RatingStamp.tsx renders
 // nothing under a non-zh UI locale, and the overlay chips follow suit.
@@ -193,6 +210,25 @@ const STAMP_TEXT: Record<StampKind, string> = {
   air: "空中小人",
   sub: "水下小人",
 };
+
+// Custom seal pictures (settings' seal customizer → commands::stamps):
+// kind → asset-protocol URL, loaded once at startup. A kind absent from
+// this map shows the bundled glyph; the kind-keyed file name in the stamps
+// folder IS the state, so a plain list call is the whole sync.
+const CUSTOM_STAMPS: Partial<Record<StampKind, string>> = {};
+async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
+  try {
+    const files = (await invoke("stamp_list")) as Array<{ kind: string; path: string }>;
+    const { convertFileSrc } = await import("@tauri-apps/api/core");
+    for (const f of files) {
+      if ((STAMP_KIND_LIST as string[]).includes(f.kind)) {
+        CUSTOM_STAMPS[f.kind as StampKind] = convertFileSrc(f.path);
+      }
+    }
+  } catch {
+    // shell without the stamp commands / no customizations — defaults show
+  }
+}
 
 let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
@@ -266,11 +302,13 @@ function fmtDamage(avg: number): string {
 }
 
 function stampImg(kind: StampKind): string {
+  if (SEALS_DISABLED.has(kind)) return "";
   const label = STAMP_TEXT[kind];
-  return `<img class="overlay-stamp" src="${STAMP_GLYPHS[kind]}" alt="${label}" title="${label}">`;
+  const src = CUSTOM_STAMPS[kind] ?? STAMP_GLYPHS[kind];
+  return `<img class="overlay-stamp" src="${src}" alt="${label}" title="${label}">`;
 }
 
-function chipContent(name: string): string {
+function chipContent(name: string, side: "ally" | "enemy"): string {
   if (AI_NAME.test(name)) return `<span class="muted">bot</span>`;
   const st = stats.get(cacheKey(name));
   let core: string;
@@ -286,14 +324,17 @@ function chipContent(name: string): string {
     core = `${wr}<span class="sep">·</span>${dmg}`;
   }
   if (!SEALS_SHOWN) return core;
-  // Seals flank the numbers: career verdict left, composition tags right
-  // (air before sub). A name without stats yet shows no seal at all — the
-  // verdicts are derived from data the stats/composition batches bring.
-  // Hidden profiles with a clan additionally HOLD their seal until the clan
-  // verdict lands (absent map entry): a strong clan (beating the 53% gate)
-  // excuses them, and a stamp that flashes first and retracts a beat later
-  // would be worse than none. A failed verdict arrives as null and stamps
-  // fail-open, same as a clanless profile.
+  // Every seal of a side sits on ONE flank: allies carry theirs to the
+  // LEFT of the numbers, enemies to the RIGHT — no more splitting career
+  // verdict and composition tags across the chip, which read as two
+  // different players' data at tab-glance distance. Career verdict leads
+  // the group, then air, then sub. A name without stats yet shows no seal
+  // at all — the verdicts are derived from data the stats/composition
+  // batches bring. Hidden profiles with a clan additionally HOLD their
+  // seal until the clan verdict lands (absent map entry): a strong clan
+  // (beating the 53% gate) excuses them, and a stamp that flashes first
+  // and retracts a beat later would be worse than none. A failed verdict
+  // arrives as null and stamps fail-open, same as a clanless profile.
   let career: StampKind | null = null;
   if (st) {
     // Non-null clanId on a hidden profile = gated: an absent verdict
@@ -306,9 +347,11 @@ function chipContent(name: string): string {
     }
   }
   const comp = compositions.get(cacheKey(name)) ?? null;
-  const left = career ? stampImg(career) : "";
-  const right = (comp?.air ? stampImg("air") : "") + (comp?.sub ? stampImg("sub") : "");
-  return left + core + right;
+  const seals =
+    (career ? stampImg(career) : "") +
+    (comp?.air ? stampImg("air") : "") +
+    (comp?.sub ? stampImg("sub") : "");
+  return side === "ally" ? seals + core : core + seals;
 }
 
 /** A row→name payload is usable only when at least one row matched —
@@ -419,7 +462,7 @@ function render() {
           // Recognized name — exactly a roster nickname, so the stats
           // cache lookup works unchanged.
           mappedName = mapped;
-          el.innerHTML = chipContent(mapped);
+          el.innerHTML = chipContent(mapped, side);
           sunk = aliveArr?.[blockOffset + i] === false;
         } else {
           // This row's player was not recognized: stay silent rather
@@ -429,7 +472,7 @@ function render() {
       } else {
         // No recognition payload — legacy index mapping.
         mappedName = v.name;
-        el.innerHTML = chipContent(v.name);
+        el.innerHTML = chipContent(v.name, side);
       }
       if (mappedName != null && !AI_NAME.test(mappedName) && !stats.has(cacheKey(mappedName))) {
         chipsMissingStats = true;
@@ -618,7 +661,9 @@ async function start() {
 
   // Attach ALL listeners before any awaited call — the window may be shown
   // within milliseconds of creation, and an event missed during the await
-  // gap would leave the page stuck hidden.
+  // gap would leave the page stuck hidden. The custom-seal read below is
+  // therefore fire-and-forget: chips read CUSTOM_STAMPS at render time and
+  // the trailing render() picks late-loaded pictures up.
   await listen("wowsp://overlay-visibility", (e: { payload: unknown }) => {
     // The load-bearing hide: the Rust watcher flips the page itself, so
     // content vanishes even when the native window hide is delayed.
@@ -699,6 +744,11 @@ async function start() {
   } catch {
     // already running
   }
+
+  // Custom seal pictures: one fire-and-forget read (see the listener note
+  // above); a later import in the settings window only matters next battle,
+  // and a failure here costs nothing (the bundled glyphs show).
+  void loadCustomStamps(invoke).then(() => render());
 }
 
 // Start hidden: the native window is created invisible, but a dev reload or
