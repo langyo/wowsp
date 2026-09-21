@@ -73,5 +73,57 @@
   "unitDisabled": "Disabled “{name}” — files renamed with a .bak suffix.",
   "confirmUnitUninstall": "Uninstall “{name}”? All of its files (including disabled .bak copies) are removed; overwritten originals are restored.",
   "manifestOnly": "No matching files found under res_mods (installer manifest entry only).",
-  "manifestOnlyShort": "Manifest entry only"
+  "manifestOnlyShort": "Manifest entry only",
+  "experimental": "This feature is unstable and still in development — it may not work.",
+  "tex": {
+    "files": "{count} files",
+    "filesOver": "{count}+ files",
+    "moreShips": "+{count} more",
+    "cat": {
+      "gameplay": "Ship & component textures",
+      "unlocks": "Camouflage & unlock icons",
+      "content": "Game content assets",
+      "particles": "Particle effects",
+      "spaces": "Map scenes",
+      "texts": "Text & fonts",
+      "system": "System assets",
+      "camouflage": "Camouflage textures"
+    },
+    "nation": {
+      "japan": "Japan",
+      "usa": "United States",
+      "germany": "Germany",
+      "russia": "USSR",
+      "uk": "United Kingdom",
+      "france": "France",
+      "italy": "Italy",
+      "poland": "Poland",
+      "sweden": "Sweden",
+      "netherlands": "Netherlands",
+      "spain": "Spain",
+      "pan_asia": "Pan-Asia",
+      "pan_america": "Pan-America",
+      "europe": "Europe",
+      "commonwealth": "Commonwealth",
+      "china": "China",
+      "ussr": "USSR",
+      "common": "Common"
+    },
+    "species": {
+      "ship": "Ships",
+      "battleship": "Battleship",
+      "cruiser": "Cruiser",
+      "destroyer": "Destroyer",
+      "carrier": "Carrier",
+      "aircarrier": "Carrier",
+      "submarine": "Submarine",
+      "gun": "Guns",
+      "projectile": "Projectiles",
+      "torpedo": "Torpedoes",
+      "superstructure": "Superstructure",
+      "plane": "Aircraft",
+      "sensor": "Sensors",
+      "misc": "Misc"
+    }
+  }
 }

@@ -1375,6 +1375,46 @@ pub enum ModKind {
     Patch,
 }
 
+/// One file-extension bucket of a texture-override tree's content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextureFileKind {
+    /// Lowercase extension with any `.bak` toggle suffix stripped (`dds`,
+    /// `mfm`, …); files without one count as `none`.
+    pub ext: String,
+    pub count: u64,
+}
+
+/// Structured breakdown of what a texture-override tree actually covers, so
+/// the UI can say more than the bare top-level folder name (`content`,
+/// `particles`, …). Every value is a language-neutral code the frontend
+/// localizes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextureAnalysis {
+    /// Total files seen under the tree (bounded walk).
+    pub file_count: u64,
+    /// Extension buckets, largest first (`dds` dominates pure texture packs,
+    /// `mfm`/`visual`/`model` mark material & model overrides).
+    pub file_kinds: Vec<TextureFileKind>,
+    /// Path-signature categories: `gameplay`, `unlocks`, `content`,
+    /// `particles`, `spaces`, `texts`, `system`, `camouflage`.
+    pub categories: Vec<String>,
+    /// Nation folder names under `content/gameplay|unlocks` (`japan`, …).
+    pub nations: Vec<String>,
+    /// Ship/component class folders under `content/gameplay` — `ship/<class>`
+    /// collapses to the class (`battleship`, `gun`, `superstructure`, …).
+    pub species: Vec<String>,
+    /// Ship/component units parsed from texture file names
+    /// (`JSB039_Yamato_1945_Hull_a.dds` → `JSB039 Yamato 1945`), unique by
+    /// code, sorted. Empty when the tree carries no recognizable codes.
+    pub ships: Vec<String>,
+    /// Map folder names directly under `spaces/`.
+    pub space_names: Vec<String>,
+    /// True when the file budget cut the walk short — counts are lower bounds.
+    pub truncated: bool,
+}
+
 /// One classified plugin found installed under `res_mods/<version>/`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1384,6 +1424,10 @@ pub struct InstalledMod {
     /// PnF `registerShipMod(...)` ship id for skins; in-game voice-over option
     /// label for banks. `None` when the kind has no secondary identifier.
     pub detail: Option<String>,
+    /// Structured content breakdown, `kind == Textures` only (see
+    /// [`TextureAnalysis`]); `None` for every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture_analysis: Option<TextureAnalysis>,
     /// Primary path of the entry relative to the `res_mods/<version>/` root —
     /// the key the enable/uninstall commands take. Manifest-only rows (an
     /// `installed_mods.xml` entry with no matched files) key on the row name.
@@ -1438,6 +1482,10 @@ pub struct PackagePlan {
     /// Non-fatal observations: missing loader marker will be auto-created,
     /// case-variant bank folders (`Mods` vs `mods`), overwrite targets.
     pub warnings: Vec<String>,
+    /// Structured breakdown of the override trees in the plan (see
+    /// [`TextureAnalysis`]); `None` when the package carries none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture_analysis: Option<TextureAnalysis>,
 }
 
 /// Result of applying a [`PackagePlan`] to a game install.

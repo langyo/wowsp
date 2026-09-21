@@ -12,6 +12,8 @@ export type {
   AuxCacheStatus,
   ModKind,
   InstalledMod,
+  TextureFileKind,
+  TextureAnalysis,
   PackagePlanEntry,
   PackagePlan,
   InstallReport,

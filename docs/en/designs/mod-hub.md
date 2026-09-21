@@ -213,6 +213,20 @@ shared prefix), so the app shows what the installer actually installed
 instead of raw directories. Rows without matched files stay listed as
 manifest-only entries; groups no row claims keep their heuristic identity.
 
+Texture-override units (the `content/`, `particles/`, `spaces/`, … catch-all
+groups, including ones merged under a claimed manifest row) carry a
+**structured content analysis** (`textureAnalysis`, bounded walk ≤ 20k
+files): paths classify by signature (`content/gameplay/<nation>/<class>/…`
+ship & component textures, `content/unlocks/…` camo icons,
+`spaces/<map>/…` scenes, particles/texts/system), and the covered model
+units are parsed out of texture file names (`JSB039_Yamato_1945_Hull_a.dds`
+→ `JSB039 Yamato 1945`; the first `_` segment is a 2–6 capitals + 2–4
+digits unit code, the readable name stops at component words like
+Hull/Gun). Nations/classes/categories stay language-neutral codes the
+frontend localizes; the local-folder install plan reuses the same analyzer,
+and `particles`/`spaces`-style override roots are recognized package-layout
+signatures too.
+
 Each unit supports two operations:
 
 - **Temporary disable** — every file of the unit is renamed with a `.bak`

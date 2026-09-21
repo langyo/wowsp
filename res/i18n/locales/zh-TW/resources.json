@@ -73,5 +73,57 @@
   "unitDisabled": "已停用「{name}」—— 檔案已加 .bak 後綴。",
   "confirmUnitUninstall": "卸載「{name}」？將刪除其全部檔案（含停用的 .bak 副本），並還原被覆蓋的原始檔案。",
   "manifestOnly": "未在 res_mods 中找到對應檔案（僅插件清單記錄）。",
-  "manifestOnlyShort": "僅清單記錄"
+  "manifestOnlyShort": "僅清單記錄",
+  "experimental": "此功能不穩定，仍在開發中，不保證可以使用。",
+  "tex": {
+    "files": "{count} 個檔案",
+    "filesOver": "約 {count}+ 個檔案",
+    "moreShips": "+{count} 個模型",
+    "cat": {
+      "gameplay": "艦船與部件貼圖",
+      "unlocks": "塗裝與解鎖圖示",
+      "content": "遊戲內容資源",
+      "particles": "粒子特效",
+      "spaces": "地圖場景",
+      "texts": "文本與字體",
+      "system": "系統資源",
+      "camouflage": "迷彩貼圖"
+    },
+    "nation": {
+      "japan": "日本",
+      "usa": "美國",
+      "germany": "德國",
+      "russia": "蘇聯",
+      "uk": "英國",
+      "france": "法國",
+      "italy": "義大利",
+      "poland": "波蘭",
+      "sweden": "瑞典",
+      "netherlands": "荷蘭",
+      "spain": "西班牙",
+      "pan_asia": "泛亞",
+      "pan_america": "泛美",
+      "europe": "歐洲",
+      "commonwealth": "英聯邦",
+      "china": "中國",
+      "ussr": "蘇聯",
+      "common": "通用"
+    },
+    "species": {
+      "ship": "艦船",
+      "battleship": "戰列艦",
+      "cruiser": "巡洋艦",
+      "destroyer": "驅逐艦",
+      "carrier": "航空母艦",
+      "aircarrier": "航空母艦",
+      "submarine": "潛艇",
+      "gun": "火炮",
+      "projectile": "彈藥",
+      "torpedo": "魚雷",
+      "superstructure": "上層建築",
+      "plane": "艦載機",
+      "sensor": "傳感器",
+      "misc": "雜項"
+    }
+  }
 }
