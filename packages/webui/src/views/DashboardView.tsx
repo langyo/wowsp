@@ -275,9 +275,15 @@ export default defineComponent({
                 ) : null}
 
                 {/* Flat ship table — multi-key sorted by the filter chips'
-                    drag order (leftmost active chip = primary key). */}
+                    drag order (leftmost active chip = primary key). Two
+                    empty states: the range itself played nothing vs. the
+                    range has ships that the filters/search all exclude. */}
                 {filteredShips.value.length === 0 ? (
-                  <p class="dash-empty">{t("dashboard.noShipsInRange")}</p>
+                  <p class="dash-empty">
+                    {dateFiltered.value.length === 0
+                      ? t("dashboard.noShipsInRange")
+                      : t("dashboard.noShipsMatchFilter")}
+                  </p>
                 ) : (
                   <div class="dash-ship-table">
                     {filteredShips.value.map((s) => (

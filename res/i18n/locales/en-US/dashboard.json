@@ -24,6 +24,7 @@
   "avgFrags": "Avg frags",
   "lastBattle": "Last battle",
   "noShipsInRange": "No battles in this period.",
+  "noShipsMatchFilter": "No ships match the current filters.",
   "shipType": {
     "Battleship": "Battleship",
     "Cruiser": "Cruiser",

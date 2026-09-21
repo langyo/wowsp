@@ -24,6 +24,7 @@
   "avgFrags": "場均擊沉",
   "lastBattle": "最後戰鬥",
   "noShipsInRange": "該時段內沒有對局。",
+  "noShipsMatchFilter": "沒有符合當前篩選條件的艦船。",
   "shipType": {
     "Battleship": "戰列艦",
     "Cruiser": "巡洋艦",

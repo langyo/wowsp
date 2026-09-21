@@ -24,6 +24,7 @@
   "avgFrags": "平均撃沈数",
   "lastBattle": "最終戦闘",
   "noShipsInRange": "この期間の対戦はありません。",
+  "noShipsMatchFilter": "現在のフィルターに一致する艦艇はありません。",
   "shipType": {
     "Battleship": "戦艦",
     "Cruiser": "巡洋艦",

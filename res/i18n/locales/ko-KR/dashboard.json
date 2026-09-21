@@ -24,6 +24,7 @@
   "avgFrags": "평균 격침",
   "lastBattle": "마지막 전투",
   "noShipsInRange": "해당 기간에는 전투 기록이 없습니다.",
+  "noShipsMatchFilter": "현재 필터에 일치하는 함선이 없습니다.",
   "shipType": {
     "Battleship": "전함",
     "Cruiser": "순양함",

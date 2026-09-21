@@ -24,6 +24,7 @@
   "avgFrags": "场均击杀",
   "lastBattle": "最后战斗",
   "noShipsInRange": "该时段内没有对局。",
+  "noShipsMatchFilter": "没有符合当前筛选条件的舰船。",
   "shipType": {
     "Battleship": "战列舰",
     "Cruiser": "巡洋舰",
