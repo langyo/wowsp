@@ -948,9 +948,26 @@ export default defineComponent({
       resizeObs.observe(el);
     }
 
+    // Wire the model-pack cache root locally before model URLs can resolve.
+    // The production dist prunes bundled GLBs, and the shell's startup
+    // wiring is gated behind the updater's delayed probe — an early-opened
+    // stage would otherwise commit the no-model placeholder for a pack
+    // that is sitting on disk. Falls through silently when the pack is
+    // genuinely absent (setViewMode offers the download flow then).
+    async function ensurePackWired(): Promise<void> {
+      if (isModelPackReady()) return;
+      try {
+        const root = await api.resCacheRoot();
+        if (root) await initModelPack(async () => root);
+      } catch {
+        // Older shell without the command / IPC unavailable.
+      }
+    }
+
     async function loadModel() {
       const ship = props.ship;
       if (!ship) return;
+      await ensurePackWired();
       loading.value = true;
       errorMsg.value = null;
       try {
@@ -1386,8 +1403,11 @@ export default defineComponent({
           viewMode.value = "3d";
           return;
         }
-        // Lite installs ship without the model pack: fetch it on demand
-        // (the installer's done pane offers the same download up front).
+        // An on-disk pack wires silently via the same local probe loadModel
+        // uses; only a genuinely missing pack falls through to the on-demand
+        // download (lite installs — the installer's done pane offers the same
+        // download up front).
+        if (!isModelPackReady()) await ensurePackWired();
         if (!isModelPackReady()) {
           if (modelPackDownloading.value) return;
           modelPackDownloading.value = true;

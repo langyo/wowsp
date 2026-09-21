@@ -1315,6 +1315,10 @@ export const api = {
    *  Returns the cache directory path so the frontend can construct file
    *  URLs; never silently re-pulls a present-but-outdated pack. */
   ensureResPack: () => transport.invoke<string>(RPC.ensure_res_pack),
+  /** Cache root once the pack is on disk (`models/` populated), null
+   *  otherwise — local-only, so present packs wire the model asset URLs
+   *  without the manifest fetch `ensureResPack` performs. */
+  resCacheRoot: () => transport.invoke<string | null>(RPC.res_cache_root),
   // ── Resource pack: updates panel ──
   /** Local state (presence, hash stamp, size, in-flight). */
   getResStatus: () => transport.invoke<ResStatus>(RPC.get_res_status),
