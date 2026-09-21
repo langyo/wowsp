@@ -73,5 +73,57 @@
   "unitDisabled": "“{name}”을(를) 비활성화했습니다(파일에 .bak 추가).",
   "confirmUnitUninstall": "“{name}”을(를) 제거하시겠습니까? 파일(.bak 사본 포함)이 삭제되고 덮어쓰인 원본이 복원됩니다.",
   "manifestOnly": "res_mods에서 일치하는 파일을 찾을 수 없습니다(매니페스트 기록만 있음).",
-  "manifestOnlyShort": "매니페스트만"
+  "manifestOnlyShort": "매니페스트만",
+  "experimental": "이 기능은 불안정하며 아직 개발 중입니다. 정상 작동을 보장하지 않습니다.",
+  "tex": {
+    "files": "파일 {count}개",
+    "filesOver": "약 {count}+개 파일",
+    "moreShips": "+{count}개",
+    "cat": {
+      "gameplay": "함선·부품 텍스처",
+      "unlocks": "도장·언락 아이콘",
+      "content": "게임 콘텐츠 리소스",
+      "particles": "파티클 이펙트",
+      "spaces": "맵 씬",
+      "texts": "텍스트·폰트",
+      "system": "시스템 리소스",
+      "camouflage": "도장 텍스처"
+    },
+    "nation": {
+      "japan": "일본",
+      "usa": "미국",
+      "germany": "독일",
+      "russia": "소련",
+      "uk": "영국",
+      "france": "프랑스",
+      "italy": "이탈리아",
+      "poland": "폴란드",
+      "sweden": "스웨덴",
+      "netherlands": "네덜란드",
+      "spain": "스페인",
+      "pan_asia": "판아시아",
+      "pan_america": "판아메리카",
+      "europe": "유럽",
+      "commonwealth": "영연방",
+      "china": "중국",
+      "ussr": "소련",
+      "common": "공용"
+    },
+    "species": {
+      "ship": "함선",
+      "battleship": "전함",
+      "cruiser": "순양함",
+      "destroyer": "구축함",
+      "carrier": "항공모함",
+      "aircarrier": "항공모함",
+      "submarine": "잠수함",
+      "gun": "주포",
+      "projectile": "탄약",
+      "torpedo": "어뢰",
+      "superstructure": "상부 구조",
+      "plane": "함재기",
+      "sensor": "센서",
+      "misc": "기타"
+    }
+  }
 }

@@ -33,6 +33,7 @@ import {
   type ModInstallRecord,
   type ModKind,
   type PackagePlan,
+  type TextureAnalysis,
 } from "@/api";
 import { openExternal } from "@/utils/openExternal";
 import { useConfigStore } from "@/stores/config";
@@ -343,6 +344,65 @@ export default defineComponent({
       return t(`resources.kind.${kind}`);
     }
 
+    /** Localized label for a texture-analysis code; falls back to the raw
+     *  code when the locale has no entry (unknown nations, exotic dirs). */
+    function texLabel(group: "cat" | "nation" | "species", code: string): string {
+      const key = `resources.tex.${group}.${code}`;
+      const label = t(key);
+      return label === key ? code : label;
+    }
+
+    /** Compact breakdown of a texture-override tree — category / nation /
+     *  species tags, the covered ship units, file-kind counts. Shared by the
+     *  installed cards and the install plan card. */
+    function renderTexAnalysis(a: TextureAnalysis) {
+      const tags = [
+        ...a.categories.map((c) => ({
+          key: `cat-${c}`,
+          text: texLabel("cat", c),
+          cls: "tex-tag--cat",
+        })),
+        ...a.nations.map((n) => ({ key: `nat-${n}`, text: texLabel("nation", n), cls: "" })),
+        ...a.species.map((s) => ({ key: `spc-${s}`, text: texLabel("species", s), cls: "" })),
+        ...a.spaceNames.slice(0, 2).map((s) => ({ key: `space-${s}`, text: s, cls: "" })),
+      ];
+      const shownShips = a.ships.slice(0, 4);
+      const meta = [
+        t(a.truncated ? "resources.tex.filesOver" : "resources.tex.files", {
+          count: a.fileCount,
+        }),
+        ...a.fileKinds.slice(0, 4).map((k) => `${k.ext} ${k.count}`),
+      ].join(" · ");
+      return (
+        <div class="tex-analysis">
+          {tags.length > 0 && (
+            <div class="tex-analysis__tags">
+              {tags.map((tag) => (
+                <span key={tag.key} class={["tex-tag", tag.cls]}>
+                  {tag.text}
+                </span>
+              ))}
+            </div>
+          )}
+          {shownShips.length > 0 && (
+            <div class="tex-analysis__ships" title={a.ships.join("\n")}>
+              {shownShips.map((s) => (
+                <span key={s} class="tex-ship">
+                  {s}
+                </span>
+              ))}
+              {a.ships.length > shownShips.length && (
+                <span class="tex-ship tex-ship--more">
+                  {t("resources.tex.moreShips", { count: a.ships.length - shownShips.length })}
+                </span>
+              )}
+            </div>
+          )}
+          <div class="tex-analysis__meta">{meta}</div>
+        </div>
+      );
+    }
+
     // The config store hydrates the active install asynchronously — rescan
     // once the game root shows up (the mount-time scan is a no-op before it).
     watch(gameRoot, (root) => {
@@ -361,6 +421,11 @@ export default defineComponent({
           <h1 class="resources-view__title">{t("resources.title")}</h1>
         </div>
         <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+
+        <div class="resources-banner resources-banner--warn">
+          <AlertTriangle size={16} />
+          {t("resources.experimental")}
+        </div>
 
         {!gameRoot.value && (
           <div class="resources-banner resources-banner--warn">
@@ -626,6 +691,7 @@ export default defineComponent({
                                 )}
                               </div>
                               <div class="mod-card__kind">{kindLabel(m.kind)}</div>
+                              {m.textureAnalysis && renderTexAnalysis(m.textureAnalysis)}
                               {m.detail && <div class="mod-card__detail">{m.detail}</div>}
                               <div class="mod-card__path" title={m.paths.join("\n")}>
                                 {m.relPath}
@@ -722,6 +788,7 @@ export default defineComponent({
                         <span class="plan-card__detail">{plan.value.detail}</span>
                       )}
                     </div>
+                    {plan.value.textureAnalysis && renderTexAnalysis(plan.value.textureAnalysis)}
                     {plan.value.entries.length > 0 && (
                       <table class="plan-card__files">
                         <caption>{t("resources.planFiles")}</caption>

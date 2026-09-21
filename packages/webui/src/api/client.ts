@@ -946,12 +946,35 @@ export interface AuxCacheStatus {
 /** Plugin category from on-disk structure signatures (mod-formats.md). */
 export type ModKind = "voice" | "skin" | "script" | "textures" | "gui" | "patch";
 
+/** One extension bucket of a texture-override tree's content. */
+export interface TextureFileKind {
+  /** Lowercase extension, `.bak` suffix stripped (`dds`, `mfm`, …). */
+  ext: string;
+  count: number;
+}
+
+/** Structured breakdown of what a texture-override tree covers — every value
+ *  is a language-neutral code the UI localizes (nations/species/categories). */
+export interface TextureAnalysis {
+  fileCount: number;
+  fileKinds: TextureFileKind[];
+  categories: string[];
+  nations: string[];
+  species: string[];
+  /** Ship/component units parsed from file names (`JSB039 Yamato 1945`). */
+  ships: string[];
+  spaceNames: string[];
+  truncated: boolean;
+}
+
 /** One classified plugin found installed under `res_mods/<version>/`. */
 export interface InstalledMod {
   kind: ModKind;
   name: string;
   /** PnF ship id / voice-over selector label, when the format carries one. */
   detail?: string | null;
+  /** Structured content breakdown, `kind === "textures"` only. */
+  textureAnalysis?: TextureAnalysis | null;
   /** Primary res_mods-relative path — the key the unit commands take.
    *  Manifest-only rows (no files matched on disk) key on the mod name. */
   relPath: string;
@@ -984,6 +1007,8 @@ export interface PackagePlan {
   detail?: string | null;
   entries: PackagePlanEntry[];
   warnings: string[];
+  /** Structured breakdown of the override trees, when present. */
+  textureAnalysis?: TextureAnalysis | null;
 }
 
 /** Result of applying a plan to a game install. */

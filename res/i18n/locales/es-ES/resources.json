@@ -73,5 +73,57 @@
   "unitDisabled": "«{name}» desactivado: archivos renombrados con el sufijo .bak.",
   "confirmUnitUninstall": "¿Desinstalar «{name}»? Se eliminan todos sus archivos (incluidas las copias .bak desactivadas) y se restauran los originales sobrescritos.",
   "manifestOnly": "No se encontraron archivos en res_mods (solo entrada del manifiesto).",
-  "manifestOnlyShort": "solo manifiesto"
+  "manifestOnlyShort": "solo manifiesto",
+  "experimental": "Esta función es inestable y aún está en desarrollo; no se garantiza que funcione.",
+  "tex": {
+    "files": "{count} archivos",
+    "filesOver": "{count}+ archivos",
+    "moreShips": "+{count}",
+    "cat": {
+      "gameplay": "Texturas de barcos y componentes",
+      "unlocks": "Camuflajes e iconos",
+      "content": "Recursos del juego",
+      "particles": "Efectos de partículas",
+      "spaces": "Escenarios de mapas",
+      "texts": "Textos y fuentes",
+      "system": "Recursos del sistema",
+      "camouflage": "Texturas de camuflaje"
+    },
+    "nation": {
+      "japan": "Japón",
+      "usa": "Estados Unidos",
+      "germany": "Alemania",
+      "russia": "URSS",
+      "uk": "Reino Unido",
+      "france": "Francia",
+      "italy": "Italia",
+      "poland": "Polonia",
+      "sweden": "Suecia",
+      "netherlands": "Países Bajos",
+      "spain": "España",
+      "pan_asia": "Pan-Asia",
+      "pan_america": "Panamérica",
+      "europe": "Europa",
+      "commonwealth": "Mancomunidad",
+      "china": "China",
+      "ussr": "URSS",
+      "common": "Común"
+    },
+    "species": {
+      "ship": "Barcos",
+      "battleship": "Acorazados",
+      "cruiser": "Cruceros",
+      "destroyer": "Destructores",
+      "carrier": "Portaaviones",
+      "aircarrier": "Portaaviones",
+      "submarine": "Submarinos",
+      "gun": "Cañones",
+      "projectile": "Proyectiles",
+      "torpedo": "Torpedos",
+      "superstructure": "Superestructuras",
+      "plane": "Aviones",
+      "sensor": "Sensores",
+      "misc": "Varios"
+    }
+  }
 }
