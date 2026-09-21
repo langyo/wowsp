@@ -5150,11 +5150,17 @@ export default defineComponent({
         {/* Enlarged minimap overlay: trails + class glyphs, closeable */}
         {minimapZoom.value ? (
           <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
-            <div class="holo-map__mmzoom-head">
+            {/* The pill is chrome, not scrim — clicking its labels must not
+                close the view (only the scrim around the map does). */}
+            <div
+              class={[
+                "holo-map__mmzoom-head",
+                tacticalOn.value ? "holo-map__mmzoom-head--tac" : "",
+              ]}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            >
               <span>{i18nT("replay.minimap.zoom")}</span>
-              {/* click guard: the head sits inside the zoom overlay, which
-                  closes on any unhandled click */}
-              <span onClick={(e: MouseEvent) => e.stopPropagation()}>
+              <span>
                 <HSwitch
                   modelValue={minimapShowTrails.value}
                   onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
@@ -5162,7 +5168,7 @@ export default defineComponent({
                   {i18nT("replay.minimap.trails")}
                 </HSwitch>
               </span>
-              <span onClick={(e: MouseEvent) => e.stopPropagation()}>
+              <span>
                 <HSwitch
                   modelValue={tacticalOn.value}
                   onUpdate:modelValue={(v: boolean) => { tacticalOn.value = v; }}
@@ -5174,7 +5180,13 @@ export default defineComponent({
             {/* Stage: base map canvas + tactical annotation layer. Clicks on
                 the map no longer close the overlay (drawing/selection needs
                 them); the scrim around it still does. */}
-            <div class="holo-map__mmzoom-stage" onClick={(e: MouseEvent) => e.stopPropagation()}>
+            <div
+              class={[
+                "holo-map__mmzoom-stage",
+                tacticalOn.value ? "holo-map__mmzoom-stage--tac" : "",
+              ]}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            >
               <canvas
                 ref={zoomCanvas}
                 width={TACTICAL_SIZE}

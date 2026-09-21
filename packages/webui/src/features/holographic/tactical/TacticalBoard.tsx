@@ -37,6 +37,7 @@ import {
   commitShape,
   commitText,
   hitTestElement,
+  markerPoseAt,
   moveElement,
   parseDoc,
   presentParkTarget,
@@ -184,7 +185,10 @@ export default defineComponent({
     let raf = 0;
     function frame(): void {
       raf = requestAnimationFrame(frame);
-      renderNow();
+      // While recording, drop the crop mask from the live overlay too — the
+      // recorder composes this very canvas, so the dim rectangle would burn
+      // into the video (WYSIWYG: live view == recorded frames).
+      renderNow(recorder?.recording ? null : undefined);
       if (recorder?.recording) {
         recorder.tick();
         const dur = props.getDuration();
@@ -553,7 +557,11 @@ export default defineComponent({
       const target = hitTest(hit.p, hit.p2);
       if (!target) return;
       if (target.kind === "text") openTextEditor(target.at, target.id);
-      else if (target.kind === "marker") openTextEditor(target.at, target.id);
+      else if (target.kind === "marker") {
+        // Anchor at the marker's pose right now (a scripted one may be
+        // anywhere along its route, not at its route start).
+        openTextEditor(markerPoseAt(target, props.getTime()).at, target.id);
+      }
     }
 
     /** Topmost element under a world point at the current time. */
@@ -571,7 +579,7 @@ export default defineComponent({
     function openTextEditor(at: Vec2, id: string | null): void {
       const el = id ? store.elements.value.find((x) => x.id === id) : null;
       textEdit.value = {
-        at: el?.kind === "text" || el?.kind === "marker" ? el.at : at,
+        at,
         value: el?.kind === "text" ? el.text : el?.kind === "marker" ? el.label : "",
         id,
       };
@@ -625,8 +633,16 @@ export default defineComponent({
       e: "eraser",
     };
 
+    /** Any hikari modal/frame stacked above the map — while one is open the
+     *  board's shortcuts (tool letters, [ ] seeks, Ctrl+Z) must stay dead
+     *  instead of acting on an invisible surface. */
+    function otherModalOpen(): boolean {
+      return document.querySelector(".hk-modal-content") != null;
+    }
+
     function onKeydown(e: KeyboardEvent): void {
       if (!props.editMode) return;
+      if (otherModalOpen()) return;
       const target = e.target as HTMLElement | null;
       const typing =
         target instanceof HTMLInputElement ||
@@ -651,8 +667,11 @@ export default defineComponent({
         return;
       }
       if (typing) return;
-      // Space = temporary hand tool (hold to pan, release to restore).
+      // Space = temporary hand tool (hold to pan, release to restore) — but
+      // never steal it from a focused button/select (keyboard activation).
       if (e.key === " ") {
+        const tag = target?.tagName;
+        if (tag === "BUTTON" || tag === "SELECT" || tag === "TEXTAREA") return;
         e.preventDefault();
         spacePanning.value = true;
         return;
@@ -721,7 +740,9 @@ export default defineComponent({
         const blob = await canvasToBlob(canvas, s.format === "webp" ? "image/webp" : "image/png");
         const saved = await saveExportBlob(blob, defaultName(s.format), "Image", s.format);
         if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
-        pendingRegion.value = null;
+        // Only a crop export consumes the crop — a full-view snapshot keeps
+        // the pending region for further cropped exports.
+        if (crop != null) pendingRegion.value = null;
       } catch (e) {
         toast.error(String((e as Error)?.message ?? e));
       } finally {
@@ -751,6 +772,9 @@ export default defineComponent({
         toast.error(i18nT("replay.tactical.record.unsupported"));
         return;
       }
+      pendingRegion.value = null; // a crop box must not record into the take
+      regionMode.value = false;
+      drag.value = null;
       const rec = new TacticalRecorder(
         (ctx, size) => composePaintedFrame(ctx, size, props.getTime()),
         1280,
@@ -810,6 +834,12 @@ export default defineComponent({
 
     function goToStep(i: number): void {
       if (offlineRendering.value) return;
+      // Manual navigation takes control from the auto-advance dwell.
+      if (presentDwellTimer != null) {
+        clearTimeout(presentDwellTimer);
+        presentDwellTimer = null;
+        if (presentMode.value) props.pause();
+      }
       const s = stepsSorted.value[i];
       if (!s) return;
       props.seekTo(s.t);
@@ -952,7 +982,7 @@ export default defineComponent({
         drag.value = null;
         regionMode.value = false;
         pendingRegion.value = null;
-        textEdit.value = null;
+        if (textEdit.value) commitTextEdit();
         exitPresentMode();
         if (recorder) {
           const rec = recorder;

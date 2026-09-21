@@ -17,7 +17,7 @@
   padding: 0.6rem 0.6rem 0.5rem;
   background: var(--holo-hud-chip);
   border: 1px solid var(--holo-hud-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   backdrop-filter: blur(8px);
   color: var(--holo-hud-text);
   cursor: default;
@@ -65,7 +65,7 @@
     transform: scale(1.08);
   }
   &--on {
-    outline: 2px solid rgba(0, 195, 255, 0.95);
+    outline: 2px solid rgb(var(--tac-accent-rgb) / 0.95);
     outline-offset: 1px;
   }
 }
@@ -92,8 +92,8 @@
     background: var(--holo-hud-text);
   }
   &--on {
-    border-color: rgba(0, 195, 255, 0.9);
-    background: rgba(0, 195, 255, 0.12);
+    border-color: rgb(var(--tac-accent-rgb) / 0.9);
+    background: rgb(var(--tac-accent-rgb) / 0.12);
   }
 }
 
@@ -120,8 +120,8 @@
     border-top-style: dotted;
   }
   &--on {
-    border-color: rgba(0, 195, 255, 0.9);
-    background: rgba(0, 195, 255, 0.12);
+    border-color: rgb(var(--tac-accent-rgb) / 0.9);
+    background: rgb(var(--tac-accent-rgb) / 0.12);
   }
 }
 

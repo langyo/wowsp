@@ -2,18 +2,31 @@
 // nav) picks the active section; the right pane renders that section's
 // titled card. The modal is wide enough for the two-column layout while
 // form controls keep a sane size.
+//
+// Scroll ownership: the SHELL below is the only scroller (the pane), so
+// every section's scrollbar sits at the same edge. HkModal's body scroller
+// is an overlay scrollbar floating over the content — if the shell ever
+// exceeded it, sections would scroll a detached floating thumb instead of
+// the pane's edge bar. The `settings-modal-host` contentClass (see the
+// HModal usage) stretches the shell to exactly the body's visible height,
+// which makes the outer scroller mathematically idle; sections themselves
+// render plain content cards and never manage scrolling.
+
+/* Host override (via HModal contentClass): give the body inner a definite
+   height so the shell's fit is computed against the real scroll area. */
+.settings-modal-host .hk-modal-body-inner {
+  height: 100%;
+}
 
 .settings-modal {
   display: flex;
   align-items: stretch;
   gap: 1.25rem;
-  /* Fixed tall height — must fit inside HkModal's body scroller (70vh cap
-     minus 1.5rem body padding top+bottom, with slack). If it ever exceeded
-     the scroller, the OUTER region would scroll first (dragging the rail
-     with it) before the pane's own scrollbar engages. Fixed height also
-     keeps the window from resizing when switching sections. No min-height
-     guard: at very short window sizes the pane just scrolls internally. */
-  height: calc(70vh - 4.5rem);
+  /* Constant shell height, sized under the body scroller's inner padding
+     (1.5rem top + bottom) with slack: the shell ALWAYS fits, so HkModal's
+     floating overlay scrollbar stays idle and the pane's own edge bar is
+     the only scrollbar — at a stable frame height, whatever the section. */
+  height: calc(70vh - 6.5rem);
 
   /* ── section rail (mirrors the main sidebar nav) ── */
   &__rail {

@@ -501,6 +501,15 @@ export default defineComponent({
       attributions: t("settings.attributions"),
     }));
     const sections = computed(() => Object.keys(sectionLabels.value) as SettingsSection[]);
+    /** Content pane — section switches restart it from the top (arriving on
+     *  a half-scrolled card reads as a broken page). */
+    const paneRef = ref<HTMLElement | null>(null);
+    watch(
+      () => ui.section,
+      () => {
+        if (paneRef.value) paneRef.value.scrollTop = 0;
+      },
+    );
 
     return () => {
       // Staged-or-persisted notch for the DPI slider/readout (null = Auto)
@@ -515,6 +524,7 @@ export default defineComponent({
         onUpdate:modelValue={(v: boolean) => (v ? ui.show() : ui.hide())}
         title={t("settings.title")}
         width="58rem"
+        contentClass="settings-modal-host"
       >
         <div class="settings-modal">
           {/* section rail — same visual language as the main sidebar's nav */}
@@ -537,7 +547,7 @@ export default defineComponent({
             })}
           </nav>
 
-          <div class="settings-modal__pane">
+          <div class="settings-modal__pane" ref={paneRef}>
           {ui.section === "language" ? (
           <>
           {/* language — two independent dropdowns: UI (app interface) vs data

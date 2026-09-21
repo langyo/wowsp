@@ -15,9 +15,9 @@ import type {
   TextElement,
   Vec2,
 } from "./types";
+import { TACTICAL_DOC_VERSION } from "./types";
 import {
   TACTICAL_MAX_SCALE,
-  boundsOf,
   distToPolyline,
   distToSegment,
   pointInEllipse,
@@ -176,11 +176,27 @@ export function elementProgress(el: TacticalElement, t: number): number {
   return Math.max(0, Math.min(1, (t - el.t0) / drawIn));
 }
 
+/** Full-progress smoothed freehand cache — hit-tests and the selection
+ *  outline re-derive the polyline far more often than the render loop, so
+ *  they share one memo per immutable element (edits replace the object,
+ *  which invalidates naturally). */
+const smoothHitCache = new WeakMap<object, Vec2[]>();
+
+function smoothedFreehand(el: ShapeElement): Vec2[] {
+  let out = smoothHitCache.get(el);
+  if (!out) {
+    out = smoothPolyline(el.points);
+    smoothHitCache.set(el, out);
+  }
+  return out;
+}
+
 /** World points an element occupies at time t (for hit-tests + selection
  *  outline). Freehand returns the SMOOTHED polyline (what the user sees). */
 export function elementPoints(el: TacticalElement, t: number): Vec2[] {
   switch (el.kind) {
     case "freehand": {
+      if (elementProgress(el, t) >= 1) return smoothedFreehand(el);
       const partial = slicePolylineByFraction(el.points, elementProgress(el, t));
       return partial.length >= 2 ? smoothPolyline(partial) : partial;
     }
@@ -267,12 +283,6 @@ export function moveElement<T extends TacticalElement>(el: T, dx: number, dz: nu
   }
 }
 
-/** Bounding box for the selection outline (world coords). */
-export function elementBounds(el: TacticalElement, t: number) {
-  if (el.kind === "replayPath") return null;
-  return boundsOf(elementPoints(el, t));
-}
-
 // ── Persistence ─────────────────────────────────────────────────────────
 
 /** FNV-1a over the replay path — stable, non-crypto, CJK-safe localStorage key. */
@@ -286,13 +296,13 @@ export function docStorageKey(replayPath: string): string {
 }
 
 export function serializeDoc(doc: TacticalDoc): string {
-  return JSON.stringify(doc);
+  return JSON.stringify({ ...doc, version: TACTICAL_DOC_VERSION });
 }
 
 export function parseDoc(json: string): TacticalDoc | null {
   try {
     const d = JSON.parse(json) as Partial<TacticalDoc>;
-    if (d && d.version === 1 && Array.isArray(d.elements)) {
+    if (d && d.version === TACTICAL_DOC_VERSION && Array.isArray(d.elements)) {
       // Sanitize + normalize: a corrupted/hand-edited localStorage entry
       // must neither brick the render loop nor degrade silently — drop
       // malformed elements and backfill safe defaults for optional fields.
