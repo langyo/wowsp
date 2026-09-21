@@ -111,9 +111,10 @@ function toUrl(
   cased: string,
 ): string {
   // The Tauri asset protocol also works under `tauri dev` (the vite origin
-  // runs inside the tauri webview), and `fetchModelResource` prefers the
-  // embedded copy first for asset URLs — so the cache only wins when the
-  // build has no bundled file, which is exactly the desired precedence.
+  // runs inside the tauri webview), and fetchModelResource prefers the pack
+  // cache for asset URLs (the dist only carries the 2D subset since the
+  // prune-baked-glb step) — so the embedded rung only wins for files the
+  // cache lacks, which is exactly the desired precedence.
   if (cacheRoot && _convertFileSrc) {
     return _convertFileSrc(`${cacheRoot}/models/${kind}/${cased}.glb`);
   }
@@ -538,25 +539,79 @@ function getLoader(): GLTFLoader {
  * pseudo-hosts through the proxy (Clash-style PACs only bypass bare
  * `localhost`) — those failures surface as raw "Failed to fetch"
  * TypeErrors; non-ok responses cover an incomplete cache.
+ *
+ * A miss can never be detected via the status code alone: Tauri's asset
+ * resolver answers ANY unknown frontendDist path with the index.html SPA
+ * fallback under HTTP 200 (`get_asset`'s `{path}.html` → `{path}/index.html`
+ * → `index.html` ladder). The dist hasn't carried the GLBs since the
+ * prune-baked-glb build step, so every embedded rung (and every plain
+ * `/models/...` URL built while the pack cache is unwired) "succeeds" with
+ * the app's own HTML — which then dies inside GLTFLoader as
+ * `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`. Each candidate
+ * is therefore validated by its payload before it counts as a hit (GLB
+ * magic / JSON value start / non-HTML), and anything else — a non-2xx, a
+ * poisoned 200, or a transport-level failure — falls through to the next
+ * candidate instead of poisoning the caller.
  */
+function payloadMatches(url: string, resp: Response, bytes: ArrayBuffer): boolean {
+  // Order matters: Tauri's asset protocol labels REAL .glb files text/html
+  // (its mime table has no .glb entry and the content sniff can't match one
+  // either, so the Html fallback kicks in), so the content-type gate must
+  // only arbitrate extensions whose payload we cannot sniff ourselves.
+  const path = (decodeURIComponent(url).split(/[?#]/)[0] ?? url).toLowerCase();
+  if (path.endsWith(".glb")) {
+    if (bytes.byteLength < 4) return false;
+    const head = new Uint8Array(bytes, 0, 4);
+    // "glTF" — the binary container magic every baked model starts with.
+    return head[0] === 0x67 && head[1] === 0x6c && head[2] === 0x54 && head[3] === 0x46;
+  }
+  if (path.endsWith(".json")) {
+    const head = new TextDecoder().decode(bytes.slice(0, 64));
+    return /^\s*[[{]/.test(head);
+  }
+  return !(resp.headers.get("content-type") ?? "").includes("text/html");
+}
+
+/** One fetch attempt: a validated hit, or the human-readable reason it
+ *  missed (status / SPA fallback / transport error) for the caller to log
+ *  and step past. */
+async function fetchCandidate(
+  url: string,
+): Promise<{ resp: Response; bytes: ArrayBuffer } | string> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return `HTTP ${resp.status} fetching ${url}`;
+    const bytes = await resp.arrayBuffer();
+    if (!payloadMatches(url, resp, bytes)) {
+      return `${url}: missing file answered by the index.html SPA fallback`;
+    }
+    return { resp, bytes };
+  } catch (e) {
+    return `${url}: ${(e as Error).message ?? String(e)}`;
+  }
+}
+
 export async function fetchModelResource(url: string): Promise<Response> {
   const isAsset = url.startsWith("http://asset.localhost/");
-  if (!isAsset) return fetch(url);
   // The asset URL is percent-encoded (backslashes and slashes alike), so
   // the cache-relative tail must be recovered from the DECODED form.
-  const embedded = "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "");
-  try {
-    const fromCache = await fetch(url);
-    if (fromCache.ok) return fromCache;
-    console.warn(
-      `[modelLoader] cache fetch ${fromCache.status}, falling back to the embedded copy: ${embedded}`,
-    );
-  } catch (e) {
-    console.warn(
-      `[modelLoader] cache fetch failed (${e}), falling back to the embedded copy: ${embedded}`,
-    );
+  const embedded = isAsset
+    ? "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "")
+    : url;
+  const candidates = isAsset ? [url, embedded] : [url];
+  const misses: string[] = [];
+  for (const candidate of candidates) {
+    const attempt = await fetchCandidate(candidate);
+    if (typeof attempt !== "string") {
+      return new Response(attempt.bytes, {
+        status: attempt.resp.status,
+        headers: attempt.resp.headers,
+      });
+    }
+    misses.push(attempt);
+    console.warn(`[modelLoader] ${attempt}, trying next source`);
   }
-  return fetch(embedded);
+  throw new Error(`no usable source for ${url} (${misses.join("; ")})`);
 }
 
 function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
