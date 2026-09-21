@@ -197,7 +197,12 @@ export default defineComponent({
     let minimapCtx: CanvasRenderingContext2D | null = null;
     let seaMat: THREE.MeshBasicMaterial | null = null;
     let gridMat: THREE.LineBasicMaterial | null = null;
-    let themeMq: MediaQueryList | null = null;
+    /** Light/dark follows the site theme (hikari's root data-mode attr),
+     *  not the OS preference — watch the attribute, not a media query. */
+    let themeObs: MutationObserver | null = null;
+    function siteModeIsLight(): boolean {
+      return document.documentElement.dataset.mode === "light";
+    }
 
     interface ShipNode {
       root: THREE.Group; rel: number; track: Track; die?: number;
@@ -229,7 +234,7 @@ export default defineComponent({
     }
 
     function applyTheme() {
-      const light = themeMq?.matches ?? false;
+      const light = siteModeIsLight();
       // Sea + grid follow the site theme: light frosted sea in light mode,
       // deep abyss in dark mode — never a black pool on a white page.
       if (seaMat) {
@@ -599,8 +604,8 @@ export default defineComponent({
     async function boot() {
       if (!host.value) return;
       reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      themeMq = window.matchMedia("(prefers-color-scheme: light)");
-      themeMq.addEventListener("change", applyTheme);
+      themeObs = new MutationObserver(applyTheme);
+      themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode"] });
 
       let bundle: BattleBundle;
       try {
@@ -816,7 +821,8 @@ export default defineComponent({
       ro?.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      themeMq?.removeEventListener("change", applyTheme);
+      themeObs?.disconnect();
+      themeObs = null;
       for (const m of materials) m.dispose();
       for (const g of geometries) g.dispose();
       for (const tx of textures) tx.dispose();
