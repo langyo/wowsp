@@ -296,6 +296,7 @@ fn main() {
             commands::gameparams::get_ship_gameparams,
             commands::gameparams::get_upgrade_prices,
             commands::model_pack::ensure_res_pack,
+            commands::model_pack::res_cache_root,
             commands::model_pack::get_res_status,
             commands::model_pack::check_res_update,
             commands::model_pack::res_download,

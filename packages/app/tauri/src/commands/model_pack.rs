@@ -1265,6 +1265,20 @@ pub async fn ensure_res_pack() -> Result<String, String> {
     ensure_pack().await
 }
 
+/// Local-only model-pack cache root: the cache dir once the pack is on
+/// disk (`models/` populated), `None` otherwise. Wiring the asset protocol
+/// through this skips the remote manifest check `ensure_res_pack` performs
+/// — a present pack serves models without touching the network.
+#[tauri::command]
+pub async fn res_cache_root() -> Result<Option<String>, String> {
+    let cache = cache_root()?;
+    if dir_populated(&cache.join("models")) {
+        Ok(Some(cache.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
