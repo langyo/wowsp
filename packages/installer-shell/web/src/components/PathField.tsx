@@ -4,6 +4,8 @@ import { ChevronDown, FolderOpen } from "lucide-vue-next";
 
 import { HAffixPicker, HButton, HInput, type HkAffixOption } from "@celestia-island/hikari";
 
+import type { PathFieldStrings } from "../i18n";
+
 import "./PathField.scss";
 
 /** One enumerated drive, as the backend's `list_drives` reports it. */
@@ -12,16 +14,6 @@ export interface DriveInfo {
   kind: string;
   label?: string | null;
 }
-
-/** Drive-kind → picker meta text (the installer has no i18n layer). */
-const KIND_LABELS: Record<string, string> = {
-  removable: "可移动磁盘",
-  fixed: "本地磁盘",
-  network: "网络磁盘",
-  cdrom: "光盘",
-  ramdisk: "RAM 盘",
-  unknown: "未知磁盘",
-};
 
 /** Windows drive-letter prefix (`X:\` / `X:/`), case-insensitive. */
 const DRIVE_PREFIX = /^[A-Za-z]:[\\/]/;
@@ -44,6 +36,9 @@ export default defineComponent({
     modelValue: { type: String, default: "" },
     disabled: { type: Boolean, default: false },
     drives: { type: Array as PropType<DriveInfo[]>, default: () => [] },
+    /** Localized labels (browse button, picker chrome, drive kinds) —
+     *  resolved by the host from the wizard locale each render. */
+    labels: { type: Object as PropType<PathFieldStrings>, required: true },
   },
   emits: {
     "update:modelValue": (_value: string) => true,
@@ -70,7 +65,7 @@ export default defineComponent({
       props.drives.map((drive) => ({
         key: drive.mount,
         label: drive.mount,
-        meta: KIND_LABELS[drive.kind] ?? KIND_LABELS.unknown,
+        meta: props.labels.kinds[drive.kind] ?? props.labels.kinds.unknown,
         keywords: drive.label ?? "",
       })),
     );
@@ -113,17 +108,17 @@ export default defineComponent({
                 selected={selectedMount.value}
                 disabled={props.disabled}
                 chipClass="path-field-chip"
-                chipLabel="选择安装所在的磁盘"
-                title="选择磁盘"
-                searchPlaceholder="搜索磁盘或卷标"
-                emptyText="未找到匹配的磁盘"
+                chipLabel={props.labels.chipLabel}
+                title={props.labels.pickerTitle}
+                searchPlaceholder={props.labels.searchPlaceholder}
+                emptyText={props.labels.emptyText}
                 onSelect={pickMount}
               >
                 {{
                   chip: () => (
                     <>
                       <span class="path-field-chip__mount" data-empty={!selectedMount.value || undefined}>
-                        {selectedMount.value || "磁盘"}
+                        {selectedMount.value || props.labels.diskChip}
                       </span>
                       <ChevronDown size={12} class="path-field-chip__caret" aria-hidden="true" />
                     </>
@@ -139,7 +134,7 @@ export default defineComponent({
           onClick={() => emit("browse")}
         >
           <FolderOpen size={14} />
-          浏览…
+          {props.labels.browse}
         </HButton>
       </div>
     );

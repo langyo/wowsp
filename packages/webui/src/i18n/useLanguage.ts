@@ -34,6 +34,9 @@
  */
 import { computed, ref } from "vue";
 
+import { RPC } from "@/rpc";
+import { isTauri, transport } from "@/transport";
+
 import { i18n, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
 
 const UI_KEY = "wowsp-ui-locale";
@@ -129,6 +132,48 @@ function loadUiLocale(): Locale {
   return (i18n.global.locale as unknown as { value: Locale }).value as Locale;
 }
 
+/** Installer-wizard locale → canonical UI locale. The installer shell
+ *  offers four wizard locales (shun's set); each seeds the UI locale whose
+ *  copy matches it. Anything else is unmappable and ignored by the seed. */
+const INSTALLER_LOCALE_TO_UI: Record<string, Locale> = {
+  "zh-Hans": "zh-CN",
+  "zh-Hant": "zh-TW",
+  en: "en-US",
+  ru: "ru-RU",
+};
+
+/** Map an installer-wizard locale onto a UI locale, or null when unknown. */
+export function installerLocaleToUi(locale: string): Locale | null {
+  return INSTALLER_LOCALE_TO_UI[locale] ?? null;
+}
+
+/**
+ * First-startup seed: when the user has never picked a UI locale in the
+ * app (no `wowsp-ui-locale` in localStorage), adopt the language the
+ * installer wizard ran under — the app reads it from the on-disk install
+ * manifest via the `installer_language` command. The seed NEVER overrides
+ * a user's own choice: it runs only while the key is absent (re-checked
+ * after the IPC round-trip) and is never persisted, so the system-locale
+ * fallback stays in charge the moment the user picks (or declines to pick)
+ * inside the app. Any failure — plain-browser build, older installer
+ * without the command — keeps the existing locale untouched.
+ */
+export async function seedUiLocaleFromInstaller(): Promise<void> {
+  if (localStorage.getItem(UI_KEY)) return;
+  if (!isTauri()) return;
+  try {
+    const raw = await transport.invoke<string | null>(RPC.installer_language);
+    if (localStorage.getItem(UI_KEY)) return;
+    const seeded = raw ? installerLocaleToUi(raw) : null;
+    if (seeded && seeded !== uiLocale.value) {
+      uiLocale.value = seeded;
+      setLocale(seeded);
+    }
+  } catch {
+    // Not available (mock backend / old installer) — keep the fallback.
+  }
+}
+
 function loadDataLanguage(): string {
   const saved = localStorage.getItem(DATA_KEY);
   if (saved && isLangLoc(saved)) return saved;
@@ -146,6 +191,10 @@ const dataLanguage = ref<string>(loadDataLanguage());
 
 // Apply the persisted UI locale to the i18n instance on load.
 setLocale(uiLocale.value);
+
+// Consult the installer seed once, after the saved/system resolution ran:
+// it can only ever upgrade a truly-first startup, never a stored choice.
+void seedUiLocaleFromInstaller();
 
 /** The effective data language is always the explicitly selected one
  *  (or the auto-determined one from first startup). */
