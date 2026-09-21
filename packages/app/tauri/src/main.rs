@@ -21,6 +21,8 @@ mod paths;
 mod test_harness;
 
 use std::sync::Arc;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{Emitter, Manager, WindowEvent};
 use tracing_subscriber::EnvFilter;
@@ -69,6 +71,13 @@ fn main() {
             .expect("spawn signal thread");
     }
 
+    // Corner preference last pushed to DWM for the main window (true =
+    // system default / rounded): the window starts windowed, i.e. rounded.
+    // Lets the resize handler below skip redundant DWM calls during the
+    // per-frame Resized storm of an interactive drag.
+    #[cfg(target_os = "windows")]
+    let corner_rounded = AtomicBool::new(true);
+
     tauri::Builder::default()
         // Remote ship portraits ride the proxy-aware, disk-cached `media`
         // scheme instead of the webview hitting the WG CDN directly (see
@@ -94,6 +103,17 @@ fn main() {
                 tracing::info!(window = %window.label(), "window close requested → emitting close-requested event to frontend");
                 api.prevent_close();
                 let _ = window.app_handle().emit("close-requested", ());
+            }
+            // Maximized borderless windows keep DWM's rounded corners on
+            // Windows 11 (DWM only squares them for windows with a real
+            // caption), leaving a notch in each corner of the maximized
+            // frame. Only the main window is a resizable frameless surface —
+            // the overlay pins DONOTROUND for good in overlay.rs.
+            #[cfg(target_os = "windows")]
+            if let WindowEvent::Resized(_) = event {
+                if window.label() == "main" {
+                    sync_window_corner_rounding(window, &corner_rounded);
+                }
             }
         })
         .setup(|app| {
@@ -341,3 +361,47 @@ fn main() {
 /// window-event closure above.
 #[allow(dead_code)]
 type _Shared<T> = Arc<T>;
+
+/// Square the main window's corners while it is maximized, restore the system
+/// default when it is not.
+///
+/// Windows 11 rounds the corners of every top-level window through DWM, but it
+/// only squares them back on its own for windows it tracks as maximized — the
+/// decorated ones. `decorations: false` windows keep the rounding through a
+/// maximize, so the maximized frame ends up with a notch in each corner where
+/// the desktop bleeds through. Push the corner preference explicitly instead:
+/// `DONOTROUND` while maximized, `DEFAULT` (honors the user's OS-wide corner
+/// setting) once restored. Overlay windows never pass through here — they pin
+/// `DONOTROUND` permanently in `overlay.rs`.
+#[cfg(target_os = "windows")]
+fn sync_window_corner_rounding(win: &tauri::Window, rounded: &AtomicBool) {
+    use windows::Win32::Graphics::Dwm::{
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
+    };
+
+    let should_round = !win.is_maximized().unwrap_or(false);
+    if rounded.load(Ordering::Relaxed) == should_round {
+        return;
+    }
+    let preference = if should_round {
+        DWMWCP_DEFAULT
+    } else {
+        DWMWCP_DONOTROUND
+    };
+    if let Ok(hwnd) = win.hwnd() {
+        let pushed = unsafe {
+            DwmSetWindowAttribute(
+                windows::Win32::Foundation::HWND(hwnd.0),
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &(preference.0) as *const _ as *const core::ffi::c_void,
+                4,
+            )
+        };
+        // Commit the cache only after a successful push: a failure (e.g. the
+        // attribute is unsupported pre-Win11) leaves the cache stale so the
+        // next Resized retries instead of desyncing.
+        if pushed.is_ok() {
+            rounded.store(should_round, Ordering::Relaxed);
+        }
+    }
+}

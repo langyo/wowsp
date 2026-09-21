@@ -3,3 +3,13 @@
 .app-titlebar {
   display: contents;
 }
+
+/* While the window is maximized the native frame is square (the shell
+   squares DWM's rounded corners in main.rs), so the close button's hover
+   fill must drop the windowed top-right radius hikari keeps on it —
+   otherwise the red fill rounds away from a now-square window corner.
+   display:contents still participates in the DOM tree, so the descendant
+   selector reaches the hikari bar despite producing no box. */
+.app-titlebar--maximized .hk-titlebar-btn-close {
+  border-radius: 0;
+}
