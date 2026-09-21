@@ -16,6 +16,7 @@ import {
   HCheckbox,
   HProgressBar,
   HScrollContainer,
+  HSelect,
   HSelectionGrid,
   HTimeline,
 } from "@celestia-island/hikari";
@@ -24,6 +25,13 @@ import AnnouncementCard from "./components/AnnouncementCard";
 import AppTitleBar from "./components/AppTitleBar";
 import PathField, { type DriveInfo } from "./components/PathField";
 import LogPane, { type LogLine } from "./components/LogPane";
+import {
+  isInstallerLocale,
+  LOCALE_OPTIONS,
+  resolveSystemLocale,
+  strings,
+  type InstallerLocale,
+} from "./i18n";
 import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 
 /**
@@ -84,36 +92,20 @@ interface FlowEventPayload {
   };
 }
 
-const MODE_ITEMS = [
-  { id: "local", title: "安装到本机", description: "标准单用户安装，含开始菜单快捷方式与自动更新。", badge: "推荐", icon: Monitor },
-  { id: "usb", title: "U 盘（网吧模式）", description: "便携副本放在可移动磁盘上，无注册表项，数据全部留在盘内。", icon: Usb },
-];
+const MODE_ICONS = { local: Monitor, usb: Usb } as const;
 
-const HINTS: Record<Mode, string> = {
-  local: "数据写入 %APPDATA%，可自动更新；卸载信息会登记到系统。",
-  usb: "检测到可移动磁盘时自动定位；否则回退到本机路径。",
-};
-
-const FLAVOR_LABELS: Record<string, string> = {
-  full: "完整版 · 含 2D/3D 模型资源包",
-  "full-webview2": "完整版 · 含 2D/3D 模型资源包与 WebView2 运行时",
-};
-
-// Quick-candidate row: label + glyph per candidate kind; drive
-// candidates show the path itself (a row of drive roots reads better
-// than a bare "磁盘").
+// Quick-candidate row: label + glyph per candidate kind; drive candidates
+// show the path itself (a row of drive roots reads better than a bare
+// "磁盘"). The two product nouns are locale-independent.
 const CANDIDATE_META: Record<string, { label: string; icon: typeof HardDrive }> = {
   appdata: { label: "AppData", icon: AppWindow },
   "program-files": { label: "Program Files", icon: HardDrive },
   drive: { label: "", icon: HardDrive },
 };
 
-const STEPS: { key: StepKey; label: string }[] = [
-  { key: "mode", label: "安装方式" },
-  { key: "license", label: "用户协议" },
-  { key: "install", label: "安装" },
-  { key: "done", label: "完成" },
-];
+// Step keys in rail order; the labels resolve from the string table per
+// render so a locale switch relabels the timeline live.
+const STEP_KEYS = ["mode", "license", "install", "done"] as const;
 
 export default defineComponent({
   name: "InstallerApp",
@@ -124,11 +116,22 @@ export default defineComponent({
       "step",
     ) ?? "") as StepKey;
     const step = ref<StepKey>(
-      STEPS.some((s) => s.key === initialStep) ? initialStep : "mode",
+      (STEP_KEYS as readonly string[]).includes(initialStep) ? initialStep : "mode",
     );
     const mode = ref<Mode>("local");
+    // Wizard locale — resolved synchronously from the system so first paint
+    // (and the ?step= previews) always has strings, then overridden by the
+    // saved preference once the backend answers (saved > system). A failed
+    // invoke (e.g. non-Tauri preview) keeps the system resolution.
+    const locale = ref<InstallerLocale>(
+      resolveSystemLocale(navigator.language),
+    );
     const dir = ref("");
-    const hint = ref("");
+    // The hint under the path field: a semantic kind resolved to text at
+    // render time (so a locale switch relabels it), or a raw backend error
+    // message that passes through as-is.
+    const hintKind = ref<Mode | "usb-detected" | "error">("local");
+    const hintError = ref("");
     const drives = ref<DriveInfo[]>([]);
     const candidates = ref<DirCandidate[]>([]);
     // Live writability of the shown path: null while the probe is in
@@ -166,8 +169,9 @@ export default defineComponent({
 
     // Install log pane: structured events composed into localized lines
     // with HH:MM:SS stamps; ordering follows the manifest (newest-first
-    // default) with a per-run toggle.
-    const zh = navigator.language.toLowerCase().startsWith("zh");
+    // default) with a per-run toggle. Line text resolves from the picked
+    // wizard locale (`install.progress` in i18n.ts); unknown backend verbs
+    // pass through verbatim (they are composed English).
     const logLines = ref<LogLine[]>([]);
     const logOrder = ref<"newest" | "oldest">("newest");
     // The log pane folds into a one-line drawer by default; error records
@@ -180,32 +184,26 @@ export default defineComponent({
       if (kind === "error") logExpanded.value = true;
     };
     // The flow's progress labels are composed English verbs; render the
-    // ones we know in the UI language and pass the rest through.
+    // ones we know in the wizard language and pass the rest through.
     const localizeStep = (step: string): string => {
-      if (!zh) return step;
+      const progress = strings(locale.value).install.progress;
       // Installer-shell steps beyond the payload verbs (main.rs): the
       // pre-kill notice and the stale-file cleanup summary.
-      if (step === "Stopping wowsp.exe") return "正在停止运行中的 WoWSP";
+      if (step === "Stopping wowsp.exe") return progress.stopApp;
       const stale = /^Removed (\d+) stale file/.exec(step);
-      if (stale) return `已移除 ${stale[1]} 个旧版残留文件`;
+      if (stale) return progress.removedStale(Number(stale[1]));
       const m = /^(Extracting|Reusing|Downloading|Registering|Writing)\s+(.+)$/.exec(step);
       if (!m) return step;
-      const verbs: Record<string, string> = {
-        Extracting: "正在解压",
-        Reusing: "正在复用",
-        Downloading: "正在下载",
-        Registering: "正在登记",
-        Writing: "正在写入",
-      };
-      return `${verbs[m[1]] ?? m[1]} ${m[2]}`;
+      const verb = progress.verbs[m[1]];
+      return verb ? `${verb} ${m[2]}` : step;
     };
     const phaseLabel = (phase: string | undefined): string => {
-      if (!zh) return phase ?? "";
+      const phases = strings(locale.value).install.progress.phases;
       switch (phase) {
-        case "download": return "正在下载资源";
-        case "extract": return "正在解压文件";
-        case "register": return "正在登记系统信息";
-        default: return "正在安装";
+        case "download": return phases.download;
+        case "extract": return phases.extract;
+        case "register": return phases.register;
+        default: return phases.fallback;
       }
     };
 
@@ -219,10 +217,9 @@ export default defineComponent({
       const defaults = await invoke<DirDefaults>("default_dir", { mode: mode.value });
       dir.value = defaults.dir;
       candidates.value = defaults.candidates;
-      hint.value =
-        mode.value === "usb" && defaults.removable
-          ? "已检测到可移动磁盘。"
-          : HINTS[mode.value];
+      hintKind.value =
+        mode.value === "usb" && defaults.removable ? "usb-detected" : mode.value;
+      hintError.value = "";
     }
 
     const identity = ref<{ version: string; flavor: string } | null>(null);
@@ -256,22 +253,43 @@ export default defineComponent({
       }, 400);
     });
 
+    // The license documents are backend-resolved per wizard locale
+    // (build-time artifacts; ru has no dedicated set and gets the English
+    // fallback). A locale switch re-fetches; a response from a superseded
+    // request is dropped so a slow earlier locale can never win.
+    function refreshLicenseDocs() {
+      const requested = locale.value;
+      invoke<LicenseDoc[]>("get_license_docs", { locale: requested })
+        .then((docs) => {
+          if (locale.value !== requested) return;
+          licenseDocs.value = docs;
+          licenseIndex.value = 0;
+        })
+        .catch(() => {});
+    }
+    watch(locale, refreshLicenseDocs);
+
     onMounted(() => {
+      invoke<string | null>("get_saved_language")
+        .then((saved) => {
+          // Saved preference wins over the system resolution; anything the
+          // wizard does not offer is ignored.
+          if (isInstallerLocale(saved)) locale.value = saved;
+        })
+        .catch(() => {});
       invoke<boolean>("is_uninstall_mode")
         .then((flag) => {
           uninstallMode.value = flag;
         })
         .catch(() => {});
-      refreshDefaults().catch((err) => { hint.value = String(err); });
+      refreshDefaults().catch((err) => { hintKind.value = "error"; hintError.value = String(err); });
       invoke<{ version: string; flavor: string }>("get_identity")
         .then((id) => { identity.value = id; })
         .catch(() => {});
       invoke<DriveInfo[]>("list_drives")
         .then((list) => { drives.value = list; })
         .catch(() => {});
-      invoke<LicenseDoc[]>("get_license_docs", {
-        locale: navigator.language,
-      })
+      invoke<LicenseDoc[]>("get_license_docs", { locale: locale.value })
         .then((docs) => {
           licenseDocs.value = docs;
           licenseIndex.value = 0;
@@ -283,19 +301,21 @@ export default defineComponent({
         })
         .catch(() => {});
       listen<FlowEventPayload>("install-progress", (event) => {
-        // Structured log records compose into localized pane lines.
+        // Structured log records compose into localized pane lines, keyed
+        // to the picked wizard locale.
         if (event.record) {
           const r = event.record;
           const kind = r.log;
+          const progress = strings(locale.value).install.progress;
           if (kind === "file-write" && r.path) {
-            pushLog("echo", zh ? `写入 ${r.path}` : `Writing ${r.path}`);
+            pushLog("echo", progress.writing(r.path));
           } else if (kind === "file-reuse" && r.path) {
-            pushLog("echo", zh ? `复用 ${r.path}` : `Reusing ${r.path}`);
+            pushLog("echo", progress.reusing(r.path));
           } else if (kind === "warning") {
             const text = [r.code, r.detail].filter(Boolean).join(": ");
             if (text) pushLog("error", text);
           } else if (kind === "script-begin" && r.name) {
-            pushLog("step", zh ? `运行脚本 ${r.name}` : `Running ${r.name}`);
+            pushLog("step", progress.runningScript(r.name));
           } else if (kind === "script-line" && r.line) {
             pushLog("echo", r.line);
           } else if (kind === "command-done" && r.command) {
@@ -350,16 +370,28 @@ export default defineComponent({
         installFailed.value = false;
         failMessage.value = "";
         overall.value = null;
-        flowStep.value = zh ? "正在准备安装…" : "Preparing the install…";
+        flowStep.value = strings(locale.value).install.preparing;
         logLines.value = [];
-        pushLog("step", zh ? "开始安装" : "Install started");
+        pushLog("step", strings(locale.value).install.startedLog);
       }
     }
 
     async function selectMode(id: string | number | boolean | undefined) {
       if (step.value !== "mode") return;
       mode.value = (id as Mode) ?? "local";
-      await refreshDefaults().catch((err) => { hint.value = String(err); });
+      await refreshDefaults().catch((err) => { hintKind.value = "error"; hintError.value = String(err); });
+    }
+
+    // Picker change: remember the choice for the next run — portable (USB)
+    // runs skip the write, so a removable copy scatters no state onto the
+    // host. The ref itself drives every label on the next render.
+    function changeLocale(value: string) {
+      if (!isInstallerLocale(value)) return;
+      locale.value = value;
+      void invoke("save_language", {
+        language: value,
+        portable: mode.value === "usb",
+      }).catch(() => {});
     }
 
     /** 裸盘符根目录（如选中的 D:\）不直接接收载荷：shun 0.3 的根盘
@@ -367,13 +399,13 @@ export default defineComponent({
         框始终显示真实目标。 */
     async function applyNestRootDir(raw: string) {
       const nested = await invoke<string>("nest_root_dir", { dir: raw });
-      if (nested !== raw.trim()) showNote("已自动垫一层文件夹，避免直接安装到盘符根目录。");
+      if (nested !== raw.trim()) showNote(strings(locale.value).target.nestedNote);
       dir.value = nested;
     }
 
     async function browse() {
       if (step.value !== "mode") return;
-      const picked = await openDirectory("选择安装位置");
+      const picked = await openDirectory(strings(locale.value).target.dialogTitle);
       if (picked) await applyNestRootDir(picked);
     }
 
@@ -386,6 +418,7 @@ export default defineComponent({
         await invoke("start_install", {
           mode: mode.value,
           dir: dir.value.trim(),
+          language: locale.value,
         });
         // No shortcut work here: the install creates none, and the done
         // pane's toggles take effect only on the final confirmation.
@@ -482,6 +515,7 @@ export default defineComponent({
     }
 
     return () => {
+      const s = strings(locale.value);
       // Uninstall page: a standalone centered pane instead of the wizard
       // layout — no step rail, no install panes, no footer nav. While the
       // mode probe is still in flight, render nothing.
@@ -490,7 +524,7 @@ export default defineComponent({
           <>
             <AppTitleBar
               icon="/logo.webp"
-              title="WoWSP 安装器"
+              title={s.title}
               subtitle={identity.value ? `v${identity.value.version}` : ""}
               showMaximize={false}
             />
@@ -502,17 +536,17 @@ export default defineComponent({
         const uninstallPane =
           uninstallPhase.value === "idle" ? (
             <section class="wizard-pane wizard-pane--center wizard-uninstall">
-              <h1>卸载 WoWSP</h1>
-              <p class="wizard-sub">这将移除 WoWSP 及其注册的系统项。模型资源与用户数据将保留。</p>
+              <h1>{s.uninstall.heading}</h1>
+              <p class="wizard-sub">{s.uninstall.sub}</p>
               <div class="wizard-uninstall__actions">
                 <HButton variant="ghost" onClick={closeWindow}>
-                  取消
+                  {s.uninstall.cancel}
                 </HButton>
                 <HButton variant="ghost" onClick={runRepair}>
-                  修复安装
+                  {s.uninstall.repair}
                 </HButton>
                 <HButton variant="danger" onClick={runUninstall}>
-                  卸载
+                  {s.uninstall.uninstall}
                 </HButton>
               </div>
             </section>
@@ -521,7 +555,7 @@ export default defineComponent({
               <img src="/logo.webp" alt="" class="wizard-logo" />
               <HProgressBar status="loading" size="md" />
               <p class="wizard-step">
-                {uninstallPhase.value === "repairing" ? "正在修复…" : "正在卸载…"}
+                {uninstallPhase.value === "repairing" ? s.uninstall.repairing : s.uninstall.uninstalling}
               </p>
             </section>
           ) : uninstallPhase.value === "done" || uninstallPhase.value === "repaired" ? (
@@ -532,11 +566,11 @@ export default defineComponent({
                 stroke-width={1.5}
               />
               <p class="wizard-done__title">
-                {uninstallPhase.value === "repaired" ? "已完成修复" : "已完成卸载"}
+                {uninstallPhase.value === "repaired" ? s.uninstall.doneRepair : s.uninstall.doneUninstall}
               </p>
               <div class="wizard-uninstall__actions">
                 <HButton variant="primary" onClick={closeWindow}>
-                  关闭
+                  {s.uninstall.close}
                 </HButton>
               </div>
             </section>
@@ -548,12 +582,12 @@ export default defineComponent({
                 stroke-width={1.5}
               />
               <p class="wizard-done__title wizard-done__title--fail">
-                {uninstallPhase.value === "repair_failed" ? "修复失败" : "卸载失败"}
+                {uninstallPhase.value === "repair_failed" ? s.uninstall.failedRepair : s.uninstall.failedUninstall}
               </p>
               <p class="wizard-uninstall__error">{uninstallError.value}</p>
               <div class="wizard-uninstall__actions">
                 <HButton variant="primary" onClick={closeWindow}>
-                  关闭
+                  {s.uninstall.close}
                 </HButton>
               </div>
             </section>
@@ -561,7 +595,7 @@ export default defineComponent({
 
         return (
           <>
-            <AppTitleBar icon="/logo.webp" title="WoWSP 卸载" showMaximize={false} />
+            <AppTitleBar icon="/logo.webp" title={s.uninstallTitle} showMaximize={false} />
             <main class="installer">
               <div class="wizard-layout__pane">{uninstallPane}</div>
             </main>
@@ -569,18 +603,48 @@ export default defineComponent({
         );
       }
 
-      const timelineSteps = STEPS.map((s) => ({ key: s.key, label: s.label }));
+      const timelineSteps = STEP_KEYS.map((key) => ({
+        key,
+        label: strings(locale.value).steps[key],
+      }));
+
+      const modeItems = [
+        {
+          id: "local",
+          title: s.mode.local.title,
+          description: s.mode.local.description,
+          badge: s.mode.local.badge,
+          icon: MODE_ICONS.local,
+        },
+        {
+          id: "usb",
+          title: s.mode.usb.title,
+          description: s.mode.usb.description,
+          icon: MODE_ICONS.usb,
+        },
+      ];
 
       const pane =
         step.value === "mode" ? (
           <section class="wizard-pane">
-            <h1>选择 WoWSP 的安装方式</h1>
-            <p class="wizard-sub">选择此副本的安装方式及其数据存放位置；2D / 3D 模型资源包将一并安装。</p>
+            <h1>{s.mode.title}</h1>
+            <p class="wizard-sub">{s.mode.sub}</p>
+
+            <div class="wizard-language">
+              <span class="wizard-language__label" id="locale-label">{s.languageLabel}</span>
+              <div class="wizard-language__select">
+                <HSelect
+                  modelValue={locale.value}
+                  options={LOCALE_OPTIONS}
+                  onUpdate:modelValue={changeLocale}
+                />
+              </div>
+            </div>
 
             <HSelectionGrid
-              items={MODE_ITEMS}
+              items={modeItems}
               selectedId={mode.value}
-              columns={MODE_ITEMS.length as 2}
+              columns={modeItems.length as 2}
               onSelect={(item: { id?: string | number | boolean }) => {
                 if (step.value !== "mode") return;
                 mode.value = (item.id as Mode) ?? "local";
@@ -589,11 +653,12 @@ export default defineComponent({
             />
 
             <section class="wizard-target">
-              <label class="wizard-target__label" for="dir-input">安装位置</label>
+              <label class="wizard-target__label" for="dir-input">{s.target.label}</label>
               <PathField
                 modelValue={dir.value}
                 disabled={running.value}
                 drives={drives.value}
+                labels={s.pathField}
                 onUpdate:modelValue={(v: string) => (dir.value = v)}
                 onBrowse={browse}
                 onBlur={() => {
@@ -631,27 +696,39 @@ export default defineComponent({
                   );
                 })}
               </div>
-              <p class="wizard-target__hint">{hint.value}</p>
+              <p class="wizard-target__hint">
+                {hintKind.value === "error"
+                  ? hintError.value
+                  : hintKind.value === "usb-detected"
+                    ? s.target.hintUsbDetected
+                    : hintKind.value === "usb"
+                      ? s.target.hintUsb
+                      : s.target.hintLocal}
+              </p>
               {dirWritable.value === false && (
                 <p class="wizard-target__warning">
                   {firstWritableCandidate.value
-                    ? "当前目录不可写，安装会被拒绝——建议选择上方标亮的候选位置。"
-                    : "未检测到可写的候选位置，请手动选择有权限的目录。"}
+                    ? s.target.warnUnwritable
+                    : s.target.warnNoWritable}
                 </p>
               )}
               {identity.value && (
                 <p class="wizard-identity">
                   {`WoWSP ${identity.value.version} · `}
-                  {FLAVOR_LABELS[identity.value.flavor] ?? identity.value.flavor}
+                  {identity.value.flavor === "full-webview2"
+                    ? s.flavors.fullWebview2
+                    : identity.value.flavor === "full"
+                      ? s.flavors.full
+                      : identity.value.flavor}
                 </p>
               )}
             </section>
           </section>
         ) : step.value === "license" ? (
           <section class="wizard-pane">
-            <h1>用户协议</h1>
-            <p class="wizard-sub">安装前请阅读以下协议文档；勾选即代表同意全部内容。</p>
-            <AnnouncementCard />
+            <h1>{s.license.title}</h1>
+            <p class="wizard-sub">{s.license.sub}</p>
+            <AnnouncementCard locale={locale.value} />
             <HScrollContainer class="license-box" axis="vertical">
               <pre>{licenseDocs.value[licenseIndex.value]?.body ?? ""}</pre>
             </HScrollContainer>
@@ -661,7 +738,7 @@ export default defineComponent({
                   variant="ghost"
                   size="sm"
                   disabled={licenseIndex.value <= 0}
-                  ariaLabel="上一篇协议文档"
+                  ariaLabel={s.license.prevDoc}
                   onClick={() => (licenseIndex.value -= 1)}
                 >
                   <ChevronLeft size={15} />
@@ -674,7 +751,7 @@ export default defineComponent({
                   variant="ghost"
                   size="sm"
                   disabled={licenseIndex.value >= licenseDocs.value.length - 1}
-                  ariaLabel="下一篇协议文档"
+                  ariaLabel={s.license.nextDoc}
                   onClick={() => (licenseIndex.value += 1)}
                 >
                   <ChevronRight size={15} />
@@ -683,7 +760,7 @@ export default defineComponent({
             )}
             <HCheckbox
               modelValue={agreed.value}
-              label="我已阅读并同意上述全部协议"
+              label={s.license.agree}
               onUpdate:modelValue={(v: boolean) => (agreed.value = v)}
             />
           </section>
@@ -698,11 +775,12 @@ export default defineComponent({
                 value={overall.value ?? undefined}
                 showLabel={overall.value != null}
               />
-              <p class="wizard-step">{flowStep.value || "正在安装 WoWSP，这可能需要一点时间…"}</p>
+              <p class="wizard-step">{flowStep.value || s.install.fallback}</p>
             </div>
             <div class="wizard-install__logs">
               <LogPane
                 lines={logLines.value}
+                labels={s.logPane}
                 order={logOrder.value}
                 expanded={logExpanded.value}
                 onToggleExpanded={() => {
@@ -718,11 +796,12 @@ export default defineComponent({
               color="rgb(var(--color-error))"
               stroke-width={1.5}
             />
-            <p class="wizard-done__title wizard-done__title--fail">安装失败</p>
+            <p class="wizard-done__title wizard-done__title--fail">{s.done.failedTitle}</p>
             <p class="wizard-done__error">{failMessage.value}</p>
             <div class="wizard-install__logs">
               <LogPane
                 lines={logLines.value}
+                labels={s.logPane}
                 order={logOrder.value}
                 expanded={logExpanded.value}
                 onToggleExpanded={() => {
@@ -732,10 +811,10 @@ export default defineComponent({
             </div>
             <div class="wizard-done__actions">
               <HButton variant="primary" onClick={start}>
-                重试安装
+                {s.done.retry}
               </HButton>
               <HButton variant="ghost" onClick={() => tauriWindow()?.close()}>
-                关闭
+                {s.done.close}
               </HButton>
             </div>
           </section>
@@ -746,31 +825,29 @@ export default defineComponent({
               color="rgb(var(--color-success))"
               stroke-width={1.5}
             />
-            <p class="wizard-done__title">✔ 安装完成</p>
+            <p class="wizard-done__title">{s.done.title}</p>
             <p class="wizard-done__path">{dir.value.trim()}</p>
             <p class="wizard-done__hint">
-            {mode.value === "local"
-              ? "WoWSP 已登记到系统「应用」列表；勾选的快捷方式会在点击「完成安装」时创建。"
-              : "便携副本已就绪：数据全部留在可移动磁盘内。"}
+            {mode.value === "local" ? s.done.hintLocal : s.done.hintUsb}
             </p>
             <div class="wizard-done__shortcuts">
               {mode.value === "local" && (
                 <>
                   <HCheckbox
                     modelValue={startMenuShortcut.value}
-                    label="创建开始菜单快捷方式"
+                    label={s.done.shortcutMenu}
                     onUpdate:modelValue={(v: boolean) => toggleMenu(v)}
                   />
                   <HCheckbox
                     modelValue={desktopShortcut.value}
-                    label="创建桌面快捷方式"
+                    label={s.done.shortcutDesktop}
                     onUpdate:modelValue={(v: boolean) => toggleDesktop(v)}
                   />
                 </>
               )}
               <HCheckbox
                 modelValue={launchAfterInstall.value}
-                label="安装完成后立即启动 WoWSP"
+                label={s.done.launchAfter}
                 onUpdate:modelValue={(v: boolean) => (launchAfterInstall.value = v)}
               />
             </div>
@@ -781,7 +858,7 @@ export default defineComponent({
         <>
           <AppTitleBar
             icon="/logo.webp"
-            title="WoWSP 安装器"
+            title={s.title}
             subtitle={identity.value ? `v${identity.value.version}` : ""}
             showMaximize={false}
           />
@@ -812,13 +889,13 @@ export default defineComponent({
                     disabled={dirWritable.value === false}
                     onClick={() => go("license")}
                   >
-                    下一步
+                    {s.nav.next}
                   </HButton>
                 )}
                 {step.value === "license" && (
                   <>
                     <HButton variant="ghost" onClick={() => go("mode")}>
-                      上一步
+                      {s.nav.back}
                     </HButton>
                     <HButton
                       variant="primary"
@@ -826,9 +903,7 @@ export default defineComponent({
                       disabled={!agreed.value || noticeCountdown.value > 0}
                       onClick={start}
                     >
-                      {noticeCountdown.value > 0
-                        ? `同意并安装（${noticeCountdown.value} 秒）`
-                        : "同意并安装"}
+                      {s.license.agreeInstall(noticeCountdown.value)}
                     </HButton>
                   </>
                 )}
@@ -839,7 +914,7 @@ export default defineComponent({
                     disabled={finishing.value}
                     onClick={finish}
                   >
-                    完成安装
+                    {s.done.finish}
                   </HButton>
                 )}
               </div>

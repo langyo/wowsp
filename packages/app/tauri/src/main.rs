@@ -300,6 +300,7 @@ fn main() {
             commands::overlay::set_manual_roster_rect,
             commands::overlay::clear_manual_roster_rect,
             commands::network::get_network_config,
+            commands::installer::installer_language,
             commands::open_external::open_external,
             commands::network::set_network_config,
             commands::wg_api::lookup_player_stats,

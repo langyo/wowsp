@@ -201,6 +201,28 @@ body {
   color: rgb(var(--color-muted));
 }
 
+/* ── mode pane: wizard-language picker row ────────────────────────── */
+
+// The locale picker sits at the top of the mode step: one muted label on
+// the left, the hikari select capped to setting-row width on the right.
+.wizard-language {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .wizard-language__label {
+    flex: none;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+
+  // HkSelect's wrapper is width:100%; cap it so the row reads as a
+  // setting rather than a full-width field.
+  .wizard-language__select {
+    width: 200px;
+  }
+}
+
 .wizard-pane__title {
   margin: 0;
   font-size: var(--text-lg);
