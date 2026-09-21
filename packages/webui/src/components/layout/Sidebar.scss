@@ -3,12 +3,17 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* Glass tint instead of an opaque fill: the body wallpaper (custom image
-     or solid) stays faintly visible behind the nav, same recipe as the
-     shared glass-panel mixin. */
-  background: rgb(var(--color-surface) / 85%);
-  backdrop-filter: blur(var(--blur-md));
-  -webkit-backdrop-filter: blur(var(--blur-md));
+  /* Translucent glass instead of an opaque fill: the body wallpaper (custom
+     image or solid) must stay plainly visible behind the nav. 55% is well
+     below the shared glass-panel mixin's 85% — that tint is meant for
+     floating cards, where a heavier fill aids contrast, but at full column
+     height it reads as a solid panel (the wallpaper's contribution also
+     shrinks further under theme.scss's readability scrim), so the rail
+     needs a lighter surface to actually read as glass. The deeper blur
+     diffuses the now-stronger wallpaper so nav text keeps its contrast. */
+  background: rgb(var(--color-surface) / 55%);
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
   border-right: 1px solid rgb(var(--color-border) / 20%);
   user-select: none;
 
