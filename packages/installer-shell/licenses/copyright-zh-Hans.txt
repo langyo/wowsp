@@ -1,0 +1,24 @@
+WoWSP — 版权所有 (c) 2026 langyo <langyo.china@gmail.com>
+
+声明：本软件包含由人工智能生成的代码。合成源码协议的全部条款（含模型披露
+要求）详见随附的 LICENSE 文件。
+
+本软件根据《合成源码协议》第 1.0 版（下称"本协议"）授权；除遵守本协议外，
+您不得使用本软件。您可从以下地址获取本协议副本：
+
+    https://github.com/celestia-island/sysl
+
+除非适用法律要求或另行书面约定，否则依本协议分发的软件均"按原样"分发，
+不附任何明示或默示的保证或条件。有关本协议项下的权限与限制，请查阅本协议
+全文。
+
+====================================================================
+
+                          模型披露（MODEL DISCLOSURE）
+
+人类作者：
+  langyo <langyo.china@gmail.com>
+
+使用的主要 AI 模型：
+  GLM 5 / 5.1 / 5.2 / 5v Turbo — 智谱 AI — https://zhipu.ai
+  DeepSeek V4 Flash / Pro — DeepSeek — https://deepseek.ai

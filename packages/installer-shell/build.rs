@@ -59,26 +59,61 @@ fn main() {
     std::fs::write(out_dir.join("shun-res-version.txt"), res_version).expect("write res version");
     println!("cargo:rerun-if-env-changed=SHUN_RES_VERSION");
 
-    // 5. License: the SySL text plus official translations. The zh texts
-    //    are vendored from celestia-island/sysl (licenses/); en comes from
-    //    the repo-root LICENSE. When the network is reachable the fetch
-    //    refreshes each file from upstream first; otherwise the vendored
-    //    copies are used as-is.
-    let license_sources = [
-        ("en", manifest_dir.join("../../LICENSE")),
-        ("zh-Hans", manifest_dir.join("licenses/zh-Hans.txt")),
-        ("zh-Hant", manifest_dir.join("licenses/zh-Hant.txt")),
+    // 5. License documents per wizard locale, assembled into ONE embedded
+    //    JSON map (`license-docs.json`): a localized copyright notice,
+    //    the SySL agreement, and the usage-telemetry notice. Every locale
+    //    vendors its copyright notice (licenses/copyright-*.txt); the
+    //    agreement is fetched fresh from celestia-island/sysl when the
+    //    network is reachable, falling back to the vendored copies
+    //    (licenses/*.txt) and finally to a one-line stub — a build must
+    //    never fail over a missing translation. The telemetry notice is
+    //    the canonical docs/{lang}/license/usage-telemetry.md document
+    //    (en / zh-CN / zh-TW), embedded verbatim so the installer and the
+    //    website always present the same wording.
+    let license_locales = [
+        ("en", "WoWSP Copyright Notice", "Synthetic Source License 1.0", "Usage Telemetry Notice"),
+        ("zh-Hans", "WoWSP 版权声明", "合成源码协议 1.0", "使用量遥测告知"),
+        ("zh-Hant", "WoWSP 版權聲明", "合成原始碼協議 1.0", "使用量遙測告知"),
     ];
-    for (locale, vendored) in license_sources {
-        let mut text = std::fs::read_to_string(&vendored)
-            .unwrap_or_else(|_| String::from("Licensed under the Synthetic Source License 1.0."));
-        if let Ok(fresh) = shun::license_sysl::fetch_locale("celestia-island/sysl", "main", locale)
-        {
-            text = fresh;
-        }
-        std::fs::write(out_dir.join(format!("license-{locale}.txt")), text)
-            .expect("write embedded license");
+    let mut docs = serde_json::Map::new();
+    for (locale, notice_title, license_title, telemetry_title) in license_locales {
+        // docs/ locale directory backing this installer locale.
+        let doc_lang = match locale {
+            "zh-Hans" => "zh-CN",
+            "zh-Hant" => "zh-TW",
+            _ => "en",
+        };
+        let notice_path = manifest_dir.join(format!("licenses/copyright-{locale}.txt"));
+        println!("cargo:rerun-if-changed={}", notice_path.display());
+        let notice = std::fs::read_to_string(&notice_path)
+            .unwrap_or_else(|_| String::from("WoWSP — Copyright (c) 2026 langyo."));
+        // Fresh-from-upstream first, vendored file second, stub last.
+        let agreement = shun::license_sysl::fetch_locale("celestia-island/sysl", "main", locale)
+            .unwrap_or_else(|_| {
+                let vendored = manifest_dir.join(format!("licenses/{locale}.txt"));
+                println!("cargo:rerun-if-changed={}", vendored.display());
+                std::fs::read_to_string(&vendored).unwrap_or_else(|_| {
+                    String::from("Licensed under the Synthetic Source License 1.0.")
+                })
+            });
+        let telemetry_path = manifest_dir.join(format!(
+            "../../docs/{doc_lang}/license/usage-telemetry.md"
+        ));
+        println!("cargo:rerun-if-changed={}", telemetry_path.display());
+        let telemetry = std::fs::read_to_string(&telemetry_path)
+            .unwrap_or_else(|_| String::from("Usage telemetry notice unavailable."));
+        docs.insert(
+            locale.to_string(),
+            serde_json::json!([
+                { "title": notice_title, "body": notice },
+                { "title": license_title, "body": agreement },
+                { "title": telemetry_title, "body": telemetry },
+            ]),
+        );
     }
+    let docs_json = serde_json::to_string_pretty(&docs).expect("license docs serialize");
+    std::fs::write(out_dir.join("license-docs.json"), docs_json)
+        .expect("write embedded license docs");
 
     // The dist is embedded at compile time (generate_context!) — a proc
     // macro, which cargo does not track. Declare it explicitly so a rebuilt
