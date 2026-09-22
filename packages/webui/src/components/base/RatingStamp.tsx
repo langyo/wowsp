@@ -18,12 +18,11 @@ let stampSeq = 0;
  *  weave + ink-rough displacement filter) around pre-rendered glyph bitmaps.
  *
  *  The glyphs are baked to PNGs by `scripts/gen_stamp_bitmaps.py` (calligraphy
- *  fonts: 神 in 毛体, the rest in 鲁迅行书); the four-char tags are recut from
- *  the 2x2 seal face into ONE horizontal line by `scripts/recut_stamp_bitmaps.py`
- *  (过街老鼠 et al. read left-to-right on a classic elongated seal face). The
- *  fonts themselves are commercial / unclear-license and are NOT bundled —
- *  bitmaps only, so the seals look identical everywhere. Displacement seeds
- *  are fixed per kind → deterministic ink.
+ *  fonts: 神 in 毛体, the rest in 鲁迅行书; the four-char tags are laid out as
+ *  a 2x2 seal face — 空中 over 小人, 过街 over 老鼠). The fonts themselves are
+ *  commercial / unclear-license and are NOT bundled — bitmaps only, so the
+ *  seals look identical everywhere. Displacement seeds are fixed per kind →
+ *  deterministic ink.
  *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
  *   - "ape" (海猴): PR < 750 with winrate ≥ 40%
  *   - "maggot" (蛆): PR < 750 with winrate < 40%
@@ -34,6 +33,11 @@ let stampSeq = 0;
  *  A user-imported custom picture (settings' seal customizer →
  *  commands::stamps) replaces the whole seal face — the procedural frame is
  *  skipped so the user's art shows as-is.
+ *
+ *  Every in-app surface shows the square 2x2 faces; only the in-game Tab
+ *  overlay chips swap in the flat one-line faces (res/stamps-wide, recut by
+ *  scripts/recut_stamp_bitmaps.py) because the chip rows are far too short
+ *  for a 2x2 face — see overlay/main.ts.
  *
  * The seals are a Chinese-community artifact — they render nothing under any
  * other UI language, and a seal switched off individually (statsPrefs
@@ -62,15 +66,12 @@ const STAMP_SEED: Record<StampKind, number> = {
   air: 21,
   sub: 5,
 };
-/** Four-char seals use the elongated 3:1 face (their bitmaps are 800x200);
- *  the single-glyph verdicts keep the square face. */
-const WIDE_FACES: ReadonlySet<StampKind> = new Set(["rat", "air", "sub"]);
 
 export default defineComponent({
   name: "RatingStamp",
   props: {
     kind: { type: String as PropType<StampKind>, required: true },
-    /** Rendered height in px (the wide 3:1 faces scale width from it). */
+    /** Rendered edge length in px. */
     size: { type: Number, default: 64 },
     /** "mini" drops the moiré weave for tiny sizes (live roster rows). */
     variant: { type: String as PropType<"full" | "mini">, default: "full" },
@@ -85,24 +86,17 @@ export default defineComponent({
       // kill switch from the seal customizer.
       if (!uiLocale.value.startsWith("zh")) return null;
       if (statsPrefsState.value.sealDisabled[props.kind]) return null;
-      const wide = WIDE_FACES.has(props.kind);
-      const width = wide ? props.size * 3 : props.size;
       const text = STAMP_TEXT[props.kind];
-      const cls = [
-        "rating-stamp",
-        `rating-stamp--${props.kind}`,
-        wide ? "rating-stamp--wide" : undefined,
-      ];
       const custom = stampOverrideUrl(props.kind);
       if (custom != null) {
         // User's own picture replaces the procedural face entirely (frame
         // and all) — same footprint, same tilt, nothing else in the way.
         return (
           <img
-            class={cls}
+            class="rating-stamp"
             src={custom}
             alt={text}
-            width={width}
+            width={props.size}
             height={props.size}
             style={{ objectFit: "contain" }}
             role="img"
@@ -116,17 +110,16 @@ export default defineComponent({
       const mini = props.variant === "mini";
       return (
         <svg
-          class={cls}
-          width={width}
+          class="rating-stamp"
+          width={props.size}
           height={props.size}
-          viewBox={wide ? "0 0 300 100" : "0 0 100 100"}
+          viewBox="0 0 100 100"
           role="img"
           aria-label={text}
         >
           <defs>
             {/* Two line weaves a hair apart in angle — their interference
-                leaves the faint moiré of a cheap rubber stamp. userSpaceOnUse
-                tiles identically across the square and wide faces. */}
+                leaves the faint moiré of a cheap rubber stamp. */}
             <pattern id={id("weave-a")} width="5" height="5" patternUnits="userSpaceOnUse">
               <path d="M2.5 0 V5" stroke="currentColor" stroke-width="0.7" />
             </pattern>
@@ -153,34 +146,16 @@ export default defineComponent({
           <g class="rating-stamp__ink" filter={url("ink")}>
             {!mini && (
               <g class="rating-stamp__moire">
-                {/* Moiré fills the space between the two frames — the wide
-                    face stretches it sideways, the weave itself is unchanged
-                    (the extra 纹路 the long face needs comes free). */}
-                <rect x="14" y="14" width={wide ? 272 : 71} height="71" fill={url("weave-a")} />
-                <rect x="14" y="14" width={wide ? 272 : 71} height="71" fill={url("weave-b")} />
+                <rect x="14" y="14" width="71" height="71" fill={url("weave-a")} />
+                <rect x="14" y="14" width="71" height="71" fill={url("weave-b")} />
               </g>
             )}
-            {wide ? (
-              <>
-                <rect class="rating-stamp__frame" x="4" y="4" width="292" height="92" rx="7" stroke-width="6" />
-                <rect class="rating-stamp__frame" x="13.5" y="13.5" width="273" height="73" rx="3" stroke-width="2" />
-              </>
-            ) : (
-              <>
-                <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
-                <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
-              </>
-            )}
+            <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
+            <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
             {/* Glyph bitmap (pre-centered cinnabar: single-glyph verdicts,
-                one-line composition tags), inset to sit well inside the
-                inner frame — full-bleed glyphs read too heavy at seal
-                sizes. The wide face's image box keeps the bitmap's 4:1
-                aspect so the recut glyphs are never stretched. */}
-            {wide ? (
-              <image href={STAMP_GLYPHS[props.kind]} x="18" y="17" width="264" height="66" />
-            ) : (
-              <image href={STAMP_GLYPHS[props.kind]} x="17" y="17" width="66" height="66" />
-            )}
+                2x2 composition tags), inset to sit well inside the inner
+                frame — full-bleed glyphs read too heavy at seal sizes. */}
+            <image href={STAMP_GLYPHS[props.kind]} x="17" y="17" width="66" height="66" />
           </g>
         </svg>
       );
