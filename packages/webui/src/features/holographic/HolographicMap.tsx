@@ -3,9 +3,10 @@ import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Crosshair, Eye, EyeOff, MessageSquare, Orbit, Pause, Play, Shield, Skull, Swords, Trophy, Video } from "@lucide/vue";
+import { Crosshair, Eye, EyeOff, Grid3x3, MessageSquare, Orbit, Pause, PenLine, Play, RotateCcw, RotateCw, Shield, Skull, Spline, Swords, Trophy, Video } from "@lucide/vue";
 import { PLANE_TYPES, shellAmmoOf } from "./tactical/shellTypes";
 import { extractActions } from "./tactical/actions";
+import { gridLabelLayout, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 
 import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
 import { useTheme } from "@/theme";
@@ -182,7 +183,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
-import { HSwitch } from "@celestia-island/hikari";
+import { HIconButton, HTooltip } from "@celestia-island/hikari";
 import TacticalBoard from "./tactical/TacticalBoard";
 import {
   TACTICAL_MAX_SCALE,
@@ -471,6 +472,16 @@ export default defineComponent({
     // 2D minimap enlarged overlay state.
     const minimapZoom = ref(props.initialMinimapZoom);
     const minimapShowTrails = ref(true);
+    /** The game's A–J / 1–10 grid with edge coordinate labels (default on). */
+    const minimapShowGrid = ref(true);
+    /** Map rotation in degrees (canvas rotate convention, +45° per click).
+     *  The whole world frame — art, trails, annotations — rotates; the grid
+     *  labels stay pinned to the screen's top/left edges. */
+    const mmRotationDeg = ref(0);
+    const mmRotationRad = computed(() => (mmRotationDeg.value * Math.PI) / 180);
+    function rotateMap(steps: number): void {
+      mmRotationDeg.value += steps * 45;
+    }
     /** Tactical board editing on the enlarged 2D map (annotations stay
      *  rendered read-only when off, so a composed view survives toggling). */
     const tacticalOn = ref(false);
@@ -1547,6 +1558,16 @@ export default defineComponent({
           // bitmap, shown as-is in both modes); only the overlay chrome —
           // scrim, head pill, frame — follows the app theme.
           zctx.clearRect(0, 0, zw, zw);
+          // World frame rotation (rotate buttons): everything map-anchored —
+          // art, grid lines, trails, glyphs, annotations — spins together;
+          // screen-frame chrome (grid labels) is drawn after restore.
+          const rotRad = mmRotationRad.value;
+          zctx.save();
+          if (rotRad !== 0) {
+            zctx.translate(zw / 2, zw / 2);
+            zctx.rotate(rotRad);
+            zctx.translate(-zw / 2, -zw / 2);
+          }
           if (minimapImage) {
             zctx.imageSmoothingEnabled = true;
             // Crop the art to the view window (source rect in image px).
@@ -1562,6 +1583,24 @@ export default defineComponent({
           }
           const zwx = (x: number) => ((x - vfull.minX) / (vfull.maxX - vfull.minX || 1)) * zw;
           const zwz = (zScene: number) => ((vfull.maxZ + zScene) / (vfull.maxZ - vfull.minZ || 1)) * zw;
+          // The game's A–J / 1–10 grid, world-anchored (full map rect, so it
+          // stays put under pan/zoom and rotates with the frame).
+          if (minimapShowGrid.value) {
+            zctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+            zctx.lineWidth = 1;
+            zctx.beginPath();
+            for (let i = 1; i < MAP_GRID_COLUMNS; i++) {
+              const x = zwx(full.minX + ((full.maxX - full.minX) * i) / MAP_GRID_COLUMNS);
+              zctx.moveTo(x, 0);
+              zctx.lineTo(x, zw);
+            }
+            for (let j = 1; j < MAP_GRID_COLUMNS; j++) {
+              const y = zwz(-(full.minZ + ((full.maxZ - full.minZ) * j) / MAP_GRID_COLUMNS));
+              zctx.moveTo(0, y);
+              zctx.lineTo(zw, y);
+            }
+            zctx.stroke();
+          }
           // Capture rings + letters (same rendering as the small thumb, at
           // the enlarged scale — true world radius through the view window).
           const zcapR = (radius: number) =>
@@ -1577,18 +1616,23 @@ export default defineComponent({
             zctx.beginPath();
             zctx.arc(cx, cz, rPx, 0, Math.PI * 2);
             zctx.stroke();
+            // Ring text stays upright under map rotation.
+            zctx.save();
+            zctx.translate(cx, cz);
+            if (rotRad !== 0) zctx.rotate(-rotRad);
             zctx.fillStyle = zctx.strokeStyle;
             zctx.font = "bold 16px sans-serif";
             zctx.textAlign = "center";
             zctx.textBaseline = "middle";
-            zctx.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
+            zctx.fillText(String.fromCharCode(65 + i), 0, 0.5);
             // Capturing countdown under the letter: "xx s" to complete.
             const eta = capDisplay.value[i]?.etaSeconds;
             if (eta != null && eta > 0) {
               zctx.fillStyle = "rgba(251,191,36,0.95)";
               zctx.font = "bold 12px sans-serif";
-              zctx.fillText(Math.ceil(eta) + " s", cx, cz + rPx + 9);
+              zctx.fillText(Math.ceil(eta) + " s", 0, rPx + 9);
             }
+            zctx.restore();
           });
           if (minimapShowTrails.value) {
             for (const tr of props.trajectories) {
@@ -1691,7 +1735,12 @@ export default defineComponent({
             zctx.font = "bold 12px sans-serif";
             zctx.textAlign = "center";
             zctx.textBaseline = "bottom";
-            zctx.fillText(`${Math.ceil(cl.endT - t)}s`, zwx(pStart.x), zwz(-pStart.z) - 7);
+            // Smoke timer text stays upright under map rotation.
+            zctx.save();
+            zctx.translate(zwx(pStart.x), zwz(-pStart.z));
+            if (rotRad !== 0) zctx.rotate(-rotRad);
+            zctx.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);
+            zctx.restore();
           }
           // Aircraft — one icon per formation (squadron centre).
           {
@@ -1713,7 +1762,9 @@ export default defineComponent({
                 const sz = 22;
                 zctx.save();
                 zctx.translate(zwx(s.x), zwz(-s.z));
-                // Aircraft icons stay upright on the minimap (no rotation).
+                // Aircraft icons stay upright on the minimap (counter-rotate
+                // against the map frame when the rotate buttons are used).
+                if (rotRad !== 0) zctx.rotate(-rotRad);
                 zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
                 zctx.restore();
               } else {
@@ -1722,6 +1773,34 @@ export default defineComponent({
                 zctx.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
                 zctx.fill();
               }
+            }
+          }
+          zctx.restore(); // world frame (rotation)
+          // Grid coordinate labels live in the SCREEN frame: pinned to the
+          // top / left edges, upright at any rotation (families swap edges
+          // past 45° — see mapGrid.gridLabelLayout).
+          if (minimapShowGrid.value) {
+            const { top, left } = gridLabelLayout(rotRad, zw);
+            for (const l of [...top, ...left]) {
+              zctx.save();
+              zctx.translate(l.x, l.y);
+              zctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+              zctx.textAlign = "center";
+              zctx.textBaseline = l.y === 0 ? "top" : "middle";
+              const w = zctx.measureText(l.text).width + 8;
+              zctx.fillStyle = "rgba(5, 8, 15, 0.6)";
+              zctx.beginPath();
+              zctx.roundRect(
+                l.x === 0 ? 1 : -w / 2,
+                l.y === 0 ? 1 : -7,
+                w,
+                14,
+                4,
+              );
+              zctx.fill();
+              zctx.fillStyle = "rgba(226, 232, 240, 0.92)";
+              zctx.fillText(l.text, l.x === 0 ? 1 + w / 2 : 0, l.y === 0 ? 2 : 0);
+              zctx.restore();
             }
           }
         }
@@ -5157,25 +5236,49 @@ export default defineComponent({
         {minimapZoom.value ? (
           <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
             {/* The pill is chrome, not scrim — clicking its labels must not
-                close the view (only the scrim around the map does). */}
+                close the view (only the scrim around the map does). Icon
+                toggles light up (primary) while active; tooltips name them. */}
             <div class="holo-map__mmzoom-head" onClick={(e: MouseEvent) => e.stopPropagation()}>
+              <HTooltip text={i18nT("replay.minimap.rotateCcw")} placement="bottom">
+                <HIconButton size={24} onClick={() => rotateMap(-1)}>
+                  <RotateCcw size={13} />
+                </HIconButton>
+              </HTooltip>
               <span>{i18nT("replay.minimap.zoom")}</span>
-              <span>
-                <HSwitch
-                  modelValue={minimapShowTrails.value}
-                  onUpdate:modelValue={(v: boolean) => { minimapShowTrails.value = v; }}
-                >
-                  {i18nT("replay.minimap.trails")}
-                </HSwitch>
+              <span class="holo-map__mmzoom-head-toggles">
+                <HTooltip text={i18nT("replay.minimap.trails")} placement="bottom">
+                  <HIconButton
+                    size={24}
+                    variant={minimapShowTrails.value ? "primary" : "ghost"}
+                    onClick={() => { minimapShowTrails.value = !minimapShowTrails.value; }}
+                  >
+                    <Spline size={13} />
+                  </HIconButton>
+                </HTooltip>
+                <HTooltip text={i18nT("replay.minimap.grid")} placement="bottom">
+                  <HIconButton
+                    size={24}
+                    variant={minimapShowGrid.value ? "primary" : "ghost"}
+                    onClick={() => { minimapShowGrid.value = !minimapShowGrid.value; }}
+                  >
+                    <Grid3x3 size={13} />
+                  </HIconButton>
+                </HTooltip>
+                <HTooltip text={i18nT("replay.tactical.toggle")} placement="bottom">
+                  <HIconButton
+                    size={24}
+                    variant={tacticalOn.value ? "primary" : "ghost"}
+                    onClick={() => { tacticalOn.value = !tacticalOn.value; }}
+                  >
+                    <PenLine size={13} />
+                  </HIconButton>
+                </HTooltip>
               </span>
-              <span>
-                <HSwitch
-                  modelValue={tacticalOn.value}
-                  onUpdate:modelValue={(v: boolean) => { tacticalOn.value = v; }}
-                >
-                  {i18nT("replay.tactical.toggle")}
-                </HSwitch>
-              </span>
+              <HTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
+                <HIconButton size={24} onClick={() => rotateMap(1)}>
+                  <RotateCw size={13} />
+                </HIconButton>
+              </HTooltip>
             </div>
             {/* Stage: base map canvas + tactical annotation layer. The map
                 keeps its full size in tactical mode — the board docks INSIDE
@@ -5202,6 +5305,7 @@ export default defineComponent({
                 pause={() => { if (playing.value) togglePlay(); }}
                 seekTo={seekBattleTime}
                 trajectories={() => props.trajectories}
+                rotationDeg={mmRotationDeg.value}
                 actions={shipActions.value}
                 labelOf={vehicleLabelOf}
                 pickShipAt={pickShipAt}

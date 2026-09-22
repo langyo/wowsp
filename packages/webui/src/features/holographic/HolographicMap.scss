@@ -719,14 +719,10 @@
     font-weight: 600;
     letter-spacing: 0.03em;
   }
-  label {
-    display: flex;
+  .holo-map__mmzoom-head-toggles {
+    display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    cursor: pointer;
-    /* The mmzoom head sits on a dark scrim — force light text so the
-       trails-switch label never falls back to the app's dark theme token. */
-    color: var(--holo-hud-text);
+    gap: 2px;
   }
 }
 .holo-map__mmzoom-canvas {

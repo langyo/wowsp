@@ -74,7 +74,10 @@
   },
   "minimap": {
     "zoom": "Zoomed map",
-    "trails": "Ship trails"
+    "trails": "Ship trails",
+    "grid": "Map grid (A–J / 1–10)",
+    "rotateCcw": "Rotate map counter-clockwise 45°",
+    "rotateCw": "Rotate map clockwise 45°"
   },
   "labels": {
     "hide": "Hide labels",
