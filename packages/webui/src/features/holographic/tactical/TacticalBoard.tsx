@@ -84,6 +84,10 @@ export default defineComponent({
     replayPath: { type: String, required: true },
     /** Filename fragment for export defaults (map name). */
     mapTag: { type: String, default: "map" },
+    /** Map-frame rotation (degrees, +45° per rotate click). The annotation
+     *  canvas renders through the same rotation as the base map; pointer
+     *  input is un-rotated before hitting world space. */
+    rotationDeg: { type: Number, default: 0 },
     /** Toolbar + interactions visible; off = view-only annotations. */
     editMode: { type: Boolean, default: false },
     getBounds: { type: Function as PropType<() => MapBounds | null>, required: true },
@@ -211,13 +215,43 @@ export default defineComponent({
       if (!pr || !cvs) return null;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0) return null;
-      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
-      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
-      return { p: pr.toWorld(lx, ly), lx, ly, p2: pr };
+      const raw = unrotate(
+        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      );
+      return { p: pr.toWorld(raw.lx, raw.ly), lx: raw.lx, ly: raw.ly, p2: pr };
     }
 
     function anchorT0(): number {
       return store.anchorToTime.value ? props.getTime() : 0;
+    }
+
+    const rotRad = computed(() => (props.rotationDeg * Math.PI) / 180);
+    /** View-space (un-rotated) point for a canvas-space point: the annotation
+     *  canvas renders rotated, so pointer input must spin back by -θ around
+     *  the logical centre before it can hit world coordinates. */
+    function unrotate(lx: number, ly: number): { lx: number; ly: number } {
+      const r = -rotRad.value;
+      if (r === 0) return { lx, ly };
+      const c = TACTICAL_SIZE / 2;
+      const dx = lx - c;
+      const dy = ly - c;
+      return {
+        lx: c + dx * Math.cos(r) - dy * Math.sin(r),
+        ly: c + dx * Math.sin(r) + dy * Math.cos(r),
+      };
+    }
+    /** Screen-rotate a view-space point for DOM positioning (text editor). */
+    function rotatePoint(q: { x: number; y: number }): { x: number; y: number } {
+      const r = rotRad.value;
+      if (r === 0) return q;
+      const c = TACTICAL_SIZE / 2;
+      const dx = q.x - c;
+      const dy = q.y - c;
+      return {
+        x: c + dx * Math.cos(r) - dy * Math.sin(r),
+        y: c + dx * Math.sin(r) + dy * Math.cos(r),
+      };
     }
 
     // ── Render loop ──────────────────────────────────────────────────────
@@ -267,6 +301,15 @@ export default defineComponent({
       const ctx = cvs.getContext("2d");
       if (!ctx) return;
       ctx.setTransform(px / TACTICAL_SIZE, 0, 0, px / TACTICAL_SIZE, 0, 0);
+      // Mirror the base map's world-frame rotation (annotations are
+      // world-anchored: they must spin together with the art).
+      if (rotRad.value !== 0) {
+        ctx.save();
+        const c = TACTICAL_SIZE / 2;
+        ctx.translate(c, c);
+        ctx.rotate(rotRad.value);
+        ctx.translate(-c, -c);
+      }
       const p = makeProjection(bounds);
       const regionRect: LogicalRect | null =
         regionOverride !== undefined
@@ -287,9 +330,10 @@ export default defineComponent({
         // their glyphs render hollow (standalone boards would own solids).
         hollowMarkers: true,
       });
-      // Keep the text editor glued to its world anchor.
+      if (rotRad.value !== 0) ctx.restore();
+      // Keep the text editor glued to its world anchor (screen-rotated).
       if (textEdit.value && inputRef.value) {
-        const q = p.toPx(textEdit.value.at);
+        const q = rotatePoint(p.toPx(textEdit.value.at));
         inputRef.value.style.left = `${(q.x / TACTICAL_SIZE) * 100}%`;
         inputRef.value.style.top = `${(q.y / TACTICAL_SIZE) * 100}%`;
       }
@@ -456,11 +500,15 @@ export default defineComponent({
       if (!hit) return;
       const d = drag.value;
       switch (d.kind) {
-        case "pan":
+        case "pan": {
+          // hit.lx/ly are already view-space (un-rotated); their DELTA is the
+          // screen-space drag delta rotated into view space, so the map
+          // follows the pointer 1:1 at any rotation.
           props.viewApi.panByLogical(hit.lx - d.lastLx, hit.ly - d.lastLy);
           d.lastLx = hit.lx;
           d.lastLy = hit.ly;
           break;
+        }
         case "draw": {
           const last = d.raw[d.raw.length - 1];
           if (!last || Math.hypot(last.x - hit.p.x, last.z - hit.p.z) > hit.p2.worldPerPx * 1.2) {
@@ -585,10 +633,12 @@ export default defineComponent({
       if (!cvs) return;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0) return;
-      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
-      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
+      const hit = unrotate(
+        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      );
       const factor = e.deltaY < 0 ? 1.22 : 1 / 1.22;
-      props.viewApi.zoomAt(lx, ly, factor);
+      props.viewApi.zoomAt(hit.lx, hit.ly, factor);
     }
 
     function onDoubleClick(e: MouseEvent): void {
