@@ -261,14 +261,23 @@
 
   /* ── wallpaper ────────────────────────────────────────────────────────── */
 
+  /* Horizontal, never-wrapping wallpaper strip — overflows into an
+     automatic horizontal scrollbar (global thin scrollbar styling in
+     theme.scss applies). The dashed add tile rides at the far end. */
   &__wallpapers {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     gap: 0.5rem;
+    overflow-x: auto;
+    /* Keep focus rings (2px outline + 1px offset) from clipping at the
+       edges of the scroll container. */
+    padding: 3px;
   }
 
   &__wallpaper {
     position: relative;
+    /* Fixed footprint — cards neither shrink nor grow in the strip. */
+    flex: 0 0 120px;
     display: flex;
     flex-direction: column;
     background: rgb(var(--color-surface));
@@ -347,9 +356,59 @@
     }
   }
 
-  &__wallpaper-actions {
+  /* Dashed import tile — the wallpaper strip's last item. Mirrors the
+     account / game-path dashed add rows. */
+  &__wallpaper-add {
+    flex: 0 0 120px;
     display: flex;
-    margin-top: 0.5rem;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &--busy {
+      cursor: default;
+      opacity: 0.6;
+    }
+  }
+
+  &__wallpaper-add-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    color: rgb(var(--color-primary));
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-xs);
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+  }
+
+  &__wallpaper-add:hover &__wallpaper-add-frame,
+  &__wallpaper-add:focus-visible &__wallpaper-add-frame {
+    border-color: rgb(var(--color-primary) / 70%);
+    background: rgb(var(--color-primary) / 5%);
+  }
+
+  &__wallpaper-add-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
   }
 
   &__wallpaper-preview {

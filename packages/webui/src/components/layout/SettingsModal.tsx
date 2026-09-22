@@ -1,4 +1,4 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   BarChart3,
   Check,
@@ -23,6 +23,7 @@ import {
 
 import {
   HButton,
+  HDivider,
   HInput,
   HModal,
   HSelect,
@@ -202,6 +203,9 @@ export default defineComponent({
 
     // ── wallpaper management (import + two-step delete) ───────────────────
     const importingWallpaper = ref(false);
+    /** The wallpaper strip element — after a successful import it scrolls
+     *  to the far end so the newly added card is visible. */
+    const wallpaperRow = ref<HTMLDivElement | null>(null);
     /** Two-step delete confirm per custom wallpaper (id of the armed row). */
     const wallpaperArmed = ref<string | null>(null);
 
@@ -209,7 +213,14 @@ export default defineComponent({
       if (importingWallpaper.value) return;
       importingWallpaper.value = true;
       try {
-        await wallpaper.importCustom();
+        // Null = the user dismissed the native picker — not an error;
+        // only reveal the new card when one actually landed.
+        const imported = await wallpaper.importCustom();
+        if (imported) {
+          await nextTick();
+          const row = wallpaperRow.value;
+          if (row) row.scrollTo({ left: row.scrollWidth, behavior: "smooth" });
+        }
       } catch (e) {
         toast.error(`${t("settings.wallpaperImportFailed")}\n${(e as Error).message || e}`);
       } finally {
@@ -649,12 +660,14 @@ export default defineComponent({
               </div>
             </div>
 
+            <HDivider />
+
             {/* wallpaper / background — solid follows the theme mode; custom
                 entries are files in the AppData wallpapers folder and can be
                 deleted (two-step confirm per card). */}
             <div class="settings-modal__sub">
               <h3 class="settings-modal__sub-title">{t("settings.wallpaper")}</h3>
-              <div class="settings-modal__wallpapers">
+              <div class="settings-modal__wallpapers" ref={wallpaperRow}>
                 {wallpaper.allWallpapers.value.map((w) => {
                   const on = wallpaper.activeWallpaperId.value === w.id;
                   const custom = w.nameKey == null;
@@ -715,19 +728,24 @@ export default defineComponent({
                     </div>
                   );
                 })}
-              </div>
-              {isTauri() ? (
-                <div class="settings-modal__wallpaper-actions">
-                  <HButton
-                    variant="secondary"
-                    size="sm"
-                    loading={importingWallpaper.value}
+                {/* dashed add tile — the row's last item; opens the native
+                    import picker (Tauri only). Matches the dashed add-row
+                    pattern used by the account / game-path sections. */}
+                {isTauri() ? (
+                  <button
+                    type="button"
+                    class={["settings-modal__wallpaper-add", importingWallpaper.value ? "settings-modal__wallpaper-add--busy" : ""]}
+                    disabled={importingWallpaper.value}
+                    aria-label={t("settings.wallpaperImport")}
                     onClick={() => void importWallpaper()}
                   >
-                    <ImagePlus size={14} /> {t("settings.wallpaperImport")}
-                  </HButton>
-                </div>
-              ) : null}
+                    <span class="settings-modal__wallpaper-add-frame">
+                      <ImagePlus size={16} />
+                    </span>
+                    <span class="settings-modal__wallpaper-add-label">{t("settings.wallpaperImport")}</span>
+                  </button>
+                ) : null}
+              </div>
               {/* Overlay strength over image wallpapers — the transparency
                   dial (wallpaperOverlay.ts); meaningless for solid, which
                   never draws a scrim, so it only renders while an image is
@@ -755,6 +773,8 @@ export default defineComponent({
               <p class="settings-modal__hint">{t("settings.wallpaperHint")}</p>
             </div>
 
+            <HDivider />
+
             {/* font size — global --text-* token scaling (see
                 theme/fontScalePreference): the whole UI rescales except the
                 title bar and the sidebar's app title, which are pinned. */}
@@ -763,6 +783,8 @@ export default defineComponent({
               <FontSizeControl ns="settings" />
               <p class="settings-modal__hint">{t("settings.fontSizeHint")}</p>
             </div>
+
+            <HDivider />
 
             {/* interface scale (DPI) — root CSS `zoom` over everything (see
                 theme/dpiPrefs): dragging stages a notch, Apply previews it
@@ -815,6 +837,8 @@ export default defineComponent({
                   this UI being reachable. */}
               <p class="settings-modal__hint">{t("settings.dpiResetHint")}</p>
             </div>
+
+            <HDivider />
 
             {/* solar status — what "Auto (sun)" currently resolves to */}
             <p class="settings-modal__geoline">
