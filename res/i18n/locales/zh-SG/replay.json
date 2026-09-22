@@ -242,6 +242,29 @@
     },
     "view": {
       "reset": "重置视图缩放"
+    },
+    "menu": {
+      "shapes": "形状与文字",
+      "markers": "单位标记",
+      "more": "更多"
+    },
+    "timeline": {
+      "zoomIn": "时间轴放大（滚轮）",
+      "zoomOut": "时间轴缩小",
+      "zoomFit": "复位到全场",
+      "fit": "全场",
+      "step": "步骤",
+      "act": {
+        "speedUp": "加速",
+        "speedDown": "减速",
+        "stop": "停船",
+        "shell": "开炮",
+        "torpedo": "鱼雷",
+        "planeTakeoff": "飞机起飞",
+        "planeDrop": "飞机投弹",
+        "marker": "虚拟单位",
+        "path": "钉取航迹"
+      }
     }
   },
   "chatLog": "聊天记录",

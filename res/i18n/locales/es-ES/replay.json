@@ -242,6 +242,29 @@
     },
     "view": {
       "reset": "Restablecer el zoom"
+    },
+    "menu": {
+      "shapes": "Formas y texto",
+      "markers": "Marcadores de unidades",
+      "more": "Más"
+    },
+    "timeline": {
+      "zoomIn": "Ampliar la línea de tiempo (rueda)",
+      "zoomOut": "Reducir la línea de tiempo",
+      "zoomFit": "Todo el combate",
+      "fit": "Todo",
+      "step": "Paso",
+      "act": {
+        "speedUp": "Aceleración",
+        "speedDown": "Reducción",
+        "stop": "Alto",
+        "shell": "Salva",
+        "torpedo": "Torpedos",
+        "planeTakeoff": "Despegue de escuadrilla",
+        "planeDrop": "Ataque aéreo",
+        "marker": "Unidad virtual",
+        "path": "Trayectoria fijada"
+      }
     }
   },
   "chatLog": "Chat de batalla",

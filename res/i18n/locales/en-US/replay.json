@@ -242,6 +242,29 @@
     },
     "view": {
       "reset": "Reset view zoom"
+    },
+    "menu": {
+      "shapes": "Shapes & text",
+      "markers": "Unit markers",
+      "more": "More"
+    },
+    "timeline": {
+      "zoomIn": "Zoom in (mouse wheel on the timeline)",
+      "zoomOut": "Zoom out",
+      "zoomFit": "Fit the whole battle",
+      "fit": "Fit",
+      "step": "Step",
+      "act": {
+        "speedUp": "Speed up",
+        "speedDown": "Slowing down",
+        "stop": "All stop",
+        "shell": "Gun salvo",
+        "torpedo": "Torpedo launch",
+        "planeTakeoff": "Squadron takeoff",
+        "planeDrop": "Air attack",
+        "marker": "Virtual unit",
+        "path": "Pinned track"
+      }
     }
   },
   "chatLog": "Battle chat",
