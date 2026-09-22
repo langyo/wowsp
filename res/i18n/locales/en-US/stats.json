@@ -2,6 +2,7 @@
   "winrate": "Win Rate",
   "battles": "Battles",
   "avgDamage": "Avg Damage",
+  "dataAnomaly": "Data anomaly",
   "avgExp": "Avg XP",
   "kdRatio": "K/D Ratio",
   "survivalRate": "Survival",

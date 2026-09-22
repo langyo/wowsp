@@ -128,7 +128,12 @@ export default defineComponent({
         { label: t("stats.battles"), value: s.battles.toLocaleString() },
         {
           label: t("stats.avgDamage"),
-          value: Math.round(s.avgDamage).toLocaleString(),
+          // Any real battle deals damage — a zero here means the snapshot
+          // slice is broken, so flag it instead of showing a red 0.
+          value:
+            s.battles > 0 && s.avgDamage <= 0
+              ? t("stats.dataAnomaly")
+              : Math.round(s.avgDamage).toLocaleString(),
           color: damageColor(s.avgDamage),
         },
         {
@@ -252,39 +257,43 @@ export default defineComponent({
             </div>
           </section>
 
-          {/* ── Recent windows (近1/7/30天) ── */}
-          <section class="ship-my-stats__section">
-            <h4 class="ship-my-stats__title">{t("ships.detail.my.recent")}</h4>
-            <div class="ship-my-stats__ranges">
-              {ranges.value.map((r) => (
-                <div class="ship-my-stats__range" key={r.key}>
-                  <div class="ship-my-stats__range-head">
-                    <span class="ship-my-stats__range-label">{r.label}</span>
+          {/* ── Recent windows (近1/7/30天) — hidden entirely until at least
+              one window has a history baseline; a row of "no baseline"
+              placeholders says nothing. ── */}
+          {ranges.value.some((r) => r.delta) ? (
+            <section class="ship-my-stats__section">
+              <h4 class="ship-my-stats__title">{t("ships.detail.my.recent")}</h4>
+              <div class="ship-my-stats__ranges">
+                {ranges.value.map((r) => (
+                  <div class="ship-my-stats__range" key={r.key}>
+                    <div class="ship-my-stats__range-head">
+                      <span class="ship-my-stats__range-label">{r.label}</span>
+                      {r.delta ? (
+                        <span
+                          class="ship-my-stats__range-wr"
+                          style={{ color: winrateColor(r.delta.winrate) }}
+                        >
+                          {r.delta.winrate.toFixed(1)}%
+                        </span>
+                      ) : null}
+                    </div>
                     {r.delta ? (
-                      <span
-                        class="ship-my-stats__range-wr"
-                        style={{ color: winrateColor(r.delta.winrate) }}
-                      >
-                        {r.delta.winrate.toFixed(1)}%
-                      </span>
-                    ) : null}
+                      <div class="ship-my-stats__range-rows">
+                        <span>{`${r.delta.battles.toLocaleString()} ${t("stats.battles")}`}</span>
+                        <span>{`${t("stats.avgDamage")} ${Math.round(r.delta.avgDamage).toLocaleString()}`}</span>
+                        <span>{`${t("ships.detail.my.avgFrags")} ${r.delta.avgFrags.toFixed(2)}`}</span>
+                      </div>
+                    ) : (
+                      <div class="ship-my-stats__range-empty">
+                        {t("ships.detail.my.noBaseline")}
+                      </div>
+                    )}
                   </div>
-                  {r.delta ? (
-                    <div class="ship-my-stats__range-rows">
-                      <span>{`${r.delta.battles.toLocaleString()} ${t("stats.battles")}`}</span>
-                      <span>{`${t("stats.avgDamage")} ${Math.round(r.delta.avgDamage).toLocaleString()}`}</span>
-                      <span>{`${t("ships.detail.my.avgFrags")} ${r.delta.avgFrags.toFixed(2)}`}</span>
-                    </div>
-                  ) : (
-                    <div class="ship-my-stats__range-empty">
-                      {t("ships.detail.my.noBaseline")}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p class="ship-my-stats__note">{t("dashboard.rangeNoHistory")}</p>
-          </section>
+                ))}
+              </div>
+              <p class="ship-my-stats__note">{t("dashboard.rangeNoHistory")}</p>
+            </section>
+          ) : null}
         </div>
       );
     };
