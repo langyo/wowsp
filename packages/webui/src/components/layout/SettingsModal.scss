@@ -667,7 +667,7 @@
     }
   }
 
-  /* Running-game shortcut row above the actions. */
+  /* Running-game shortcut row above the dashed add row. */
   &__running {
     display: flex;
     align-items: center;
@@ -686,8 +686,44 @@
     }
   }
 
-  &__install-actions {
+  /* Dashed add-path placeholder — the last row of the section; opens the
+     dialog hosting the detection / browse actions. Mirrors the running-row
+     dashed style (and the account list's add row). */
+  &__install-add {
     display: flex;
-    gap: 0.6rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: transparent;
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-primary));
+    font-family: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 5%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  /* Stacked full-width actions inside the add-path dialog. */
+  &__addpath-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    margin-top: 0.75rem;
   }
 }

@@ -1,7 +1,7 @@
 import { defineComponent, ref, watch, type PropType } from "vue";
-import { X, Trophy, Swords, Star } from "@lucide/vue";
+import { X, Trophy, Swords, Star, Plus } from "@lucide/vue";
 
-import { HButton, HInput, HSelect, HTag } from "@celestia-island/hikari";
+import { HButton, HInput, HModal, HSelect, HTag } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
@@ -13,10 +13,11 @@ import "./AccountManagerContent.scss";
 
 /**
  * Account binder / switcher body — the shell-agnostic part of account
- * management: 4+ realms, search by nickname → WG API resolves account_id →
- * bind, and all bound accounts as rich cards (clan tag, winrate, battles).
- * Selecting a card switches the active account (no separate checkmark
- * button).
+ * management: all bound accounts as rich cards (clan tag, winrate, battles)
+ * plus a dashed "add player" row at the end of the list. The row opens a
+ * dialog that searches by nickname → WG API resolves account_id → the found
+ * player is previewed → confirm binds and activates it. Selecting a card
+ * switches the active account (no separate checkmark button).
  *
  * Rendered inline in the settings modal's 账户 section AND inside the
  * AccountSwitcherModal wrapper (dashboard's bind entry). Hosts that need to
@@ -38,32 +39,77 @@ export default defineComponent({
     const searching = ref(false);
     const searchError = ref<string | null>(null);
     const realms = ["ru", "eu", "na", "asia", "cn"];
+    /** Whether the add-player dialog is open. */
+    const addOpen = ref(false);
+    /** Player resolved by the lookup step, awaiting confirmation. */
+    const found = ref<{ profile: AccountProfile; stats: PlayerStats } | null>(null);
+    const binding = ref(false);
     // Per-account stats cache (hydrated from the local cache so cards can
     // show winrate/battles/clan without re-hitting the WG API).
     const statsById = ref<Map<string, PlayerStats>>(new Map());
 
+    /** Open the add dialog from the dashed list row — start from a clean
+     *  slate (no stale query / preview / error from a previous visit). */
+    function openAdd() {
+      searchError.value = null;
+      found.value = null;
+      searchName.value = "";
+      addOpen.value = true;
+    }
+
+    /** Lookup-only step: resolve the nickname on the selected realm and
+     *  stage it as the preview; the actual bind happens in confirmAdd.
+     *  `searchSeq` discards results that resolve after a reset (dialog
+     *  reopened, realm switched, newer query) so only the current query can
+     *  stage a preview. */
+    let searchSeq = 0;
     async function doSearch() {
       const name = searchName.value.trim();
-      if (!name) return;
+      if (!name || searching.value) return;
+      const seq = ++searchSeq;
       searching.value = true;
       searchError.value = null;
+      // Any new query invalidates the previously staged preview (a failed
+      // re-search must not leave the old player confirmable).
+      found.value = null;
       try {
         // lookup also resolves the account_id + caches stats.
         const result = await stats.lookup(name, searchRealm.value);
-        const profile: AccountProfile = {
-          accountId: result.accountId,
-          nickname: result.name,
-          realm: searchRealm.value,
+        if (seq !== searchSeq) return;
+        found.value = {
+          profile: {
+            accountId: result.accountId,
+            nickname: result.name,
+            realm: searchRealm.value,
+          },
+          stats: result,
         };
-        await accounts.addAccount(profile);
-        await accounts.setActive(profile.realm, profile.accountId);
-        statsById.value.set(`${profile.realm}_${profile.accountId}`, result);
+      } catch (e) {
+        if (seq !== searchSeq) return;
+        searchError.value = (e as Error).message;
+      } finally {
+        searching.value = false;
+      }
+    }
+
+    /** Bind the staged player and make it active; seed the stats cache so
+     *  the new card shows winrate/battles/clan immediately. */
+    async function confirmAdd() {
+      const f = found.value;
+      if (!f || binding.value) return;
+      binding.value = true;
+      try {
+        await accounts.addAccount(f.profile);
+        await accounts.setActive(f.profile.realm, f.profile.accountId);
+        statsById.value.set(`${f.profile.realm}_${f.profile.accountId}`, f.stats);
+        found.value = null;
         searchName.value = "";
+        addOpen.value = false;
         props.onActive?.();
       } catch (e) {
         searchError.value = (e as Error).message;
       } finally {
-        searching.value = false;
+        binding.value = false;
       }
     }
 
@@ -106,33 +152,7 @@ export default defineComponent({
 
     return () => (
       <div class="acct-modal">
-        {/* search / bind */}
-        <div class="acct-modal__search">
-          <HSelect
-            modelValue={searchRealm.value}
-            onUpdate:modelValue={(v: string) => (searchRealm.value = v)}
-            options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
-          />
-          <HInput
-            modelValue={searchName.value}
-            onUpdate:modelValue={(v: string) => (searchName.value = v)}
-            placeholder={t("account.nickname")}
-            submitOnEnter={() => void doSearch()}
-          />
-          <HButton
-            size="sm"
-            loading={searching.value}
-            disabled={!searchName.value.trim()}
-            onClick={() => void doSearch()}
-          >
-            {t("account.search")}
-          </HButton>
-        </div>
-        {searchError.value ? (
-          <p class="acct-modal__error">{searchError.value}</p>
-        ) : null}
-
-        {/* bound accounts as cards */}
+        {/* bound accounts as cards + the dashed add row closing the list */}
         <div class="acct-modal__list">
           {accounts.accounts.length === 0 ? (
             <p class="acct-modal__empty">{t("account.noAccounts")}</p>
@@ -217,7 +237,101 @@ export default defineComponent({
               );
             })
           )}
+          {/* dashed add placeholder — the last row of the list; opens the
+              search → confirm-bind dialog instead of an inline search row. */}
+          <button type="button" class="acct-modal__add" onClick={openAdd}>
+            <Plus size={14} /> {t("account.addPlayer")}
+          </button>
         </div>
+
+        {/* add-player dialog — search by nickname, preview the resolved
+            player, then confirm the bind (two-step instead of the old
+            search-binds-immediately row). */}
+        <HModal
+          modelValue={addOpen.value}
+          onUpdate:modelValue={(v: boolean) => (addOpen.value = v)}
+          title={t("account.addPlayer")}
+          width="30rem"
+        >
+          <div class="acct-modal__search">
+            <HSelect
+              modelValue={searchRealm.value}
+              onUpdate:modelValue={(v: string) => {
+                searchRealm.value = v;
+                // The staged preview belongs to the realm it was found on.
+                found.value = null;
+              }}
+              options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
+            />
+            <HInput
+              modelValue={searchName.value}
+              onUpdate:modelValue={(v: string) => (searchName.value = v)}
+              placeholder={t("account.nickname")}
+              submitOnEnter={() => void doSearch()}
+            />
+            <HButton
+              size="sm"
+              loading={searching.value}
+              disabled={!searchName.value.trim()}
+              onClick={() => void doSearch()}
+            >
+              {t("account.search")}
+            </HButton>
+          </div>
+          {searchError.value ? (
+            <p class="acct-modal__error">{searchError.value}</p>
+          ) : null}
+          {found.value ? (
+            <>
+              {/* preview of the resolved player — same anatomy as the
+                  account cards but inert: no click-to-switch, no remove /
+                  promote buttons. */}
+              <div class="acct-card acct-card--preview">
+                <PlayerBadge
+                  tier={found.value.stats.levelingTier ?? 0}
+                  dogTag={found.value.stats.dogTag ?? null}
+                  size={38}
+                />
+                <div class="acct-card__body">
+                  <div class="acct-card__head">
+                    {found.value.stats.clanTag ? (
+                      <span class="acct-card__clan">[{found.value.stats.clanTag}]</span>
+                    ) : null}
+                    <span class="acct-card__name">{found.value.profile.nickname}</span>
+                  </div>
+                  <div class="acct-card__meta">
+                    <HTag variant="default" size="sm">
+                      {found.value.profile.realm.toUpperCase()}
+                    </HTag>
+                    {found.value.stats.battles != null ? (
+                      <span class="acct-card__stat" data-hint={t("stats.battles")}>
+                        <Swords size={11} /> {found.value.stats.battles.toLocaleString()}
+                      </span>
+                    ) : null}
+                    {found.value.stats.winrate != null ? (
+                      <span
+                        class="acct-card__stat"
+                        style={{ color: winrateColor(found.value.stats.winrate) }}
+                        data-hint={t("stats.winrate")}
+                      >
+                        <Trophy size={11} /> {found.value.stats.winrate.toFixed(1)}%
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div class="acct-modal__confirm">
+                <HButton
+                  variant="primary"
+                  loading={binding.value}
+                  onClick={() => void confirmAdd()}
+                >
+                  {t("account.bind")}
+                </HButton>
+              </div>
+            </>
+          ) : null}
+        </HModal>
       </div>
     );
   },

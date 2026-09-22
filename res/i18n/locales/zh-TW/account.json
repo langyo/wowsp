@@ -4,6 +4,7 @@
   "switch": "切換帳號",
   "switcherTitle": "帳號管理",
   "add": "新增帳號",
+  "addPlayer": "新增玩家",
   "remove": "移除",
   "nickname": "暱稱",
   "realm": "伺服器",
@@ -12,7 +13,7 @@
   "notFound": "找不到帳號",
   "bound": "已綁定",
   "selectRealm": "選擇伺服器",
-  "noAccounts": "尚未綁定帳號。在上方搜尋暱稱即可綁定。",
+  "noAccounts": "尚未綁定帳號。點擊「新增玩家」搜尋暱稱以綁定。",
   "preferred": "首選",
   "setPreferred": "設為首選",
   "autoSwitched": "已切換到 {name}"
