@@ -273,17 +273,17 @@ export default defineComponent({
         return "—";
       };
 
-      const cell = (entry: TabOrderedVehicle, side: "ally" | "enemy") => {
+      const cell = (entry: TabOrderedVehicle) => {
         const v = entry.vehicle;
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
         const clickable = !isAiName(v.name);
-        // The career seal is a card-level element pinned to the card's OUTER
+        // The career seal is a card-level element pinned to the card's right
         // edge (same "pressed onto the card" look as the account card), so it
-        // needs its own copy of the career guard statLine uses above. The
-        // outer edge follows the in-game Tab table's reading direction — the
-        // seal group sits left of the text for allies, right of it for
-        // enemies, matching the overlay chips' side rule.
+        // needs its own copy of the career guard statLine uses above. Both
+        // roster columns read left-to-right, so the seal rides the right edge
+        // for allies and enemies alike — only the in-game Tab overlay flakes
+        // its seals by team.
         const st = clickable ? stats.get(v.id) : null;
         // Hidden profiles earn the 过街老鼠 seal instead of a stat verdict —
         // careerStamp's hidden branch handles that — but only once the clan
@@ -328,17 +328,8 @@ export default defineComponent({
         );
         const content = (
           <>
-            {side === "ally" ? (
-              <>
-                {seal}
-                {main}
-              </>
-            ) : (
-              <>
-                {main}
-                {seal}
-              </>
-            )}
+            {main}
+            {seal}
           </>
         );
         return clickable ? (
@@ -409,11 +400,11 @@ export default defineComponent({
           <div class="live-battle__matrix">
             <div class="live-battle__col">
               <div class="live-battle__col-title">{t("replay.roster.allies")}</div>
-              {allies.value.map((e) => cell(e, "ally"))}
+              {allies.value.map(cell)}
             </div>
             <div class="live-battle__col">
               <div class="live-battle__col-title">{t("replay.roster.enemies")}</div>
-              {enemies.value.map((e) => cell(e, "enemy"))}
+              {enemies.value.map(cell)}
             </div>
           </div>
         </div>
