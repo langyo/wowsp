@@ -11,10 +11,17 @@ const RELEASES = `${GITHUB}/releases/latest`;
 const API_LATEST = "https://api.github.com/repos/langyo/wowsp/releases/latest";
 const API_LIST = "https://api.github.com/repos/langyo/wowsp/releases?per_page=10";
 
-/* GitHub asset downloads are commonly unreachable from mainland China;
- * the zh-Hans locale routes them through the gh-proxy.com mirror (the
- * raw github.com URL is appended verbatim after the prefix). */
-const GH_PROXY = "https://gh-proxy.com/";
+/* GitHub is commonly unreachable from mainland China. Every GitHub request
+ * rotates through the official endpoint first, then these ghproxy-style
+ * prefixes (the official URL appended verbatim) until one answers — the
+ * same ladder the desktop app walks, see
+ * packages/app/tauri/src/commands/github_mirror.rs. No configuration. */
+const MIRROR_PREFIXES = [
+  "https://ghp.ci/",
+  "https://gh-proxy.com/",
+  "https://ghfast.top/",
+  "https://ghproxy.net/",
+];
 
 interface ReleaseAsset {
   name: string;
@@ -55,29 +62,48 @@ function pickRelease(v: unknown): LatestRelease | null {
   return assets.length ? { tag, assets } : null;
 }
 
-async function ghJson(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    headers: { Accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(8000),
-  });
-  return res.ok ? (res.json() as Promise<unknown>) : null;
-}
-
-async function fetchLatestRelease(): Promise<LatestRelease | null> {
+async function ghJson(url: string): Promise<unknown | null> {
   try {
-    const latest = pickRelease(await ghJson(API_LATEST));
-    if (latest) return latest;
-    const list = await ghJson(API_LIST);
-    if (Array.isArray(list)) {
-      for (const rel of list) {
-        const hit = pickRelease(rel);
-        if (hit) return hit;
-      }
-    }
-    return null;
+    const res = await fetch(url, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok ? (res.json() as Promise<unknown>) : null;
   } catch {
     return null;
   }
+}
+
+/* Walks the official-first mirror ladder until an endpoint answers.
+ * Returns the payload plus the prefix that served it ("" = official) —
+ * that same prefix is then applied to the asset download links, so the
+ * route proven working for the API carries the downloads too. */
+async function ghJsonRotating(
+  path: string,
+): Promise<{ data: unknown; prefix: string } | null> {
+  for (const prefix of ["", ...MIRROR_PREFIXES]) {
+    const data = await ghJson(prefix + path);
+    if (data !== null) return { data, prefix };
+  }
+  return null;
+}
+
+async function fetchLatestRelease(): Promise<{
+  release: LatestRelease;
+  prefix: string;
+} | null> {
+  // `releases/latest` first; the list endpoint is the fallback for the
+  // rolling res-latest / mod-hub releases taking the endpoint over.
+  for (const path of [API_LATEST, API_LIST]) {
+    const hit = await ghJsonRotating(path);
+    if (!hit) continue;
+    const rows = Array.isArray(hit.data) ? hit.data : [hit.data];
+    for (const row of rows) {
+      const parsed = pickRelease(row);
+      if (parsed) return { release: parsed, prefix: hit.prefix };
+    }
+  }
+  return null;
 }
 
 function formatSize(bytes: number): string {
@@ -90,11 +116,19 @@ function formatSize(bytes: number): string {
 export default defineComponent({
   name: "DownloadView",
   setup() {
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
 
-    // Mirrored asset links for the Simplified-Chinese locale (GH_PROXY);
-    // computed so the language switcher toggles it live.
-    const mirror = computed(() => locale.value === "zh-Hans");
+    // The mirror prefix that served the release info ("" = official).
+    // Asset links ride the same route; the pill below the assets heading
+    // names the mirror whenever one had to step in.
+    const mirrorPrefix = ref("");
+    const mirrorHost = computed(() => {
+      try {
+        return new URL(mirrorPrefix.value).host;
+      } catch {
+        return mirrorPrefix.value;
+      }
+    });
 
     // Latest release — fetched live so version numbers never go stale.
     // `phase` keeps the pending fetch (placeholder row) apart from a real
@@ -104,7 +138,8 @@ export default defineComponent({
     onMounted(async () => {
       const hit = await fetchLatestRelease();
       if (hit) {
-        release.value = hit;
+        release.value = hit.release;
+        mirrorPrefix.value = hit.prefix;
         phase.value = "ready";
       } else {
         phase.value = "failed";
@@ -181,13 +216,16 @@ export default defineComponent({
           <Reveal>
             <div class="download__assets-head">
               <h2>{t("download.assets")}</h2>
-              {/* Hidden on a failed fetch: then the only link left goes
-               * straight to the releases page, and the mirror promise
-               * would no longer match what actually downloads. */}
-              {mirror.value && phase.value !== "failed" && (
-                <span class="accent-pill download__mirror">
+              {/* Hidden when the official route served the release info
+               * (and on a failed fetch, when only the Releases-page link
+               * remains): the note only ever names a mirror in use. */}
+              {phase.value === "ready" && mirrorPrefix.value && (
+                <span
+                  class="accent-pill download__mirror"
+                  title={mirrorPrefix.value}
+                >
                   <Zap size={12} />
-                  {t("download.mirrorNote")}
+                  {t("download.mirrorNote", { host: mirrorHost.value })}
                 </span>
               )}
             </div>
@@ -197,7 +235,7 @@ export default defineComponent({
               {phase.value === "ready" && release.value
                 ? release.value.assets.map((a) => (
                   <li key={a.name}>
-                    <a href={mirror.value ? GH_PROXY + a.url : a.url} target="_blank" rel="noopener">
+                    <a href={mirrorPrefix.value + a.url} target="_blank" rel="noopener">
                       <span class="download__file">
                         <FileDown size={14} />
                         {a.name}

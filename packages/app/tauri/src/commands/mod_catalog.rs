@@ -37,34 +37,18 @@ pub const CATALOG_PROGRESS_EVENT: &str = "wowsp://mod-catalog-progress";
 /// step while still working offline (a failed refresh falls back to cache).
 const INDEX_CACHE_TTL_HOURS: i64 = 6;
 
-/// Direct download first, then the updater's CN mirror prefixes.
+/// Index candidates: the shared GitHub mirror ladder (user mirror first,
+/// then the official route, then the built-in prefixes).
 fn index_urls() -> Vec<String> {
-    let path = "langyo/wowsp/releases/download/mod-hub/mod-index.json";
-    vec![
-        format!("https://github.com/{path}"),
-        format!("https://ghp.ci/https://github.com/{path}"),
-        format!("https://gh-proxy.com/https://github.com/{path}"),
-        format!("https://ghfast.top/https://github.com/{path}"),
-        format!("https://ghproxy.net/https://github.com/{path}"),
-    ]
+    super::github_mirror::candidates(
+        "https://github.com/langyo/wowsp/releases/download/mod-hub/mod-index.json",
+    )
 }
 
-/// Download candidates for a release asset: GitHub direct first, then the
-/// same CN mirror prefixes the index fetch uses. Non-GitHub URLs are
-/// returned unchanged (single candidate).
+/// Download candidates for a release asset: the same shared ladder. Non-
+/// GitHub URLs are returned unchanged (single candidate).
 fn download_candidates(url: &str) -> Vec<String> {
-    const MIRRORS: [&str; 4] = [
-        "https://ghp.ci/",
-        "https://gh-proxy.com/",
-        "https://ghfast.top/",
-        "https://ghproxy.net/",
-    ];
-    match url.strip_prefix("https://github.com/") {
-        Some(rest) => std::iter::once(url.to_string())
-            .chain(MIRRORS.map(|m| format!("{m}https://github.com/{rest}")))
-            .collect(),
-        None => vec![url.to_string()],
-    }
+    super::github_mirror::candidates(url)
 }
 
 /// Serializes every mod-hub mutation (catalog install / uninstall, `.bak`
