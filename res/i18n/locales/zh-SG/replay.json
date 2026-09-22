@@ -102,7 +102,6 @@
     "manualTooSmall": "选区太小"
   },
   "postbattle": {
-    "rawData": "原始数据",
     "loadingGlobal": "加载 {name} 全局战绩…",
     "destroyedBy": "被 {name} 摧毁",
     "damageUnknownNote": "录像不包含完整的对局信息，部分伤害来源不可见",

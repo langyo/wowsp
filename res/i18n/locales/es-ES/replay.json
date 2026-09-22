@@ -102,7 +102,6 @@
     "manualTooSmall": "La selección es demasiado pequeña"
   },
   "postbattle": {
-    "rawData": "Datos en bruto",
     "loadingGlobal": "Cargando las estadísticas globales de {name}…",
     "destroyedBy": "Destruído por {name}",
     "damageUnknownNote": "Las repeticiones no incluyen la información completa de la batalla — algunas fuentes de daño no se pueden atribuir",
