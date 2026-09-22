@@ -112,12 +112,6 @@
   },
   "sealCustomizer": {
     "desc": "Toggle each seal individually, or set a custom picture per seal (stored in the stamps folder of the app data directory). Previews update live; resetting deletes the custom picture.",
-    "sealMiracle": "Shen Le (\"Miracle\")",
-    "sealApe": "Hai Hou (\"Sea Ape\")",
-    "sealMaggot": "Qu (\"Maggot\")",
-    "sealRat": "Guo Jie Lao Shu (\"Street Rat\")",
-    "sealAir": "Kong Zhong Xiao Ren (\"Sky Dweller\")",
-    "sealSub": "Shui Xia Xiao Ren (\"Underwater Dweller\")",
     "pickImage": "Custom image",
     "resetDefault": "Reset to default",
     "pickFailed": "Failed to import the custom seal image",

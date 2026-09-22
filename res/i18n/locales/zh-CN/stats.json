@@ -26,6 +26,12 @@
   "tierGood": "顶级",
   "tierGreat": "夯",
   "tierUnicum": "战舰仙人",
+  "sealMiracleDesc": "PR 评价达到 2100 且总场次不少于 500 场时授予",
+  "sealApeDesc": "PR 评价低于 750 且胜率不低于 40%（或无数据）时授予",
+  "sealMaggotDesc": "PR 评价低于 750 且胜率低于 40% 时授予",
+  "sealRatDesc": "隐藏水表，且所在公会胜率不高于 53% 或未加入任何公会时授予",
+  "sealAirDesc": "航母场次占比超过 20%（总场次多于 200 场）时授予",
+  "sealSubDesc": "潜艇场次占比超过 20%（总场次多于 200 场）时授予",
   "dist": {
     "battleship": "战列",
     "aircarrier": "航母",

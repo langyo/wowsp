@@ -10,15 +10,17 @@ import { importStampImage, resetStampImage } from "@/stores/stampOverrides";
 import type { StampKind } from "@/utils/winrate";
 import "./SealCustomizer.scss";
 
-/** The customizer's rows, in RatingStamp's canonical kind order; names are
- *  settings.json `sealCustomizer.*` keys. */
-const SEALS: Array<{ kind: StampKind; nameKey: string }> = [
-  { kind: "miracle", nameKey: "sealMiracle" },
-  { kind: "ape", nameKey: "sealApe" },
-  { kind: "maggot", nameKey: "sealMaggot" },
-  { kind: "rat", nameKey: "sealRat" },
-  { kind: "air", nameKey: "sealAir" },
-  { kind: "sub", nameKey: "sealSub" },
+/** The customizer's rows, in RatingStamp's canonical kind order; each row
+ *  renders its award-criteria description (stats.json `stats.seal*Desc`
+ *  keys) — the stamps already carry their own name glyph, and the same copy
+ *  serves as RatingStamp's hover tooltip. */
+const SEALS: Array<{ kind: StampKind; descKey: string }> = [
+  { kind: "miracle", descKey: "sealMiracleDesc" },
+  { kind: "ape", descKey: "sealApeDesc" },
+  { kind: "maggot", descKey: "sealMaggotDesc" },
+  { kind: "rat", descKey: "sealRatDesc" },
+  { kind: "air", descKey: "sealAirDesc" },
+  { kind: "sub", descKey: "sealSubDesc" },
 ];
 
 /**
@@ -72,7 +74,7 @@ export default defineComponent({
       return (
         <div class="seal-customizer">
           <p class="seal-customizer__hint">{t("settings.sealCustomizer.desc")}</p>
-          {SEALS.map(({ kind, nameKey }) => {
+          {SEALS.map(({ kind, descKey }) => {
             const disabled = prefs.prefs.sealDisabled[kind] === true;
             return (
               <div
@@ -82,7 +84,7 @@ export default defineComponent({
                 <span class="seal-customizer__preview">
                   <RatingStamp kind={kind} size={34} />
                 </span>
-                <span class="seal-customizer__name">{t(`settings.sealCustomizer.${nameKey}`)}</span>
+                <span class="seal-customizer__desc">{t(`stats.${descKey}`)}</span>
                 <span class="seal-customizer__actions">
                   <HButton
                     variant="secondary"
