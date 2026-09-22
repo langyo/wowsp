@@ -27,7 +27,14 @@ function loadStoredOverlayPercent(): number {
   try {
     const raw = localStorage.getItem(WALLPAPER_OVERLAY_STORAGE_KEY);
     if (raw == null) return WALLPAPER_OVERLAY_DEFAULT;
-    return clampPercent(raw);
+    const percent = clampPercent(raw);
+    // Heal-write: a value that needed clamping (or was garbage and took the
+    // default) is forced back to disk so the correction sticks instead of
+    // re-clamping a stale value on every boot.
+    if (String(percent) !== raw) {
+      localStorage.setItem(WALLPAPER_OVERLAY_STORAGE_KEY, String(percent));
+    }
+    return percent;
   } catch {
     return WALLPAPER_OVERLAY_DEFAULT;
   }

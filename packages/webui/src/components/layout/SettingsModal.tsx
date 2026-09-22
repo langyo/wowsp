@@ -280,6 +280,15 @@ export default defineComponent({
       await saveNet();
     }
 
+    /** The canonical way users type a manual proxy: bare `host:port`.
+     *  Prefix http:// so the shell's scheme validation accepts it instead
+     *  of silently dropping the field (which would flip manual → system). */
+    function normalizeProxyUrl(raw: string | null | undefined): string | null {
+      const v = raw?.trim() ?? "";
+      if (!v) return null;
+      return v.includes("://") ? v : `http://${v}`;
+    }
+
     async function saveNet() {
       // Re-fetch the CURRENT config so fields this section does not edit
       // (githubMirror — saved from the cache section — and future additions)
@@ -294,14 +303,20 @@ export default defineComponent({
       const payload: NetworkConfig = {
         ...base,
         mode: netCfg.value.mode,
-        proxy: netCfg.value.proxy?.trim() || null,
+        proxy: normalizeProxyUrl(netCfg.value.proxy),
         resourceCdn: netCfg.value.resourceCdn?.trim() || null,
       };
       delete payload.effectiveProxy;
       try {
-        await api.setNetworkConfig(payload);
-        netCfg.value = { ...payload };
-        netLastSaved.value = { ...payload };
+        // The shell sanitizes before persisting and returns what actually
+        // landed — adopt THAT so the form never claims a proxy the HTTP
+        // stack is not using (an invalid value would otherwise desync).
+        // A backend without the response (mock / older shell) falls back
+        // to the payload we sent.
+        const saved = await api.setNetworkConfig(payload);
+        const effective = saved ?? payload;
+        netCfg.value = { ...effective };
+        netLastSaved.value = { ...effective };
         netSavedFlash.value = true;
         window.clearTimeout(netFlashTimer);
         netFlashTimer = window.setTimeout(() => (netSavedFlash.value = false), 1600);

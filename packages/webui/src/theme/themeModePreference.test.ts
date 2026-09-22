@@ -89,10 +89,13 @@ describe("readStoredThemeModePreference", () => {
     expect(readStoredThemeModePreference()).toBe("light");
   });
 
-  it("falls back to solar on a corrupt value", async () => {
+  it("falls back to solar on a corrupt value — and heals it onto disk", async () => {
     localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, "fish");
     const { readStoredThemeModePreference } = await freshModule();
     expect(readStoredThemeModePreference()).toBe("solar");
+    // Heal-write: the corrupt value is forced back to the default so the
+    // fix sticks instead of re-defaulting on every boot.
+    expect(localStorage.getItem(THEME_MODE_PREFERENCE_STORAGE_KEY)).toBe("solar");
   });
 });
 

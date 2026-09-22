@@ -43,13 +43,23 @@ function isDpiScale(v: unknown): v is number {
 /**
  * Persisted manual DPI scale in percent (one of the 25% notches between
  * 100 and 300), or null for Auto — the default, where the page never
- * touches scaling and follows the browser's own zoom untouched.
+ * touches scaling and follows the browser's own zoom untouched. An invalid
+ * stored value (garbage, out-of-range — e.g. left behind by a schema
+ * change) HEALS onto Auto by removing the key: Auto is represented by the
+ * key's absence, and clearing it makes the correction stick instead of
+ * re-defaulting on every boot.
  */
 export function loadDpiScale(): number | null {
-  const raw = localStorage.getItem(DPI_KEY);
-  if (raw == null) return null;
-  const v = Number(raw);
-  return isDpiScale(v) ? v : null;
+  try {
+    const raw = localStorage.getItem(DPI_KEY);
+    if (raw == null) return null;
+    const v = Number(raw);
+    if (isDpiScale(v)) return v;
+    localStorage.removeItem(DPI_KEY);
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export function saveDpiScale(pct: number | null): void {

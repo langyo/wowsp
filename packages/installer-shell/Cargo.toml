@@ -20,6 +20,8 @@ shun = "^0.4.1"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# The wizard prefs file is flat TOML (see read_saved_language_in)
+toml.workspace = true
 shun = "^0.4.1"
 
 # WebView2 runtime detection (same registry layout the NSIS engine used)

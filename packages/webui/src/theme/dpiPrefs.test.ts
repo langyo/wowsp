@@ -61,13 +61,14 @@ describe("dpiPrefs", () => {
     expect(loadDpiScale()).toBeNull();
   });
 
-  it("falls back to Auto for invalid stored values", () => {
-    localStorage.setItem("wowsp-dpi", "42");
-    expect(loadDpiScale()).toBeNull();
-    localStorage.setItem("wowsp-dpi", "400");
-    expect(loadDpiScale()).toBeNull();
-    localStorage.setItem("wowsp-dpi", "chonky");
-    expect(loadDpiScale()).toBeNull();
+  it("falls back to Auto for invalid stored values — and heals them off disk", () => {
+    for (const raw of ["42", "400", "chonky"]) {
+      localStorage.setItem("wowsp-dpi", raw);
+      expect(loadDpiScale()).toBeNull();
+      // Heal-write: the invalid value is removed (Auto is the key's
+      // absence) so the fix sticks instead of re-defaulting every boot.
+      expect(localStorage.getItem("wowsp-dpi")).toBeNull();
+    }
   });
 
   it("applyDpiPrefs sets root CSS zoom and the dataset notch", () => {

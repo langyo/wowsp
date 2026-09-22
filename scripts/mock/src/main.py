@@ -868,12 +868,43 @@ async def cmd_get_network_config() -> dict:
 
 
 @app.post("/api/set_network_config")
-async def cmd_set_network_config(payload: dict) -> None:
+async def cmd_set_network_config(payload: dict) -> dict:
     _MOCK_NETWORK["mode"] = payload.get("mode", "system")
     _MOCK_NETWORK["proxy"] = payload.get("proxy")
     _MOCK_NETWORK["resourceCdn"] = payload.get("resourceCdn")
     _MOCK_NETWORK["githubMirror"] = payload.get("githubMirror")
-    return None
+    # The shell returns the SANITIZED config it persisted; the settings UI
+    # adopts that response, so the mock must return one too.
+    return {**_MOCK_NETWORK, "effectiveProxy": None}
+
+
+# --- Settings files the shell persists as TOML (in-memory mirrors) ----------
+
+_MOCK_OVERLAY_CONFIG = {"table": "detect", "roster": "ocr"}
+_MOCK_GAME_CONFIG = {"activePath": None}
+
+
+@app.post("/api/get_overlay_config")
+async def cmd_get_overlay_config() -> dict:
+    return {**_MOCK_OVERLAY_CONFIG}
+
+
+@app.post("/api/set_overlay_config")
+async def cmd_set_overlay_config(payload: dict) -> dict:
+    _MOCK_OVERLAY_CONFIG["table"] = payload.get("table", "detect")
+    _MOCK_OVERLAY_CONFIG["roster"] = payload.get("roster", "ocr")
+    return {**_MOCK_OVERLAY_CONFIG}
+
+
+@app.post("/api/get_game_config")
+async def cmd_get_game_config() -> dict:
+    return {**_MOCK_GAME_CONFIG}
+
+
+@app.post("/api/set_game_config")
+async def cmd_set_game_config(payload: dict) -> dict:
+    _MOCK_GAME_CONFIG["activePath"] = payload.get("activePath")
+    return {**_MOCK_GAME_CONFIG}
 
 
 # --- Resource pack / caches (Settings -> Updates) --------------------------
