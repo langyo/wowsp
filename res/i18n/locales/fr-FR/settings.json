@@ -112,12 +112,6 @@
   },
   "sealCustomizer": {
     "desc": "Activez ou désactivez chaque sceau individuellement, ou définissez une image personnalisée par sceau (stockée dans le dossier stamps du répertoire de données de l'application). L'aperçu est immédiat ; la réinitialisation supprime l'image personnalisée.",
-    "sealMiracle": "Shen Le (« Miracle »)",
-    "sealApe": "Hai Hou (« Singe de mer »)",
-    "sealMaggot": "Qu (« Asticot »)",
-    "sealRat": "Guo Jie Lao Shu (« Rat »)",
-    "sealAir": "Kong Zhong Xiao Ren (« Nain du ciel »)",
-    "sealSub": "Shui Xia Xiao Ren (« Nain sous-marin »)",
     "pickImage": "Image personnalisée",
     "resetDefault": "Rétablir",
     "pickFailed": "Échec de l'import de l'image du sceau",

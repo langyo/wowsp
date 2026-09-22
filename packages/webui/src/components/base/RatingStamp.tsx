@@ -1,5 +1,6 @@
 import { defineComponent, type PropType } from "vue";
 
+import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { statsPrefsState } from "@/stores/statsPrefs";
 import { stampOverrideUrl } from "@/stores/stampOverrides";
@@ -34,6 +35,9 @@ let stampSeq = 0;
  *  commands::stamps) replaces the whole seal face — the procedural frame is
  *  skipped so the user's art shows as-is.
  *
+ *  Hovering a seal shows its award criteria (stats.json `stats.seal*Desc`
+ *  keys) as the native tooltip — the same copy the seal customizer rows use.
+ *
  *  Every in-app surface shows the square 2x2 faces; only the in-game Tab
  *  overlay chips swap in the flat one-line faces (res/stamps-wide, recut by
  *  scripts/recut_stamp_bitmaps.py) because the chip rows are far too short
@@ -57,6 +61,16 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
+};
+/** Award-criteria tooltip keys (stats.json) — shared with the seal
+ *  customizer rows; hover copy explains why a seal was earned. */
+const STAMP_DESC_KEYS: Record<StampKind, string> = {
+  miracle: "stats.sealMiracleDesc",
+  ape: "stats.sealApeDesc",
+  maggot: "stats.sealMaggotDesc",
+  rat: "stats.sealRatDesc",
+  air: "stats.sealAirDesc",
+  sub: "stats.sealSubDesc",
 };
 const STAMP_SEED: Record<StampKind, number> = {
   miracle: 7,
@@ -87,6 +101,7 @@ export default defineComponent({
       if (!uiLocale.value.startsWith("zh")) return null;
       if (statsPrefsState.value.sealDisabled[props.kind]) return null;
       const text = STAMP_TEXT[props.kind];
+      const desc = t(STAMP_DESC_KEYS[props.kind]);
       const custom = stampOverrideUrl(props.kind);
       if (custom != null) {
         // User's own picture replaces the procedural face entirely (frame
@@ -101,7 +116,7 @@ export default defineComponent({
             style={{ objectFit: "contain" }}
             role="img"
             aria-label={text}
-            title={text}
+            title={desc}
           />
         );
       }
@@ -117,6 +132,7 @@ export default defineComponent({
           role="img"
           aria-label={text}
         >
+          <title>{desc}</title>
           <defs>
             {/* Two line weaves a hair apart in angle — their interference
                 leaves the faint moiré of a cheap rubber stamp. */}

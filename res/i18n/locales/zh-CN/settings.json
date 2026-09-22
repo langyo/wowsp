@@ -112,12 +112,6 @@
   },
   "sealCustomizer": {
     "desc": "逐个开关每枚印章，或为印章选用自定义图片（图片存储在应用数据目录的 stamps 文件夹）。预览即时生效，还原默认即删除自定义图。",
-    "sealMiracle": "神了",
-    "sealApe": "海猴",
-    "sealMaggot": "蛆",
-    "sealRat": "过街老鼠",
-    "sealAir": "空中小人",
-    "sealSub": "水下小人",
     "pickImage": "自定义图片",
     "resetDefault": "还原默认",
     "pickFailed": "导入自定义印章图片失败",

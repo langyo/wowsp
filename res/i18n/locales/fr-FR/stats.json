@@ -26,6 +26,12 @@
   "tierGood": "Élite",
   "tierGreat": "Monstre",
   "tierUnicum": "Légende",
+  "sealMiracleDesc": "Attribué lorsque le score PR atteint 2100 sur au moins 500 batailles.",
+  "sealApeDesc": "Attribué lorsque le score PR est inférieur à 750 et que le taux de victoire est de 40 % ou plus (ou inconnu).",
+  "sealMaggotDesc": "Attribué lorsque le score PR est inférieur à 750 et que le taux de victoire est inférieur à 40 %.",
+  "sealRatDesc": "Attribué lorsque les statistiques sont masquées et que le taux de victoire du clan est au plus 53 % — ou en l'absence de clan.",
+  "sealAirDesc": "Attribué lorsque les batailles en porte-avions dépassent 20 % d'une carrière comptant plus de 200 batailles.",
+  "sealSubDesc": "Attribué lorsque les batailles en sous-marin dépassent 20 % d'une carrière comptant plus de 200 batailles.",
   "dist": {
     "battleship": "BB",
     "aircarrier": "CV",
