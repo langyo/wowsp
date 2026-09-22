@@ -1090,7 +1090,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     let focused_on_game = game.is_some_and(|g| g.is_foreground());
     let tab_down = tab_key_down();
 
-    // Table-anchoring switch (`overlay-config.json`, written by the
+    // Table-anchoring switch (`overlay-config.toml`, written by the
     // settings modal): `table: "off"` disables the WHOLE Tab overlay.
     // The webui never creates the overlay window + watcher while it is
     // off and tears them down on the off edge; this cached read is the
@@ -2177,7 +2177,7 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
     // default (WOWSP_ROW_RECOGNIZER, engine `windows-ocr`) and a no-op then
     // only when it fails — the anchor keeps row_players = None, which the
     // frontend reads as the historical index mapping. Explicitly disabled
-    // with the settings switch (`overlay-config.json` `roster: "off"`) or
+    // with the settings switch (`overlay-config.toml` `roster: "off"`) or
     // the env (`off` / `null`). Every failure inside degrades to None and
     // must never disturb the anchor flow. `ally_rows` is the SAME
     // team_sizes read the detection grid above was built from — the single

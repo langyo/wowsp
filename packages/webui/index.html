@@ -56,8 +56,18 @@
       window.__celestiaDefaultTheme = "nord";
       (function () {
         try {
-          if (!localStorage.getItem("hikari-theme-mode") && localStorage.getItem("wowsp-theme-mode")) {
-            localStorage.setItem("hikari-theme-mode", localStorage.getItem("wowsp-theme-mode"));
+          // Seed hikari's own mode key from WoWSP's authoritative one. Only
+          // VALID values are copied — a corrupt value (e.g. left behind by
+          // an upgrade) must not propagate into hikari's key; "solar" is
+          // WoWSP's word for hikari's sun-following "system" mode, and the
+          // retired "system" value maps straight through.
+          if (!localStorage.getItem("hikari-theme-mode")) {
+            var mode = localStorage.getItem("wowsp-theme-mode");
+            if (mode === "dark" || mode === "light") {
+              localStorage.setItem("hikari-theme-mode", mode);
+            } else if (mode === "solar" || mode === "system") {
+              localStorage.setItem("hikari-theme-mode", "system");
+            }
           }
           if (!localStorage.getItem("hikari-theme")) {
             var preset = localStorage.getItem("wowsp-theme-preset");
@@ -65,6 +75,10 @@
               localStorage.setItem("hikari-theme", preset);
             }
           }
+          // The pre-hikari preset key is dead either way — its value now
+          // lives on in "hikari-theme" (or was invalid). Sweep it so stale
+          // state cannot accumulate across upgrades.
+          localStorage.removeItem("wowsp-theme-preset");
         } catch (e) { /* private mode etc. — fall back to defaults */ }
       })();
     </script>

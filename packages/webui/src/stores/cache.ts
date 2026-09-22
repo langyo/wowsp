@@ -2,7 +2,7 @@
  * Resource-pack + auxiliary-cache state for the Settings → updates panel.
  * Owns the single pack's status/update snapshots, the in-flight pass
  * progress (fed by the `wowsp://res-progress` stream) and the GitHub mirror
- * preference (persisted through network-config.json, same file the network
+ * preference (persisted through network-config.toml, same file the network
  * section edits).
  *
  * The pack is content-addressed: `checkResUpdate` compares the local tree
@@ -111,8 +111,10 @@ export const useCacheStore = defineStore("resourceCache", () => {
       ...current,
       githubMirror: value?.trim() || null,
     };
-    await api.setNetworkConfig(next);
-    githubMirror.value = next.githubMirror ?? null;
+    // Adopt the sanitized response — the shell may correct the value; a
+    // backend without the response (mock / older shell) keeps what we sent.
+    const saved = await api.setNetworkConfig(next);
+    githubMirror.value = saved?.githubMirror ?? next.githubMirror ?? null;
   }
 
   /** Explicit pack pass (initial / migration / update — the Rust side

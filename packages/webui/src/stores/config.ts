@@ -3,13 +3,14 @@ import { ref } from "vue";
 
 import { api, type GameInstall } from "@/api";
 
-const GAME_CONFIG_FILE = "game-config.json";
-
 /**
  * Holds the detected game install + user settings (realm, replay dir).
  * The game-install detection runs once on app start; users can re-run it or
  * pin a manual path. The active install (which client the replay list + stats
- * read from) is persisted to AppData so switching clients survives a restart.
+ * read from) is persisted by the shell as `game-config.toml` through the
+ * typed get/set commands (migrated from the pre-TOML `game-config.json`,
+ * sanitized on every read/write — see commands/game_config.rs) so switching
+ * clients survives a restart.
  */
 export const useConfigStore = defineStore("config", () => {
   const installs = ref<GameInstall[]>([]);
@@ -25,13 +26,10 @@ export const useConfigStore = defineStore("config", () => {
    *  fresh scan and keeps it if the install still exists. */
   async function load() {
     try {
-      const raw = await api.appdataRead(GAME_CONFIG_FILE);
-      if (raw) {
-        const data = JSON.parse(raw) as { activePath?: string | null };
-        rememberedPath = data.activePath ?? null;
-      }
+      const cfg = await api.getGameConfig();
+      rememberedPath = cfg?.activePath ?? null;
     } catch {
-      // file doesn't exist yet — that's fine
+      // command unavailable (mock backend) — nothing remembered
     }
   }
 
@@ -104,10 +102,7 @@ export const useConfigStore = defineStore("config", () => {
    *  kind/realm on the next scan, so we don't risk storing a stale kind). */
   async function persist() {
     try {
-      await api.appdataWrite(
-        GAME_CONFIG_FILE,
-        JSON.stringify({ activePath: activeInstall.value?.path ?? null }),
-      );
+      await api.setGameConfig(activeInstall.value?.path ?? null);
     } catch {
       // best-effort — don't fail the action if persistence is unavailable
     }

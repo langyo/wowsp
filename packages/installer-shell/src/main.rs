@@ -688,14 +688,27 @@ struct ShellPrefs {
     log_order: String,
 }
 
-/// Installer wizard preferences, persisted under the local data home —
-/// the convention shun's own demo shell established:
-/// `%LOCALAPPDATA%\WoWSP\installer-prefs.json` = `{ "language": "zh-Hans" }`.
+/// Installer wizard preferences, persisted under the local data home:
+/// `%LOCALAPPDATA%\WoWSP\installer-prefs.toml` = `language = "zh-Hans"`.
 /// Portable (USB) runs never write the file, so a copy that moves between
 /// machines carries no machine-local state; a corrupt file degrades to
 /// the defaults instead of failing the wizard.
+///
+/// FALLBACK LAYER (same policy the app shell applies — see that shell's
+/// `settings_store`): the canonical file is TOML, but builds before the
+/// TOML switch persisted `installer-prefs.json` = `{ "language": … }`. A
+/// read prefers the TOML file and, when it is absent, parses the legacy
+/// JSON twin once, rewrites it as TOML, and deletes the JSON only after
+/// that write succeeded (an interrupted migration just re-runs next boot).
+/// The language is additionally validated against the wizard's offered
+/// locales: a value that is not one of the ten (`is_wizard_locale`) is
+/// treated as invalid, resolves to the default (system locale) and — the
+/// heal-half of the policy — is rewritten as the empty canonical TOML file
+/// so the broken value never survives a run.
 const PREFS_DIR_NAME: &str = "WoWSP";
-const PREFS_FILE: &str = "installer-prefs.json";
+const PREFS_FILE: &str = "installer-prefs.toml";
+/// Pre-TOML persistence of the same pref — read once, then retired.
+const LEGACY_PREFS_FILE: &str = "installer-prefs.json";
 
 #[derive(Serialize, Deserialize, Default)]
 struct InstallerPrefs {
@@ -704,22 +717,78 @@ struct InstallerPrefs {
     language: Option<String>,
 }
 
-/// The prefs file under a data root: `<root>\WoWSP\installer-prefs.json`.
+/// The prefs file under a data root: `<root>\WoWSP\installer-prefs.toml`.
 fn prefs_file_in(root: &Path) -> PathBuf {
     root.join(PREFS_DIR_NAME).join(PREFS_FILE)
 }
 
-/// Reads the saved wizard language under `root`. A missing file or corrupt
-/// JSON yields `None` (the defaults) — never a panic.
+/// The legacy JSON twin next to the canonical file.
+fn legacy_prefs_file_in(root: &Path) -> PathBuf {
+    root.join(PREFS_DIR_NAME).join(LEGACY_PREFS_FILE)
+}
+
+/// Canonical file text for a (possibly absent) language — header comment
+/// plus the flat key. Compared byte-for-byte on read to decide whether a
+/// corrective write is due, so a file this code wrote is never rewritten.
+fn canonical_prefs_toml(language: Option<&str>) -> String {
+    let prefs = InstallerPrefs {
+        language: language.map(str::to_string),
+    };
+    let body = toml::to_string(&prefs).unwrap_or_default();
+    format!("# WoWSP installer preferences. Invalid values are reset by the installer.\n{body}")
+}
+
+/// Reads the saved wizard language under `root`. A missing file, a corrupt
+/// file, or a value outside the wizard's offered locales yields `None` (the
+/// defaults) — never a panic. Performs the JSON→TOML migration and the
+/// invalid-value heal-write on the way past.
 fn read_saved_language_in(root: &Path) -> Option<String> {
-    let bytes = std::fs::read(prefs_file_in(root)).ok()?;
-    let prefs: InstallerPrefs = serde_json::from_slice(&bytes).ok()?;
-    prefs.language.filter(|l| !l.trim().is_empty())
+    // TOML first; fall back to the legacy JSON twin only while the TOML
+    // file does not exist yet (fresh upgrade from a pre-TOML build).
+    let (raw, legacy) = match std::fs::read_to_string(prefs_file_in(root)) {
+        Ok(raw) => (raw, false),
+        Err(_) => match std::fs::read_to_string(legacy_prefs_file_in(root)) {
+            Ok(raw) => (raw, true),
+            Err(_) => return None,
+        },
+    };
+    // One tolerant parser per source format; a parse failure is just
+    // another flavor of "invalid value" and lands on the defaults below,
+    // which the heal-write then persists over the garbage.
+    let parsed: InstallerPrefs = if legacy {
+        serde_json::from_str(&raw).unwrap_or_default()
+    } else {
+        toml::from_str(&raw).unwrap_or_default()
+    };
+    let saved = parsed
+        .language
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && is_wizard_locale(l));
+    // Heal/migrate. Legacy source: rewrite as TOML and retire the JSON twin
+    // strictly after a successful write (an interrupted migration simply
+    // re-runs next boot). TOML source: heal an invalid value onto disk, and
+    // sweep a JSON twin that survived an interrupted migration or a
+    // downgrade→re-upgrade cycle — once the TOML file exists it rules every
+    // later read, so the twin is dead weight either way.
+    let canonical = canonical_prefs_toml(saved.as_deref());
+    if legacy {
+        if std::fs::write(prefs_file_in(root), &canonical).is_ok() {
+            let _ = std::fs::remove_file(legacy_prefs_file_in(root));
+        }
+    } else if raw != canonical {
+        let _ = std::fs::write(prefs_file_in(root), &canonical);
+        let _ = std::fs::remove_file(legacy_prefs_file_in(root));
+    } else {
+        let _ = std::fs::remove_file(legacy_prefs_file_in(root));
+    }
+    saved
 }
 
 /// Persists the wizard language under `root`. Portable runs (`portable`)
 /// are a no-op; I/O failures are silently ignored — a pref write must
-/// never fail the wizard.
+/// never fail the wizard. Values outside the wizard's offered locales are
+/// not persisted at all (the write resets to the empty canonical file), so
+/// the file only ever carries a locale the UI can actually resolve.
 fn write_saved_language_in(root: &Path, language: &str, portable: bool) {
     if portable {
         return;
@@ -731,12 +800,15 @@ fn write_saved_language_in(root: &Path, language: &str, portable: bool) {
     if std::fs::create_dir_all(dir).is_err() {
         return;
     }
-    let prefs = InstallerPrefs {
-        language: Some(language.to_string()),
+    let language = language.trim();
+    let saved = if is_wizard_locale(language) {
+        Some(language)
+    } else {
+        None
     };
-    if let Ok(json) = serde_json::to_vec(&prefs) {
-        let _ = std::fs::write(file, json);
-    }
+    let _ = std::fs::write(&file, canonical_prefs_toml(saved));
+    // A legacy JSON twin must never win a later read back — retire it.
+    let _ = std::fs::remove_file(legacy_prefs_file_in(root));
 }
 
 /// The wizard language saved by a previous run of this shell, if any —
@@ -1912,8 +1984,72 @@ mod tests {
         let dir = guard.path();
         let file = dir.join(PREFS_DIR_NAME).join(PREFS_FILE);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        std::fs::write(&file, "{ not json").unwrap();
+        std::fs::write(&file, "= not toml [").unwrap();
 
+        assert!(
+            read_saved_language_in(dir).is_none(),
+            "garbage TOML degrades to the default"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            canonical_prefs_toml(None),
+            "garbage is healed onto disk so it never survives a run"
+        );
+    }
+
+    /// Pre-TOML builds persisted `installer-prefs.json`; a fresh run migrates
+    /// it once (retiring the JSON only after the TOML write) and keeps the
+    /// saved language.
+    #[test]
+    fn legacy_json_prefs_migrate_to_toml() {
+        let guard = scratch("prefs-migrate");
+        let dir = guard.path();
+        std::fs::create_dir_all(dir.join(PREFS_DIR_NAME)).unwrap();
+        std::fs::write(
+            dir.join(PREFS_DIR_NAME).join(LEGACY_PREFS_FILE),
+            r#"{"language":"zh-Hans"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(read_saved_language_in(dir), Some("zh-Hans".to_string()));
+        let toml_file = dir.join(PREFS_DIR_NAME).join(PREFS_FILE);
+        assert!(toml_file.is_file(), "the canonical TOML file exists");
+        assert!(
+            !dir.join(PREFS_DIR_NAME).join(LEGACY_PREFS_FILE).exists(),
+            "the legacy JSON twin is retired after the successful write"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&toml_file).unwrap(),
+            canonical_prefs_toml(Some("zh-Hans")),
+        );
+
+        // Steady state: the canonical file round-trips untouched.
+        assert_eq!(read_saved_language_in(dir), Some("zh-Hans".to_string()));
+    }
+
+    /// A language outside the ten wizard locales (stale tag, hand edit) is
+    /// invalid: it resolves to the default AND is rewritten away.
+    #[test]
+    fn invalid_language_is_reset_and_healed() {
+        let guard = scratch("prefs-invalid");
+        let dir = guard.path();
+        std::fs::create_dir_all(dir.join(PREFS_DIR_NAME)).unwrap();
+        std::fs::write(
+            dir.join(PREFS_DIR_NAME).join(PREFS_FILE),
+            "language = \"klingon\"\n",
+        )
+        .unwrap();
+
+        assert!(read_saved_language_in(dir).is_none());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(PREFS_DIR_NAME).join(PREFS_FILE)).unwrap(),
+            canonical_prefs_toml(None),
+            "the invalid value is forced back to the default on disk"
+        );
+
+        // Writes with an invalid value persist nothing (empty canonical
+        // file), so the broken tag can never sneak back in.
+        write_saved_language_in(dir, "klingon", false);
         assert!(read_saved_language_in(dir).is_none());
     }
 

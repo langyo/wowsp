@@ -34,11 +34,14 @@ describe("readStoredFontScaleLevel", () => {
     }
   });
 
-  it("falls back to 0 on a corrupt or out-of-range value", async () => {
+  it("falls back to 0 on a corrupt or out-of-range value — and heals it onto disk", async () => {
     for (const raw of ["fish", "3", "-3", "1.5", ""]) {
       localStorage.setItem(FONT_SCALE_STORAGE_KEY, raw);
       const { readStoredFontScaleLevel } = await freshModule();
       expect(readStoredFontScaleLevel()).toBe(0);
+      // Heal-write: the invalid value is forced back to the default so the
+      // fix sticks instead of re-defaulting on every boot.
+      expect(localStorage.getItem(FONT_SCALE_STORAGE_KEY)).toBe("0");
     }
   });
 });

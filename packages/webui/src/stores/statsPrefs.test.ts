@@ -41,9 +41,28 @@ describe("loadStatsPrefs", () => {
     });
   });
 
-  it("falls back to defaults on corrupt JSON", () => {
+  it("falls back to defaults on corrupt JSON — and heals it onto disk", () => {
     localStorage.setItem(STATS_PREFS_STORAGE_KEY, "{not json");
     expect(loadStatsPrefs()).toEqual(DEFAULT_STATS_PREFS);
+    // Heal-write: the corrupt blob is replaced by the defaults so the fix
+    // sticks instead of re-defaulting on every boot.
+    expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).toBe(
+      JSON.stringify(DEFAULT_STATS_PREFS),
+    );
+  });
+
+  it("rewrites a partially-invalid blob in its normalized form", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ prAlgo: "voodoo", sealDisabled: { rat: true, junk: true } }),
+    );
+    expect(loadStatsPrefs()).toEqual({
+      ...DEFAULT_STATS_PREFS,
+      sealDisabled: { rat: true },
+    });
+    expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).toBe(
+      JSON.stringify({ ...DEFAULT_STATS_PREFS, sealDisabled: { rat: true } }),
+    );
   });
 
   it("fills missing fields with defaults instead of dropping the blob", () => {

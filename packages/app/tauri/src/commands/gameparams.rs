@@ -542,11 +542,12 @@ fn entry_matches_id(entry: &serde_json::Value, ship_id: i64) -> bool {
 
 // ── shared helpers (same pattern as encyclopedia.rs) ─────────────────────
 
+/// Resolves through `paths` (NOT `dirs_next` directly) so portable installs
+/// read/write `<exe>/data/` like every other appdata consumer — this used to
+/// hardcode %APPDATA%\WoWSP and silently split the gameparams cache across
+/// two roots in portable mode.
 fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    let base = dirs_next::data_dir().ok_or_else(|| "cannot resolve AppData dir".to_string())?;
-    let dir = base.join("WoWSP");
-    fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
-    Ok(dir)
+    crate::paths::ensure_data_dir()
 }
 
 fn appdata_read(file: String) -> Result<Option<String>, String> {

@@ -17,6 +17,7 @@
 mod commands;
 mod os_prefs;
 mod paths;
+mod settings_store;
 #[cfg(feature = "test-harness")]
 mod test_harness;
 
@@ -301,6 +302,10 @@ fn main() {
             commands::overlay::clear_manual_roster_rect,
             commands::network::get_network_config,
             commands::installer::installer_language,
+            commands::overlay_config::get_overlay_config,
+            commands::overlay_config::set_overlay_config,
+            commands::game_config::get_game_config,
+            commands::game_config::set_game_config,
             commands::open_external::open_external,
             commands::network::set_network_config,
             commands::wg_api::lookup_player_stats,

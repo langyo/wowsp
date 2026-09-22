@@ -23,7 +23,7 @@
 //! three retained links; anything older falls back to a full download.
 //!
 //! Every GitHub URL is tried through a candidate list: the user-configured
-//! mirror (Settings → updates, stored in network-config.json) first, then a
+//! mirror (Settings → updates, stored in network-config.toml) first, then a
 //! direct connection, then the built-in ghproxy-style mirrors — so mainland
 //! China networks can pin a working prefix instead of waiting out the dead
 //! direct attempt.

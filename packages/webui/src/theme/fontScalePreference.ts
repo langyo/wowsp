@@ -58,15 +58,26 @@ function isFontScaleLevel(v: unknown): v is FontScaleLevel {
   return v === -2 || v === -1 || v === 0 || v === 1 || v === 2;
 }
 
-/** Parse the stored value. Anything but a stringified integer in -2..2
- *  falls back to 0 without rewriting it (same contract as the theme-mode
- *  preference's corrupt-value path). */
+/** Parse the stored value — with the heal-write. Anything but a stringified
+ *  integer in -2..2 falls back to 0 (the current-version default) and is
+ *  FORCED back to disk, so an invalid value is corrected once instead of
+ *  being silently re-defaulted on every boot. Non-canonical spellings of a
+ *  valid level ("" for 0, "1.0" for 1) are normalized to the canonical
+ *  string the app itself writes (same contract as the theme-mode
+ *  preference). */
 export function readStoredFontScaleLevel(): FontScaleLevel {
   try {
     const raw = localStorage.getItem(FONT_SCALE_STORAGE_KEY);
     if (raw == null) return 0;
     const parsed = Number(raw);
-    return isFontScaleLevel(parsed) ? parsed : 0;
+    if (isFontScaleLevel(parsed)) {
+      if (String(parsed) !== raw) {
+        localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(parsed));
+      }
+      return parsed;
+    }
+    localStorage.setItem(FONT_SCALE_STORAGE_KEY, "0");
+    return 0;
   } catch {
     return 0;
   }
