@@ -36,7 +36,7 @@
   "retry": "Reintentar",
   "gamePath": {
     "title": "Ruta del juego",
-    "desc": "WoWSP necesita la carpeta de instalación de World of Warships para leer los datos de blindaje y balística de los barcos, las repeticiones y los recursos de mods.",
+    "desc": "WoWSP necesita la carpeta de instalación de World of Warships para leer los datos de blindaje y balística de los buques, las repeticiones y los recursos de mods.",
     "current": "Ruta actual",
     "unset": "Sin establecer",
     "detected": "Instalaciones detectadas",
