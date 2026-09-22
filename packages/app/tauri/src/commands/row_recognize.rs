@@ -25,7 +25,7 @@
 //! and the `WOWSP_ROW_RECOGNIZER` env; PR 3b added the real on-device engine
 //! (`windows-ocr`, the OS-bundled Windows.Media.Ocr — see
 //! [`row_ocr_windows`]), which is now the DEFAULT: recognition runs unless
-//! the user's settings switch it off (`overlay-config.json` `roster: "off"`,
+//! the user's settings switch it off (`overlay-config.toml` `roster: "off"`,
 //! read via [`super::overlay_config`]) or the env explicitly opts out
 //! (`off` / `null`). The pipeline stays
 //! IO-LIGHT: the one arena-file read happens only after some text was
@@ -153,7 +153,7 @@ fn select_recognizer(raw: Option<std::ffi::OsString>) -> Option<Box<dyn RowRecog
 /// never produce a row mapping, so the pending machinery (anchor
 /// `row_players_pending`, watcher catch-up) must not wait for one. The
 /// settings file takes CLEAR precedence: a `roster: "off"` in
-/// `overlay-config.json` disables the pipeline outright, while `"ocr"` or
+/// `overlay-config.toml` disables the pipeline outright, while `"ocr"` or
 /// an absent file defers to the env below (the env stays the dev override).
 /// Consumed by `compute_anchor` and by the Tab watcher's recognition
 /// catch-up gate.
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn settings_roster_off_beats_the_env_default() {
-        // The settings switch (`overlay-config.json` `roster`) takes
+        // The settings switch (`overlay-config.toml` `roster`) takes
         // precedence over the env default: with the env UNSET — the default
         // that enables recognition on Windows whenever the OS engine is
         // constructible — a config `off` still disables the pipeline. On

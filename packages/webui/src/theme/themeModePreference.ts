@@ -34,12 +34,16 @@ function isThemeModePreference(v: unknown): v is ThemeModePreference {
   return v === "dark" || v === "light" || v === "solar";
 }
 
-/** Read + migrate. Missing new key → adopt the legacy hikari value
+/** Read + migrate + HEAL. Missing new key → adopt the legacy hikari value
  *  (dark/light verbatim, anything else — including hikari's "system",
  *  which was daylight-following here — becomes "solar") and write it back.
  *  The retired "system" value of our own key migrates onto "solar" the same
- *  way. A corrupt present value falls back to the default without rewriting
- *  history we cannot interpret. */
+ *  way. A corrupt present value ("solar" is the shipped default — the
+ *  "auto" of this app's dark/light/auto triad) is likewise FORCED back to
+ *  disk: an invalid value surviving in storage is exactly the stale state
+ *  that re-triggers on every boot after an upgrade, so the heal must stick
+ *  (the user-reported upgrade conflicts). When storage itself throws the
+ *  preference degrades to the default for the session. */
 export function readStoredThemeModePreference(): ThemeModePreference {
   try {
     const raw = localStorage.getItem(THEME_MODE_PREFERENCE_STORAGE_KEY);
@@ -55,7 +59,11 @@ export function readStoredThemeModePreference(): ThemeModePreference {
       localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, "solar");
       return "solar";
     }
-    return isThemeModePreference(raw) ? raw : "solar";
+    if (isThemeModePreference(raw)) return raw;
+    // Corrupt value — reset to the current-version default AND rewrite it,
+    // so the fix persists instead of silently re-defaulting every boot.
+    localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, "solar");
+    return "solar";
   } catch {
     return "solar";
   }

@@ -1,7 +1,7 @@
 /**
- * In-game overlay (Mode 2) user settings, persisted to AppData as
- * `overlay-config.json` (schema v2) — TWO independent switches, each with
- * its own off state:
+ * In-game overlay (Mode 2) user settings, persisted by the shell as
+ * `overlay-config.toml` (schema v2) through the typed get/set commands —
+ * TWO independent switches, each with its own off state:
  *
  * - `table` — table anchoring: "detect" (pixel detection, the default)
  *   anchors the chips to the detected team table; "off" disables the WHOLE
@@ -11,18 +11,19 @@
  *   OCR row→name matching) or "off" (chips follow roster/index order, the
  *   historical fallback, with no "recognizing…" pending hints).
  *
- * Both value sets are open enums on purpose: a future third option (e.g.
- * "plugin") can be added without schema churn, and unknown/legacy values
- * fall back to each field's safe default. Schema v1 (`{enabled: boolean}` —
- * a single master switch) migrates on load: enabled → detect + ocr,
- * disabled → off + ocr; the file is always written back in the v2 shape.
+ * The Rust side owns every on-disk concern: the flat TOML file, the
+ * one-shot migration of the pre-TOML `overlay-config.json`, the v1
+ * `{enabled: boolean}` shape (enabled → detect + ocr, disabled → off +
+ * ocr), and the fallback that resets an unknown value to the field's safe
+ * default and FORCES the corrected value back to disk (see
+ * commands/overlay_config.rs). This store keeps a thin client-side guard
+ * as defense in depth: values arriving from an older shell still land on
+ * the defaults without ever throwing.
  */
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api } from "@/api";
-
-const OVERLAY_CONFIG_FILE = "overlay-config.json";
 
 /** Table anchoring modes (schema v2 `table` field). */
 export type TableAnchorMode = "detect" | "off";
@@ -41,13 +42,6 @@ function parseRoster(raw: unknown): RosterRecognitionMode {
   return raw === "off" ? "off" : DEFAULT_ROSTER;
 }
 
-/** Shape a v1 or v2 file may carry; parsed defensively on load. */
-interface OverlayConfigFile {
-  enabled?: unknown;
-  table?: unknown;
-  roster?: unknown;
-}
-
 export const useOverlayConfigStore = defineStore("overlayConfig", () => {
   const table = ref<TableAnchorMode>(DEFAULT_TABLE);
   const roster = ref<RosterRecognitionMode>(DEFAULT_ROSTER);
@@ -57,33 +51,21 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
     if (loaded.value) return;
     loaded.value = true;
     try {
-      const raw = await api.appdataRead(OVERLAY_CONFIG_FILE);
-      if (raw) {
-        const parsed = JSON.parse(raw) as OverlayConfigFile;
-        table.value =
-          parsed.table !== undefined
-            ? parseTable(parsed.table)
-            : // v1 migration: the legacy master switch was the table
-              // overlay's on/off — enabled (or missing entirely) maps onto
-              // the default, disabled onto "off".
-              parsed.enabled === false
-              ? "off"
-              : DEFAULT_TABLE;
-        // v1 had no roster switch — recognition keeps its default.
-        roster.value = parseRoster(parsed.roster);
-      }
+      const cfg = await api.getOverlayConfig();
+      table.value = parseTable(cfg?.table);
+      roster.value = parseRoster(cfg?.roster);
     } catch {
-      // missing file / parse error — keep the defaults
+      // missing command / mock backend — keep the defaults
     }
   }
 
-  /** Best-effort persistence in the v2 shape; in-memory state applies regardless. */
+  /** Persist through the typed command; the shell sanitizes and writes the
+   *  TOML file, and the returned values are what actually landed. */
   async function persist() {
     try {
-      await api.appdataWrite(
-        OVERLAY_CONFIG_FILE,
-        JSON.stringify({ table: table.value, roster: roster.value }),
-      );
+      const saved = await api.setOverlayConfig(table.value, roster.value);
+      table.value = parseTable(saved?.table);
+      roster.value = parseRoster(saved?.roster);
     } catch {
       // best-effort persistence; the in-memory flag still applies
     }

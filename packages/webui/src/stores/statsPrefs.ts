@@ -108,7 +108,20 @@ function persist(p: StatsPrefs): void {
 }
 
 export function loadStatsPrefs(): StatsPrefs {
-  return parsePrefs(readStored()) ?? { ...DEFAULT_STATS_PREFS };
+  const raw = readStored();
+  const parsed = parsePrefs(raw);
+  if (parsed == null) {
+    const defaults = { ...DEFAULT_STATS_PREFS };
+    // Heal-write: outright garbage resets the WHOLE blob to the defaults on
+    // disk, so the stale value is corrected once instead of re-defaulting
+    // on every boot (missing key = first run, nothing to heal).
+    if (raw != null) persist(defaults);
+    return defaults;
+  }
+  // Normalize: a partially-invalid blob (dropped junk seal keys, fields
+  // reset to defaults) is rewritten so what's on disk is what's in effect.
+  if (JSON.stringify(parsed) !== raw) persist(parsed);
+  return parsed;
 }
 
 /** App-wide source of truth as a MODULE-level ref (not store-owned state):

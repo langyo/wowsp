@@ -12,9 +12,34 @@ export interface AccountProfile {
 
 const ACCOUNTS_FILE = "accounts.json";
 
+/** The five WG realms an `activeRealm` value may carry. */
+const REALMS = ["ru", "eu", "na", "asia", "cn"] as const;
+
+/** Seed the active realm from localStorage, validating against the realm
+ *  list: a stale/garbage value resets to the default ("asia") AND is forced
+ *  back to disk so the correction sticks (heal-write, same policy as the
+ *  other persisted preferences). */
+function loadActiveRealm(): string {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem("wowsp-active-realm");
+  } catch {
+    saved = null;
+  }
+  if (saved && (REALMS as readonly string[]).includes(saved)) return saved;
+  if (saved != null) {
+    try {
+      localStorage.setItem("wowsp-active-realm", "asia");
+    } catch {
+      // storage unavailable — the default holds for the session
+    }
+  }
+  return "asia";
+}
+
 export const useAccountStore = defineStore("account", () => {
   const accounts = ref<AccountProfile[]>([]);
-  const activeRealm = ref<string>(localStorage.getItem("wowsp-active-realm") || "asia");
+  const activeRealm = ref<string>(loadActiveRealm());
   const activeAccountId = ref<number | null>(
     Number(localStorage.getItem("wowsp-active-account")) || null,
   );
@@ -49,7 +74,14 @@ export const useAccountStore = defineStore("account", () => {
         const data = JSON.parse(raw);
         accounts.value = Array.isArray(data.accounts) ? data.accounts : [];
         if (data.activeAccountId) activeAccountId.value = data.activeAccountId;
-        if (data.activeRealm) activeRealm.value = data.activeRealm;
+        // Same realm validation as the localStorage seed — a corrupt file
+        // value never overrides the default.
+        if (
+          typeof data.activeRealm === "string" &&
+          (REALMS as readonly string[]).includes(data.activeRealm)
+        ) {
+          activeRealm.value = data.activeRealm;
+        }
         preferredByRealm.value =
           typeof data.preferred === "object" && data.preferred != null ? data.preferred : {};
       }

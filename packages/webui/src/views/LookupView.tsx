@@ -63,7 +63,12 @@ function loadHistory(): HistoryEntry[] {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const arr = JSON.parse(raw) as (HistoryEntry & { kind?: LookupKind })[];
-    if (!Array.isArray(arr)) return [];
+    // Heal-write: a corrupt blob (non-array, unparseable) is swept —
+    // absence means "no history", which is exactly what it degrades to.
+    if (!Array.isArray(arr)) {
+      localStorage.removeItem(HISTORY_KEY);
+      return [];
+    }
     // Entries written before clan lookup existed carry no kind — they are
     // player lookups by definition.
     return arr
@@ -76,6 +81,7 @@ function loadHistory(): HistoryEntry[] {
         time: e.time,
       }));
   } catch {
+    localStorage.removeItem(HISTORY_KEY);
     return [];
   }
 }

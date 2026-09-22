@@ -184,6 +184,10 @@ export default defineComponent({
         if (saved === "quit" || saved === "minimize") {
           void handleCloseChoice(saved);
         } else {
+          // Heal-write: a saved-but-invalid value is swept so the ask
+          // dialog (the default behavior) is a deliberate choice again,
+          // not a stale value re-failing validation on every close.
+          if (saved != null) localStorage.removeItem("wowsp-close-action");
           showCloseDialog.value = true;
         }
       });

@@ -129,7 +129,18 @@ function loadUiLocale(): Locale {
   if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) {
     return saved as Locale;
   }
-  return (i18n.global.locale as unknown as { value: Locale }).value as Locale;
+  const detected = (i18n.global.locale as unknown as { value: Locale }).value as Locale;
+  // Heal-write: a saved-but-unsupported locale (stale tag from an older
+  // build's locale list, hand edit) is forced back to the detected value so
+  // the correction sticks instead of re-detecting on every boot.
+  if (saved != null) {
+    try {
+      localStorage.setItem(UI_KEY, detected);
+    } catch {
+      // storage unavailable — the detected locale holds for the session
+    }
+  }
+  return detected;
 }
 
 /** Installer-wizard locale → canonical UI locale. The installer shell

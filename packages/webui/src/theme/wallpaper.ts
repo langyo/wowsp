@@ -73,11 +73,12 @@ export function loadActiveWallpaperId(): string {
     if (raw == null) return DEFAULT_WALLPAPER_ID;
     // Old installs may carry ids of removed presets (solid-black/white) or
     // of the old localStorage custom list ("custom-…") — those entries no
-    // longer exist, so they fall back to the solid default. useWallpaper
-    // also self-heals when a custom file disappears from disk.
-    return raw === DEFAULT_WALLPAPER_ID || raw.startsWith("wallpaper-")
-      ? raw
-      : DEFAULT_WALLPAPER_ID;
+    // longer exist. The default is FORCED back to disk (heal-write) so the
+    // stale id is corrected once instead of re-defaulting every boot;
+    // useWallpaper also self-heals when a custom file disappears from disk.
+    if (raw === DEFAULT_WALLPAPER_ID || raw.startsWith("wallpaper-")) return raw;
+    localStorage.setItem(STORAGE_BG_KEY, DEFAULT_WALLPAPER_ID);
+    return DEFAULT_WALLPAPER_ID;
   } catch {
     return DEFAULT_WALLPAPER_ID;
   }

@@ -207,15 +207,19 @@ function loadPersisted(): Persisted | null {
     if (!raw) return null;
     const p = JSON.parse(raw) as Persisted;
     // Order must be a permutation of the four categories, else fall back.
+    // Heal-write: the invalid blob is swept (absence = the canonical
+    // defaults) so the stale value is corrected once, not every boot.
     if (
       !Array.isArray(p.order) ||
       p.order.length !== CAT_KEYS.length ||
       !CAT_KEYS.every((k) => p.order.includes(k))
     ) {
+      localStorage.removeItem(PERSIST_KEY);
       return null;
     }
     return p;
   } catch {
+    localStorage.removeItem(PERSIST_KEY);
     return null;
   }
 }

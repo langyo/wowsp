@@ -1133,6 +1133,17 @@ export const api = {
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
   appdataWrite: (file: string, content: string) => transport.invoke<null>(RPC.appdata_write, { file, content }),
   appdataDelete: (file: string) => transport.invoke<null>(RPC.appdata_delete, { file }),
+  /** Overlay switches (schema v2) — sanitized + persisted as TOML by the
+   *  shell (see commands/overlay_config.rs). Unknown values reset to the
+   *  field's default on the Rust side, so the response is always valid. */
+  getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
+  setOverlayConfig: (table: string, roster: string) =>
+    transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
+  /** Remembered game-install path — sanitized + persisted as TOML by the
+   *  shell (see commands/game_config.rs). */
+  getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),
+  setGameConfig: (activePath: string | null) =>
+    transport.invoke<{ activePath: string | null }>(RPC.set_game_config, { activePath }),
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
   getGameProcess: (installs: GameInstall[]) =>
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
@@ -1357,10 +1368,13 @@ export const api = {
   /** Resource-pack progress stream (`wowsp://res-progress`). */
   listenResProgress: (handler: (p: ResProgress) => void) =>
     transport.listen?.<ResProgress>("wowsp://res-progress", handler),
-  /** Network proxy settings (system / none / manual), applied globally. */
+  /** Network proxy settings (system / none / manual), applied globally.
+   *  The setter returns the SANITIZED config the shell actually persisted
+   *  (invalid values are corrected there — see commands/network.rs), so
+   *  callers re-sync their UI from the response. */
   getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
   setNetworkConfig: (config: NetworkConfig) =>
-    transport.invoke<null>(RPC.set_network_config, { config }),
+    transport.invoke<NetworkConfig>(RPC.set_network_config, { config }),
   // ── Mod Hub ──
   modHubScanInstalled: (gameRoot: string) =>
     transport.invoke<InstalledMod[]>(RPC.mod_hub_scan_installed, { gameRoot }),
