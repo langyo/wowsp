@@ -25,7 +25,7 @@ export default defineComponent({
             <RouterLink to="/download" class="site-footer__link">{t("nav.download")}</RouterLink>
             <a href={docsHref} class="site-footer__link">{t("nav.docs")}</a>
             <a href={GITHUB} target="_blank" rel="noopener" class="site-footer__link">
-              <GithubMark size={12} style="vertical-align: -2px; margin-right: 4px;" />
+              <GithubMark size={12} />
               GitHub
             </a>
           </nav>

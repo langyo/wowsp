@@ -46,6 +46,9 @@
     text-decoration: none;
     transition: color var(--duration-short) ease;
 
+    /* The GithubMark rides inline in the label; keep it off the text. */
+    svg { margin-right: 4px; }
+
     &:hover { color: rgb(var(--color-primary)); }
   }
 }

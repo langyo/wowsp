@@ -10,6 +10,7 @@ pub mod encyclopedia;
 pub mod exports;
 pub mod game_detect;
 pub mod gameparams;
+pub mod github_mirror;
 pub mod installer;
 pub mod lookup_error;
 pub mod media;
