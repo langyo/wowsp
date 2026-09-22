@@ -318,9 +318,9 @@
     "noCommandersForNation": "No hay comandantes especiales disponibles para esta nación.",
     "slotEmpty": "No hay mejoras disponibles",
     "commanderLegend": "Insignia \"Legendario\" = comandante legendario con talentos únicos; \"Élite\" = comandante de élite/especial.",
-    "epicRibbon": "Mejorada por el comandante legendario",
+    "epicTag": "Mejorada por el comandante legendario",
     "epicLegend": "Cinta verde = habilidad que el comandante legendario seleccionado enseña con valores mejorados.",
-    "recRibbon": "Recomendada por el juego",
+    "recTag": "Recomendada por el juego",
     "recLegend": "Cinta ámbar = habilidad de la build recomendada por el juego para este barco.",
     "activator": {
       "DamageDoneActivator": "Daño infligido",

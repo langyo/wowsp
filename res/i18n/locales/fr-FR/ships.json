@@ -318,9 +318,9 @@
     "noCommandersForNation": "Aucun commandant spécial disponible pour cette nation.",
     "slotEmpty": "Aucune amélioration disponible",
     "commanderLegend": "Badge « Légendaire » = commandant légendaire avec des talents uniques ; « Élite » = commandant d'élite/spécial.",
-    "epicRibbon": "Améliorée par le commandant légendaire",
+    "epicTag": "Améliorée par le commandant légendaire",
     "epicLegend": "Ruban vert = compétence enseignée par le commandant légendaire sélectionné avec des valeurs améliorées.",
-    "recRibbon": "Recommandé par le jeu",
+    "recTag": "Recommandé par le jeu",
     "recLegend": "Ruban ambre = compétence issue de la build recommandée par le jeu pour ce navire.",
     "activator": {
       "DamageDoneActivator": "Dégâts infligés",

@@ -347,27 +347,42 @@
   /* Corner ribbons (game-style): an angled band across the plate corner.
      Green top-left = taught at enhanced values by the selected legendary
      commander; amber bottom-right = part of the in-game recommended build
-     for this ship. Siblings of the button so active/banned filters never
-     wash them out. */
+     for this ship. Sibling of the button so active/banned filters never
+     wash it out — but sized to the 56px plate only: anchoring to the tile
+     would drop the lower band onto the name label below the plate.
+     overflow:hidden clips the band ends flush with the plate edges. */
+  &__ribbon-host {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    width: 56px;
+    height: 56px;
+    border-radius: 4px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   &__ribbon {
     position: absolute;
-    z-index: 1;
     width: 26px;
     height: 7px;
     border-radius: 1px;
     box-shadow: 0 0 3px rgb(0 0 0 / 45%);
-    pointer-events: none;
 
+    /* Band centre sits 13/√2 ≈ 9.2px inside the corner on both axes, so
+       the 45° ends land exactly on the host edges and clip into a clean
+       miter instead of floating past the plate. */
     &--epic {
-      top: 7px;
-      left: -4px;
+      top: 5.7px;
+      left: -3.8px;
       transform: rotate(-45deg);
       background: linear-gradient(180deg, #7ce8a9, #2ea05d);
     }
 
     &--rec {
-      bottom: 7px;
-      right: -4px;
+      bottom: 5.7px;
+      right: -3.8px;
       transform: rotate(-45deg);
       background: linear-gradient(180deg, #ffe08a, #e0a72e);
     }
@@ -405,6 +420,58 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     word-break: break-word;
+  }
+}
+
+/* Ribbon legend above the tier rows: one chip per ribbon meaning — a
+   miniature plate corner carrying the band, plus the short tag label.
+   The full sentence rides the chip as a global data-hint tooltip. */
+.skill-legend-v {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+  padding: 0.1rem 0;
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* Miniature of the skill plate: grey square + clipped corner band. */
+  &__swatch {
+    position: relative;
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #7d8085;
+    flex: none;
+
+    &::after {
+      content: "";
+      position: absolute;
+      width: 13px;
+      height: 4px;
+      border-radius: 1px;
+      /* 6.5/√2 ≈ 4.6px off the corner — same miter math as the plate. */
+      transform: rotate(-45deg);
+    }
+
+    &--epic::after {
+      top: 2.6px;
+      left: -1.9px;
+      background: linear-gradient(180deg, #7ce8a9, #2ea05d);
+    }
+
+    &--rec::after {
+      bottom: 2.6px;
+      right: -1.9px;
+      background: linear-gradient(180deg, #ffe08a, #e0a72e);
+    }
   }
 }
 

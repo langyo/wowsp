@@ -318,9 +318,9 @@
     "noCommandersForNation": "该国别暂无可用特殊舰长。",
     "slotEmpty": "无可选升级",
     "commanderLegend": "「传奇」徽章 = 拥有专属天赋的传奇舰长；「精英」徽章 = 精英/特种舰长。",
-    "epicRibbon": "传奇舰长强化技能",
+    "epicTag": "传奇舰长强化",
     "epicLegend": "绿色角带 = 当前传奇舰长以强化数值教授的技能。",
-    "recRibbon": "游戏推荐技能",
+    "recTag": "游戏推荐加点",
     "recLegend": "黄色角带 = 游戏内为该船推荐的加点，按推荐顺序排列。",
     "activator": {
       "DamageDoneActivator": "造成损伤时",
