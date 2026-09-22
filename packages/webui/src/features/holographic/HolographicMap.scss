@@ -729,12 +729,6 @@
     color: var(--holo-hud-text);
   }
 }
-/* Pill variant shifted by the rail gutter (class set alongside the stage's
-   --tac) so it stays centered over the MAP, not the map + rail group. */
-.holo-map__mmzoom-head--tac {
-  margin-right: 224px;
-}
-
 .holo-map__mmzoom-canvas {
   /* Fit the CONTAINER: height cap = container minus head pill (~37px) +
      gap (8px) + reserved playback strip (64px) + slack; the canvas keeps
@@ -746,28 +740,17 @@
   /* The canvas shows the game's own dark map art in BOTH themes (frame +
      scrim around it follow the theme). */
   background: #05080f;
-  /* With the tactical board on, the toolbar rail takes the gutter to the
-     right — shrink the map so canvas + rail always fit the container. */
-  &--tac {
-    width: min(calc(100cqh - 122px), calc(100cqw - 240px), 720px);
-  }
 }
 
-/* Stage wrapper: the base 2D map canvas + the tactical-board annotation
- * layer (canvas, text editor, toolbar rail) stacked on top of each other.
- * Sized by its canvas child; the toolbar floats in the gutter to the right. */
+/* Stage wrapper: the base 2D map canvas + the tactical-board layer stacked
+ * on top of each other. The board docks INSIDE the map (bottom timeline +
+ * toolbar), so the canvas never resizes for it. */
 .holo-map__mmzoom-stage {
   position: relative;
   display: inline-block;
   line-height: 0;
   /* Clicks here no longer close the overlay — don't advertise zoom-out. */
   cursor: default;
-  /* With the rail on, the centering group carries the rail gutter so the
-     rail can't clip off-window when the canvas size is height-bound (the
-     centered side margins would otherwise be narrower than the gutter). */
-  &--tac {
-    margin-right: 224px;
-  }
 }
 
 /* ── Tab roster overlay ─────────────────────────────────────────────── */

@@ -4,8 +4,8 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Crosshair, Eye, EyeOff, MessageSquare, Orbit, Pause, Play, Shield, Skull, Swords, Trophy, Video } from "@lucide/vue";
-import planeTypesRaw from "../../data/plane_types.json";
-import shellTypesRaw from "../../data/shell_types.json";
+import { PLANE_TYPES, shellAmmoOf } from "./tactical/shellTypes";
+import { extractActions } from "./tactical/actions";
 
 import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
 import { useTheme } from "@/theme";
@@ -172,40 +172,10 @@ function inferGrouping(
   };
 }
 
-/** paramsId → plane metadata (index/name/type/count) baked from GameParams by
- *  `scripts/model_convert/extract_planes.py` — the type drives which in-game
- *  aircraft icon the minimap uses; `count` is the full squadron size. */
-const PLANE_TYPES = planeTypesRaw as Record<
-  string,
-  { index: string; name: string; type: string; count?: number }
->;
-/** Shell encyclopedia (paramsId → ammo/tint) baked from GameParams by
- *  `scripts/model_convert/extract_shells.py`. */
-const SHELL_TYPES = shellTypesRaw as Record<
-  string,
-  { name: string; ammo: string; tint: number[] | null }
->;
-/** Shell-flight colors per ammo type: HE yellow, AP silver, SAP grey. */
-const SHELL_COLORS: Record<string, number> = {
-  HE: 0xffcc33,
-  AP: 0xc8d0e0,
-  SAP: 0x9aa0a8,
-  CS: 0xffa07a,
-};
+/** paramsId → plane/shell metadata comes from the shared tactical
+ *  encyclopedia (tactical/shellTypes.ts) — the timeline's action markers
+ *  read the same tables. */
 
-/** Resolve a shell's ammo family (+ color) from its GameParams id. SAP shells
- *  are stored as AP in the game data — detect them by name. */
-function shellAmmoOf(paramsId?: number): { ammo: string; color: number } {
-  if (paramsId == null) return { ammo: "unknown", color: 0xffe08a };
-  const info = SHELL_TYPES[String(paramsId)];
-  if (!info) return { ammo: "unknown", color: 0xffe08a };
-  const ammo =
-    info.ammo === "AP" && info.name.toUpperCase().includes("SAP")
-      ? "SAP"
-      : info.ammo;
-  const color = SHELL_COLORS[ammo] ?? 0xffe08a;
-  return { ammo, color };
-}
 import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -504,6 +474,25 @@ export default defineComponent({
     /** Tactical board editing on the enlarged 2D map (annotations stay
      *  rendered read-only when off, so a composed view survives toggling). */
     const tacticalOn = ref(false);
+    /** Ship-action markers for the tactical timeline (salvo-grouped shells,
+     *  torpedo runs, plane sorties/attacks, speed changes). Derived once per
+     *  stream; the timeline slices by its own window. */
+    const shipActions = computed(() =>
+      extractActions({
+        trajectories: props.trajectories,
+        shellLaunches: props.shellLaunches,
+        torpedoes: props.torpedoes,
+        explosions: props.explosions,
+        minimapSquadronAdds: props.minimapSquadronAdds,
+        minimapSquadronMoves: props.minimapSquadronMoves,
+        minimapSquadronRemoves: props.minimapSquadronRemoves,
+      }),
+    );
+    /** Entity id → display label (ship name / player name) for tooltips. */
+    const vehicleLabelOf = (entityId: number): string => {
+      const v = props.vehicles.find((q) => q.id === entityId);
+      return v?.shipName ?? v?.name ?? String(entityId);
+    };
     /** Enlarged-2D-map viewport: world-space center + zoom (1 = full map,
      *  clamped 12×). Owned here because drawMinimap paints through it; the
      *  tactical board pans/zooms via the `viewApi` prop. */
@@ -1613,12 +1602,29 @@ export default defineComponent({
                     : "rgba(60, 180, 120, 0.5)";
               zctx.lineWidth = 1.5;
               zctx.beginPath();
-              tr.samples.forEach((s, i) => {
+              // Trails grow with the playhead: only samples observed at or
+              // before the current battle time. Drawing the FULL recorded
+              // path made every line run ahead of its ship into the future —
+              // scrubbed views read as "trails offset past the ships".
+              const now = current.value;
+              let end = tr.samples.length;
+              if (tr.samples[end - 1].time > now) {
+                let lo = 0;
+                let hi = end - 1;
+                while (lo < hi) {
+                  const mid = (lo + hi) >> 1;
+                  if (tr.samples[mid].time <= now) lo = mid + 1;
+                  else hi = mid;
+                }
+                end = lo;
+              }
+              for (let i = 0; i < end; i++) {
+                const s = tr.samples[i];
                 const px = zwx(s.x);
                 const py = zwz(-s.z);
                 if (i === 0) zctx.moveTo(px, py);
                 else zctx.lineTo(px, py);
-              });
+              }
               zctx.stroke();
             }
           }
@@ -5152,13 +5158,7 @@ export default defineComponent({
           <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
             {/* The pill is chrome, not scrim — clicking its labels must not
                 close the view (only the scrim around the map does). */}
-            <div
-              class={[
-                "holo-map__mmzoom-head",
-                tacticalOn.value ? "holo-map__mmzoom-head--tac" : "",
-              ]}
-              onClick={(e: MouseEvent) => e.stopPropagation()}
-            >
+            <div class="holo-map__mmzoom-head" onClick={(e: MouseEvent) => e.stopPropagation()}>
               <span>{i18nT("replay.minimap.zoom")}</span>
               <span>
                 <HSwitch
@@ -5177,24 +5177,17 @@ export default defineComponent({
                 </HSwitch>
               </span>
             </div>
-            {/* Stage: base map canvas + tactical annotation layer. Clicks on
-                the map no longer close the overlay (drawing/selection needs
-                them); the scrim around it still does. */}
-            <div
-              class={[
-                "holo-map__mmzoom-stage",
-                tacticalOn.value ? "holo-map__mmzoom-stage--tac" : "",
-              ]}
-              onClick={(e: MouseEvent) => e.stopPropagation()}
-            >
+            {/* Stage: base map canvas + tactical annotation layer. The map
+                keeps its full size in tactical mode — the board docks INSIDE
+                it (timeline + toolbar at the bottom edge). Clicks on the map
+                no longer close the overlay (drawing/selection needs them);
+                the scrim around it still does. */}
+            <div class="holo-map__mmzoom-stage" onClick={(e: MouseEvent) => e.stopPropagation()}>
               <canvas
                 ref={zoomCanvas}
                 width={TACTICAL_SIZE}
                 height={TACTICAL_SIZE}
-                class={[
-                  "holo-map__mmzoom-canvas",
-                  tacticalOn.value ? "holo-map__mmzoom-canvas--tac" : "",
-                ]}
+                class="holo-map__mmzoom-canvas"
               />
               <TacticalBoard
                 replayPath={props.replayPath}
@@ -5209,6 +5202,8 @@ export default defineComponent({
                 pause={() => { if (playing.value) togglePlay(); }}
                 seekTo={seekBattleTime}
                 trajectories={() => props.trajectories}
+                actions={shipActions.value}
+                labelOf={vehicleLabelOf}
                 pickShipAt={pickShipAt}
                 baseCanvas={() => zoomCanvas.value}
               />

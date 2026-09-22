@@ -242,6 +242,29 @@
     },
     "view": {
       "reset": "ズームをリセット"
+    },
+    "menu": {
+      "shapes": "図形とテキスト",
+      "markers": "ユニットマーカー",
+      "more": "その他"
+    },
+    "timeline": {
+      "zoomIn": "タイムライン拡大（ホイール）",
+      "zoomOut": "タイムライン縮小",
+      "zoomFit": "全体表示に戻す",
+      "fit": "全体",
+      "step": "ステップ",
+      "act": {
+        "speedUp": "加速",
+        "speedDown": "減速",
+        "stop": "停船",
+        "shell": "砲撃",
+        "torpedo": "魚雷発射",
+        "planeTakeoff": "航空機発艦",
+        "planeDrop": "航空攻撃",
+        "marker": "仮想ユニット",
+        "path": "軌跡ピン留め"
+      }
     }
   },
   "chatLog": "チャット記録",

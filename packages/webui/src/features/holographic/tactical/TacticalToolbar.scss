@@ -1,20 +1,12 @@
-/* Tactical-board rail: the floating toolbar beside the enlarged 2D map.
- * hikari buttons render on the chip surface so both themes read correctly
- * over the dark map scrim. */
+/* Tactical-board bar: the compact horizontal toolbar docked at the map's
+ * bottom-left. Popovers open upward from their anchor. hikari buttons render
+ * on the chip surface so both themes read correctly over the dark map. */
 
-.tac-rail {
-  position: absolute;
-  top: 0;
-  /* Sits in the gutter the mmzoom stage reserves to the right of the map. */
-  left: calc(100% + 10px);
-  /* Wide enough for the 5-column tool grid (5×32px buttons + gaps). */
-  width: 204px;
-  max-height: 100%;
-  overflow-y: auto;
+.tac-bar {
   display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.6rem 0.6rem 0.5rem;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
   background: var(--holo-hud-chip);
   border: 1px solid var(--holo-hud-border);
   border-radius: var(--radius-md);
@@ -22,40 +14,133 @@
   color: var(--holo-hud-text);
   cursor: default;
   z-index: 5;
-  scrollbar-width: thin;
 }
 
-.tac-rail__group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
+.tac-bar__anchor {
+  position: relative;
+  display: inline-flex;
+
+  &--on::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: -3px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgb(var(--tac-accent-rgb) / 0.95);
+  }
+}
+
+.tac-bar__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--holo-hud-border);
+}
+
+/* Colour chip on the bar (opens the style sheet). */
+.tac-bar__color {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.08s ease;
+  &:hover {
+    transform: scale(1.06);
+  }
+  &--on {
+    outline: 2px solid rgb(var(--tac-accent-rgb) / 0.95);
+    outline-offset: 1px;
+  }
 }
 
-/* Tool buttons keep an even 5-wide grid; the other groups (history, export)
- * size to their content instead of stretching 2–3 buttons across 5 slots. */
-.tac-rail__tools {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.3rem;
-  justify-items: stretch;
+.tac-bar__color-ico {
+  color: rgba(0, 0, 0, 0.55);
+  mix-blend-mode: plus-lighter;
 }
 
-.tac-rail__sep {
+/* ── Popovers (open upward) ──────────────────────────────────────────── */
+
+.tac-bar__pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--holo-hud-chip);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 9;
+
+  &--wide {
+    width: 236px;
+  }
+  &--right {
+    left: auto;
+    right: 0;
+  }
+}
+
+.tac-bar__pop-sep {
   height: 1px;
+  margin: 3px 0;
   background: var(--holo-hud-border);
-  margin: 0.1rem 0;
 }
 
-.tac-rail__swatches {
+.tac-bar__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  font-size: var(--text-sm);
+  color: var(--holo-hud-text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  > span {
+    flex: 1;
+  }
+  kbd {
+    font-family: inherit;
+    font-size: 10px;
+    color: var(--holo-hud-dim);
+    border: 1px solid var(--holo-hud-border);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  &:hover {
+    background: rgb(var(--tac-accent-rgb) / 0.14);
+  }
+  &--on {
+    background: rgb(var(--tac-accent-rgb) / 0.18);
+    color: rgb(var(--tac-accent-rgb));
+  }
+}
+
+/* Style sheet: palette + widths + dashes. */
+.tac-bar__swatches {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 0.35rem;
+  gap: 5px;
+  margin-bottom: 6px;
 }
 
-.tac-rail__swatch {
-  height: 18px;
+.tac-bar__swatch {
+  height: 20px;
   border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
@@ -70,17 +155,22 @@
   }
 }
 
-.tac-rail__widths {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.35rem;
+.tac-bar__row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  &--actions {
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
 }
 
-.tac-rail__width {
+.tac-bar__width {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 22px;
+  flex: 1;
   background: transparent;
   border: 1px solid var(--holo-hud-border);
   border-radius: 5px;
@@ -97,8 +187,9 @@
   }
 }
 
-.tac-rail__dash {
+.tac-bar__dash {
   height: 22px;
+  flex: 1;
   background: transparent;
   border: 1px solid var(--holo-hud-border);
   border-radius: 5px;
@@ -125,43 +216,38 @@
   }
 }
 
-.tac-rail__toggles {
+/* More-menu internals. */
+.tac-bar__toggles {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.4rem;
+  gap: 5px;
+  padding: 2px 4px;
   label {
-    /* The rail sits on a dark chip — keep switch labels light in both themes
-       (same override as the mmzoom head). */
     color: var(--holo-hud-text);
     font-size: var(--text-xs);
   }
 }
 
-.tac-rail__export {
+.tac-bar__grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.3rem;
-  align-items: center;
-  label {
-    /* HSwitch renders a <label>; keep it readable on the dark chip. */
-    color: var(--holo-hud-text);
-    font-size: var(--text-xs);
-  }
+  gap: 5px;
+  margin-bottom: 4px;
 }
 
-.tac-rail__field {
+.tac-bar__field {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 2px;
 }
 
-.tac-rail__field-label {
+.tac-bar__field-label {
   font-size: var(--text-xs);
   color: var(--holo-hud-dim);
 }
 
-.tac-rail__select {
+.tac-bar__select {
   width: 100%;
   padding: 0.22rem 0.35rem;
   font-size: var(--text-xs);
@@ -172,7 +258,7 @@
   outline: none;
 }
 
-.tac-rail__count {
+.tac-bar__count {
   font-size: var(--text-xs);
   color: var(--holo-hud-dim);
   text-align: center;
