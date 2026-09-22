@@ -110,7 +110,8 @@ test-harness = []
 # the files fetched under the first reachable one (`latest` version marker,
 # then the lite installer artifact). Mirrors the old tauri-plugin-updater
 # endpoints for continuity; `build.rs` embeds this table into the binary and
-# `src/commands/update.rs` consumes it.
+# `src/commands/update.rs` consumes it. Must stay equal to `update_sources()`
+# in `src/commands/github_mirror.rs` — a unit test there fails on drift.
 [package.metadata.shun.update]
 sources = [
   "https://github.com/langyo/wowsp/releases/latest/download",

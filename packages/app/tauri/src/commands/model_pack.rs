@@ -90,16 +90,6 @@ const DELTA_STAGING_DIR: &str = ".res-delta-staging";
 
 pub const RES_PROGRESS_EVENT: &str = "wowsp://res-progress";
 
-/// Built-in ghproxy-style mirror prefixes (the same set the updater races
-/// and mod-catalog falls back to). Tried AFTER a direct connection so they
-/// only carry traffic the direct route cannot.
-const BUILTIN_MIRRORS: [&str; 4] = [
-    "https://ghp.ci/",
-    "https://gh-proxy.com/",
-    "https://ghfast.top/",
-    "https://ghproxy.net/",
-];
-
 /// In-flight download bookkeeping (single-flight — there is exactly one
 /// pack now) plus a cooperative cancel flag the panel sets mid-stream.
 static DOWNLOAD_ACTIVE: Mutex<bool> = Mutex::new(false);
@@ -140,25 +130,6 @@ fn write_local_version(cache: &Path, tree_sha256: &str, version: &str) -> Result
 fn has_legacy_stamp(cache: &Path) -> bool {
     read_local_version(cache).tree_sha256.is_none()
         && LEGACY_STAMPS.iter().any(|s| cache.join(s).is_file())
-}
-
-// ── Mirror ladder ─────────────────────────────────────────────────────────
-
-/// Candidate URLs for a GitHub URL: the user-configured mirror first, then
-/// direct, then the built-in mirrors.
-fn mirror_candidates(url: &str) -> Vec<String> {
-    let cfg = super::network::load_config();
-    candidates_with_mirror(cfg.github_mirror.as_deref(), url)
-}
-
-fn candidates_with_mirror(user_mirror: Option<&str>, url: &str) -> Vec<String> {
-    let mut out = Vec::with_capacity(2 + BUILTIN_MIRRORS.len());
-    if let Some(m) = user_mirror.map(str::trim).filter(|m| !m.is_empty()) {
-        out.push(format!("{}/{url}", m.trim_end_matches('/')));
-    }
-    out.push(url.to_string());
-    out.extend(BUILTIN_MIRRORS.iter().map(|m| format!("{m}{url}")));
-    out
 }
 
 // ── Remote manifest + delta discovery ─────────────────────────────────────
@@ -205,7 +176,7 @@ fn release_download_url(asset: &str) -> String {
 async fn fetch_manifest(client: &Client) -> Result<ResManifest, String> {
     let url = release_download_url(RES_MANIFEST);
     let mut last_err = format!("no mirror attempted for {RES_MANIFEST}");
-    for candidate in mirror_candidates(&url) {
+    for candidate in super::github_mirror::candidates(&url) {
         match client
             .get(&candidate)
             .header("User-Agent", "WoWSP-resource-pack/2.0")
@@ -247,7 +218,7 @@ fn parse_delta_tag(tag: &str) -> Option<(String, String)> {
 async fn fetch_delta_edges(client: &Client) -> Result<Vec<DeltaEdge>, String> {
     let api_url = format!("https://api.github.com/repos/{REPO}/releases?per_page=100");
     let mut last_err = String::from("no mirror attempted for release list");
-    for candidate in mirror_candidates(&api_url) {
+    for candidate in super::github_mirror::candidates(&api_url) {
         let resp: serde_json::Value = match client
             .get(&candidate)
             .header("User-Agent", "WoWSP-resource-pack/2.0")
@@ -502,7 +473,7 @@ async fn download_asset(
     app: Option<&AppHandle>,
 ) -> Result<(), String> {
     let mut last_err = String::from("no mirror attempted");
-    for candidate in mirror_candidates(ctx.url) {
+    for candidate in super::github_mirror::candidates(ctx.url) {
         let attempt = DownloadCtx {
             url: &candidate,
             ..*ctx
@@ -1282,35 +1253,6 @@ pub async fn res_cache_root() -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const ASSET: &str = "https://github.com/langyo/wowsp/x.tar.gz";
-
-    #[test]
-    fn mirror_candidates_put_user_mirror_first() {
-        let urls = candidates_with_mirror(Some("https://ghfast.top"), ASSET);
-        assert_eq!(
-            urls[0],
-            "https://ghfast.top/https://github.com/langyo/wowsp/x.tar.gz"
-        );
-        assert_eq!(urls[1], ASSET);
-        assert!(urls.len() >= 6);
-    }
-
-    #[test]
-    fn mirror_candidates_trim_a_trailing_slash() {
-        let urls = candidates_with_mirror(Some("https://gh-proxy.com/"), ASSET);
-        assert_eq!(
-            urls[0],
-            "https://gh-proxy.com/https://github.com/langyo/wowsp/x.tar.gz"
-        );
-    }
-
-    #[test]
-    fn mirror_candidates_without_config_start_direct() {
-        let urls = candidates_with_mirror(None, ASSET);
-        assert_eq!(urls[0], ASSET);
-        assert_eq!(urls.len(), 5);
-    }
 
     fn edge(from: &str, to: &str) -> DeltaEdge {
         DeltaEdge {

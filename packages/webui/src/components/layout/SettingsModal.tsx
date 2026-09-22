@@ -298,8 +298,11 @@ export default defineComponent({
     const clearArmed = ref<string | null>(null);
     /** Two-step aux-cache clear confirm (scope of the armed row). */
     const auxArmed = ref<string | null>(null);
-    /** Common ghproxy presets — click to fill the input. */
+    /** Common ghproxy presets — click to fill the input. The same set the
+     * app rotates through automatically (see github_mirror.rs), plus ghp.ci
+     * which the built-in ladder tries first. */
     const MIRROR_PRESETS = [
+      "https://ghp.ci",
       "https://ghfast.top",
       "https://gh-proxy.com",
       "https://ghproxy.net",

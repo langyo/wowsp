@@ -1040,6 +1040,15 @@ mod tests {
     }
 
     #[test]
+    fn embedded_sources_match_the_shared_mirror_ladder() {
+        // Cargo.toml's `[package.metadata.shun.update]` table and
+        // `github_mirror.rs` both declare the official-first mirror list;
+        // this test fails when they drift apart.
+        let watch = watch_config().expect("embedded config parses");
+        assert_eq!(watch.sources, super::super::github_mirror::update_sources());
+    }
+
+    #[test]
     fn app_version_is_a_clean_semver() {
         assert_eq!(APP_VERSION.trim(), APP_VERSION, "no stray whitespace");
         assert!(
