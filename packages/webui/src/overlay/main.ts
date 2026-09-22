@@ -17,12 +17,16 @@ import { careerStamp, damageColor, winrateColor, type StampKind } from "@/utils/
 // Pure-TS transport wrapper (no Vue/Pinia) — safe for this bare-DOM page,
 // same as @/utils/winrate above.
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
-import stampAir from "../res/stamps/stamp-air.png";
+// The square 2x2 faces the in-app surfaces use, plus the flat one-line
+// recuts of the four-char seals (res/stamps-wide) — the chip rows are far
+// too short for a 2x2 face, so ONLY this page swaps the flat faces in
+// (see scripts/recut_stamp_bitmaps.py).
+import stampAir from "../res/stamps-wide/stamp-air.png";
 import stampApe from "../res/stamps/stamp-ape.png";
 import stampMaggot from "../res/stamps/stamp-maggot.png";
 import stampMiracle from "../res/stamps/stamp-miracle.png";
-import stampRat from "../res/stamps/stamp-rat.png";
-import stampSub from "../res/stamps/stamp-sub.png";
+import stampRat from "../res/stamps-wide/stamp-rat.png";
+import stampSub from "../res/stamps-wide/stamp-sub.png";
 import "./overlay.css";
 
 // Same locale files the Vue app consumes — one source of truth for the hint

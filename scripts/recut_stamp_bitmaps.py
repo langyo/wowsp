@@ -2,11 +2,13 @@
 """Recut the four-char stamp bitmaps from a 2x2 seal face into one line.
 
 The shipped 过街老鼠 / 空中小人 / 水下小人 glyph bitmaps stack two lines of two
-glyphs into the classic 2x2 seal face. The tab chips want them laid out flat
-in a single row instead, and the calligraphy fonts that produced the glyphs
-are NOT redistributable (see gen_stamp_bitmaps.py) — so instead of
-re-rendering from fonts, this script slices the EXISTING bitmaps apart and
-recomposes them:
+glyphs into the classic 2x2 seal face. The IN-GAME TAB chips want them laid
+out flat in a single row instead (the chip rows are far too short for a 2x2
+face), while every in-app surface keeps the square faces — so the flat faces
+are a SECOND asset set, not a replacement. The calligraphy fonts that
+produced the glyphs are NOT redistributable (see gen_stamp_bitmaps.py), so
+instead of re-rendering from fonts, this script slices the EXISTING bitmaps
+apart and recomposes them:
 
   1. find the inked block (alpha bbox);
   2. split it into the two stacked lines at the lowest-ink row seam near the
@@ -18,14 +20,17 @@ recomposes them:
      row, then fit the row centered into a fixed 800x200 canvas (4:1, matching
      the wide face's 264x66 glyph box inside RatingStamp's 300x100 viewBox).
 
-Single-glyph stamps (神 / 猴 / 蛆) are untouched. The script is one-shot per
-generation: it refuses to run on an already-wide (aspect ≥ 2.5) bitmap —
-re-run gen_stamp_bitmaps.py first to restore the 2x2 faces, then recut.
-Run after a glyph bitmap changes:
+Only the four-char kinds have a flat face; 神了 / 海猴 / 蛆 are square in
+both sets, so the overlay imports those three straight from res/stamps.
+The script is one-shot per generation: it refuses to run on an
+already-wide (aspect ≥ 2.5) bitmap — re-run gen_stamp_bitmaps.py first to
+restore the 2x2 faces, then recut. Run after a glyph bitmap changes:
 
     python scripts/recut_stamp_bitmaps.py
 
-Output: rewritten stamp-{rat,air,sub}.png in packages/webui/src/res/stamps/.
+Output: stamp-{rat,air,sub}.png (800x200) in
+packages/webui/src/res/stamps-wide/ — consumed only by the overlay page's
+bare <img> chips (see overlay/main.ts); RatingStamp keeps res/stamps.
 Requires Pillow."""
 import os
 
@@ -33,7 +38,9 @@ from PIL import Image
 
 HERE = os.path.dirname(__file__)
 SRC = os.path.join(HERE, "..", "packages", "webui", "src", "res", "stamps")
-# 4:1 canvas — 2x the 300x100-unit wide SVG face RatingStamp uses.
+OUT = os.path.join(HERE, "..", "packages", "webui", "src", "res", "stamps-wide")
+# 4:1 canvas — the overlay chips size seals by height with width auto, so
+# the aspect lives entirely in the bitmap.
 CANVAS_W, CANVAS_H = 800, 200
 MARGIN = 14
 
@@ -79,8 +86,7 @@ def trim(tile: Image.Image, pad: int = 2) -> Image.Image:
 
 
 def recut(name: str) -> None:
-    path = os.path.join(SRC, name)
-    src = Image.open(path).convert("RGBA")
+    src = Image.open(os.path.join(SRC, name)).convert("RGBA")
     if src.width / src.height >= 2.5:
         # Already a one-line face — slicing again would hunt seams through
         # the glyph row and shred it. Restore the 2x2 face via
@@ -102,8 +108,10 @@ def recut(name: str) -> None:
     for t in tiles:
         canvas.alpha_composite(t, (x, (CANVAS_H - t.height) // 2))
         x += t.width + gap
-    canvas.save(path, optimize=True)
-    print(f"{name}: {[t.size for t in tiles]} -> {canvas.size} {os.path.getsize(path)} bytes")
+    os.makedirs(OUT, exist_ok=True)
+    out_path = os.path.join(OUT, name)
+    canvas.save(out_path, optimize=True)
+    print(f"{name}: {[t.size for t in tiles]} -> {canvas.size} {os.path.getsize(out_path)} bytes")
 
 
 def main() -> None:
