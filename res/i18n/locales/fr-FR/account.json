@@ -4,6 +4,7 @@
   "switch": "Changer de compte",
   "switcherTitle": "Gestion des comptes",
   "add": "Ajouter un compte",
+  "addPlayer": "Ajouter un joueur",
   "remove": "Retirer",
   "nickname": "Pseudo",
   "realm": "Serveur",
@@ -12,7 +13,7 @@
   "notFound": "Aucun compte trouvé",
   "bound": "Lié",
   "selectRealm": "Sélectionner un serveur",
-  "noAccounts": "Aucun compte lié pour l'instant. Recherchez un pseudo ci-dessus pour en lier un.",
+  "noAccounts": "Aucun compte lié pour l'instant. Utilisez « Ajouter un joueur » pour rechercher un pseudo et en lier un.",
   "preferred": "Préféré",
   "setPreferred": "Définir comme préféré",
   "autoSwitched": "Basculé sur {name}"

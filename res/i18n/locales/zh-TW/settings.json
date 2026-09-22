@@ -95,7 +95,7 @@
   "attributionsHint": "本應用使用的合作方素材、上游專案與致謝名單。",
   "telemetryTitle": "使用量遙測",
   "account": "帳戶",
-  "accountHint": "目前帳號用於「我的水表」與戰績查詢。點擊卡片切換，在上方搜尋暱稱以綁定新帳號。",
+  "accountHint": "目前帳號用於「我的水表」與戰績查詢。點擊卡片切換，透過「新增玩家」綁定新帳號。",
   "statsSection": "戰績",
   "statsSectionHint": "調整玩家戰績卡片與即時戰鬥名單的水表（PR 評價）顯示偏好。",
   "statsPrefs": {

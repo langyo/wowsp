@@ -4,6 +4,7 @@
   "switch": "Cambiar de cuenta",
   "switcherTitle": "Gestor de cuentas",
   "add": "Añadir cuenta",
+  "addPlayer": "Añadir jugador",
   "remove": "Quitar",
   "nickname": "Apodo",
   "realm": "Servidor",
@@ -12,7 +13,7 @@
   "notFound": "No se encontró ninguna cuenta",
   "bound": "Vinculada",
   "selectRealm": "Selecciona un servidor",
-  "noAccounts": "Aún no hay cuentas vinculadas. Busca un apodo arriba para vincular una.",
+  "noAccounts": "Aún no hay cuentas vinculadas. Usa «Añadir jugador» para buscar un apodo y vincular una.",
   "preferred": "Preferida",
   "setPreferred": "Marcar como preferida",
   "autoSwitched": "Cambiado a {name}"

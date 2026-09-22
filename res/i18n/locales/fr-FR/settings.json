@@ -95,7 +95,7 @@
   "attributionsHint": "Ressources des partenaires, projets upstream et remerciements utilisés par cette application.",
   "telemetryTitle": "Télémétrie d'utilisation",
   "account": "Compte",
-  "accountHint": "Le compte actif alimente « Mes statistiques » et les recherches de données. Cliquez sur une carte pour changer ; recherchez un pseudo ci-dessus pour en lier un nouveau.",
+  "accountHint": "Le compte actif alimente « Mes statistiques » et les recherches de données. Cliquez sur une carte pour changer ; utilisez « Ajouter un joueur » pour en lier un nouveau.",
   "statsSection": "Statistiques",
   "statsSectionHint": "Préférences d'affichage de l'évaluation PR sur les fiches de statistiques et la liste de combat.",
   "statsPrefs": {

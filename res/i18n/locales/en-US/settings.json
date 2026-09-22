@@ -95,7 +95,7 @@
   "attributionsHint": "Partner assets, upstream projects, and acknowledgements used by this app.",
   "telemetryTitle": "Usage Telemetry",
   "account": "Account",
-  "accountHint": "The active account drives My Stats and record lookups. Click a card to switch; search a nickname above to bind a new one.",
+  "accountHint": "The active account drives My Stats and record lookups. Click a card to switch; use Add player to bind a new one.",
   "statsSection": "Battle stats",
   "statsSectionHint": "Display preferences for the water-table PR rating on player stat cards and the live roster.",
   "statsPrefs": {

@@ -95,7 +95,7 @@
   "attributionsHint": "Materiales de colaboradores, proyectos upstream y agradecimientos usados por esta aplicación.",
   "telemetryTitle": "Telemetría de uso",
   "account": "Cuenta",
-  "accountHint": "La cuenta activa se usa en «Mis estadísticas» y en las consultas de datos. Haz clic en una tarjeta para cambiar; busca un apodo arriba para vincular una nueva.",
+  "accountHint": "La cuenta activa se usa en «Mis estadísticas» y en las consultas de datos. Haz clic en una tarjeta para cambiar; usa «Añadir jugador» para vincular una nueva.",
   "statsSection": "Estadísticas",
   "statsSectionHint": "Preferencias de visualización de la evaluación PR en las fichas de estadísticas y la lista de batalla.",
   "statsPrefs": {

@@ -4,6 +4,7 @@
   "switch": "切换账户",
   "switcherTitle": "账户管理",
   "add": "添加账户",
+  "addPlayer": "新增玩家",
   "remove": "移除",
   "nickname": "昵称",
   "realm": "区服",
@@ -12,7 +13,7 @@
   "notFound": "未找到账户",
   "bound": "已绑定",
   "selectRealm": "选择区服",
-  "noAccounts": "尚未绑定账户。在上方搜索昵称以绑定。",
+  "noAccounts": "尚未绑定账户。点击「新增玩家」搜索昵称以绑定。",
   "preferred": "首选",
   "setPreferred": "设为首选",
   "autoSwitched": "已切换到 {name}"

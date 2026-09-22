@@ -4,6 +4,7 @@
   "switch": "アカウントを切り替え",
   "switcherTitle": "アカウント管理",
   "add": "アカウントを追加",
+  "addPlayer": "プレイヤーを追加",
   "remove": "削除",
   "nickname": "ニックネーム",
   "realm": "サーバー",
@@ -12,7 +13,7 @@
   "notFound": "アカウントが見つかりません",
   "bound": "連携済み",
   "selectRealm": "サーバーを選択",
-  "noAccounts": "まだアカウントが連携されていません。上の検索欄でニックネームを検索して連携してください。",
+  "noAccounts": "まだアカウントが連携されていません。「プレイヤーを追加」からニックネームを検索して連携してください。",
   "preferred": "優先アカウント",
   "setPreferred": "優先に設定",
   "autoSwitched": "{name} に切り替えました"
