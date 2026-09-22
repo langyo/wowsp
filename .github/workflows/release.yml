@@ -103,7 +103,32 @@ jobs:
           ref="${{ github.ref_name }}"
           case "$ref" in
             v*)
-              gh release create "$ref" --draft --title "WoWSP $ref" || true
+              # GitHub files a draft created for an already-pushed tag under
+              # an `untagged-<hash>` slug instead of the tag name (observed
+              # on v0.3.1 and v0.4.3); publishing such a draft mints a
+              # literal `untagged-…` tag and orphans the real one. Resolve
+              # the run's release — by the unique slug from the create URL
+              # when we just made it, else by the tag so a re-run after a
+              # crashed create still repairs the orphaned draft — and
+              # re-point it at the real tag before uploading. A tag push
+              # with no resolvable release fails the run instead of
+              # green-lighting a draft that publishes into a bogus tag.
+              url="$(gh release create "$ref" --draft --title "WoWSP $ref")" || true
+              rel_id=""
+              if [ -n "$url" ]; then
+                rel_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/${url##*/}" --jq .id)" || rel_id=""
+              fi
+              if [ -z "$rel_id" ]; then
+                rel_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$ref" --jq .id)" || rel_id=""
+              fi
+              if [ -z "$rel_id" ]; then
+                echo "::error::no release resolvable for $ref — refusing to upload"
+                exit 1
+              fi
+              cur_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/$rel_id" --jq .tag_name)"
+              if [ "$cur_tag" != "$ref" ]; then
+                gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$rel_id" -f tag_name="$ref"
+              fi
               printf '%s' "${ref#v}" > target/release/bundle/installer/latest
               gh release upload "$ref" target/release/bundle/installer/* --clobber
               ;;
