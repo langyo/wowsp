@@ -112,12 +112,6 @@
   },
   "sealCustomizer": {
     "desc": "逐個開關每枚印章，或為印章選用自訂圖片（圖片儲存在應用程式資料目錄的 stamps 資料夾）。預覽即時生效，還原預設即刪除自訂圖。",
-    "sealMiracleDesc": "PR 評價達到 2100 且總場次不少於 500 場時授予",
-    "sealApeDesc": "PR 評價低於 750 且勝率不低於 40%（或無資料）時授予",
-    "sealMaggotDesc": "PR 評價低於 750 且勝率低於 40% 時授予",
-    "sealRatDesc": "隱藏水表，且所在公會勝率不高於 53% 或未加入任何公會時授予",
-    "sealAirDesc": "航母場次佔比超過 20%（總場次多於 200 場）時授予",
-    "sealSubDesc": "潛艇場次佔比超過 20%（總場次多於 200 場）時授予",
     "pickImage": "自訂圖片",
     "resetDefault": "還原預設",
     "pickFailed": "匯入自訂印章圖片失敗",

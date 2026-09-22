@@ -26,6 +26,12 @@
   "tierGood": "Élite",
   "tierGreat": "Bestia",
   "tierUnicum": "Leyenda",
+  "sealMiracleDesc": "Se concede cuando la puntuación PR alcanza 2100 en al menos 500 batallas.",
+  "sealApeDesc": "Se concede cuando la puntuación PR es inferior a 750 y la tasa de victorias es del 40 % o más (o desconocida).",
+  "sealMaggotDesc": "Se concede cuando la puntuación PR es inferior a 750 y la tasa de victorias es inferior al 40 %.",
+  "sealRatDesc": "Se concede cuando las estadísticas están ocultas y la tasa de victorias del clan es del 53 % o menos, o cuando no hay clan.",
+  "sealAirDesc": "Se concede cuando las batallas en portaaviones superan el 20 % de una carrera de más de 200 batallas.",
+  "sealSubDesc": "Se concede cuando las batallas en submarinos superan el 20 % de una carrera de más de 200 batallas.",
   "dist": {
     "battleship": "BB",
     "aircarrier": "CV",
