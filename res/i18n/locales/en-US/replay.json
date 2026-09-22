@@ -102,7 +102,6 @@
     "manualTooSmall": "Selection is too small"
   },
   "postbattle": {
-    "rawData": "Raw data",
     "loadingGlobal": "Loading {name}'s global stats…",
     "destroyedBy": "Destroyed by {name}",
     "damageUnknownNote": "Replays don't include the full battle info — some damage sources can't be attributed",
