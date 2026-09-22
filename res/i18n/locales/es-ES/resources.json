@@ -80,7 +80,7 @@
     "filesOver": "{count}+ archivos",
     "moreShips": "+{count}",
     "cat": {
-      "gameplay": "Texturas de barcos y componentes",
+      "gameplay": "Texturas de buques y componentes",
       "unlocks": "Camuflajes e iconos",
       "content": "Recursos del juego",
       "particles": "Efectos de partículas",
@@ -110,7 +110,7 @@
       "common": "Común"
     },
     "species": {
-      "ship": "Barcos",
+      "ship": "Buques",
       "battleship": "Acorazados",
       "cruiser": "Cruceros",
       "destroyer": "Destructores",
