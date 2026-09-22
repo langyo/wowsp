@@ -17,7 +17,7 @@
   "range30d": "30 d",
   "rangeAll": "Todo",
   "rangeSince": "Cubre desde {date} (según instantáneas locales de estadísticas).",
-  "rangeNoHistory": "Aún no hay una instantánea local lo bastante antigua, así que se muestran los totales de carrera de los barcos jugados recientemente; el historial se acumulará automáticamente con el uso.",
+  "rangeNoHistory": "Aún no hay una instantánea local lo bastante antigua, así que se muestran los totales de carrera de los buques jugados recientemente; el historial se acumulará automáticamente con el uso.",
   "battles": "Batallas",
   "winrate": "Tasa de victorias",
   "avgDamage": "Daño medio",

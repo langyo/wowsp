@@ -62,7 +62,7 @@
     "title": "Detalles del buque",
     "tabSpecs": "Especificaciones",
     "tabArmor": "Blindaje y balística",
-    "tabMyStats": "Estadísticas del barco",
+    "tabMyStats": "Estadísticas del buque",
     "tabCommunity": "Tendencia del servidor",
     "tabSkill": "Habilidades del capitán",
     "mainBattery": "Batería principal",
@@ -141,7 +141,7 @@
       "solo": "Solo",
       "pickHint": "Clic en una banda para aislar · clic en el modelo para ocultar"
     },
-    "openHint": "Haz clic para ver los detalles del barco",
+    "openHint": "Haz clic para ver los detalles del buque",
     "my": {
       "career": "Todas las batallas",
       "recent": "Rendimiento reciente",
@@ -150,7 +150,7 @@
       "range30d": "Últ. 30 días",
       "avgFrags": "Bajas medias",
       "noBaseline": "Aún no hay base histórica",
-      "divisionsHint": "Datos de toda la cuenta, no de este barco"
+      "divisionsHint": "Datos de toda la cuenta, no de este buque"
     },
     "server": {
       "title": "Promedios del servidor",
@@ -160,7 +160,7 @@
       "source": "Fuente: muestra del servidor de wows-numbers",
       "updatedAt": "Muestra generada el {date}",
       "cached": "caché",
-      "notFound": "Aún no hay muestra del servidor para este barco.",
+      "notFound": "Aún no hay muestra del servidor para este buque.",
       "failed": "Error al obtener datos del servidor: {error}",
       "compareTitle": "Servidor vs. jugador",
       "colServer": "Servidor",
@@ -321,7 +321,7 @@
     "epicTag": "Mejorada por el comandante legendario",
     "epicLegend": "Cinta verde = habilidad que el comandante legendario seleccionado enseña con valores mejorados.",
     "recTag": "Recomendada por el juego",
-    "recLegend": "Cinta ámbar = habilidad de la build recomendada por el juego para este barco.",
+    "recLegend": "Cinta ámbar = habilidad de la build recomendada por el juego para este buque.",
     "activator": {
       "DamageDoneActivator": "Daño infligido",
       "TargetsDamagedActivator": "Objetivos alcanzados",
@@ -478,7 +478,7 @@
     "empty": "No hay árbol tecnológico para esta nación."
   },
   "banner": {
-    "imageFailed": "No se pudieron cargar algunas imágenes de barcos",
+    "imageFailed": "No se pudieron cargar algunas imágenes de buques",
     "action": "Abrir ajustes de recursos"
   },
   "archetype": {

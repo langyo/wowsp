@@ -166,7 +166,7 @@
       "rect": "Rectángulo",
       "ellipse": "Elipse",
       "text": "Nota de texto",
-      "markerShip": "Marcador de barco",
+      "markerShip": "Marcador de buque",
       "markerPlane": "Marcador de avión",
       "pinPath": "Fijar trayectoria real",
       "markerRoute": "Marcador móvil (dibuja su ruta)",
@@ -195,7 +195,7 @@
       "importJson": "Importar anotaciones de JSON"
     },
     "hint": {
-      "pin": "Haz clic en un barco para fijar su trayectoria real",
+      "pin": "Haz clic en un buque para fijar su trayectoria real",
       "region": "Arrastra para elegir la zona de exportación (Esc para cancelar)"
     },
     "text": {
