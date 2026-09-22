@@ -8,13 +8,12 @@
 //!   `255.255.255.255:[DISCOVERY_PORT]`:
 //!
 //!   ```json
-//!   {"magic":"wowsp-pairing-v1","name":"DESKTOP-PC","port":58041,
-//!    "relay":"https://wowsp-pairing.example.workers.dev"}
+//!   {"magic":"wowsp-pairing-v1","name":"DESKTOP-PC","port":58041}
 //!   ```
 //!
-//!   (`relay` is optional — present only when the internet-relay bridge is
-//!   enabled, so a LAN-visible phone can adopt the address without typing
-//!   it either.) The task's lifecycle is exactly the server's: started from
+//!   (a `relay` field is reserved but currently always omitted — the
+//!   phone's built-in gateway constant makes advertising it unnecessary.)
+//!   The task's lifecycle is exactly the server's: started from
 //!   `pairing_start`, stopped from `pairing_stop` — no leaks across restarts.
 //!
 //! - **LISTENER (all targets)** — `pairing_discovery_start` /
@@ -57,8 +56,9 @@ pub const EMIT_THROTTLE: Duration = Duration::from_millis(1000);
 /// Event channel the listener pushes [`DiscoverySnapshot`] snapshots on.
 pub const DISCOVERY_EVENT: &str = "wowsp://pairing-discovery";
 
-/// The broadcast payload. `relay` rides along when the desktop's relay
-/// bridge is enabled (the phone adopts it for internet mode without typing).
+/// The broadcast payload. `relay` is a reserved display-only field — the
+/// phone's built-in gateway constant makes advertising it unnecessary, so
+/// broadcasts currently always omit it (kept for forward compatibility).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct BroadcastPayload {

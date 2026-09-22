@@ -840,6 +840,13 @@ pub(crate) mod server {
         status_of(&state().blocking_lock())
     }
 
+    /// Async twin of `current_status` for call sites already inside a tokio
+    /// worker (async commands): `blocking_lock` panics there on tokio 1.x.
+    pub async fn current_status_async() -> PairingStatus {
+        let st = state().lock().await;
+        status_of(&st)
+    }
+
     /// `(port, room)` while the server is running — the relay host session
     /// needs both (the gateway room is the run's random 64-hex id; the
     /// bridge dials 127.0.0.1:port for tunnel conns).

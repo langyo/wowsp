@@ -1673,7 +1673,7 @@ pub async fn pairing_reallocate_code() -> Result<PairingStatus, String> {
     #[cfg(desktop)]
     {
         host_reallocate().await?;
-        Ok(super::pairing::server::current_status())
+        Ok(super::pairing::server::current_status_async().await)
     }
 }
 

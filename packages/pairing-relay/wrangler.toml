@@ -13,7 +13,7 @@
 # Production is served at the custom domain gateway.wowsp.langyo.xyz
 # (bound in the Cloudflare dashboard after deploy; the desktop app and
 # the phone app hardcode wss://gateway.wowsp.langyo.xyz — see
-# packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_WS_URL).
+# packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_ROOT_URL).
 # Development can override the endpoint with the WOWSP_RELAY_URL env var.
 
 name = "wowsp-pairing"
