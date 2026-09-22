@@ -48,6 +48,43 @@
     font-size: var(--text-sm);
     padding: 2rem 0;
   }
+
+  /* Dashed add-player placeholder — the last row of the list; opens the
+     bind dialog. Mirrors the settings running-row dashed style. */
+  &__add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: transparent;
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-primary));
+    font-family: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 5%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  /* Confirm-bind row at the bottom of the add dialog. */
+  &__confirm {
+    display: flex;
+    justify-content: flex-end;
+  }
 }
 
 /* ── Account card ──────────────────────────────────────────────────────
@@ -79,6 +116,19 @@
     border-color: rgb(var(--color-primary) / 50%);
     background: rgb(var(--color-primary) / 8%);
     box-shadow: inset 3px 0 0 rgb(var(--color-primary));
+  }
+
+  /* Inert preview variant shown in the add dialog while a looked-up player
+     awaits confirmation — same anatomy as a bound card, but it doesn't
+     react to hover like a clickable one. */
+  &--preview {
+    cursor: default;
+
+    &:hover {
+      border-color: rgb(var(--color-border) / 15%);
+      background: rgb(var(--color-bg));
+      transform: none;
+    }
   }
 
   &__avatar {

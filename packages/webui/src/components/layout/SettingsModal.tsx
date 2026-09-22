@@ -13,6 +13,7 @@ import {
   MonitorPlay,
   Moon,
   Palette,
+  Plus,
   RefreshCw,
   Sun,
   SunMoon,
@@ -120,6 +121,8 @@ export default defineComponent({
 
     // ── game-path table (see the 游戏路径 section) ────────────────────────
     const pickingPath = ref(false);
+    /** Whether the add-path dialog (detection / browse actions) is open. */
+    const addPathOpen = ref(false);
 
     const installRows = computed<GameInstall[]>(() => configStore.installs);
     const activePath = computed(() => configStore.activeInstall?.path ?? "");
@@ -151,22 +154,31 @@ export default defineComponent({
       toast.info(t("common.gamePath.applied"));
     }
 
-    /** Native folder picker → validate → pin as the active install. */
-    async function browseFolder() {
-      if (pickingPath.value) return;
+    /** Native folder picker → validate → pin as the active install.
+     *  Resolves true only when a folder was picked and applied — false on
+     *  cancel or error, so the add-path dialog stays open. */
+    async function browseFolder(): Promise<boolean> {
+      if (pickingPath.value) return false;
       pickingPath.value = true;
       try {
         // Null = the user closed the native dialog — not an error.
         const picked = await api.pickGameFolder();
-        if (!picked) return;
+        if (!picked) return false;
         await configStore.setManualPath(picked.path);
         await followRealm(picked.realm);
         toast.info(t("common.gamePath.applied"));
+        return true;
       } catch (e) {
         toast.error(`${t("common.gamePath.invalid")}\n${(e as Error).message || e}`);
+        return false;
       } finally {
         pickingPath.value = false;
       }
+    }
+
+    /** Open the add-path dialog from the dashed section row. */
+    function openAddPath() {
+      addPathOpen.value = true;
     }
 
     async function useRunning() {
@@ -841,8 +853,9 @@ export default defineComponent({
               left, client + realm tag + path in the body; clicking a card
               activates it, which switches the app-wide client context
               (replay list, armor/ballistics loader, stats realm) and follows
-              that realm's preferred account. Detection and the native
-              folder picker live here too. */}
+              that realm's preferred account. A dashed add row at the end
+              opens the dialog hosting detection and the native folder
+              picker. */}
           <section class="settings-modal__group">
             <h2 class="settings-modal__group-title">{t("settings.gamePath")}</h2>
             <p class="settings-modal__hint">{t("common.gamePath.desc")}</p>
@@ -889,18 +902,50 @@ export default defineComponent({
                 </HButton>
               </div>
             ) : null}
-            <div class="settings-modal__install-actions">
-              <HButton
-                variant="secondary"
-                loading={detecting.value}
-                onClick={() => void configStore.detect()}
-              >
-                <RefreshCw size={14} /> {t("common.gamePath.redetect")}
-              </HButton>
-              <HButton variant="secondary" loading={pickingPath.value} onClick={() => void browseFolder()}>
-                <FolderOpen size={14} /> {t("common.gamePath.browse")}
-              </HButton>
-            </div>
+            {/* dashed add placeholder — the section's last row; opens the
+                dialog with the detection / browse actions instead of an
+                always-visible action row. */}
+            <button type="button" class="settings-modal__install-add" onClick={() => openAddPath()}>
+              <Plus size={14} /> {t("common.gamePath.addAction")}
+            </button>
+            {/* add-path dialog — re-detect installs or browse to a folder
+                manually; closes as soon as detection finishes / a folder is
+                actually applied (a cancelled picker or a failed scan keeps
+                it open). */}
+            <HModal
+              modelValue={addPathOpen.value}
+              onUpdate:modelValue={(v: boolean) => (addPathOpen.value = v)}
+              title={t("common.gamePath.addTitle")}
+              width="26rem"
+            >
+              <p class="settings-modal__hint">{t("common.gamePath.addDesc")}</p>
+              <div class="settings-modal__addpath-actions">
+                <HButton
+                  variant="secondary"
+                  loading={detecting.value}
+                  onClick={async () => {
+                    try {
+                      await configStore.detect();
+                      addPathOpen.value = false;
+                    } catch (e) {
+                      toast.error(`${(e as Error).message || e}`);
+                    }
+                  }}
+                >
+                  <RefreshCw size={14} /> {t("common.gamePath.redetect")}
+                </HButton>
+                <HButton
+                  variant="secondary"
+                  loading={pickingPath.value}
+                  onClick={async () => {
+                    const ok = await browseFolder();
+                    if (ok) addPathOpen.value = false;
+                  }}
+                >
+                  <FolderOpen size={14} /> {t("common.gamePath.browse")}
+                </HButton>
+              </div>
+            </HModal>
           </section>
 
           </>
