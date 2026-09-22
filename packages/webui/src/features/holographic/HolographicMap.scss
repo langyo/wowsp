@@ -368,7 +368,12 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 0 0.8rem;
+  /* Rigid equal-width segments: the strip keeps a constant footprint no
+     matter what the live numbers are (wide "54,356" vs narrow "47" would
+     otherwise re-splat the row on every ribbon tick). 4.5rem clears a
+     7-digit tabular-nums readout with room to spare. */
+  flex: 0 0 4.5rem;
+  width: 4.5rem;
   white-space: nowrap;
 
   &:not(:first-child) {
