@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Crosshair, Eye, EyeOff, MessageSquare, Orbit, Pause, Plane, Play, Shield, Skull, Swords, Trophy, Video } from "@lucide/vue";
+import { Crosshair, Eye, EyeOff, MessageSquare, Orbit, Pause, Play, Shield, Skull, Swords, Trophy, Video } from "@lucide/vue";
 import planeTypesRaw from "../../data/plane_types.json";
 import shellTypesRaw from "../../data/shell_types.json";
 
@@ -5224,7 +5224,9 @@ export default defineComponent({
               <HoloShipCard data={selfCard.value} />
               {/* Self battle stats ride to the right of the hull plaque:
                   icon + short label + number per stat, bottom-aligned with
-                  the plaque, content centred inside. */}
+                  the plaque, content centred inside. Exactly four segments
+                  at a fixed width each — no conditional fifth (plane) stat:
+                  its appearance resized the strip past the viewport edge. */}
               {selfStats.value ? (
                 <div class="holo-map__selfstats">
                   <span class="holo-map__selfstat">
@@ -5242,15 +5244,6 @@ export default defineComponent({
                     <i class="holo-map__selfstat-label">{i18nT("replay.selfDamage")}</i>
                     <b class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</b>
                   </span>
-                  {selfStats.value.planeDamage > 0 ? (
-                    <span class="holo-map__selfstat">
-                      <Plane size={14} class="holo-map__selfstat-ico" />
-                      <i class="holo-map__selfstat-label">{i18nT("replay.selfPlane")}</i>
-                      <b class="holo-map__selfstat-num">
-                        {selfStats.value.planeDamage.toLocaleString()}
-                      </b>
-                    </span>
-                  ) : null}
                   <span class="holo-map__selfstat">
                     <Shield size={14} class="holo-map__selfstat-ico" />
                     <i class="holo-map__selfstat-label">{i18nT("replay.selfTaken")}</i>
