@@ -61,7 +61,12 @@ export default defineComponent({
         {
           label: t("stats.avgDamage"),
           server: Math.round(s.avgDamage).toLocaleString(),
-          player: Math.round(p.avgDamage).toLocaleString(),
+          // compare only exists when the player has battles on this ship, so
+          // a zero here is broken snapshot data — same flag as the KPI tile.
+          player:
+            p.avgDamage <= 0
+              ? t("stats.dataAnomaly")
+              : Math.round(p.avgDamage).toLocaleString(),
           playerColor: damageColor(p.avgDamage),
         },
         {

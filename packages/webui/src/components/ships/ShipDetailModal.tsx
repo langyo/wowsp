@@ -424,7 +424,9 @@ export default defineComponent({
                     loading={shipStats.loading}
                   />
 
-                  {trends.playerTrend && trends.playerTrend.buckets.length > 0 ? (
+                  {/* A single version bucket is no trend — hide the chart
+                      until there are at least two versions to compare. */}
+                  {trends.playerTrend && trends.playerTrend.buckets.length > 1 ? (
                     <div class="ship-detail__trend">
                       <h4>{t("trend.winrateOverTime")}</h4>
                       <TrendBars
@@ -437,7 +439,8 @@ export default defineComponent({
               ) : tab.value === "community" ? (
                 <div class="ship-detail__community" key="community">
                   <ServerTrendPanel shipId={viewShip.value.shipId} compare={serverCompare.value} />
-                  {trends.communityTrend?.available ? (
+                  {trends.communityTrend?.available &&
+                  trends.communityTrend.buckets.length > 1 ? (
                     <div class="ship-detail__trend">
                       <h4>{t("trend.winrateOverTime")}</h4>
                       <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
