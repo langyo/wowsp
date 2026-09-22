@@ -2,6 +2,7 @@
   "winrate": "胜率",
   "battles": "场次",
   "avgDamage": "场均伤害",
+  "dataAnomaly": "数据异常",
   "avgExp": "场均经验",
   "kdRatio": "击杀比",
   "survivalRate": "存活率",

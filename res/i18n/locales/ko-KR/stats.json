@@ -2,6 +2,7 @@
   "winrate": "승률",
   "battles": "전투 수",
   "avgDamage": "평균 데미지",
+  "dataAnomaly": "데이터 이상",
   "avgExp": "평균 경험치",
   "kdRatio": "K/D 비율",
   "survivalRate": "생존율",
