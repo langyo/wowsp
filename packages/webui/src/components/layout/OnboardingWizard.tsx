@@ -280,8 +280,8 @@ export default defineComponent({
               v-slots={{
                 welcome: () => (
                   <div class="onboarding__body onboarding__body--welcome">
-                    {/* Scroll region of last resort: four language blocks
-                        can exceed short viewports (same contract as the
+                    {/* Scroll region of last resort: the notice block can
+                        exceed very short viewports (same contract as the
                         retired AnnouncementDialog). */}
                     <div class="onboarding__announce">
                       <AnnouncementContent />

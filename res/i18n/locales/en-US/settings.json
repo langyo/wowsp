@@ -93,6 +93,7 @@
   "overlayFullscreenNote": "※ Unavailable in exclusive fullscreen: in that mode GDI screen capture only returns black frames, and the overlay window cannot sit on top of a fullscreen swap chain. Set the game's display mode to borderless or windowed.",
   "attributions": "Attributions",
   "attributionsHint": "Partner assets, upstream projects, and acknowledgements used by this app.",
+  "telemetryTitle": "Usage Telemetry",
   "account": "Account",
   "accountHint": "The active account drives My Stats and record lookups. Click a card to switch; search a nickname above to bind a new one.",
   "statsSection": "Battle stats",

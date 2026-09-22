@@ -3,24 +3,20 @@
  * notice, plus the locale-based variant picker, and the usage-telemetry
  * notice shown in the user's own language.
  *
- * The free-notice is ALWAYS shown in exactly three languages — Simplified
- * Chinese, English, and Russian — no matter which UI locale the user runs.
- * When the UI locale resolves to a fourth language (zh-TW / ja / ko / fr /
- * es) its variant is appended after the mandatory three; zh-SG deliberately
- * maps onto the zh-CN block (same script, same copy), so it adds nothing.
+ * Both notices render ONCE, in the user's own language: zh locales split
+ * into Simplified / Traditional, the other offered UI locales map by code,
+ * and anything unmapped reads English. (The installer shell's license step
+ * deliberately keeps a multi-language free-notice card — there the notice
+ * is part of the agreement text and must stay legible to a buyer no matter
+ * which locale they picked; the in-app surfaces don't need that.)
  *
- * The telemetry notice is shown ONCE, in the user's own language: every
- * UI locale resolves its own entry (zh locales split into Simplified /
- * Traditional, the other six offered UI locales map by code), and
- * anything unmapped reads English. Unlike the anti-scam warning it is
- * not a fraud-prevention banner that must be legible to every buyer
- * regardless of locale — it is a disclosure aimed at this specific user.
- * Canonical long-form copy: docs/{lang}/license/usage-telemetry.md (the
- * webui offers no de / pt UI locale, so those entries only surface in
+ * Canonical long-form telemetry copy: docs/{lang}/license/usage-telemetry.md
+ * (the webui offers no de / pt UI locale, so those entries only surface in
  * the installer shell's mirror).
  *
- * This module is a mirrored copy: an identical module lives in
- * packages/installer-shell/web — keep the copy texts in sync across both.
+ * This module shares its copy texts with the announcement module in
+ * packages/installer-shell/web (which keeps its own multi-language picker)
+ * — keep the texts in sync across both.
  */
 
 export interface AnnouncementVariant {
@@ -85,9 +81,6 @@ export const ANNOUNCEMENT_VARIANTS: Record<string, AnnouncementVariant> = {
     body: "WoWSP es software gratuito y de código abierto, distribuido únicamente por la página oficial de GitHub Releases (github.com/langyo/wowsp). Quien lo venda no es el autor: no pague; si ya pagó, solicite un reembolso y denuncie al vendedor lo antes posible.",
   },
 };
-
-/** Mandatory blocks every surface shows, in display order. */
-const MANDATORY_IDS = ["zh-CN", "en", "ru"] as const;
 
 /** Short usage-telemetry disclosure, one per language id (the languages
  *  the wizard offers, zh keyed as zh-CN / zh-TW; anything else falls back
@@ -167,7 +160,8 @@ export function pickTelemetryNotice(uiLocale: string): { label: string; text: st
   return TELEMETRY_NOTICES[key];
 }
 
-/** UI locale → optional fourth variant id (missing entry = no fourth block). */
+/** UI locale → free-notice variant id (exact codes — this picker keys off
+ *  the app's canonical UI locale). Codes outside the set fall back to en. */
 const LOCALE_VARIANT: Record<string, string> = {
   "zh-CN": "zh-CN",
   "zh-SG": "zh-CN",
@@ -180,16 +174,21 @@ const LOCALE_VARIANT: Record<string, string> = {
   "es-ES": "es",
 };
 
-/** Pick the variants to render for a UI locale: the three mandatory blocks
- *  (zh-CN, en, ru) plus the locale's own variant when it isn't one of them.
- *  Unknown locales fall back to the mandatory three only. */
-export function pickAnnouncementVariants(uiLocale: string): AnnouncementVariant[] {
-  const picked: AnnouncementVariant[] = MANDATORY_IDS.map(
-    (id) => ANNOUNCEMENT_VARIANTS[id],
-  );
-  const extraId = LOCALE_VARIANT[uiLocale];
-  if (extraId && !picked.some((v) => v.id === extraId)) {
-    picked.push(ANNOUNCEMENT_VARIANTS[extraId]);
+/** Pick the single free-notice variant for a UI locale: Traditional Chinese
+ *  locales read zh-TW, any other zh prefix reads zh-CN, the other offered
+ *  UI locales map by code, everything else reads English. */
+export function pickAnnouncementVariant(uiLocale: string): AnnouncementVariant {
+  const lower = uiLocale.toLowerCase();
+  const traditional =
+    lower.startsWith("zh") &&
+    (["-tw", "-hk", "-mo"].some((sub) => lower.includes(sub)) || lower.includes("hant"));
+  let key = "en";
+  if (traditional) {
+    key = "zh-TW";
+  } else if (lower.startsWith("zh")) {
+    key = "zh-CN";
+  } else {
+    key = LOCALE_VARIANT[uiLocale] ?? "en";
   }
-  return picked;
+  return ANNOUNCEMENT_VARIANTS[key];
 }
