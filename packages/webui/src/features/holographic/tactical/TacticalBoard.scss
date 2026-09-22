@@ -133,128 +133,32 @@
   }
 }
 
-/* ── Presentation step strip ─────────────────────────────────────────── */
-.tac-steps {
+/* ── Bottom dock: timeline above the compact toolbar ─────────────────── */
+/* Replaces the old in-map step strip: the toolbar keeps the strip's
+ * bottom-left spot (map size never changes for the board), and the
+ * editor-style timeline sits directly above it. */
+.tac-dock {
   position: absolute;
+  left: 10px;
+  right: 10px;
   bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  max-width: calc(100% - 24px);
-  /* Same chrome family as the playback bar (holo-hud-bg + radius-sm +
-     28px square buttons) so the two bottom rails read as one system. */
-  padding: 4px 8px;
-  background: var(--holo-hud-bg);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: var(--radius-sm);
-  backdrop-filter: blur(6px);
-  cursor: default;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
   z-index: 3;
-  /* During the offline render the strip must not fight the encoder's seek. */
+  /* During the offline render the dock must not fight the encoder's seek. */
   &--busy {
     pointer-events: none;
     opacity: 0.55;
   }
-}
 
-.tac-steps__btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  font-size: 0.875rem;
-  line-height: 1;
-  color: rgb(var(--color-primary));
-  background: var(--holo-hud-chip);
-  border: 1px solid rgb(var(--color-primary) / 50%);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease;
-  &:hover {
-    background: rgb(var(--color-primary) / 14%);
-  }
-  &--on {
-    color: rgb(var(--color-on-solid));
-    background: rgb(var(--color-primary));
-    border-color: transparent;
-    &:hover {
-      background: rgb(var(--color-primary) / 88%);
-    }
-  }
-  &--add {
-    color: #4ade80;
-    border-color: rgb(74 222 128 / 50%);
-    &:hover {
-      background: rgb(74 222 128 / 14%);
-    }
-  }
-}
-
-.tac-steps__chips {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  max-width: 46vw;
-  padding: 0 0.15rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-.tac-steps__empty {
-  font-size: var(--text-xs);
-  color: var(--holo-hud-dim);
-  white-space: nowrap;
-  padding: 0 0.3rem;
-}
-
-.tac-steps__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.1rem;
-  padding: 0 0.15rem 0 0;
-  font-size: var(--text-xs);
-  color: var(--holo-hud-text);
-  background: var(--holo-hud-chip);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  &--on {
-    border-color: rgb(var(--color-primary) / 80%);
-    background: rgb(var(--color-primary) / 16%);
-  }
-}
-
-.tac-steps__jump {
-  padding: 0.18rem 0.55rem;
-  font-variant-numeric: tabular-nums;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  &:hover {
-    color: rgb(var(--color-primary));
-  }
-}
-
-.tac-steps__del {
-  padding: 0 0.4rem 0.1rem;
-  font-size: 0.75rem;
-  color: var(--holo-hud-dim);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  &:hover {
-    color: #ef4444;
+  /* The toolbar row hugs its content. NOTE: no overflow-x here — a scroll
+     container would clip the upward-opening popovers (overflow-y computes
+     to auto alongside it). On very narrow maps the row may poke past the
+     dock instead, which is the lesser evil. */
+  .tac-bar {
+    align-self: flex-start;
+    max-width: none;
   }
 }

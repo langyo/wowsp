@@ -242,6 +242,29 @@
     },
     "view": {
       "reset": "보기 확대 초기화"
+    },
+    "menu": {
+      "shapes": "도형 및 텍스트",
+      "markers": "유닛 마커",
+      "more": "더보기"
+    },
+    "timeline": {
+      "zoomIn": "타임라인 확대(휠)",
+      "zoomOut": "타임라인 축소",
+      "zoomFit": "전체로 재설정",
+      "fit": "전체",
+      "step": "단계",
+      "act": {
+        "speedUp": "가속",
+        "speedDown": "감속",
+        "stop": "정지",
+        "shell": "포격",
+        "torpedo": "어뢰 발사",
+        "planeTakeoff": "항공기 이륙",
+        "planeDrop": "항공 공격",
+        "marker": "가상 유닛",
+        "path": "항적 고정"
+      }
     }
   },
   "chatLog": "채팅 기록",

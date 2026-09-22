@@ -16,12 +16,13 @@ import {
   type PropType,
 } from "vue";
 import { useToast } from "@celestia-island/hikari";
-import { Pause, Play } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { EntityTrajectory } from "@/api/client";
 import type { MapBounds } from "../modelLoader";
 import TacticalToolbar from "./TacticalToolbar";
+import Timeline, { type TimelineUserMarker } from "./Timeline";
 import { useTactical } from "./useTactical";
+import type { ShipAction } from "./actions";
 import {
   makeProjection,
   renderTactical,
@@ -107,6 +108,14 @@ export default defineComponent({
       required: true,
     },
     trajectories: { type: Function as PropType<() => EntityTrajectory[]>, required: true },
+    /** Replay-action markers for the timeline (shells / torpedoes / planes /
+     *  speed changes). Empty on hosts that don't supply one. */
+    actions: { type: Array as PropType<ShipAction[]>, default: () => [] },
+    /** Entity id → display label (ship name) for timeline tooltips. */
+    labelOf: {
+      type: Function as PropType<(entityId: number) => string>,
+      default: (id: number) => String(id),
+    },
     pickShipAt: {
       type: Function as PropType<(x: number, z: number) => ShipPick | null>,
       required: true,
@@ -159,6 +168,36 @@ export default defineComponent({
       for (const tr of props.trajectories()) m.set(tr.entityId, tr);
       return m;
     });
+
+    /** User-authored markers on the timeline: virtual ships/planes and
+     *  pinned real paths, anchored at their reveal time. Over a replay
+     *  context these render hollow (they are plans, not observed events). */
+    const userMarkers = computed<TimelineUserMarker[]>(() =>
+      store.elements.value
+        .filter((el) => el.kind === "marker" || el.kind === "replayPath")
+        .map((el) =>
+          el.kind === "marker"
+            ? {
+                id: el.id,
+                t0: el.t0,
+                color: el.color,
+                label: el.label,
+                kind: "marker" as const,
+                solid: false,
+              }
+            : {
+                id: el.id,
+                t0: el.t0,
+                color: el.color,
+                label: props.labelOf(el.entityId),
+                kind: "path" as const,
+                solid: false,
+              },
+        ),
+    );
+    function removeUserMarkerById(id: string): void {
+      store.removeElement(id);
+    }
 
     function proj(): TacticalProjection | null {
       const b = props.getBounds();
@@ -244,6 +283,9 @@ export default defineComponent({
         preview: previewElement.value,
         regionRect,
         showGhostFuture: store.showGhostFuture.value,
+        // The board always runs over a replay: virtual units are plans, so
+        // their glyphs render hollow (standalone boards would own solids).
+        hollowMarkers: true,
       });
       // Keep the text editor glued to its world anchor.
       if (textEdit.value && inputRef.value) {
@@ -1142,107 +1184,53 @@ export default defineComponent({
           ) : null}
           {edit ? (
             <div
-              class={["tac-steps", offlineRendering.value ? "tac-steps--busy" : ""]}
+              class={["tac-dock", offlineRendering.value ? "tac-dock--busy" : ""]}
               onClick={(e: MouseEvent) => e.stopPropagation()}
             >
-              <button
-                class="tac-steps__btn"
-                title={i18nT("replay.tactical.steps.prev")}
-                onClick={stepPrev}
-              >
-                ‹
-              </button>
-              <button
-                class="tac-steps__btn tac-steps__btn--add"
-                title={i18nT("replay.tactical.steps.add")}
-                onClick={addStepHere}
-              >
-                ＋
-              </button>
-              <div class="tac-steps__chips">
-                {stepsSorted.value.length === 0 ? (
-                  <span class="tac-steps__empty">{i18nT("replay.tactical.steps.empty")}</span>
-                ) : (
-                  stepsSorted.value.map((s, i) => (
-                    <span
-                      key={s.id}
-                      class={[
-                        "tac-steps__chip",
-                        i === currentStepIndex.value ? "tac-steps__chip--on" : "",
-                      ]}
-                    >
-                      <button
-                        class="tac-steps__jump"
-                        title={i18nT("replay.tactical.steps.updateView")}
-                        onClick={(ev: MouseEvent) => {
-                          // Shift+click re-captures the current camera onto
-                          // the step; plain click seeks (with its 运镜).
-                          if (ev.shiftKey) {
-                            store.updateStepView(s.id, props.viewApi.snapshot());
-                          } else {
-                            goToStep(i);
-                          }
-                        }}
-                      >
-                        {s.name}
-                      </button>
-                      <button
-                        class="tac-steps__del"
-                        title={i18nT("replay.tactical.action.delete")}
-                        onClick={() => removeStepById(s.id)}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))
-                )}
-              </div>
-              <button
-                class="tac-steps__btn"
-                title={i18nT("replay.tactical.steps.next")}
-                onClick={stepNext}
-              >
-                ›
-              </button>
-              <button
-                class={[
-                  "tac-steps__btn",
-                  presentMode.value ? "tac-steps__btn--on" : "",
-                ].join(" ")}
-                title={
-                  presentMode.value
-                    ? i18nT("replay.tactical.steps.presentStop")
-                    : i18nT("replay.tactical.steps.present")
-                }
-                onClick={togglePresent}
-              >
-                {presentMode.value ? <Pause size={14} /> : <Play size={14} />}
-              </button>
+              <Timeline
+                getTime={props.getTime}
+                getDuration={props.getDuration}
+                getPlaying={props.getPlaying}
+                play={() => { if (!props.getPlaying()) props.play(); }}
+                pause={() => { if (props.getPlaying()) props.pause(); }}
+                seekTo={props.seekTo}
+                actions={props.actions}
+                labelOf={props.labelOf}
+                steps={stepsSorted.value}
+                currentStepIndex={currentStepIndex.value}
+                userMarkers={userMarkers.value}
+                presentMode={presentMode.value}
+                addStep={addStepHere}
+                stepPrev={stepPrev}
+                stepNext={stepNext}
+                togglePresent={togglePresent}
+                goToStep={goToStep}
+                removeStep={removeStepById}
+                removeUserMarker={removeUserMarkerById}
+              />
+              <TacticalToolbar
+                store={store}
+                regionActive={regionMode.value}
+                pendingRegion={pendingRegion.value != null}
+                recording={recording.value}
+                recordingSupported={recorderSupported}
+                busy={busy.value}
+                exportSettings={exportSettings.value}
+                hasSelection={store.selected.value != null}
+                actions={{
+                  exportFull: () => void runImageExport(null),
+                  exportRegion: () => {
+                    if (pendingRegion.value) void runImageExport(pendingRegion.value);
+                    else beginRegionMode();
+                  },
+                  recordToggle: toggleRecording,
+                  offlineExport: () => void runOfflineExport(),
+                  exportJson: exportDocJson,
+                  importJson: () => jsonInput.value?.click(),
+                  resetView: () => props.viewApi.reset(),
+                }}
+              />
             </div>
-          ) : null}
-          {edit ? (
-            <TacticalToolbar
-              store={store}
-              regionActive={regionMode.value}
-              pendingRegion={pendingRegion.value != null}
-              recording={recording.value}
-              recordingSupported={recorderSupported}
-              busy={busy.value}
-              exportSettings={exportSettings.value}
-              hasSelection={store.selected.value != null}
-              actions={{
-                exportFull: () => void runImageExport(null),
-                exportRegion: () => {
-                  if (pendingRegion.value) void runImageExport(pendingRegion.value);
-                  else beginRegionMode();
-                },
-                recordToggle: toggleRecording,
-                offlineExport: () => void runOfflineExport(),
-                exportJson: exportDocJson,
-                importJson: () => jsonInput.value?.click(),
-                resetView: () => props.viewApi.reset(),
-              }}
-            />
           ) : null}
           <input
             ref={jsonInput}

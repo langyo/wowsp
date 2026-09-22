@@ -242,6 +242,29 @@
     },
     "view": {
       "reset": "重設視圖縮放"
+    },
+    "menu": {
+      "shapes": "形狀與文字",
+      "markers": "單位標記",
+      "more": "更多"
+    },
+    "timeline": {
+      "zoomIn": "時間軸放大（滾輪）",
+      "zoomOut": "時間軸縮小",
+      "zoomFit": "重設為全場",
+      "fit": "全場",
+      "step": "步驟",
+      "act": {
+        "speedUp": "加速",
+        "speedDown": "減速",
+        "stop": "停船",
+        "shell": "開炮",
+        "torpedo": "魚雷",
+        "planeTakeoff": "飛機起飛",
+        "planeDrop": "飛機投彈",
+        "marker": "虛擬單位",
+        "path": "釘取航跡"
+      }
     }
   },
   "chatLog": "聊天記錄",

@@ -110,30 +110,46 @@ function drawArrowHead(
 
 /** Simple vector plane silhouette pointing RIGHT (+x) at rotation 0 — the
  *  same rest orientation as the ship glyph, so one shared heading rotation
- *  (`heading − π/2`, heading 0 = north) fits both variants. */
-function drawPlaneGlyph(ctx: CanvasRenderingContext2D, size: number, color: string): void {
+ *  (`heading − π/2`, heading 0 = north) fits both variants. Hollow renders
+ *  the outline only (replay-context virtual units are plans, not contacts). */
+function drawPlaneGlyph(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  color: string,
+  hollow = false,
+): void {
   const s = size / 24;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  // Fuselage + swept wings + tail, one polygon in a 24px box, nose at +x.
-  ctx.moveTo(12 * s, 0);
-  ctx.lineTo(7 * s, 1.6 * s);
-  ctx.lineTo(1 * s, 11 * s); // top wingtip (screen up = world north when heading 0)
-  ctx.lineTo(-1.6 * s, 11 * s);
-  ctx.lineTo(-1.2 * s, 1.6 * s);
-  ctx.lineTo(-8 * s, 1.4 * s); // tail
-  ctx.lineTo(-10.6 * s, 4.6 * s);
-  ctx.lineTo(-12 * s, 4.6 * s);
-  ctx.lineTo(-10.8 * s, 0);
-  ctx.lineTo(-12 * s, -4.6 * s);
-  ctx.lineTo(-10.6 * s, -4.6 * s);
-  ctx.lineTo(-8 * s, -1.4 * s);
-  ctx.lineTo(-1.2 * s, -1.6 * s);
-  ctx.lineTo(-1.6 * s, -11 * s);
-  ctx.lineTo(1 * s, -11 * s);
-  ctx.lineTo(7 * s, -1.6 * s);
-  ctx.closePath();
-  ctx.fill();
+  const trace = (): void => {
+    ctx.beginPath();
+    // Fuselage + swept wings + tail, one polygon in a 24px box, nose at +x.
+    ctx.moveTo(12 * s, 0);
+    ctx.lineTo(7 * s, 1.6 * s);
+    ctx.lineTo(1 * s, 11 * s); // top wingtip (screen up = world north when heading 0)
+    ctx.lineTo(-1.6 * s, 11 * s);
+    ctx.lineTo(-1.2 * s, 1.6 * s);
+    ctx.lineTo(-8 * s, 1.4 * s); // tail
+    ctx.lineTo(-10.6 * s, 4.6 * s);
+    ctx.lineTo(-12 * s, 4.6 * s);
+    ctx.lineTo(-10.8 * s, 0);
+    ctx.lineTo(-12 * s, -4.6 * s);
+    ctx.lineTo(-10.6 * s, -4.6 * s);
+    ctx.lineTo(-8 * s, -1.4 * s);
+    ctx.lineTo(-1.2 * s, -1.6 * s);
+    ctx.lineTo(-1.6 * s, -11 * s);
+    ctx.lineTo(1 * s, -11 * s);
+    ctx.lineTo(7 * s, -1.6 * s);
+    ctx.closePath();
+  };
+  if (hollow) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.2, size / 22);
+    trace();
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = color;
+    trace();
+    ctx.fill();
+  }
 }
 
 function drawLabelChip(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
@@ -163,6 +179,9 @@ export interface RenderOptions {
   regionRect: LogicalRect | null;
   /** Dim elements whose t0 is in the future (scrubbed before appearance). */
   showGhostFuture?: boolean;
+  /** Draw marker glyphs hollow (outline only) — the replay-context style for
+   *  virtual units (standalone boards own solid markers). */
+  hollowMarkers?: boolean;
 }
 
 export function renderTactical(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
@@ -362,9 +381,14 @@ function drawElement(
       // Heading 0 = north (up); glyph art points right at rest → −90°.
       ctx.rotate(pose.heading - Math.PI / 2);
       if (el.variant === "ship") {
-        drawShipGlyph(ctx, undefined, 0, 0, el.size, el.color);
+        drawShipGlyph(ctx, undefined, 0, 0, el.size, el.color, {
+          outline: opts.hollowMarkers === true,
+          // Hollow = the replay "plan marker" style — a readable solid
+          // outline, not the hairline engraved look used for ghost contacts.
+          lineWidth: opts.hollowMarkers === true ? Math.max(1.4, el.size / 20) : undefined,
+        });
       } else {
-        drawPlaneGlyph(ctx, el.size, el.color);
+        drawPlaneGlyph(ctx, el.size, el.color, opts.hollowMarkers === true);
       }
       ctx.restore();
       if (el.label) {

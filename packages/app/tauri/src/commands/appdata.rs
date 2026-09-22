@@ -157,7 +157,11 @@ fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> 
         GameInstallKind::CnKongzhong
     } else if lower.contains("lesta") {
         GameInstallKind::Lesta
-    } else if lower.contains("360") {
+    } else if norm.contains("360游戏大厅") || lower.contains("\\360\\") {
+        // Match the 360 launcher's directory name or a dedicated `\360\`
+        // segment — a bare "360" substring also fires on unrelated digits
+        // (timestamps, "D:\360Downloads\…") and misclassified Wargaming
+        // installs as Cn360.
         GameInstallKind::Cn360
     } else {
         GameInstallKind::Wargaming
