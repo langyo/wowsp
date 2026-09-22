@@ -347,3 +347,39 @@
   color: rgb(var(--color-muted) / 80%);
   font-size: 0.625rem;
 }
+
+/* ── Phone layout (≤767px): search rail stacks above the results ────────
+   The 240px sidebar becomes a capped block on top (search + history),
+   the results column keeps the internal scroll; the page stays within
+   one viewport. Desktop rules above are untouched. */
+@media (max-width: 767px) {
+  .lookup-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0;
+    padding: 0 0.75rem;
+  }
+
+  .lookup-view__sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgb(var(--color-text) / 8%);
+    padding: 0.75rem 0 0.5rem;
+  }
+
+  .lookup-view__history {
+    flex: none;
+    max-height: 24vh;
+    /* Capped inner scroller above the results: hitting its end must not
+       chain the touch gesture onward (phone sheet-family containment —
+       see AppShell.scss). */
+    overscroll-behavior: contain;
+  }
+
+  .lookup-view__history-item {
+    min-height: 40px;
+  }
+
+  .lookup-view__main {
+    padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}

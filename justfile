@@ -153,6 +153,119 @@ lint target='full' *FLAGS='':
 check:
     cargo check --workspace
 
+# ── pairing relay ─────────────────────────────────────────────────────
+# The pairing gateway (packages/pairing-relay) is a STANDALONE Rust
+# workspace compiled to wasm32 for Cloudflare Workers (excluded from the
+# root workspace — own gitignored Cargo.lock). One recipe covers both
+# halves of its verification; wasm32 check is quick and holds no shared
+# target-dir lock (the package has its own target/).
+check-relay:
+    cd packages/pairing-relay && cargo test -p relay-core
+    cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
+
+# ── android ───────────────────────────────────────────────────────────
+# Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
+# clang wrappers cargo's CC/AR env (and later the target linker) point at;
+# `cargo check` itself needs no linker, only the C-compiler env for build
+# scripts (ring, cc-based crates). gen/android is scaffolded and tracked —
+# `just build android --debug --apk --target aarch64` produces the APK.
+#
+#   just check-android              → cargo check --target aarch64-linux-android
+#   just dev android [--release]    → cargo tauri android dev
+#   just build android *FLAGS       → cargo tauri android build
+#   just build android-apk          → one-ABI APK (canonical flags baked in)
+#
+# The APK BUNDLES the resource pack: the recipes run fetch_models + the
+# offline GameParams extraction first (both idempotent — the model pull
+# skips the ~1.3 GB download when the local wowsp-res.json tree hash
+# already matches res-latest; the gameparams pack re-extracts only when
+# build.txt lags the installed game) and export WOWSP_MOBILE_BUNDLE=1 so
+# the webui build's prune steps keep models/*.glb + dogtags +
+# data/gameparams in dist (see packages/webui/vite.config.ts); the app
+# then serves them same-origin from the read-only APK assets — gameparams
+# through commands/gameparams.rs's bundled-asset fallback. Desktop `just
+# build tauri`/`package` is untouched — no env var, pruning stays on.
+#
+# NDK note: tauri-cli 2.11.x ignores NDK_HOME and always picks the NEWEST
+# NDK under $ANDROID_HOME/ndk — make sure 26.1 is the only/newest installed
+# one (a stray newer NDK silently wins toolchain selection). If a newer
+# NDK (e.g. 29.x) IS installed, temporarily move its directory aside for
+# the build and restore it afterwards, exactly like the R2 scaffold run.
+
+# Machine-local SDK/JDK locations as OVERRIDABLE defaults:
+# `env_var_or_default` picks up ANDROID_HOME / NDK_HOME / JAVA_HOME from the
+# environment when present, so CI or another workstation only needs to
+# export the vars — no file edits. NDK_HOME still derives from ANDROID_HOME
+# by default so the 26.1 pin below stays the source of truth.
+ANDROID_HOME := env_var_or_default("ANDROID_HOME", "C:/Users/langy/AppData/Local/Android/Sdk")
+NDK_HOME     := env_var_or_default("NDK_HOME", ANDROID_HOME / "ndk/26.1.10909125")
+NDK_TOOLCHAIN_BIN := NDK_HOME / "toolchains/llvm/prebuilt/windows-x86_64/bin"
+JAVA_HOME    := env_var_or_default("JAVA_HOME", "C:/Program Files/Amazon Corretto/jdk17.0.19_10")
+ANDROID_TARGET := "aarch64-linux-android"
+
+# Cross-compile check for Android. The env var names carry dashes (cargo's
+# per-target CC convention), which bash cannot `export` — `env` takes them
+# fine. `cargo check` needs the C-compiler env for build scripts (ring & cc
+# based crates); linking env is included for reuse but unused by check.
+check-android:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env \
+        ANDROID_HOME={{ANDROID_HOME}} \
+        NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_ROOT={{NDK_HOME}} \
+        CC_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/aarch64-linux-android24-clang.cmd \
+        CXX_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/aarch64-linux-android24-clang++.cmd \
+        AR_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/llvm-ar.exe \
+        RANLIB_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/llvm-ranlib.exe \
+        CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER={{NDK_TOOLCHAIN_BIN}}/aarch64-linux-android24-clang.cmd \
+        cargo check --target {{ANDROID_TARGET}} -p wowsp_tauri -p wowsp_tauri_shared
+
+# Wrappers around `cargo tauri android` with the same NDK env plus the JDK
+# gradle needs (AGP 8.x requires JDK 17). cargo-tauri configures the
+# per-target CC/linker env itself from the resolved NDK. Both export
+# WOWSP_MOBILE_BUNDLE=1 — it must reach tauri.conf.json's beforeBuildCommand
+# (`pnpm --filter @wowsp/webui build`) so the webui build keeps the GLBs and
+# the offline gameparams pack. The extract_gameparams step is idempotent:
+# it refreshes packages/webui/src/res/data/gameparams/ only when build.txt
+# lags the installed game (or the pack is missing/partial) and FAILS the
+# build when neither the cached GameParams.json nor a game install to
+# generate it from is available — an android APK without offline tech data
+# is a defect, not a degraded mode.
+_dev-android *FLAGS='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python scripts/fetch_models.py
+    python scripts/extract_gameparams.py
+    export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
+        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+    cargo tauri android dev {{FLAGS}}
+
+_build-android *FLAGS='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Skip-if-present fetches of the packs that ride into the APK assets:
+    # the GLB model pack (res-latest release) and the offline GameParams
+    # ship-data pack (re-extracted when the game build changed).
+    python scripts/fetch_models.py
+    python scripts/extract_gameparams.py
+    export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
+        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+    cargo tauri android build {{FLAGS}}
+
+# Single-ABI APK shortcut: the canonical `--debug --apk --target aarch64`
+# from the section note above. Without an explicit --target, cargo tauri
+# android build compiles ALL FOUR ABIs (aarch64/armv7/i686/x86_64) — slow,
+# and the extra Rust targets are usually not even installed. Debug output
+# is signed with the local debug keystore automatically; a RELEASE APK
+# (pass --release as FLAGS) comes out unsigned until a signingConfig +
+# gen/android/key.properties (gitignored) is wired into the gradle project.
+_build-android-apk *FLAGS='--debug':
+    just _build-android --apk --target aarch64 {{FLAGS}}
+
 # ── lint-msg ──────────────────────────────────────────────────────────
 #   just lint-msg              → check commit subjects on master..HEAD (AGENTS.md §1)
 #   just lint-msg origin/dev   → check against another base

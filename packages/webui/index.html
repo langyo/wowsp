@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: Android 15+ enforces edge-to-edge, so the page
+         lays out under the status/navigation bars; without the key the
+         WebView reports every env(safe-area-inset-*) as 0 and the phone
+         shell's top bar (hamburger/gear) ends up untouchable under the
+         status bar. The shell SCSS already pads by the insets. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />

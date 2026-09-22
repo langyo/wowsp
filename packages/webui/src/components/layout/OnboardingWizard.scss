@@ -20,6 +20,30 @@
   --hk-modal-border-color: rgb(var(--color-border) / 20%);
 }
 
+/* The 82% glass relies on the overlay's backdrop-filter to stay readable.
+   On phones hikari docks every modal as a bottom sheet and drops that
+   filter (--hk-modal-overlay-blur-mobile defaults to none — a per-frame
+   backdrop re-raster over a resizing sheet lags on phone GPUs), so the
+   translucent sheet goes see-through and the page bleeds between the
+   sections (real-device Android WebView report). The sheet's mobile
+   background token wins over the desktop glass there; the scrim keeps its
+   45% tint, so the appearance steps still preview the wallpaper live
+   AROUND the sheet. Desktop (≥768px) keeps the glass untouched. */
+@media (max-width: 767px) {
+  .hk-modal-content.onboarding-wizard {
+    --hk-modal-bg-mobile: rgb(var(--color-surface));
+  }
+}
+
+/* Same failure without the width signal: an engine without backdrop-filter
+   support (disabled WebView GPU feature, old engine) renders the 82% glass
+   raw. Fall back to the opaque surface — identical chrome, no bleed. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hk-modal-content.onboarding-wizard {
+    --hk-modal-bg: rgb(var(--color-surface));
+  }
+}
+
 /* Step bodies live inside the modal's scroll container; the tall notice
    step keeps its own inner scroll region (nested on purpose: the step
    must not grow the window every frame). */
@@ -71,6 +95,18 @@
        and 4-up squeezes each under the 9.5rem legibility floor. */
     &--four {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* Phone widths: three-up tracks crush the labels into ellipsized
+       fragments (常黑 / 常白 / 根据… — real-device report; the option card
+       is icon + one label line, so a 103px track leaves ~19px of text).
+       One full-width card per row keeps every label readable; the preset
+       2×2 keeps two columns — its labels (Nord, Gruvbox…) fit at half
+       width. Desktop rows are unchanged. */
+    @media (max-width: 767px) {
+      &--three {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
   }
 

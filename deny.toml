@@ -1,9 +1,10 @@
-# WoWSP ships Windows-only (tauri x86_64-pc-windows-msvc); restrict checks
-# to that target so tauri's Linux-only stack (gtk-rs etc.) stays out of
-# license/advisory scope.
+# WoWSP ships Windows desktop (tauri x86_64-pc-windows-msvc) + Android
+# (tauri aarch64-linux-android); restrict checks to those targets so tauri's
+# Linux-only stack (gtk-rs etc.) stays out of license/advisory scope.
 [graph]
 targets = [
     { triple = "x86_64-pc-windows-msvc" },
+    { triple = "aarch64-linux-android" },
 ]
 
 [advisories]

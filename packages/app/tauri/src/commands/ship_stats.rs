@@ -642,10 +642,9 @@ fn now_ts() -> i64 {
 }
 
 fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    let base = dirs_next::data_dir().ok_or_else(|| "cannot resolve AppData dir".to_string())?;
-    let dir = base.join("WoWSP");
-    fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
-    Ok(dir)
+    // Same root as commands::appdata (paths.rs): identical %APPDATA%\WoWSP on
+    // Windows, Tauri-resolved app-private dir on Android.
+    crate::paths::ensure_data_dir()
 }
 
 fn appdata_read(file: String) -> Result<Option<String>, String> {

@@ -1,7 +1,11 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { HTitleBar } from "@celestia-island/hikari";
+import { Menu } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { useNavUiStore } from "@/stores/navUi";
+import { isMobileApp } from "@/utils/platform";
+import { t } from "@/i18n";
 import "./AppTitleBar.scss";
 
 /**
@@ -16,6 +20,13 @@ import "./AppTitleBar.scss";
  * `customActions` (extra icon buttons left of minimize — the app puts the
  * settings gear there) pass through verbatim; their clicks surface as the
  * `action` emit with the button's id.
+ *
+ * The title block is provided through HTitleBar's `left` slot so a nav
+ * hamburger can ride ahead of it — hidden above 767px (desktop is
+ * pixel-identical to the upstream default) and toggling the phone-layout
+ * nav drawer below. On the phone app build the window caption buttons
+ * (minimize/maximize/close) are dropped: the Android shell manages its
+ * own window, and dead caption buttons would only mislead.
  *
  * Self-guards: outside Tauri (plain browser) it renders the bar inert —
  * browser chrome already provides window controls.
@@ -37,6 +48,8 @@ export default defineComponent({
   },
   setup(props, { emit }) {
     const maximized = ref(false);
+    const navUi = useNavUiStore();
+    const mobileApp = isMobileApp();
     let win: ReturnType<typeof getCurrentWindow> | null = null;
     let unlistenResize: (() => void) | null = null;
 
@@ -90,7 +103,9 @@ export default defineComponent({
           title={props.title}
           subtitle={props.subtitle}
           maximized={maximized.value}
-          showMaximize={props.showMaximize}
+          showMaximize={props.showMaximize && !mobileApp}
+          showMinimize={!mobileApp}
+          showClose={!mobileApp}
           customActions={props.customActions}
           onMinimize={() => win?.minimize().catch(() => {})}
           onClose={() => win?.close().catch(() => {})}
@@ -99,6 +114,35 @@ export default defineComponent({
           // under plain tsc the JSX key must match it verbatim (spread form,
           // since a quoted key is not a valid JSX attribute name).
           {...{ "onToggle-maximize": () => win?.toggleMaximize().catch(() => {}) }}
+          v-slots={{
+            // Hamburger + the upstream default title block (replicated
+            // verbatim so desktop stays identical). The button borrows
+            // hikari's caption-button chrome; CSS hides it ≥768px.
+            left: () => (
+              <>
+                <button
+                  type="button"
+                  class="hk-titlebar-btn app-titlebar__menu"
+                  title={t("nav.openMenu")}
+                  aria-label={t("nav.openMenu")}
+                  aria-expanded={navUi.open}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    navUi.toggle();
+                  }}
+                >
+                  <Menu size={15} />
+                </button>
+                <span class="hk-titlebar-title">
+                  {props.icon && <img class="hk-titlebar-icon" src={props.icon} alt="" />}
+                  <span class="hk-titlebar-title-text">{props.title}</span>
+                  {props.subtitle && (
+                    <span class="hk-titlebar-subtitle">{props.subtitle}</span>
+                  )}
+                </span>
+              </>
+            ),
+          }}
         />
       </div>
     );

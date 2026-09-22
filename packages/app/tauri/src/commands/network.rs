@@ -344,6 +344,17 @@ pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
     let mut builder = reqwest::Client::builder()
         .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .connect_timeout(std::time::Duration::from_secs(15));
+    // Android has no SChannel/native-tls, so reqwest builds on rustls there
+    // — and reqwest 0.13's rustls support defaults its verifier to
+    // rustls-platform-verifier, whose Android backend is JVM Kotlin glue we
+    // do not ship. tls_certs_only() switches the verifier to a plain
+    // webpki RootCertStore over the bundled Mozilla CA bundle instead (the
+    // same trust set the webpki-roots crate compiles in). Desktop keeps its
+    // SChannel path untouched.
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.tls_certs_only(android_tls_roots()?);
+    }
     if let Some(url) = effective_proxy(&config) {
         let mut proxy =
             reqwest::Proxy::all(url.clone()).map_err(|e| format!("proxy {url}: {e}"))?;
@@ -363,6 +374,15 @@ pub fn build_http_client() -> Result<reqwest::Client, String> {
     http_client_builder()?
         .build()
         .map_err(|e| format!("http client: {e}"))
+}
+
+/// The Mozilla CA root bundle vendored at `res/ca-bundle.pem` (refreshed
+/// from https://curl.se/docs/caextract.html). Android-only TLS trust anchor
+/// source — see the comment in [http_client_builder].
+#[cfg(target_os = "android")]
+fn android_tls_roots() -> Result<Vec<reqwest::tls::Certificate>, String> {
+    let pem: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/ca-bundle.pem"));
+    reqwest::tls::Certificate::from_pem_bundle(pem).map_err(|e| format!("bundled CA bundle: {e}"))
 }
 
 #[cfg(test)]

@@ -75,6 +75,7 @@
     "gameparamsMissing": "GameParams.data 尚未解包。请运行 wowsunpack 以查看装甲方案与弹道曲线。",
     "gameparamsError": "加载失败：{error}",
     "gameparamsErrorTip": "加载装甲与弹道失败 — 点击可复制错误：",
+    "gameparamsSyncAction": "从电脑同步游戏数据",
     "gameparamsHint": "提示：将解包后的 GameParams.json 放在游戏根目录（与 bin/ 同级）。见 https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "此舰艇暂无规格数据。",
     "noImage": "无图片。",
@@ -84,6 +85,7 @@
     "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。",
     "stage": {
       "hint3d": "拖动旋转 · 滚轮缩放 · 右键拖动平移",
+      "hint3dTouch": "拖动旋转 · 双指缩放",
       "holo": "全息",
       "hide": "隐藏预览",
       "show": "展示预览",

@@ -75,6 +75,7 @@
     "gameparamsMissing": "GameParams.data が未解凍です。wowsunpack を実行すると装甲配置と弾道を確認できます。",
     "gameparamsError": "読み込みに失敗しました：{error}",
     "gameparamsErrorTip": "装甲と弾道の読み込みに失敗しました — クリックでエラーをコピー：",
+    "gameparamsSyncAction": "PCからゲームデータを同期",
     "gameparamsHint": "ヒント：解凍した GameParams.json をゲームのルート（bin/ と同じ階層）に置いてください。詳細は https://github.com/wowsinfo/wowsunpack を参照。",
     "noSpecs": "この艦艇の諸元データはありません。",
     "noImage": "画像はありません。",
@@ -84,6 +85,7 @@
     "noBallistics": "この艦艇の装甲 / 弾道データを GameParams から抽出できませんでした。",
     "stage": {
       "hint3d": "ドラッグで回転 · ホイールでズーム · 右ドラッグで移動",
+      "hint3dTouch": "ドラッグで回転 · ピンチでズーム",
       "holo": "ホログラム",
       "hide": "プレビューを隠す",
       "show": "プレビューを表示",

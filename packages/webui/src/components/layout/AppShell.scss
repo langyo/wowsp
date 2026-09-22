@@ -1,11 +1,12 @@
 .app-shell {
   display: flex;
-  /* The TitleBar component is fixed at the top (32 px).  Offset the shell
-     by the same amount so content starts below the bar.  box-sizing must
-     be border-box so padding is subtracted from height: 100% rather than
+  /* The TitleBar component is fixed at the top (32px on desktop — see
+     --app-titlebar-h in AppTitleBar.scss).  Offset the shell by the same
+     amount so content starts below the bar.  box-sizing must be
+     border-box so padding is subtracted from height: 100% rather than
      added on top. */
   height: 100%;
-  padding-top: 32px;
+  padding-top: var(--app-titlebar-h, 32px);
   box-sizing: border-box;
   overflow: hidden;
   /* Transparent backdrop: the wallpaper is painted on <body> (WallpaperRenderer
@@ -67,4 +68,87 @@
   font-size: var(--text-sm);
   color: rgb(var(--color-muted));
   line-height: 1.5;
+}
+
+/* ── Phone layout (≤767px) ──────────────────────────────────────────────
+   The shell itself changes little here (the sidebar↔drawer swap and the
+   settings modal↔page swap are component-level, keyed off hikari's
+   useBreakpoint in AppShell.tsx); what CSS owns is the display cutout:
+   the fixed hikari title bar is pushed below the status bar (see
+   AppTitleBar.scss), so the shell's top offset must follow, and the main
+   column clears the gesture bar so scrolled content never underlaps it.
+   env() is 0 on desktop webviews — the rules are no-ops there. */
+@media (max-width: 767px) {
+  .app-shell {
+    padding-top: calc(var(--app-titlebar-h, 48px) + env(safe-area-inset-top, 0px));
+
+    &__main {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  }
+
+  /* The hikari drawer panel is fixed top:0 / bottom:0 and would slide UNDER
+     our fixed title bar (titlebar z 100001 > drawer z). Keep the top
+     offset below the bar (+ safe area) and PIN the bottom flush with the
+     viewport so the panel spans the full height a standard side drawer
+     does. Square the corners and drop the shadow: flush against three
+     screen edges, the rounding + blur shadow read as a floating
+     card, and the shadow bled onto the scrim as a darker band along the
+     panel's right edge — the dim curtain must stay uniform. The 1px
+     border-right (hikari) keeps the edge line. */
+  .hk-drawer-panel.hk-drawer-left {
+    top: calc(var(--app-titlebar-h, 48px) + env(safe-area-inset-top, 0px));
+    bottom: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* Uniform full-screen scrim: the overlay itself spans inset:0, but the
+     fixed title bar (z 100001) paints its translucent glass ABOVE it, so
+     the top 32px band stayed bright against the dimmed rest. Paint the
+     same curtain over the bar while the drawer is open — :has() keys off
+     the drawer layers hikari teleports to <body> (the nav drawer is the
+     app's only HDrawer; same technique as OnboardingWizard.scss).
+     pointer-events: none keeps the bar's buttons live — the hamburger
+     still toggles the drawer closed. */
+  body:has(> .hk-drawer-overlay) .app-titlebar .hk-titlebar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--hk-drawer-overlay-bg, rgba(0, 0, 0, 0.45));
+    pointer-events: none;
+  }
+
+  /* ── Sheet-family geometry: keep every docked sheet clear of the bar ──
+     hikari caps the phone sheet family (HkModal / HkPopover sheetOnMobile /
+     HkSelectPanel / HkDrawer bottom) at 100dvh − var(--hk-sheet-top-inset,
+     4.25rem). The 4.25rem default reserves the HOST'S breadcrumb strip
+     (shittim-chest's secondary-window chrome — WoWSP has none) and is a
+     FIXED length, while our bar is 48px PLUS the status-bar safe area:
+     with viewport-fit=cover an edge-to-edge Android WebView reports a real
+     inset (24–48px), the bar bottom lands at 72–96px, and a maxed sheet's
+     top edge (68px) sits UNDER the bar — scrolled body content slid
+     beneath the bar's surface (real-device report; the bar is opaque
+     now, but the sheet must still never underlap it). Re-express the
+     inset off the bar token + the same env() the bar itself offsets with
+     (+1.25rem breathing): both sides share the env() term, so the gap is
+     structural for ANY cutout height. At env()=0 this equals hikari's
+     68px default exactly. Reaches every teleported sheet through :root. */
+  :root {
+    --hk-sheet-top-inset: calc(
+      var(--app-titlebar-h, 48px) + env(safe-area-inset-top, 0px) + 1.25rem
+    );
+  }
+
+  /* Scroll containment: a sheet body that hits its end must never chain
+     the gesture to the page scroller behind it — the chained scroll slid
+     page content (and with it the sheet, visually) under the bar. hikari
+     ships `overscroll-behavior: contain` on its popover/select sheets but
+     not on the modal scroll body or the drawer body; patch both here on
+     phones (desktop chains nowhere — the shell never scrolls — so
+     desktop is untouched). */
+  .hk-modal-body-scroll,
+  .hk-drawer-body {
+    overscroll-behavior: contain;
+  }
 }

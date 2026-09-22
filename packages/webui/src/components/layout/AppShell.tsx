@@ -1,12 +1,15 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   HBlockingToast,
   HCheckbox,
+  HDrawer,
   HErrorBoundary,
   HModal,
   HScrollContainer,
   HToast,
+  useBreakpoint,
 } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
@@ -14,10 +17,12 @@ import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
+import { useNavUiStore } from "@/stores/navUi";
+import { useSettingsUiStore } from "@/stores/settingsUi";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { api } from "@/api";
-import { isTauri } from "@/transport";
+import { isMobileApp, isTauri } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import SettingsModal from "./SettingsModal";
@@ -39,6 +44,14 @@ import "./AppShell.scss";
  * free & open-source notice. Mounts the shared hikari service
  * containers: the toast host and an error boundary around the routed
  * content.
+ *
+ * Phone LAYOUT (viewport < 768px, hikari useBreakpoint): the persistent
+ * sidebar becomes a left nav DRAWER (hamburger in the title bar toggles
+ * it; hikari's back guard pushes a history entry so the Android back
+ * gesture closes it; route changes close it too) and the settings modal
+ * is not mounted — settingsUi.show() navigates to the /settings page
+ * instead. The phone APP build (isMobileApp) additionally skips the
+ * game-path setup prompt, the desktop updater and its toast surfaces.
  */
 export default defineComponent({
   name: "AppShell",
@@ -48,6 +61,16 @@ export default defineComponent({
     const gameStatus = useGameStatusStore();
     const updater = useUpdaterStore();
     const cacheStore = useCacheStore();
+    const navUi = useNavUiStore();
+    const settingsUi = useSettingsUiStore();
+    const route = useRoute();
+    const router = useRouter();
+    // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
+    // drawer nav + settings page instead of sidebar + modal.
+    const { isMobile } = useBreakpoint();
+    // Phone APP build gate (see utils/platform): desktop-only features
+    // (game-path prompt, updater, its toasts) stay off there.
+    const mobileApp = isMobileApp();
 
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
@@ -64,6 +87,7 @@ export default defineComponent({
     // asked to locate the game right away instead of discovering it through
     // a failed armor load later — but never while the onboarding wizard is
     // up (it would cover the wizard); completing the wizard releases it.
+    // The phone app build has no local game install to locate — never pops.
     const gamePathMissing = ref(false);
     const showGamePathSetup = ref(false);
     let unlistenClose: UnlistenFn | null = null;
@@ -73,6 +97,26 @@ export default defineComponent({
     }
 
     watch(showOnboarding, () => syncGamePathSetup());
+
+    // Drawer hygiene: any navigation (nav link, footer button, settings
+    // gear) closes the phone-layout drawer.
+    watch(
+      () => route.fullPath,
+      () => navUi.close(),
+    );
+
+    // Layout flip while the desktop settings modal is open (e.g. a narrow
+    // desktop window squeezed under 768px): hand the surface over to the
+    // settings page instead of the modal vanishing mid-interaction.
+    watch(isMobile, (phone) => {
+      if (phone && settingsUi.visible) {
+        settingsUi.hide();
+        void router.push({
+          path: "/settings",
+          query: { section: settingsUi.section },
+        });
+      }
+    });
 
     async function handleCloseChoice(action: "quit" | "minimize") {
       if (rememberChoice.value) {
@@ -111,10 +155,33 @@ export default defineComponent({
       // precedes a ~1.2 GB pack pull — the pack catches up after the
       // restart. The pack auto-downloads ONLY when entirely missing (lite
       // install / wiped cache); an outdated-but-present pack is surfaced
-      // in Settings → updates instead of silently re-pulling.
+      // in Settings → updates instead of silently re-pulling. The phone
+      // app build skips the updater entirely (update commands are
+      // unsupported there — failures stay quiet); its pack ships INSIDE
+      // the APK, so it never downloads either — the updates panel is the
+      // only mobile download path.
       if (!import.meta.env.DEV) {
         void cacheStore.init();
         void (async () => {
+          // Phone build: bundled pack + optional downloaded update. Report
+          // the bundled baseline first (same-origin /wowsp-res.json → the
+          // shell's res commands), then wire the model/dogtag loaders to
+          // the cache ONLY when a downloaded update is serving — otherwise
+          // the loaders keep their default same-origin bundled URLs. No
+          // ensure/download on startup, ever.
+          if (mobileApp) {
+            try {
+              await cacheStore.reportBundledBaseline();
+              const root = await api.resCacheRoot();
+              if (root) {
+                void initDogtagPack(async () => root).catch(() => {});
+                void initModelPack(async () => root).catch(() => {});
+              }
+            } catch {
+              // Older shell — bundled same-origin assets serve.
+            }
+            return;
+          }
           try {
             await updater.init().then(() => updater.waitForCheck());
             if (updater.available) {
@@ -164,7 +231,7 @@ export default defineComponent({
             () => (detected = true),
             () => (detected = false),
           );
-          gamePathMissing.value = detected && !config.activeInstall;
+          gamePathMissing.value = detected && !config.activeInstall && !mobileApp;
           syncGamePathSetup();
         })
         .catch(() => {});
@@ -174,23 +241,30 @@ export default defineComponent({
       // Shun auto-update: probe portable mode, then a delayed version check.
       // The check itself is silent — failures live in the store for
       // AboutModal only; a newer version raises the hikari blocking-toast
-      // prompt from the store. Browser dev mode has no updater.
-      if (isTauri()) {
+      // prompt from the store. Browser dev mode has no updater, and the
+      // phone app build has no desktop updater at all (updates ship through
+      // the store pipeline there — keep it quiet).
+      if (isTauri() && !mobileApp) {
         void updater.init().then(() => updater.scheduleAutoCheck());
       }
 
-      unlistenClose = await listen("close-requested", () => {
-        const saved = localStorage.getItem("wowsp-close-action");
-        if (saved === "quit" || saved === "minimize") {
-          void handleCloseChoice(saved);
-        } else {
-          // Heal-write: a saved-but-invalid value is swept so the ask
-          // dialog (the default behavior) is a deliberate choice again,
-          // not a stale value re-failing validation on every close.
-          if (saved != null) localStorage.removeItem("wowsp-close-action");
-          showCloseDialog.value = true;
-        }
-      });
+      // The close-requested event only exists inside the Tauri shell; in a
+      // plain browser tab listen() would throw at mount, so guard it (the
+      // close dialog is desktop-app-only anyway).
+      if (isTauri()) {
+        unlistenClose = await listen("close-requested", () => {
+          const saved = localStorage.getItem("wowsp-close-action");
+          if (saved === "quit" || saved === "minimize") {
+            void handleCloseChoice(saved);
+          } else {
+            // Heal-write: a saved-but-invalid value is swept so the ask
+            // dialog (the default behavior) is a deliberate choice again,
+            // not a stale value re-failing validation on every close.
+            if (saved != null) localStorage.removeItem("wowsp-close-action");
+            showCloseDialog.value = true;
+          }
+        });
+      }
     });
     onBeforeUnmount(() => {
       gameStatus.stop();
@@ -204,7 +278,24 @@ export default defineComponent({
             the updater store raises a blocking toast prompt (立即更新 /
             稍后), then the dedicated UpdateToast pass card (spinner,
             progress bar, 取消); nothing renders inline here. */}
-        <Sidebar />
+        {isMobile.value ? (
+          // Phone-layout nav: the sidebar lives in a left drawer behind
+          // the title-bar hamburger. hikari's back guard pushes a history
+          // entry on open, so the Android back gesture (and the desktop
+          // browser's back) closes it before anything else; route changes
+          // close it via the watcher above.
+          <HDrawer
+            modelValue={navUi.open}
+            onUpdate:modelValue={(v: boolean) => (navUi.open = v)}
+            side="left"
+            title={t("nav.menu")}
+            size="min(18.75rem, 84vw)"
+          >
+            <Sidebar variant="drawer" />
+          </HDrawer>
+        ) : (
+          <Sidebar />
+        )}
         <main class="app-shell__main">
           {/* Shared page scroll region: the hikari scroll container owns the
               scrollbar (auto-hiding overlay track on the window's right edge)
@@ -278,16 +369,23 @@ export default defineComponent({
 
         {/* Game-path first-launch prompt — fires whenever the detect pass
             ends without an active install; also reachable from the
-            ship-detail armor-error banner. */}
-        <GamePathSetupModal
-          modelValue={showGamePathSetup.value}
-          onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
-        />
+            ship-detail armor-error banner. Never on the phone app build
+            (no local game install to locate — the flag itself stays
+            false there, this is a belt-and-braces render guard). */}
+        {!mobileApp ? (
+          <GamePathSetupModal
+            modelValue={showGamePathSetup.value}
+            onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
+          />
+        ) : null}
 
-        {/* Settings modal — app-singleton, opened from the title-bar gear or
+        {/* Settings modal — the DESKTOP-layout surface of the shared
+            settings body, app-singleton, opened from the title-bar gear or
             the sidebar's client / account buttons (optionally landing on a
-            section); state lives in the settingsUi store. */}
-        <SettingsModal />
+            section); state lives in the settingsUi store. Phone layout
+            never mounts it — settingsUi.show() routes to /settings there
+            (a full page with the same body). */}
+        {!isMobile.value ? <SettingsModal /> : null}
       </div>
     );
   },

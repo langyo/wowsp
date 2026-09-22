@@ -18,9 +18,14 @@
  *   - dogtagEntry() looks ids up in the bundled map overlaid by the pack's
  *     map (pack wins per id). The lookup touches dogtagMapVersion, a ref, so
  *     computeds that call it re-run when the overlay lands.
+ *
+ * Mobile keeps initDogtagPack unwired while the APK bundle serves (the
+ * bundled publicDir snapshot IS the pack there) and wires it only when a
+ * downloaded update is in the app cache — same rule as initModelPack.
  */
 import { ref } from "vue";
 import mapRaw from "@/data/dogtags_map.json";
+import { isTauri } from "@/utils/platform";
 
 export type DogtagMapEntry = [string, string] | [string, string, string];
 
@@ -38,10 +43,12 @@ let initPromise: Promise<void> | null = null;
 export function initDogtagPack(fetchPack: () => Promise<string>): Promise<void> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    // convertFileSrc only exists in the Tauri context; the web build keeps
-    // serving the bundled snapshot.
+    // convertFileSrc's module resolves in plain browsers too, but the call
+    // itself needs the Tauri internals; outside the shell keep serving the
+    // bundled snapshot (what `?mobileApp=1` browser emulation wants).
     try {
       const mod = await import("@tauri-apps/api/core");
+      if (!isTauri()) return;
       convertFileSrc = mod.convertFileSrc;
     } catch {
       return;

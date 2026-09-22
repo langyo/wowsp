@@ -1,0 +1,451 @@
+/* Pairing wizard (mobile replay acquisition) — hosted inside an HModal,
+   so it inherits hikari's chrome and auto bottom-sheet docking on phone
+   layout. These are just the body bits: host list, add form, PIN entry,
+   remote entries with per-file progress. */
+
+.pairing-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+
+  &__hint {
+    margin: 0;
+    color: rgb(var(--color-text-secondary) / 85%);
+    font-size: var(--text-sm, 0.875rem);
+    line-height: 1.5;
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 0.9rem 0.25rem;
+    text-align: center;
+    color: rgb(var(--color-text-tertiary) / 80%);
+    font-size: var(--text-sm, 0.875rem);
+  }
+
+  &__error {
+    margin: 0;
+    color: rgb(var(--color-danger, 240 84 84));
+    font-size: var(--text-sm, 0.875rem);
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  &__sub {
+    margin-top: 0.2rem;
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgb(var(--color-text-tertiary) / 90%);
+  }
+
+  /* ── saved hosts ── */
+  &__hosts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__host {
+    display: flex;
+    align-items: stretch;
+    gap: 0.35rem;
+    border: 1px solid rgb(var(--color-border) / 35%);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgb(var(--color-surface-variant, var(--color-surface)) / 40%);
+
+    /* main row is one big tap target; remove rides outside it (no nested
+       buttons) */
+  }
+
+  &__host-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    background: none;
+    border: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    min-height: 48px;
+
+    &:hover { background: rgb(var(--color-primary) / 8%); }
+  }
+
+  &__host-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: rgb(var(--color-primary) / 14%);
+    color: rgb(var(--color-primary));
+    flex: none;
+  }
+
+  &__host-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  &__host-label {
+    font-weight: 600;
+    font-size: var(--text-sm, 0.875rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__host-addr {
+    color: rgb(var(--color-text-tertiary) / 90%);
+    font-size: var(--text-xs, 0.75rem);
+    font-family: var(--font-mono, monospace);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__host-remove {
+    flex: none;
+    width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-left: 1px solid rgb(var(--color-border) / 25%);
+    background: none;
+    color: rgb(var(--color-text-tertiary) / 90%);
+    cursor: pointer;
+
+    &:hover { color: rgb(var(--color-danger, 240 84 84)); }
+  }
+
+  /* ── add form ── */
+  &__form {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+
+    > :first-child { flex: 1; min-width: 0; }
+  }
+
+  &__port {
+    flex: none;
+    width: 6.5rem;
+  }
+
+  /* ── PIN step (hikari OTP grid) ── */
+  &__pin-busy {
+    display: flex;
+    justify-content: center;
+    padding: 0.2rem 0 0;
+  }
+
+  /* ── discovery live dot ── */
+  &__host-live {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-right: 0.7rem;
+    border-radius: 999px;
+    background: rgb(var(--color-success));
+    box-shadow: 0 0 0 3px rgb(var(--color-success) / 18%);
+    animation: pairing-live-pulse 2s ease-in-out infinite;
+  }
+
+  /* ── manual entry toggle (collapsed fallback) ── */
+  &__manual-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.2rem;
+    padding: 0.25rem 0;
+    border: none;
+    background: none;
+    color: rgb(var(--color-text-tertiary) / 95%);
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    cursor: pointer;
+
+    &:hover { color: rgb(var(--color-primary)); }
+  }
+
+  &__manual-chevron {
+    transition: transform 0.16s var(--ease-standard, ease);
+
+    &.open { transform: rotate(180deg); }
+  }
+
+  /* ── remote list ── */
+  &__remote-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  /* ── game-data sync row (encyclopedia + gameparams caches) ── */
+  &__gamedata {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: 10px;
+    background: rgb(var(--color-surface-variant, var(--color-surface)) / 35%);
+  }
+
+  &__gamedata-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__gamedata-prog {
+    position: relative;
+    display: block;
+    flex: 1;
+    height: 4px;
+    border-radius: 999px;
+    background: rgb(var(--color-border) / 30%);
+    overflow: hidden;
+  }
+
+  &__gamedata-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 999px;
+    background: rgb(var(--color-primary));
+    transition: width 0.18s var(--ease-standard, ease);
+  }
+
+  &__gamedata-note {
+    flex: 1;
+    min-width: 0;
+    color: rgb(var(--color-text-tertiary) / 90%);
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &--ok { color: rgb(var(--color-success)); }
+    &--bad {
+      color: rgb(var(--color-danger, 240 84 84));
+      white-space: normal;
+      word-break: break-word;
+    }
+  }
+
+  &__remote-addr {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-text-tertiary) / 90%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__remote-loading {
+    display: flex;
+    justify-content: center;
+    padding: 1.2rem 0;
+  }
+
+  &__entries {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: min(52vh, 26rem);
+    overflow-y: auto;
+  }
+
+  &__entry {
+    display: flex;
+    align-items: stretch;
+    gap: 0.35rem;
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: 10px;
+    background: rgb(var(--color-surface-variant, var(--color-surface)) / 35%);
+    overflow: hidden;
+  }
+
+  &__entry-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.55rem 0.7rem;
+    background: none;
+    border: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    min-height: 48px;
+
+    &:disabled { cursor: default; }
+    &:not(:disabled):hover { background: rgb(var(--color-primary) / 8%); }
+  }
+
+  &__entry-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  &__entry-ship {
+    font-weight: 600;
+    font-size: var(--text-sm, 0.875rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__entry-pill {
+    flex: none;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    font-size: var(--text-2xs, 0.7rem);
+    line-height: 1.5;
+  }
+
+  &__entry-sub {
+    color: rgb(var(--color-text-tertiary) / 90%);
+    font-size: var(--text-xs, 0.75rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__entry-progress {
+    position: relative;
+    display: block;
+    height: 4px;
+    border-radius: 999px;
+    background: rgb(var(--color-border) / 30%);
+    overflow: hidden;
+    margin-top: 0.15rem;
+  }
+
+  &__entry-progress-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 999px;
+    background: rgb(var(--color-primary));
+    transition: width 0.18s var(--ease-standard, ease);
+  }
+
+  &__entry-pct {
+    position: absolute;
+    right: 0;
+    top: -1.15rem;
+    font-size: var(--text-2xs, 0.7rem);
+    font-family: var(--font-mono, monospace);
+    color: rgb(var(--color-text-tertiary) / 95%);
+  }
+
+  &__entry-actions {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.55rem;
+    border-left: 1px solid rgb(var(--color-border) / 25%);
+  }
+
+  &__entry-dl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: rgb(var(--color-primary) / 14%);
+    color: rgb(var(--color-primary));
+    cursor: pointer;
+
+    &:hover { background: rgb(var(--color-primary) / 24%); }
+  }
+
+  &__entry-retry {
+    border: 1px solid rgb(var(--color-danger, 240 84 84) / 50%);
+    border-radius: 8px;
+    background: none;
+    color: rgb(var(--color-danger, 240 84 84));
+    font-size: var(--text-xs, 0.75rem);
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    min-height: 36px;
+  }
+
+  &__entry-done {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: rgb(var(--color-success) / 16%);
+    color: rgb(var(--color-success));
+  }
+
+  &__done {
+    margin: 0;
+    padding: 0.5rem 0.7rem;
+    border-radius: 8px;
+    background: rgb(var(--color-success) / 12%);
+    color: rgb(var(--color-success));
+    font-size: var(--text-sm, 0.875rem);
+    font-weight: 600;
+    text-align: center;
+  }
+}
+
+@keyframes pairing-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ── Phone layout (≤767px): touch-sizing + scroll containment for the
+   docked bottom sheet. Desktop (≥768px, centered modal) is untouched. */
+@media (max-width: 767px) {
+  .pairing-wizard__manual-toggle {
+    /* Comfortable touch target — the raw text row lands ~20px tall. */
+    min-height: 40px;
+  }
+
+  .pairing-wizard__entries {
+    /* Inner scroller inside the sheet body: a list that hits its end must
+       never chain the touch gesture to the sheet/page scrollers behind it
+       (same containment rule the sheet family follows — AppShell.scss). */
+    overscroll-behavior: contain;
+  }
+}

@@ -6,10 +6,17 @@
 //! community tool `wowsunpack` (vendored under `packages/tools/`) unpacks it.
 //!
 //! Lookup order for one ship's subtree:
-//!   1. `gameparams/<shipId>.json` AppData cache (instant).
-//!   2. A pre-unpacked `GameParams.json` at the game root (or the extract
+//!   1. `gameparams/<shipId>.json` AppData cache (instant; pairing sync
+//!      fills it on phones).
+//!   2. Mobile only: the offline pack baked into the APK assets
+//!      (`data/gameparams/<shipId>.json`, written by
+//!      `scripts/extract_gameparams.py` — the same file format this cache
+//!      uses). A phone has no game install, so this is its primary source;
+//!      it lives BETWEEN the cache and the install paths: fresher synced
+//!      slices win, bundled data beats any install error.
+//!   3. A pre-unpacked `GameParams.json` at the game root (or the extract
 //!      script's LOCALAPPDATA cache) → extract slice → cache → return.
-//!   3. In-app unpack: mount the install's idx/pkg VFS, read
+//!   4. In-app unpack: mount the install's idx/pkg VFS, read
 //!      `content/GameParams.data`, decode the pickle, pick the ship's entry
 //!      → cache → return. This is the path every fresh player install takes
 //!      (nobody runs wowsunpack by hand); it costs a few seconds once per
@@ -17,29 +24,45 @@
 //!
 //! The cache is keyed to the game's current `bin/<build>` number: when the
 //! game updates, stale slices are dropped so armor data never lags the
-//! client.
+//! client. On mobile the same freshness rule runs between the PAIRING-SYNC
+//! cache and the bundled pack: the pack ships a `build.txt` stamp and the
+//! sync writes the desktop's `source-build.txt`, and a bundle strictly
+//! NEWER than the synced data replaces it (see
+//! [`bundle_shadows_cache`]) so a stale sync can never shadow an app
+//! update.
 //!
 //! `get_upgrade_prices` walks the same decoded GameParams tree for the
 //! Modernization entities' credit prices — the build planner's cost panel
 //! sums the selected build's shopping list from them.
 
 use std::fs;
+#[cfg(desktop)]
 use std::io::Read;
 use std::path::Path;
 
 /// Extract one ship's GameParams subtree. `game_root` is the directory
 /// containing `bin/` (i.e. the WoWS install root, as detected by
-/// `detect_game_install`).
+/// `detect_game_install`); the phone app always passes the empty string and
+/// is served from the cache / bundled offline pack instead.
 #[tauri::command]
 pub async fn get_ship_gameparams(
+    app: tauri::AppHandle,
     ship_id: i64,
     game_root: String,
 ) -> Result<serde_json::Value, String> {
     let cache_file = format!("gameparams/{ship_id}.json");
 
-    // 0. Game updated since the cache was filled? Drop stale slices BEFORE
-    //    any cache read (one bin/ readdir — cheap even on the hot path) so
-    //    armor data never lags the client.
+    // 0a. Mobile freshness gate: a bundled pack strictly newer than the
+    //     data the phone last synced drops the synced cache first, so the
+    //     cache read below can never serve stale slices over an app
+    //     update. (The desktop's build-change invalidation follows.)
+    #[cfg(mobile)]
+    invalidate_synced_cache_behind_bundle(&app);
+
+    // 0b. Game updated since the cache was filled? Drop stale slices BEFORE
+    //     any cache read (one bin/ readdir — cheap even on the hot path) so
+    //     armor data never lags the client. Skips itself when there is no
+    //     resolvable bin/ (the phone app: game_root is always empty there).
     if let Some(build) = latest_build_with_idx(Path::new(&game_root)) {
         invalidate_cache_on_build_change(build);
     }
@@ -51,20 +74,44 @@ pub async fn get_ship_gameparams(
         }
     }
 
-    // 2. In-app unpack from the install's pkg store — the player path, and
-    //    always fresher than any loose pre-unpacked JSON. Heavy (reads +
-    //    decodes the full GameParams pickle) — keep it off the async runtime
-    //    threads. A failure here (no install / game updating) falls through
-    //    to the loose-JSON candidates and only surfaces if those fail too.
-    let game_root2 = game_root.clone();
+    // 2. Mobile: the bundled offline pack. The asset resolver hands back
+    //    the APK-embedded file bytes (dist/webui-relative key); the install
+    //    paths below can never succeed on a phone, so pack problems surface
+    //    as clear errors instead of the misleading "no bin/ version dir"
+    //    one. Exactly one of the two returns compiles per target — the
+    //    desktop flow below is untouched, cfg-gated into a helper.
+    #[cfg(mobile)]
+    return bundled_asset_json(&app, &format!("data/gameparams/{ship_id}.json"));
+    #[cfg(desktop)]
+    {
+        // The handle only serves the mobile branch; keep desktop silent.
+        let _ = &app;
+        ship_from_install_or_loose(&game_root, ship_id, cache_file).await
+    }
+}
+
+/// Desktop continuation of [`get_ship_gameparams`]: in-app unpack from the
+/// install, then the loose-JSON fallback. Never compiled on mobile.
+#[cfg(desktop)]
+async fn ship_from_install_or_loose(
+    game_root: &str,
+    ship_id: i64,
+    cache_file: String,
+) -> Result<serde_json::Value, String> {
+    // In-app unpack from the install's pkg store — the player path, and
+    // always fresher than any loose pre-unpacked JSON. Heavy (reads +
+    // decodes the full GameParams pickle) — keep it off the async runtime
+    // threads. A failure here (no install / game updating) falls through
+    // to the loose-JSON candidates and only surfaces if those fail too.
+    let game_root2 = game_root.to_string();
     let unpacked =
         tokio::task::spawn_blocking(move || unpack_ship_from_install(&game_root2, ship_id))
             .await
             .map_err(|e| format!("GameParams 解包任务异常退出：{e}"));
 
-    // 3. Fallback: a pre-unpacked GameParams.json (dev flow: wowsunpack CLI
-    //    output at the game root, or the extract script's LOCALAPPDATA cache
-    //    for sessions without a resolvable install).
+    // Fallback: a pre-unpacked GameParams.json (dev flow: wowsunpack CLI
+    // output at the game root, or the extract script's LOCALAPPDATA cache
+    // for sessions without a resolvable install).
     let unpack_err = match unpacked {
         Ok(Ok(slice)) => {
             let serialized = serde_json::to_string(&slice).unwrap_or_default();
@@ -75,7 +122,7 @@ pub async fn get_ship_gameparams(
         Err(e) => e,
     };
 
-    let root = Path::new(&game_root);
+    let root = Path::new(game_root);
     let local_cache = dirs_next::cache_dir()
         .unwrap_or_default()
         .join("WoWSP-extract")
@@ -103,6 +150,7 @@ pub async fn get_ship_gameparams(
 /// does, minus writing a 350MB intermediate JSON: mount the VFS, read
 /// `content/GameParams.data`, decode, pick the ship, serialize just that
 /// entry.
+#[cfg(desktop)]
 fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json::Value, String> {
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
@@ -173,6 +221,7 @@ fn invalidate_cache_on_build_change(build: u32) {
 /// `{"": {…}}` namespace dict (alongside region keys like ASIA/EU), old
 /// builds use a flat `{name: entry}` dict, and some use a list/tuple whose
 /// first element holds the dict.
+#[cfg(desktop)]
 fn params_root(pickle: &pickled::Value) -> Option<pickled::Value> {
     match pickle {
         pickled::Value::List(items) => items.inner().first().cloned(),
@@ -209,8 +258,14 @@ fn params_root(pickle: &pickled::Value) -> Option<pickled::Value> {
 /// Only entities carrying a numeric `cost` surface; everything else is
 /// skipped so the frontend can tell "price known" from "price missing".
 #[tauri::command]
-pub async fn get_upgrade_prices(game_root: String) -> Result<serde_json::Value, String> {
-    // Build-keyed cache, same lifecycle as the per-ship slices.
+pub async fn get_upgrade_prices(
+    app: tauri::AppHandle,
+    game_root: String,
+) -> Result<serde_json::Value, String> {
+    // Build-keyed cache, same lifecycle as the per-ship slices (the
+    // mobile bundle-vs-sync freshness gate applies here too).
+    #[cfg(mobile)]
+    invalidate_synced_cache_behind_bundle(&app);
     if let Some(build) = latest_build_with_idx(Path::new(&game_root)) {
         invalidate_cache_on_build_change(build);
     }
@@ -220,18 +275,29 @@ pub async fn get_upgrade_prices(game_root: String) -> Result<serde_json::Value, 
         }
     }
 
-    let game_root2 = game_root.clone();
-    let prices = tokio::task::spawn_blocking(move || upgrade_prices_from_install(&game_root2))
-        .await
-        .map_err(|e| format!("配件价格解包任务异常退出：{e}"))??;
+    // Mobile: bundled offline pack, same slot as the per-ship slices —
+    // synced cache wins, bundled data beats the install error below.
+    // Exactly one branch compiles per target.
+    #[cfg(mobile)]
+    return bundled_asset_json(&app, "data/gameparams/upgrade-prices.json");
+    #[cfg(desktop)]
+    {
+        // The handle only serves the mobile branch; keep desktop silent.
+        let _ = &app;
+        let game_root2 = game_root.clone();
+        let prices = tokio::task::spawn_blocking(move || upgrade_prices_from_install(&game_root2))
+            .await
+            .map_err(|e| format!("配件价格解包任务异常退出：{e}"))??;
 
-    let _ = appdata_write(
-        "gameparams/upgrade-prices.json".into(),
-        serde_json::to_string(&prices).unwrap_or_default(),
-    );
-    Ok(prices)
+        let _ = appdata_write(
+            "gameparams/upgrade-prices.json".into(),
+            serde_json::to_string(&prices).unwrap_or_default(),
+        );
+        Ok(prices)
+    }
 }
 
+#[cfg(desktop)]
 fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value, String> {
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
@@ -295,6 +361,7 @@ fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value, Str
     Ok(serde_json::Value::Object(out))
 }
 
+#[cfg(desktop)]
 fn ship_slice_from_pickle(pickle: &pickled::Value, ship_id: i64) -> Option<serde_json::Value> {
     let params = params_root(pickle)?;
 
@@ -332,6 +399,7 @@ fn to_json(v: &pickled::Value) -> Result<serde_json::Value, serde_json::Error> {
 /// whose `__dict__` (a `DictObject` state) is the actual data. Clones the
 /// entry list — Rc-bump cheap, and references cannot outlive the RefCell
 /// guards anyway.
+#[cfg(desktop)]
 fn dict_entries(v: &pickled::Value) -> Option<Vec<(pickled::HashableValue, pickled::Value)>> {
     match v {
         pickled::Value::Dict(d) => Some(d.inner().as_slice().to_vec()),
@@ -347,6 +415,7 @@ fn dict_entries(v: &pickled::Value) -> Option<Vec<(pickled::HashableValue, pickl
 }
 
 /// Whether the value would yield entries via [`dict_entries`].
+#[cfg(desktop)]
 fn dict_like_is_dict(v: &pickled::Value) -> bool {
     match v {
         pickled::Value::Dict(_) => true,
@@ -361,6 +430,7 @@ fn dict_like_is_dict(v: &pickled::Value) -> bool {
     }
 }
 
+#[cfg(desktop)]
 fn pickled_entry_matches(entry: &pickled::Value, ship_id: i64) -> bool {
     pickled_get(entry, "id")
         .or_else(|| pickled_get(entry, "ShipId"))
@@ -371,6 +441,7 @@ fn pickled_entry_matches(entry: &pickled::Value, ship_id: i64) -> bool {
 
 /// Look up a string key in a dict-like pickled value (owned clone out of the
 /// RefCell guard).
+#[cfg(desktop)]
 fn pickled_get(v: &pickled::Value, key: &str) -> Option<pickled::Value> {
     dict_entries(v)?
         .into_iter()
@@ -378,6 +449,7 @@ fn pickled_get(v: &pickled::Value, key: &str) -> Option<pickled::Value> {
         .map(|(_, v)| v)
 }
 
+#[cfg(desktop)]
 fn pickled_keys(v: &pickled::Value) -> Vec<String> {
     dict_entries(v)
         .unwrap_or_default()
@@ -391,6 +463,7 @@ fn pickled_keys(v: &pickled::Value) -> Vec<String> {
 
 /// Coerce a pickled number/string to i64. GameParams ids exceed u32, so the
 /// pickle may carry them as I64, unbounded Int, or (rarely) F64.
+#[cfg(desktop)]
 fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
     match v {
         pickled::Value::I64(n) => Some(*n),
@@ -419,6 +492,7 @@ fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
 /// like aircraft squadrons don't carry weapon data.
 /// The per-ship AppData cache makes subsequent calls instant regardless of
 /// file size.
+#[cfg(desktop)]
 pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value, String> {
     let parsed: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("parse GameParams.json: {e}"))?;
@@ -523,6 +597,7 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
     Ok(candidates[0].clone())
 }
 
+#[cfg(desktop)]
 fn entry_matches_id(entry: &serde_json::Value, ship_id: i64) -> bool {
     // The id field may be a number or a string-encoded number.
     if let Some(n) = entry.get("id").and_then(|v| v.as_i64()) {
@@ -547,6 +622,8 @@ fn entry_matches_id(entry: &serde_json::Value, ship_id: i64) -> bool {
 /// hardcode %APPDATA%\WoWSP and silently split the gameparams cache across
 /// two roots in portable mode.
 fn appdata_dir() -> Result<std::path::PathBuf, String> {
+    // Same root as commands::appdata (paths.rs): identical %APPDATA%\WoWSP on
+    // Windows, Tauri-resolved app-private dir on Android.
     crate::paths::ensure_data_dir()
 }
 
@@ -569,6 +646,85 @@ fn appdata_write(file: String, content: String) -> Result<(), String> {
     fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
     fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
     Ok(())
+}
+
+// ── bundled offline pack (mobile) ─────────────────────────────────────────
+
+/// Whether the bundled offline pack should shadow the pairing-synced
+/// cache: only when BOTH build stamps are known and the bundle is
+/// STRICTLY newer. Anything unknown (never synced, unmarked bundle)
+/// keeps the existing precedence — synced data wins — so a packaging
+/// hiccup can never discard a good sync.
+#[cfg_attr(not(mobile), allow(dead_code))] // exercised by unit tests on desktop
+pub(crate) fn bundle_shadows_cache(bundled: Option<u32>, synced: Option<u32>) -> bool {
+    match (bundled, synced) {
+        (Some(b), Some(s)) => b > s,
+        _ => false,
+    }
+}
+
+/// The bundled pack's source build (`data/gameparams/build.txt`, written
+/// by `scripts/extract_gameparams.py`). `None` when the pack carries no
+/// parseable stamp (older packaging, dev assets) — comparisons then
+/// decline to decide.
+#[cfg(mobile)]
+fn bundled_pack_build(app: &tauri::AppHandle) -> Option<u32> {
+    let asset = app
+        .asset_resolver()
+        .get("data/gameparams/build.txt".to_string())?;
+    std::str::from_utf8(&asset.bytes).ok()?.trim().parse().ok()
+}
+
+/// Mobile freshness gate for [`get_ship_gameparams`] /
+/// [`get_upgrade_prices`]: when the APK's bundled pack is strictly newer
+/// than the build the phone last synced from a desktop, the synced
+/// slices are stale — drop them (and restamp) so lookups fall through to
+/// the bundle instead of serving pre-update data forever. Best-effort, on
+/// the same pattern as [`invalidate_cache_on_build_change`].
+#[cfg(mobile)]
+fn invalidate_synced_cache_behind_bundle(app: &tauri::AppHandle) {
+    let Some(bundled) = bundled_pack_build(app) else {
+        return;
+    };
+    let synced = appdata_read("gameparams/source-build.txt".to_string())
+        .ok()
+        .flatten()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    if !bundle_shadows_cache(Some(bundled), synced) {
+        return;
+    }
+    tracing::info!(
+        bundled_build = bundled,
+        synced_build = ?synced,
+        "mobile: pairing-synced GameParams cache is older than the bundled pack — dropping stale slices"
+    );
+    if let Ok(dir) = appdata_dir() {
+        let _ = fs::remove_dir_all(dir.join("gameparams"));
+    }
+    let _ = appdata_write(
+        "gameparams/source-build.txt".to_string(),
+        bundled.to_string(),
+    );
+}
+
+/// Read a JSON file from the bundled frontend assets — the offline
+/// GameParams pack that `scripts/extract_gameparams.py` drops into
+/// `src/res/data/gameparams/` and the APK embeds under dist/webui. `rel` is
+/// a frontendDist-relative asset key (e.g. `data/gameparams/<id>.json`).
+///
+/// Production resolves the APK-embedded asset; `tauri android dev` falls
+/// back to reading `frontendDist` on disk. A missing file is a packaging
+/// defect (the pack must carry every ship), so it surfaces as a clear
+/// error instead of falling through to the install-unpack paths that can
+/// never succeed on a phone.
+#[cfg(mobile)]
+fn bundled_asset_json(app: &tauri::AppHandle, rel: &str) -> Result<serde_json::Value, String> {
+    let Some(asset) = app.asset_resolver().get(rel.to_string()) else {
+        return Err(format!(
+            "离线舰船数据包缺少 {rel}——安装包不完整。请用 `just build android` 重新打包。"
+        ));
+    };
+    serde_json::from_slice(&asset.bytes).map_err(|e| format!("离线数据包文件损坏（{rel}）：{e}"))
 }
 
 #[cfg(test)]
@@ -727,6 +883,75 @@ mod tests {
     fn entry_matches_id_accepts_string_id() {
         let entry = serde_json::json!({ "id": "4282948544", "name": "x" });
         assert!(entry_matches_id(&entry, 4282948544));
+    }
+
+    // ── mobile cache→bundled precedence ───────────────────────────────────
+
+    /// The stale-cache shadowing rule: a bundle strictly NEWER than the
+    /// phone's last sync replaces the synced data; equal/older bundles and
+    /// any unknown stamp keep the synced cache (the documented precedence —
+    /// fresher synced slices win, and an unmarked pack must never discard a
+    /// good sync).
+    #[test]
+    fn bundle_shadows_cache_only_when_strictly_newer() {
+        // App update outpaces the last sync → shadow.
+        assert!(bundle_shadows_cache(Some(1_400), Some(1_200)));
+        // Desktop synced from a newer build than the frozen APK → keep.
+        assert!(!bundle_shadows_cache(Some(1_200), Some(1_400)));
+        // Same build → keep (nothing to gain by discarding).
+        assert!(!bundle_shadows_cache(Some(1_200), Some(1_200)));
+        // Unknown stamps never decide (never synced / unmarked bundle).
+        assert!(!bundle_shadows_cache(None, Some(1_200)));
+        assert!(!bundle_shadows_cache(Some(1_400), None));
+        assert!(!bundle_shadows_cache(None, None));
+    }
+
+    /// The sync flow really stamps `source-build.txt` where the mobile gate
+    /// reads it: the desktop's gamedata zip packs its whole `gameparams/**`
+    /// source dir (stamp included, forward-slash names — exactly what
+    /// `write_gamedata_zip` emits), extraction lands the stamp next to the
+    /// synced slices, and the extracted value is what drives
+    /// `bundle_shadows_cache` against the bundled `build.txt`.
+    #[test]
+    fn gamedata_sync_stamp_drives_the_bundle_precedence() {
+        use std::io::Write as _;
+
+        let tmp = crate::commands::pairing::tests::tempfile_dir();
+        // A desktop-shaped zip: one per-ship slice + the source-build stamp.
+        let zip_path = tmp.join("gd.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut w = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        for (name, bytes) in [
+            (
+                "gameparams/4282948544.json",
+                b"{\"id\":4282948544}" as &[u8],
+            ),
+            ("gameparams/source-build.txt", b"1200"),
+        ] {
+            w.start_file(name, opts).unwrap();
+            w.write_all(bytes).unwrap();
+        }
+        w.finish().unwrap();
+
+        // Phone side: extract into the data dir and read the stamp back.
+        let dest = tmp.join("data");
+        assert_eq!(
+            crate::commands::pairing::extract_gamedata_zip(&zip_path, &dest).unwrap(),
+            2
+        );
+        let stamp = fs::read_to_string(dest.join("gameparams").join("source-build.txt")).unwrap();
+        let synced: u32 = stamp.trim().parse().unwrap();
+        assert_eq!(synced, 1200);
+
+        // The extracted stamp drives the precedence: an APK bundle from a
+        // strictly newer build replaces the stale sync; equal or older
+        // bundles (and unknown stamps) keep it.
+        assert!(bundle_shadows_cache(Some(1_400), Some(synced)));
+        assert!(!bundle_shadows_cache(Some(1_200), Some(synced)));
+        assert!(!bundle_shadows_cache(Some(1_100), Some(synced)));
+        assert!(!bundle_shadows_cache(None, Some(synced)));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // ── in-app unpack helpers ─────────────────────────────────────────────

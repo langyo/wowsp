@@ -14,13 +14,14 @@ import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { Pause, Play, RotateCcw, X } from "@lucide/vue";
 
-import { HSpinner, HTabs, useToast } from "@celestia-island/hikari";
+import { HSpinner, HTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { isMobileApp } from "@/utils/platform";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t, i18n } from "@/i18n";
 import type { ShipInfo } from "@/api";
@@ -262,6 +263,9 @@ export default defineComponent({
     /** Armor-zone overlay group (visible when showArmor is true). */
     const armorGroup = shallowRef<THREE.Group | null>(null);
     const showArmor = ref(false);
+    // Layout-aware gesture hint: the desktop hint names mouse-only affordances
+    // (scroll zoom, right-drag pan) — touch users get the touch wording.
+    const { isMobile } = useBreakpoint();
     /** Generation token for syncArmorOverlay: the async GLB load must not
      *  commit state if a newer sync (or a teardown) superseded it. */
     let armorSyncGen = 0;
@@ -1450,9 +1454,11 @@ export default defineComponent({
         // An on-disk pack wires silently via the same local probe loadModel
         // uses; only a genuinely missing pack falls through to the on-demand
         // download (lite installs — the installer's done pane offers the same
-        // download up front).
-        if (!isModelPackReady()) await ensurePackWired();
-        if (!isModelPackReady()) {
+        // download up front). The phone build never reaches the download:
+        // its pack ships in the APK and loads same-origin without wiring a
+        // cache root (Settings → updates is the only mobile download path).
+        if (!isModelPackReady() && !isMobileApp()) await ensurePackWired();
+        if (!isModelPackReady() && !isMobileApp()) {
           if (modelPackDownloading.value) return;
           modelPackDownloading.value = true;
           toast.show(t("ships.model3d.downloadStart"));
@@ -1600,7 +1606,9 @@ export default defineComponent({
             {!props.hidden ? (
               <>
                 {viewMode.value === "3d" ? (
-                  <span class="ship-stage__hint">{t("ships.detail.stage.hint3d")}</span>
+                  <span class="ship-stage__hint">
+                    {t(isMobile.value ? "ships.detail.stage.hint3dTouch" : "ships.detail.stage.hint3d")}
+                  </span>
                 ) : null}
                 {viewMode.value === "3d" ? (
                   <div class="ship-stage__rotate" role="group">

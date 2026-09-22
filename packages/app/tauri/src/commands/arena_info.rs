@@ -304,7 +304,9 @@ fn handle_watch_event(
             // PREVIOUS one. Pushed as a FIFO command (not applied here) so
             // the watcher applies it in-order with the manual-anchor
             // commands — the loop is the single owner of that state, and the
-            // atomics above stay as-is for the other consumers.
+            // atomics above stay as-is for the other consumers. Desktop
+            // only: the Tab watcher is part of the overlay stack.
+            #[cfg(desktop)]
             super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
             if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
                 tracing::warn!(error = %e, "emit arena-info event failed");

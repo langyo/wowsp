@@ -1,0 +1,64 @@
+# WoWSP pairing gateway — Cloudflare Worker configuration.
+#
+# The worker is RUST compiled to WebAssembly (crates/relay-core carries
+# the protocol/policy; crates/relay-worker is the wasm entry). Building
+# requires the one-time tool install (see README.md ▶ Deploy):
+#
+#   cargo install -t worker-build worker-build
+#
+# then `npx wrangler deploy` / `pnpm --filter @wowsp/pairing-relay deploy`
+# (owner's manual step). Local dev: `pnpm --filter @wowsp/pairing-relay dev`
+# (= `wrangler dev`, builds the wasm via the [build] command below).
+#
+# Production is served at the custom domain gateway.wowsp.langyo.xyz
+# (bound in the Cloudflare dashboard after deploy; the desktop app and
+# the phone app hardcode wss://gateway.wowsp.langyo.xyz — see
+# packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_WS_URL).
+# Development can override the endpoint with the WOWSP_RELAY_URL env var.
+
+name = "wowsp-pairing"
+main = "crates/relay-worker/build/worker/shim.mjs"
+compatibility_date = "2026-01-15"
+
+[build]
+command = "worker-build --release crates/relay-worker"
+
+# Two SQLite-backed Durable Object classes — what the Workers FREE tier
+# provisions:
+#   Room      — one per pairing room (DO id = the room's 64-hex key):
+#               in-memory rendezvous + byte pipes; storage is used only
+#               for the 15-min idle alarm.
+#   Directory — the singleton ("codes", idFromName) 6-digit pairing-code
+#               registry: code → {room, hostId} bindings + per-IP rate
+#               state in storage with a TTL alarm.
+#
+# Migrations v1/v2 are the SAME class declarations the TypeScript worker
+# deployed (names and SQLite backing unchanged) — the Rust rewrite needs
+# NO new migration tag: deploying over the live worker applies cleanly.
+# (Storage rows in the old v1 key format are garbage-collected lazily on
+# the Directory's first load — see crates/relay-worker/src/directory.rs.)
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[durable_objects.bindings]]
+name = "DIRECTORY"
+class_name = "Directory"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Directory"]
+
+# Optional operator switches (dashboard ▶ Settings ▶ Variables, or here
+# under [vars]); neither is required:
+#   GATEWAY_UPSTREAM — absolute https/wss URL of the real exchange. When
+#       set, /v1/manifest reports it as "upstream" and v2 clients follow
+#       it (forwarding-station hand-off — no app redeploy needed).
+#   GATEWAY_NOTICE   — free-form operator message surfaced by /v1/manifest.
+[vars]
+# GATEWAY_UPSTREAM = ""
+# GATEWAY_NOTICE = ""

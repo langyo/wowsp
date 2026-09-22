@@ -360,21 +360,30 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
 /// replays — both accept arbitrary paths.
 #[tauri::command]
 pub async fn pick_replay_files() -> Result<Vec<String>, String> {
+    // Mobile: replays arrive through the pairing / document-picker flow (a
+    // later mobile phase), not a desktop-style multi-select dialog.
+    #[cfg(mobile)]
+    {
+        return Err(crate::mobile_unsupported::PICKER.into());
+    }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread.
-    let picked = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("Select World of Warships replays")
-            .add_filter("World of Warships replay", &["wowsreplay"])
-            .pick_files()
-    })
-    .await
-    .map_err(|e| format!("replay file picker task failed: {e}"))?;
-    Ok(picked
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect())
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Select World of Warships replays")
+                .add_filter("World of Warships replay", &["wowsreplay"])
+                .pick_files()
+        })
+        .await
+        .map_err(|e| format!("replay file picker task failed: {e}"))?;
+        Ok(picked
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect())
+    }
 }
 
 /// List `.wowsreplay` files under a directory (defaults to the detected game's
@@ -405,17 +414,32 @@ pub fn list_replays_meta(
     dir: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<ReplayMetaLite>, String> {
+    Ok(scan_replays_meta(dir, limit)?.1)
+}
+
+/// Enumeration core shared by the [`list_replays_meta`] command and the
+/// pairing server's `/api/replays` route (single source of truth — never
+/// duplicate the walk). Returns the resolved replay ROOT alongside the
+/// entries so callers that need relative names (the pairing server projects
+/// absolute paths onto root-relative remote names) can do so.
+pub(crate) fn scan_replays_meta(
+    dir: Option<String>,
+    limit: Option<usize>,
+) -> Result<(PathBuf, Vec<ReplayMetaLite>), String> {
     let dir = resolve_replay_dir(dir)?;
     let mut entries: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
     walk_replays(&dir, &mut entries);
     use std::cmp::Reverse;
     entries.sort_by_key(|(_, t)| Reverse(*t));
     let limit = limit.unwrap_or(200);
-    Ok(entries
-        .into_iter()
-        .take(limit)
-        .map(|(p, _)| lite_from_path(&p))
-        .collect())
+    Ok((
+        dir,
+        entries
+            .into_iter()
+            .take(limit)
+            .map(|(p, _)| lite_from_path(&p))
+            .collect(),
+    ))
 }
 
 /// Build a [`ReplayMetaLite`] for one replay file by reading just its
@@ -694,7 +718,34 @@ fn parse_vehicle_entry(v: &serde_json::Value) -> Option<VehicleEntry> {
     })
 }
 
-fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf, String> {
+/// Default replay dir when neither an explicit `dir` nor the env pins name
+/// one. Desktop falls back to auto-detecting the game install (registry +
+/// Steam) and using its `replays/` folder — the common path when the frontend
+/// doesn't pass an explicit dir (e.g. CLI use, or a caller that didn't wire
+/// up the config store; the frontend normally passes the active install's
+/// path). Mobile replays live in the app-private managed dir
+/// (`<app_data>/replays`), filled by the pairing / import flow — there is no
+/// game install to auto-detect on a phone.
+#[cfg(desktop)]
+fn default_replay_dir() -> Result<PathBuf, String> {
+    super::game_detect::scan_game_installs()
+        .into_iter()
+        .next()
+        .map(|detected| PathBuf::from(&detected.path).join("replays"))
+        .ok_or_else(|| {
+            "no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into()
+        })
+}
+
+#[cfg(mobile)]
+fn default_replay_dir() -> Result<PathBuf, String> {
+    crate::paths::ensure_data_dir().map(|d| d.join("replays"))
+}
+
+/// Resolve the replay dir the caller asked for (explicit → env override →
+/// platform default). Shared with the pairing module, which writes imports /
+/// pulls into the same dir the local listing reads.
+pub(crate) fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Some(d) = dir {
         return Ok(PathBuf::from(d));
     }
@@ -704,14 +755,7 @@ fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Ok(game) = std::env::var("WOWSP_GAME_PATH") {
         return Ok(PathBuf::from(game).join("replays"));
     }
-    // Last resort: auto-detect the install (registry + Steam) and use its
-    // `replays/` folder. This is the common path when the frontend doesn't pass
-    // an explicit dir (e.g. CLI use, or a caller that didn't wire up the
-    // config store). The frontend normally passes the active install's path.
-    if let Some(detected) = super::game_detect::scan_game_installs().into_iter().next() {
-        return Ok(PathBuf::from(&detected.path).join("replays"));
-    }
-    Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into())
+    default_replay_dir()
 }
 
 fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) {

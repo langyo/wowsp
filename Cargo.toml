@@ -15,10 +15,16 @@ members = [
 
 exclude = [
     "packages/webui",
+    # Standalone Rust workspace compiled to wasm for Cloudflare Workers —
+    # keeps its own Cargo.lock (gitignored) and its worker/wasm-bindgen
+    # dependency tree out of the app crates' builds. Entry points:
+    # `just check-relay`, or `cargo check --target wasm32-unknown-unknown`
+    # / `cargo test -p relay-core` inside packages/pairing-relay.
+    "packages/pairing-relay",
 ]
 
 [workspace.package]
-version = "0.4.7"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
@@ -42,6 +48,27 @@ serde_json = "^1"
 toml = "1.1"
 uuid = { version = "^1", features = ["v4", "serde"] }
 
+# OS randomness for the pairing server's PIN/token minting. Already in the
+# lockfile via tempfile/uuid; a direct dependency adds no new crate.
+getrandom = "^0.4"
+
+# Pairing relay transport (mobile client + desktop host bridge): WebSocket
+# tunnel to the Cloudflare Worker in packages/pairing-relay. rustls carries
+# the wss:// legs; the ring provider (installed process-wide where needed)
+# keeps aws-lc-rs off every build machine.
+tokio-tungstenite = { version = "^0.30", default-features = false, features = [
+    "connect",
+    "handshake",
+    "url",
+    "rustls-tls-webpki-roots",
+] }
+rustls = { version = "^0.23", default-features = false, features = [
+    "ring",
+    "logging",
+    "std",
+    "tls12",
+] }
+
 # Logging and tracing
 tracing = { version = "^0.1", features = ["log"] }
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
@@ -50,11 +77,12 @@ tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 futures = "^0.3"
 tokio = { version = "^1", features = ["rt", "rt-multi-thread", "macros", "time", "net", "io-util", "fs", "sync", "signal"] }
 
-# Networking (optional WG API lookups)
-# Networking (optional WG API lookups). native-tls = SChannel on Windows:
-# reqwest 0.13 renamed `rustls-tls` → `rustls`, which now pins aws-lc-rs
-# (needs NASM/CMake on every build machine) — not worth it for a
-# Windows-only app.
+# Networking (WG API lookups, mod catalog + model pack downloads).
+# native-tls = SChannel on Windows: reqwest 0.13 renamed `rustls-tls` →
+# `rustls`, which now pins aws-lc-rs (needs NASM/CMake on every build
+# machine) — not worth it for the Windows desktop build. Android cannot use
+# native-tls (no system OpenSSL), so the app crate swaps in a ring-provider
+# rustls build via a per-target dependency table (see packages/app/tauri).
 reqwest = { version = "^0.13", default-features = false, features = [
     "json",
     "native-tls",
@@ -118,8 +146,10 @@ image = { version = "^0.25", default-features = false, features = ["png"] }
 base64 = "^0.23"
 hex = "^0.4"
 
-# Tauri desktop shell — with tray-icon + image-png for the system tray.
-tauri = { version = "^2", features = ["tray-icon", "image-png"] }
+# Tauri shell. tray-icon + image-png are desktop-only features and are added
+# by the app crate's desktop target table (no system tray on Android), so the
+# shared definition stays feature-free apart from what every shell needs.
+tauri = { version = "^2" }
 tauri-build = "^2"
 tauri-plugin-updater = "^2"
 

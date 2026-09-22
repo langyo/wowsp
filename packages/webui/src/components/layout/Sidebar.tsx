@@ -13,6 +13,7 @@ import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useStatsStore } from "@/stores/stats";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
+import { isMobileApp } from "@/utils/platform";
 import { kindLabel } from "@/utils/installLabel";
 import type { PlayerStats } from "@/api";
 import "./Sidebar.scss";
@@ -24,16 +25,28 @@ import "./Sidebar.scss";
  * Footer (bottom): game-status indicator, then two full-width key/value
  * buttons in the same style — the active game client (opens settings on
  * 游戏路径) and the active account (opens settings on 账户). Management
- * itself lives in the settings modal; the footer only mirrors the current
+ * itself lives in the settings surface; the footer only mirrors the current
  * state.
  *
  * The active client is the app-wide context — the replay list, mod hub and
  * account auto-switching all follow it — so its tooltip shows the full
  * install path.
+ *
+ * `variant="drawer"` re-hosts the same nav inside the phone-layout nav
+ * drawer (AppShell's HDrawer): the brand row drops (the drawer header
+ * carries the title) and the footer keeps the safe-area breathing room.
+ * On the phone APP build the client button is hidden (its settings section
+ * is unavailable there).
  */
 export default defineComponent({
   name: "Sidebar",
-  setup() {
+  props: {
+    variant: {
+      type: String as () => "sidebar" | "drawer",
+      default: "sidebar",
+    },
+  },
+  setup(props) {
     const accounts = useAccountStore();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
@@ -79,11 +92,13 @@ export default defineComponent({
     }
 
     return () => (
-      <aside class="sidebar">
-        <div class="sidebar__brand">
-          <img src="/logo.webp" alt="WoWSP" class="sidebar__brand-logo" />
-          <span>{t("common.app.name")}</span>
-        </div>
+      <aside class={["sidebar", props.variant === "drawer" ? "sidebar--drawer" : ""]}>
+        {props.variant === "drawer" ? null : (
+          <div class="sidebar__brand">
+            <img src="/logo.webp" alt="WoWSP" class="sidebar__brand-logo" />
+            <span>{t("common.app.name")}</span>
+          </div>
+        )}
 
         <nav class="sidebar__nav">
           <RouterLink to="/" class="sidebar__link" activeClass="is-active" exactActiveClass="is-active">
@@ -153,7 +168,10 @@ export default defineComponent({
           </div>
 
           {/* active client — same button style as the account below; opens
-              settings on the 游戏路径 table where clients are switched */}
+              settings on the 游戏路径 table where clients are switched.
+              Phone app build: no local installs to switch — the whole row
+              (and its settings section) is desktop-app territory. */}
+          {!isMobileApp() ? (
           <HTooltip
             class="sidebar__footer-slot"
             text={activeInstallPath.value || t("common.gamePath.noneFound")}
@@ -182,6 +200,7 @@ export default defineComponent({
               </span>
             </button>
           </HTooltip>
+          ) : null}
 
           {/* active account — opens settings on the 账户 section */}
           <button type="button" class="sidebar__footer-btn" onClick={() => ui.show("account")}>

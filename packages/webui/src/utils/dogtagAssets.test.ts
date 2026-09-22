@@ -31,6 +31,10 @@ describe("dogtagAssets", () => {
     vi.resetModules();
     vi.unstubAllGlobals();
     convertFileSrc.mockClear();
+    // The Tauri shell signal initDogtagPack gates on (see utils/platform).
+    (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
+      convertFileSrc: () => "asset://localhost/x",
+    };
   });
 
   it("resolves lookups from the bundled map before the pack lands", async () => {
@@ -75,5 +79,21 @@ describe("dogtagAssets", () => {
     expect(mod.dogtagAssetUrl("PCNA001/border.png")).toBe(
       "asset://localhost/C:/cache/dogtags/PCNA001/border.png",
     );
+  });
+
+  it("keeps bundled URLs in a plain browser even when a cache root is reported", async () => {
+    // `?mobileApp=1` browser emulation: the mock backend answers
+    // res_cache_root with a Windows path, but without the Tauri shell
+    // convertFileSrc would throw at call time — initDogtagPack must stay
+    // unwired and every URL resolve from the bundled publicDir instead.
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
+    const fetchMock = mockFetch(PACK_MAP);
+    vi.stubGlobal("fetch", fetchMock);
+    const mod = await import("./dogtagAssets");
+    await mod.initDogtagPack(() => Promise.resolve("C:/cache"));
+    expect(convertFileSrc).not.toHaveBeenCalled();
+    expect(mod.dogtagAssetUrl("PCNP053.png")).toBe("/dogtags/PCNP053.png");
+    expect(mod.dogtagEntry(9999999999)).toBeNull();
   });
 });

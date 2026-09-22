@@ -310,3 +310,36 @@
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
 }
+
+/* ── Phone sheet mode (HPopover sheetOnMobile) ───────────────────────────
+   On <768px viewports every popup docks as a bottom sheet (hikari's
+   "phones never float anchored menus" convention). The sheet carries its
+   own title + close chrome (hk-popover-sheet-header), so the panels'
+   inner header rows would duplicate it — hidden below. The segmented
+   option tracks switch from one nowrap line to a wrapping group (six ship
+   types cannot fit 390px), and the search panel spans the sheet instead
+   of its fixed 360px desktop width. The sheet surface itself (full width,
+   opaque background, top rounding, safe-area bottom padding) is hikari's
+   .hk-is-sheet — nothing to re-paint here. Desktop anchored panels are
+   untouched. */
+.hk-popover-panel.hk-is-sheet {
+  .ship-filter-bar__pop {
+    padding: 10px var(--space-12, 0.75rem) 0;
+  }
+
+  .ship-filter-bar__pop-head,
+  .ship-filter-bar__search-panel-head {
+    display: none;
+  }
+
+  .ship-filter-bar__opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  .ship-filter-bar__search-panel {
+    width: auto;
+    padding: 10px var(--space-12, 0.75rem) 0;
+  }
+}

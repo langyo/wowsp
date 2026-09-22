@@ -75,6 +75,7 @@
     "gameparamsMissing": "GameParams.data sin desempaquetar. Ejecuta wowsunpack para ver los esquemas de blindaje y las balísticas.",
     "gameparamsError": "Error al cargar: {error}",
     "gameparamsErrorTip": "No se pudo cargar el blindaje y la balística — haz clic para copiar el error:",
+    "gameparamsSyncAction": "Sincronizar datos del juego desde el PC",
     "gameparamsHint": "Sugerencia: coloca el GameParams.json desempaquetado en la raíz del juego (junto a bin/). Ver https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "No hay especificaciones disponibles para este buque.",
     "noImage": "No hay imagen disponible.",
@@ -84,6 +85,7 @@
     "noBallistics": "No se pudo extraer datos de blindaje / balística de GameParams para este buque.",
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
+      "hint3dTouch": "Arrastra para rotar · pellizca para hacer zoom",
       "holo": "Holograma",
       "hide": "Ocultar vista previa",
       "show": "Mostrar vista previa",
