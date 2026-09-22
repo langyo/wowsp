@@ -565,7 +565,13 @@ export default defineComponent({
                             >
                               {s.winrate.toFixed(1)}%
                             </span>
-                            <span class="lookup-view__ship-dmg">{Math.round(s.avgDamage).toLocaleString()}</span>
+                            <span class="lookup-view__ship-dmg">
+                              {/* Battles with zero damage are broken snapshot
+                                  data — same anomaly flag as the ship modal. */}
+                              {s.battles > 0 && s.avgDamage <= 0
+                                ? t("stats.dataAnomaly")
+                                : Math.round(s.avgDamage).toLocaleString()}
+                            </span>
                             <span class="lookup-view__ship-kd">
                               {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                             </span>

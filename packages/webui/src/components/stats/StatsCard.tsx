@@ -8,6 +8,7 @@ import type { PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import {
   careerStamp,
+  damageColor,
   prTier,
   prTierLabel,
   winrateColor,
@@ -106,32 +107,45 @@ export default defineComponent({
     const wrColor = computed(() => winrateColor(props.stats.winrate));
     const { copy } = useClipboard();
 
-    const kpis = computed(() => [
-      {
-        label: t("stats.battles"),
-        value: props.stats.battles != null ? props.stats.battles.toLocaleString() : "—",
-      },
-      {
-        label: t("stats.avgDamage"),
-        value: props.stats.avgDamage != null ? Math.round(props.stats.avgDamage).toLocaleString() : "—",
-      },
-      {
-        label: t("stats.avgExp"),
-        value: props.stats.avgXp != null ? Math.round(props.stats.avgXp).toLocaleString() : "—",
-      },
-      {
-        label: t("stats.kdRatio"),
-        value: props.stats.kdRatio != null ? props.stats.kdRatio.toFixed(2) : "—",
-      },
-      {
-        label: t("stats.survivalRate"),
-        value: props.stats.survivalRate != null ? `${props.stats.survivalRate.toFixed(0)}%` : "—",
-      },
-      {
-        label: t("stats.hitRate"),
-        value: props.stats.hitRate != null ? `${props.stats.hitRate.toFixed(0)}%` : "—",
-      },
-    ]);
+    const kpis = computed(() => {
+      const s = props.stats;
+      // Any real battle deals damage — a zero with battles played is broken
+      // data, flagged with the same anomaly text as the ship modal's KPI
+      // strip (stats.dataAnomaly, red) instead of an implausible 0.
+      const damageAnomaly =
+        s.battles != null && s.battles > 0 && s.avgDamage != null && s.avgDamage <= 0;
+      return [
+        {
+          label: t("stats.battles"),
+          value: s.battles != null ? s.battles.toLocaleString() : "—",
+        },
+        {
+          label: t("stats.avgDamage"),
+          value: damageAnomaly
+            ? t("stats.dataAnomaly")
+            : s.avgDamage != null
+              ? Math.round(s.avgDamage).toLocaleString()
+              : "—",
+          color: damageAnomaly ? damageColor(0) : undefined,
+        },
+        {
+          label: t("stats.avgExp"),
+          value: s.avgXp != null ? Math.round(s.avgXp).toLocaleString() : "—",
+        },
+        {
+          label: t("stats.kdRatio"),
+          value: s.kdRatio != null ? s.kdRatio.toFixed(2) : "—",
+        },
+        {
+          label: t("stats.survivalRate"),
+          value: s.survivalRate != null ? `${s.survivalRate.toFixed(0)}%` : "—",
+        },
+        {
+          label: t("stats.hitRate"),
+          value: s.hitRate != null ? `${s.hitRate.toFixed(0)}%` : "—",
+        },
+      ];
+    });
 
     /** "场次: 12,345" tooltip body for a split (null = count unknown —
      *  cache files written before the counts were added carry none). */
@@ -279,7 +293,12 @@ export default defineComponent({
               data-hint={`${k.label}: ${k.value} · ${t("common.clickToCopy")}`}
             >
               <span class="stats-card__kpi-label">{k.label}</span>
-              <span class="stats-card__kpi-value">{k.value}</span>
+              <span
+                class="stats-card__kpi-value"
+                style={k.color ? { color: k.color } : undefined}
+              >
+                {k.value}
+              </span>
             </div>
           ))}
         </div>
