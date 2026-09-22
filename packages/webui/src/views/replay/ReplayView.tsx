@@ -249,7 +249,6 @@ const PostBattlePanel = defineComponent({
         .sort((a, b) => b.xp - a.xp);
     });
     const detailOpen = ref(false);
-    const rawOpen = ref(false);
     const selected = ref<(typeof rows.value)[number] | null>(null);
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
@@ -339,11 +338,10 @@ const PostBattlePanel = defineComponent({
       void loadShipDist(p);
     }
 
-    /** Jump into the lookup screen for this player, closing both modals. */
+    /** Jump into the lookup screen for this player, closing the modal. */
     function jumpToLookup() {
       const p = selected.value;
       detailOpen.value = false;
-      rawOpen.value = false;
       emit("close");
       if (p) {
         void router.push({ path: "/lookup", query: { name: p.name, realm: p.realm ?? "asia" } });
@@ -395,28 +393,6 @@ const PostBattlePanel = defineComponent({
               {enemies.value.map(cell)}
             </div>
           </div>
-          <button
-            class="replay-view__postbattle-rawbtn"
-            onClick={() => (rawOpen.value = true)}
-          >
-            {t("replay.postbattle.rawData")}
-          </button>
-
-          {/* Level-2 modal: raw payload */}
-          {rawOpen.value ? (
-            <div class="replay-view__postbattle-modal" onClick={() => (rawOpen.value = false)}>
-              <div
-                class="replay-view__postbattle-modal-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div class="replay-view__postbattle-modal-head">
-                  <span>{t("replay.postbattle.rawData")}</span>
-                  <button onClick={() => (rawOpen.value = false)}><X size={12} /></button>
-                </div>
-                <pre class="replay-view__postbattle-modal-raw">{props.raw}</pre>
-              </div>
-            </div>
-          ) : null}
 
           {/* Level-2 modal: player detail */}
           {detailOpen.value && sel ? (

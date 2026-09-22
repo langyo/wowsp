@@ -639,31 +639,7 @@
     color: rgb(var(--color-text) / 0.7);
     b { color: #ffd93d; font-family: var(--font-mono); margin-left: 4px; }
   }
-  &__postbattle-raw {
-    margin-top: 0.6rem;
-    summary { cursor: pointer; color: rgb(var(--color-text) / 0.5); }
-    pre {
-      margin-top: 4px;
-      max-height: 220px;
-      overflow: auto;
-      padding: 6px;
-      background: rgba(0, 0, 0, 0.35);
-      border-radius: 4px;
-      font-size: 0.6875rem;
-    }
-  }
-  &__postbattle-rawbtn {
-    margin-top: 8px;
-    padding: 3px 10px;
-    border: none;
-    border-radius: 4px;
-    background: rgb(var(--color-text) / 0.08);
-    color: rgb(var(--color-text) / 0.7);
-    font-size: var(--text-xs);
-    cursor: pointer;
-    &:hover { background: rgb(var(--color-text) / 0.14); }
-  }
-  /* Level-2 modal (raw payload / player detail) */
+  /* Level-2 modal (player detail) */
   &__postbattle-modal {
     position: fixed;
     inset: 0;
@@ -707,17 +683,6 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-  }
-  &__postbattle-modal-raw {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 6px;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 4px;
-    font-size: 0.6875rem;
-    white-space: pre-wrap;
-    word-break: break-all;
   }
   &__postbattle-global {
     margin-top: 10px;

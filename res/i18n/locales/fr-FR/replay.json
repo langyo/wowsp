@@ -102,7 +102,6 @@
     "manualTooSmall": "Sélection trop petite"
   },
   "postbattle": {
-    "rawData": "Données brutes",
     "loadingGlobal": "Chargement des statistiques globales de {name}…",
     "destroyedBy": "Détruit par {name}",
     "damageUnknownNote": "Les replays n'incluent pas les informations complètes de la bataille — certaines sources de dégâts ne peuvent être attribuées",
