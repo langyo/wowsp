@@ -4,6 +4,7 @@ import { Ban, Coins, Lock, RotateCcw } from "@lucide/vue";
 import { HButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
 import { techTreeNode } from "@/utils/techTreeData";
 import type { ShipInfo } from "@/api";
@@ -662,16 +663,23 @@ export default defineComponent({
         return <p class="planner-v__empty">{t("ships.skills.noTree")}</p>;
       }
       const columns = skillColumns.value;
-      const legend = (
-        <div key="ribbon-legend">
-          {epicSkills.value.size > 0 ? (
-            <p class="planner-v__note">{t("ships.skills.epicLegend")}</p>
-          ) : null}
-          {recommended.value.size > 0 ? (
-            <p class="planner-v__note">{t("ships.skills.recLegend")}</p>
-          ) : null}
-        </div>
-      );
+      const legend =
+        epicSkills.value.size > 0 || recommended.value.size > 0 ? (
+          <div key="ribbon-legend" class="skill-legend-v">
+            {epicSkills.value.size > 0 ? (
+              <span class="skill-legend-v__chip" data-hint={t("ships.skills.epicLegend")}>
+                <span class="skill-legend-v__swatch skill-legend-v__swatch--epic" />
+                {t("ships.skills.epicTag")}
+              </span>
+            ) : null}
+            {recommended.value.size > 0 ? (
+              <span class="skill-legend-v__chip" data-hint={t("ships.skills.recLegend")}>
+                <span class="skill-legend-v__swatch skill-legend-v__swatch--rec" />
+                {t("ships.skills.recTag")}
+              </span>
+            ) : null}
+          </div>
+        ) : null;
       const tierRows = [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
@@ -692,12 +700,11 @@ export default defineComponent({
           const enhanced = epicSkills.value.has(skill.code);
           const rec = recommended.value.has(skill.code);
           const name = skillName(skill);
-          const hints = [
-            skillHint(skill),
-            enhanced ? t("ships.skills.epicRibbon") : "",
-            rec ? t("ships.skills.recRibbon") : "",
-          ].filter(Boolean);
-          const hint = hints.join(" — ");
+          // Ribbon meanings ride the tooltip as tag chips (data-hint-tags,
+          // rendered by the global hint) instead of a bolted-on sentence.
+          const tags: HintTag[] = [];
+          if (enhanced) tags.push({ tone: "epic", text: t("ships.skills.epicTag") });
+          if (rec) tags.push({ tone: "rec", text: t("ships.skills.recTag") });
           cells.push(
             <div
               class={[
@@ -712,7 +719,8 @@ export default defineComponent({
                 class="skill-tile-v__btn"
                 disabled={!unlocked || !!banned}
                 onClick={() => (unlocked && !banned ? toggleSkill(skill) : null)}
-                data-hint={banned ? t("ships.skills.notApplicable") : hint}
+                data-hint={banned ? t("ships.skills.notApplicable") : skillHint(skill)}
+                data-hint-tags={tags.length > 0 ? JSON.stringify(tags) : undefined}
               >
                 <span class="skill-tile-v__icon">
                   <AssetImage
@@ -723,13 +731,15 @@ export default defineComponent({
                   />
                 </span>
               </button>
-              {/* Sibling of the button so the active/banned filters never
-                  wash the ribbon out. */}
-              {enhanced ? (
-                <span class="skill-tile-v__ribbon skill-tile-v__ribbon--epic" />
-              ) : null}
-              {rec ? (
-                <span class="skill-tile-v__ribbon skill-tile-v__ribbon--rec" />
+              {/* Sibling of the button (inside the clip host) so the
+                  active/banned filters never wash the ribbons out. */}
+              {enhanced || rec ? (
+                <span class="skill-tile-v__ribbon-host">
+                  {enhanced ? (
+                    <span class="skill-tile-v__ribbon skill-tile-v__ribbon--epic" />
+                  ) : null}
+                  {rec ? <span class="skill-tile-v__ribbon skill-tile-v__ribbon--rec" /> : null}
+                </span>
               ) : null}
               {banned ? (
                 <span class="skill-tile-v__ban">

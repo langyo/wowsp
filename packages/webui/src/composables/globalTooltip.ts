@@ -4,7 +4,11 @@
  *
  * Elements opt in with `data-hint="…"` (plain text, pre-localized at the
  * call site); optional `data-hint-pos="top|bottom|left|right"` overrides
- * the default top placement. Because the hook delegates pointer/focus
+ * the default top placement. `data-hint-tags` (JSON array of
+ * `{ text, tone: "epic" | "rec" }`, also pre-localized) appends a chip row
+ * under the text for ribbon-style qualifiers — the chips are built with
+ * DOM APIs only, so anchor-supplied strings never become markup. Because
+ * the hook delegates pointer/focus
  * events, rows rendered long after install (spec tables, filter chips,
  * map HUD buttons…) are covered with no per-component wiring.
  *
@@ -18,8 +22,41 @@
  */
 import { usePopupManager } from "@celestia-island/hikari";
 import "@celestia-island/hikari/components/HkTooltip.scss";
+import "./globalTooltip.scss";
 
 type Placement = "top" | "bottom" | "left" | "right";
+
+/** A ribbon-style qualifier chip rendered under the hint text. Call sites
+ *  pass these pre-localized via the `data-hint-tags` JSON attribute. */
+export interface HintTag {
+  text: string;
+  tone: "epic" | "rec";
+}
+
+const TAG_TONES: ReadonlySet<string> = new Set(["epic", "rec"]);
+
+/** Parse the `data-hint-tags` JSON attribute; anything malformed or off-
+ *  schema degrades to "no chips" rather than breaking the hint. */
+function tagsFor(el: HTMLElement): HintTag[] {
+  const raw = el.dataset.hintTags;
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (tag): tag is HintTag =>
+      typeof tag === "object" &&
+      tag !== null &&
+      typeof (tag as HintTag).text === "string" &&
+      (tag as HintTag).text.trim() !== "" &&
+      typeof (tag as HintTag).tone === "string" &&
+      TAG_TONES.has((tag as HintTag).tone),
+  );
+}
 
 /** Parity with HTooltip's default hover delay. */
 const SHOW_DELAY_MS = 300;
@@ -123,7 +160,22 @@ export function installGlobalTooltip(): void {
       hideNow();
       return;
     }
-    content.textContent = text;
+    const tags = tagsFor(anchor);
+    if (tags.length === 0) {
+      content.textContent = text;
+    } else {
+      const textEl = document.createElement("div");
+      textEl.textContent = text;
+      const tagsEl = document.createElement("div");
+      tagsEl.className = "global-tooltip__tags";
+      for (const tag of tags) {
+        const chip = document.createElement("span");
+        chip.className = `global-tooltip__tag global-tooltip__tag--${tag.tone}`;
+        chip.textContent = tag.text;
+        tagsEl.appendChild(chip);
+      }
+      content.replaceChildren(textEl, tagsEl);
+    }
     popup.classList.remove("hk-tooltip-visible");
     popup.style.display = "block";
     place();
