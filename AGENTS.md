@@ -111,6 +111,10 @@
   `packages/webui`、`packages/website`、`packages/holo` 的 `version`），
   由 `scripts/check_versions.py` 在 CI 里强制一致；
   **不要**单独开纯 bump PR（除非用户明确要求）。
+- **版本号推进分级授权**（2026-09-22 用户决策）：未经用户明确同意，
+  agent 自主推进版本号时**最多只能升 patch 位**；minor / major 严禁
+  擅自推进，必须先获得用户对目标版本号的明确批准。功能/修复 PR 需要
+  升 minor 或 major 时，先向用户确认版本号再一并 bump 七处。
 - **只在被要求或已批准的工作流步骤里创建 PR**；未经许可不得自发开 PR。
 
 ## 6. Build & Test
