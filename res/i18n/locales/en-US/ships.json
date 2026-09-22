@@ -318,9 +318,9 @@
     "noCommandersForNation": "No special commanders available for this nation.",
     "slotEmpty": "No upgrades available",
     "commanderLegend": "\"Legendary\" badge = legendary commander with unique talents; \"Elite\" badge = elite/special commander.",
-    "epicRibbon": "Enhanced by the legendary commander",
+    "epicTag": "Enhanced by the legendary commander",
     "epicLegend": "Green corner ribbon = a skill the selected legendary commander teaches at enhanced values.",
-    "recRibbon": "Recommended by the game",
+    "recTag": "Recommended by the game",
     "recLegend": "Amber corner ribbon = part of the in-game recommended build for this ship.",
     "activator": {
       "DamageDoneActivator": "Damage dealt",

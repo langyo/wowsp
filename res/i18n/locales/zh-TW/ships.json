@@ -318,9 +318,9 @@
     "noCommandersForNation": "該國別暫無可用特殊艦長。",
     "slotEmpty": "無可選升級",
     "commanderLegend": "「傳奇」徽章 = 擁有專屬天賦的傳奇艦長；「精英」徽章 = 精英/特種艦長。",
-    "epicRibbon": "傳奇艦長強化技能",
+    "epicTag": "傳奇艦長強化",
     "epicLegend": "綠色角帶 = 當前傳奇艦長以強化數值教授的技能。",
-    "recRibbon": "遊戲推薦技能",
+    "recTag": "遊戲推薦加點",
     "recLegend": "黃色角帶 = 遊戲內為該艦推薦的加點，按推薦順序排列。",
     "activator": {
       "DamageDoneActivator": "造成損傷時",
