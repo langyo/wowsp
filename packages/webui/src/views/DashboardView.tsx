@@ -316,7 +316,13 @@ export default defineComponent({
                         >
                           {s.winrate.toFixed(1)}%
                         </span>
-                        <span class="dash-ship-table__col-num">{s.avgDamage.toFixed(0)}</span>
+                        <span class="dash-ship-table__col-num">
+                          {/* Battles with zero damage are broken snapshot
+                              data — same anomaly flag as the ship modal. */}
+                          {s.battles > 0 && s.avgDamage <= 0
+                            ? t("stats.dataAnomaly")
+                            : s.avgDamage.toFixed(0)}
+                        </span>
                         <span class="dash-ship-table__col-num">
                           {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                         </span>
