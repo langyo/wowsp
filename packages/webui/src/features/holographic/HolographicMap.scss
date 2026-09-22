@@ -36,6 +36,11 @@
   --holo-hud-tshadow: 0 1px 2px rgb(0 0 0 / 80%);
 
   position: relative;
+  /* Inline-size container: the shipcard row (absolutely positioned against
+     the content-sized playback bar, where %-widths are meaningless) caps
+     itself to the map's real width via 100cqw below. Inline-size
+     containment is free here — the map is width:100%, never content-sized. */
+  container-type: inline-size;
   width: 100%;
   height: 100%;
   border-radius: var(--radius-md);
@@ -122,6 +127,18 @@
     position: absolute;
     left: 0;
     bottom: calc(100% + 8px);
+    /* Cap the row at the map's usable width: 100cqw minus the row's left
+       anchor offset (map border + the bar's 12px inset) and the 12px map
+       inset on the right, with a few px of deliberate slack so a capped
+       row still clears the map edge visibly. The row shrink-to-fits
+       against the bar's inner width too, so the bar normally already
+       bounds it — this clamp is the explicit authority for when the bar
+       itself is wider than the map affords. Under the cap the stat
+       segments (flex-shrink below) give up width; don't use
+       `width: max-content` here — intrinsic keywords size flex items at
+       their natural width and the max-width box clamp alone would leave
+       them overflowing the clamped box. */
+    max-width: calc(100cqw - 34px);
     display: flex;
     flex-direction: row;
     align-items: flex-end;
@@ -353,6 +370,10 @@
   display: inline-flex;
   align-items: stretch;
   gap: 0;
+  /* Release the strip's automatic minimum inside the shipcard row: it
+     would otherwise read as the sum of the segments' 4.5rem contributions
+     and keep the row rigid even under the row's width cap. */
+  min-width: 0;
   padding: 0.45rem 0.3rem;
   background: var(--holo-hud-glass, rgb(96 108 126 / 42%));
   border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
@@ -371,8 +392,17 @@
   /* Rigid equal-width segments: the strip keeps a constant footprint no
      matter what the live numbers are (wide "54,356" vs narrow "47" would
      otherwise re-splat the row on every ribbon tick). 4.5rem clears a
-     7-digit tabular-nums readout with room to spare. */
-  flex: 0 0 4.5rem;
+     7-digit tabular-nums readout with room to spare. Shrinkable (0 1) so a
+     narrow map can compress the row; min-width: min-content is what lets
+     it actually happen — a flex item's intrinsic contribution otherwise
+     rides on the 4.5rem base (not this floor), so without it the strip's
+     automatic minimum stays ≈ its natural width and the row stays rigid.
+     Under pressure segments stop at their nowrap content, numbers never
+     clip; unconstrained rows still lay out at exactly 4.5rem.
+     width stays alongside the basis: dropping it would collapse the
+     unconstrained row down to bare text widths. */
+  flex: 0 1 4.5rem;
+  min-width: min-content;
   width: 4.5rem;
   white-space: nowrap;
 

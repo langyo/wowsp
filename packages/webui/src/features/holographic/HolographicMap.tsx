@@ -5225,8 +5225,10 @@ export default defineComponent({
               {/* Self battle stats ride to the right of the hull plaque:
                   icon + short label + number per stat, bottom-aligned with
                   the plaque, content centred inside. Exactly four segments
-                  at a fixed width each — no conditional fifth (plane) stat:
-                  its appearance resized the strip past the viewport edge. */}
+                  at a nominal 4.5rem each (compressed only when the map is
+                  too narrow for the row) — no conditional fifth (plane)
+                  stat: its appearance resized the strip past the viewport
+                  edge. */}
               {selfStats.value ? (
                 <div class="holo-map__selfstats">
                   <span class="holo-map__selfstat">
