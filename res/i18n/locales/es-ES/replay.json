@@ -74,7 +74,10 @@
   },
   "minimap": {
     "zoom": "Mapa ampliado",
-    "trails": "Estelas de los buques"
+    "trails": "Estelas de los buques",
+    "grid": "Cuadrícula del mapa (A–J / 1–10)",
+    "rotateCcw": "Girar el mapa 45° antihorario",
+    "rotateCw": "Girar el mapa 45° horario"
   },
   "labels": {
     "hide": "Ocultar etiquetas",

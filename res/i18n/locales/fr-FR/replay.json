@@ -74,7 +74,10 @@
   },
   "minimap": {
     "zoom": "Carte agrandie",
-    "trails": "Trajectoires des navires"
+    "trails": "Trajectoires des navires",
+    "grid": "Grille de la carte (A–J / 1–10)",
+    "rotateCcw": "Pivoter la carte de 45° anti-horaire",
+    "rotateCw": "Pivoter la carte de 45° horaire"
   },
   "labels": {
     "hide": "Masquer les étiquettes",
