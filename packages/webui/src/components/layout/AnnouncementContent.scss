@@ -1,7 +1,7 @@
-/* Free & open-source notice body: one labelled block per language variant,
-   separated by hairline dividers. Shared by the forced first-launch dialog
-   and the About modal card, so this only styles the notice's own internals —
-   each host sizes and scrolls the wrapper around it. */
+/* Free & open-source notice body: a single block in the user's own
+   language (bold headline + body paragraph). Shared by the onboarding
+   wizard's welcome step and the About modal card, so this only styles the
+   notice's own internals — each host sizes and scrolls the wrapper. */
 
 .announce-content {
   display: flex;
@@ -13,16 +13,6 @@
     flex-direction: column;
     gap: 0.3rem;
     padding: 0.6rem 0;
-
-    & + & {
-      border-top: 1px solid rgb(var(--color-border) / 15%);
-    }
-  }
-
-  &__lang {
-    font-size: var(--text-2xs);
-    letter-spacing: 0.02em;
-    color: rgb(var(--color-muted));
   }
 
   &__title {

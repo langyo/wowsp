@@ -13,9 +13,11 @@ import "./AboutModal.scss";
 /**
  * About modal: app name + version (dynamic via Tauri app API), tech stack,
  * links, license, and the QQ feedback group notice. Carries the mandatory
- * free & open-source notice as a permanent, always-visible card (no dismiss
- * — the dismissable twin is the onboarding wizard's welcome step).
- * Includes a "check for updates" action when the updater is available.
+ * free & open-source notice as a permanent, always-visible card, shown in
+ * the user's own language (no dismiss — the dismissable twin is the
+ * onboarding wizard's welcome step; the usage-telemetry disclosure lives
+ * in the settings' attributions section instead). Includes a "check for
+ * updates" action when the updater is available.
  * Every link opens through the Rust backend so the system default browser
  * is used (the webview itself never navigates remotely). Link URLs live
  * only in the en-US locale (`about.links.*`) — they are language-invariant
@@ -32,9 +34,9 @@ const TECH_LINKS = [
 ];
 
 /** The About body — logo, version + updater, tech tags, links, license
- *  footer, QQ line, then the mandatory free & open-source notice as the
- *  last card. Rendered inside the AboutModal and inline in the settings
- *  modal's 关于 section. */
+ *  footer, QQ line, then the mandatory free & open-source notice (the
+ *  user's own language) as the last card. Rendered inside the AboutModal
+ *  and inline in the settings modal's 关于 section. */
 export const AboutContent = defineComponent({
   name: "AboutContent",
   setup() {
@@ -145,9 +147,11 @@ export const AboutContent = defineComponent({
             </button>
           </p>
 
-          {/* Mandatory free & open-source notice: rendered in full as the
-              very last card — all info first, warning last, no inner
-              scrollbar (the host scroller is the only one). */}
+          {/* Mandatory free & open-source notice: one block in the user's
+              own language as the very last card — all info first, warning
+              last, no inner scrollbar (the host scroller is the only one).
+              The usage-telemetry disclosure lives in the settings'
+              attributions section. */}
           <div class="about-modal__notice">
             <AnnouncementContent />
           </div>

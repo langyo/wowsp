@@ -71,6 +71,7 @@ import { useSettingsUiStore, type SettingsSection } from "@/stores/settingsUi";
 import { useCacheStore } from "@/stores/cache";
 import { useUpdaterStore } from "@/stores/updater";
 import { AboutContent } from "@/components/layout/AboutModal";
+import { pickTelemetryNotice } from "@/components/layout/announcementVariants";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import AuthorMark from "@/components/base/AuthorMark";
@@ -1304,6 +1305,16 @@ export default defineComponent({
                 </div>
               ))}
             </div>
+          </section>
+          {/* usage-telemetry disclosure — its own group closing the section
+              (moved out of the About notice card), rendered in the user's
+              own language; the full notice lives at
+              docs/{lang}/license/usage-telemetry.md. */}
+          <section class="settings-modal__group">
+            <h2 class="settings-modal__group-title">{t("settings.telemetryTitle")}</h2>
+            <p class="settings-modal__hint">
+              {pickTelemetryNotice(lang.uiLocale.value).text}
+            </p>
           </section>
           </>
           ) : null}
