@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { BarChart3, Search, Ship, Film, Package } from "@lucide/vue";
+import { BarChart3, Search, Ship, Film, Video, Crosshair, Package } from "@lucide/vue";
 
 import { HTag, HTooltip } from "@celestia-island/hikari";
 
@@ -21,7 +21,9 @@ import "./Sidebar.scss";
 /**
  * Left sidebar: brand + nav links + spacer + footer.
  *
- * Nav links (top): Dashboard / Lookup / Ships / Replay / Resources.
+ * Nav links (top): Dashboard / Lookup / Ships / Live / Replay / Tactics /
+ * Resources. Live + Tactics watch the local game install, so they hide on
+ * the phone app build (no local game / install there).
  * Footer (bottom): game-status indicator, then two full-width key/value
  * buttons in the same style — the active game client (opens settings on
  * 游戏路径) and the active account (opens settings on 账户). Management
@@ -113,10 +115,25 @@ export default defineComponent({
             <Ship size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.ships")}</span>
           </RouterLink>
+          {/* Live battle + tactics analysis watch the LOCAL game install —
+              desktop app territory (same guard as the footer client button;
+              one branch covers the drawer variant too). */}
+          {!isMobileApp() ? (
+            <RouterLink to="/live" class="sidebar__link" activeClass="is-active">
+              <Video size={16} class="sidebar__link-icon" />
+              <span class="sidebar__link-text">{t("nav.live")}</span>
+            </RouterLink>
+          ) : null}
           <RouterLink to="/replay" class="sidebar__link" activeClass="is-active">
             <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
           </RouterLink>
+          {!isMobileApp() ? (
+            <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active">
+              <Crosshair size={16} class="sidebar__link-icon" />
+              <span class="sidebar__link-text">{t("nav.tactics")}</span>
+            </RouterLink>
+          ) : null}
           <RouterLink to="/resources" class="sidebar__link" activeClass="is-active">
             <Package size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.resources")}</span>
