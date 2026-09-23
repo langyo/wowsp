@@ -4,9 +4,9 @@
 //! Structure:
 //! - [`relay_core`] carries every protocol/policy decision (pure, host
 //!   testable — `cargo test -p relay-core`).
-//! - this crate is routing + WebSocket glue only. The worker ALSO hosts
-//!   the website's static assets (wrangler `[assets]`, served at `/`);
-//!   `run_worker_first = ["/api/*"]` means only `/api` reaches this code:
+//! - this crate is routing + WebSocket glue only. The website's static
+//!   assets live on the GitHub Pages mirror; the `routes` entry sends
+//!   only `wowsp.langyo.xyz/api*` into this code:
 //!   - `GET /api/health` — the merged liveness + discovery document
 //!     (server version + minimum client version + relay endpoints;
 //!     forwarding-station switch via the `GATEWAY_UPSTREAM` var,
@@ -46,19 +46,6 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 async fn route(req: Request, env: Env) -> Result<Response> {
     let url = req.url()?;
     let path = url.path().to_string();
-
-    // The docs are NOT bundled: they live on the GitHub Pages mirror
-    // (langyo.github.io/wowsp/docs, the same origin every built asset of
-    // the site loads from) so Cloudflare stays out of the heavy-download
-    // path. run_worker_first includes /docs so old links land here.
-    if path == "/docs" || path.starts_with("/docs/") {
-        let target = format!(
-            "https://langyo.github.io/wowsp{path}{}",
-            url.query().map_or(String::new(), |q| format!("?{q}"))
-        );
-        return Response::redirect(worker::Url::parse(&target)?);
-    }
-
     let query = url.query().unwrap_or("").to_string();
     let origin = url.origin().ascii_serialization();
 
