@@ -1,10 +1,11 @@
 //! Internet pairing gateway (v2): a Cloudflare Worker rendezvous
 //! (`packages/pairing-relay`, deployed by the owner at
-//! `wowsp-gateway.langyo.xyz`) lets the phone pair from OUTSIDE the desktop's
-//! LAN by tunneling the exact same pairing HTTP protocol the LAN server
-//! speaks. The gateway is a HIDDEN built-in service — nothing is
-//! user-configured; development points it elsewhere via the undocumented
-//! `WOWSP_RELAY_URL` environment variable.
+//! `wowsp.langyo.xyz` — the same worker also serves the website
+//! statically) lets the phone pair from OUTSIDE the desktop's LAN by
+//! tunneling the exact same pairing HTTP protocol the LAN server speaks.
+//! The gateway is a HIDDEN built-in service — nothing is user-configured;
+//! development points it elsewhere via the undocumented `WOWSP_RELAY_URL`
+//! environment variable.
 //!
 //! # Gateway compatibility layer (protocol v2)
 //!
@@ -13,19 +14,21 @@
 //! speaks our protocol forever. Before the first socket of a pairing
 //! session, both roles RESOLVE the gateway:
 //!
-//! 1. `GET https://<root>/v1/manifest` (5 s timeout, `no-store`). The root
-//!    starts at the built-in `https://wowsp-gateway.langyo.xyz` (the
-//!    `WOWSP_RELAY_URL` dev override replaces it).
-//! 2. No manifest (transport error / 404 / non-200 / foreign body) →
-//!    LEGACY DIRECT MODE: the tunnels dial `wss://<root>` exactly like the
-//!    v1 client did.
-//! 3. A manifest with `upstream != null` → re-resolve at that URL (at most
-//!    2 hops; a cycle or an over-long chain degrades to legacy direct mode
-//!    at the INITIAL root).
-//! 4. The final manifest must list protocol `v1` — otherwise a clear
-//!    unsupported-protocol error surfaces (the desktop stays LAN-only, the
-//!    phone shows a distinct toast). `endpoints.relay` (path or absolute
-//!    wss URL) becomes the WebSocket base.
+//! 1. `GET https://<root>/api/health` (5 s timeout, `no-store`) — the
+//!    merged liveness + discovery document. The root starts at the
+//!    built-in `https://wowsp.langyo.xyz` (the `WOWSP_RELAY_URL` dev
+//!    override replaces it).
+//! 2. No document (transport error / 404 / non-200 / foreign body) →
+//!    LEGACY DIRECT MODE: the tunnels dial `wss://<root>/api/relay`.
+//! 3. A document with `upstream != null` → re-resolve at that URL (at
+//!    most 2 hops; a cycle or an over-long chain degrades to legacy
+//!    direct mode at the INITIAL root).
+//! 4. The final document must pass the `minClientVersion` gate (a
+//!    distinct update-the-app error otherwise) and list protocol `v1` —
+//!    otherwise a clear unsupported-protocol error surfaces (the desktop
+//!    stays LAN-only, the phone shows a distinct toast).
+//!    `endpoints.relay` (path or absolute wss URL) becomes the WebSocket
+//!    base.
 //!
 //! The resolved gateway is cached for the pairing session (short TTL), and
 //! its `provider` / `viaUpstream` / `notice` fields ride the pairing status.
@@ -77,7 +80,7 @@
 //! desktop — never derived from the PIN. The gateway is nonetheless a
 //! TRUSTED component: its operator sees every code→room binding and could
 //! join a room as a fake host and MITM the /pair exchange — which is why the
-//! endpoint is first-party (wowsp-gateway.langyo.xyz; a resolved `upstream`
+//! endpoint is first-party (wowsp.langyo.xyz; a resolved `upstream`
 //! inherits that trust by construction, it is reached only through the
 //! pinned root's own manifest). Payloads are plain HTTP inside the tunnel,
 //! same as the LAN; the token/data sniffing caveat of the LAN server applies
@@ -103,12 +106,13 @@ use wowsp_tauri_shared::{
 use super::pairing::{GAMEDATA_SENTINEL, emit_progress, http_error};
 
 /// The built-in internet-pairing gateway ROOT, in its https spelling — the
-/// v2 manifest is fetched from `<root>/v1/manifest` and the WebSocket base
-/// is derived from the resolved manifest. The owner binds the DNS for this
-/// host at deploy time (see packages/pairing-relay/README.md); the webui
-/// keeps the same host in its `wss://` spelling (`stores/pairing.ts`
-/// PAIRING_GATEWAY_WS) — both normalize to this root.
-pub const BUILTIN_RELAY_ROOT_URL: &str = "https://wowsp-gateway.langyo.xyz";
+/// merged health document is fetched from `<root>/api/health` and the
+/// WebSocket base is derived from it. The worker ALSO serves the website
+/// statically at this host (Pages+Worker in one service); the owner binds
+/// the DNS at deploy time (see packages/pairing-relay/README.md); the
+/// webui keeps the same host in its `wss://` spelling
+/// (`stores/pairing.ts` PAIRING_GATEWAY_WS) — both normalize to this root.
+pub const BUILTIN_RELAY_ROOT_URL: &str = "https://wowsp.langyo.xyz";
 /// Undocumented DEVELOPMENT override for the built-in gateway root
 /// (never surfaced in any UI; see the worker package README).
 pub const RELAY_URL_ENV: &str = "WOWSP_RELAY_URL";
@@ -118,11 +122,16 @@ pub const RELAY_URL_ENV: &str = "WOWSP_RELAY_URL";
 /// gateway does not know (unknown/expired) — from the phone both mean
 /// "check the code and your connection".
 pub const GATEWAY_UNREACHABLE: &str = "pairing gateway unreachable or code not found";
-/// Stable, DISTINCT error for a resolved gateway whose manifest does not
-/// list protocol `v1` — the built-in address forwards to infrastructure
-/// that no longer speaks a protocol we understand. Must NOT collapse into
-/// [`GATEWAY_UNREACHABLE`]: the user cannot fix it by retrying.
+/// Stable, DISTINCT error for a resolved gateway whose health document
+/// does not list protocol `v1` — the built-in address forwards to
+/// infrastructure that no longer speaks a protocol we understand. Must
+/// NOT collapse into [`GATEWAY_UNREACHABLE`]: the user cannot fix it by
+/// retrying.
 pub const UNSUPPORTED_PROTOCOL: &str = "the pairing gateway speaks an unsupported pairing protocol";
+/// Stable, DISTINCT error for a gateway whose health document demands a
+/// newer client than this build (minClientVersion gate). The only fix is
+/// updating the app — surfaced as such, never as a retryable failure.
+pub const CLIENT_TOO_OLD: &str = "the pairing gateway requires a newer app version";
 /// Stable, DISTINCT error for the gateway's directory rate-limiting us
 /// (resolve/control `err` replies carrying `reason: "rate_limited"`).
 pub const GATEWAY_RATE_LIMITED: &str =
@@ -164,9 +173,9 @@ const MAX_RESPONSE_BODY: usize = 4 * 1024 * 1024;
 
 // ── gateway resolution (protocol v2) ────────────────────────────────────────
 
-/// Manifest route, fetched from `<root>/v1/manifest` with a 5 s timeout and
-/// `Cache-Control: no-store`.
-const MANIFEST_PATH: &str = "/v1/manifest";
+/// Health-document route (merged liveness + discovery), fetched from
+/// `<root>/api/health` with a 5 s timeout and `Cache-Control: no-store`.
+const MANIFEST_PATH: &str = "/api/health";
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// A manifest body beyond this is not ours — treat like a non-200.
 const MANIFEST_MAX_BYTES: usize = 64 * 1024;
@@ -179,16 +188,26 @@ const RESOLUTION_TTL: Duration = Duration::from_secs(300);
 /// The persistent host identity file (32 hex chars, created on first use).
 const HOST_ID_FILE: &str = "pairing-host-id.txt";
 
-/// The v2 gateway manifest. Every field defaults so a partially-shaped JSON
-/// body still parses; [`is_gateway_manifest`] separates real manifests from
-/// foreign 200 responses (captive portals and friends).
+/// The v2 gateway health document. Every field defaults so a
+/// partially-shaped JSON body still parses; [`is_gateway_manifest`]
+/// separates real documents from foreign 200 responses (captive portals
+/// and friends).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GatewayManifest {
     #[serde(default)]
+    ok: bool,
+    #[serde(default)]
     provider: String,
     #[serde(default)]
     name: String,
+    /// The gateway's own version (informational).
+    #[serde(default)]
+    version: Option<String>,
+    /// The minimum client the gateway serves — enforced by
+    /// [`client_meets_minimum`] before anything else.
+    #[serde(default)]
+    min_client_version: Option<String>,
     #[serde(default)]
     protocol: Vec<String>,
     #[serde(default)]
@@ -208,12 +227,41 @@ struct GatewayEndpoints {
     relay: String,
 }
 
-/// A body only counts as a gateway manifest when it says something
+/// A body only counts as a gateway document when it says something
 /// gateway-ish — a protocol list or a relay endpoint. Anything else that
-/// parses as JSON (e.g. a captive portal's 200) is treated as "no manifest"
-/// so resolution degrades to legacy direct mode instead of erroring.
+/// parses as JSON (e.g. a captive portal's 200) is treated as "no
+/// document" so resolution degrades to legacy direct mode instead of
+/// erroring.
 fn is_gateway_manifest(m: &GatewayManifest) -> bool {
     !m.protocol.is_empty() || !m.endpoints.relay.is_empty()
+}
+
+/// Numeric `x.y.z` comparison of dotted versions (any trailing non-numeric
+/// suffix on a part is ignored; missing parts count as 0). Returns true
+/// when `client` >= `minimum`.
+fn client_meets_minimum(client: &str, minimum: &str) -> bool {
+    let nums = |v: &str| {
+        v.split('.')
+            .map(|p| {
+                p.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .parse::<u64>()
+                    .unwrap_or(0)
+            })
+            .collect::<Vec<_>>()
+    };
+    let (c, m) = (nums(client), nums(minimum));
+    for i in 0..c.len().max(m.len()) {
+        let (a, b) = (
+            c.get(i).copied().unwrap_or(0),
+            m.get(i).copied().unwrap_or(0),
+        );
+        if a != b {
+            return a > b;
+        }
+    }
+    true
 }
 
 /// The outcome of resolving a gateway root through the v2 manifest protocol.
@@ -332,9 +380,18 @@ async fn resolve_gateway(root_raw: &str) -> Result<GatewayResolution, String> {
         tracing::debug!(
             provider = %manifest.provider,
             name = %manifest.name,
+            healthy = manifest.ok,
+            version = ?manifest.version,
             features = ?manifest.features,
-            "gateway manifest resolved"
+            "gateway health document resolved"
         );
+        // A gateway that explicitly reports itself unhealthy gets the
+        // same treatment as one we could not ask: legacy direct mode at
+        // the root (dialing its documented endpoints is not sensible).
+        if !manifest.ok {
+            tracing::warn!("gateway reports ok:false — legacy direct mode");
+            return Ok(legacy_resolution(&current));
+        }
         let upstream = manifest
             .upstream
             .as_deref()
@@ -367,12 +424,30 @@ async fn resolve_gateway(root_raw: &str) -> Result<GatewayResolution, String> {
     Ok(legacy_resolution(&initial))
 }
 
-/// Validate the FINAL manifest (protocol check + endpoint resolution).
+/// Validate the FINAL health document (minimum-version gate + protocol
+/// check + endpoint resolution).
 fn finish_resolution(
     root: &str,
     manifest: GatewayManifest,
     via_upstream: bool,
 ) -> Result<GatewayResolution, String> {
+    // The version gate runs FIRST: a too-old app must hear "update the
+    // app", never a protocol/endpoint complaint it cannot act on.
+    if let Some(min) = manifest
+        .min_client_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if !client_meets_minimum(env!("CARGO_PKG_VERSION"), min) {
+            tracing::warn!(
+                client = env!("CARGO_PKG_VERSION"),
+                minimum = min,
+                "the pairing gateway demands a newer client"
+            );
+            return Err(CLIENT_TOO_OLD.to_string());
+        }
+    }
     if !manifest
         .protocol
         .iter()
@@ -512,7 +587,7 @@ fn strip_scheme_ci<'a>(url: &'a str, scheme: &str) -> Option<&'a str> {
 }
 
 /// Normalize any plausible gateway URL into its http(s) ROOT form (the
-/// manifest is fetched from `<root>/v1/manifest`): `wss:`→`https:`,
+/// health document is fetched from `<root>/api/health`): `wss:`→`https:`,
 /// `ws:`→`http:`, a bare host gets `https://`. A path prefix on the root is
 /// allowed (routed gateways). Returns Err on anything that cannot be a
 /// gateway origin.
@@ -575,15 +650,17 @@ pub fn normalize_relay_ws_url(raw: &str) -> Result<String, String> {
     Ok(out)
 }
 
-/// The legacy direct-mode WebSocket base of an (already normalized) root.
+/// The legacy direct-mode WebSocket base of an (already normalized)
+/// root: the relay routes live under `/api/relay` on the same origin.
 fn ws_base_of_root(root: &str) -> String {
-    if let Some(rest) = root.strip_prefix("https://") {
+    let base = if let Some(rest) = root.strip_prefix("https://") {
         format!("wss://{rest}")
     } else if let Some(rest) = root.strip_prefix("http://") {
         format!("ws://{rest}")
     } else {
         format!("ws://{root}")
-    }
+    };
+    format!("{base}/api/relay")
 }
 
 /// Resolve the final manifest's `endpoints.relay` against the root it was
@@ -1936,12 +2013,12 @@ mod tests {
     fn relay_roots_normalize_across_schemes() {
         // Every gateway spelling folds onto the http(s) manifest root.
         assert_eq!(
-            normalize_relay_root("wss://wowsp-gateway.langyo.xyz").unwrap(),
-            "https://wowsp-gateway.langyo.xyz"
+            normalize_relay_root("wss://wowsp.langyo.xyz").unwrap(),
+            "https://wowsp.langyo.xyz"
         );
         assert_eq!(
-            normalize_relay_root("https://wowsp-gateway.langyo.xyz/").unwrap(),
-            "https://wowsp-gateway.langyo.xyz"
+            normalize_relay_root("https://wowsp.langyo.xyz/").unwrap(),
+            "https://wowsp.langyo.xyz"
         );
         assert_eq!(
             normalize_relay_root("ws://127.0.0.1:8787").unwrap(),
@@ -1970,18 +2047,15 @@ mod tests {
     #[test]
     fn builtin_gateway_is_the_hardcoded_root_with_dev_override() {
         // No override → the ONE built-in constant.
-        assert_eq!(
-            builtin_relay_root_from(None),
-            "https://wowsp-gateway.langyo.xyz"
-        );
+        assert_eq!(builtin_relay_root_from(None), "https://wowsp.langyo.xyz");
         // Blank/whitespace override → still the built-in root.
         assert_eq!(
             builtin_relay_root_from(Some("")),
-            "https://wowsp-gateway.langyo.xyz"
+            "https://wowsp.langyo.xyz"
         );
         assert_eq!(
             builtin_relay_root_from(Some("   ")),
-            "https://wowsp-gateway.langyo.xyz"
+            "https://wowsp.langyo.xyz"
         );
         // A usable override wins (development against `wrangler dev`) in
         // any spelling.
@@ -1997,7 +2071,7 @@ mod tests {
         // breaking pairing.
         assert_eq!(
             builtin_relay_root_from(Some("ftp://nope")),
-            "https://wowsp-gateway.langyo.xyz"
+            "https://wowsp.langyo.xyz"
         );
     }
 
@@ -2084,11 +2158,11 @@ mod tests {
             serde_json::from_str(r#"{"protocol":["v1"],"endpoints":[]}"#).unwrap();
         assert!(is_gateway_manifest(&arr_eps));
         assert_eq!(arr_eps.endpoints.relay, "");
-        // Same for a whole-doc array: it parses (seq-form struct, first
-        // field `provider` swallows the element, the rest default) into a
-        // NON-gateway manifest → foreign body → legacy direct mode.
-        let whole_arr: GatewayManifest = serde_json::from_str(r#"["v1"]"#).unwrap();
-        assert!(!is_gateway_manifest(&whole_arr));
+        // Same idea for a whole-doc array: with the bool `ok` leading the
+        // struct it no longer parses at all (seq-form would need a bool
+        // first) — the fetch wrapper treats that as "no manifest"
+        // (foreign body → legacy direct mode), the same safe outcome.
+        assert!(serde_json::from_str::<GatewayManifest>(r#"["v1"]"#).is_err());
 
         // WRONG TYPES on any field fail the whole parse — the fetch
         // wrapper then treats the body as "no manifest" (legacy direct
@@ -2120,7 +2194,7 @@ mod tests {
             res.manifest.is_none(),
             "degraded resolutions carry no manifest"
         );
-        assert_eq!(res.ws_base, "wss://gw.example.org");
+        assert_eq!(res.ws_base, "wss://gw.example.org/api/relay");
         assert!(!res.via_upstream);
 
         // And a manifest without v1 keeps the DISTINCT error.
@@ -2298,7 +2372,7 @@ mod tests {
     /// threads and the slot is a singleton.
     static HOST_SLOT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    /// The mock's v2 manifest recipe.
+    /// The mock's v2 health-document recipe.
     #[derive(Debug, Clone)]
     struct ManifestSpec {
         provider: String,
@@ -2308,6 +2382,8 @@ mod tests {
         /// an absolute ws URL.
         relay: String,
         notice: Option<String>,
+        /// `minClientVersion` — `Some("99.0.0")` drives the too-old path.
+        min_client_version: Option<String>,
     }
 
     impl Default for ManifestSpec {
@@ -2317,6 +2393,7 @@ mod tests {
                 protocol: vec!["v1".into()],
                 relay: "/relay-ws".into(),
                 notice: None,
+                min_client_version: None,
             }
         }
     }
@@ -2324,9 +2401,9 @@ mod tests {
     /// Behavior switches of one mock gateway instance.
     #[derive(Debug, Clone)]
     struct MockOptions {
-        /// Serve `GET /v1/manifest` (None → 404 → client legacy fallback).
+        /// Serve `GET /api/health` (None → 404 → client legacy fallback).
         manifest: Option<ManifestSpec>,
-        /// Serve a FORWARDER manifest whose `upstream` is this root (wins
+        /// Serve a FORWARDER document whose `upstream` is this root (wins
         /// over `manifest`).
         forward_to: Option<String>,
         /// Answer code resolution with `err / rate_limited`.
@@ -2477,7 +2554,7 @@ mod tests {
             }
         }
 
-        /// Plain-HTTP `GET /v1/manifest` (or 404). Reads the full request
+        /// Plain-HTTP `GET /api/health` (or 404). Reads the full request
         /// head first — the peek window may have truncated it.
         async fn serve_manifest(mut stream: TcpStream, hub: SharedHub, opts: Arc<MockOptions>) {
             let mut buf = Vec::new();
@@ -2496,7 +2573,7 @@ mod tests {
             }
             let head = String::from_utf8_lossy(&buf).to_string();
             let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
-            if path != "/v1/manifest" {
+            if path != "/api/health" {
                 let _ = stream
                     .write_all(
                         b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -2512,8 +2589,10 @@ mod tests {
             }
             let body = if let Some(up) = &opts.forward_to {
                 serde_json::json!({
+                    "ok": true,
                     "provider": "wowsp-mock-forwarder",
                     "name": "Mock Forwarder",
+                    "version": "0.5.0",
                     "protocol": ["v1"],
                     "endpoints": { "relay": "/relay-ws" },
                     "upstream": up,
@@ -2522,8 +2601,11 @@ mod tests {
                 })
             } else if let Some(m) = &opts.manifest {
                 serde_json::json!({
+                    "ok": true,
                     "provider": m.provider,
                     "name": "Mock Gateway",
+                    "version": "0.5.0",
+                    "minClientVersion": m.min_client_version,
                     "protocol": m.protocol,
                     "endpoints": { "relay": m.relay },
                     "upstream": null,
@@ -2978,13 +3060,13 @@ mod tests {
         assert!(!info.via_upstream);
         assert_eq!(info.notice, None);
 
-        // The manifest fetch itself: /v1/manifest, requested no-store.
+        // The health fetch itself: /api/health, requested no-store.
         {
             let hits = gateway.manifest_hits.lock().unwrap();
             assert!(!hits.is_empty(), "the manifest route must have been hit");
             assert!(
                 hits.iter()
-                    .all(|(p, no_store)| p == "/v1/manifest" && *no_store),
+                    .all(|(p, no_store)| p == "/api/health" && *no_store),
                 "manifest requests must send Cache-Control: no-store"
             );
         }
@@ -3109,7 +3191,7 @@ mod tests {
         assert!(res.manifest.is_none());
         assert!(!res.via_upstream);
         assert_eq!(res.ws_base, ws_base_of_root(&gateway.root));
-        // …and the fallback was driven by an actual 404 from /v1/manifest.
+        // …and the fallback was driven by an actual 404 from /api/health.
         assert!(
             !gateway.manifest_hits.lock().unwrap().is_empty(),
             "legacy fallback must still have probed the manifest route"
@@ -3177,12 +3259,13 @@ mod tests {
         })
         .await;
 
-        // Resolution from A's root lands on B's relay endpoint.
+        // Resolution from A's root lands on B's relay endpoint (an
+        // absolute path in B's document REPLACES any base on the host).
         let res = resolve_gateway(&a.root).await.unwrap();
         assert!(res.via_upstream);
         assert_eq!(res.manifest.as_ref().unwrap().provider, "wowsp-mock-b");
-        let b_ws = ws_base_of_root(&b.root);
-        assert_eq!(res.ws_base, format!("{b_ws}/relay-ws"));
+        let b_host = b.root.trim_start_matches("http://");
+        assert_eq!(res.ws_base, format!("ws://{b_host}/relay-ws"));
 
         // The bridge + phone pair through the chain (A's WS is dead — only
         // B can carry it).
@@ -3317,6 +3400,86 @@ mod tests {
         assert!(!relay_online());
         assert_eq!(current_gateway_info().provider, None);
 
+        gateway.stop().await;
+    }
+
+    /// Numeric x.y.z comparison: suffix junk is ignored, missing parts
+    /// count as zero, equal strings pass.
+    #[test]
+    fn client_meets_minimum_compares_dotted_versions() {
+        use super::client_meets_minimum as meets;
+        assert!(meets("0.5.0", "0.5.0"));
+        assert!(meets("0.5.1", "0.5.0"));
+        assert!(meets("1.0.0", "0.9.9"));
+        assert!(meets("0.5.0", "0.5"));
+        assert!(meets("0.5.0", "0.5.0-beta"));
+        assert!(meets("0.6.0-rc.1", "0.6.0"));
+        assert!(!meets("0.4.9", "0.5.0"));
+        assert!(!meets("0.5.0", "0.5.1"));
+        assert!(!meets("0.10.0", "1.0.0"));
+        // Junk minimum parts degrade to 0 — never strand a client over a
+        // malformed field.
+        assert!(meets("0.5.0", "not-a-version"));
+    }
+
+    /// A gateway whose health document demands a newer client surfaces the
+    /// DISTINCT too-old error (never the retryable unreachable marker),
+    /// identically on phone and desktop paths.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn min_client_version_gate_fails_distinctly() {
+        let _serial = HOST_SLOT_LOCK.lock().await;
+        host_session_stop().await;
+        store_code(None);
+        clear_resolution_cache_for_test();
+
+        let gateway = MockGateway::start(MockOptions {
+            manifest: Some(ManifestSpec {
+                min_client_version: Some("99.0.0".into()),
+                ..ManifestSpec::default()
+            }),
+            ..MockOptions::default()
+        })
+        .await;
+
+        let err = resolve_gateway_cached(&gateway.root).await.unwrap_err();
+        assert_eq!(err, CLIENT_TOO_OLD);
+        assert_ne!(err, GATEWAY_UNREACHABLE);
+        assert_ne!(err, UNSUPPORTED_PROTOCOL);
+        // Not cached — every call re-surfaces it.
+        assert_eq!(
+            resolve_gateway_cached(&gateway.root).await.unwrap_err(),
+            CLIENT_TOO_OLD
+        );
+        // The phone's pair path propagates it verbatim.
+        assert_eq!(
+            relay_pair(&gateway.root, "123456").await.unwrap_err(),
+            CLIENT_TOO_OLD
+        );
+        // The desktop bridge refuses to start.
+        assert_eq!(
+            host_session_start(&gateway.root, 1, &"a".repeat(64))
+                .await
+                .unwrap_err(),
+            CLIENT_TOO_OLD
+        );
+
+        gateway.stop().await;
+    }
+
+    /// A minClientVersion the client satisfies is a no-op.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn satisfied_min_client_version_passes() {
+        clear_resolution_cache_for_test();
+        let gateway = MockGateway::start(MockOptions {
+            manifest: Some(ManifestSpec {
+                min_client_version: Some("0.1.0".into()),
+                ..ManifestSpec::default()
+            }),
+            ..MockOptions::default()
+        })
+        .await;
+        let res = resolve_gateway_cached(&gateway.root).await.unwrap();
+        assert!(res.manifest.is_some());
         gateway.stop().await;
     }
 

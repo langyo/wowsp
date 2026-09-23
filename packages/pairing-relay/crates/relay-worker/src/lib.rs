@@ -4,14 +4,16 @@
 //! Structure:
 //! - [`relay_core`] carries every protocol/policy decision (pure, host
 //!   testable — `cargo test -p relay-core`).
-//! - this crate is routing + WebSocket glue only:
-//!   - `GET /v1/manifest` — capability discovery (forwarding-station
-//!     switch via the `GATEWAY_UPSTREAM` var; operator notes via
-//!     `GATEWAY_NOTICE`).
-//!   - `GET /v1/health` (+ legacy `/health`) — deploy smoke check.
-//!   - `WS  /relay/control`, `/relay/resolve?code=`, `/relay/data/…`
-//!     (plus the v1 bare paths) — forwarded to the two Durable Objects
-//!     in [`directory`] (the singleton code Directory) and [`room`]
+//! - this crate is routing + WebSocket glue only. The worker ALSO hosts
+//!   the website's static assets (wrangler `[assets]`, served at `/`);
+//!   `run_worker_first = ["/api/*"]` means only `/api` reaches this code:
+//!   - `GET /api/health` — the merged liveness + discovery document
+//!     (server version + minimum client version + relay endpoints;
+//!     forwarding-station switch via the `GATEWAY_UPSTREAM` var,
+//!     operator notes via `GATEWAY_NOTICE`).
+//!   - `WS  /api/relay/control`, `/api/relay/resolve?code=`,
+//!     `/api/relay/data/…` — forwarded to the two Durable Objects in
+//!     [`directory`] (the singleton code Directory) and [`room`]
 //!     (per-room rendezvous + byte pipes).
 
 pub mod directory;
@@ -40,19 +42,17 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let query = url.query().unwrap_or("").to_string();
 
     match classify(&path, &query) {
-        Route::Manifest => {
+        Route::Health => {
             let upstream = env.var("GATEWAY_UPSTREAM").ok().map(|v| v.to_string());
             let notice = env.var("GATEWAY_NOTICE").ok().map(|v| v.to_string());
-            let manifest = gateway_manifest(&ManifestOverrides::from_raw(
+            let health = gateway_manifest(&ManifestOverrides::from_raw(
                 upstream.as_deref(),
                 notice.as_deref(),
             ));
-            let mut resp = Response::from_json(&manifest)?;
+            let mut resp = Response::from_json(&health)?;
             resp.headers_mut().set("cache-control", "no-store")?;
             Ok(resp)
         },
-
-        Route::Health => Response::ok("ok"),
 
         Route::Control { room, role } => {
             let Some(room) = room.filter(|r| valid_room(r)) else {
