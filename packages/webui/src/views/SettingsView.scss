@@ -73,30 +73,21 @@
 
 /* ── Re-hosting the shared .settings-modal shell in a page context ────── */
 
-.settings-page__body .settings-modal {
+/* The shell is hikari's HSettingsBody (.hk-settings*) now; the page
+   still needs the modal-host assumptions neutralized — the host class is
+   absent on the page (those rules only apply under .hk-settings-host),
+   so only the sizing override below remains necessary. */
+.settings-page__body .hk-settings {
   /* Page grows with content; the app shell's scroll viewport scrolls. */
   height: auto;
   min-height: 0;
   gap: 1rem;
   padding-top: 1rem;
-
-  &__pane {
-    overflow: visible;
-    padding-right: 0;
-    /* The modal pane drags itself flush to the modal WINDOW edge with a
-       negative margin so its scrollbar hugs the window chrome; the page
-       has no window frame, so that negative margin hangs the pane (and
-       every section card in it) ~1rem past the viewport edge — the page
-       scrolls sideways and headings slide out of view (real-device
-       report). Zero it: the shell scroll container is the only scroller
-       here. */
-    margin-right: 0;
-  }
 }
 
 /* ── Phone widths: icon rail + full-width cards ────────────────────────── */
 @media (max-width: 767px) {
-  .settings-page__body .settings-modal {
+  .settings-page__body .hk-settings {
     gap: 0.75rem;
 
     &__rail {
@@ -115,10 +106,13 @@
     &__rail-label {
       display: none;
     }
+  }
 
-    &__group {
-      padding: 0.85rem 0.9rem;
-    }
+  .settings-page__body .hk-settings-group {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .settings-page__body .settings-modal {
 
     /* Rows that side-by-side on desktop stack or wrap on phones. */
     &__netmanual {
