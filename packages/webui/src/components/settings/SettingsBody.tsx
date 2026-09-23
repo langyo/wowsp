@@ -28,6 +28,10 @@ import {
   HDivider,
   HInput,
   HModal,
+  HSettingsBody,
+  HSettingsGroup,
+  HSettingsHint,
+  HSettingsSub,
   HOtpInput,
   HSelect,
   HSlider,
@@ -39,6 +43,7 @@ import {
   useTheme,
   useToast,
   type ModalAction,
+  type HkSettingsSection,
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
@@ -640,15 +645,17 @@ export default defineComponent({
       attributions: t("settings.attributions"),
     }));
     const sections = computed(() => availableSettingsSections());
-    /** Content pane — section switches restart it from the top (arriving on
-     *  a half-scrolled card reads as a broken page). */
-    const paneRef = ref<HTMLElement | null>(null);
-    watch(
-      () => ui.section,
-      () => {
-        if (paneRef.value) paneRef.value.scrollTop = 0;
-      },
+    // The rail entries handed to HSettingsBody — icons + labels resolved
+    // here so the shared component owns only the rendering.
+    const railSections = computed<HkSettingsSection[]>(() =>
+      sections.value.map((id) => ({
+        key: id,
+        label: sectionLabels.value[id],
+        icon: SECTION_ICONS[id],
+      })),
     );
+    // (Pane scroll ownership moved into HSettingsBody — the shared
+    // component restarts the pane from the top on section switches.)
 
     return () => {
       // Staged-or-persisted notch for the DPI slider/readout (null = Auto)
@@ -658,36 +665,27 @@ export default defineComponent({
       const warningVisible = pending != null && isDpiRisky(pending, window.innerWidth);
       return (
         <>
-        <div class="settings-modal">
-          {/* section rail — same visual language as the main sidebar's nav */}
-          <nav class="settings-modal__rail">
-            {sections.value.map((id) => {
-              const Icon = SECTION_ICONS[id];
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  class={["settings-modal__rail-item", ui.section === id ? "is-active" : ""]}
-                  onClick={() => (ui.section = id)}
-                >
-                  <span class="settings-modal__rail-icon">
-                    <Icon size={16} />
-                  </span>
-                  <span class="settings-modal__rail-label">{sectionLabels.value[id]}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          <div class="settings-modal__pane" ref={paneRef}>
-          {ui.section === "language" ? (
+        {/* The shell is hikari's HSettingsBody now (the settings-window
+            grammar this app's own rail+pane anatomy upstreamed,
+            2026-09-23): rail rendering, active-section state, pane
+            scrolling and the switch-restarts-at-top behavior all come
+            from the shared component; this body keeps only the section
+            content. Section identity stays in the settingsUi store so
+            openers can land on a specific section. */}
+        <HSettingsBody
+          sections={railSections.value}
+          section={ui.section}
+          onUpdate:section={(key: string) => (ui.section = key as SettingsSection)}
+          navLabel={t("settings.title")}
+        >
+          {{
+          language: () => (
           <>
           {/* language — two independent dropdowns: UI (app interface) vs data
               (game-asset names: ships/captains/maps). The same language can have
               different official translations across regions, e.g. 国服 simplified
               (animal names for IJN) vs 亚服 Chinese. */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.language")}</h2>
+          <HSettingsGroup title={t("settings.language")}>
             <div class="settings-modal__langs">
               <div class="settings-modal__lang">
                 <span class="settings-modal__lang-label">{t("settings.uiLanguage")}</span>
@@ -706,16 +704,15 @@ export default defineComponent({
                 />
               </div>
             </div>
-            <p class="settings-modal__hint">{t("settings.dataLanguageHint")}</p>
-          </section>
+            <HSettingsHint>{t("settings.dataLanguageHint")}</HSettingsHint>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "appearance" ? (
+          ),
+          appearance: () => (
           <>
           {/* appearance — mode, color preset, wallpaper, solar indicator */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.themeMode")}</h2>
+          <HSettingsGroup title={t("settings.themeMode")}>
             {/* Three-way mode preference (wowsp's own key — see
                 theme/themeModePreference): dark/light verbatim, solar =
                 daylight-following (hikari "system"). The retired OS-follower
@@ -736,8 +733,7 @@ export default defineComponent({
 
             {/* color preset — uniform card chrome; the theme only peeks
                 through the preview chip so the row reads as one control */}
-            <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.themePreset")}</h3>
+            <HSettingsSub title={t("settings.themePreset")}>
               <div class="settings-modal__presets">
                 {presetIds.map((id) => {
                   // Use the effective mode so light-mode users see a light preview.
@@ -762,15 +758,14 @@ export default defineComponent({
                   );
                 })}
               </div>
-            </div>
+            </HSettingsSub>
 
             <HDivider />
 
             {/* wallpaper / background — solid follows the theme mode; custom
                 entries are files in the AppData wallpapers folder and can be
                 deleted (two-step confirm per card). */}
-            <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.wallpaper")}</h3>
+            <HSettingsSub title={t("settings.wallpaper")}>
               <div class="settings-modal__wallpapers" ref={wallpaperRow}>
                 {wallpaper.allWallpapers.value.map((w) => {
                   const on = wallpaper.activeWallpaperId.value === w.id;
@@ -874,19 +869,18 @@ export default defineComponent({
                   </span>
                 </div>
               ) : null}
-              <p class="settings-modal__hint">{t("settings.wallpaperHint")}</p>
-            </div>
+              <HSettingsHint>{t("settings.wallpaperHint")}</HSettingsHint>
+            </HSettingsSub>
 
             <HDivider />
 
             {/* font size — global --text-* token scaling (see
                 theme/fontScalePreference): the whole UI rescales except the
                 title bar and the sidebar's app title, which are pinned. */}
-            <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.fontSize")}</h3>
+            <HSettingsSub title={t("settings.fontSize")}>
               <FontSizeControl ns="settings" />
-              <p class="settings-modal__hint">{t("settings.fontSizeHint")}</p>
-            </div>
+              <HSettingsHint>{t("settings.fontSizeHint")}</HSettingsHint>
+            </HSettingsSub>
 
             <HDivider />
 
@@ -896,8 +890,7 @@ export default defineComponent({
                 the bottom of this component as a sibling modal. The risk
                 warning flags scales that squeeze the viewport under the
                 usable layout-width floor. */}
-            <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.dpiTitle")}</h3>
+            <HSettingsSub title={t("settings.dpiTitle")}>
               <div class="settings-modal__dpi-row">
                 <HSlider
                   class="settings-modal__dpi-slider"
@@ -934,13 +927,13 @@ export default defineComponent({
                   </HButton>
                 ) : null}
               </div>
-              <p class="settings-modal__hint">{t("settings.dpiHint")}</p>
+              <HSettingsHint>{t("settings.dpiHint")}</HSettingsHint>
               {/* The guaranteed way back, readable even at a scale that
                   breaks the modal itself: the keyboard hatch works anywhere
                   (capture-phase, dpiPrefs), so the reset never depends on
                   this UI being reachable. */}
-              <p class="settings-modal__hint">{t("settings.dpiResetHint")}</p>
-            </div>
+              <HSettingsHint>{t("settings.dpiResetHint")}</HSettingsHint>
+            </HSettingsSub>
 
             <HDivider />
 
@@ -955,26 +948,25 @@ export default defineComponent({
                 </span>
               ) : null}
             </p>
-            <p class="settings-modal__hint">{t("settings.geolocationHint")}</p>
-          </section>
+            <HSettingsHint>{t("settings.geolocationHint")}</HSettingsHint>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "stats" ? (
+          ),
+          stats: () => (
           <>
           {/* 战绩 (water-table prefs) — the same four controls as the
               onboarding wizard's preferences step (StatsPrefsControls),
               reading/writing the shared statsPrefs store. */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.statsSection")}</h2>
-            <p class="settings-modal__hint">{t("settings.statsSectionHint")}</p>
+          <HSettingsGroup title={t("settings.statsSection")}>
+            <HSettingsHint>{t("settings.statsSectionHint")}</HSettingsHint>
             <StatsPrefsControls ns="settings" />
             <SealCustomizer />
-          </section>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "gamePath" ? (
+          ),
+          gamePath: () => (
           <>
           {/* game path — every known install (detected clients + manual pins)
               as a rich card mirroring the 账户 list: platform badge on the
@@ -985,11 +977,10 @@ export default defineComponent({
               opens the dialog hosting detection and the native folder
               picker. Unreachable on the phone app build (the rail filters
               the section out). */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.gamePath")}</h2>
-            <p class="settings-modal__hint">{t("common.gamePath.desc")}</p>
+          <HSettingsGroup title={t("settings.gamePath")}>
+            <HSettingsHint>{t("common.gamePath.desc")}</HSettingsHint>
             {installRows.value.length === 0 ? (
-              <p class="settings-modal__hint">{t("common.gamePath.noneFound")}</p>
+              <HSettingsHint>{t("common.gamePath.noneFound")}</HSettingsHint>
             ) : (
               <div class="settings-modal__installs">
                 {installRows.value.map((i) => {
@@ -1023,9 +1014,9 @@ export default defineComponent({
             {runningInstall.value ? (
               <div class="settings-modal__running">
                 <MonitorPlay size={14} />
-                <span class="settings-modal__hint">
+                <HSettingsHint>
                   {t("common.gamePath.runningHint", { path: runningInstall.value.path })}
-                </span>
+                </HSettingsHint>
                 <HButton size="sm" variant="secondary" onClick={() => void useRunning()}>
                   {t("common.gamePath.useRunning")}
                 </HButton>
@@ -1047,7 +1038,7 @@ export default defineComponent({
               title={t("common.gamePath.addTitle")}
               width="26rem"
             >
-              <p class="settings-modal__hint">{t("common.gamePath.addDesc")}</p>
+              <HSettingsHint>{t("common.gamePath.addDesc")}</HSettingsHint>
               <div class="settings-modal__addpath-actions">
                 <HButton
                   variant="secondary"
@@ -1075,31 +1066,29 @@ export default defineComponent({
                 </HButton>
               </div>
             </HModal>
-          </section>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "account" ? (
+          ),
+          account: () => (
           <>
           {/* account — the binder/switcher body shared with the dashboard's
               modal entry: search → bind, rich cards for every bound account,
               click to activate. Switching here leaves the section open (the
               wrapper modal closes instead). */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.account")}</h2>
-            <p class="settings-modal__hint">{t("settings.accountHint")}</p>
+          <HSettingsGroup title={t("settings.account")}>
+            <HSettingsHint>{t("settings.accountHint")}</HSettingsHint>
             <AccountManagerContent />
-          </section>
+          </HSettingsGroup>
           </>
-          ) : null}
-          {ui.section === "network" ? (
+          ),
+          network: () => (
           <>
           {/* network proxy — applies to every outbound request (stats, model
               pack, updates); resource CDN mirrors remote resources
               independently of the proxy mode */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.network")}</h2>
-            <p class="settings-modal__hint">{t("settings.networkHint")}</p>
+          <HSettingsGroup title={t("settings.network")}>
+            <HSettingsHint>{t("settings.networkHint")}</HSettingsHint>
             <HTabs
               block
               variant="segmented"
@@ -1135,21 +1124,21 @@ export default defineComponent({
                 submitOnEnter={() => void saveNet()}
               />
             </div>
-            <p class="settings-modal__hint">{t("settings.resourceCdnHint")}</p>
-          </section>
+            <HSettingsHint>{t("settings.resourceCdnHint")}</HSettingsHint>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "pairing" && mobileApp ? (
+          ),
+          pairing: () =>
+          mobileApp ? (
           <>
           {/* phone pairing — the PHONE (client) side. Discoverability
               first: the section the owner could not find. One primary
               action opens the replay view's pairing wizard (deep-linked
               via ?pairing=1), plus the paired computers with forget
               buttons and last-synced info. */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.pairingMobile")}</h2>
-            <p class="settings-modal__hint">{t("settings.pairingMobileHint")}</p>
+          <HSettingsGroup title={t("settings.pairingMobile")}>
+            <HSettingsHint>{t("settings.pairingMobileHint")}</HSettingsHint>
             <div class="settings-modal__pairing-open">
               <HButton variant="primary" onClick={openPairingWizard}>
                 <Smartphone size={15} />
@@ -1158,7 +1147,7 @@ export default defineComponent({
             </div>
             {pairingStore.hosts.length > 0 ? (
               <>
-                <h3 class="settings-modal__sub-title">{t("settings.pairingPairedHosts")}</h3>
+                <HSettingsSub title={t("settings.pairingPairedHosts")} />
                 <ul class="settings-modal__paired-hosts">
                   {pairingStore.hosts.map((h) => (
                     <li key={entryKey(h)} class="settings-modal__paired-host">
@@ -1186,10 +1175,10 @@ export default defineComponent({
                 </ul>
               </>
             ) : null}
-          </section>
+          </HSettingsGroup>
           </>
-          ) : null}
-          {ui.section === "pairing" && !mobileApp ? (
+          ) : (
+
           <>
           {/* phone pairing — the DESKTOP side. Runs the pairing server the
               mobile app connects to: toggle on, then read the code into the
@@ -1199,9 +1188,8 @@ export default defineComponent({
               desktop falls back to its LAN PIN and shows a LAN-only hint.
               There is deliberately NO relay URL field: the gateway endpoint
               is built into both apps. */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.pairing")}</h2>
-            <p class="settings-modal__hint">{t("settings.pairingHint")}</p>
+          <HSettingsGroup title={t("settings.pairing")}>
+            <HSettingsHint>{t("settings.pairingHint")}</HSettingsHint>
             <HTabs
               block
               variant="segmented"
@@ -1260,11 +1248,11 @@ export default defineComponent({
                     </HButton>
                   </div>
                 </div>
-                <p class="settings-modal__hint">
+                <HSettingsHint>
                   {pairingStore.server.relayOnline
                     ? t("settings.pairingPhoneHintInternet")
                     : t("settings.pairingPhoneHint")}
-                </p>
+                </HSettingsHint>
                 {/* Gateway status: relay mode vs the LAN-only fallback. */}
                 {pairingStore.server.relayOnline ? (
                   <p class="settings-modal__pairing-mode">
@@ -1286,12 +1274,12 @@ export default defineComponent({
                 </div>
               </div>
             ) : (
-              <p class="settings-modal__hint">{t("settings.pairingIdleHint")}</p>
+              <HSettingsHint>{t("settings.pairingIdleHint")}</HSettingsHint>
             )}
-          </section>
+          </HSettingsGroup>
           </>
-          ) : null}
-          {ui.section === "updates" ? (
+          ),
+          updates: () => (
           <>
           {/* updates — the app-binary card and the single content-addressed
               resource-pack card (download / update / delete with live
@@ -1305,9 +1293,9 @@ export default defineComponent({
               build ships through the store pipeline — its app-binary card
               is dropped entirely (checks are also silenced at the shell). */}
           {!isMobileApp() ? (
-          <section class="settings-modal__group">
+          <HSettingsGroup>
             <div class="settings-modal__packs-head">
-              <h2 class="settings-modal__group-title">{t("settings.updatesAppTitle")}</h2>
+              <h2 class="hk-settings-group-title">{t("settings.updatesAppTitle")}</h2>
               <HButton
                 size="sm"
                 loading={updater.checking}
@@ -1317,7 +1305,7 @@ export default defineComponent({
                 {t("settings.cacheCheckUpdates")}
               </HButton>
             </div>
-            <p class="settings-modal__hint">{t("settings.updatesAppHint")}</p>
+            <HSettingsHint>{t("settings.updatesAppHint")}</HSettingsHint>
             <div class="settings-modal__pack">
               <div class="settings-modal__pack-info">
                 <span class="settings-modal__pack-name">{t("settings.updatesAppName")}</span>
@@ -1338,7 +1326,7 @@ export default defineComponent({
               </div>
               <div class="settings-modal__pack-actions">
                 {updater.portable ? (
-                  <span class="settings-modal__hint">{t("settings.updatesPortable")}</span>
+                  <HSettingsHint>{t("settings.updatesPortable")}</HSettingsHint>
                 ) : updater.available ? (
                   <HButton
                     variant="primary"
@@ -1351,11 +1339,11 @@ export default defineComponent({
                 ) : null}
               </div>
             </div>
-          </section>
+          </HSettingsGroup>
           ) : null}
-          <section class="settings-modal__group">
+          <HSettingsGroup>
             <div class="settings-modal__packs-head">
-              <h2 class="settings-modal__group-title">{t("settings.resPackTitle")}</h2>
+              <h2 class="hk-settings-group-title">{t("settings.resPackTitle")}</h2>
               <HButton
                 size="sm"
                 loading={cacheStore.updatesLoading}
@@ -1364,9 +1352,9 @@ export default defineComponent({
                 {t("settings.cacheCheckUpdates")}
               </HButton>
             </div>
-            <p class="settings-modal__hint">
+            <HSettingsHint>
               {mobileApp ? t("settings.resPackMobileHint") : t("settings.resPackHint")}
-            </p>
+            </HSettingsHint>
             {cacheStore.anyUpdateAvailable ? (
               <p class="settings-modal__packs-banner">{t("settings.cacheUpdateBanner")}</p>
             ) : null}
@@ -1496,10 +1484,9 @@ export default defineComponent({
                 </div>
               );
             })()}
-          </section>
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.cacheMirrorTitle")}</h2>
-            <p class="settings-modal__hint">{t("settings.cacheMirrorHint")}</p>
+          </HSettingsGroup>
+          <HSettingsGroup title={t("settings.cacheMirrorTitle")}>
+            <HSettingsHint>{t("settings.cacheMirrorHint")}</HSettingsHint>
             <div class="settings-modal__netmanual">
               <div class="settings-modal__netinput">
                 <HInput
@@ -1534,10 +1521,9 @@ export default defineComponent({
                 </button>
               ))}
             </div>
-          </section>
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.cacheAuxTitle")}</h2>
-            <p class="settings-modal__hint">{t("settings.cacheAuxHint")}</p>
+          </HSettingsGroup>
+          <HSettingsGroup title={t("settings.cacheAuxTitle")}>
+            <HSettingsHint>{t("settings.cacheAuxHint")}</HSettingsHint>
             {cacheStore.auxCaches.map((c) => (
               <div class="settings-modal__pack" key={c.scope}>
                 <div class="settings-modal__pack-info">
@@ -1570,11 +1556,11 @@ export default defineComponent({
                 </div>
               </div>
             ))}
-          </section>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "overlay" ? (
+          ),
+          overlay: () => (
           <>
           {/* in-game overlay (Mode 2) — pre-creates the transparent window
               + Tab watcher while the game runs; hold Tab in battle to see
@@ -1587,11 +1573,9 @@ export default defineComponent({
               under the first switch explains why exclusive fullscreen
               can't work. Unreachable on the phone app build (no overlay
               window there — the rail filters the section out). */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.overlay")}</h2>
-            <p class="settings-modal__hint">{t("settings.overlayDesc")}</p>
-            <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.overlayTable")}</h3>
+          <HSettingsGroup title={t("settings.overlay")}>
+            <HSettingsHint>{t("settings.overlayDesc")}</HSettingsHint>
+            <HSettingsSub title={t("settings.overlayTable")}>
               <HTabs
                 block
                 variant="segmented"
@@ -1602,10 +1586,9 @@ export default defineComponent({
                   { key: "off", label: t("settings.overlayTableOff") },
                 ]}
               />
-              <p class="settings-modal__hint">{t("settings.overlayFullscreenNote")}</p>
-            </div>
-            <div class="settings-modal__sub">
-              <h3 class="settings-modal__sub-title">{t("settings.overlayRoster")}</h3>
+              <HSettingsHint>{t("settings.overlayFullscreenNote")}</HSettingsHint>
+            </HSettingsSub>
+            <HSettingsSub title={t("settings.overlayRoster")}>
               <HTabs
                 block
                 variant="segmented"
@@ -1618,51 +1601,48 @@ export default defineComponent({
                   { key: "off", label: t("settings.overlayRosterOff") },
                 ]}
               />
-            </div>
-          </section>
+            </HSettingsSub>
+          </HSettingsGroup>
 
           </>
-          ) : null}
-          {ui.section === "about" ? (
+          ),
+          about: () => (
           <>
           {/* about */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.about")}</h2>
+          <HSettingsGroup title={t("settings.about")}>
             <AboutContent />
-          </section>
+          </HSettingsGroup>
           {/* usage-telemetry disclosure — its own group closing the section
               (moved out of the About notice card), rendered in the user's
               own language; the full notice lives at
               docs/{lang}/license/usage-telemetry.md. */}
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.telemetryTitle")}</h2>
-            <p class="settings-modal__hint">
+          <HSettingsGroup title={t("settings.telemetryTitle")}>
+            <HSettingsHint>
               {pickTelemetryNotice(lang.uiLocale.value).text}
-            </p>
-          </section>
+            </HSettingsHint>
+          </HSettingsGroup>
           </>
-          ) : null}
-          {/* attributions — partner + asset credits (seal calligraphy fonts,
-              wallpaper art). The same AuthorMark component annotates the
-              desktop wallpaper. */}
-          {ui.section === "attributions" ? (
+          ),
+          attributions: () => (
           <>
-          <section class="settings-modal__group">
-            <h2 class="settings-modal__group-title">{t("settings.attributions")}</h2>
-            <p class="settings-modal__hint">{t("settings.attributionsHint")}</p>
+          {/* attributions — partner + asset credits (seal calligraphy
+              fonts, wallpaper art). The same AuthorMark component
+              annotates the desktop wallpaper. */}
+          <HSettingsGroup title={t("settings.attributions")}>
+            <HSettingsHint>{t("settings.attributionsHint")}</HSettingsHint>
             <div class="settings-modal__attributions">
               {ATTRIBUTIONS.map((a) => (
                 <div key={a.id} class="settings-modal__attribution">
                   <AuthorMark name={a.name} url={a.url} role={t(`about.attribution.${a.roleKey}`)} />
-                  {a.noteKey ? <p class="settings-modal__hint">{t(`about.attribution.${a.noteKey}`)}</p> : null}
+                  {a.noteKey ? <HSettingsHint>{t(`about.attribution.${a.noteKey}`)}</HSettingsHint> : null}
                 </div>
               ))}
             </div>
-          </section>
+          </HSettingsGroup>
           </>
-          ) : null}
-          </div>
-        </div>
+          ),
+          }}
+        </HSettingsBody>
 
         {/* DPI preview confirm — a pure view over dpiPrefs' app-level
             countdown store (all keep/revert logic lives there): it floats
@@ -1678,12 +1658,12 @@ export default defineComponent({
           width="22rem"
           footerActions={dpiConfirmActions.value}
         >
-          <p class="settings-modal__hint">
+          <HSettingsHint>
             {t("settings.dpiRevertCountdown", {
               scale: dpiCountdown.scale,
               seconds: dpiCountdown.remaining,
             })}
-          </p>
+          </HSettingsHint>
         </HModal>
         </>
       );

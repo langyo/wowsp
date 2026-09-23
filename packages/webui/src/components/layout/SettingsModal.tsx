@@ -29,7 +29,10 @@ export default defineComponent({
         onUpdate:modelValue={(v: boolean) => (v ? ui.show() : ui.hide())}
         title={t("settings.title")}
         width="58rem"
-        contentClass="settings-modal-host"
+        // hikari's settings-host contract class (the stable-frame rules
+        // ship with the package's HkSettingsDialog.scss): body-inner
+        // height 100%, constant shell height, flush pane scrollbar.
+        contentClass="hk-settings-host"
       >
         <SettingsBody active={ui.visible} />
       </HModal>
