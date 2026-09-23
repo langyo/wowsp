@@ -1,6 +1,6 @@
 //! Internet pairing gateway (v2): a Cloudflare Worker rendezvous
 //! (`packages/pairing-relay`, deployed by the owner at
-//! `gateway.wowsp.langyo.xyz`) lets the phone pair from OUTSIDE the desktop's
+//! `wowsp-gateway.langyo.xyz`) lets the phone pair from OUTSIDE the desktop's
 //! LAN by tunneling the exact same pairing HTTP protocol the LAN server
 //! speaks. The gateway is a HIDDEN built-in service — nothing is
 //! user-configured; development points it elsewhere via the undocumented
@@ -14,7 +14,7 @@
 //! session, both roles RESOLVE the gateway:
 //!
 //! 1. `GET https://<root>/v1/manifest` (5 s timeout, `no-store`). The root
-//!    starts at the built-in `https://gateway.wowsp.langyo.xyz` (the
+//!    starts at the built-in `https://wowsp-gateway.langyo.xyz` (the
 //!    `WOWSP_RELAY_URL` dev override replaces it).
 //! 2. No manifest (transport error / 404 / non-200 / foreign body) →
 //!    LEGACY DIRECT MODE: the tunnels dial `wss://<root>` exactly like the
@@ -77,7 +77,7 @@
 //! desktop — never derived from the PIN. The gateway is nonetheless a
 //! TRUSTED component: its operator sees every code→room binding and could
 //! join a room as a fake host and MITM the /pair exchange — which is why the
-//! endpoint is first-party (gateway.wowsp.langyo.xyz; a resolved `upstream`
+//! endpoint is first-party (wowsp-gateway.langyo.xyz; a resolved `upstream`
 //! inherits that trust by construction, it is reached only through the
 //! pinned root's own manifest). Payloads are plain HTTP inside the tunnel,
 //! same as the LAN; the token/data sniffing caveat of the LAN server applies
@@ -108,7 +108,7 @@ use super::pairing::{GAMEDATA_SENTINEL, emit_progress, http_error};
 /// host at deploy time (see packages/pairing-relay/README.md); the webui
 /// keeps the same host in its `wss://` spelling (`stores/pairing.ts`
 /// PAIRING_GATEWAY_WS) — both normalize to this root.
-pub const BUILTIN_RELAY_ROOT_URL: &str = "https://gateway.wowsp.langyo.xyz";
+pub const BUILTIN_RELAY_ROOT_URL: &str = "https://wowsp-gateway.langyo.xyz";
 /// Undocumented DEVELOPMENT override for the built-in gateway root
 /// (never surfaced in any UI; see the worker package README).
 pub const RELAY_URL_ENV: &str = "WOWSP_RELAY_URL";
@@ -1936,12 +1936,12 @@ mod tests {
     fn relay_roots_normalize_across_schemes() {
         // Every gateway spelling folds onto the http(s) manifest root.
         assert_eq!(
-            normalize_relay_root("wss://gateway.wowsp.langyo.xyz").unwrap(),
-            "https://gateway.wowsp.langyo.xyz"
+            normalize_relay_root("wss://wowsp-gateway.langyo.xyz").unwrap(),
+            "https://wowsp-gateway.langyo.xyz"
         );
         assert_eq!(
-            normalize_relay_root("https://gateway.wowsp.langyo.xyz/").unwrap(),
-            "https://gateway.wowsp.langyo.xyz"
+            normalize_relay_root("https://wowsp-gateway.langyo.xyz/").unwrap(),
+            "https://wowsp-gateway.langyo.xyz"
         );
         assert_eq!(
             normalize_relay_root("ws://127.0.0.1:8787").unwrap(),
@@ -1972,16 +1972,16 @@ mod tests {
         // No override → the ONE built-in constant.
         assert_eq!(
             builtin_relay_root_from(None),
-            "https://gateway.wowsp.langyo.xyz"
+            "https://wowsp-gateway.langyo.xyz"
         );
         // Blank/whitespace override → still the built-in root.
         assert_eq!(
             builtin_relay_root_from(Some("")),
-            "https://gateway.wowsp.langyo.xyz"
+            "https://wowsp-gateway.langyo.xyz"
         );
         assert_eq!(
             builtin_relay_root_from(Some("   ")),
-            "https://gateway.wowsp.langyo.xyz"
+            "https://wowsp-gateway.langyo.xyz"
         );
         // A usable override wins (development against `wrangler dev`) in
         // any spelling.
@@ -1997,7 +1997,7 @@ mod tests {
         // breaking pairing.
         assert_eq!(
             builtin_relay_root_from(Some("ftp://nope")),
-            "https://gateway.wowsp.langyo.xyz"
+            "https://wowsp-gateway.langyo.xyz"
         );
     }
 
