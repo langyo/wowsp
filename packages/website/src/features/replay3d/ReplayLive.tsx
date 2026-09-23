@@ -12,6 +12,7 @@ import { HSwitch } from "@celestia-island/hikari";
 import { loadGlb } from "./glb";
 import shipTypes from "@/data/shipTypes.json";
 import { ships as SHIP_DB, shipName } from "@/data/ships";
+import { siteBase } from "@/composables/siteBase";
 import "./ReplayLive.scss";
 
 /** Compact per-entity track baked by scripts/bake_site_replay.py (1 Hz). */
@@ -48,7 +49,7 @@ const MAP_BOUNDS: HoloBounds = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
 const CAP_RING_R = 90;
 
 /** The game's own HUD ship icons (bundled with the site assets). */
-const ICON_BASE = `${import.meta.env.BASE_URL}icons/ships`;
+const ICON_BASE = `${siteBase}icons/ships`;
 const ICON_CLASSES = ["battleship", "cruiser", "destroyer", "aircarrier", "submarine"] as const;
 for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(

@@ -2,6 +2,7 @@ import { defineComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import GithubMark from "@/components/GithubMark";
+import { siteBase } from "@/composables/siteBase";
 import "./SiteFooter.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -10,7 +11,7 @@ export default defineComponent({
   name: "SiteFooter",
   setup() {
     const { t } = useI18n();
-    const docsHref = `${import.meta.env.BASE_URL}docs/`;
+    const docsHref = `${siteBase}docs/`;
 
     return () => (
       <footer class="site-footer">

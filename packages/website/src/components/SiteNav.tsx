@@ -3,6 +3,7 @@ import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import { Languages, Download } from "@lucide/vue";
 import { LOCALE_OPTIONS, type Locale } from "@/locales";
+import { siteBase } from "@/composables/siteBase";
 import { HButton, HMenu } from "@celestia-island/hikari";
 import "./SiteNav.scss";
 
@@ -12,8 +13,8 @@ export default defineComponent({
   name: "SiteNav",
   setup() {
     const { t, locale } = useI18n();
-    const docsHref = `${import.meta.env.BASE_URL}docs/`;
-    const logoUrl = `${import.meta.env.BASE_URL}logo.webp`;
+    const docsHref = `${siteBase}docs/`;
+    const logoUrl = `${siteBase}logo.webp`;
 
     const scrolled = ref(false);
 
@@ -61,7 +62,7 @@ export default defineComponent({
           </RouterLink>
 
           <nav class="site-nav__links">
-            <a href={`${import.meta.env.BASE_URL}#features`} class="site-nav__link">{t("nav.features")}</a>
+            <a href={`${siteBase}#features`} class="site-nav__link">{t("nav.features")}</a>
             <RouterLink to="/mods" class="site-nav__link">{t("nav.mods")}</RouterLink>
             <RouterLink to="/download" class="site-nav__link">{t("nav.download")}</RouterLink>
             <a href={docsHref} class="site-nav__link">{t("nav.docs")}</a>
