@@ -21,7 +21,7 @@ target `wasm32-unknown-unknown`). Two crates:
 
 > This is a **hidden built-in service**, not something users configure. The
 > production deployment is bound to the custom domain
-> **`gateway.wowsp.langyo.xyz`** and both apps hardcode the host (desktop:
+> **`wowsp-gateway.langyo.xyz`** and both apps hardcode the host (desktop:
 > `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay.rs`,
 > an `https://` root the v2 manifest and WebSocket base derive from; webui:
 > the `wss://` spelling in `stores/pairing.ts` `PAIRING_GATEWAY_WS`).
@@ -154,13 +154,13 @@ npx wrangler deploy
 The env override is only consulted when set and resolvable; unset, it
 falls back to the normal download.
 
-Custom domain: bind `gateway.wowsp.langyo.xyz` to the `wowsp-pairing`
+Custom domain: bind `wowsp-gateway.langyo.xyz` to the `wowsp-pairing`
 worker in the Cloudflare dashboard (Workers → wowsp-pairing → Settings →
 Domains & Routes → Custom Domain). Until that record exists the apps
 report the gateway unreachable and fall back to LAN-only pairing —
 nothing breaks.
 
-Smoke check: `curl https://gateway.wowsp.langyo.xyz/v1/health` → `ok`
+Smoke check: `curl https://wowsp-gateway.langyo.xyz/v1/health` → `ok`
 (the legacy `/health` answers too).
 
 **Migrations note** — the Durable Object classes are unchanged from the
@@ -201,7 +201,7 @@ Settings → Variables, or `[vars]` in wrangler.toml) to an absolute
 
 Clients that honor the manifest then follow the upstream and stop
 pairing through this gateway — a hand-off with **no app redeploy**: the
-address clients dial stays `gateway.wowsp.langyo.xyz`, and if WoWSP ever
+address clients dial stays `wowsp-gateway.langyo.xyz`, and if WoWSP ever
 runs an official exchange (or a 360/Lesta-run one) it can take over by
 flipping this one variable. Clearing the variable flips it back. Values
 that are not absolute https/wss URLs are ignored (a typo must not strand
