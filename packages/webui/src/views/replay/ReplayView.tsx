@@ -42,7 +42,7 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HButton, HSpinner, useToast } from "@celestia-island/hikari";
+import { HButton, HScrollPin, HSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -1223,7 +1223,15 @@ const ChatLogPanel = defineComponent({
       const sel = selected.value;
       return (
         <>
-          <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
+          {/* Pinned above the scroll: the timeline (and its legend) rides an
+              HScrollPin so the message list scrolls underneath it instead of
+              carrying it away. Bleed contract: the pin must stay the FIRST
+              element of the scroll body (host class + pad var on
+              __modal-body), and the timeline keeps its gap as padding so the
+              pin's painted box covers it. */}
+          <HScrollPin side="top">
+            <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
+          </HScrollPin>
           <ul class="replay-view__chat-list">
             {rows.value.map((r, i) => (
               <li key={i} class={["replay-view__chat-row", `replay-view__chat-row--${r.channel}`]}>
@@ -1335,7 +1343,10 @@ const ChatTimeline = defineComponent({
     mapApi: { type: Object as () => HoloMapHandle | null, default: null },
   },
   setup(props) {
-    const track = ref<HTMLDivElement | null>(null);
+    // The travel rail inset past the pill's rounded end caps — dots and the
+    // playhead map 0–100% onto THIS box, so the seek math must measure the
+    // same rectangle (clicks on the caps themselves clamp to 0 / 100%).
+    const rail = ref<HTMLSpanElement | null>(null);
     // Prefer the map's own clock span (max−first sample) once it reports in —
     // the playhead and the pausing seek both speak that clock; the stream-side
     // duration prop (absolute last-sample time) is the pre-mount fallback.
@@ -1344,7 +1355,7 @@ const ChatTimeline = defineComponent({
       total.value > 0 ? Math.min(100, Math.max(0, (t / total.value) * 100)) : 0;
 
     function seekFromTrack(e: MouseEvent) {
-      const el = track.value;
+      const el = rail.value;
       const api = props.mapApi;
       if (!el || !api || total.value <= 0) return;
       const rect = el.getBoundingClientRect();
@@ -1357,30 +1368,31 @@ const ChatTimeline = defineComponent({
       return (
         <div class="replay-view__chat-timeline">
           <div
-            ref={track}
             class={["replay-view__chat-track", api ? "" : "replay-view__chat-track--static"]}
             onClick={seekFromTrack}
           >
-            {props.rows.map((r, i) => (
-              <button
-                key={i}
-                class={["replay-view__chat-dot", `replay-view__chat-ch--${r.channel}`]}
-                style={{ left: `${pctOf(r.time)}%` }}
-                data-hint={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
-                aria-label={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
-                disabled={!api}
-                onClick={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  api?.seek(r.time);
-                }}
-              />
-            ))}
-            {api ? (
-              <span
-                class="replay-view__chat-playhead"
-                style={{ left: `${pctOf(api.current)}%` }}
-              />
-            ) : null}
+            <span ref={rail} class="replay-view__chat-rail">
+              {props.rows.map((r, i) => (
+                <button
+                  key={i}
+                  class={["replay-view__chat-dot", `replay-view__chat-ch--${r.channel}`]}
+                  style={{ left: `${pctOf(r.time)}%` }}
+                  data-hint={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
+                  aria-label={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
+                  disabled={!api}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    api?.seek(r.time);
+                  }}
+                />
+              ))}
+              {api ? (
+                <span
+                  class="replay-view__chat-playhead"
+                  style={{ left: `${pctOf(api.current)}%` }}
+                />
+              ) : null}
+            </span>
           </div>
           <div class="replay-view__chat-legend">
             {CHANNEL_KEYS.map((k) => (
@@ -2214,7 +2226,7 @@ export default defineComponent({
                         <X size={14} />
                       </button>
                     </div>
-                    <div class="replay-view__modal-body">
+                    <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
                       <ChatLogPanel
                         events={chatMessages.value}
                         vehicles={parser.current.value.vehicles}
