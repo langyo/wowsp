@@ -59,3 +59,31 @@
     gap: 0.4rem;
   }
 }
+
+/* Phone widths: the desktop row (fixed-width preview column + criteria
+   text + pick/reset pair + switch) cannot fit 390px — the text column
+   collapsed to one character per line (vertical CJK text) and the
+   actions/switch overflowed the pane (real-device report). Restack
+   instead: stamp + criteria text + switch share the first line (the
+   preview column hugs the stamp, the longer criteria copy wraps inside
+   the flexible text column), the pick/reset pair drops to its own
+   full-width line. */
+@media (max-width: 767px) {
+  .seal-customizer__row {
+    flex-wrap: wrap;
+    row-gap: 0.45rem;
+  }
+
+  .seal-customizer__preview {
+    width: auto;
+  }
+
+  .seal-customizer__desc {
+    flex: 1 1 0;
+  }
+
+  .seal-customizer__actions {
+    order: 5;
+    flex: 1 0 100%;
+  }
+}

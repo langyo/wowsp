@@ -7,6 +7,7 @@ import { Crosshair, Eye, EyeOff, Grid3x3, MessageSquare, Orbit, Pause, PenLine, 
 import { PLANE_TYPES, shellAmmoOf } from "./tactical/shellTypes";
 import { extractActions } from "./tactical/actions";
 import { gridLabelLayout, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
+import { useBreakpoint } from "@celestia-island/hikari";
 
 import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
 import { useTheme } from "@/theme";
@@ -410,6 +411,15 @@ export default defineComponent({
     let playRaf = 0;
     let lastTick = 0;
 
+    // Phone layout signal: on ≤767px the two HUD pop-up menus (playback
+    // speed, camera mode) dock as bottom sheets — hikari's "phones never
+    // float anchored menus" convention. The panels stay hand-rolled (their
+    // --holo-hud-* chrome is HUD-specific, unlike the hikari-surfaced
+    // filter popovers), so the docking is CSS-only; the scrim below is the
+    // phone-only dismissal surface that replaces the anchored panel's
+    // tap-outside radius. Desktop keeps the anchored panels untouched.
+    const { isMobile } = useBreakpoint();
+
     const showRoster = ref(false);
     // Toggle for the floating ship labels (info overlay).
     const showLabels = ref(true);
@@ -429,6 +439,9 @@ export default defineComponent({
     // dispatch (`applyOriginalCamera` vs `followSelected`) stays untouched.
     const cameraMenuOpen = ref(false);
     const cameraMode = ref<"free" | "original" | "follow">("free");
+    // Either HUD pop-up open → the phone sheet scrim shows (computed reads
+    // both refs lazily, so declaring it here after the second ref is fine).
+    const hudSheetOpen = computed(() => speedMenuOpen.value || cameraMenuOpen.value);
     watch(cameraMode, (m) => {
       originalView.value = m === "original";
       if (m !== "follow") selectedEntityId.value = null;
@@ -5316,6 +5329,19 @@ export default defineComponent({
         ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
+          {/* Phone sheet scrim: while a HUD pop-up menu is docked as a
+              bottom sheet (≤767px only — the CSS docks the panels), taps on
+              the scrim dismiss both menus, mirroring the hikari sheet
+              family's closeOnBackdrop. Desktop never renders it. */}
+          {isMobile.value && hudSheetOpen.value ? (
+            <div
+              class="holo-map__sheet-scrim"
+              onClick={() => {
+                speedMenuOpen.value = false;
+                cameraMenuOpen.value = false;
+              }}
+            />
+          ) : null}
           {/* In the 2D enlarged view the plaque + stats duplicate what the 3D
               view shows — hide them so the 2D map owns the screen. */}
           {!minimapZoom.value && selfCard.value ? (

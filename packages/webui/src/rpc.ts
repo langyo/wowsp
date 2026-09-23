@@ -61,6 +61,7 @@ export const RPC = {
   get_ranked_stats: "get_ranked_stats",
   ensure_res_pack: "ensure_res_pack",
   res_cache_root: "res_cache_root",
+  res_report_bundled: "res_report_bundled",
   get_res_status: "get_res_status",
   check_res_update: "check_res_update",
   res_download: "res_download",
@@ -93,6 +94,24 @@ export const RPC = {
   stamp_import: "stamp_import",
   stamp_reset: "stamp_reset",
   installer_language: "installer_language",
+  // ── Mobile replay acquisition + desktop pairing (Rust handlers in
+  //    commands/pairing.rs; the web transport mocks them for browser dev) ──
+  import_replay_file: "import_replay_file",
+  pairing_start: "pairing_start",
+  pairing_stop: "pairing_stop",
+  pairing_get_status: "pairing_get_status",
+  pairing_pair: "pairing_pair",
+  pairing_list_remote: "pairing_list_remote",
+  pairing_pull_replay: "pairing_pull_replay",
+  pairing_pull_gamedata: "pairing_pull_gamedata",
+  // LAN auto-discovery (phone listener; see commands/pairing_discovery.rs).
+  pairing_discovery_start: "pairing_discovery_start",
+  pairing_discovery_stop: "pairing_discovery_stop",
+  // Internet relay configuration (hidden setting — see
+  // commands/pairing_relay.rs) + pairing-code regeneration.
+  pairing_get_relay_config: "pairing_get_relay_config",
+  pairing_set_relay: "pairing_set_relay",
+  pairing_reallocate_code: "pairing_reallocate_code",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

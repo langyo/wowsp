@@ -268,3 +268,10 @@
     }
   }
 }
+
+/* ── Phone layout (≤767px): tighter page gutters ───────────────────────── */
+@media (max-width: 767px) {
+  .dashboard-view {
+    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  }
+}

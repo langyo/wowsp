@@ -1,7 +1,11 @@
-// Settings modal. A left rail (same visual language as the main sidebar's
-// nav) picks the active section; the right pane renders that section's
-// titled card. The modal is wide enough for the two-column layout while
-// form controls keep a sane size.
+// Settings shell SCSS — shared by BOTH surfaces of the settings body
+// (components/settings/SettingsBody): the desktop MODAL (layout/
+// SettingsModal, host class `settings-modal-host`) and the phone-layout
+// PAGE (views/SettingsView, which re-styles the same classes under
+// `.settings-page`).
+//
+// A left rail (same visual language as the main sidebar's nav) picks the
+// active section; the right pane renders that section's titled card.
 //
 // Scroll ownership: the SHELL below is the only scroller (the pane), so
 // every section's scrollbar sits at the same edge. HkModal's body scroller
@@ -10,7 +14,8 @@
 // the pane's edge bar. The `settings-modal-host` contentClass (see the
 // HModal usage) stretches the shell to exactly the body's visible height,
 // which makes the outer scroller mathematically idle; sections themselves
-// render plain content cards and never manage scrolling.
+// render plain content cards and never manage scrolling. The page instead
+// lets the app shell scroll and opens the pane (see SettingsView.scss).
 
 /* Host override (via HModal contentClass): give the body inner a definite
    height so the shell's fit is computed against the real scroll area. */
@@ -22,11 +27,12 @@
   display: flex;
   align-items: stretch;
   gap: 1.25rem;
-  /* Constant shell height, sized under the body scroller's inner padding
-     (1.5rem top + bottom) with slack: the shell ALWAYS fits, so HkModal's
-     floating overlay scrollbar stays idle and the pane's own edge bar is
-     the only scrollbar — at a stable frame height, whatever the section. */
-  height: calc(70vh - 6.5rem);
+  /* Constant shell height applies to the MODAL surface only (the page
+     variant sizes from content instead): sized under the body scroller's
+     inner padding (1.5rem top + bottom) with slack, the shell ALWAYS
+     fits, so HkModal's floating overlay scrollbar stays idle and the
+     pane's own edge bar is the only scrollbar — at a stable frame
+     height, whatever the section. See the host rule at the file end. */
 
   /* ── section rail (mirrors the main sidebar nav) ── */
   &__rail {
@@ -600,6 +606,122 @@
     color: rgb(var(--color-error));
   }
 
+  /* ── phone pairing (desktop server side) ── */
+  &__pairing-busy {
+    display: flex;
+    justify-content: center;
+    margin: 0.4rem 0 0;
+  }
+
+  &__pairing-live {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.7rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid rgb(var(--color-primary) / 35%);
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-primary) / 6%);
+  }
+
+  &__pairing-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  &__pairing-label {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__pairing-value {
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    /* The user copies these by hand into the phone — keep them selectable
+       even where the surrounding app suppresses selection. */
+    user-select: text;
+    -webkit-user-select: text;
+    white-space: nowrap;
+  }
+
+  /* The PIN display is a readonly hikari OTP grid (the same component the
+     phone types into) plus its action row (copy + regenerate) — the address
+     below is auxiliary small print now that discovery does the addressing. */
+  &__pairing-pin {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    margin: 0.3rem 0 0.4rem;
+  }
+
+  &__pairing-pin-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  /* Gateway status line under the code (relay mode tag). */
+  &__pairing-mode {
+    display: flex;
+    align-items: center;
+    margin: 0.35rem 0 0;
+  }
+
+  /* ── phone-build CLIENT pairing section: primary open action + the
+        paired-computer list (label + last-synced + forget) ── */
+  &__pairing-open {
+    display: flex;
+    align-items: center;
+    margin-top: 0.4rem;
+  }
+
+  &__paired-hosts {
+    list-style: none;
+    margin: 0.45rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__paired-host {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: 10px;
+    background: rgb(var(--color-surface-variant, var(--color-surface)) / 30%);
+  }
+
+  &__paired-host-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  &__paired-host-label {
+    font-size: var(--text-sm, 0.875rem);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__paired-host-meta {
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-text-secondary));
+  }
+
   /* Thin progress track (same visual language as the mod-catalog rows). */
   &__pack-progress {
     height: 3px;
@@ -785,4 +907,11 @@
     align-items: stretch;
     margin-top: 0.75rem;
   }
+}
+
+/* Modal-only constant shell height (see the comment at the top of the
+   .settings-modal block): the page surface (`.settings-page` in
+   SettingsView.scss) overrides this to size from content. */
+.settings-modal-host .settings-modal {
+  height: calc(70vh - 6.5rem);
 }

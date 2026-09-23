@@ -94,68 +94,77 @@ pub async fn stamp_import(kind: String) -> Result<Option<StampOverride>, String>
     if !is_valid_kind(&kind) {
         return Err(format!("invalid stamp kind {kind:?}"));
     }
+    // Mobile: no native image picker (rfd has no Android backend) — the
+    // seal customizer's photo-picker bytes ride a later mobile phase.
+    #[cfg(mobile)]
+    {
+        return Err(crate::mobile_unsupported::PICKER.into());
+    }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread (same rule as
     // wallpaper_import).
-    let picked = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("Select a seal image")
-            .add_filter(
-                "Images",
-                &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"],
-            )
-            .pick_file()
-    })
-    .await
-    .map_err(|e| format!("stamp picker task failed: {e}"))?;
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Select a seal image")
+                .add_filter(
+                    "Images",
+                    &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"],
+                )
+                .pick_file()
+        })
+        .await
+        .map_err(|e| format!("stamp picker task failed: {e}"))?;
 
-    let Some(src) = picked else {
-        return Ok(None);
-    };
-    // Windows dialogs don't enforce the filter on a manually typed file name
-    // — reject anything the listing wouldn't accept instead of importing a
-    // stamp that can never resolve.
-    let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
-        return Err("picked file has no usable name".into());
-    };
-    if !is_image_file(file_name) {
-        return Err(format!("unsupported stamp image type: {file_name}"));
-    }
-    let ext = src
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .unwrap_or_else(|| "png".into());
-    let dir = stamps_dir()?;
-    let dest = dir.join(format!("{kind}.{ext}"));
-    // Copy via a `.part` temp name so an interrupted/disk-full copy can't
-    // leave a corrupt image that the listing would pick up, then rename;
-    // drop the kind's other extensions only after the new file is in place.
-    let part = dir.join(format!("{kind}.{ext}.part"));
-    let dest_clone = dest.clone();
-    let part_clone = part.clone();
-    tokio::task::spawn_blocking(move || {
-        let result = std::fs::copy(&src, &part_clone)
-            .map(|_| ())
-            .and_then(|()| std::fs::rename(&part_clone, &dest_clone))
-            .map_err(|e| format!("copy stamp image: {e}"));
-        if result.is_err() {
-            let _ = std::fs::remove_file(&part_clone);
+        let Some(src) = picked else {
+            return Ok(None);
+        };
+        // Windows dialogs don't enforce the filter on a manually typed file name
+        // — reject anything the listing wouldn't accept instead of importing a
+        // stamp that can never resolve.
+        let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
+            return Err("picked file has no usable name".into());
+        };
+        if !is_image_file(file_name) {
+            return Err(format!("unsupported stamp image type: {file_name}"));
         }
-        result
-    })
-    .await
-    .map_err(|e| format!("stamp copy task failed: {e}"))??;
-    for ext in ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"] {
-        let other = dir.join(format!("{kind}.{ext}"));
-        if other != dest {
-            let _ = std::fs::remove_file(&other);
+        let ext = src
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_else(|| "png".into());
+        let dir = stamps_dir()?;
+        let dest = dir.join(format!("{kind}.{ext}"));
+        // Copy via a `.part` temp name so an interrupted/disk-full copy can't
+        // leave a corrupt image that the listing would pick up, then rename;
+        // drop the kind's other extensions only after the new file is in place.
+        let part = dir.join(format!("{kind}.{ext}.part"));
+        let dest_clone = dest.clone();
+        let part_clone = part.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = std::fs::copy(&src, &part_clone)
+                .map(|_| ())
+                .and_then(|()| std::fs::rename(&part_clone, &dest_clone))
+                .map_err(|e| format!("copy stamp image: {e}"));
+            if result.is_err() {
+                let _ = std::fs::remove_file(&part_clone);
+            }
+            result
+        })
+        .await
+        .map_err(|e| format!("stamp copy task failed: {e}"))??;
+        for ext in ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"] {
+            let other = dir.join(format!("{kind}.{ext}"));
+            if other != dest {
+                let _ = std::fs::remove_file(&other);
+            }
         }
+        Ok(Some(StampOverride {
+            kind,
+            path: dest.to_string_lossy().into_owned(),
+        }))
     }
-    Ok(Some(StampOverride {
-        kind,
-        path: dest.to_string_lossy().into_owned(),
-    }))
 }
 
 /// Delete the custom picture of `kind` — the seal falls back to the bundled

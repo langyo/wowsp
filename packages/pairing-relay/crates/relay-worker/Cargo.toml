@@ -1,0 +1,39 @@
+# The Cloudflare Worker itself (Rust → wasm32-unknown-unknown via
+# worker-build; see wrangler.toml and README.md). Never built for the host
+# target — the `worker` crate only compiles for wasm. All policy lives in
+# relay-core; this crate is routing + Durable Object glue only.
+[package]
+name = "relay-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# worker-build skips its wasm-opt (binaryen) step entirely: the release
+# bundle is ~0.9 MB raw / ~0.27 MB gzipped — far under the Workers
+# free-plan size limit — and not downloading a binaryen release makes
+# deploys deterministic on networks where GitHub release downloads fail.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[dependencies]
+relay-core = { path = "../relay-core" }
+worker = "^0.8"
+futures-util = { version = "^0.3", default-features = false, features = [
+    "std",
+] }
+serde_json = { workspace = true }
+# Deserializing DO storage rows listed as raw JsValues (see directory.rs).
+serde-wasm-bindgen = "^0.6"
+# CSPRNG for pairing-code minting inside workerd. getrandom's JavaScript
+# backend (crypto.getRandomValues, which workerd implements) serves
+# wasm32-unknown-unknown; host builds of relay-core never see this crate.
+# relay-core keeps randomness behind its `CodeRng` trait so tests inject a
+# deterministic sequence instead.
+getrandom = { version = "^0.4", features = ["wasm_js"] }

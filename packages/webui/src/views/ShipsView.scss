@@ -470,3 +470,18 @@
     font-weight: 700;
   }
 }
+
+/* ── Phone layout (≤767px): tighter page gutters ───────────────────────── */
+@media (max-width: 767px) {
+  .ships-view {
+    &__header {
+      padding: 0.9rem 0.9rem 0.4rem;
+      gap: 0.6rem;
+    }
+
+    &__meta {
+      padding: 0 0.9rem 0.3rem;
+      gap: 0.9rem;
+    }
+  }
+}

@@ -84,21 +84,30 @@ pub async fn detect_game_install() -> Vec<GameInstall> {
 /// error state both route here when auto-detection comes up empty.
 #[tauri::command]
 pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
+    // Mobile: no native folder picker (and no game install to point at) —
+    // the first-launch flow uses a different entry on phones.
+    #[cfg(mobile)]
+    {
+        return Err(crate::mobile_unsupported::PICKER.into());
+    }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread.
-    let picked = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("Select the World of Warships install folder")
-            .pick_folder()
-    })
-    .await
-    .map_err(|e| format!("文件夹选择器任务异常退出：{e}"))?;
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Select the World of Warships install folder")
+                .pick_folder()
+        })
+        .await
+        .map_err(|e| format!("文件夹选择器任务异常退出：{e}"))?;
 
-    let Some(path) = picked else {
-        return Ok(None);
-    };
-    let path = path.to_string_lossy().into_owned();
-    validate_manual_path(&path).map(Some)
+        let Some(path) = picked else {
+            return Ok(None);
+        };
+        let path = path.to_string_lossy().into_owned();
+        validate_manual_path(&path).map(Some)
+    }
 }
 
 /// Pin a user-chosen path as the active install (no validation beyond the
@@ -133,6 +142,9 @@ fn is_game_dir(path: &str) -> bool {
 /// but matches publishers as substrings (see [`PUBLISHER_PATTERNS`]).
 /// On Steam installs this yields nothing (Steam carries no WG publisher key) —
 /// `scan_steam_libraries` covers that case.
+// The pushes live in a windows-only block, so the binding is `mut` on Windows
+// only (non-Windows keeps the function as an empty-result stub).
+#[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
 fn scan_registry_uninstall_keys() -> Vec<GameInstall> {
     let mut found = Vec::new();
     #[cfg(target_os = "windows")]

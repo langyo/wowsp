@@ -1,13 +1,15 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
-import { Copy, FolderOpen, Play, RefreshCw, X } from "@lucide/vue";
+import { Copy, FileUp, FolderOpen, Laptop, Play, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
+import PairingWizard from "@/features/replay/PairingWizard";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useOverlayStore } from "@/stores/overlay";
+import { usePairingStore } from "@/stores/pairing";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
   AchievementEvent,
@@ -34,6 +36,7 @@ import type {
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { isMobileApp } from "@/utils/platform";
 import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBattle";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
@@ -1631,6 +1634,60 @@ export default defineComponent({
       }
     }
 
+    // ── mobile replay acquisition (phone app build) ─────────────────────
+    // pick_replay_files (the native dialog behind onOpenExternal) errors on
+    // mobile, so the phone surfaces its own pair of acquisition actions:
+    // an HTML file picker writing through importReplayFile, and the
+    // pairing wizard pulling from the user's desktop WoWSP.
+    const pairing = usePairingStore();
+    const wizardOpen = ref(false);
+    // Deep link: /replay?pairing=1 auto-opens the wizard — the phone
+    // settings' pairing section routes here (its primary button).
+    if (route.query.pairing === "1") wizardOpen.value = true;
+    const fileInput = ref<HTMLInputElement | null>(null);
+    const importing = ref(false);
+
+    /** Open the (hidden) HTML file input — on Android WebView this may open
+     *  the system file picker / SAF; in a browser it opens the normal
+     *  chooser. Multiple .wowsreplay selection allowed. */
+    function onPickFiles() {
+      fileInput.value?.click();
+    }
+
+    /** Read the picked Files and import each into the managed replays dir
+     *  (list refresh afterwards shows them; the backend dedupes names). */
+    async function onFilesChosen(e: Event) {
+      const input = e.target as HTMLInputElement;
+      const files = [...(input.files ?? [])];
+      // Reset so picking the same file again re-fires change.
+      input.value = "";
+      if (files.length === 0) return;
+      importing.value = true;
+      try {
+        const entries = await Promise.all(
+          files.map(async (f) => ({
+            name: f.name,
+            bytes: new Uint8Array(await f.arrayBuffer()),
+          })),
+        );
+        const { imported, failed } = await pairing.importFiles(entries);
+        for (const f of failed) {
+          toast.error(`${f.name}\n${f.error}`);
+        }
+        if (imported.length > 0) {
+          toast.success(t("replay.acquire.importedToast", { n: imported.length }));
+          await reload();
+        }
+      } finally {
+        importing.value = false;
+      }
+    }
+
+    /** A remote pull finished — refresh so the landed files show locally. */
+    function onPairingImported() {
+      void reload();
+    }
+
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
     // open so the header parse stays fast; the decode is the expensive step.
     const trajectories = ref<EntityTrajectory[]>([]);
@@ -1846,19 +1903,44 @@ export default defineComponent({
             <div class="replay-view__list-head-row">
               <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
               <span class="replay-view__list-head-actions">
+                {isMobileApp() ? (
+                  <>
+                    {/* Phone build: the native pick dialog is unavailable
+                        (pick_replay_files errors on mobile) — the HTML file
+                        input + pairing wizard take over. */}
+                    <HButton
+                      size="sm"
+                      variant="ghost"
+                      loading={importing.value}
+                      onClick={onPickFiles}
+                      ariaLabel={t("replay.acquire.pickFiles")}
+                    >
+                      <FileUp size={14} />
+                    </HButton>
+                    <HButton
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => (wizardOpen.value = true)}
+                      ariaLabel={t("replay.acquire.fromDesktop")}
+                    >
+                      <Laptop size={14} />
+                    </HButton>
+                  </>
+                ) : (
+                  <HButton
+                    size="sm"
+                    variant="ghost"
+                    loading={openingExternal.value}
+                    onClick={() => void onOpenExternal()}
+                    ariaLabel={t("replay.list.openExternal")}
+                  >
+                    <FolderOpen size={14} />
+                  </HButton>
+                )}
                 <HButton
                   size="sm"
                   variant="ghost"
-                  loading={openingExternal.value}
-                  onClick={() => void onOpenExternal()}
-                  ariaLabel={t("replay.list.openExternal")}
-                >
-                  <FolderOpen size={14} />
-                </HButton>
-                <HButton
-                  size="sm"
-                  variant="ghost"
-                  disabled={!hasClient.value || refreshing.value}
+                  disabled={(!hasClient.value && !isMobileApp()) || refreshing.value}
                   onClick={() => void onRefresh()}
                   ariaLabel={t("replay.refresh")}
                 >
@@ -1869,8 +1951,9 @@ export default defineComponent({
 
             {/* The client/server selector lives in the sidebar footer (shared
                 with plugin management + account switching); the replay list
-                just reads the active install. */}
-            {!hasClient.value ? (
+                just reads the active install. (Never shown on the phone app —
+                there is no local client to pick.) */}
+            {!hasClient.value && !isMobileApp() ? (
               <p class="replay-view__no-client">{t("replay.list.noClient")}</p>
             ) : null}
 
@@ -1882,13 +1965,41 @@ export default defineComponent({
           </div>
 
           <div class="replay-view__list-scroll">
-            {parser.external.value.length === 0 && !hasClient.value ? (
-              <p class="replay-view__empty">{t("replay.list.noClient")}</p>
-            ) : parser.external.value.length === 0 && parser.list.value.length === 0 ? (
-              <p class="replay-view__empty">{t("replay.list.empty")}</p>
+            {parser.external.value.length === 0 && parser.list.value.length === 0 ? (
+              isMobileApp() ? (
+                /* Phone build's prominent acquisition empty state: pick
+                    local .wowsreplay files, or pair with the desktop. */
+                <div class="replay-view__acquire">
+                  <p class="replay-view__acquire-title">{t("replay.acquire.emptyTitle")}</p>
+                  <p class="replay-view__acquire-hint">{t("replay.acquire.emptyHint")}</p>
+                  <div class="replay-view__acquire-actions">
+                    <HButton
+                      variant="primary"
+                      loading={importing.value}
+                      onClick={onPickFiles}
+                    >
+                      <FileUp size={15} />
+                      {t("replay.acquire.pickFiles")}
+                    </HButton>
+                    <HButton
+                      variant="secondary"
+                      onClick={() => (wizardOpen.value = true)}
+                    >
+                      <Laptop size={15} />
+                      {t("replay.acquire.fromDesktop")}
+                    </HButton>
+                  </div>
+                </div>
+              ) : !hasClient.value ? (
+                <p class="replay-view__empty">{t("replay.list.noClient")}</p>
+              ) : (
+                <p class="replay-view__empty">{t("replay.list.empty")}</p>
+              )
             ) : (
               <ul class="replay-view__items">
-                {gameStatus.process.running ? (
+                {/* LIVE entry — only while the game process runs, and never
+                    on the phone app build (no local game to watch there). */}
+                {gameStatus.process.running && !isMobileApp() ? (
                   <li class="replay-view__item">
                     <button
                       type="button"
@@ -2171,6 +2282,28 @@ export default defineComponent({
             <div class="replay-view__placeholder">{t("replay.select")}</div>
           )}
         </section>
+
+        {/* Hidden HTML file picker backing the mobile import action (the
+            styled button clicks it). Multi-select .wowsreplay only. Rendered
+            only on the phone build — desktop uses the native picker. */}
+        {isMobileApp() ? (
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            accept=".wowsreplay"
+            class="replay-view__file-input"
+            onChange={(e: Event) => void onFilesChosen(e)}
+          />
+        ) : null}
+
+        {/* Phone-build pairing wizard (sheet-driven; docks as a bottom sheet
+            on phone layout through hikari's HModal). */}
+        <PairingWizard
+          open={wizardOpen.value}
+          onClose={() => (wizardOpen.value = false)}
+          onImported={onPairingImported}
+        />
       </main>
     );
   },

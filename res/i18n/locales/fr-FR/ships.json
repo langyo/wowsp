@@ -75,6 +75,7 @@
     "gameparamsMissing": "GameParams.data non décompressé. Exécutez wowsunpack pour voir les schémas de blindage et la balistique des obus.",
     "gameparamsError": "Échec du chargement : {error}",
     "gameparamsErrorTip": "Échec du chargement du blindage et de la balistique — cliquez pour copier l'erreur :",
+    "gameparamsSyncAction": "Synchroniser les données du jeu depuis le PC",
     "gameparamsHint": "Astuce : placez le GameParams.json décompressé à la racine du jeu (à côté de bin/). Voir https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "Aucune caractéristique disponible pour ce navire.",
     "noImage": "Aucune image disponible.",
@@ -84,6 +85,7 @@
     "noBallistics": "Aucune donnée de blindage / balistique n'a pu être extraite de GameParams pour ce navire.",
     "stage": {
       "hint3d": "Glisser pour tourner · molette pour zoomer · clic droit glisser pour déplacer",
+      "hint3dTouch": "Glisser pour tourner · pincer pour zoomer",
       "holo": "Hologramme",
       "hide": "Masquer l'aperçu",
       "show": "Afficher l'aperçu",

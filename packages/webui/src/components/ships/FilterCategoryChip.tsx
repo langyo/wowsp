@@ -16,7 +16,7 @@
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
 
-import { HPopover } from "@celestia-island/hikari";
+import { HPopover, useBreakpoint } from "@celestia-island/hikari";
 import { X } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -45,6 +45,10 @@ export default defineComponent({
     clear: () => true,
   },
   setup(props, { emit }) {
+    // Phone layout signal for the HPopover sheet dock (sheetOnMobile +
+    // scrim-rendering closeOnBackdrop — hikari convention: on phones
+    // nothing floats anchored, not even popups over a modal sheet).
+    const { isMobile } = useBreakpoint();
     // Root element for the outside-click test — NOT a class-based closest()
     // check: several chip anchors coexist on one page and each must close
     // only for events landing outside itself.
@@ -106,10 +110,17 @@ export default defineComponent({
         >
           <span>{chipLabel.value}</span>
         </button>
-        {/* closeOnBackdrop stays off: HPopover's own document listener would
-            close on the re-click of the open chip before that click re-opens
-            it, making the open chip impossible to dismiss. The pointerdown
-            listener above is the outside-close; Escape rides closeOnEscape. */}
+        {/* Desktop keeps closeOnBackdrop off: HPopover's own document
+            listener would close on the re-click of the open chip before
+            that click re-opens it, making the open chip impossible to
+            dismiss; the pointerdown listener above is the outside-close and
+            Escape rides closeOnEscape. Phones dock the panel as a bottom
+            sheet (sheetOnMobile), where the sheet branch renders its
+            dismissal scrim from closeOnBackdrop; tapping the scrim also
+            trips the listener above (same close, one path). Sheet-mode
+            chrome reuse comes free: the panel reuses ShipFilterBar's flat
+            classes, and ShipFilterBar.scss already restyles
+            .hk-popover-panel.hk-is-sheet for this exact markup. */}
         <HPopover
           modelValue={props.open}
           onUpdate:modelValue={(v: boolean) => {
@@ -117,7 +128,8 @@ export default defineComponent({
           }}
           anchorRef={chipBtn.value}
           placement={props.edge ? "bottom-end" : "bottom-start"}
-          closeOnBackdrop={false}
+          closeOnBackdrop={isMobile.value}
+          sheetOnMobile
           title={props.title}
         >
           <div ref={panelEl} class="ship-filter-bar__pop">

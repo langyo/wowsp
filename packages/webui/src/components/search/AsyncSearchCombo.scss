@@ -121,3 +121,28 @@
     background: rgb(var(--color-primary) / 10%);
   }
 }
+
+/* ── Phone sheet mode (HPopover sheetOnMobile) ───────────────────────────
+   On <768px viewports the combo popup docks as a bottom sheet (hikari's
+   "phones never float anchored menus" convention — same contract as
+   ShipFilterBar's chips). The sheet carries its own title + close chrome
+   (hk-popover-sheet-header), so the panel's inner header row would
+   duplicate it — hidden below; the candidate list trades its fixed 280px
+   desktop cap for the sheet's own scroll envelope. The sheet surface
+   itself (full width, top rounding, safe-area bottom padding, scroll
+   containment, top-inset cap) is hikari's .hk-is-sheet — nothing to
+   re-paint. Desktop anchored panels are untouched. */
+.hk-popover-panel.hk-is-sheet {
+  .async-search-combo__panel {
+    padding: 10px var(--space-12, 0.75rem) 0;
+  }
+
+  .async-search-combo__panel-head {
+    display: none;
+  }
+
+  .async-search-combo__candidates {
+    max-height: none;
+    overflow-y: visible;
+  }
+}

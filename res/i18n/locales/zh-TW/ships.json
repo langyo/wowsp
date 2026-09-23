@@ -75,6 +75,7 @@
     "gameparamsMissing": "GameParams.data 尚未解包。請執行 wowsunpack 以查看裝甲方案與彈道曲線。",
     "gameparamsError": "載入失敗：{error}",
     "gameparamsErrorTip": "載入裝甲與彈道失敗 — 點擊可複製錯誤訊息：",
+    "gameparamsSyncAction": "從電腦同步遊戲資料",
     "gameparamsHint": "提示：將解包後的 GameParams.json 放在遊戲根目錄（與 bin/ 同層）。參見 https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "此艦艇暫無規格資料。",
     "noImage": "無圖片。",
@@ -84,6 +85,7 @@
     "noBallistics": "無法從 GameParams 擷取此艦艇的裝甲 / 彈道資料。",
     "stage": {
       "hint3d": "拖曳旋轉 · 滾輪縮放 · 右鍵拖曳平移",
+      "hint3dTouch": "拖曳旋轉 · 雙指縮放",
       "holo": "全像",
       "hide": "隱藏預覽",
       "show": "展示預覽",

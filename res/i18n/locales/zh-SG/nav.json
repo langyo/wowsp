@@ -5,5 +5,8 @@
   "replay": "录像复盘",
   "resources": "资源配置",
   "settings": "设置",
-  "home": "首页"
+  "home": "首页",
+  "openMenu": "打开菜单",
+  "menu": "菜单",
+  "back": "返回"
 }

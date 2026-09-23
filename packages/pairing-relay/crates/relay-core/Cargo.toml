@@ -1,0 +1,17 @@
+# Pure policy/protocol core of the pairing gateway — NO Cloudflare types,
+# NO wasm-bindgen, builds and tests on the HOST. relay-worker (wasm) is a
+# thin shell over exactly these state machines, which keeps every TTL /
+# rate-limit / one-code-per-host rule unit-testable without workerd.
+[package]
+name = "relay-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

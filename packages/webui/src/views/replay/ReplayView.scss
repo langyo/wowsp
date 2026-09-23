@@ -77,6 +77,42 @@
     line-height: 1.5;
   }
 
+  /* Phone build's acquisition empty state — the two prominent actions
+     (HTML file picker + desktop pairing wizard). */
+  &__acquire {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 1rem 0.75rem 0.5rem;
+  }
+
+  &__acquire-title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  &__acquire-hint {
+    margin: 0;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+
+  &__acquire-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+
+    button { min-height: 44px; }
+  }
+
+  /* Hidden HTML file input backing the styled import button. */
+  &__file-input {
+    display: none;
+  }
+
   &__items {
     list-style: none;
     margin: 0;
@@ -226,6 +262,10 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /* Never chain the sheet body's scroll to the page behind it (phone
+       sheet-family containment; the desktop shell never scrolls, so this
+       is a no-op there). */
+    overscroll-behavior: contain;
     padding: 0.6rem 1rem;
   }
 
@@ -683,6 +723,8 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /* Phone sheet-family scroll containment (see __modal-body). */
+    overscroll-behavior: contain;
   }
   &__postbattle-global {
     margin-top: 10px;
@@ -1132,6 +1174,131 @@
     &__detail {
       flex-basis: 45%;
     }
+  }
+}
+
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────
+   The two-column app shell collapses: the replay list stacks above the
+   detail (own capped scroller) and the custom in-view overlays
+   (results / chat / post-battle drill-downs — plain fixed divs, NOT
+   hikari modals) dock as bottom sheets to match what HModal gives the
+   rest of the app for free: full-width, rounded top corners, slide-up
+   entry, backdrop, max-height under the title bar (--app-titlebar-h,
+   see AppTitleBar.scss) + 2.25rem breathing room, safe-area padded.
+   Desktop rules above are untouched. */
+@media (max-width: 767px) {
+  .replay-view {
+    flex-direction: column;
+
+    &__list {
+      width: 100%;
+      max-height: 36vh;
+      border-right: none;
+      border-bottom: 1px solid rgb(var(--color-border) / 20%);
+    }
+
+    &__main {
+      flex: 1;
+      min-height: 0;
+      /* Desktop keeps internal scrollers (roster/map); on phones the
+         stacked detail scrolls the whole main column. */
+      overflow-y: auto;
+      padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    &__content {
+      padding-right: 0;
+    }
+
+    /* 3D map gets the full width and a usable height; any overflow inside
+       the detail (roster columns, legend) stacks below it. */
+    &__detail {
+      min-height: 52vh;
+    }
+
+    &__roster {
+      flex-basis: auto;
+    }
+
+    /* ── bottom-sheet docking for the custom overlays ── */
+    &__modal,
+    &__postbattle-modal {
+      align-items: flex-end;
+    }
+
+    &__modal-panel,
+    &__postbattle-modal-panel {
+      width: 100%;
+      max-width: none;
+      /* Same 2.25rem breathing over the bar that 4.25rem gave the old
+         32px bar (68 − 32); tracks --app-titlebar-h so a future raise
+         stays a one-var change. The status-bar safe area rides the same
+         env() term the bar itself offsets with (AppTitleBar.scss) —
+         without it a cutout device's bar bottom rose past this cap and
+         the sheet's top edge slid under the bar. */
+      max-height: calc(
+        100dvh - var(--app-titlebar-h, 48px) - env(safe-area-inset-top, 0px) - 2.25rem
+      );
+      border-radius: 12px 12px 0 0;
+      border-bottom: none;
+      animation: replay-sheet-up 0.24s var(--ease-standard, ease);
+    }
+
+    &__modal-head,
+    &__postbattle-modal-head {
+      /* Grip-style breathing room; keep the close affordance ≥44px. */
+      padding: 0.55rem 0.75rem;
+
+      button {
+        min-width: 44px;
+        min-height: 44px;
+        margin: -0.35rem -0.5rem -0.35rem 0;
+      }
+    }
+
+    &__modal-body {
+      padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    &__postbattle-modal-panel {
+      padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    &__chat-panel {
+      width: 100%;
+    }
+
+    /* Team matrix columns stack (two 12-row columns don't fit side by
+       side); rows get tap-sized padding. */
+    &__postbattle-matrix {
+      grid-template-columns: 1fr;
+    }
+
+    &__postbattle-cell {
+      min-height: 44px;
+      padding: 0.4rem 0.5rem;
+    }
+
+    &__postbattle-jump {
+      min-height: 44px;
+      align-self: stretch;
+      text-align: center;
+    }
+  }
+
+  .replay-card {
+    min-height: 44px;
+  }
+}
+
+@keyframes replay-sheet-up {
+  from {
+    transform: translateY(16%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 

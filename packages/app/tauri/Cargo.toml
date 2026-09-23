@@ -12,6 +12,13 @@ description = "WoWSP — Tauri desktop shell"
 name = "wowsp"
 path = "src/main.rs"
 
+# The real app bootstrap lives in the lib (`src/lib.rs::run`) so mobile
+# entry points (Tauri 2 `mobile_entry_point`, which needs a cdylib/staticlib)
+# and the desktop bin share one code path.
+[lib]
+name = "wowsp_tauri"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [dependencies]
 # Data and serialization
 serde.workspace = true
@@ -41,9 +48,6 @@ byteorder.workspace = true
 flate2.workspace = true
 tar.workspace = true
 
-# HTTP client for Wargaming public API lookups (M9) + mod catalog downloads
-reqwest.workspace = true
-
 # Catalog package integrity + unpacking (Mod Hub)
 sha2.workspace = true
 hex.workspace = true
@@ -52,12 +56,6 @@ zip.workspace = true
 
 # Service supervision — graceful shutdown / signal handling
 malkuth.workspace = true
-
-# Windows registry scanning for game install detection (official / Lesta / 360)
-winreg.workspace = true
-
-# Windows screen capture for overlay roster positioning
-windows.workspace = true
 
 # AppData directory resolution
 dirs-next.workspace = true
@@ -68,33 +66,86 @@ wowsunpack.workspace = true
 # match on wowsunpack's return value)
 pickled.workspace = true
 
-# Native folder picker for the manual game-path entry
-rfd.workspace = true
-
 # Image handling for capture analysis
 image.workspace = true
 
 # Encoding
 base64.workspace = true
 
-# Tauri desktop shell. protocol-asset backs the asset-protocol scope the
-# model pack loads through (tauri.conf.json assetProtocol — required once
-# that section exists, tauri-build validates the pair).
+# Tauri shell. protocol-asset backs the asset-protocol scope the model pack
+# loads through (tauri.conf.json assetProtocol — required once that section
+# exists, tauri-build validates the pair). tray-icon/image-png are desktop-only
+# and ride the desktop target table below (no system tray on Android).
 tauri = { workspace = true, features = ["protocol-asset"] }
-
-# Update watch: resolves the configured mirror sources, fetches the `latest`
-# version marker and (via the `online` feature) probes mirrors — the app-side
-# half of the shun delivery pipeline (the installer shell is the other half).
-shun = { version = "^0.4.1", default-features = false, features = ["online"] }
+# Cross-platform hand-off of http(s) URLs to the system default browser
+# (open_external; replaced the Windows-only ShellExecuteW path).
+tauri-plugin-opener = "^2"
+# Installer-handoff reads (`commands/installer.rs`: the on-disk
+# `shun-manifest.json` the install flow writes, carrying the wizard
+# language). Runtime use is `targets::install::read_manifest` only — a
+# local file parse behind no feature — so the `online` probe feature
+# stays off here: update.rs probes mirrors with the app's own reqwest
+# stack, and Android must not drag shun's HTTP client in.
+shun = { version = "^0.4.1", default-features = false }
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
+
+# Pairing relay tunnels (commands/pairing_relay.rs): the desktop host bridge
+# and the phone's HTTP-over-WebSocket client both ride tokio-tungstenite.
+# The wss:// legs use the rustls webpki-roots connector — the ring provider
+# must be the process default before the first connect (installed at startup
+# on android, and lazily by the relay module elsewhere).
+tokio-tungstenite.workspace = true
+rustls.workspace = true
+# Pairing secrets (PIN/token on the desktop server, tunnel conn ids on the
+# phone) — OS CSPRNG on every target (already in the tree via tempfile/uuid,
+# so this direct dependency adds no new crate to the lockfile).
+getrandom.workspace = true
+
+# Desktop-only runtime deps. `cfg(desktop)` is not known to cargo's target
+# table evaluation, so spell the complement of the mobile targets out.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# HTTP client — SChannel via native-tls on Windows (see the workspace def's
+# comment on why not aws-lc-rs rustls).
+reqwest.workspace = true
+# Native folder/file pickers (Windows IFileDialog); mobile uses its own
+# document-picker flow.
+rfd.workspace = true
+# Tauri tray + PNG decoding for the system-tray icon (desktop only).
+tauri = { workspace = true, features = ["tray-icon", "image-png"] }
+
+# Android: native-tls drags openssl-sys (no system OpenSSL on Android), so
+# swap the TLS stack per target instead of one workspace-wide choice — the
+# desktop build keeps its SChannel native-tls bit-for-bit. `rustls-no-provider`
+# avoids aws-lc-rs (NASM/CMake build pain); ring is installed as the process
+# default crypto provider at startup (see src/lib.rs run()). reqwest 0.13's
+# rustls support defaults to rustls-platform-verifier, whose Android backend
+# needs Kotlin/JVM glue; instead the clients pin their trust store to the
+# bundled Mozilla CA roots (res/ca-bundle.pem) via
+# ClientBuilder::tls_certs_only — see commands/network.rs.
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "^0.13", default-features = false, features = [
+    "json",
+    "stream",
+    "charset",
+    "http2",
+    "rustls-no-provider",
+] }
+
+# Windows-only runtime deps (registry + screen capture / OCR namespaces).
+[target.'cfg(windows)'.dependencies]
+# Windows registry scanning for game install detection (official / Lesta / 360)
+winreg.workspace = true
+# Windows screen capture for overlay roster positioning
+windows.workspace = true
 
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
 # Parses `[package.metadata.shun.update]` out of this manifest at build time
-# (same pattern as the installer shell's build.rs).
+# (same pattern as the installer shell's build.rs). Build-deps run on the host,
+# so its `online` feature never cross-compiles.
 shun = { version = "^0.4.1", default-features = false, features = ["online"] }
 
 [features]

@@ -39,6 +39,30 @@
 //! shipped or legacy-stamped pack counts as present), while `res_download`
 //! is the panel's explicit download: streaming, progress events
 //! (`wowsp://res-progress`) and cancellable.
+//!
+//! ## Mobile (Android/iOS app build)
+//!
+//! The phone APK ships the pack INSIDE its read-only assets (the webui
+//! build keeps the baked GLBs via `WOWSP_MOBILE_BUNDLE=1`, and the dist
+//! carries the pack's `wowsp-res.json` manifest at its root). Serving
+//! precedence: the app-cache pack when one was downloaded AND it is not
+//! older than the bundled baseline; otherwise the bundled same-origin
+//! assets (`/models/...`, `/dogtags/...` — the webui constructs those
+//! URLs itself when no cache root is wired). Consequences:
+//!
+//!   - `ensure_res_pack` NEVER downloads on mobile (a first launch must
+//!     not surprise the user with a ~1.2 GB pull) — it hands out the
+//!     serving cache root or the `MOBILE_BUNDLED_IN_USE` marker.
+//!   - the bundled baseline (tree hash + version) cannot be read from the
+//!     read-only APK assets portably, so the WEBUI reports it once at
+//!     startup via `res_report_bundled` after fetching the same-origin
+//!     `/wowsp-res.json`; the shell keeps it in a static.
+//!   - `res_download` installs the FULL archive only — chain patches
+//!     would have to read the patched tree's base files out of the
+//!     read-only APK assets when the base is the bundle. A cache-based
+//!     base could patch in theory; v1 keeps mobile full-download-only.
+//!   - `clear_res` deletes the cache, and the bundle takes over again —
+//!     clearing can never brick the app.
 
 use std::fs;
 use std::fs::File;
@@ -94,6 +118,107 @@ pub const RES_PROGRESS_EVENT: &str = "wowsp://res-progress";
 /// pack now) plus a cooperative cancel flag the panel sets mid-stream.
 static DOWNLOAD_ACTIVE: Mutex<bool> = Mutex::new(false);
 static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// Marker `ensure_res_pack` answers with on mobile when the APK bundle (not
+/// a downloaded cache pack) is serving — the webui treats it as "nothing to
+/// wire, same-origin assets cover everything".
+#[cfg(mobile)]
+pub const MOBILE_BUNDLED_IN_USE: &str = "mobile: bundled resource pack in use";
+
+// ── Mobile bundled baseline ────────────────────────────────────────────────
+
+/// The APK-bundled pack's identity, reported once by the webui at startup
+/// (it fetches the same-origin `/wowsp-res.json` shipped in the APK and
+/// hands the tree hash + published-at over — the shell cannot read the
+/// read-only APK assets portably, the webui can).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(mobile), allow(dead_code))] // exercised by unit tests on desktop
+struct BundledBaseline {
+    tree_sha256: String,
+    version: String,
+}
+
+/// First report wins: the APK's manifest is immutable for the lifetime of
+/// the install, so a second (buggy) report is ignored rather than racing.
+static BUNDLED_BASELINE: Mutex<Option<BundledBaseline>> = Mutex::new(None);
+
+#[cfg_attr(not(mobile), allow(dead_code))] // exercised by unit tests on desktop
+fn bundled_baseline() -> Option<BundledBaseline> {
+    BUNDLED_BASELINE.lock().ok().and_then(|g| g.clone())
+}
+
+/// Webui → shell handoff of the bundled baseline (mobile). Pure bookkeeping
+/// on desktop (stored, never consulted), so the same command shape serves
+/// both targets.
+#[tauri::command]
+pub fn res_report_bundled(tree_sha256: String, version: String) -> Result<(), String> {
+    let is_hash = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit());
+    if !is_hash(&tree_sha256) || version.trim().is_empty() {
+        return Err(format!(
+            "invalid bundled baseline (treeSha256 len {}, version {:?})",
+            tree_sha256.len(),
+            version
+        ));
+    }
+    let mut guard = BUNDLED_BASELINE.lock().map_err(|_| "lock poisoned")?;
+    if guard.is_none() {
+        *guard = Some(BundledBaseline {
+            tree_sha256: tree_sha256.to_ascii_lowercase(),
+            version,
+        });
+    }
+    Ok(())
+}
+
+/// Whether the local cache pack may serve over the bundled baseline.
+/// Versions are the publisher's ISO-8601 published-at stamps, so a plain
+/// string compare orders them. No baseline reported → a populated cache
+/// serves; no local stamp → only an identical hash saves it (otherwise the
+/// newer bundle wins — app updates refresh the bundle, not the cache).
+#[cfg_attr(not(mobile), allow(dead_code))] // exercised by unit tests on desktop
+fn cache_supersedes_baseline(local: &LocalVersion, base: Option<&BundledBaseline>) -> bool {
+    match base {
+        None => true,
+        Some(b) => match local.version.as_deref() {
+            Some(v) => v >= b.version.as_str(),
+            None => local.tree_sha256.as_deref() == Some(b.tree_sha256.as_str()),
+        },
+    }
+}
+
+/// The serving local state: the cache stamp on desktop; on mobile, nothing
+/// when the bundle outranks the cache (a stale cache must neither shortcut
+/// a download as "current" nor be handed out as the serving root).
+fn effective_local_version(cache: &Path) -> LocalVersion {
+    let local = read_local_version(cache);
+    #[cfg(mobile)]
+    {
+        if !cache_supersedes_baseline(&local, bundled_baseline().as_ref()) {
+            return LocalVersion::default();
+        }
+    }
+    local
+}
+
+/// Mobile serving decision: `Some(cache_root)` when a downloaded pack is
+/// current enough to serve, `None` when the APK bundle serves (or nothing
+/// does). A populated but UNSTAMPED cache never serves on mobile — only
+/// `res_download` writes this cache, and it always stamps.
+#[cfg(mobile)]
+fn mobile_serving_root() -> Result<Option<String>, String> {
+    let cache = cache_root()?;
+    if !dir_populated(&cache.join("models")) {
+        return Ok(None);
+    }
+    let local = read_local_version(&cache);
+    if local.tree_sha256.is_none() {
+        return Ok(None);
+    }
+    if !cache_supersedes_baseline(&local, bundled_baseline().as_ref()) {
+        return Ok(None);
+    }
+    Ok(Some(cache.to_string_lossy().to_string()))
+}
 
 fn is_downloading() -> bool {
     DOWNLOAD_ACTIVE.lock().map(|g| *g).unwrap_or(false)
@@ -856,7 +981,8 @@ async fn delta_install(
 /// hash + remote manifest, then run a full or chain-patch install. The
 /// `prefer_delta` flag distinguishes the panel path (chain when possible)
 /// from the startup path (full install only — it only runs when the pack
-/// is missing anyway).
+/// is missing anyway); mobile passes `false` unconditionally (the chain
+/// base may be the read-only bundle — see the module docs).
 async fn install_latest(
     app: Option<&AppHandle>,
     client: &Client,
@@ -864,7 +990,7 @@ async fn install_latest(
 ) -> Result<(), String> {
     let cache = cache_root()?;
     let manifest = fetch_manifest(client).await?;
-    let local = read_local_version(&cache);
+    let local = effective_local_version(&cache);
     if let Some(hash) = local.tree_sha256.as_deref() {
         if hash == manifest.tree_sha256 {
             // Already current — the panel seeds a progress entry before
@@ -922,81 +1048,96 @@ async fn install_latest(
 /// manifest is reachable, whatever is on disk still serves (offline
 /// machines fall back to the installer-shipped pack).
 async fn ensure_pack() -> Result<String, String> {
-    let cache = cache_root()?;
-    let client = crate::commands::network::build_http_client()?;
-
-    // Route through the SAME single-flight guard the panel download uses.
-    // While another download holds the guard, sleep and retry — once
-    // ACQUIRED, the install pass re-resolves everything locally against
-    // the freshest manifest, so a download that finished meanwhile is
-    // detected as a no-op. Patience is bounded (~2 minutes) so a stuck
-    // download falls through to the on-disk fallback below instead of
-    // hanging forever.
-    const WAIT_SLOT: Duration = Duration::from_millis(750);
-    const WAIT_SLOTS: u32 = 160;
-    let mut held = false;
-    let mut waited: u32 = 0;
-    let installed = loop {
-        let blocked = {
-            let mut guard = DOWNLOAD_ACTIVE.lock().map_err(|_| "lock poisoned")?;
-            if *guard {
-                true
-            } else {
-                DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
-                *guard = true;
-                held = true;
-                false
-            }
+    // Mobile: the APK bundle exists by construction — ensure NEVER pulls a
+    // ~1.2 GB archive on first launch. Hand out the serving cache root when
+    // a downloaded update is current enough to serve; otherwise answer with
+    // the bundled-in-use marker so the webui keeps its same-origin URLs.
+    #[cfg(mobile)]
+    {
+        return match mobile_serving_root()? {
+            Some(root) => Ok(root),
+            None => Err(MOBILE_BUNDLED_IN_USE.to_string()),
         };
-        if !blocked {
-            // The pack may have landed while we waited for the guard —
-            // one manifest fetch + local hash compare settles it.
-            let manifest = fetch_manifest(&client).await.ok();
-            let local = read_local_version(&cache);
-            if let (Some(m), Some(h)) = (&manifest, local.tree_sha256.as_deref()) {
-                if h == m.tree_sha256 {
-                    tracing::info!(?cache, "resource pack up to date");
+    }
+    // Desktop path continues below (compiled out on mobile).
+    #[cfg(not(mobile))]
+    {
+        let cache = cache_root()?;
+        let client = crate::commands::network::build_http_client()?;
+
+        // Route through the SAME single-flight guard the panel download uses.
+        // While another download holds the guard, sleep and retry — once
+        // ACQUIRED, the install pass re-resolves everything locally against
+        // the freshest manifest, so a download that finished meanwhile is
+        // detected as a no-op. Patience is bounded (~2 minutes) so a stuck
+        // download falls through to the on-disk fallback below instead of
+        // hanging forever.
+        const WAIT_SLOT: Duration = Duration::from_millis(750);
+        const WAIT_SLOTS: u32 = 160;
+        let mut held = false;
+        let mut waited: u32 = 0;
+        let installed = loop {
+            let blocked = {
+                let mut guard = DOWNLOAD_ACTIVE.lock().map_err(|_| "lock poisoned")?;
+                if *guard {
+                    true
+                } else {
+                    DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
+                    *guard = true;
+                    held = true;
+                    false
+                }
+            };
+            if !blocked {
+                // The pack may have landed while we waited for the guard —
+                // one manifest fetch + local hash compare settles it.
+                let manifest = fetch_manifest(&client).await.ok();
+                let local = read_local_version(&cache);
+                if let (Some(m), Some(h)) = (&manifest, local.tree_sha256.as_deref()) {
+                    if h == m.tree_sha256 {
+                        tracing::info!(?cache, "resource pack up to date");
+                        break Ok(());
+                    }
+                }
+                // Hash-unknown but populated → keep it, the panel offers the
+                // one-time migration download; only a MISSING pack pulls the
+                // full archive here.
+                if dir_populated(&cache.join("models")) {
+                    tracing::info!(
+                        ?cache,
+                        "resource pack present (hash unknown) — deferring to panel"
+                    );
                     break Ok(());
                 }
+                break install_latest(None, &client, false).await;
             }
-            // Hash-unknown but populated → keep it, the panel offers the
-            // one-time migration download; only a MISSING pack pulls the
-            // full archive here.
-            if dir_populated(&cache.join("models")) {
-                tracing::info!(
-                    ?cache,
-                    "resource pack present (hash unknown) — deferring to panel"
-                );
-                break Ok(());
+            waited += 1;
+            if waited >= WAIT_SLOTS {
+                break Err("a resource-pack download stayed in flight for too long".to_string());
             }
-            break install_latest(None, &client, false).await;
-        }
-        waited += 1;
-        if waited >= WAIT_SLOTS {
-            break Err("a resource-pack download stayed in flight for too long".to_string());
-        }
-        tracing::info!("resource-pack download in flight, waiting");
-        tokio::time::sleep(WAIT_SLOT).await;
-    };
+            tracing::info!("resource-pack download in flight, waiting");
+            tokio::time::sleep(WAIT_SLOT).await;
+        };
 
-    if held {
-        if let Ok(mut guard) = DOWNLOAD_ACTIVE.lock() {
-            *guard = false;
+        if held {
+            if let Ok(mut guard) = DOWNLOAD_ACTIVE.lock() {
+                *guard = false;
+            }
         }
+
+        // Offline / failed install: an installer-shipped or legacy pack on
+        // disk still serves — otherwise the frontend falls back to the
+        // embedded publicDir snapshot.
+        if installed.is_err() && dir_populated(&cache.join("models")) {
+            tracing::warn!(
+                ?cache,
+                "using on-disk resource pack (install failed or offline)"
+            );
+            return Ok(cache.to_string_lossy().to_string());
+        }
+
+        installed.map(|(): ()| cache.to_string_lossy().to_string())
     }
-
-    // Offline / failed install: an installer-shipped or legacy pack on
-    // disk still serves — otherwise the frontend falls back to the
-    // embedded publicDir snapshot.
-    if installed.is_err() && dir_populated(&cache.join("models")) {
-        tracing::warn!(
-            ?cache,
-            "using on-disk resource pack (install failed or offline)"
-        );
-        return Ok(cache.to_string_lossy().to_string());
-    }
-
-    installed.map(|(): ()| cache.to_string_lossy().to_string())
 }
 
 // ── Updates-panel commands (Settings) ─────────────────────────────────────
@@ -1004,18 +1145,52 @@ async fn ensure_pack() -> Result<String, String> {
 /// Local state of the pack: presence, hash stamp, size, in-flight flag.
 /// No network; the size walk over a ~1.2 GB tree runs on the blocking
 /// pool so the IPC thread stays responsive.
+///
+/// Mobile: the EFFECTIVE serving identity — the cache stamp when a
+/// downloaded pack serves, the reported bundled baseline otherwise (a
+/// stale cache is shadowed by the bundle). `present` counts the bundle,
+/// so a bundled-only install never reports a missing pack.
 #[tauri::command]
 pub async fn get_res_status() -> Result<ResStatus, String> {
     let cache = cache_root()?;
     let status = tokio::task::spawn_blocking(move || -> ResStatus {
         let local = read_local_version(&cache);
+        let cache_populated = SUBDIRS.iter().any(|s| dir_populated(&cache.join(s)));
+
+        #[cfg(mobile)]
+        {
+            let base = bundled_baseline();
+            let cache_serves = cache_populated && cache_supersedes_baseline(&local, base.as_ref());
+            let (tree_sha256, version) = if cache_serves {
+                (
+                    local.tree_sha256.clone().filter(|h| !h.is_empty()),
+                    local.version.clone().filter(|v| !v.is_empty()),
+                )
+            } else {
+                base.as_ref()
+                    .map(|b| (Some(b.tree_sha256.clone()), Some(b.version.clone())))
+                    .unwrap_or((None, None))
+            };
+            ResStatus {
+                present: cache_populated || base.is_some(),
+                tree_sha256,
+                version,
+                legacy_stamp: has_legacy_stamp(&cache),
+                size_bytes: SUBDIRS.iter().map(|s| dir_size(&cache.join(s))).sum(),
+                downloading: is_downloading(),
+                bundled: !cache_serves,
+            }
+        }
+
+        #[cfg(not(mobile))]
         ResStatus {
-            present: SUBDIRS.iter().any(|s| dir_populated(&cache.join(s))),
+            present: cache_populated,
             tree_sha256: local.tree_sha256.filter(|h| !h.is_empty()),
             version: local.version.filter(|v| !v.is_empty()),
             legacy_stamp: has_legacy_stamp(&cache),
             size_bytes: SUBDIRS.iter().map(|s| dir_size(&cache.join(s))).sum(),
             downloading: is_downloading(),
+            bundled: false,
         }
     })
     .await
@@ -1026,15 +1201,40 @@ pub async fn get_res_status() -> Result<ResStatus, String> {
 /// Remote state: manifest hash/timestamp, whether a download is possible,
 /// and the chain-patch path (empty chain = full download required; `None`
 /// = delta lookup failed, UI stays silent about it).
+///
+/// Mobile: the comparison base is the EFFECTIVE serving hash (cache when
+/// current, bundled baseline otherwise), and an available update always
+/// reports an empty chain — mobile installs are full-download-only (the
+/// chain base may be the read-only bundle), so the delta graph is never
+/// even queried.
 #[tauri::command]
 pub async fn check_res_update() -> Result<ResUpdate, String> {
     let cache = cache_root()?;
     let client = crate::commands::network::build_http_client()?;
     let manifest = fetch_manifest(&client).await.ok();
     let local = read_local_version(&cache);
+
+    // The serving identity: plain cache stamp on desktop; on mobile a
+    // cache outranked by the bundle is invisible (the bundle's hash is
+    // what an update must be compared against and supersede).
+    #[cfg(mobile)]
+    let local_hash: Option<String> = {
+        let base = bundled_baseline();
+        let cache_serves = dir_populated(&cache.join("models"))
+            && local.tree_sha256.is_some()
+            && cache_supersedes_baseline(&local, base.as_ref());
+        if cache_serves {
+            local.tree_sha256
+        } else {
+            base.map(|b| b.tree_sha256)
+        }
+    };
+    #[cfg(not(mobile))]
+    let local_hash: Option<String> = local.tree_sha256;
+
     let (latest_tree, latest_version, update_available) = match &manifest {
         Some(m) => {
-            let differs = local.tree_sha256.as_deref() != Some(m.tree_sha256.as_str());
+            let differs = local_hash.as_deref() != Some(m.tree_sha256.as_str());
             (
                 Some(m.tree_sha256.clone()),
                 Some(m.version.clone()),
@@ -1043,34 +1243,42 @@ pub async fn check_res_update() -> Result<ResUpdate, String> {
         },
         None => (None, None, false),
     };
-    let delta_steps = if update_available
-        && local.tree_sha256.is_some()
-        && dir_populated(&cache.join("models"))
-    {
-        match fetch_delta_edges(&client).await {
-            Ok(edges) => {
-                let chain = delta_chain(
-                    &edges,
-                    local.tree_sha256.as_deref().unwrap_or(""),
-                    manifest
-                        .as_ref()
-                        .map(|m| m.tree_sha256.as_str())
-                        .unwrap_or(""),
-                );
-                Some(chain.iter().map(Into::into).collect())
-            },
-            Err(e) => {
-                tracing::warn!("delta discovery failed: {e}");
-                None
-            },
-        }
-    } else if update_available {
-        // No local hash (fresh / legacy cache) — a full download is the
-        // only path, state that definitively.
+
+    #[cfg(mobile)]
+    let delta_steps = if update_available {
+        // Definitive: a full download is the only mobile path.
         Some(Vec::new())
     } else {
         None
     };
+
+    #[cfg(not(mobile))]
+    let delta_steps =
+        if update_available && local_hash.is_some() && dir_populated(&cache.join("models")) {
+            match fetch_delta_edges(&client).await {
+                Ok(edges) => {
+                    let chain = delta_chain(
+                        &edges,
+                        local_hash.as_deref().unwrap_or(""),
+                        manifest
+                            .as_ref()
+                            .map(|m| m.tree_sha256.as_str())
+                            .unwrap_or(""),
+                    );
+                    Some(chain.iter().map(Into::into).collect())
+                },
+                Err(e) => {
+                    tracing::warn!("delta discovery failed: {e}");
+                    None
+                },
+            }
+        } else if update_available {
+            // No local hash (fresh / legacy cache) — a full download is the
+            // only path, state that definitively.
+            Some(Vec::new())
+        } else {
+            None
+        };
     Ok(ResUpdate {
         latest_tree_sha256: latest_tree,
         latest_version,
@@ -1081,7 +1289,8 @@ pub async fn check_res_update() -> Result<ResUpdate, String> {
 
 /// Explicit download (initial, migration or update) of the pack, streaming
 /// progress through `wowsp://res-progress`. Prefers the chain-patch path
-/// when one exists; falls back to the hash-verified full archive.
+/// when one exists; falls back to the hash-verified full archive. Mobile
+/// skips the chain entirely (full download only — see module docs).
 /// Single-flight: a second call while a pass is in flight is rejected.
 #[tauri::command]
 pub async fn res_download(app: AppHandle) -> Result<(), String> {
@@ -1101,7 +1310,8 @@ pub async fn res_download(app: AppHandle) -> Result<(), String> {
         DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
         *guard = true;
     }
-    let result = install_latest(Some(&app), &client, true).await;
+    // cfg! keeps one code path; the mobile false is folded at compile time.
+    let result = install_latest(Some(&app), &client, !cfg!(mobile)).await;
     if let Err(e) = &result {
         emit_progress(
             Some(&app),
@@ -1133,7 +1343,10 @@ pub fn res_cancel() -> Result<(), String> {
 
 /// Delete the pack's cache sub-directories + version stamp. Refused while
 /// a pass is in flight. The recursive delete runs on the blocking pool so
-/// a ~1.2 GB tree removal cannot freeze the IPC thread.
+/// a ~1.2 GB tree removal cannot freeze the IPC thread. On mobile this
+/// only ever deletes the DOWNLOADED update copy — the APK bundle takes
+/// over serving immediately afterwards, so clearing can never brick the
+/// app.
 #[tauri::command]
 pub async fn clear_res() -> Result<(), String> {
     if is_downloading() {
@@ -1240,13 +1453,24 @@ pub async fn ensure_res_pack() -> Result<String, String> {
 /// disk (`models/` populated), `None` otherwise. Wiring the asset protocol
 /// through this skips the remote manifest check `ensure_res_pack` performs
 /// — a present pack serves models without touching the network.
+///
+/// Mobile: the same question narrowed to "does the downloaded update
+/// serve?" — a stale (older-than-bundle) or unstamped cache yields `None`
+/// and the webui keeps its same-origin bundled URLs.
 #[tauri::command]
 pub async fn res_cache_root() -> Result<Option<String>, String> {
-    let cache = cache_root()?;
-    if dir_populated(&cache.join("models")) {
-        Ok(Some(cache.to_string_lossy().to_string()))
-    } else {
-        Ok(None)
+    #[cfg(mobile)]
+    {
+        return mobile_serving_root();
+    }
+    #[cfg(not(mobile))]
+    {
+        let cache = cache_root()?;
+        if dir_populated(&cache.join("models")) {
+            Ok(Some(cache.to_string_lossy().to_string()))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -1317,5 +1541,79 @@ mod tests {
         assert_eq!(v.tree_sha256.as_deref(), Some(hash(7).as_str()));
         assert_eq!(v.version.as_deref(), Some("2026-09-21T00:00:00Z"));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn baseline(version: &str) -> BundledBaseline {
+        BundledBaseline {
+            tree_sha256: hash(3),
+            version: version.to_string(),
+        }
+    }
+
+    fn local(hash_opt: Option<String>, version: Option<String>) -> LocalVersion {
+        LocalVersion {
+            tree_sha256: hash_opt,
+            version,
+        }
+    }
+
+    #[test]
+    fn cache_supersedes_when_no_baseline_is_reported() {
+        // Unknown bundle (older APK without the manifest) — a downloaded
+        // cache serves unconditionally.
+        assert!(cache_supersedes_baseline(&local(None, None), None));
+        assert!(cache_supersedes_baseline(
+            &local(Some(hash(9)), Some("2026-01-01T00:00:00Z".into())),
+            None
+        ));
+    }
+
+    #[test]
+    fn cache_supersedes_by_published_at_ordering() {
+        let base = baseline("2026-06-01T00:00:00Z");
+        // Newer cache stamp wins.
+        assert!(cache_supersedes_baseline(
+            &local(Some(hash(1)), Some("2026-06-02T00:00:00Z".into())),
+            Some(&base)
+        ));
+        // Same stamp (the identical pack) wins.
+        assert!(cache_supersedes_baseline(
+            &local(Some(hash(3)), Some("2026-06-01T00:00:00Z".into())),
+            Some(&base)
+        ));
+        // Older cache loses to the newer bundle (app update refreshed it).
+        assert!(!cache_supersedes_baseline(
+            &local(Some(hash(1)), Some("2026-05-31T23:59:59Z".into())),
+            Some(&base)
+        ));
+    }
+
+    #[test]
+    fn unstamped_cache_only_survives_an_identical_hash() {
+        let base = baseline("2026-06-01T00:00:00Z");
+        // Same tree hash, missing version — treat as the same pack.
+        assert!(cache_supersedes_baseline(
+            &local(Some(hash(3)), None),
+            Some(&base)
+        ));
+        // Different tree hash, no version to order by — bundle wins.
+        assert!(!cache_supersedes_baseline(
+            &local(Some(hash(1)), None),
+            Some(&base)
+        ));
+    }
+
+    #[test]
+    fn res_report_bundled_rejects_malformed_input() {
+        assert!(res_report_bundled("short".into(), "2026-06-01T00:00:00Z".into()).is_err());
+        assert!(
+            res_report_bundled(
+                format!("{:x}", 0xdeadbeef_u32),
+                "2026-06-01T00:00:00Z".into()
+            )
+            .is_err()
+        );
+        assert!(res_report_bundled(hash(1), "".into()).is_err());
+        assert!(res_report_bundled(hash(1), "   ".into()).is_err());
     }
 }

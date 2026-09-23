@@ -5,5 +5,8 @@
   "replay": "リプレイ分析",
   "resources": "リソース管理",
   "settings": "設定",
-  "home": "ホーム"
+  "home": "ホーム",
+  "openMenu": "メニューを開く",
+  "menu": "メニュー",
+  "back": "戻る"
 }

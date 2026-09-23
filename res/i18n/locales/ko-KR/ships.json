@@ -75,6 +75,7 @@
     "gameparamsMissing": "GameParams.data가 아직 언팩되지 않았습니다. wowsunpack을 실행하면 장갑 배치와 포탄 탄도를 볼 수 있습니다.",
     "gameparamsError": "불러오지 못했습니다: {error}",
     "gameparamsErrorTip": "장갑 및 탄도를 불러오지 못했습니다 — 클릭하면 오류를 복사합니다:",
+    "gameparamsSyncAction": "PC에서 게임 데이터 동기화",
     "gameparamsHint": "팁: 언팩한 GameParams.json을 게임 루트(bin/ 옆)에 두세요. https://github.com/wowsinfo/wowsunpack 참고",
     "noSpecs": "이 함선에는 제원 데이터가 없습니다.",
     "noImage": "이미지가 없습니다.",
@@ -84,6 +85,7 @@
     "noBallistics": "GameParams에서 이 함선의 장갑 / 탄도 데이터를 추출할 수 없습니다.",
     "stage": {
       "hint3d": "드래그하여 회전 · 스크롤로 확대/축소 · 우클릭 드래그로 이동",
+      "hint3dTouch": "드래그하여 회전 · 핀치로 확대/축소",
       "holo": "홀로그램",
       "hide": "미리보기 숨기기",
       "show": "미리보기 표시",

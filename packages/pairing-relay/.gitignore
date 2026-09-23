@@ -1,0 +1,7 @@
+target/
+crates/relay-worker/build/
+.wrangler/
+.dev.vars
+# Generated lockfile of this standalone workspace (also matched by the
+# root .gitignore's Cargo.lock rule)
+Cargo.lock
