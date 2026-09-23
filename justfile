@@ -171,11 +171,12 @@ check-relay:
 bundle-site:
     #!/bin/sh
     set -e
-    WOWSP_SITE_ASSET_BASE="https://langyo.github.io/wowsp" pnpm --filter @wowsp/website build
-    node -e "require('fs').rmSync('packages/pairing-relay/assets',{recursive:true,force:true})"
-    mkdir -p packages/pairing-relay/assets
-    cp -r dist/website/. packages/pairing-relay/assets/
-
+    # Both origins serve the SAME build: Pages at /wowsp/ (first resource
+    # candidate) and the worker's nested copy at /wowsp/** (fallback).
+    # MSYS2_ENV_CONV_EXCL: Git Bash would otherwise rewrite the /wowsp/
+    # env value into a Windows path on its way to node.
+    MSYS2_ENV_CONV_EXCL="WOWSP_SITE_BASE" WOWSP_SITE_BASE=/wowsp/ pnpm --filter @wowsp/website build
+    node scripts/build_worker_site.mjs dist/website packages/pairing-relay/assets
 # ── android ───────────────────────────────────────────────────────────
 # Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
 # clang wrappers cargo's CC/AR env (and later the target linker) point at;

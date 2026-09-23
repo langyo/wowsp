@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { siteBase as routeBase } from "@/composables/siteBase";
+
 export const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL || "/"),
+  history: createWebHistory(routeBase),
   routes: [
     {
       path: "/",
