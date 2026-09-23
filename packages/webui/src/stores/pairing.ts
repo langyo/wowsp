@@ -14,7 +14,7 @@
  *   `wowsp://pairing-discovery` (commands/pairing_discovery.rs); the wizard
  *   starts the listener on open and MUST stop it on close.
  * - THE BUILT-IN GATEWAY (v2): internet pairing is PIN-ONLY — the endpoint
- *   (`wowsp-gateway.langyo.xyz`) is a hidden built-in service hardcoded in
+ *   (`wowsp.langyo.xyz`) is a hidden built-in service hardcoded in
  *   both apps, never user-configured.
  * - PAIRING SERVER (desktop side): the settings → pairing section's view of
  *   `pairing_start`/`pairing_stop`/`pairing_get_status`, the hidden gateway
@@ -44,7 +44,7 @@ const PAIRING_HOSTS_FILE = "pairing-hosts.json";
  * resolves the v2 gateway manifest from). The owner binds the DNS for this
  * host at deploy time; there is no user-facing configuration anywhere.
  */
-export const PAIRING_GATEWAY_WS = "wss://wowsp-gateway.langyo.xyz";
+export const PAIRING_GATEWAY_WS = "wss://wowsp.langyo.xyz";
 
 /** How a paired entry reaches its desktop. */
 export type PairingMode = "lan" | "relay";

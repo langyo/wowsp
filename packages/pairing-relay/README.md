@@ -1,10 +1,13 @@
 # wowsp-pairing-relay
 
-A Cloudflare Worker that lets the WoWSP **phone app pair with a WoWSP desktop
-from outside the desktop's local network** (phone on cellular / another
-Wi-Fi). It is a rendezvous + raw byte tunnel: both ends dial OUTBOUND, the
-worker never dials anything, and the tunneled traffic is the desktop pairing
-server's ordinary HTTP protocol, byte-for-byte.
+A Cloudflare Worker that is BOTH the WoWSP **website host** and the
+**internet pairing gateway** (a phone app pairs with a WoWSP desktop from
+outside the desktop's local network — cellular / another Wi-Fi). Static
+assets (website + docs) answer `/` via Workers Static Assets; the pairing
+API lives under `/api/*`. The gateway is a rendezvous + raw byte tunnel:
+both ends dial OUTBOUND, the worker never dials anything, and the tunneled
+traffic is the desktop pairing server's ordinary HTTP protocol,
+byte-for-byte.
 
 The worker is **Rust compiled to WebAssembly** (the
 [`workers-rs`](https://github.com/cloudflare/workers-rs) `worker` crate,
@@ -21,7 +24,7 @@ target `wasm32-unknown-unknown`). Two crates:
 
 > This is a **hidden built-in service**, not something users configure. The
 > production deployment is bound to the custom domain
-> **`wowsp-gateway.langyo.xyz`** and both apps hardcode the host (desktop:
+> **`wowsp.langyo.xyz`** and both apps hardcode the host (desktop:
 > `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay.rs`,
 > an `https://` root the v2 manifest and WebSocket base derive from; webui:
 > the `wss://` spelling in `stores/pairing.ts` `PAIRING_GATEWAY_WS`).
@@ -38,12 +41,14 @@ phone ──wss control/data ──▶ WORKER (this package) ◀──wss── 
   └─ raw HTTP request bytes ──▶ [byte pipe] ──▶ 127.0.0.1:58041┘
 ```
 
-1. **Discovery** — `GET /v1/manifest` describes the gateway: provider id,
-   protocol versions, the relay base path (`/relay`), the feature list, an
-   optional operator `notice`, and `upstream` (see
+1. **Discovery** — `GET /api/health` is the merged liveness + discovery
+   document (like the celestia services): provider id, the gateway's
+   `version`, the `minClientVersion` it demands, protocol versions, the
+   relay base path (`/api/relay`), the feature list, an optional operator
+   `notice`, and `upstream` (see
    [Forwarding station](#forwarding-station-mode-gateway_upstream) below).
 2. **Host** — the desktop mints a random 64-hex **room key** and connects
-   `WS /relay/control?room=<key>&role=host`. It may open with a
+   `WS /api/relay/control?room=<key>&role=host`. It may open with a
    `{"type":"hello","protocol":"v1","hostId":"<hex>"}` handshake (answered
    with `{"type":"welcome",…,"capabilities":["pin-allocation","byte-tunnel"]}`;
    clients that skip hello keep working — v1 compatibility). It then sends
@@ -53,12 +58,12 @@ phone ──wss control/data ──▶ WORKER (this package) ◀──wss── 
    displays. The bridge keepalives every **30 s** (any inbound text also
    refreshes the room's 15-minute idle TTL).
 3. **Client** — the phone resolves its code via
-   `WS /relay/resolve?code=NNNNNN` → `{"type":"room","room":"<key>"}`, joins
+   `WS /api/relay/resolve?code=NNNNNN` → `{"type":"room","room":"<key>"}`, joins
    the room's control channel as `role=client` (greeted
    `{"type":"ready"}` / `{"type":"waiting"}`), then per request:
    `{"type":"open","connId":"…"}` → the host is signaled
    `{"type":"conn","connId":"…"}` → both sides dial
-   `WS /relay/data/<room>/<connId>` (`?role=host` on the desktop leg) —
+   `WS /api/relay/data/<room>/<connId>` (`?role=host` on the desktop leg) —
    from there bytes are piped opaquely and the flow is IDENTICAL to the
    LAN protocol: `POST /pair`, `GET /api/replays`,
    `GET /api/replay/<name>`, `GET /api/gamedata`.
@@ -92,26 +97,36 @@ phone ──wss control/data ──▶ WORKER (this package) ◀──wss── 
 
 | Route | Meaning |
 | --- | --- |
-| `GET /v1/manifest` | capability discovery (see below), `cache-control: no-store` |
-| `GET /v1/health`, `GET /health` | deploy smoke check → `ok` |
-| `WS /relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
-| `WS /relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
-| `WS /relay/data/<room>/<connId>[?role=host\|client]` | the raw byte pipe |
-| `WS /control`, `WS /resolve`, `WS /data/<room>?conn=<id>&side=…` | v1 legacy spellings, served identically |
+| `/` and every non-`/api` path | the WEBSITE + docs (Workers Static Assets; SPA fallback to `index.html`) |
+| `GET /api/health` | merged liveness + discovery document (see below), `cache-control: no-store` |
+| `WS /api/relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
+| `WS /api/relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
+| `WS /api/relay/data/<room>/<connId>[?role=host\|client]` | the raw byte pipe |
 
-`manifest` (default deployment):
+The pre-unification spellings (`/v1/*`, `/health`, bare `/control` …) are
+**retired** — the only consumers were the unreleased 0.5.0 apps, updated in
+the same change.
+
+`/api/health` (default deployment):
 
 ```json
 {
+  "ok": true,
   "provider": "wowsp-gateway",
   "name": "WoWSP Pairing Gateway",
+  "version": "0.5.0",
+  "minClientVersion": "0.5.0",
   "protocol": ["v1"],
-  "endpoints": { "relay": "/relay" },
+  "endpoints": { "relay": "/api/relay" },
   "upstream": null,
   "features": ["pin-allocation", "byte-tunnel"],
   "notice": null
 }
 ```
+
+Clients below `minClientVersion` get a distinct update-the-app error
+(`relay-core::MIN_CLIENT_VERSION` is the knob to turn when a wire change
+old clients cannot talk to lands).
 
 ## Deploy (the owner's manual step)
 
@@ -123,13 +138,20 @@ build tool:
 cargo install -t worker-build worker-build
 ```
 
-Then from this directory:
+Then from the REPO ROOT (the worker also serves the website, so its
+assets must be bundled first):
 
 ```sh
 pnpm install              # once, for the workspace (wrangler)
-npx wrangler login        # once
-npx wrangler deploy       # = pnpm --filter @wowsp/pairing-relay deploy
+just bundle-site          # website (+docs when lagrange is installed) → assets/
+npx wrangler login        # once, from packages/pairing-relay
+npx wrangler deploy       # from packages/pairing-relay
 ```
+
+`just bundle-site` rebuilds `packages/website` into
+`packages/pairing-relay/assets/` and, when the `lagrange` binary exists,
+also renders `docs/` into `assets/docs` (without lagrange the site ships
+and the docs stay on the GitHub Pages backup).
 
 `[build] command = "worker-build --release crates/relay-worker"` in
 `wrangler.toml` compiles the Rust workspace to
@@ -154,14 +176,16 @@ npx wrangler deploy
 The env override is only consulted when set and resolvable; unset, it
 falls back to the normal download.
 
-Custom domain: bind `wowsp-gateway.langyo.xyz` to the `wowsp-pairing`
+Custom domain: bind `wowsp.langyo.xyz` to the `wowsp-pairing`
 worker in the Cloudflare dashboard (Workers → wowsp-pairing → Settings →
 Domains & Routes → Custom Domain). Until that record exists the apps
 report the gateway unreachable and fall back to LAN-only pairing —
 nothing breaks.
 
-Smoke check: `curl https://wowsp-gateway.langyo.xyz/v1/health` → `ok`
-(the legacy `/health` answers too).
+Smoke checks: `curl https://wowsp.langyo.xyz/api/health` (the JSON above)
+and `curl -I https://wowsp.langyo.xyz/` (the website's `index.html`).
+GitHub Pages remains a BACKUP mirror of the site; this worker is the
+primary host once the custom domain is bound.
 
 **Migrations note** — the Durable Object classes are unchanged from the
 TypeScript deployment (`Room` v1 + `Directory` v2, both SQLite-backed),
@@ -193,7 +217,7 @@ just check-relay                                    # both, from repo root
 The gateway is a stable, hardcoded address; the exchange behind it does
 not have to be. Setting the `GATEWAY_UPSTREAM` variable (dashboard →
 Settings → Variables, or `[vars]` in wrangler.toml) to an absolute
-`https://`/`wss://` URL switches `/v1/manifest` to
+`https://`/`wss://` URL switches `/api/health` to
 
 ```json
 "upstream": "https://exchange.example.org/…"
@@ -201,12 +225,12 @@ Settings → Variables, or `[vars]` in wrangler.toml) to an absolute
 
 Clients that honor the manifest then follow the upstream and stop
 pairing through this gateway — a hand-off with **no app redeploy**: the
-address clients dial stays `wowsp-gateway.langyo.xyz`, and if WoWSP ever
+address clients dial stays `wowsp.langyo.xyz`, and if WoWSP ever
 runs an official exchange (or a 360/Lesta-run one) it can take over by
 flipping this one variable. Clearing the variable flips it back. Values
 that are not absolute https/wss URLs are ignored (a typo must not strand
 clients). `GATEWAY_NOTICE` optionally surfaces an operator message
-(e.g. maintenance windows) in the same manifest.
+(e.g. maintenance windows) in the same document.
 
 ## Cloudflare facts this design is built on
 

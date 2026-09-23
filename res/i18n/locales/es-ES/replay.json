@@ -53,7 +53,8 @@
     "internetHint": "Empareja desde cualquier lugar — sin configuración. Solo introduce el código de 6 dígitos que aparece en la configuración WoWSP del ordenador.",
     "internetNext": "Introducir código de emparejamiento",
     "gatewayUnreachable": "No se pudo conectar con la pasarela de emparejamiento, o el código no se encontró — comprueba el código y tu conexión e inténtalo de nuevo.",
-    "internetLabel": "Emparejamiento por Internet"
+    "internetLabel": "Emparejamiento por Internet",
+    "gatewayTooOld": "Esta pasarela de emparejamiento necesita una versión más reciente de la app: actualiza WoWSP e inténtalo de nuevo."
   },
   "client": "Cliente",
   "refresh": "Actualizar",

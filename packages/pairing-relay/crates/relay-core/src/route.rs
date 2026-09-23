@@ -1,28 +1,19 @@
-//! URL classification for the gateway's HTTP + WebSocket routes. Both
-//! the v2 shape under the `/relay` base and the v1 bare paths resolve to
-//! the same [`Route`] values, so one handler serves both dialects.
+//! URL classification for the gateway's HTTP + WebSocket routes. The
+//! worker serves the WEBSITE statically at `/`; everything it answers
+//! itself lives under `/api` (no version segment — the health document
+//! carries the version instead).
 //!
-//! v2 (advertised by the manifest):
-//!   GET  /v1/manifest
-//!   GET  /v1/health
-//!   WS   /relay/control?room=<64hex>&role=host|client
-//!   WS   /relay/resolve?code=NNNNNN
-//!   WS   /relay/data/<room>/<connId>[?role=host|client]
-//!
-//! v1 (legacy, kept verbatim):
-//!   GET  /health
-//!   WS   /control?room=<64hex>&role=host|client
-//!   WS   /resolve?code=NNNNNN
-//!   WS   /data/<room>?conn=<id>&side=host|client
+//!   GET  /api/health                     — merged health + discovery doc
+//!   WS   /api/relay/control?room=<64hex>&role=host|client
+//!   WS   /api/relay/resolve?code=NNNNNN
+//!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
 
 use crate::room::Side;
 
 /// What a request path (+query) asks for. Values borrow from the input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route<'a> {
-    /// GET /v1/manifest.
-    Manifest,
-    /// GET /v1/health or the legacy GET /health.
+    /// GET /api/health — the merged health/discovery document.
     Health,
     /// Control socket. `room`/`role` are the raw query values —
     /// validation happens in the handler (this layer only routes).
@@ -33,22 +24,24 @@ pub enum Route<'a> {
     /// Resolve socket; `code` is the raw query value (may be absent or
     /// malformed — the handler decides).
     Resolve { code: Option<&'a str> },
-    /// Data socket for `<room>/<connId>` on `side`. One of the two
-    /// wire shapes has already been normalized into fields.
+    /// Data socket for `<room>/<connId>` on `side`.
     Data {
         room: &'a str,
         conn_id: &'a str,
         side: Side,
     },
-    /// Nothing we serve.
+    /// Nothing we serve — the static-asset layer already answered every
+    /// non-API path, so in production this only happens on unknown
+    /// `/api/*` shapes.
     NotFound,
 }
 
-/// Strip a trailing slash so `/relay/control` and `/relay/control/`
-/// route identically.
+/// Strip a trailing slash so `/api/relay/control` and
+/// `/api/relay/control/` route identically.
 fn trim_path(path: &str) -> &str {
     let p = path.trim_end_matches('/');
-    // Keep "/" as-is (it is NotFound either way).
+    // Keep "/" as-is (it is NotFound either way — the site's index.html
+    // comes from the asset layer, never the worker).
     if p.is_empty() { "/" } else { p }
 }
 
@@ -57,46 +50,29 @@ fn trim_path(path: &str) -> &str {
 pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
     let path = trim_path(path);
     match path {
-        "/v1/manifest" => return Route::Manifest,
-        "/v1/health" | "/health" => return Route::Health,
-        "/relay/control" | "/control" => {
+        "/api/health" => return Route::Health,
+        "/api/relay/control" => {
             return Route::Control {
                 room: query_get(query, "room"),
                 role: query_get(query, "role"),
             };
         },
-        "/relay/resolve" | "/resolve" => {
+        "/api/relay/resolve" => {
             return Route::Resolve {
                 code: query_get(query, "code"),
             };
         },
         _ => {},
     }
-    // Data routes: v2 puts room AND connId in the path; v1 puts only the
-    // room there and carries conn/side in the query. Both spellings are
-    // accepted under both prefixes (a lenient superset: `/data/<room>/<id>`
-    // and `/relay/data/<room>?conn=`).
-    if let Some(rest) = path
-        .strip_prefix("/relay/data/")
-        .or_else(|| path.strip_prefix("/data/"))
-    {
+    if let Some(rest) = path.strip_prefix("/api/relay/data/") {
         let mut segs = rest.split('/');
         let room = segs.next().unwrap_or("");
         let conn_in_path = segs.next();
         if segs.next().is_some() || room.is_empty() {
             return Route::NotFound;
         }
-        let conn_id = match conn_in_path {
-            Some(c) if !c.is_empty() => c,
-            // v1 shape: conn comes from the query.
-            None => {
-                return query_get(query, "conn").map_or(Route::NotFound, |conn| Route::Data {
-                    room,
-                    conn_id: conn,
-                    side: data_side(query),
-                });
-            },
-            Some(_) => return Route::NotFound,
+        let Some(conn_id) = conn_in_path.filter(|c| !c.is_empty()) else {
+            return Route::NotFound;
         };
         return Route::Data {
             room,
@@ -107,8 +83,9 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
     Route::NotFound
 }
 
-/// The data side: v2 spells it `role`, v1 `side`; absent means client
-/// (the phone dials first, the host answers).
+/// The data socket's side: `role` in the query (the legacy `side=`
+/// spelling is tolerated); absent means client (the phone dials first,
+/// the host answers).
 fn data_side(query: &str) -> Side {
     Side::parse(query_get(query, "role").or_else(|| query_get(query, "side")))
         .unwrap_or(Side::Client)
@@ -130,36 +107,53 @@ mod tests {
 
     #[test]
     fn http_routes_classify() {
-        assert_eq!(classify("/v1/manifest", ""), Route::Manifest);
-        assert_eq!(classify("/v1/health", ""), Route::Health);
-        assert_eq!(classify("/health", ""), Route::Health);
-        assert_eq!(classify("/v1/manifest/", ""), Route::Manifest);
+        assert_eq!(classify("/api/health", ""), Route::Health);
+        assert_eq!(classify("/api/health/", ""), Route::Health);
         assert_eq!(classify("/nope", ""), Route::NotFound);
         assert_eq!(classify("/", ""), Route::NotFound);
-        assert_eq!(classify("/v1", ""), Route::NotFound);
+        assert_eq!(classify("/api", ""), Route::NotFound);
+        assert_eq!(classify("/api/", ""), Route::NotFound);
     }
 
     #[test]
-    fn control_classifies_under_both_prefixes() {
-        for path in ["/relay/control", "/control"] {
-            assert_eq!(
-                classify(path, "room=abc&role=host"),
-                Route::Control {
-                    room: Some("abc"),
-                    role: Some("host")
-                },
-                "path {path}"
-            );
+    fn retired_routes_are_not_found() {
+        // The pre-unification spellings (v1 bare, /v1/*, /relay/*) are
+        // retired: the only consumers are the unreleased 0.5.0 apps that
+        // this same change updates, so no compatibility shims remain.
+        for path in [
+            "/health",
+            "/v1/health",
+            "/v1/manifest",
+            "/manifest",
+            "/control",
+            "/resolve",
+            "/relay/control",
+            "/relay/resolve",
+            "/relay/data/a/b",
+            "/data/a",
+        ] {
+            assert_eq!(classify(path, ""), Route::NotFound, "path {path}");
         }
+    }
+
+    #[test]
+    fn control_classifies() {
         assert_eq!(
-            classify("/relay/control", "role=client&room=xyz"),
+            classify("/api/relay/control", "room=abc&role=host"),
+            Route::Control {
+                room: Some("abc"),
+                role: Some("host")
+            }
+        );
+        assert_eq!(
+            classify("/api/relay/control", "role=client&room=xyz"),
             Route::Control {
                 room: Some("xyz"),
                 role: Some("client")
             }
         );
         assert_eq!(
-            classify("/relay/control", ""),
+            classify("/api/relay/control", ""),
             Route::Control {
                 room: None,
                 role: None
@@ -169,25 +163,20 @@ mod tests {
     }
 
     #[test]
-    fn resolve_classifies_under_both_prefixes() {
-        for path in ["/relay/resolve", "/resolve"] {
-            assert_eq!(
-                classify(path, "code=123456"),
-                Route::Resolve {
-                    code: Some("123456")
-                }
-            );
-        }
+    fn resolve_classifies() {
         assert_eq!(
-            classify("/relay/resolve", ""),
-            Route::Resolve { code: None }
+            classify("/api/relay/resolve", "code=123456"),
+            Route::Resolve {
+                code: Some("123456")
+            }
         );
+        assert_eq!(classify("/api/relay/resolve", ""), Route::Resolve { code: None });
     }
 
     #[test]
-    fn data_v2_shape_puts_room_and_conn_in_the_path() {
+    fn data_puts_room_and_conn_in_the_path() {
         assert_eq!(
-            classify("/relay/data/aaaa/bbbb1111", "role=host"),
+            classify("/api/relay/data/aaaa/bbbb1111", "role=host"),
             Route::Data {
                 room: "aaaa",
                 conn_id: "bbbb1111",
@@ -196,16 +185,16 @@ mod tests {
         );
         // Client leg has no query at all.
         assert_eq!(
-            classify("/relay/data/aaaa/bbbb1111", ""),
+            classify("/api/relay/data/aaaa/bbbb1111", ""),
             Route::Data {
                 room: "aaaa",
                 conn_id: "bbbb1111",
                 side: Side::Client
             }
         );
-        // The v1 `side=` spelling works on the v2 path too.
+        // The legacy `side=` spelling still works.
         assert_eq!(
-            classify("/relay/data/aaaa/bbbb1111", "side=host"),
+            classify("/api/relay/data/aaaa/bbbb1111", "side=host"),
             Route::Data {
                 room: "aaaa",
                 conn_id: "bbbb1111",
@@ -214,44 +203,27 @@ mod tests {
         );
         // Junk roles fall back to client.
         assert_eq!(
-            classify("/relay/data/aaaa/bbbb1111", "role=ninja"),
+            classify("/api/relay/data/aaaa/bbbb1111", "role=ninja"),
             Route::Data {
                 room: "aaaa",
                 conn_id: "bbbb1111",
                 side: Side::Client
             }
         );
-    }
-
-    #[test]
-    fn data_v1_shape_carries_conn_and_side_in_the_query() {
-        assert_eq!(
-            classify("/data/aaaa", "conn=bbbb1111&side=host"),
-            Route::Data {
-                room: "aaaa",
-                conn_id: "bbbb1111",
-                side: Side::Host
-            }
-        );
-        assert_eq!(
-            classify("/data/aaaa", "conn=bbbb1111"),
-            Route::Data {
-                room: "aaaa",
-                conn_id: "bbbb1111",
-                side: Side::Client
-            }
-        );
-        assert_eq!(classify("/data/aaaa", ""), Route::NotFound);
-        assert_eq!(classify("/data/", "conn=x"), Route::NotFound);
-        assert_eq!(classify("/data", "conn=x"), Route::NotFound);
     }
 
     #[test]
     fn data_path_malformations_are_not_found() {
-        assert_eq!(classify("/relay/data/a/b/c", ""), Route::NotFound);
-        assert_eq!(classify("/relay/data/a//b", ""), Route::NotFound);
-        assert_eq!(classify("/relay/data//b", ""), Route::NotFound);
-        assert_eq!(classify("/relay/data/a/", "role=host"), Route::NotFound);
+        assert_eq!(classify("/api/relay/data/a/b/c", ""), Route::NotFound);
+        assert_eq!(classify("/api/relay/data/a//b", ""), Route::NotFound);
+        assert_eq!(classify("/api/relay/data//b", ""), Route::NotFound);
+        assert_eq!(
+            classify("/api/relay/data/a/", "role=host"),
+            Route::NotFound
+        );
+        assert_eq!(classify("/api/relay/data/a", ""), Route::NotFound);
+        assert_eq!(classify("/api/relay/data/", "conn=x"), Route::NotFound);
+        assert_eq!(classify("/api/relay/data", "conn=x"), Route::NotFound);
     }
 
     #[test]

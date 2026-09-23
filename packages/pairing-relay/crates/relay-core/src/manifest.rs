@@ -1,19 +1,35 @@
-//! The `/v1/manifest` document: how a client discovers what this gateway
-//! is, where its relay routes live, and whether it is a forwarding
-//! station pointing at an upstream exchange.
+//! The `/api/health` document — one route, two jobs: liveness plus
+//! capability discovery. Like the celestia services, the health reply
+//! itself carries the server's version and the minimum client version it
+//! demands, so a client fetches exactly ONE document to learn whether
+//! the gateway is alive, whether its app is new enough, where the relay
+//! routes live, and whether this is a forwarding station pointing at an
+//! upstream exchange.
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DEFAULT_RELAY_BASE, FEATURE_BYTE_TUNNEL, FEATURE_PIN_ALLOCATION, PROTOCOL_V1};
+use crate::{
+    DEFAULT_RELAY_BASE, FEATURE_BYTE_TUNNEL, FEATURE_PIN_ALLOCATION, MIN_CLIENT_VERSION,
+    PROTOCOL_V1,
+};
 
-/// Gateway identity + capability discovery document (GET /v1/manifest,
-/// always `cache-control: no-store`).
+/// Gateway health + identity + capability discovery document (GET
+/// /api/health, always `cache-control: no-store`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Manifest {
+    /// Liveness flag (`true` on every reply this gateway serves).
+    pub ok: bool,
     /// Machine id of the implementation (`wowsp-gateway`).
     pub provider: String,
     /// Human-facing name.
     pub name: String,
+    /// This gateway deployment's version (`x.y.z`, crate version).
+    pub version: String,
+    /// The minimum client (`x.y.z`) this gateway will serve. Clients
+    /// below it must tell their user to update the app instead of
+    /// retrying.
+    pub min_client_version: String,
     /// Protocol versions accepted, oldest first (`["v1"]`).
     pub protocol: Vec<String>,
     /// Where the WebSocket routes live.
@@ -29,10 +45,10 @@ pub struct Manifest {
     pub notice: Option<String>,
 }
 
-/// Endpoint table of the manifest.
+/// Endpoint table of the health document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ManifestEndpoints {
-    /// Same-origin path (`/relay`) or an absolute `wss://` URL.
+    /// Same-origin path (`/api/relay`) or an absolute `wss://` URL.
     pub relay: String,
 }
 
@@ -40,9 +56,10 @@ pub struct ManifestEndpoints {
 /// the plain gateway serves `{ upstream: null, notice: null }`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ManifestOverrides {
-    /// `GATEWAY_UPSTREAM` — puts the manifest into forwarding-station
-    /// mode. Only absolute `https://`/`wss://` values are honored;
-    /// anything else is ignored (a typo must not strand clients).
+    /// `GATEWAY_UPSTREAM` — puts the health document into
+    /// forwarding-station mode. Only absolute `https://`/`wss://` values
+    /// are honored; anything else is ignored (a typo must not strand
+    /// clients).
     pub upstream: Option<String>,
     /// `GATEWAY_NOTICE` — free-form operator message.
     pub notice: Option<String>,
@@ -66,11 +83,14 @@ impl ManifestOverrides {
     }
 }
 
-/// The manifest this gateway serves for the given overrides.
+/// The health document this gateway serves for the given overrides.
 pub fn gateway_manifest(overrides: &ManifestOverrides) -> Manifest {
     Manifest {
+        ok: true,
         provider: crate::PROVIDER_ID.to_string(),
         name: crate::PROVIDER_NAME.to_string(),
+        version: crate::GATEWAY_VERSION.to_string(),
+        min_client_version: MIN_CLIENT_VERSION.to_string(),
         protocol: vec![PROTOCOL_V1.to_string()],
         endpoints: ManifestEndpoints {
             relay: DEFAULT_RELAY_BASE.to_string(),
@@ -91,19 +111,21 @@ mod tests {
 
     /// The exact JSON the contract mandates, field for field.
     #[test]
-    fn default_manifest_serializes_to_the_contract_shape() {
+    fn default_health_serializes_to_the_contract_shape() {
         let m = gateway_manifest(&ManifestOverrides::default());
         let json = serde_json::to_string(&m).unwrap();
         assert_eq!(
             json,
-            "{\"provider\":\"wowsp-gateway\",\"name\":\"WoWSP Pairing Gateway\",\
-             \"protocol\":[\"v1\"],\"endpoints\":{\"relay\":\"/relay\"},\
+            "{\"ok\":true,\"provider\":\"wowsp-gateway\",\"name\":\"WoWSP Pairing Gateway\",\
+             \"version\":\"0.5.0\",\"minClientVersion\":\"0.5.0\",\"protocol\":[\"v1\"],\
+             \"endpoints\":{\"relay\":\"/api/relay\"},\
              \"upstream\":null,\"features\":[\"pin-allocation\",\"byte-tunnel\"],\
              \"notice\":null}"
         );
 
         let back: Manifest = serde_json::from_str(&json).unwrap();
         assert_eq!(back, m);
+        assert!(back.ok);
         assert_eq!(back.protocol, vec![PROTOCOL_V1]);
         assert!(back.features.contains(&FEATURE_PIN_ALLOCATION.to_string()));
         assert!(back.features.contains(&FEATURE_BYTE_TUNNEL.to_string()));
@@ -156,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_round_trips_through_value() {
+    fn health_round_trips_through_value() {
         let m = gateway_manifest(&ManifestOverrides {
             upstream: Some("wss://other.example.org".into()),
             notice: Some("hi".into()),

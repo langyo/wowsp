@@ -163,6 +163,24 @@ check-relay:
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 
+# Bundle the WEBSITE (+ docs when the lagrange binary is installed) into
+# the worker's static-asset dir — the deploy precondition. The website
+# always ships; docs warn-and-skip without lagrange (they stay available
+# on the GitHub Pages backup until the next deploy that has the tool).
+bundle-site:
+    #!/bin/sh
+    set -e
+    pnpm --filter @wowsp/website build
+    rm -rf packages/pairing-relay/assets
+    mkdir -p packages/pairing-relay/assets
+    cp -r packages/website/dist/. packages/pairing-relay/assets/
+    if command -v lagrange >/dev/null 2>&1; then
+        lagrange build --src docs --out packages/pairing-relay/assets/docs \
+            --site-url https://wowsp.langyo.xyz/docs
+    else
+        echo "note: 'lagrange' not installed — docs skipped (backup stays on GitHub Pages)"
+    fi
+
 # ── android ───────────────────────────────────────────────────────────
 # Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
 # clang wrappers cargo's CC/AR env (and later the target linker) point at;
