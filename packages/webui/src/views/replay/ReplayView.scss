@@ -267,6 +267,10 @@
        is a no-op there). */
     overscroll-behavior: contain;
     padding: 0.6rem 1rem;
+    /* Scroll-pin whitespace contract (hk-scroll-pin-host): the pinned chat
+       timeline bleeds into this gutter, so the pad var must track the
+       padding above (the phone sheet re-declares it at 0.5rem). */
+    --hk-scroll-pad-top: 0.6rem;
   }
 
   /* Chat log modal — narrower than the results panel. Top: mini timeline
@@ -281,7 +285,11 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
-    margin-bottom: 0.6rem;
+    /* Padding, not margin: the gap to the message list travels INSIDE the
+       pinned wrapper's painted box, so rows scrolling underneath vanish
+       behind the pin instead of peeking through a transparent margin
+       strip (a margin would collapse out of .hk-scroll-pin unpainted). */
+    padding-bottom: 0.6rem;
   }
   &__chat-track {
     position: relative;
@@ -293,6 +301,14 @@
     &--static {
       cursor: default;
     }
+  }
+  &__chat-rail {
+    /* Dot/playhead travel maps 0–100% onto this inset box rather than the
+       full pill, so the leftmost/rightmost positions stay clear of the
+       rounded end caps (9px = the track's corner radius; clicks on the
+       caps still seek, clamping to 0 / 100%). */
+    position: absolute;
+    inset: 0 9px;
   }
   &__chat-dot {
     /* Shared by timeline dots and legend chips: a currentColor pellet. */
@@ -1258,6 +1274,8 @@
 
     &__modal-body {
       padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+      /* Tracks the shrunken top gutter the pinned timeline bleeds into. */
+      --hk-scroll-pad-top: 0.5rem;
     }
 
     &__postbattle-modal-panel {
