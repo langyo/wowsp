@@ -184,8 +184,9 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
 
 /// The newest `bin/<build>/` that actually ships an `idx/` directory — Steam
 /// installs keep several builds around and only some carry the index files
-/// the VFS needs (same rule as `scripts/extract/_common.py`).
-fn latest_build_with_idx(root: &Path) -> Option<u32> {
+/// the VFS needs (same rule as `scripts/extract/_common.py`). Shared with the
+/// game-maps inventory (commands/game_maps.rs).
+pub(crate) fn latest_build_with_idx(root: &Path) -> Option<u32> {
     let bin = root.join("bin");
     let mut builds: Vec<u32> = fs::read_dir(&bin)
         .ok()?

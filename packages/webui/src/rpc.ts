@@ -21,6 +21,7 @@ export const RPC = {
   read_replay_positions: "read_replay_positions",
   list_replays: "list_replays",
   list_replays_meta: "list_replays_meta",
+  list_game_maps: "list_game_maps",
   pick_replay_files: "pick_replay_files",
   pick_export_path: "pick_export_path",
   write_export_bytes: "write_export_bytes",
