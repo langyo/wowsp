@@ -171,9 +171,9 @@ bundle-site:
     #!/bin/sh
     set -e
     pnpm --filter @wowsp/website build
-    rm -rf packages/pairing-relay/assets
+    node -e "require('fs').rmSync('packages/pairing-relay/assets',{recursive:true,force:true})"
     mkdir -p packages/pairing-relay/assets
-    cp -r packages/website/dist/. packages/pairing-relay/assets/
+    cp -r dist/website/. packages/pairing-relay/assets/
     if command -v lagrange >/dev/null 2>&1; then
         lagrange build --src docs --out packages/pairing-relay/assets/docs \
             --site-url https://wowsp.langyo.xyz/docs
