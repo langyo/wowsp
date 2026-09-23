@@ -10,7 +10,7 @@
  * pretending full analysis exists. Replay history is optional enrichment:
  * bucket classification degrades gracefully when it can't be read.
  */
-import { computed, defineComponent, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onMounted, ref, watch, type DefineComponent } from "vue";
 
 import { HAlert, HSpinner, HTabs } from "@celestia-island/hikari";
 
@@ -22,7 +22,19 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
 import { modeKey } from "@/utils/modeColors";
+import { isMobileApp } from "@/utils/platform";
 import "./TacticsView.scss";
+
+/** hikari's HkAlert types `message` as required, but its runtime prefers
+ *  the default slot whenever one is given (`slots.default ?
+ *  slots.default() : props.message`) — passing both silently drops the
+ *  message, and passing a never-rendered string is worse. Retype locally
+ *  so the slot-only form needs no dead prop. */
+const SlotHAlert = HAlert as unknown as DefineComponent<{
+  variant?: "warning" | "error" | "info" | "success";
+  size?: "sm" | "md" | "lg";
+  title?: string;
+}>;
 
 type FilterKey = "all" | "random" | "ranked" | "clan";
 const FILTERS: { key: FilterKey; labelKey: string }[] = [
@@ -43,6 +55,18 @@ function formatMtime(ms: number | null): string {
 export default defineComponent({
   name: "TacticsView",
   setup() {
+    // The phone app build has no local game install to inspect, so it renders
+    // a static placeholder and mounts none of the loaders/watchers (the nav
+    // link is hidden there too — this is belt-and-braces for direct URLs),
+    // mirroring LiveView.
+    if (isMobileApp()) {
+      return () => (
+        <main class="tactics-view">
+          <div class="tactics-view__placeholder">{t("tactics.list.noClient")}</div>
+        </main>
+      );
+    }
+
     const gd = useGameDetect();
     const { dataLanguage } = useLanguage();
 
@@ -97,8 +121,16 @@ export default defineComponent({
     }
 
     onMounted(async () => {
+      // Snapshot BEFORE detect(): the watcher below owns the "" → path
+      // transition — including the one detect() itself causes — so loading
+      // here as well would mount the expensive Rust VFS twice on cold start.
+      // Only an install that was already active before the rescan needs an
+      // explicit load (the rescan keeps its path, the watcher stays silent).
+      const wasActive = !!activePath.value;
       await gd.detect();
-      await loadMaps();
+      if (wasActive) {
+        await loadMaps();
+      }
     });
     // Follow the sidebar's client switch: reload the new install's inventory
     // (the previous selection belonged to the old install's list).
@@ -275,13 +307,19 @@ export default defineComponent({
                   </strong>
                   <span class="tactics-view__detail-id">{sel.spaceId}</span>
                 </header>
+                {/* hikari's HkAlert renders `slots.default ?
+                    slots.default() : props.message` — a default slot
+                    shadows the message prop, so the body text must live
+                    inside the slot itself. */}
                 {isIncomplete(sel.spaceId) ? (
-                  <HAlert
+                  <SlotHAlert
                     variant="warning"
                     size="md"
                     title={displayMapName(sel.spaceId, dataLanguage.value)}
-                    message={t("tactics.warning.message")}
                   >
+                    <p class="tactics-view__warning-text">
+                      {t("tactics.warning.message")}
+                    </p>
                     <div class="tactics-view__detail-rows">
                       <div class="tactics-view__detail-row">
                         <span class="tactics-view__detail-label">
@@ -300,7 +338,7 @@ export default defineComponent({
                         </span>
                       </div>
                     </div>
-                  </HAlert>
+                  </SlotHAlert>
                 ) : null}
                 <div class="tactics-view__art">
                   {artUrl.value ? (

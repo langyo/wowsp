@@ -103,12 +103,19 @@ export default defineComponent({
         return null;
       }
     }
+    /** Arm the battle phase for a running game: flip to "battle" and
+     *  snapshot the replay-dir baseline. Shared by the running-transition
+     *  watcher and onMounted — opening /live after the battle already
+     *  started must land in the same state a mid-page game start would. */
+    async function armBattlePhase() {
+      livePhase.value = "battle";
+      baselineFiles = await snapshotReplayDir();
+    }
     watch(
       () => gameStatus.process.running,
       async (running) => {
         if (running) {
-          livePhase.value = "battle";
-          baselineFiles = await snapshotReplayDir();
+          await armBattlePhase();
         } else {
           livePhase.value = "idle";
           baselineFiles = null;
@@ -150,6 +157,12 @@ export default defineComponent({
     let arenaTimer: number | null = null;
     onMounted(async () => {
       await gd.detect();
+      // The watcher above only sees running→true transitions while this page
+      // is mounted — a game that started BEFORE /live opened never fires it.
+      // Seed the phase directly so the SETTLING pill can show mid-battle.
+      if (gameStatus.process.running) {
+        await armBattlePhase();
+      }
       void overlay.refreshArenaInfo();
       arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
     });

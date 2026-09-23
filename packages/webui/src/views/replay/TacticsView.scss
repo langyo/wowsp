@@ -136,6 +136,15 @@
     font-family: var(--font-mono, ui-monospace, monospace);
   }
 
+  /* The warning alert's message body — hikari renders default-slot content
+     inside .hk-alert-text, which already carries the colour / size /
+     line-height the message prop would have gotten; only the <p>'s UA
+     margin needs resetting (the gap to the rows below is their own
+     margin-top). */
+  &__warning-text {
+    margin: 0;
+  }
+
   /* The warning alert's detail rows (修改时间 / 路径) — same label/value
      shape as the rail cards, with the long .pkg path truncated by ellipsis
      (the full path rides the title attribute on hover). */

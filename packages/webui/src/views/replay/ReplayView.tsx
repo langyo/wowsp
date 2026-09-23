@@ -1711,8 +1711,8 @@ export default defineComponent({
                 : "",
             ]}
             onClick={() => {
-              // Transition the pane (closing any live view) BEFORE opening
-              // the archive — exactly one pane at a time.
+              // Transition the pane to the new archive BEFORE opening it —
+              // exactly one pane at a time.
               pane.value = { kind: "archive", path: r.path };
               void parser.open(r.path);
             }}
