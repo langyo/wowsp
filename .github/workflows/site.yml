@@ -1,5 +1,15 @@
 name: Deploy Site
 
+# GitHub Pages is the BACKUP mirror of the site AND the origin every
+# built asset of the live site loads from: the worker at
+# https://wowsp.langyo.xyz serves only the HTML shell + the pairing API
+# (/api), while JS/CSS/images/docs download from
+# https://langyo.github.io/wowsp/… (GitHub's CDN). Consequence: this
+# artifact must NOT carry a CNAME file — a CNAME (or a custom domain in
+# the repo Pages settings) makes langyo.github.io/wowsp 301 back to the
+# worker origin and the asset URLs circular. If the domain ever needs to
+# come back, re-add the CNAME step and flip the bases below.
+
 on:
   push:
     branches: [master]
@@ -30,7 +40,7 @@ jobs:
       - name: Build docs (lagrange)
         run: |
           cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
-          lagrange build --src docs --out _site/docs --site-url https://wowsp.langyo.xyz/docs
+          lagrange build --src docs --out _site/docs --site-url https://langyo.github.io/wowsp/docs
 
       - uses: pnpm/action-setup@v6
         # Version comes from the "packageManager" field in package.json.
@@ -41,17 +51,16 @@ jobs:
 
       - name: Build website
         env:
-          # The custom domain wowsp.langyo.xyz is live and serves from the
-          # root, so the website must build with base "/". (When previewing
-          # at langyo.github.io/wowsp/, pass WOWSP_SITE_BASE=/wowsp/ instead.)
-          WOWSP_SITE_BASE: /
+          # Pages serves this artifact as a PROJECT site at
+          # /wowsp/ — the base must match or every route 404s.
+          WOWSP_SITE_BASE: /wowsp/
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @wowsp/website build
           cp -r dist/website/. _site/
 
-      - name: Write CNAME at site root
-        run: echo "wowsp.langyo.xyz" > _site/CNAME
+      - name: No CNAME (must serve at langyo.github.io/wowsp/)
+        run: rm -f _site/CNAME
 
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, and the
       # website router (createWebHistory) renders the right route from it.
@@ -72,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: https://wowsp.langyo.xyz
+      url: https://langyo.github.io/wowsp/
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

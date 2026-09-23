@@ -163,23 +163,18 @@ check-relay:
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 
-# Bundle the WEBSITE (+ docs when the lagrange binary is installed) into
-# the worker's static-asset dir — the deploy precondition. The website
-# always ships; docs warn-and-skip without lagrange (they stay available
-# on the GitHub Pages backup until the next deploy that has the tool).
+# Bundle the WEBSITE into the worker's static-asset dir — the deploy
+# precondition. The worker serves only the HTML shell + API; built
+# assets (JS/CSS/images) load from the GitHub Pages mirror via absolute
+# URLs (WOWSP_SITE_ASSET_BASE), and /docs redirects there too — Cloudflare
+# is kept out of the heavy-download path entirely.
 bundle-site:
     #!/bin/sh
     set -e
-    pnpm --filter @wowsp/website build
+    WOWSP_SITE_ASSET_BASE="https://langyo.github.io/wowsp" pnpm --filter @wowsp/website build
     node -e "require('fs').rmSync('packages/pairing-relay/assets',{recursive:true,force:true})"
     mkdir -p packages/pairing-relay/assets
     cp -r dist/website/. packages/pairing-relay/assets/
-    if command -v lagrange >/dev/null 2>&1; then
-        lagrange build --src docs --out packages/pairing-relay/assets/docs \
-            --site-url https://wowsp.langyo.xyz/docs
-    else
-        echo "note: 'lagrange' not installed — docs skipped (backup stays on GitHub Pages)"
-    fi
 
 # ── android ───────────────────────────────────────────────────────────
 # Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
