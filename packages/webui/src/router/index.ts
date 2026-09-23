@@ -21,9 +21,23 @@ export const router = createRouter({
       component: () => import("@/views/ShipsView"),
     },
     {
+      // Live battle watch (desktop app only — the phone has no local game;
+      // the sidebar hides the link there too).
+      path: "/live",
+      name: "live",
+      component: () => import("@/views/replay/LiveView"),
+    },
+    {
       path: "/replay",
       name: "replay",
       component: () => import("@/views/replay/ReplayView"),
+    },
+    {
+      // Map tactics analysis over the active install's full map inventory
+      // (desktop app only — the sidebar hides the link on phones).
+      path: "/tactics",
+      name: "tactics",
+      component: () => import("@/views/replay/TacticsView"),
     },
     {
       path: "/resources",

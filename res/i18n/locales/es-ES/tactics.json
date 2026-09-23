@@ -1,0 +1,26 @@
+{
+  "title": "Análisis táctico",
+  "count": "{n} mapas",
+  "filter": {
+    "all": "Todas",
+    "random": "Aleatorio",
+    "ranked": "Clasificatoria",
+    "clan": "Clan"
+  },
+  "badge": {
+    "limited": "Soporte limitado"
+  },
+  "warning": {
+    "message": "La compatibilidad de este mapa (escenario / modo especial) en el análisis táctico es incompleta: pueden faltar los datos de terreno y superposición. Solo como vista previa.",
+    "modified": "Modificado",
+    "path": "Ruta"
+  },
+  "list": {
+    "error": "No se pudo leer el índice de recursos del juego. Comprueba que el cliente del juego esté disponible.",
+    "empty": "No se encontraron mapas en el cliente del juego.",
+    "noClient": "No se detectó ningún cliente del juego"
+  },
+  "select": "Selecciona un mapa para empezar el análisis",
+  "noArt": "Este mapa no tiene material de minimapa",
+  "loading": "Cargando la lista de mapas…"
+}

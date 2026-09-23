@@ -1,14 +1,11 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
-import { Copy, FileUp, FolderOpen, Laptop, Play, RefreshCw, X } from "@lucide/vue";
+import { computed, defineComponent, onMounted, ref, watch, type CSSProperties } from "vue";
+import { Copy, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
-import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
 import PairingWizard from "@/features/replay/PairingWizard";
-import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { useOverlayStore } from "@/stores/overlay";
 import { usePairingStore } from "@/stores/pairing";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
@@ -53,6 +50,7 @@ import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { modeColor, modeKey } from "@/utils/modeColors";
+import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { damageColor, winrateColor } from "@/utils/winrate";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
 import { fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
@@ -61,13 +59,6 @@ import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
 import "./ReplayView.scss";
-
-/** The replays subfolder of a client install. WoWS writes replays under
- *  `<install>/replays/`. */
-function replaysDir(installPath: string): string {
-  const trimmed = installPath.replace(/[\\/]+$/, "");
-  return `${trimmed}/replays`;
-}
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
  *  eventType / roster bots) with a generic fallback. */
@@ -92,38 +83,6 @@ function formatPlayerCount(vehicles: { relation: number }[]): string {
   const enemy = vehicles.filter((v) => v.relation > 1).length;
   if (ally > 0 && enemy > 0) return `${ally}v${enemy}`;
   return t("replay.players", { n: vehicles.length });
-}
-
-/** Official map display names extracted from the game's gettext catalogs
- *  (`scripts/model_convert/extract_map_names.py`): space id → {lang: name}.
- *  Space ids often DON'T match the display name (WG renamed maps but kept
- *  the internal id — "20_NE_two_brothers" is "双峰海峡"/"Two Brothers", not
- *  "两兄弟"), so the catalog is authoritative. */
-import mapNamesRaw from "@/data/map_names.json";
-
-const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
-
-function mapNameForLang(spaceId: string, lang: string): string | null {
-  const names = MAP_NAMES[spaceId];
-  if (!names) return null;
-  // Take the exact server language first (国服 zh-cn and 亚服 zh-sg are
-  // different official translations, e.g. 断层线 vs 海神之击). Never fall
-  // back across servers — if the chosen language lacks an entry (e.g. the
-  // official zh-tw catalog keeps map names in English), use English, not
-  // the other server's name.
-  return names[lang] ?? names["en"] ?? null;
-}
-
-/** Resolve a map's localized display name from its internal space id. Falls
- *  back to the prettified id, then to the unknown-map label. */
-function displayMapName(spaceId?: string | null, lang?: string): string {
-  if (!spaceId) return t("replay.map.unknown");
-  const clean = spaceId.replace(/^spaces\//, "");
-  const official = mapNameForLang(clean, lang ?? "");
-  if (official) return official;
-  const key = `replay.map.names.${clean}`;
-  const lbl = t(key);
-  return lbl === key ? clean : lbl;
 }
 
 /** Format a `YYYYMMDD[_HHMMSS]` timestamp from the replay filename into a
@@ -1425,131 +1384,27 @@ export default defineComponent({
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
-    const overlay = useOverlayStore();
     /**
      * What the main pane currently shows — a proper little state machine
-     * (Rust-flavoured: None | Live | Archive(Server, ID)). Invariant: exactly
-     * one pane renders, and every rail card click *transitions* the state
-     * instead of flipping independent booleans (the old liveOpen bug was a
-     * replay click forgetting to transition back).
+     * (Rust-flavoured: None | Archive(Server, ID)). Invariant: exactly one
+     * pane renders, and every rail card click *transitions* the state
+     * instead of flipping independent booleans.
      */
     type Pane =
       | { kind: "none" }
-      | { kind: "live" }
       | { kind: "archive"; path: string };
     const pane = ref<Pane>({ kind: "none" });
-    /** Live battle clock (from tempArenaInfo's dateTime). */
-    const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
-    /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
-     *  (the settling watcher never fires) and the game deletes
-     *  tempArenaInfo.json, which only the live-pane poll notices — so a
-     *  stale roster + ticking clock can survive forever. Cap every battle by
-     *  its clock: PvP modes end at 20 min, everything else (co-op /
-     *  operations / training rooms, which legitimately run long) at 30 min —
-     *  matching the Rust overlay window's ARENA_FRESHNESS_SECS. Past the cap
-     *  the roster is force-cleared and the live card falls back to "not
-     *  started" until the next arena-info event repopulates it. */
-    const PVP_BATTLE_CAP_SECS = 20 * 60;
-    const PVE_BATTLE_CAP_SECS = 30 * 60;
-    const battleCapHit = computed(() => {
-      const a = overlay.arenaInfo;
-      const elapsed = liveClock.elapsed.value;
-      if (!a || elapsed == null) return false;
-      const key = modeKey(a.matchGroup, a.scenario, null, a.botCount ?? 0);
-      const pvp =
-        key === "pvp" ||
-        key === "ranked" ||
-        key === "clan" ||
-        key === "brawl" ||
-        key === "squad" ||
-        key === "armsrace";
-      return elapsed >= (pvp ? PVP_BATTLE_CAP_SECS : PVE_BATTLE_CAP_SECS);
-    });
-    watch(battleCapHit, (hit) => {
-      if (hit) overlay.clearArenaInfo();
-    });
-    // While the live pane is open, poll the game's tempArenaInfo.json so the
-    // roster refreshes as players load in / the battle ends.
-    let arenaTimer: number | null = null;
-    watch(
-      pane,
-      (p, old) => {
-        if (p.kind === "live" && old.kind !== "live") {
-          void overlay.refreshArenaInfo();
-          arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
-        } else if (p.kind !== "live" && arenaTimer !== null) {
-          clearInterval(arenaTimer);
-          arenaTimer = null;
-        }
-      },
-      { deep: false },
-    );
 
-    /** Battle lifecycle: while the game runs, watch the replays folder —
-     *  the game writes the .wowsreplay file when the battle ENDS, so a new
-     *  file is the direct "match over" signal. On detection: flip the live
-     *  panel to SETTLING (结算中 — stats screen, replay not yet final) and
-     *  refresh the replay list so the finished match appears immediately.
-     *  When the game process exits, do a final refresh (the file may grow
-     *  its post-battle block) and return to idle. */
-    const livePhase = ref<"idle" | "battle" | "settling">("idle");
-    let baselineFiles: Set<string> | null = null;
-    async function snapshotReplayDir(): Promise<Set<string> | null> {
-      const dir = activePath.value ? replaysDir(activePath.value) : undefined;
-      try {
-        const files = await api.listReplays(dir);
-        return new Set(files);
-      } catch {
-        return null;
-      }
-    }
+    // The live battle has its own page (/live) now; this view only refreshes
+    // the replay list when the game EXITS so the finished match appears
+    // without a manual refresh (the game writes the .wowsreplay at battle
+    // end — the final pass also catches late post-battle flushes).
     watch(
       () => gameStatus.process.running,
-      async (running) => {
-        if (running) {
-          livePhase.value = "battle";
-          baselineFiles = await snapshotReplayDir();
-        } else {
-          // Game exited: finalize whatever the battle produced.
-          if (livePhase.value !== "idle") void reload();
-          livePhase.value = "idle";
-          baselineFiles = null;
-        }
+      (running) => {
+        if (!running) void reload();
       },
     );
-    let endPoll: number | null = null;
-    watch(
-      livePhase,
-      (ph) => {
-        if (ph === "battle") {
-          if (endPoll === null) {
-            endPoll = window.setInterval(async () => {
-              if (baselineFiles == null) {
-                baselineFiles = await snapshotReplayDir();
-                return;
-              }
-              const now = await snapshotReplayDir();
-              if (!now) return;
-              const fresh = [...now].some((f) => !baselineFiles!.has(f));
-              if (fresh) {
-                livePhase.value = "settling";
-                void reload();
-              } else {
-                baselineFiles = now;
-              }
-            }, 3000);
-          }
-        } else if (endPoll !== null) {
-          clearInterval(endPoll);
-          endPoll = null;
-        }
-      },
-      { immediate: true },
-    );
-    onBeforeUnmount(() => {
-      if (endPoll !== null) clearInterval(endPoll);
-      if (arenaTimer !== null) clearInterval(arenaTimer);
-    });
 
     // Auto-manage loading toast for replay operations.
     let loadingToastId = 0;
@@ -1615,7 +1470,7 @@ export default defineComponent({
 
     /** Pick replays from anywhere on disk (shared files outside the game's
      *  replays folder). Each picked file header-parses into a temporary card
-     *  queued right after the live entry; the first pick opens immediately. */
+     *  queued above the scanned list; the first pick opens immediately. */
     const openingExternal = ref(false);
     async function onOpenExternal() {
       if (openingExternal.value) return;
@@ -1856,8 +1711,8 @@ export default defineComponent({
                 : "",
             ]}
             onClick={() => {
-              // Transition the pane (closing any live view) BEFORE opening
-              // the archive — exactly one pane at a time.
+              // Transition the pane to the new archive BEFORE opening it —
+              // exactly one pane at a time.
               pane.value = { kind: "archive", path: r.path };
               void parser.open(r.path);
             }}
@@ -2009,82 +1864,8 @@ export default defineComponent({
               )
             ) : (
               <ul class="replay-view__items">
-                {/* LIVE entry — only while the game process runs, and never
-                    on the phone app build (no local game to watch there). */}
-                {gameStatus.process.running && !isMobileApp() ? (
-                  <li class="replay-view__item">
-                    <button
-                      type="button"
-                      class={[
-                        "replay-card",
-                        "replay-card--live",
-                        pane.value.kind === "live" ? "replay-card--active" : "",
-                      ]}
-                      onClick={() => {
-                        pane.value = { kind: "live" };
-                        parser.clear();
-                      }}
-                    >
-                      <div class="replay-card__top">
-                        <span class="replay-card__ship">
-                          <Play size={13} class="replay-card__live-ico" strokeWidth={2.4} />
-                          {t("replay.live.title")}
-                        </span>
-                        {/* Pills ride as ONE right-aligned group: __top is
-                            space-between, so loose children would each claim
-                            a spread-out slot (the mode pill used to end up
-                            centered between title and LIVE). */}
-                        <span class="replay-card__pills">
-                          {overlay.arenaInfo?.matchGroup ? (
-                            <span
-                              class="replay-card__pill"
-                              style={modeColor(
-                                overlay.arenaInfo.matchGroup,
-                                overlay.arenaInfo.scenario,
-                                null,
-                                overlay.arenaInfo.botCount ?? 0,
-                              ) as CSSProperties}
-                            >
-                              {modeLabel(
-                                overlay.arenaInfo.matchGroup,
-                                overlay.arenaInfo.scenario,
-                                null,
-                                overlay.arenaInfo.botCount ?? 0,
-                              )}
-                            </span>
-                          ) : null}
-                          {livePhase.value === "settling" ? (
-                            <span class="replay-card__pill replay-card__pill--settling">
-                              {t("replay.live.settling")}
-                            </span>
-                          ) : (
-                            <span class="replay-card__pill replay-card__pill--live">LIVE</span>
-                          )}
-                        </span>
-                      </div>
-                      <div class="replay-card__row">
-                        <span class="replay-card__label">{t("replay.mapLabel")}</span>
-                        <span class="replay-card__val">
-                          {overlay.arenaInfo?.mapName
-                            ? displayMapName(overlay.arenaInfo.mapName, mapLang.value)
-                            : t("replay.live.notStarted")}
-                        </span>
-                      </div>
-                      <div class="replay-card__foot">
-                        <span class="replay-card__players">
-                          {overlay.arenaInfo
-                            ? t("replay.players", { n: overlay.arenaInfo.vehicles.length })
-                            : "—"}
-                        </span>
-                        {liveClock.label.value ? (
-                          <span class="replay-card__clock">{liveClock.label.value}</span>
-                        ) : null}
-                      </div>
-                    </button>
-                  </li>
-                ) : null}
-                {/* Manually picked files queue-jump to right after the live
-                    entry — newest picks sit closest to the live card. */}
+                {/* Manually picked files (session-temporary) sit above the
+                    scanned list — newest picks on top. */}
                 {parser.external.value.map((r) => renderReplayCard(r, true))}
                 {parser.list.value.map((r) => renderReplayCard(r, false))}
               </ul>
@@ -2093,13 +1874,7 @@ export default defineComponent({
         </aside>
 
         <section class="replay-view__main">
-          {pane.value.kind === "live" ? (
-            <LiveBattlePanel
-              arena={overlay.arenaInfo}
-              settling={livePhase.value === "settling"}
-              realm={realm.value}
-            />
-          ) : parser.current.value ? (
+          {parser.current.value ? (
             <div class="replay-view__content">
               {parser.error.value ? (
                 <div class="replay-view__placeholder replay-view__placeholder--error">

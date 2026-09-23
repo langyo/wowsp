@@ -103,6 +103,21 @@ export interface ArenaInfo {
   raw: unknown;
 }
 
+/** One playable map in a local game install, as returned by
+ *  `list_game_maps` (desktop only — phones get an error). Mirrors
+ *  `wowsp_tauri::commands::game_maps::GameMapEntry`. A space is a playable
+ *  map iff the install's VFS carries `spaces/<spaceId>/minimap.png`. */
+export interface GameMapEntry {
+  /** Space id, e.g. "20_NE_two_brothers". */
+  spaceId: string;
+  /** Virtual VFS path of the minimap marker. */
+  path: string;
+  /** Absolute on-disk path of the backing .pkg volume file. */
+  pkgPath: string;
+  /** Backing volume's mtime in ms since the epoch; null when stat failed. */
+  mtimeMs: number | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::Rect` — an axis-aligned rect in physical px. */
 export interface Rect {
   x: number;
@@ -1293,6 +1308,11 @@ export const api = {
    *  Only reads the JSON header block per file — fast even for hundreds. */
   listReplaysMeta: (dir?: string, limit?: number) =>
     transport.invoke<ReplayMetaLite[]>(RPC.list_replays_meta, { dir, limit }),
+  /** Inventory every playable map in a local game install (space id, VFS
+   *  minimap path, backing .pkg volume + its mtime). Desktop only — the
+   *  shell answers with an error on phones. */
+  listGameMaps: (gameRoot: string) =>
+    transport.invoke<GameMapEntry[]>(RPC.list_game_maps, { gameRoot }),
   readTempArenaInfo: (dir?: string) =>
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),
