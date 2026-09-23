@@ -53,7 +53,8 @@
     "internetHint": "随时随地配对——无需任何设置。直接输入电脑 WoWSP 设置中显示的 6 位配对码即可。",
     "internetNext": "输入配对码",
     "gatewayUnreachable": "无法连接配对服务，或配对码无效——请核对配对码和网络连接后重试。",
-    "internetLabel": "互联网配对"
+    "internetLabel": "互联网配对",
+    "gatewayTooOld": "配对网关需要更新的应用版本——请升级 WoWSP 后重试。"
   },
   "client": "游戏客户端",
   "refresh": "刷新",

@@ -5,3 +5,4 @@ crates/relay-worker/build/
 # Generated lockfile of this standalone workspace (also matched by the
 # root .gitignore's Cargo.lock rule)
 Cargo.lock
+/assets/

@@ -53,7 +53,8 @@
     "internetHint": "隨時隨地配對——無需任何設定。直接輸入電腦 WoWSP 設定中顯示的 6 位配對碼即可。",
     "internetNext": "輸入配對碼",
     "gatewayUnreachable": "無法連線配對服務，或配對碼無效——請核對配對碼和網路連線後重試。",
-    "internetLabel": "網際網路配對"
+    "internetLabel": "網際網路配對",
+    "gatewayTooOld": "配對閘道需要更新的應用版本——請升級 WoWSP 後重試。"
   },
   "client": "遊戲用戶端",
   "refresh": "重新整理",

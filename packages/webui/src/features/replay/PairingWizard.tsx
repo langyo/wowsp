@@ -11,7 +11,7 @@
  * — nobody types an IP or a port on a normal network; the old host+port form
  * survives collapsed under "add manually" for AP-isolation edge cases.
  * Internet mode (v2) is PIN-ONLY with zero discovery: the pairing gateway
- * (`wowsp-gateway.langyo.xyz`) is a hidden built-in service, so the phone
+ * (`wowsp.langyo.xyz`) is a hidden built-in service, so the phone
  * just enters the 6-digit code shown on the desktop. The mode toggle
  * defaults to internet until the phone has paired with something. The PIN
  * step is the hikari `HOtpInput` everywhere.
@@ -172,7 +172,9 @@ export default defineComponent({
         // next complete entry re-fires autoSubmit.
         pinError.value = message.startsWith("pairing gateway unreachable")
           ? t("replay.pairing.gatewayUnreachable")
-          : message;
+          : message.startsWith("the pairing gateway requires")
+            ? t("replay.pairing.gatewayTooOld")
+            : message;
         pinDraft.value = "";
       } finally {
         pinBusy.value = false;

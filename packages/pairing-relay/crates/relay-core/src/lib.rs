@@ -30,12 +30,21 @@ pub const FEATURE_PIN_ALLOCATION: &str = "pin-allocation";
 pub const FEATURE_BYTE_TUNNEL: &str = "byte-tunnel";
 
 /// The one protocol version this gateway speaks (advertised in the
-/// manifest and echoed in `welcome` frames).
+/// health document and echoed in `welcome` frames).
 pub const PROTOCOL_V1: &str = "v1";
 
-/// Default relay base path advertised by the manifest (routes live at
-/// `<base>/control`, `<base>/resolve`, `<base>/data/...`).
-pub const DEFAULT_RELAY_BASE: &str = "/relay";
+/// This gateway's own version, reported by the health document.
+pub const GATEWAY_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The minimum CLIENT version (`x.y.z`) this gateway will serve. Clients
+/// below it get a distinct "update the app" error instead of a retryable
+/// one. Bump deliberately when a wire change lands that old clients
+/// cannot talk to.
+pub const MIN_CLIENT_VERSION: &str = "0.5.0";
+
+/// Default relay base path advertised by the health document (routes
+/// live at `<base>/control`, `<base>/resolve`, `<base>/data/...`).
+pub const DEFAULT_RELAY_BASE: &str = "/api/relay";
 
 /// A room key is exactly 64 lowercase hex chars (minted by the desktop
 /// host bridge with its OS CSPRNG).

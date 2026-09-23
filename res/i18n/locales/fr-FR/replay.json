@@ -53,7 +53,8 @@
     "internetHint": "Appairez-vous de n'importe où — aucun réglage requis. Saisissez simplement le code à 6 chiffres affiché dans les paramètres WoWSP de l'ordinateur.",
     "internetNext": "Saisir le code d'appairage",
     "gatewayUnreachable": "Impossible de joindre la passerelle d'appairage, ou code introuvable — vérifiez le code et votre connexion, puis réessayez.",
-    "internetLabel": "Appairage Internet"
+    "internetLabel": "Appairage Internet",
+    "gatewayTooOld": "Cette passerelle d'appairage exige une version plus récente de l'application — mettez WoWSP à jour puis réessayez."
   },
   "client": "Client",
   "refresh": "Actualiser",

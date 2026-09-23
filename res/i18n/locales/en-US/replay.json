@@ -53,7 +53,8 @@
     "internetHint": "Pair from anywhere — no setup needed. Just enter the 6-digit code shown in the computer's WoWSP settings.",
     "internetNext": "Enter pairing code",
     "gatewayUnreachable": "Couldn't reach the pairing gateway, or the code wasn't found — check the code and your connection, then try again.",
-    "internetLabel": "Internet pairing"
+    "internetLabel": "Internet pairing",
+    "gatewayTooOld": "This pairing gateway needs a newer app version — update WoWSP and try again."
   },
   "client": "Client",
   "refresh": "Refresh",
