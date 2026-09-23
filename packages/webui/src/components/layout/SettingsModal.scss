@@ -659,95 +659,10 @@
 
   /* Install card — mirrors the account card's anatomy (round badge + body +
      trailing state), so the 游戏路径 and 账户 lists read as one family.
-     Clicking a card activates that client. */
-  .hk-settings__pane .install-card {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.6rem 0.7rem;
-    background: rgb(var(--color-bg));
-    border: 1px solid rgb(var(--color-border) / 15%);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    text-align: left;
-    width: 100%;
-    font-family: inherit;
-    transition:
-      border-color var(--duration-short) var(--ease-standard),
-      background var(--duration-short) var(--ease-standard),
-      transform var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      border-color: rgb(var(--color-primary) / 35%);
-      background: rgb(var(--color-primary) / 4%);
-      transform: translateY(-1px);
-    }
-
-    &:focus-visible {
-      outline: 2px solid rgb(var(--color-primary));
-      outline-offset: 1px;
-    }
-
-    &--active {
-      border-color: rgb(var(--color-primary) / 50%);
-      background: rgb(var(--color-primary) / 8%);
-      box-shadow: inset 3px 0 0 rgb(var(--color-primary));
-    }
-
-    &__body {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-    }
-
-    &__head {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      min-width: 0;
-    }
-
-    &__name {
-      font-size: var(--text-sm);
-      font-weight: 600;
-      color: rgb(var(--color-text));
-    }
-
-    &__check {
-      flex-shrink: 0;
-      color: rgb(var(--color-primary));
-    }
-
-    &__path {
-      font-family: var(--font-mono);
-      font-size: var(--text-2xs);
-      color: rgb(var(--color-muted));
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-
-  /* Running-game shortcut row above the dashed add row. */
-  &__running {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px dashed rgb(var(--color-primary) / 35%);
-    border-radius: var(--radius-sm);
-    color: rgb(var(--color-primary));
-
-    .hk-settings-hint {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
+     Clicking a card activates that client. Its rules live at the file's
+     top level (`.hk-settings__pane .install-card`) — the pane, not this
+     BEM block, is the surviving ancestor after the shell moved to
+     hikari's HSettingsBody. */
 
   /* Dashed add-path placeholder — the last row of the section; opens the
      dialog hosting the detection / browse actions. Mirrors the running-row
@@ -788,5 +703,93 @@
     gap: 0.5rem;
     align-items: stretch;
     margin-top: 0.75rem;
+  }
+}
+
+.settings-modal__running {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed rgb(var(--color-primary) / 35%);
+  border-radius: var(--radius-sm);
+  color: rgb(var(--color-primary));
+
+  .hk-settings-hint {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.hk-settings__pane .install-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  transition:
+    border-color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard),
+    transform var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 35%);
+    background: rgb(var(--color-primary) / 4%);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 1px;
+  }
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 50%);
+    background: rgb(var(--color-primary) / 8%);
+    box-shadow: inset 3px 0 0 rgb(var(--color-primary));
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__check {
+    flex-shrink: 0;
+    color: rgb(var(--color-primary));
+  }
+
+  &__path {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
