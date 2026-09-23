@@ -1,0 +1,26 @@
+{
+  "title": "Analyse tactique",
+  "count": "{n} cartes",
+  "filter": {
+    "all": "Tout",
+    "random": "Aléatoire",
+    "ranked": "Classée",
+    "clan": "Clan"
+  },
+  "badge": {
+    "limited": "Prise en charge limitée"
+  },
+  "warning": {
+    "message": "La prise en charge de cette carte (scénario / mode spécial) dans l'analyse tactique est incomplète : les données de terrain et de superposition peuvent manquer. Aperçu uniquement.",
+    "modified": "Modifiée le",
+    "path": "Chemin"
+  },
+  "list": {
+    "error": "Impossible de lire l'index des ressources du jeu. Vérifiez que le client du jeu est disponible.",
+    "empty": "Aucune carte trouvée dans le client du jeu.",
+    "noClient": "Aucun client de jeu détecté"
+  },
+  "select": "Sélectionnez une carte pour commencer l'analyse",
+  "noArt": "Cette carte n'a pas de mini-carte",
+  "loading": "Chargement de la liste des cartes…"
+}

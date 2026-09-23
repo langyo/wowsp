@@ -38,6 +38,7 @@ export type {
   ReplayMeta,
   ReplayMetaLite,
   ArenaInfo,
+  GameMapEntry,
   CaptureResult,
   Rect,
   OverlayAnchor,

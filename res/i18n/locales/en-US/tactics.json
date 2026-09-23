@@ -1,0 +1,26 @@
+{
+  "title": "Tactics",
+  "count": "{n} maps",
+  "filter": {
+    "all": "All",
+    "random": "Random",
+    "ranked": "Ranked",
+    "clan": "Clan"
+  },
+  "badge": {
+    "limited": "Limited support"
+  },
+  "warning": {
+    "message": "Support for this map (scenario / special mode) in tactics analysis is incomplete: terrain and overlay data may be missing. For preview only.",
+    "modified": "Modified",
+    "path": "Path"
+  },
+  "list": {
+    "error": "Could not read the game asset index. Make sure the game client is available.",
+    "empty": "No maps found in the game client.",
+    "noClient": "No game client detected"
+  },
+  "select": "Select a map to start analysing",
+  "noArt": "This map has no minimap art",
+  "loading": "Loading map list…"
+}
