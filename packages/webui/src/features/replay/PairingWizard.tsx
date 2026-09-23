@@ -11,7 +11,7 @@
  * — nobody types an IP or a port on a normal network; the old host+port form
  * survives collapsed under "add manually" for AP-isolation edge cases.
  * Internet mode (v2) is PIN-ONLY with zero discovery: the pairing gateway
- * (`gateway.wowsp.langyo.xyz`) is a hidden built-in service, so the phone
+ * (`wowsp-gateway.langyo.xyz`) is a hidden built-in service, so the phone
  * just enters the 6-digit code shown on the desktop. The mode toggle
  * defaults to internet until the phone has paired with something. The PIN
  * step is the hikari `HOtpInput` everywhere.
