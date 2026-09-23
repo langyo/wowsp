@@ -31,17 +31,18 @@ compatibility_date = "2026-01-15"
 [build]
 command = "worker-build --release crates/relay-worker"
 
-# The WEBSITE this worker serves: static files answer every path except
-# /api/* (run_worker_first routes those into the Rust worker above).
-# `assets/` is generated — bundle it with `just bundle-site` (website
-# dist + lagrange docs); it is gitignored.
-# not_found_handling = single-page-application because the website's
-# vue-router uses createWebHistory (unknown paths render the app shell).
+# The WEBSITE this worker serves: the HTML shell answers every non-API
+# path (SPA fallback), while BUILT assets (JS/CSS/images) load from the
+# GitHub Pages mirror (langyo.github.io/wowsp) via absolute URLs — see
+# justfile `bundle-site` (WOWSP_SITE_ASSET_BASE). /docs redirects to the
+# Pages-hosted docs, and run_worker_first routes /api + /docs into the
+# worker; everything else resolves statically. `assets/` is generated
+# (gitignored).
 [assets]
 directory = "./assets"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/docs", "/docs/*"]
 
 # Two SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions:
