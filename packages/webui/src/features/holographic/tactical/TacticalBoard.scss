@@ -162,3 +162,16 @@
     max-width: none;
   }
 }
+
+/* Phone widths: the desktop bar is a single ~400px row of tool chips —
+   on a 390px viewport it poked 70px+ past the right edge (the tradeoff
+   above is fine for a shrunken desktop window, not for a phone). Wrap
+   instead: the chips flow onto a second row inside the dock and every
+   chip stays reachable. No scroll container is introduced, so the
+   upward-opening popovers stay unclipped. Desktop ≥768px unchanged. */
+@media (max-width: 767px) {
+  .tac-dock .tac-bar {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+}

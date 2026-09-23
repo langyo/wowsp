@@ -1,0 +1,9 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.wowsp_tauri" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Dark launch surface in both day and night modes: the webui is
+             dark-themed by default, so a light DayNight window background
+             would flash white on cold start. -->
+        <item name="android:windowBackground">@color/launch_background</item>
+    </style>
+</resources>

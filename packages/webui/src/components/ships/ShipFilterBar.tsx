@@ -40,7 +40,7 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import type { PlayerShipStats } from "@/api";
 import { ArrowDown, ArrowUp, GripHorizontal, Search, X } from "@lucide/vue";
 
-import { HPopover, HSearchInput } from "@celestia-island/hikari";
+import { HPopover, HSearchInput, useBreakpoint } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -241,6 +241,9 @@ export default defineComponent({
   setup(props, { emit }) {
     const encyclopedia = useEncyclopediaStore();
     const { dataLanguage } = useLanguage();
+    // Phone widths (the same <768px cut hikari's sheets use) dock every
+    // popup as a bottom sheet instead of an anchored floating panel.
+    const { isMobile } = useBreakpoint();
 
     // ── Chip state: drag order (= sort priority) + per-category multi-select.
     //    Types start ascending (the canonical BB→CV→CA→DD→SS reading order),
@@ -635,11 +638,16 @@ export default defineComponent({
                 {isSortCat(key) ? dirIcon(cur.dir) : null}
               </button>
               {/* The popup teleports to body (HPopover) — no overflow
-                  ancestor can clip it. closeOnBackdrop stays off: hikari's
-                  own document listener would close on the re-click of the
-                  open chip before that click re-opens it; the bar-level
-                  pointerdown listener above is the outside-close, and chip
-                  re-click switching runs through onChipClick untouched. */}
+                  ancestor can clip it. On phones it docks as a bottom
+                  sheet (sheetOnMobile — hikari convention: phones never
+                  float anchored menus; the anchored desktop panel would
+                  clip at the screen edge and read translucent where the
+                  engine lacks backdrop-filter). The scrim + tap-outside
+                  close ride closeOnBackdrop on phones only: the sheet
+                  branch renders its dismissal scrim from that prop, while
+                  desktop keeps the bar-level pointerdown outside-close
+                  with hikari's own listener off (chip re-click switching
+                  runs through onChipClick untouched either way). */}
               <HPopover
                 modelValue={openPop.value === key}
                 onUpdate:modelValue={(v: boolean) => {
@@ -651,7 +659,8 @@ export default defineComponent({
                 placement={
                   key === order.value[order.value.length - 1] ? "bottom-end" : "bottom-start"
                 }
-                closeOnBackdrop={false}
+                closeOnBackdrop={isMobile.value}
+                sheetOnMobile
                 title={t(def.title)}
               >
                 <div
@@ -732,7 +741,8 @@ export default defineComponent({
             }}
             anchorRef={searchBtnEl.value}
             placement="bottom-end"
-            closeOnBackdrop={false}
+            closeOnBackdrop={isMobile.value}
+            sheetOnMobile
             title={t("common.search.fuzzy")}
           >
             <div ref={searchPanelEl} class="ship-filter-bar__search-panel">

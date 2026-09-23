@@ -22,20 +22,93 @@ pub mod mod_install;
 pub mod model_pack;
 pub mod network;
 pub mod open_external;
+#[cfg(desktop)]
 pub mod overlay;
+#[cfg(mobile)]
+/// Mobile stand-ins for the overlay command surface. The desktop module
+/// (src/commands/overlay.rs) is a game-window capture stack — GDI BitBlt,
+/// Win32 styling, a second always-on-top webview — none of which exists on a
+/// phone. The registered commands stay available (the webui transport calls
+/// them unconditionally) but answer with the clean
+/// [`crate::mobile_unsupported::OVERLAY`] marker so the mobile UI can hide
+/// the feature. `create_overlay_window` is NOT mirrored: it is desktop-only
+/// in the invoke handler (no overlay window may exist on mobile).
+pub mod overlay {
+    use crate::mobile_unsupported::OVERLAY;
+
+    #[tauri::command]
+    pub async fn destroy_overlay_window() -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn set_overlay_visible(_visible: bool) -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn start_overlay_tab_watch() -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn stop_overlay_tab_watch() -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn start_manual_locate(_locale: Option<String>) -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn cancel_manual_locate() -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn set_manual_roster_rect(
+        _x: i32,
+        _y: i32,
+        _width: i32,
+        _height: i32,
+    ) -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn clear_manual_roster_rect() -> Result<(), String> {
+        Err(OVERLAY.into())
+    }
+
+    #[tauri::command]
+    pub async fn capture_game_window() -> Result<wowsp_tauri_shared::CaptureResult, String> {
+        Err(OVERLAY.into())
+    }
+}
 pub mod overlay_config;
+#[cfg(desktop)]
 pub mod overlay_detect;
 pub mod packets;
+pub mod pairing;
+// LAN UDP discovery for pairing (desktop broadcaster + phone listener).
+pub mod pairing_discovery;
+// Internet pairing relay: Cloudflare Worker tunnel (config + desktop host
+// bridge + phone client transport).
+pub mod pairing_relay;
 pub mod ranked;
 pub mod replay;
 pub mod res_mods;
+#[cfg(desktop)]
 pub mod row_match;
+#[cfg(desktop)]
 pub mod row_recognize;
 pub mod screenshot;
 pub mod ship_stats;
 pub mod stamps;
 pub mod tab_dump;
 pub mod trends;
+#[cfg(windows)]
 pub mod update;
 pub mod wallpaper;
 pub mod wg_api;

@@ -1,0 +1,149 @@
+// Settings PAGE (phone-layout surface of the shared settings body).
+// The page owns its chrome (sticky top bar with the back affordance) and
+// re-hosts the modal's `.settings-modal` shell: there it grows with
+// content instead of the modal's fixed viewport height, and the pane does
+// not scroll itself — the app shell's scroll container owns the page
+// scroll. On phone widths the rail collapses to a 44px icon strip so the
+// pane keeps usable width; wider sizes show the labeled rail like the
+// desktop modal.
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 0 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+.settings-page__bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Opaque enough to stay readable while content scrolls under it; the
+     blur matches the app title bar's glass recipe. */
+  background: rgb(var(--color-surface) / 88%);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  border-bottom: 1px solid rgb(var(--color-border) / 15%);
+  padding: 0.35rem 0.15rem;
+  margin: 0 -0.75rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
+.settings-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 44px;
+  padding: 0 0.6rem 0 0.35rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-primary) / 8%);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 1px;
+  }
+}
+
+.settings-page__back-label {
+  /* Hidden on phone widths where the bare arrow + 44px target is enough;
+     the aria-label keeps it usable for screen readers either way. */
+}
+
+.settings-page__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+}
+
+/* ── Re-hosting the shared .settings-modal shell in a page context ────── */
+
+.settings-page__body .settings-modal {
+  /* Page grows with content; the app shell's scroll viewport scrolls. */
+  height: auto;
+  min-height: 0;
+  gap: 1rem;
+  padding-top: 1rem;
+
+  &__pane {
+    overflow: visible;
+    padding-right: 0;
+    /* The modal pane drags itself flush to the modal WINDOW edge with a
+       negative margin so its scrollbar hugs the window chrome; the page
+       has no window frame, so that negative margin hangs the pane (and
+       every section card in it) ~1rem past the viewport edge — the page
+       scrolls sideways and headings slide out of view (real-device
+       report). Zero it: the shell scroll container is the only scroller
+       here. */
+    margin-right: 0;
+  }
+}
+
+/* ── Phone widths: icon rail + full-width cards ────────────────────────── */
+@media (max-width: 767px) {
+  .settings-page__body .settings-modal {
+    gap: 0.75rem;
+
+    &__rail {
+      width: 3rem;
+      padding: 0 0 0.25rem;
+      border-right: none;
+      align-items: stretch;
+    }
+
+    &__rail-item {
+      justify-content: center;
+      min-height: 44px;
+      padding: 0.5rem 0;
+    }
+
+    &__rail-label {
+      display: none;
+    }
+
+    &__group {
+      padding: 0.85rem 0.9rem;
+    }
+
+    /* Rows that side-by-side on desktop stack or wrap on phones. */
+    &__netmanual {
+      flex-wrap: wrap;
+    }
+
+    &__pack {
+      flex-direction: column;
+      align-items: stretch;
+
+      &-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    &__dpi-row {
+      flex-wrap: wrap;
+    }
+  }
+
+  .settings-page__back-label {
+    display: none;
+  }
+
+  .settings-page__back {
+    padding: 0 0.5rem;
+  }
+}

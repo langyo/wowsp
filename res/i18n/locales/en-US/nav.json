@@ -5,5 +5,8 @@
   "replay": "Replay review",
   "resources": "Resources",
   "settings": "Settings",
-  "home": "Home"
+  "home": "Home",
+  "openMenu": "Open menu",
+  "menu": "Menu",
+  "back": "Back"
 }

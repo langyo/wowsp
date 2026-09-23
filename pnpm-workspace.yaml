@@ -3,10 +3,14 @@ packages:
   - 'packages/website'
   - 'packages/holo'
   - 'packages/installer-shell/web'
+  - 'packages/pairing-relay'
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true
   vue-demi: true
+  # wrangler's local dev runtime (packages/pairing-relay devDep only — the
+  # worker itself is typechecked with tsc, never built locally).
+  workerd: true
 minimumReleaseAgeExclude:
   - '@lucide/vue@1.38.0'
   - '@celestia-island/hikari@0.40.18'

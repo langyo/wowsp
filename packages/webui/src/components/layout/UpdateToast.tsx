@@ -4,10 +4,16 @@ import { HSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
+import { isMobileApp } from "@/utils/platform";
 import "./UpdateToast.scss";
 
 /** Leave transition length — must match the --leave duration below. */
 const LEAVE_MS = 260;
+
+/** The phone app build never runs update passes (AppShell skips the
+ *  updater there); the card renders nothing in that build even if some
+ *  store state were to leak in — belt and braces for quiet failures. */
+const QUIET_BUILD = isMobileApp();
 
 /**
  * UpdateToast — the updater's live pass card (下载中 / 测镜像 / 安装中),
@@ -84,7 +90,7 @@ export default defineComponent({
     });
 
     return () => {
-      if (!mounted.value) return null;
+      if (QUIET_BUILD || !mounted.value) return null;
       // Live store while running; the frozen snapshot while folding out.
       const live = updater.running;
       const statusText = live ? updater.statusText : held.value.statusText;

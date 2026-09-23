@@ -5,5 +5,8 @@
   "replay": "錄影復盤",
   "resources": "資源配置",
   "settings": "設定",
-  "home": "首頁"
+  "home": "首頁",
+  "openMenu": "開啟選單",
+  "menu": "選單",
+  "back": "返回"
 }

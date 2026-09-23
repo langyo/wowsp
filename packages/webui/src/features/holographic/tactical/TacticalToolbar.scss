@@ -263,3 +263,13 @@
   color: var(--holo-hud-dim);
   text-align: center;
 }
+
+/* Phone layout: the keyboard-shortcut chips beside popover menu items are
+   desktop-only affordances — no keyboard can press them on a touch screen,
+   and each chip only steals label width. Hide them ≤767px; desktop keeps
+   them. */
+@media (max-width: 767px) {
+  .tac-bar__item kbd {
+    display: none;
+  }
+}

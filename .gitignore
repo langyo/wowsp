@@ -35,7 +35,10 @@ Thumbs.db
 # Test coverage
 /coverage/
 **/__pycache__/
-packages/app/tauri/gen/
+# tauri-build schema/acl dumps (regenerated on every cargo build) stay
+# ignored; the gen/android project sources ARE tracked (standard Tauri v2
+# practice — its own gen/android/.gitignore excludes build outputs).
+packages/app/tauri/gen/schemas/
 packages/installer-shell/gen/
 .cache/
 
@@ -80,6 +83,19 @@ packages/webui/src/res/models/ships/*.glb
 packages/webui/src/res/models/planes/*.glb
 packages/webui/src/res/models/props/*.glb
 packages/webui/src/res/models/maps/*.glb
+
+# res-latest manifest persisted by scripts/fetch_models.py — derived download
+# like the GLBs (rides publicDir into dist for the mobile bundle baseline).
+packages/webui/src/res/wowsp-res.json
+
+# Offline GameParams ship-data pack (scripts/extract_gameparams.py) — derived
+# from a local game extract like the GLB pack; the android build regenerates
+# it before the webui build and desktop builds prune it from dist.
+packages/webui/src/res/data/gameparams/
+
+# The pack's refreshed dog-tag map, extracted by fetch_models.py over the
+# tracked snapshot baked into src/data/dogtags_map.json at build time.
+packages/webui/src/res/dogtags/dogtags_map.json
 
 # WebView2 Evergreen offline installer cached by scripts/build_installers.py
 # (~180 MB, never tracked) for the -webview2.zip delivery artifact.

@@ -19,6 +19,11 @@ const pkgDir = resolve(__dirname);
 
 const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 
+// Mobile-bundle builds (justfile android recipes) keep the baked GLBs and
+// the offline gameparams pack in dist so they embed into the APK's assets;
+// every other build prunes both (see pruneBakedGlb / pruneGameparams).
+const mobileBundle = process.env.WOWSP_MOBILE_BUNDLE === '1';
+
 // hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
 // excluded from optimizeDeps those files are served raw in dev, and a raw CJS
 // module has no default export. Alias the whole `lib/` tree onto the package's
@@ -81,6 +86,12 @@ function vendorChunks(id: string): string | undefined {
 // unlike the GLBs they are wanted in the shipped binary: release CI fetches
 // them from the res-latest wowsp-images archive before the webui build
 // (scripts/build_installers.py --images), so they embed on every side.
+//
+// MOBILE BUNDLE exception (WOWSP_MOBILE_BUNDLE=1): the Android build embeds
+// dist into the APK's read-only assets and the app loads GLBs SAME-ORIGIN
+// from there (see modelLoader.ts / commands/model_pack.rs mobile paths), so
+// the GLBs must survive the build. The env flag is exported by the justfile
+// android recipes only — desktop builds keep pruning.
 function pruneBakedGlb(outDir: string): Plugin {
   return {
     name: 'prune-baked-glb',
@@ -126,10 +137,61 @@ function pruneBakedGlb(outDir: string): Plugin {
   };
 }
 
+// The offline GameParams ship-data pack (src/res/data/gameparams/*.json —
+// untracked extraction output from scripts/extract_gameparams.py, ~135 MB raw
+// / ~13 MB compressed, one armed-ship subtree per file + upgrade prices +
+// build marker) rides publicDir into outDir like every other res asset.
+// Desktop never reads it (ship data comes from the install, and a stale
+// bundled copy would lag the client), so desktop builds prune the whole
+// directory to keep dist — and the embedded desktop binary — free of dead
+// weight; WOWSP_MOBILE_BUNDLE=1 keeps it for the APK assets where the
+// mobile gameparams fallback reads it (commands/gameparams.rs). Same gating
+// shape as pruneBakedGlb above.
+function pruneGameparams(outDir: string): Plugin {
+  return {
+    name: 'prune-gameparams',
+    apply: 'build',
+    closeBundle() {
+      const packDir = resolve(outDir, 'data/gameparams');
+      let freed = 0;
+      let removed = 0;
+      const visit = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = resolve(dir, entry.name);
+          if (entry.isDirectory()) {
+            visit(path);
+          } else {
+            freed += statSync(path).size;
+            rmSync(path);
+            removed += 1;
+          }
+        }
+      };
+      try {
+        visit(packDir);
+      } catch {
+        return; // no gameparams pack was copied — nothing to prune
+      }
+      rmSync(packDir, { recursive: true, force: true });
+      if (removed > 0) {
+        console.log(
+          `[prune-gameparams] removed ${removed} offline gameparams files ` +
+            `(${(freed / 1024 / 1024).toFixed(0)} MB) from ${packDir}`,
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     cleanOutDirContents(resolve(pkgDir, '../../dist/webui')),
-    pruneBakedGlb(resolve(pkgDir, '../../dist/webui')),
+    // Desktop/dev builds prune the baked GLBs (the pack serves from the
+    // cache dir) and the offline gameparams pack (ship data reads the
+    // install); WOWSP_MOBILE_BUNDLE=1 keeps both for the APK assets.
+    ...(mobileBundle
+      ? []
+      : [pruneBakedGlb(resolve(pkgDir, '../../dist/webui')), pruneGameparams(resolve(pkgDir, '../../dist/webui'))]),
     vueSfc(),
     vueJsx(),
     UnoCSS(),

@@ -1,6 +1,6 @@
 {
   "productName": "WoWSP",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "identifier": "com.langyo.wowsp",
   "build": {
     "beforeBuildCommand": "pnpm --filter @wowsp/webui build",
@@ -46,7 +46,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://asset.localhost https://asset.localhost; script-src 'self' https://www.googletagmanager.com; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* http://asset.localhost https://asset.localhost http://ipc.localhost https://ipc.localhost blob: https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://api.ipapi.co https://www.googletagmanager.com https://*.google-analytics.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://asset.localhost https://asset.localhost http://media.localhost media: https://*.google-analytics.com https://www.googletagmanager.com; font-src 'self'",
+      "csp": "default-src 'self' http://asset.localhost https://asset.localhost; script-src 'self' https://www.googletagmanager.com; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* http://asset.localhost https://asset.localhost http://ipc.localhost https://ipc.localhost blob: https://api.worldofwarships.* https://vortex.worldofwarships.* https://github.com https://*.githubusercontent.com https://api.github.com https://ipapi.co https://api.ipapi.co https://www.googletagmanager.com https://*.google-analytics.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://asset.localhost https://asset.localhost http://media.localhost media: https://*.google-analytics.com https://www.googletagmanager.com; font-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": [

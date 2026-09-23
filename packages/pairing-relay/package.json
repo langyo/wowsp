@@ -1,0 +1,14 @@
+{
+  "name": "@wowsp/pairing-relay",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "WoWSP mobile pairing gateway — a Rust-to-WebAssembly Cloudflare Worker rendezvous + byte tunnel (deploy your own copy; see README)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0"
+  }
+}

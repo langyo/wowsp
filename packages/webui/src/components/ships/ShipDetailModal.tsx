@@ -1,4 +1,5 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
 import { HButton, HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
@@ -14,6 +15,7 @@ import { api, type ShipInfo } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
+import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import BuildPlanner from "./BuildPlanner";
@@ -65,6 +67,12 @@ export default defineComponent({
     const ranked = useRankedStore();
     const trends = useTrendsStore();
     const toast = useToast();
+    const router = useRouter();
+    // Phone app build: there is no local game install to point the armor
+    // error's recovery action at (the game-path settings section and setup
+    // modal are desktop-only surfaces) — the banner's second action routes
+    // to the replay view's PC-pairing wizard instead (see the banner below).
+    const mobileApp = isMobileApp();
 
     const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
 
@@ -385,17 +393,37 @@ export default defineComponent({
             ) : null}
 
             {/* Armor-data failure banner: shows the backend error plus the
-                two recovery paths — re-run the load (retry after a path
-                change or game update) or open the game-path setup modal. */}
+                two recovery paths — re-run the load (retry after a sync or
+                game update), then either the game-path setup modal (desktop
+                app: pick a local install) or, on the phone app where no
+                local install exists, the replay view's PC-pairing wizard
+                that syncs the gamedata cache to the phone. */}
             {gpError.value ? (
               <div class="ship-detail__gp-error">
                 <span class="ship-detail__gp-error-msg">{gpError.value}</span>
                 <HButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
                   {t("common.retry")}
                 </HButton>
-                <HButton size="sm" onClick={() => (showPathSetup.value = true)}>
-                  {t("common.gamePath.setAction")}
-                </HButton>
+                {mobileApp ? (
+                  <HButton
+                    size="sm"
+                    onClick={() => {
+                      emit("close");
+                      // The modal's hikari back guard rewinds its pushed
+                      // history entry on close (a deferred macrotask); a
+                      // same-tick router.push races that rewind and the
+                      // popstate strands the user on /ships. Let the close
+                      // settle (0.3s leave animation) before navigating.
+                      setTimeout(() => void router.push("/replay"), 350);
+                    }}
+                  >
+                    {t("ships.detail.gameparamsSyncAction")}
+                  </HButton>
+                ) : (
+                  <HButton size="sm" onClick={() => (showPathSetup.value = true)}>
+                    {t("common.gamePath.setAction")}
+                  </HButton>
+                )}
               </div>
             ) : null}
 
@@ -463,11 +491,15 @@ export default defineComponent({
           </div>
         )}
 
-        {/* Nested game-path setup (opened from the armor-error banner). */}
-        <GamePathSetupModal
-          modelValue={showPathSetup.value}
-          onUpdate:modelValue={(v: boolean) => (showPathSetup.value = v)}
-        />
+        {/* Nested game-path setup (opened from the armor-error banner) —
+            desktop app only: the phone build has no local install to pick,
+            and its banner action routes to the replay pairing wizard. */}
+        {!mobileApp ? (
+          <GamePathSetupModal
+            modelValue={showPathSetup.value}
+            onUpdate:modelValue={(v: boolean) => (showPathSetup.value = v)}
+          />
+        ) : null}
       </HModal>
     );
   },

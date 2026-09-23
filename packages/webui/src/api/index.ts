@@ -1,4 +1,4 @@
-export { api, foldDamageStats } from "./client";
+export { api, foldDamageStats, GAMEDATA_SENTINEL } from "./client";
 export type {
   GameInstall,
   GameInstallKind,
@@ -24,6 +24,15 @@ export type {
   ModInstallRecord,
   UninstallReport,
   CatalogProgress,
+  PairingStatus,
+  PairingToken,
+  RemoteReplayEntry,
+  PairingProgress,
+  GamedataSyncResult,
+  PairingTarget,
+  DiscoveredHost,
+  DiscoverySnapshot,
+  RelayConfig,
   RankedSeasonStats,
   VehicleEntry,
   ReplayMeta,

@@ -246,3 +246,35 @@
     letter-spacing: 0.04em;
   }
 }
+
+/* ── Drawer variant (phone-layout nav drawer) ─────────────────────────
+   Same nav re-hosted inside hikari's HDrawer panel: no side border (the
+   drawer panel owns its chrome) and the footer clears the gesture-bar
+   safe area so the account button stays tappable on edge-to-edge phones. */
+.sidebar--drawer {
+  border-right: none;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  /* Stretch to the drawer body's FULL height: hikari's .hk-drawer-body is
+     a plain scrolling block (not a flex container), so the flex:1 above is
+     inert — without an explicit height the sidebar collapses to content
+     height, the footer floats up right behind the nav, and the drawer's
+     lower half sits empty (which reads as a panel that stops well above
+     the screen bottom). min-height (not height) still lets tall navs
+     overflow into the body's scroll on short screens. */
+  min-height: 100%;
+  box-sizing: border-box;
+
+  .sidebar__footer {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Phone widths: nav links carry 44px touch targets (the 32px-tall desktop
+   rows are below the comfortable tap floor). */
+@media (max-width: 767px) {
+  .sidebar__link {
+    min-height: 44px;
+  }
+}

@@ -46,3 +46,20 @@
     margin-left: 0.35rem;
   }
 }
+
+/* Phone widths: rows that pair text with an inline segmented control (the
+   PR algorithm tabs) overflow 390px — let the control wrap under its
+   label (hikari tabs then fill the row and scroll internally, their own
+   overflow behavior). The text column gets a zero flex basis so the small
+   toggle switches keep their desktop shape — right-aligned on the label
+   line instead of wrapping with it. Shared by the settings stats section
+   and the onboarding preferences step. */
+@media (max-width: 767px) {
+  .stats-prefs__row {
+    flex-wrap: wrap;
+  }
+
+  .stats-prefs__row-text {
+    flex: 1 1 0;
+  }
+}

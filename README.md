@@ -38,6 +38,19 @@ WoWSP is a next-generation battle analysis dashboard for **World of Warships**. 
 
 2. **In-game overlay** — installs as a mod that auto-launches WoWSP when the game starts. A transparent overlay window detects both teams at match start and renders a roster on top of the game, shown only while you hold `Tab`. On each Tab press WoWSP captures the screen, locates the team-list region, and re-anchors the overlay to the correct position.
 
+## Android edition
+
+Since 0.5.0 WoWSP also ships a phone edition — the same review dashboard with phone-native layouts that pulls replays straight from your desktop: the computer shows up automatically on the same Wi-Fi, or from anywhere by entering its six-digit pairing code (relayed through the built-in Cloudflare Worker at `gateway.wowsp.langyo.xyz`; source and one-command deploy instructions live in [`packages/pairing-relay`](./packages/pairing-relay/README.md)). The APK bundles the 3D model pack and the offline ship-data pack, so reviews render with no network at all once the replays are on the phone.
+
+Building it from source needs the Android SDK + NDK 26.1 and a JDK 17 (`ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME` can be overridden in the environment — see the android notes in the [`justfile`](./justfile)):
+
+```sh
+just fetch-models       # one-time ~1.3 GB model-pack download (cached, skipped when present)
+just build android-apk  # arm64 debug APK; --release output is unsigned until a keystore is wired in
+```
+
+The default build targets arm64 (`aarch64`); for an emulator use `just build android --apk --target x86_64` instead.
+
 The replay parsing, game-detection, and `tempArenaInfo.json` polling principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell, build infrastructure, and licensing model are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## Documentation

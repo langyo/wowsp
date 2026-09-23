@@ -21,7 +21,7 @@ import {
   type VNodeChild,
 } from "vue";
 
-import { HPopover, HSearchInput } from "@celestia-island/hikari";
+import { HPopover, HSearchInput, useBreakpoint } from "@celestia-island/hikari";
 import { Search, X } from "@lucide/vue";
 
 import "./AsyncSearchCombo.scss";
@@ -58,6 +58,9 @@ export default defineComponent({
   },
   setup(props) {
     const open = ref(false);
+    // Phone layout signal for the HPopover sheet dock (sheetOnMobile +
+    // scrim-rendering closeOnBackdrop, mirroring ShipFilterBar's chips).
+    const { isMobile } = useBreakpoint();
     const query = ref("");
     const items = ref<unknown[]>([]);
     const loading = ref(false);
@@ -148,10 +151,14 @@ export default defineComponent({
               crushing a CSS-sized-only svg down to zero width. */}
           <Search size={14} />
         </button>
-        {/* closeOnBackdrop stays off: HPopover's own document listener would
-            close on the re-click of the open trigger before that click
-            re-opens it. The pointerdown listener above is the outside-close;
-            Escape rides closeOnEscape. */}
+        {/* Desktop keeps closeOnBackdrop off: HPopover's own document
+            listener would close on the re-click of the open trigger before
+            that click re-opens it; the pointerdown listener above is the
+            outside-close and Escape rides closeOnEscape. Phones dock the
+            panel as a bottom sheet (sheetOnMobile — hikari convention:
+            nothing floats anchored on phones), where the sheet branch
+            renders its dismissal scrim from closeOnBackdrop; tapping the
+            scrim also trips the listener above (same close, one path). */}
         <HPopover
           modelValue={open.value}
           onUpdate:modelValue={(v: boolean) => {
@@ -159,7 +166,8 @@ export default defineComponent({
           }}
           anchorRef={btnEl.value}
           placement={placement.value}
-          closeOnBackdrop={false}
+          closeOnBackdrop={isMobile.value}
+          sheetOnMobile
           title={props.title || props.placeholder}
         >
           <div ref={panelEl} class="async-search-combo__panel">

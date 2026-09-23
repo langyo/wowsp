@@ -197,9 +197,10 @@ pub(crate) fn capture_window_png(
 }
 
 pub(crate) fn default_screenshot_path() -> Result<PathBuf, String> {
-    let dir = dirs_next::data_dir().ok_or_else(|| "cannot resolve data dir".to_string())?;
-    let wowsp_dir = dir.join("WoWSP");
-    std::fs::create_dir_all(&wowsp_dir).map_err(|e| format!("create {wowsp_dir:?}: {e}"))?;
+    // paths::data_dir keeps this identical on Windows (%APPDATA%\WoWSP) and
+    // resolves the app-private dir on Android, where raw dirs-next has no
+    // HOME/XDG to read.
+    let wowsp_dir = crate::paths::ensure_data_dir()?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())

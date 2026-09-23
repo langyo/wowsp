@@ -25,6 +25,7 @@ import {
 import { type PlannerBuild } from "./modifierPipeline";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
 import { api, type UpgradePrice } from "@/api";
+import { isMobileApp } from "@/utils/platform";
 import DataObserver from "./DataObserver";
 import signalsData from "../../data/signals.json";
 import modernizationsData from "../../data/modernizations.json";
@@ -621,14 +622,20 @@ export default defineComponent({
     }
 
     // ── Cost panel data: GameParams price walk (loaded per game root,
-    //    the first time the 成本计算 section opens) ──
+    //    the first time the 成本计算 section opens; on the phone app the
+    //    root stays empty and the backend resolves prices from the bundled
+    //    offline pack) ──
     const prices = ref<Record<string, UpgradePrice> | null>(null);
     const pricesError = ref(false);
     let pricesLoadedFor = "";
     watch(
       () => [props.gameRoot, section.value] as const,
       ([root, sec]) => {
-        if (sec !== "costs" || !root || pricesLoadedFor === root) return;
+        // Desktop keeps the empty-root short-circuit (no install picked →
+        // nothing to read); on the phone app the empty root is the NORMAL
+        // state and the Rust side must decide (appdata cache → bundled
+        // pack), so only the section gate applies there.
+        if (sec !== "costs" || (!root && !isMobileApp()) || pricesLoadedFor === root) return;
         pricesLoadedFor = root;
         api
           .getUpgradePrices(root)

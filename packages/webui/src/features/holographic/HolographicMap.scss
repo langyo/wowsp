@@ -678,6 +678,58 @@
   white-space: nowrap;
 }
 
+/* ── Phone sheet docking (≤767px) ─────────────────────────────────────
+   On phones the two HUD pop-up menus (playback speed above the clock,
+   camera mode above its toggle) dock as bottom sheets — hikari's "phones
+   never float anchored menus" convention, same family contract the
+   HModal/HkPopover sheets and ReplayView's custom overlays follow:
+   full-width, rounded top corners only, capped under the app title bar
+   (--app-titlebar-h + status-bar safe area + breathing room), scroll
+   contained so the roster list never chains to the page. The scrim
+   (rendered phone-only from HolographicMap.tsx) replaces the anchored
+   panel's tap-outside radius. Desktop ≥768px keeps the anchored
+   --holo-hud panels byte-identical. */
+@media (max-width: 767px) {
+  .holo-map__sheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    background: rgb(0 0 0 / 40%);
+  }
+
+  .holo-map__speed-menu,
+  .holo-map__cam-menu {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    z-index: 7;
+    max-height: calc(
+      100dvh - var(--app-titlebar-h, 48px) - env(safe-area-inset-top, 0px) - 2.25rem
+    );
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
+    animation: holo-sheet-up 0.24s var(--ease-standard, ease);
+  }
+}
+
+@keyframes holo-sheet-up {
+  from {
+    transform: translateY(16%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 /* ── Zoomed minimap overlay ─────────────────────────────────────────── */
 .holo-map__mmzoom {
   position: absolute;

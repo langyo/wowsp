@@ -17,21 +17,31 @@ pub async fn pick_export_path(
     filter_name: String,
     filter_exts: Vec<String>,
 ) -> Result<Option<String>, String> {
+    // Mobile: no native save dialog — the export flow writes into app
+    // storage / the media store instead (later mobile phase).
+    #[cfg(mobile)]
+    {
+        let _ = (default_name, filter_name, filter_exts);
+        return Err(crate::mobile_unsupported::PICKER.into());
+    }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread (same rule as
     // pick_replay_files / pick_game_folder).
-    let picked = tokio::task::spawn_blocking(move || {
-        let mut dlg = rfd::FileDialog::new()
-            .set_title("Save tactical board export")
-            .set_file_name(&default_name);
-        if !filter_exts.is_empty() {
-            dlg = dlg.add_filter(&filter_name, &filter_exts);
-        }
-        dlg.save_file()
-    })
-    .await
-    .map_err(|e| format!("export save dialog task failed: {e}"))?;
-    Ok(picked.map(|p| p.to_string_lossy().into_owned()))
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(move || {
+            let mut dlg = rfd::FileDialog::new()
+                .set_title("Save tactical board export")
+                .set_file_name(&default_name);
+            if !filter_exts.is_empty() {
+                dlg = dlg.add_filter(&filter_name, &filter_exts);
+            }
+            dlg.save_file()
+        })
+        .await
+        .map_err(|e| format!("export save dialog task failed: {e}"))?;
+        Ok(picked.map(|p| p.to_string_lossy().into_owned()))
+    }
 }
 
 /// Write a raw export body (PNG/WebP image bytes or MP4/WebM video bytes) to
@@ -70,7 +80,8 @@ pub async fn write_export_bytes(request: tauri::ipc::Request<'_>) -> Result<(), 
 
 /// Decode a percent-encoded ASCII string (from `encodeURIComponent` on the JS
 /// side) back into UTF-8. Hand-rolled to avoid a new dependency for one call.
-fn percent_decode(input: &str) -> Result<String, String> {
+/// Shared with the pairing module (URL paths + the import file-name header).
+pub(crate) fn percent_decode(input: &str) -> Result<String, String> {
     let bytes = input.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

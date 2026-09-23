@@ -5,5 +5,8 @@
   "replay": "Revue des replays",
   "resources": "Ressources",
   "settings": "Paramètres",
-  "home": "Accueil"
+  "home": "Accueil",
+  "openMenu": "Ouvrir le menu",
+  "menu": "Menu",
+  "back": "Retour"
 }

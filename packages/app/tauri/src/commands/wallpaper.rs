@@ -95,38 +95,55 @@ pub fn wallpaper_list() -> Result<Vec<WallpaperFile>, String> {
 /// or `None` when the dialog was cancelled.
 #[tauri::command]
 pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
+    // Mobile: no native image picker (rfd has no Android backend) — the
+    // mobile UI uses the system photo picker in a later phase.
+    #[cfg(mobile)]
+    {
+        return Err(crate::mobile_unsupported::PICKER.into());
+    }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread (same rule as
     // pick_game_folder / pick_export_path).
-    let picked = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("Select a wallpaper image")
-            .add_filter(
-                "Images",
-                &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"],
-            )
-            .pick_file()
-    })
-    .await
-    .map_err(|e| format!("wallpaper picker task failed: {e}"))?;
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Select a wallpaper image")
+                .add_filter(
+                    "Images",
+                    &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"],
+                )
+                .pick_file()
+        })
+        .await
+        .map_err(|e| format!("wallpaper picker task failed: {e}"))?;
 
-    let Some(src) = picked else {
-        return Ok(None);
-    };
-    // Windows dialogs don't enforce the filter on a manually typed file name
-    // — reject anything the listing wouldn't accept instead of importing a
-    // wallpaper that can never resolve.
-    let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
-        return Err("picked file has no usable name".into());
-    };
-    if !is_image_file(file_name) {
-        return Err(format!("unsupported wallpaper type: {file_name}"));
+        let Some(src) = picked else {
+            return Ok(None);
+        };
+        // Windows dialogs don't enforce the filter on a manually typed file name
+        // — reject anything the listing wouldn't accept instead of importing a
+        // wallpaper that can never resolve.
+        let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
+            return Err("picked file has no usable name".into());
+        };
+        if !is_image_file(file_name) {
+            return Err(format!("unsupported wallpaper type: {file_name}"));
+        }
+        let ext = src
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_else(|| "png".into());
+        import_image(&src, &ext).await.map(Some)
     }
-    let ext = src
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .unwrap_or_else(|| "png".into());
+}
+
+/// Copy a picked image into the wallpapers dir under a fresh
+/// `wallpaper-<nanos>.<ext>` name (user files keep their originals; renames
+/// avoid collisions with same-named imports). Shared tail of the import
+/// command so future mobile import paths (photo-picker bytes) reuse it.
+async fn import_image(src: &Path, ext: &str) -> Result<WallpaperFile, String> {
     let dir = wallpapers_dir()?;
     let dest_name = format!(
         "wallpaper-{}.{}",
@@ -140,6 +157,7 @@ pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
     let part = dir.join(format!("{dest_name}.part"));
     // Copy via a `.part` temp name so an interrupted/disk-full copy can't
     // leave a corrupt image that the listing would pick up, then rename.
+    let src = src.to_path_buf();
     tokio::task::spawn_blocking(move || {
         let result = std::fs::copy(&src, &part)
             .map(|_| ())
@@ -152,7 +170,7 @@ pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
     })
     .await
     .map_err(|e| format!("wallpaper copy task failed: {e}"))??;
-    Ok(to_entry(dir.join(dest_name)))
+    to_entry(dir.join(dest_name)).ok_or_else(|| "imported wallpaper missing after copy".into())
 }
 
 /// Delete an imported wallpaper by id (bare file name inside the dir).

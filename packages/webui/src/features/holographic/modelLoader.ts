@@ -12,6 +12,15 @@
  * pack doesn't have 404s into the per-ship fallback chain (substitute hull →
  * placeholder), exactly like any other load failure.
  *
+ * MOBILE (phone app build): the pack ships inside the APK's assets, and the
+ * webui build keeps the GLBs (WOWSP_MOBILE_BUNDLE=1 skips prune-baked-glb).
+ * Startup wires the pack cache ONLY when a downloaded update is serving
+ * (AppShell → res_cache_root); otherwise initModelPack stays unwired and
+ * every URL below resolves SAME-ORIGIN (`/models/...`) straight out of the
+ * read-only APK assets — the exact fallback the unwired state already
+ * produces. `fetchModelResource`'s GLB-magic validation keeps the WebView's
+ * SPA-fallback answers from poisoning loads there too.
+ *
  * ## Skin → base model dedup
  * `src/data/ship_models.json` maps each shipId to a `baseName`.
  */
@@ -20,6 +29,7 @@ import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
 import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
+import { isTauri } from "@/utils/platform";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
@@ -31,10 +41,13 @@ let _convertFileSrc: ((path: string) => string) | null = null;
  *  multiple times — only the first invocation actually fetches. */
 export async function initModelPack(fetch: () => Promise<string>): Promise<void> {
   if (_modelCacheRoot) return;
-  // Lazy-load convertFileSrc — only available in Tauri context.
+  // Lazy-load convertFileSrc. The npm module resolves in plain browsers
+  // too, but the call itself needs the Tauri internals — unwired here (null)
+  // every URL below falls back to the same-origin /models/... paths, which
+  // is exactly what `?mobileApp=1` browser emulation wants.
   try {
     const mod = await import("@tauri-apps/api/core");
-    _convertFileSrc = mod.convertFileSrc;
+    _convertFileSrc = isTauri() ? mod.convertFileSrc : null;
   } catch {
     _convertFileSrc = null;
   }
