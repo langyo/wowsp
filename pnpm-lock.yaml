@@ -120,8 +120,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.36
-        version: 0.55.36(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.53
+        version: 0.55.53(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
         version: 1.47.0(vue@3.5.42(typescript@7.0.2))
@@ -314,6 +314,11 @@ packages:
 
   '@celestia-island/hikari@0.55.36':
     resolution: {integrity: sha512-NPKzyukYBJHMautZIbVh0b8j5qIVZFeSYKGWWIf9P+QieflcJhWDnd5zZl/IyLfkitD08TuWAUxckuiolpqcVw==}
+    peerDependencies:
+      vue: ^*
+
+  '@celestia-island/hikari@0.55.53':
+    resolution: {integrity: sha512-UPL0fyZH3HsI4kgRQwuvGJWE3IEt5ugUMdoHdw3RRdVrqO/ZNLX4neDK3IJoAovW1WPSz5WkHUt2Phh48ZF39Q==}
     peerDependencies:
       vue: ^*
 
@@ -2820,6 +2825,15 @@ snapshots:
       '@babel/helper-validator-identifier': 7.29.7
 
   '@celestia-island/hikari@0.55.36(vue@3.5.42(typescript@7.0.2))':
+    dependencies:
+      dompurify: 3.4.15
+      echarts: 6.1.0
+      highlight.js: 11.12.0
+      lucide-vue-next: 1.0.0(vue@3.5.42(typescript@7.0.2))
+      marked: 18.0.13
+      vue: 3.5.42(typescript@7.0.2)
+
+  '@celestia-island/hikari@0.55.53(vue@3.5.42(typescript@7.0.2))':
     dependencies:
       dompurify: 3.4.15
       echarts: 6.1.0
