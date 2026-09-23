@@ -1,48 +1,39 @@
-# WoWSP site + pairing gateway — one Cloudflare Worker.
+# WoWSP pairing gateway — the API half of wowsp.langyo.xyz.
 #
 # The worker is RUST compiled to WebAssembly (crates/relay-core carries
-# the protocol/policy; crates/relay-worker is the wasm entry) AND hosts
-# the website's static assets (the [assets] block below — Pages+Worker
-# in one service). Building requires the one-time tool install (see
-# README.md ▶ Deploy):
+# the protocol/policy; crates/relay-worker is the wasm entry). Building
+# requires the one-time tool install (see README.md ▶ Deploy):
 #
 #   cargo install -t worker-build worker-build
 #
-# then bundle the site (see the justfile `bundle-site` recipe — builds
-# packages/website + docs into ./assets) and deploy:
+# then `npx wrangler deploy` / `pnpm --filter @wowsp/pairing-relay deploy`
+# (owner's manual step). Local dev: `pnpm --filter @wowsp/pairing-relay dev`
+# (= `wrangler dev`, builds the wasm via the [build] command below).
 #
-#   just bundle-site
-#   WASM_BINDGEN_BIN="$(command -v wasm-bindgen)" pnpm exec wrangler deploy
-#
-# (owner's manual step). Local dev: `pnpm --filter @wowsp/pairing-relay
-# dev` (= `wrangler dev`, builds the wasm via the [build] command below).
-#
-# Production is served at the custom domain wowsp.langyo.xyz (bound in
-# the Cloudflare dashboard after deploy; the desktop app and the phone
-# app hardcode https://wowsp.langyo.xyz — see
-# packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_ROOT_URL).
-# GitHub Pages remains a backup mirror only. Development can override
-# the endpoint with the WOWSP_RELAY_URL env var.
+# The worker answers ONLY the pairing API under
+# https://wowsp.langyo.xyz/api* — the `routes` entry below. Workers
+# Routes take precedence over the GitHub Pages custom domain bound to
+# the same hostname, so the WEBSITE (HTML + all assets, including /docs)
+# is served by GitHub Pages at the same address and Cloudflare stays out
+# of the page/heavy-download path entirely. The DNS record for
+# wowsp.langyo.xyz is therefore the proxied CNAME to
+# `langyo.github.io` (GitHub Pages). The apps hardcode
+# https://wowsp.langyo.xyz — see
+# packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_ROOT_URL.
+# Development can override the endpoint with the WOWSP_RELAY_URL env var.
 
 name = "wowsp-pairing"
 main = "crates/relay-worker/build/worker/shim.mjs"
 compatibility_date = "2026-01-15"
 
+# API route on the site's hostname (see the header comment). The zone's
+# DNS for this hostname must be the proxied GitHub Pages CNAME.
+routes = [
+  { pattern = "wowsp.langyo.xyz/api*", zone_name = "langyo.xyz" },
+]
+
 [build]
 command = "worker-build --release crates/relay-worker"
-
-# The WEBSITE this worker serves: the HTML shell answers every non-API
-# path (SPA fallback), while BUILT assets (JS/CSS/images) load from the
-# GitHub Pages mirror (langyo.github.io/wowsp) via absolute URLs — see
-# justfile `bundle-site` (WOWSP_SITE_ASSET_BASE). /docs redirects to the
-# Pages-hosted docs, and run_worker_first routes /api + /docs into the
-# worker; everything else resolves statically. `assets/` is generated
-# (gitignored).
-[assets]
-directory = "./assets"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/docs", "/docs/*"]
 
 # Two SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions:

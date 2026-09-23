@@ -39,19 +39,6 @@ const RESOLVE_SOCKET_LIFETIME_MS: u32 = 10_000;
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let url = req.url()?;
     let path = url.path().to_string();
-
-    // The docs are NOT bundled: they live on the GitHub Pages mirror
-    // (langyo.github.io/wowsp/docs, the same origin every built asset of
-    // the site loads from) so Cloudflare stays out of the heavy-download
-    // path. run_worker_first includes /docs so old links land here.
-    if path == "/docs" || path.starts_with("/docs/") {
-        let target = format!(
-            "https://langyo.github.io/wowsp{path}{}",
-            url.query().map_or(String::new(), |q| format!("?{q}"))
-        );
-        return Response::redirect(worker::Url::parse(&target)?);
-    }
-
     let query = url.query().unwrap_or("").to_string();
 
     match classify(&path, &query) {
