@@ -324,6 +324,21 @@
         "marker": "Unité virtuelle",
         "path": "Trajectoire épinglée"
       }
+    },
+    "plan": {
+      "act": {
+        "move": "Déplacement",
+        "attack": "Attaque",
+        "spot": "Repérage"
+      },
+      "actionLabel": "Action",
+      "hint": "Replacez la même unité plus tard et elle s'y rendra d'elle-même : la chronologie trace la flèche d'interpolation entre les deux repères.",
+      "tween": "Interpolation",
+      "unitN": "Unité {n}",
+      "actionCount": "{n} actions",
+      "collapse": "Cliquer pour réduire",
+      "expand": "Cliquer pour déplier",
+      "hiddenUnits": "…et {n} unités de plus (bande pleine)"
     }
   },
   "chatLog": "Chat de bataille",

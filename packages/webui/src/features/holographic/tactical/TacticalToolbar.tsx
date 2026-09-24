@@ -16,14 +16,17 @@ import {
   ChevronUp,
   Circle,
   Crop,
+  Crosshair,
   Download,
   Eraser,
+  Eye,
   FastForward,
   Hand,
   MousePointer2,
   Maximize2,
   Minus,
   MoreHorizontal,
+  MoveRight,
   Palette,
   Pen,
   Plane,
@@ -41,7 +44,8 @@ import {
 import { t as i18nT } from "@/i18n";
 import type { TacticalStore } from "./useTactical";
 import { TACTICAL_PALETTE, TACTICAL_WIDTHS } from "./useTactical";
-import type { DashStyle, TacticalToolId } from "./types";
+import { ACTION_KINDS } from "./plan";
+import type { DashStyle, TacticalActionKind, TacticalToolId } from "./types";
 import "./TacticalToolbar.scss";
 
 interface ExportSettings {
@@ -92,6 +96,20 @@ const MARKER_TOOLS: ToolMeta[] = [
   { id: "pinPath", icon: Route, key: "tools.pinPath" },
 ];
 
+/** Plan boards carry no replay, so the path pin (which picks a live ship)
+ *  has nothing to pick — and the route tool would paint a hull that is
+ *  neither a keyframe nor a timeline row, so both stay replay-only. */
+const PLAN_MARKER_TOOLS: ToolMeta[] = MARKER_TOOLS.filter(
+  (tl) => tl.id !== "pinPath" && tl.id !== "markerRoute",
+);
+
+/** Icons for the placement action kinds, in toolbar order. */
+const ACTION_ICONS: Record<TacticalActionKind, typeof Pen> = {
+  move: MoveRight,
+  attack: Crosshair,
+  spot: Eye,
+};
+
 const DASHES: DashStyle[] = ["solid", "dashed", "dotted"];
 
 /** Keyboard shortcut shown next to a menu item (matches TacticalBoard's
@@ -124,10 +142,14 @@ export default defineComponent({
     exportSettings: { type: Object as PropType<ExportSettings>, required: true },
     actions: { type: Object as PropType<TacticalToolbarActions>, required: true },
     hasSelection: { type: Boolean, default: false },
+    /** Plan board: markers are keyframes, so the marker menu gains the action
+     *  kind picker and loses the replay-only path pin. */
+    plan: { type: Boolean, default: false },
   },
   setup(props) {
     const tool = computed(() => props.store.tool.value);
     const style = computed(() => props.store.style.value);
+    const markerTools = computed(() => (props.plan ? PLAN_MARKER_TOOLS : MARKER_TOOLS));
 
     /** Which popover is open (null = none). One at a time. */
     const open = ref<string | null>(null);
@@ -152,10 +174,10 @@ export default defineComponent({
       () => SHAPE_TOOLS.find((tl) => tl.id === tool.value)?.icon ?? SHAPE_TOOLS[0].icon,
     );
     const markerIcon = computed(
-      () => MARKER_TOOLS.find((tl) => tl.id === tool.value)?.icon ?? MARKER_TOOLS[0].icon,
+      () => markerTools.value.find((tl) => tl.id === tool.value)?.icon ?? markerTools.value[0].icon,
     );
     const isShapeTool = computed(() => SHAPE_TOOLS.some((tl) => tl.id === tool.value));
-    const isMarkerTool = computed(() => MARKER_TOOLS.some((tl) => tl.id === tool.value));
+    const isMarkerTool = computed(() => markerTools.value.some((tl) => tl.id === tool.value));
 
     const toolButton = (tl: ToolMeta, onPick?: () => void) => {
       const Icon = tl.icon;
@@ -230,7 +252,32 @@ export default defineComponent({
           </HTooltip>
           {open.value === "markers" ? (
             <div class="tac-bar__pop">
-              {MARKER_TOOLS.map((tl) => menuItem(tl))}
+              {markerTools.value.map((tl) => menuItem(tl))}
+              {props.plan ? (
+                <>
+                  <div class="tac-bar__pop-sep" />
+                  <div class="tac-bar__field-label">{i18nT("replay.tactical.plan.actionLabel")}</div>
+                  <div class="tac-bar__row">
+                    {ACTION_KINDS.map((kind) => {
+                      const Icon = ACTION_ICONS[kind];
+                      const on = props.store.actionKind.value === kind;
+                      return (
+                        <button
+                          key={kind}
+                          class={["tac-bar__item", on ? "tac-bar__item--on" : ""]}
+                          onClick={() => {
+                            props.store.actionKind.value = kind;
+                          }}
+                        >
+                          <Icon size={14} />
+                          <span>{i18nT(`replay.tactical.plan.act.${kind}`)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p class="tac-bar__note">{i18nT("replay.tactical.plan.hint")}</p>
+                </>
+              ) : null}
             </div>
           ) : null}
         </span>

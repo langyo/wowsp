@@ -19,6 +19,7 @@ import type {
 import {
   elementPoints,
   elementProgress,
+  markerPoseAt,
   visibleAt,
 } from "./model";
 import {
@@ -27,6 +28,7 @@ import {
   sliceSegmentByFraction,
   smoothPolyline,
 } from "./geometry";
+import { planNextActionT, planTweenTargets, type PlanTweenTarget } from "./plan";
 import { trajectoryPolylines } from "./replayPath";
 
 /** Logical map space the enlarged 2D view draws in (matches zoomCanvas). */
@@ -245,6 +247,31 @@ function cachedPathPolys(
   return polys;
 }
 
+/** Plan tween targets for one document. Keyed on the elements ARRAY, which
+ *  every edit replaces (`useTactical` never mutates in place), so a repainting
+ *  RAF loop pays the grouping cost once per document change instead of once
+ *  per frame. */
+const tweenCache = new WeakMap<object, Map<string, PlanTweenTarget>>();
+
+export function planTweensOf(elements: TacticalElement[]): Map<string, PlanTweenTarget> {
+  const hit = tweenCache.get(elements);
+  if (hit) return hit;
+  const out = planTweenTargets(elements);
+  tweenCache.set(elements, out);
+  return out;
+}
+
+/** Takeover seconds per plan action, memoized like the tween targets. */
+const nextCache = new WeakMap<object, Map<string, number>>();
+
+export function planNextOf(elements: TacticalElement[]): Map<string, number> {
+  const hit = nextCache.get(elements);
+  if (hit) return hit;
+  const out = planNextActionT(elements);
+  nextCache.set(elements, out);
+  return out;
+}
+
 function drawElement(
   ctx: CanvasRenderingContext2D,
   el: TacticalElement,
@@ -353,6 +380,12 @@ function drawElement(
       break;
     }
     case "marker": {
+      const tween = planTweensOf(opts.elements).get(el.id) ?? null;
+      // One unit = one hull at any second: once a later action of the same
+      // unit has taken over, this keyframe keeps drawing its leg (the unit's
+      // course is worth keeping on screen) but no longer its glyph.
+      const handover = planNextOf(opts.elements).get(el.id);
+      const owns = handover == null || handover > t || mode !== "normal";
       // Scripted routes: dashed guide line + the marker sailing along it.
       if (el.route != null && el.route.length >= 2) {
         const routePts = cachedSmooth(el, el.route, () => smoothPolyline(el.route!));
@@ -364,7 +397,32 @@ function drawElement(
         strokePolylineWorld(ctx, routePts, proj);
         ctx.setLineDash([]);
         ctx.globalAlpha = alpha;
+      } else if (tween && mode === "normal") {
+        // Leg: the straight line this action travels, dashed, ending in an
+        // arrowhead plus an arrival ring on the spot it is ordered to (the
+        // map twin of the timeline's tween arrow). Faded once the unit has
+        // arrived — a travelled leg is history, not plan.
+        const lw = Math.max(1.2, el.size / 28);
+        const from = proj.toPx(el.at);
+        const to = proj.toPx(tween.at);
+        const arrived = t >= tween.t;
+        ctx.strokeStyle = el.color;
+        ctx.lineWidth = lw;
+        ctx.globalAlpha = alpha * (arrived ? 0.2 : 0.45);
+        applyDash(ctx, "dashed", lw);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = alpha * (arrived ? 0.25 : 0.6);
+        drawArrowHead(ctx, from, to, lw, el.color);
+        ctx.beginPath();
+        ctx.arc(to.x, to.y, Math.max(3, el.size * 0.16), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = alpha;
       }
+      if (!owns) break;
       const scripted = el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0;
       const pose = scripted
         ? pointAlongPolyline(
@@ -373,9 +431,14 @@ function drawElement(
               ? Math.max(0, Math.min(1, (t - el.t0) / (el.moveDur || 1)))
               : 0, // previews sit at the route start
           )
-        : { at: el.at, heading: el.heading };
+        : markerPoseAt(el, t, mode === "normal" ? tween : null);
       const p = proj.toPx(pose.at);
-      ctx.globalAlpha = alpha * progress;
+      // A plan hull is the unit itself, not an annotation appearing: no
+      // draw-on fade, or it would blink invisible at every takeover second
+      // (the predecessor just lost ownership while the successor is still at
+      // progress 0) and stay invisible right after being dropped.
+      const planHull = mode === "normal" && el.action != null;
+      ctx.globalAlpha = alpha * (planHull ? 1 : progress);
       ctx.save();
       ctx.translate(p.x, p.y);
       // Heading 0 = north (up); glyph art points right at rest → −90°.
@@ -413,7 +476,7 @@ function drawElement(
 
 function drawSelection(ctx: CanvasRenderingContext2D, el: TacticalElement, opts: RenderOptions): void {
   if (el.kind === "replayPath") return;
-  const pts = elementPoints(el, opts.time);
+  const pts = elementPoints(el, opts.time, planTweensOf(opts.elements).get(el.id) ?? null);
   if (pts.length === 0) return;
   const padPx = 7;
   let minX = Infinity;

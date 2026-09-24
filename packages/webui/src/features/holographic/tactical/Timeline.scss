@@ -64,7 +64,8 @@
 .tac-timeline__canvas {
   display: block;
   width: 100%;
-  height: 120px;
+  /* Height is set inline from the band model: the replay strip is short, the
+     plan board's accordion + progress bar are much deeper. */
   cursor: crosshair;
   touch-action: none;
 }

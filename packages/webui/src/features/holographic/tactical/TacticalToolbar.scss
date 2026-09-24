@@ -165,6 +165,14 @@
   }
 }
 
+/* Plan-board hint under the action-kind picker. */
+.tac-bar__note {
+  margin: 2px 0 0;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: var(--holo-hud-dim);
+}
+
 .tac-bar__width {
   display: flex;
   align-items: center;
