@@ -113,9 +113,7 @@
     "armor": {
       "toggle": "Basculer l'affichage de la ceinture blindée",
       "short": "Blindage",
-      "noData": "Aucune donnée de blindage disponible.",
       "legend": "Blindage (mm)",
-      "estimated": "approximatif",
       "zone": {
         "bow": "Proue",
         "midship": "Centre",
@@ -131,13 +129,6 @@
         "torpedoBelt": "Bulbe anti-torpilles",
         "bowBelt": "Ceinture de proue",
         "superstructure": "Superstructure"
-      },
-      "overmatchThreshold": "L'écrasement nécessite un calibre ≥{n}mm",
-      "outcome": {
-        "overmatch": "Écrasement",
-        "pen": "Pénétration",
-        "overpen": "Sur-pénétration",
-        "bounce": "Ricochet"
       },
       "restore": "Restaurer",
       "solo": "Seulement",

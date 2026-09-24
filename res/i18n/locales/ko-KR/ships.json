@@ -113,9 +113,7 @@
     "armor": {
       "toggle": "장갑대 오버레이 전환",
       "short": "장갑",
-      "noData": "장갑 데이터가 없습니다.",
       "legend": "장갑 (mm)",
-      "estimated": "추정치",
       "zone": {
         "bow": "함수",
         "midship": "중앙부",
@@ -131,13 +129,6 @@
         "torpedoBelt": "어뢰 방어격벽",
         "bowBelt": "함수 장갑대",
         "superstructure": "상부 구조물"
-      },
-      "overmatchThreshold": "오버매치에는 ≥{n}mm 구경 필요",
-      "outcome": {
-        "overmatch": "오버매치",
-        "pen": "관통",
-        "overpen": "과관통",
-        "bounce": "튕김"
       },
       "restore": "복원",
       "solo": "표시만",

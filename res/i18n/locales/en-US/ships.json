@@ -113,9 +113,7 @@
     "armor": {
       "toggle": "Toggle armor belt overlay",
       "short": "Armor",
-      "noData": "No armor data available.",
       "legend": "Armor (mm)",
-      "estimated": "approximate",
       "zone": {
         "bow": "Bow",
         "midship": "Midship",
@@ -131,13 +129,6 @@
         "torpedoBelt": "Torpedo bulkhead",
         "bowBelt": "Bow belt",
         "superstructure": "Superstructure"
-      },
-      "overmatchThreshold": "Overmatch needs ≥{n}mm caliber",
-      "outcome": {
-        "overmatch": "Overmatch",
-        "pen": "Pen",
-        "overpen": "Overpen",
-        "bounce": "Bounce"
       },
       "restore": "Restore",
       "solo": "Only",
