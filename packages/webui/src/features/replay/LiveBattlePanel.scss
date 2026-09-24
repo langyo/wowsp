@@ -76,6 +76,14 @@
     color: rgb(var(--color-warning, 251 191 36));
   }
 
+  /* Battle over for good — the roster on screen is the last battle's,
+     kept until the next one starts. Muted: nothing is live here. */
+  &__pill--ended {
+    border-color: rgb(var(--color-text) / 30%);
+    background: rgb(var(--color-text) / 8%);
+    color: rgb(var(--color-muted));
+  }
+
   &__clock {
     display: inline-flex;
     align-items: baseline;

@@ -517,15 +517,65 @@ function render() {
 }
 
 /** Backoff state for a FAILED batch. The backend fails the WHOLE batch on
- *  any error (WG rate limit, transient network) and tempArenaInfo.json
- *  never changes mid-battle — no arena-info event will ever re-queue the
- *  names. Without this retry the affected chips stay "…" for the entire
- *  battle even after the API recovers (the main window's roster pipeline
- *  has its own retry; this is the same contract for the overlay page). */
+ *  any error (WG rate limit, transient network — one flaky name in a CN
+ *  vortex batch is enough) and tempArenaInfo.json never changes mid-battle
+ *  — no arena-info event will ever re-queue the names. Without this retry
+ *  the affected chips stay "…" for the entire battle even after the API
+ *  recovers (the main window's roster pipeline has its own retry; this is
+ *  the same contract for the overlay page). The ceiling stays low on
+ *  purpose: a batch that keeps failing must keep re-filling within a
+ *  Tab-hold or two, not a half-minute out. */
 let inFlight = false;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = 2000;
-const RETRY_DELAY_MAX_MS = 30000;
+const RETRY_DELAY_MAX_MS = 10000;
+
+// A "not found" answer (null result, cached as the "—" no-data stat) is not
+// always final: WG/vortex lookups occasionally answer empty for a name the
+// same API resolves moments later, and the main window's panel would then
+// show stats the overlay chip never picks up. Cache the null answer (chips
+// stay honest immediately) but re-queue the name while a small per-battle
+// budget lasts — bounded, so a genuinely absent account stops being probed
+// after the retries run out. The budget counts EVERY attempt (the initial
+// lookup included), so this is "up to 1 initial + 2 re-queues per battle".
+const NOT_FOUND_ATTEMPTS_MAX = 3;
+const NOT_FOUND_RETRY_DELAY_MS = 20000;
+const notFoundLeft = new Map<string, number>();
+const notFoundRetry = new Set<string>();
+let notFoundTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Spend one attempt from a name's per-battle budget. Every LOOKUP against
+ *  a suspected-absent name costs one — a null answer and a thrown batch
+ *  alike — so a hard-down API cannot keep the re-queue alive indefinitely
+ *  (a throwing batch consumes its budget without producing an answer). */
+function spendNotFoundRetry(name: string) {
+  const left = (notFoundLeft.get(name) ?? NOT_FOUND_ATTEMPTS_MAX) - 1;
+  if (left > 0) {
+    notFoundLeft.set(name, left);
+    notFoundRetry.add(name);
+  } else {
+    notFoundLeft.delete(name);
+    notFoundRetry.delete(name);
+  }
+}
+
+/** Arm the delayed re-queue of "not found" names (one timer regardless of
+ *  batch size). The set keeps its names until they resolve or run out of
+ *  budget; on fire, only names still on the current roster re-join the
+ *  pending set — a battle switch clears the bookkeeping instead. */
+function scheduleNotFoundRetry() {
+  if (!arena || !tauri || !realm || notFoundRetry.size === 0 || notFoundTimer) return;
+  notFoundTimer = setTimeout(() => {
+    notFoundTimer = null;
+    if (!arena) return;
+    for (const name of notFoundRetry) {
+      if (arena.vehicles.some((v) => v.name === name)) pending.add(name);
+    }
+    if (pending.size > 0 && !batchTimer && !inFlight && !retryTimer) {
+      batchTimer = setTimeout(runBatch, 250);
+    }
+  }, NOT_FOUND_RETRY_DELAY_MS);
+}
 
 function scheduleBatch() {
   if (!arena || !tauri) return;
@@ -571,6 +621,8 @@ async function runBatch() {
           clanId: r.clanId ?? null,
           hidden: r.hidden,
         });
+        notFoundLeft.delete(name);
+        notFoundRetry.delete(name);
       } else {
         stats.set(cacheKey(name), {
           winrate: null,
@@ -580,10 +632,15 @@ async function runBatch() {
           clanId: null,
           hidden: false,
         });
+        // Cache the "—" now, but keep a bounded re-queue armed: an empty
+        // answer is sometimes a hiccup, not a verdict (see the retry
+        // bookkeeping above).
+        spendNotFoundRetry(name);
       }
     });
     // Success: restore the initial cadence for any future failure.
     retryDelayMs = 2000;
+    scheduleNotFoundRetry();
     // Freshly landed stats unlock the composition-seal lookups for those
     // names (seals only queue names that already have their stats) and the
     // hidden-profile clan gates alike.
@@ -599,6 +656,14 @@ async function runBatch() {
       scheduleBatch();
     }, retryDelayMs);
     retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
+    // A thrown batch is still an ATTEMPT against the suspected-absent names
+    // riding in it: spend their budget and re-arm, so their re-queue stays
+    // bounded even while the API is hard-down (the backoff above never
+    // re-queues them — their null answers are cached).
+    for (const name of names) {
+      if (notFoundRetry.has(name)) spendNotFoundRetry(name);
+    }
+    scheduleNotFoundRetry();
   } finally {
     inFlight = false;
   }
@@ -685,6 +750,14 @@ async function start() {
         clearTimeout(retryTimer);
         retryTimer = null;
       }
+      // The "not found" re-queue belongs to the old battle's answer set —
+      // drop it with the rest of the cadence state.
+      notFoundLeft.clear();
+      notFoundRetry.clear();
+      if (notFoundTimer) {
+        clearTimeout(notFoundTimer);
+        notFoundTimer = null;
+      }
       // The seal pipeline resets its cadence the same way (its cache
       // persists — career composition does not change battle to battle).
       compRetryDelayMs = 2000;
@@ -729,6 +802,12 @@ async function start() {
         alive: anchor.rowAlive ?? null,
       };
     }
+    // The user is LOOKING at the table right now — give any chip still on
+    // "…" a prompt fill round. The call is cheap when everything is cached
+    // and stays behind the failed-batch backoff when one is running (no API
+    // hammering); it exists for the window-lifecycle gaps where the roster
+    // landed without a stats batch ever being scheduled.
+    scheduleBatch();
     render();
   });
 

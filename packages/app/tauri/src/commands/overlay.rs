@@ -25,9 +25,11 @@
 //! panel shifts as a whole when HUD phases change (countdown → combat), and
 //! a battle-pinned anchor would otherwise keep the countdown position for
 //! the entire battle. The same pass now also RECONCILES the row→name
-//! recognition: while a pin still lacks a trusted mapping (the arena roster
-//! file landed after the pin, or an all-`None` OCR read matched nothing) it
-//! re-runs at the capture rate limit ([`CAPTURE_MIN_INTERVAL`]) instead of
+//! recognition: while a pin's mapping is incomplete (no trusted mapping yet
+//! — the arena roster file landed after the pin, or an all-`None` OCR read
+//! matched nothing — or a partial match left some rows unnamed, which are
+//! exactly the chips stuck on "…") it re-runs at the capture rate limit
+//! ([`CAPTURE_MIN_INTERVAL`]) instead of
 //! the full 5 s, and whenever a fresh detection disagrees with the pin's
 //! mapping — first recognition landing late, or sunk ships re-sorting the
 //! rows — only the mapping is transplanted onto the pin (geometry
@@ -1423,27 +1425,41 @@ fn mapping_untrusted(players: &Option<Vec<Option<String>>>) -> bool {
     }
 }
 
+/// Pure: does this payload leave at least one row WITHOUT a name? A
+/// partially-matched mapping is trusted enough to render (the matched chips
+/// are correct), but the unmatched rows are exactly the chips stuck on "…"
+/// — the recognition catch-up stays armed on them so a later OCR read can
+/// still fill the gaps. Strictly includes [`mapping_untrusted`].
+fn mapping_incomplete(players: &Option<Vec<Option<String>>>) -> bool {
+    match players {
+        None => true,
+        Some(v) => v.iter().any(Option::is_none),
+    }
+}
+
 /// Pure catch-up gate (unit-testable; time, engine availability and the
 /// stale flag are injected by the caller): run a recognition catch-up pass
 /// when a CONFIRMED pin is on screen and its row→name mapping needs a
-/// fresh OCR read — either because it still lacks a trusted mapping
-/// (absent, or an all-`None` read: nothing matched) or because the pin is
-/// STALE (the sink probe flipped alive flags; the old mapping is
-/// battle-accurate but the rows re-sorted, so the mapping must be re-read
-/// to confirm the new order) — while recognition is enabled and the
-/// throttle says a pass may run.
+/// fresh OCR read — because it still lacks a trusted mapping (absent, or
+/// an all-`None` read: nothing matched), because rows are still unnamed
+/// (a partial match leaves those chips on "…" until a later read names
+/// them), or because the pin is STALE (the sink probe flipped alive flags;
+/// the old mapping is battle-accurate but the rows re-sorted, so the
+/// mapping must be re-read to confirm the new order) — while recognition
+/// is enabled and the throttle says a pass may run.
 ///
-/// Keeping the gate armed on an all-`None` pin cannot oscillate: a
-/// deterministic re-read is again all-`None`, compares equal to the pin's
-/// mapping, `should_transplant_rows` stays false and the pass re-emits
-/// nothing.
+/// Keeping the gate armed on an incomplete pin cannot oscillate: a
+/// deterministic re-read of a row OCR cannot name yields the same
+/// `None` again, the payload compares equal to the pin's mapping,
+/// `should_transplant_rows` stays false and the pass re-emits nothing —
+/// it only re-spends the (Tab-hold-only) capture budget.
 fn should_catch_up_recognition(
     pin: Option<&OverlayAnchor>,
     stale: bool,
     recognizer_on: bool,
     throttle_elapsed: bool,
 ) -> bool {
-    pin.is_some_and(|p| p.table_detected && (mapping_untrusted(&p.row_players) || stale))
+    pin.is_some_and(|p| p.table_detected && (mapping_incomplete(&p.row_players) || stale))
         && recognizer_on
         && throttle_elapsed
 }
@@ -2891,10 +2907,20 @@ mod tests {
         // An all-None mapping (text read, nothing matched) is NOT ready —
         // catch-up stays armed for it too.
         let all_none_pin = anchor_with_players(2, true, Some(vec![None, None]), false);
-        let ready_pin = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
+        // A PARTIAL match names one row but leaves the other on "…": trusted
+        // enough to render, yet the catch-up stays armed so the unnamed row
+        // gets re-read instead of dotting for the whole battle.
+        let partial_pin =
+            anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
+        let ready_pin = anchor_with_players(
+            2,
+            true,
+            Some(vec![Some("Alpha".into()), Some("Beta".into())]),
+            false,
+        );
         let fallback_pin = anchor_with_players(2, false, None, false);
-        // Pending (absent or all-None mapping) + engine on + throttle
-        // elapsed → run the catch-up pass.
+        // Pending (absent, all-None or partially-named mapping) + engine on +
+        // throttle elapsed → run the catch-up pass.
         assert!(should_catch_up_recognition(
             Some(&pending_pin),
             false,
@@ -2907,8 +2933,14 @@ mod tests {
             true,
             true
         ));
+        assert!(should_catch_up_recognition(
+            Some(&partial_pin),
+            false,
+            true,
+            true
+        ));
         // …but not without the engine, the throttle, a pin, a confirmed
-        // table, or once a trusted mapping has landed.
+        // table, or once a fully-named mapping has landed.
         assert!(!should_catch_up_recognition(
             Some(&pending_pin),
             false,
@@ -2963,6 +2995,17 @@ mod tests {
             true,
             true
         ));
+    }
+
+    #[test]
+    fn mapping_incomplete_needs_every_row_named() {
+        assert!(mapping_incomplete(&None));
+        assert!(mapping_incomplete(&Some(vec![None, None])));
+        assert!(mapping_incomplete(&Some(vec![Some("Alpha".into()), None])));
+        assert!(!mapping_incomplete(&Some(vec![Some("Alpha".into())])));
+        // Strictly stricter than the trust bar: everything untrusted is
+        // incomplete, while a partial match is trusted AND incomplete.
+        assert!(!mapping_untrusted(&Some(vec![Some("Alpha".into()), None])));
     }
 
     #[test]
