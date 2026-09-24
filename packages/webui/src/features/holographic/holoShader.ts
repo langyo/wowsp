@@ -15,6 +15,21 @@
  * Scanlines sweep vertically over time; a separate wireframe overlay mesh is
  * drawn by the caller.
  *
+ * Definition layer: the ship stage enables two extra terms that give large
+ * panels surface reading (a flat pastel fill with nothing between the
+ * silhouette and the rim reads as porridge on a broadside hull):
+ *   - `uLightGain` — a soft headlight (dot of the smooth normal with the view
+ *     direction, eased, multiplicative) so curvature and creases modulate the
+ *     fill instead of every facing fragment getting the same colour. Gated on
+ *     `vHasNormal`: markers and terrain build on normal-less geometry and
+ *     keep the flat look (their uniforms stay at the 0 defaults).
+ *   - `uLinesGain` — a faint world-space measuring grid (10-unit pitch,
+ *     fwidth-antialiased) so a broadside slab shows panel-scale structure
+ *     without a per-triangle wireframe. World space because the bake's local
+ *     units differ per ship while the stage normalizes every model to the
+ *     same 200-unit box.
+ * Both default to 0 — `makeHoloMaterial()` alone reproduces the legacy look.
+ *
  * Usage:
  *   const mat = makeHoloMaterial();          // a ShaderMaterial (transparent)
  *   tickHoloUniforms(mat.uniforms, dt);      // drive it each frame
@@ -45,6 +60,10 @@ export interface HoloUniforms {
   /** Multiplier for the output alpha — ghosts (unseen/spawned/ sunk ships)
    *  render at a fraction of the normal opacity. */
   ghostAlpha: { value: number };
+  /** Headlight gain — 0 keeps the flat legacy fill (markers, terrain). */
+  uLightGain: { value: number };
+  /** Measuring-grid gain — 0 draws no grid. */
+  uLinesGain: { value: number };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -81,6 +100,8 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float focusRadius;
   uniform float focusBoost;
   uniform float ghostAlpha;
+  uniform float uLightGain;
+  uniform float uLinesGain;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
@@ -111,6 +132,20 @@ export const HOLO_FRAG = /* glsl */ `
     vec3 col = baseColor * (0.75 + 0.45 * fres);
     col += fresnelColor * fres * 1.2;
     col += fresnelColor * scan * 0.5;
+    // Headlight: ease the facing ratio so only surfaces square to the camera
+    // lift, while grazing panels stay dark toward the rim. Multiplicative —
+    // the hue stays the category's own instead of washing toward white.
+    if (uLightGain > 0.0 && vHasNormal > 0.5) {
+      float def = dot(n, viewDir);
+      col *= 1.0 + uLightGain * def * def;
+    }
+    // Measuring grid, one line every 10 world units on each axis. Kept
+    // faint: it must read as panel structure, not as a cage over the ship.
+    if (uLinesGain > 0.0) {
+      vec3 g = abs(fract(vWorldPos / 10.0 - 0.5) - 0.5) / fwidth(vWorldPos);
+      float line = 1.0 - min(min(g.x, g.y), g.z);
+      col += fresnelColor * clamp(line, 0.0, 1.0) * uLinesGain;
+    }
     // No interior alpha fade: it would be another dot(n, viewDir) sign test at
     // the same grazing incidence the plate mosaic comes from. Occlusion is the
     // depth test's job (the stage writes depth); every fragment keeps one
@@ -167,6 +202,10 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       focusRadius: { value: 30.0 },
       focusBoost: { value: 0.8 },
       ghostAlpha: { value: 1.0 },
+      // Legacy look: both definition terms off. The ship stage turns them on
+      // per material after loading a model.
+      uLightGain: { value: 0.0 },
+      uLinesGain: { value: 0.0 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,
