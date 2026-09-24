@@ -158,7 +158,28 @@
     "manualDragHint": "按住鼠标左键拖动，框选游戏内的战绩表格区域",
     "manualConfirm": "确认",
     "manualCancel": "取消",
-    "manualTooSmall": "选区太小"
+    "manualTooSmall": "选区太小",
+    "param": {
+      "mainGun": "主炮",
+      "secondary": "副炮",
+      "aa": "防空",
+      "torpedo": "鱼雷",
+      "airstrike": "空袭",
+      "concealment": "隐蔽",
+      "speed": "航速"
+    },
+    "card": {
+      "loadout": "装配与升级",
+      "consumables": "消耗品槽位",
+      "upgrades": "可研发模块",
+      "upgradesNone": "完全体（无待研发模块）",
+      "flags": "信号旗上限",
+      "commander": "本国传奇舰长",
+      "loadoutNote": "仅列出该舰可配置项；实际装配无法从对局数据获知",
+      "enemyNote": "按规则不展示敌方装配信息",
+      "noData": "暂无该舰参数"
+    },
+    "tier": "等级"
   },
   "postbattle": {
     "loadingGlobal": "加载 {name} 全局战绩…",

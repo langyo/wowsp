@@ -272,7 +272,11 @@
     "depthChargeDamage": "深彈傷害",
     "depthChargePacks": "深彈組數",
     "depthChargeBombs": "每組深彈數",
-    "depthChargeReload": "深彈裝填"
+    "depthChargeReload": "深彈裝填",
+    "secondaryRange": "副砲射程",
+    "aswRange": "空襲距離",
+    "aswCharges": "空襲次數",
+    "aswReload": "空襲裝填"
   },
   "skills": {
     "title": "艦長技能模擬",
@@ -462,6 +466,21 @@
     "showing": "顯示前 {shown} 艘 / 共 {total} 艘",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "維修小組",
+    "crashCrew": "損管小組",
+    "spotter": "偵察機",
+    "fighter": "戰鬥機",
+    "smoke": "發煙器",
+    "speedBoost": "引擎增壓",
+    "hydro": "水聽器",
+    "radar": "雷達",
+    "hydrophone": "水聽器（潛艦）",
+    "subLocator": "潛艦探測",
+    "torpReload": "魚雷裝填助推器",
+    "artyReload": "主砲裝填助推器",
+    "defensiveAA": "防空彈幕"
+  },
   "techTree": {
     "title": "科技樹",
     "branch": "分支",
@@ -532,5 +551,14 @@
     "downloadStart": "3D 檢視需要下載模型資源包（約 1.2 GB），已開始下載…",
     "ready": "模型資源包就緒",
     "failed": "模型資源包下載失敗，請稍後重試"
+  },
+  "module": {
+    "fireControl": "射擊系統",
+    "sonar": "聲納",
+    "fighter": "戰鬥機",
+    "diveBomber": "俯衝轟炸機",
+    "torpedoBomber": "魚雷機",
+    "skipBomber": "跳彈轟炸機",
+    "flightControl": "飛行控制"
   }
 }

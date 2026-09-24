@@ -1,26 +1,13 @@
-/* Live-battle page — slim title header + full-height panel body. BEM and
-   tokens mirror ReplayView.scss. The LiveBattlePanel owns its internal
-   scrolling (a height:100% column with its own padding), so the body here
-   only constrains it to the remaining height. */
+/* Live-battle page — a bare full-height body around the panel. The page has
+   no header of its own: LiveBattlePanel's heading is the page title (a slim
+   eyebrow here used to duplicate it), and the idle guide carries its own.
+   The panel owns the internal scrolling (a height:100% column with its own
+   padding), so the body only constrains it to the full height. */
 .live-view {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-
-  &__head {
-    flex-shrink: 0;
-    padding: 1.1rem 1.5rem 0.75rem;
-  }
-
-  &__title {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: rgb(var(--color-muted));
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
 
   &__body {
     flex: 1;
@@ -37,14 +24,5 @@
     justify-content: center;
     color: rgb(var(--color-muted));
     font-size: var(--text-md);
-  }
-}
-
-/* ── Phone layout (≤767px): tighten the gutters like ReplayView ────────── */
-@media (max-width: 767px) {
-  .live-view {
-    &__head {
-      padding: 0.75rem 0.75rem 0.5rem;
-    }
   }
 }

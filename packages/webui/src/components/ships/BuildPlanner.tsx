@@ -26,6 +26,7 @@ import { type PlannerBuild } from "./modifierPipeline";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
 import { api, type UpgradePrice } from "@/api";
 import { isMobileApp } from "@/utils/platform";
+import { gameNationOf } from "@/utils/nationCodes";
 import DataObserver from "./DataObserver";
 import signalsData from "../../data/signals.json";
 import modernizationsData from "../../data/modernizations.json";
@@ -145,30 +146,6 @@ const COMMANDERS = (commandersData as CommanderEntry[])
  *  extracted from GameParams ShipAbilities (the WG API hides loadouts);
  *  backs the consumable-gated skill bans. */
 const SHIP_CONSUMABLES = shipConsumablesData as Record<string, string[]>;
-
-/** WG lowercase nation code → GameParams nation name used by modernizations. */
-const GP_NATION: Record<string, string> = {
-  usa: "USA",
-  japan: "Japan",
-  germany: "Germany",
-  uk: "United_Kingdom",
-  ussr: "Russia",
-  france: "France",
-  italy: "Italy",
-  netherlands: "Netherlands",
-  spain: "Spain",
-  pan_asia: "Pan_Asia",
-  pan_america: "Pan_America",
-  commonwealth: "Commonwealth",
-  europe: "Europe",
-  // WG mixes both spellings for the pan-European faction (tech tree ships
-  // carry "pan_europe", GameParams mods/commanders say "Europe").
-  pan_europe: "Europe",
-  // ship_names.json keeps the raw game-file spellings; synthetic ShipInfo
-  // entries (event ships outside the encyclopedia) carry them verbatim.
-  united_kingdom: "United_Kingdom",
-  russia: "Russia",
-};
 
 /** skilltree.json / signals.json / modernizations.json language key for the
  *  current data-language setting (falls back to en). */
@@ -359,7 +336,7 @@ export default defineComponent({
     // ── Commanders section ─────────────────────────────────────────────────
     /** WG lowercase nation → GameParams nation of the current ship (drives
      *  both the commander pool and modernization gating). */
-    const gpNation = computed(() => GP_NATION[props.ship.nation] ?? props.ship.nation);
+    const gpNation = computed(() => gameNationOf(props.ship.nation));
     /** Commanders usable on THIS ship. Filtering by nation also drops the
      *  7 event-bound commanders (empty nations). COMMANDERS is pre-sorted
      *  legendary-first then by person — the filter preserves that order. */

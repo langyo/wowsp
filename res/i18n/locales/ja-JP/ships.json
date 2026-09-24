@@ -272,7 +272,11 @@
     "depthChargeDamage": "爆雷ダメージ",
     "depthChargePacks": "爆雷セット数",
     "depthChargeBombs": "セットあたりの爆雷数",
-    "depthChargeReload": "爆雷装填"
+    "depthChargeReload": "爆雷装填",
+    "secondaryRange": "副砲射程",
+    "aswRange": "空襲距離",
+    "aswCharges": "空襲回数",
+    "aswReload": "空襲装填"
   },
   "skills": {
     "title": "艦長スキルビルダー",
@@ -462,6 +466,21 @@
     "showing": "先頭 {shown} 艘を表示 / 全 {total} 艘",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "修理班",
+    "crashCrew": "応急修理班",
+    "spotter": "偵察機",
+    "fighter": "戦闘機",
+    "smoke": "煙幕発生器",
+    "speedBoost": "エンジンブースト",
+    "hydro": "水中聴音",
+    "radar": "レーダー",
+    "hydrophone": "ハイドロフォン",
+    "subLocator": "潜水艦探知機",
+    "torpReload": "魚雷装填ブースター",
+    "artyReload": "主砲装填ブースター",
+    "defensiveAA": "対空弾幕"
+  },
   "techTree": {
     "title": "テックツリー",
     "branch": "分岐",
@@ -532,5 +551,14 @@
     "downloadStart": "3D 表示にはモデルパック（約 1.2 GB）が必要です。ダウンロードを開始しました…",
     "ready": "モデルパックの準備ができました",
     "failed": "モデルパックのダウンロードに失敗しました。後でもう一度お試しください"
+  },
+  "module": {
+    "fireControl": "射撃管制装置",
+    "sonar": "ソナー",
+    "fighter": "戦闘機",
+    "diveBomber": "急降下爆撃機",
+    "torpedoBomber": "雷撃機",
+    "skipBomber": "反跳爆撃機",
+    "flightControl": "航空管制"
   }
 }

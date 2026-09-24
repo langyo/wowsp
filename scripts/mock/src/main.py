@@ -53,12 +53,12 @@ def wg_to_short_code(wg: str) -> str:
 # A sample roster matching tempArenaInfo.json shape. Enough to render both
 # teams in the overlay view during mock development.
 _SAMPLE_ROSTER = [
-    {"id": 1, "name": "Player1", "relation": "0", "shipId": "4183305088", "shipName": "Yamato"},
-    {"id": 2, "name": "Player2", "relation": "0", "shipId": "4273848496", "shipName": "Montana"},
-    {"id": 3, "name": "Player3", "relation": "0", "shipId": "4285609360", "shipName": "Gearing"},
-    {"id": 4, "name": "Enemy1", "relation": "2", "shipId": "4183305088", "shipName": "Yamato"},
-    {"id": 5, "name": "Enemy2", "relation": "2", "shipId": "4273848496", "shipName": "Montana"},
-    {"id": 6, "name": "Enemy3", "relation": "2", "shipId": "4285609360", "shipName": "Gearing"},
+    {"id": 1, "name": "Player1", "relation": "0", "shipId": "4276041424", "shipName": "Yamato"},
+    {"id": 2, "name": "Player2", "relation": "0", "shipId": "4277090288", "shipName": "Montana"},
+    {"id": 3, "name": "Player3", "relation": "0", "shipId": "4281219056", "shipName": "Gearing"},
+    {"id": 4, "name": "Enemy1", "relation": "2", "shipId": "4276041424", "shipName": "Yamato"},
+    {"id": 5, "name": "Enemy2", "relation": "2", "shipId": "4277090288", "shipName": "Montana"},
+    {"id": 6, "name": "Enemy3", "relation": "2", "shipId": "4281219056", "shipName": "Gearing"},
 ]
 
 

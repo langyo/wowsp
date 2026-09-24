@@ -158,7 +158,28 @@
     "manualDragHint": "Mantén pulsado el botón izquierdo y arrastra para enmarcar la tabla de jugadores del juego",
     "manualConfirm": "Confirmar",
     "manualCancel": "Cancelar",
-    "manualTooSmall": "La selección es demasiado pequeña"
+    "manualTooSmall": "La selección es demasiado pequeña",
+    "param": {
+      "mainGun": "Batería principal",
+      "secondary": "Batería secundaria",
+      "aa": "AA",
+      "torpedo": "Torpedos",
+      "airstrike": "Ataque aéreo",
+      "concealment": "Detección",
+      "speed": "Velocidad"
+    },
+    "card": {
+      "loadout": "Equipamiento y mejoras",
+      "consumables": "Ranuras de consumibles",
+      "upgrades": "Módulos investigables",
+      "upgradesNone": "Totalmente investigado (no quedan módulos)",
+      "flags": "Capacidad de señales",
+      "commander": "Comandante legendario (nación)",
+      "loadoutNote": "Solo capacidades del buque — la configuración real no aparece en los datos de batalla",
+      "enemyNote": "La información de equipamiento enemiga no se muestra por política",
+      "noData": "No hay especificaciones para este buque"
+    },
+    "tier": "Nivel"
   },
   "postbattle": {
     "loadingGlobal": "Cargando las estadísticas globales de {name}…",

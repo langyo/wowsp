@@ -45,6 +45,7 @@
   }
 
   &__title {
+    margin: 0;
     font-size: var(--text-lg);
     font-weight: 700;
   }
@@ -184,10 +185,12 @@
     background: rgb(var(--color-text) / 0.04);
   }
 
-  /* Text stack (name / ship / stat line). `min-width: 0` lets it give way to
-     the career seal instead of pushing it out of the card. */
+  /* Text stack (name / ship / stat line). A capped column so the ship-meta
+     strip owns the card's middle ground; `min-width: 0` lets it give way
+     instead of pushing the seal out of the card. */
   &__player-main {
-    flex: 1;
+    flex: 0 1 auto;
+    width: 34%;
     min-width: 0;
     display: flex;
     flex-direction: column;
