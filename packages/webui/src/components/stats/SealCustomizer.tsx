@@ -1,5 +1,5 @@
 import { defineComponent, ref } from "vue";
-import { HButton, HSwitch, useToast } from "@celestia-island/hikari";
+import { HkButton, HkSwitch, useToast } from "@celestia-island/hikari";
 import { ImagePlus, RotateCcw } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -86,7 +86,7 @@ export default defineComponent({
                 </span>
                 <span class="seal-customizer__desc">{t(`stats.${descKey}`)}</span>
                 <span class="seal-customizer__actions">
-                  <HButton
+                  <HkButton
                     variant="secondary"
                     size="sm"
                     loading={busy.value === kind}
@@ -94,17 +94,17 @@ export default defineComponent({
                     onClick={() => void pick(kind)}
                   >
                     <ImagePlus size={13} /> {t("settings.sealCustomizer.pickImage")}
-                  </HButton>
-                  <HButton
+                  </HkButton>
+                  <HkButton
                     variant="ghost"
                     size="sm"
                     disabled={disabled}
                     onClick={() => void reset(kind)}
                   >
                     <RotateCcw size={13} /> {t("settings.sealCustomizer.resetDefault")}
-                  </HButton>
+                  </HkButton>
                 </span>
-                <HSwitch
+                <HkSwitch
                   modelValue={!disabled}
                   onUpdate:modelValue={(v: boolean) => prefs.setSealDisabled(kind, !v)}
                 />

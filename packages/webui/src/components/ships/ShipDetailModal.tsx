@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
-import { HButton, HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
@@ -344,7 +344,7 @@ export default defineComponent({
     });
 
     return () => (
-      <HModal
+      <HkModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
         title={viewShip.value ? `${tierToRoman(viewShip.value.tier)} ${useEncyclopediaStore().shipDisplayName(viewShip.value)}` : t("ships.detail.title")}
@@ -374,8 +374,8 @@ export default defineComponent({
 
             {/* identity header */}
             <div class="ship-detail__id">
-              <HTag variant="primary">{tierToRoman(viewShip.value.tier)}</HTag>
-              <HTag variant="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</HTag>
+              <HkTag variant="primary">{tierToRoman(viewShip.value.tier)}</HkTag>
+              <HkTag variant="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</HkTag>
               <NationFlag
                 nation={viewShip.value.nation}
                 label={nationLabel(viewShip.value.nation)}
@@ -383,9 +383,9 @@ export default defineComponent({
                 size="md"
                 showLabel
               />
-              <HTag variant={RARITY_VARIANT[rarity.value]}>
+              <HkTag variant={RARITY_VARIANT[rarity.value]}>
                 {t(`ships.rarity.${rarity.value}`)}
-              </HTag>
+              </HkTag>
             </div>
 
             {viewShip.value.description ? (
@@ -401,11 +401,11 @@ export default defineComponent({
             {gpError.value ? (
               <div class="ship-detail__gp-error">
                 <span class="ship-detail__gp-error-msg">{gpError.value}</span>
-                <HButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
+                <HkButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
                   {t("common.retry")}
-                </HButton>
+                </HkButton>
                 {mobileApp ? (
-                  <HButton
+                  <HkButton
                     size="sm"
                     onClick={() => {
                       emit("close");
@@ -418,17 +418,17 @@ export default defineComponent({
                     }}
                   >
                     {t("ships.detail.gameparamsSyncAction")}
-                  </HButton>
+                  </HkButton>
                 ) : (
-                  <HButton size="sm" onClick={() => (showPathSetup.value = true)}>
+                  <HkButton size="sm" onClick={() => (showPathSetup.value = true)}>
                     {t("common.gamePath.setAction")}
-                  </HButton>
+                  </HkButton>
                 )}
               </div>
             ) : null}
 
             {/* tab bar — hikari pill tab strip */}
-            <HTabs
+            <HkTabs
               variant="pill"
               modelValue={tab.value}
               onUpdate:modelValue={(v: string) => selectTab(v as typeof tab.value)}
@@ -500,7 +500,7 @@ export default defineComponent({
             onUpdate:modelValue={(v: boolean) => (showPathSetup.value = v)}
           />
         ) : null}
-      </HModal>
+      </HkModal>
     );
   },
 });

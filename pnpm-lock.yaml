@@ -120,8 +120,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.53
-        version: 0.55.53(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.74
+        version: 0.55.74(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
         version: 1.47.0(vue@3.5.42(typescript@7.0.2))
@@ -314,8 +314,8 @@ packages:
     peerDependencies:
       vue: ^*
 
-  '@celestia-island/hikari@0.55.53':
-    resolution: {integrity: sha512-UPL0fyZH3HsI4kgRQwuvGJWE3IEt5ugUMdoHdw3RRdVrqO/ZNLX4neDK3IJoAovW1WPSz5WkHUt2Phh48ZF39Q==}
+  '@celestia-island/hikari@0.55.74':
+    resolution: {integrity: sha512-66h2+qxbAv0zE0xpH4pN5OSMw+Jr/O9tKDayjtADJ2yOPp/Om2OhfCnbbPzLBXxhV1pxeV00jFj7syEEYz3ryg==}
     peerDependencies:
       vue: ^*
 
@@ -2826,7 +2826,7 @@ snapshots:
       marked: 18.0.13
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.53(vue@3.5.42(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.74(vue@3.5.42(typescript@7.0.2))':
     dependencies:
       dompurify: 3.4.15
       echarts: 6.1.0

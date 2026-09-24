@@ -1,6 +1,6 @@
 /**
  * Mobile "get replays from the PC" wizard — a sheet-driven flow (hikari
- * HModal auto-docks as a bottom sheet on phone layout):
+ * HkModal auto-docks as a bottom sheet on phone layout):
  *
  *   hosts → [live discovery + saved + manual (collapsed)] ─┐ LAN
  *   hosts → [nothing to configure — straight to the code] ─┘ internet (beta)
@@ -14,7 +14,7 @@
  * (`wowsp.langyo.xyz`) is a hidden built-in service, so the phone
  * just enters the 6-digit code shown on the desktop. The mode toggle
  * defaults to internet until the phone has paired with something. The PIN
- * step is the hikari `HOtpInput` everywhere.
+ * step is the hikari `HkOtpInput` everywhere.
  *
  * The discovery listener is tied to THIS component's lifecycle: started when
  * the sheet opens, stopped on close/unmount.
@@ -31,12 +31,12 @@ import {
 } from "@lucide/vue";
 
 import {
-  HButton,
-  HInput,
-  HModal,
-  HSpinner,
-  HTabs,
-  HOtpInput,
+  HkButton,
+  HkInput,
+  HkModal,
+  HkSpinner,
+  HkTabs,
+  HkOtpInput,
   useToast,
 } from "@celestia-island/hikari";
 
@@ -385,7 +385,7 @@ export default defineComponent({
     );
 
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.open}
         onUpdate:modelValue={(v: boolean) => {
           if (!v) emit("close");
@@ -397,7 +397,7 @@ export default defineComponent({
         <div class="pairing-wizard">
           {step.value === "hosts" ? (
             <>
-              <HTabs
+              <HkTabs
                 block
                 variant="segmented"
                 modelValue={mode.value}
@@ -418,7 +418,7 @@ export default defineComponent({
                     </ul>
                   ) : (
                     <p class="pairing-wizard__empty">
-                      <HSpinner size="sm" tone="current" />
+                      <HkSpinner size="sm" tone="current" />
                       {t("replay.pairing.discoverySearching")}
                     </p>
                   )}
@@ -476,13 +476,13 @@ export default defineComponent({
                   </button>
                   {manualOpen.value ? (
                     <div class="pairing-wizard__form">
-                      <HInput
+                      <HkInput
                         modelValue={hostDraft.value}
                         onUpdate:modelValue={(v: string) => (hostDraft.value = v)}
                         placeholder={t("replay.pairing.hostPlaceholder")}
                         spellcheck={false}
                       />
-                      <HInput
+                      <HkInput
                         class="pairing-wizard__port"
                         modelValue={portDraft.value}
                         onUpdate:modelValue={(v: string) => (portDraft.value = v)}
@@ -490,10 +490,10 @@ export default defineComponent({
                         variant="number"
                         submitOnEnter={() => addAndConnect()}
                       />
-                      <HButton size="sm" variant="secondary" onClick={addAndConnect}>
+                      <HkButton size="sm" variant="secondary" onClick={addAndConnect}>
                         <Plus size={14} />
                         {t("replay.pairing.add")}
-                      </HButton>
+                      </HkButton>
                     </div>
                   ) : null}
                   {addError.value ? (
@@ -507,13 +507,13 @@ export default defineComponent({
                       built-in service, the code comes off the desktop's
                       screen. */}
                   <p class="pairing-wizard__hint">{t("replay.pairing.internetHint")}</p>
-                  <HButton
+                  <HkButton
                     block
                     variant="primary"
                     onClick={goInternetPin}
                   >
                     {t("replay.pairing.internetNext")}
-                  </HButton>
+                  </HkButton>
                 </>
               )}
             </>
@@ -526,7 +526,7 @@ export default defineComponent({
                   ? t("replay.pairing.pinPromptRelay")
                   : t("replay.pairing.pinPrompt", { label: pinTargetLabel.value })}
               </p>
-              <HOtpInput
+              <HkOtpInput
                 length={6}
                 separated
                 autofocus
@@ -544,7 +544,7 @@ export default defineComponent({
               />
               {pinBusy.value ? (
                 <div class="pairing-wizard__pin-busy">
-                  <HSpinner size="sm" tone="current" />
+                  <HkSpinner size="sm" tone="current" />
                 </div>
               ) : null}
             </>
@@ -558,30 +558,30 @@ export default defineComponent({
                     ? entry.value.label
                     : `${entry.value.host}:${entry.value.port}`}
                 </span>
-                <HButton
+                <HkButton
                   size="sm"
                   variant="ghost"
                   onClick={() => void loadRemote()}
                   ariaLabel={t("replay.refresh")}
                 >
                   {t("replay.refresh")}
-                </HButton>
+                </HkButton>
               </div>
 
               <div class="pairing-wizard__gamedata">
-                <HButton
+                <HkButton
                   size="sm"
                   variant="secondary"
                   disabled={gdState.value === "syncing"}
                   onClick={() => void syncGamedata()}
                 >
                   {gdState.value === "syncing" ? (
-                    <HSpinner size="sm" tone="current" />
+                    <HkSpinner size="sm" tone="current" />
                   ) : (
                     <Database size={14} />
                   )}
                   {t("replay.pairing.syncGameData")}
-                </HButton>
+                </HkButton>
                 {gdState.value === "syncing" ? (
                   <span class="pairing-wizard__gamedata-body">
                     <span class="pairing-wizard__gamedata-prog">
@@ -613,7 +613,7 @@ export default defineComponent({
 
               {listBusy.value ? (
                 <div class="pairing-wizard__remote-loading">
-                  <HSpinner size="md" tone="current" />
+                  <HkSpinner size="md" tone="current" />
                 </div>
               ) : listError.value ? (
                 <p class="pairing-wizard__error">{listError.value}</p>
@@ -687,7 +687,7 @@ export default defineComponent({
                               {t("common.retry")}
                             </button>
                           ) : st === "pulling" ? (
-                            <HSpinner size="sm" tone="current" />
+                            <HkSpinner size="sm" tone="current" />
                           ) : (
                             <button
                               type="button"
@@ -713,7 +713,7 @@ export default defineComponent({
             </>
           ) : null}
         </div>
-      </HModal>
+      </HkModal>
     );
   },
 });

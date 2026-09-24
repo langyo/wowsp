@@ -33,7 +33,7 @@
  * no row claims are appended after the recognized ones in predicted order.
  */
 import type { TabRowPlayer, VehicleEntry } from "@/api";
-import { shipClassRank, shipTierWeight } from "@/utils/shipClass";
+import { shipClassRank, shipTierWeight, tabOrderCompare } from "@/utils/shipClass";
 
 /** One roster entry with its display state after Tab-ordering. */
 export interface TabOrderedVehicle {
@@ -73,18 +73,15 @@ export function orderForTab(
     }
   }
   // Roster entries no row claimed (recognition missed them, or no
-  // recognition ran at all): predicted order — stable by class rank, then
-  // tier descending, then ship id so same-ship players (the classic
-  // division) stay adjacent.
+  // recognition ran at all): predicted order — the verified game rule
+  // (class rank, tier descending, ship id) with the arena order as the
+  // final stable tie-break.
   const rest = list
     .filter((v) => !claimed.has(v.name))
     .map((v, i) => ({ v, i }))
     .sort(
       (a, b) =>
-        rankOf(a.v.shipId) - rankOf(b.v.shipId) ||
-        tierWeightOf(b.v.shipId) - tierWeightOf(a.v.shipId) ||
-        a.v.shipId - b.v.shipId ||
-        a.i - b.i,
+        tabOrderCompare(rankOf, tierWeightOf)(a.v, b.v) || a.i - b.i,
     )
     .map(({ v }) => v);
   for (const v of rest) ordered.push({ vehicle: v, sunk: false });

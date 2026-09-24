@@ -30,7 +30,7 @@ import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useRosterStats, isAiName } from "@/composables/useRosterStats";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
-import { HSpinner } from "@celestia-island/hikari";
+import { HkSpinner } from "@celestia-island/hikari";
 import mapNamesRaw from "@/data/map_names.json";
 import "./LiveBattlePanel.scss";
 
@@ -253,7 +253,7 @@ export default defineComponent({
       const statLine = (v: VehicleEntry) => {
         if (isAiName(v.name)) return "—";
         const st = stats.get(v.id);
-        if (!st || st.loading) return <HSpinner size="xs" tone="current" />;
+        if (!st || st.loading) return <HkSpinner size="xs" tone="current" />;
         if (st.hidden) {
           return (
             <span class="live-battle__player-hidden">
@@ -401,7 +401,7 @@ export default defineComponent({
                     `live-battle__pill--status-${statusBadge.value.cls}`,
                   ]}
                 >
-                  {statusBadge.value.spin && <HSpinner size="xs" tone="current" />}
+                  {statusBadge.value.spin && <HkSpinner size="xs" tone="current" />}
                   {statusBadge.value.text}
                 </span>
                 <button

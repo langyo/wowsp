@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
-import { HButton, HModal, HStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -50,7 +50,7 @@ const THEME_OPTIONS: {
  * AnnouncementDialog — the notice content is now the wizard's first step
  * with the same 5-second blind-click guard on its confirm button.
  *
- * Rides the shared HModal window shell (surface-machine open/close motion,
+ * Rides the shared HkModal window shell (surface-machine open/close motion,
  * delayed unmount, content hold) so the wizard folds in and out like every
  * other window in the app instead of snapping. Non-closable and without a
  * back guard: the only way forward is finishing it. The scrim stays light
@@ -265,7 +265,7 @@ export default defineComponent({
     );
 
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("onboarding.title")}
@@ -275,7 +275,7 @@ export default defineComponent({
         contentClass="onboarding-wizard"
         v-slots={{
           default: () => (
-            <HStepFlow
+            <HkStepFlow
               steps={steps.value}
               modelValue={step.value}
               onUpdate:modelValue={(v: string) => (step.value = v as StepKey)}
@@ -352,17 +352,17 @@ export default defineComponent({
                   .hk-modal-footer strip supplies the nav chrome (border,
                   padding, right alignment) the old __nav block painted. */}
               {isWelcome.value ? null : (
-                <HButton variant="secondary" onClick={() => go(-1)}>
+                <HkButton variant="secondary" onClick={() => go(-1)}>
                   {t("onboarding.prev")}
-                </HButton>
+                </HkButton>
               )}
-              <HButton
+              <HkButton
                 variant="primary"
                 disabled={primaryDisabled.value}
                 onClick={() => (isLast.value ? finish() : go(1))}
               >
                 {primaryLabel.value}
-              </HButton>
+              </HkButton>
             </>
           ),
         }}

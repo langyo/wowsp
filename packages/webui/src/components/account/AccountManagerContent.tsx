@@ -1,7 +1,7 @@
 import { defineComponent, ref, watch, type PropType } from "vue";
 import { X, Trophy, Swords, Star, Plus } from "@lucide/vue";
 
-import { HButton, HInput, HModal, HSelect, HTag } from "@celestia-island/hikari";
+import { HkButton, HkInput, HkModal, HkSelect, HkTag } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
@@ -226,7 +226,7 @@ export default defineComponent({
                       ) : null}
                     </div>
                     <div class="acct-card__meta">
-                      <HTag variant="default" size="sm">{a.realm.toUpperCase()}</HTag>
+                      <HkTag variant="default" size="sm">{a.realm.toUpperCase()}</HkTag>
                       {s ? (
                         [
                           s.battles != null ? (
@@ -244,7 +244,7 @@ export default defineComponent({
                             </span>
                           ) : null,
                           s.hidden ? (
-                            <HTag variant="danger" size="sm">{t("stats.hidden")}</HTag>
+                            <HkTag variant="danger" size="sm">{t("stats.hidden")}</HkTag>
                           ) : null,
                         ]
                       ) : null}
@@ -281,7 +281,7 @@ export default defineComponent({
         {/* add-player dialog — search by nickname, preview the resolved
             player, then confirm the bind (two-step instead of the old
             search-binds-immediately row). */}
-        <HModal
+        <HkModal
           modelValue={addOpen.value}
           onUpdate:modelValue={(v: boolean) => (addOpen.value = v)}
           title={t("account.addPlayer")}
@@ -291,7 +291,7 @@ export default defineComponent({
           contentClass="acct-add-modal"
         >
           <div class="acct-modal__search">
-            <HSelect
+            <HkSelect
               modelValue={searchRealm.value}
               onUpdate:modelValue={(v: string) => {
                 searchRealm.value = v;
@@ -304,20 +304,20 @@ export default defineComponent({
               }}
               options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
             />
-            <HInput
+            <HkInput
               modelValue={searchName.value}
               onUpdate:modelValue={(v: string) => (searchName.value = v)}
               placeholder={t("account.nickname")}
               submitOnEnter={() => void doSearch()}
             />
-            <HButton
+            <HkButton
               size="sm"
               loading={searching.value}
               disabled={!searchName.value.trim()}
               onClick={() => void doSearch()}
             >
               {t("account.search")}
-            </HButton>
+            </HkButton>
           </div>
           {searchError.value ? (
             <p class="acct-modal__error">{searchError.value}</p>
@@ -341,9 +341,9 @@ export default defineComponent({
                     <span class="acct-card__name">{found.value.profile.nickname}</span>
                   </div>
                   <div class="acct-card__meta">
-                    <HTag variant="default" size="sm">
+                    <HkTag variant="default" size="sm">
                       {found.value.profile.realm.toUpperCase()}
-                    </HTag>
+                    </HkTag>
                     {found.value.stats.battles != null ? (
                       <span class="acct-card__stat" data-hint={t("stats.battles")}>
                         <Swords size={11} /> {found.value.stats.battles.toLocaleString()}
@@ -362,17 +362,17 @@ export default defineComponent({
                 </div>
               </div>
               <div class="acct-modal__confirm">
-                <HButton
+                <HkButton
                   variant="primary"
                   loading={binding.value}
                   onClick={() => void confirmAdd()}
                 >
                   {t("account.bind")}
-                </HButton>
+                </HkButton>
               </div>
             </>
           ) : null}
-        </HModal>
+        </HkModal>
       </div>
     );
   },

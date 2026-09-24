@@ -73,12 +73,12 @@ function mountContent() {
   return mount(AccountManagerContent, { global: { plugins: [pinia] } });
 }
 
-/** The add dialog's own content renders through HModal, which teleports to
+/** The add dialog's own content renders through HkModal, which teleports to
  *  body — so the search row is queried there, not on the wrapper. The row
- *  is [HSelect, HInput, HButton], and BOTH HSelect and HButton put a
+ *  is [HkSelect, HkInput, HkButton], and BOTH HkSelect and HkButton put a
  *  <button> in it (the select's trigger comes first), so the search button
  *  is the LAST button in the row. Same reason the nickname field is the
- *  last input: HSelect renders its own. */
+ *  last input: HkSelect renders its own. */
 const searchInput = () => {
   const inputs = document.body.querySelectorAll<HTMLInputElement>(
     ".acct-modal__search input",

@@ -2,7 +2,7 @@ import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { Check, Download, MessageCircle, RefreshCw } from "@lucide/vue";
 
-import { HButton, HModal } from "@celestia-island/hikari";
+import { HkButton, HkModal } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
@@ -68,17 +68,17 @@ export const AboutContent = defineComponent({
             ) : updater.running ? (
               <span class="about-modal__updating">{updater.statusText}</span>
             ) : updater.available ? (
-              <HButton variant="secondary" size="sm" onClick={() => void updater.downloadAndInstall()}>
+              <HkButton variant="secondary" size="sm" onClick={() => void updater.downloadAndInstall()}>
                 <Download size={12} /> {t("about.updateAvailable", { version: updater.version ?? "" })}
-              </HButton>
+              </HkButton>
             ) : updater.checked ? (
               <span class="about-modal__up-to-date">
                 <Check size={12} /> {t("about.upToDate")}
               </span>
             ) : (
-              <HButton variant="ghost" size="sm" onClick={() => void updater.check()}>
+              <HkButton variant="ghost" size="sm" onClick={() => void updater.check()}>
                 <RefreshCw size={12} /> {t("about.checkUpdate")}
-              </HButton>
+              </HkButton>
             )}
           </div>
 
@@ -170,14 +170,14 @@ export default defineComponent({
   },
   setup(props, { emit }) {
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("about.title")}
         width="26rem"
       >
         <AboutContent />
-      </HModal>
+      </HkModal>
     );
   },
 });

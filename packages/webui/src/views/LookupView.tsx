@@ -6,7 +6,7 @@ import ClanCard from "@/components/stats/ClanCard";
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HTabs, useToast } from "@celestia-island/hikari";
+import { HkTabs, useToast } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
@@ -363,7 +363,7 @@ export default defineComponent({
         <aside class="lookup-view__sidebar">
           <div class="lookup-view__search">
             {/* Row 1 — realm picker as a segmented button group */}
-            <HTabs
+            <HkTabs
               variant="segmented"
               block
               modelValue={realm.value}
@@ -372,7 +372,7 @@ export default defineComponent({
             />
             {/* Row 2 — player/clan target picker + live search trigger */}
             <div class="lookup-view__row2">
-              <HTabs
+              <HkTabs
                 variant="segmented"
                 block
                 modelValue={mode.value}
@@ -487,7 +487,7 @@ export default defineComponent({
                   </div>
                 ) : null}
                 <div class="lookup-view__controls">
-                  <HTabs
+                  <HkTabs
                     variant="segmented"
                     modelValue={dateRange.value}
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}

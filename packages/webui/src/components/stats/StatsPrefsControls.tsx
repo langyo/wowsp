@@ -1,6 +1,6 @@
 import { defineComponent, type PropType } from "vue";
 
-import { HSwitch, HTabs } from "@celestia-island/hikari";
+import { HkSwitch, HkTabs } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useStatsPrefsStore, type PrAlgo } from "@/stores/statsPrefs";
@@ -39,7 +39,7 @@ export default defineComponent({
             <span class="stats-prefs__row-label">{tr("prToggle")}</span>
             <span class="stats-prefs__row-desc">{tr("prToggleDesc")}</span>
           </span>
-          <HSwitch
+          <HkSwitch
             modelValue={prefs.prefs.prEnabled}
             onUpdate:modelValue={(v: boolean) => prefs.setPrEnabled(v)}
           />
@@ -54,7 +54,7 @@ export default defineComponent({
                 <span class="stats-prefs__row-label">{tr("prAlgo")}</span>
                 <span class="stats-prefs__row-desc">{tr("prAlgoDesc")}</span>
               </span>
-              <HTabs
+              <HkTabs
                 variant="segmented"
                 modelValue={prefs.prefs.prAlgo}
                 onUpdate:modelValue={(v: string) => prefs.setPrAlgo(v as PrAlgo)}
@@ -69,7 +69,7 @@ export default defineComponent({
                 <span class="stats-prefs__row-label">{tr("sealsToggle")}</span>
                 <span class="stats-prefs__row-desc">{tr("sealsToggleDesc")}</span>
               </span>
-              <HSwitch
+              <HkSwitch
                 modelValue={prefs.prefs.sealsEnabled}
                 onUpdate:modelValue={(v: boolean) => prefs.setSealsEnabled(v)}
               />
@@ -79,7 +79,7 @@ export default defineComponent({
                 <span class="stats-prefs__row-label">{tr("localizedTiersToggle")}</span>
                 <span class="stats-prefs__row-desc">{tr("localizedTiersToggleDesc")}</span>
               </span>
-              <HSwitch
+              <HkSwitch
                 modelValue={prefs.prefs.localizedTiers}
                 onUpdate:modelValue={(v: boolean) => prefs.setLocalizedTiers(v)}
               />

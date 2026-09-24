@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref } from "vue";
 import { MonitorPlay } from "@lucide/vue";
 
-import { HButton, HModal, useToast } from "@celestia-island/hikari";
+import { HkButton, HkModal, useToast } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
@@ -113,7 +113,7 @@ export default defineComponent({
     }
 
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("common.gamePath.title")}
@@ -174,13 +174,13 @@ export default defineComponent({
               <span class="game-path-modal__running-text">
                 {t("common.gamePath.runningHint", { path: runningInstall.value.path })}
               </span>
-              <HButton size="sm" onClick={() => void useRunning()}>
+              <HkButton size="sm" onClick={() => void useRunning()}>
                 {t("common.gamePath.useRunning")}
-              </HButton>
+              </HkButton>
             </div>
           ) : null}
         </div>
-      </HModal>
+      </HkModal>
     );
   },
 });

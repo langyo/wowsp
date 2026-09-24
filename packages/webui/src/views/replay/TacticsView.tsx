@@ -22,7 +22,7 @@
  */
 import { computed, defineComponent, onMounted, ref, watch, type DefineComponent } from "vue";
 
-import { HAlert, HTabs } from "@celestia-island/hikari";
+import { HkAlert, HkTabs } from "@celestia-island/hikari";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
@@ -42,7 +42,7 @@ import "./TacticsView.scss";
  *  slots.default() : props.message`) — passing both silently drops the
  *  message, and passing a never-rendered string is worse. Retype locally
  *  so the slot-only form needs no dead prop. */
-const SlotHAlert = HAlert as unknown as DefineComponent<{
+const SlotHAlert = HkAlert as unknown as DefineComponent<{
   variant?: "warning" | "error" | "info" | "success";
   size?: "sm" | "md" | "lg";
   title?: string;
@@ -207,7 +207,7 @@ export default defineComponent({
                 <h2 class="tactics-view__list-title">{t("nav.tactics")}</h2>
                 <span class="tactics-view__count">{t("tactics.count", { n: list.length })}</span>
               </div>
-              <HTabs
+              <HkTabs
                 variant="segmented"
                 block
                 modelValue={filter.value}
