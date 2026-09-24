@@ -7,15 +7,18 @@
  * pill and the map name in its own head — this page only adds the page
  * title and the full-height body around it.
  *
- * The phone app build has no local game install to watch, so it renders a
- * static placeholder and mounts none of the watchers (the nav link is
- * hidden there too — this is belt-and-braces for direct URLs).
+ * While the game is off (and no roster lingers) the body shows the
+ * LiveIdleGuide two-step onboarding instead of the panel. The phone app
+ * build has no local game install to watch, so it renders a static
+ * placeholder and mounts none of the watchers (the nav link is hidden there
+ * too — this is belt-and-braces for direct URLs).
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
+import LiveIdleGuide from "@/features/replay/LiveIdleGuide";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -190,7 +193,7 @@ export default defineComponent({
               realm={realm.value}
             />
           ) : (
-            <div class="live-view__placeholder">{t("replay.live.notStarted")}</div>
+            <LiveIdleGuide />
           )}
         </div>
       </main>

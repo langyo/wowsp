@@ -9,14 +9,32 @@
   padding: 1rem 1.5rem 1rem 1rem;
   color: rgb(var(--color-text));
 
+  /* Waiting for the battle to start (radar scope + copy). */
   &--empty {
     align-items: center;
     justify-content: center;
+    text-align: center;
   }
 
-  &__empty-text {
+  &__empty-art {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 0.4rem;
+  }
+
+  &__empty-title {
+    margin: 0;
+    color: rgb(var(--color-text));
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  &__empty-hint {
+    margin: 0.3rem 0 0;
+    max-width: 26rem;
     color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
+    line-height: 1.6;
   }
 
   &__head {
