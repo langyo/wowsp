@@ -1055,20 +1055,23 @@ export default defineComponent({
             // so any winding-trusting normal shades the hull as per-triangle
             // patches under the holographic lighting. Rebuild winding-agnostic
             // crease-aware normals for EVERY mesh: continuous panel runs share
-            // a normal, hard chines stay split. The crease angle must sit
+            // a normal, hard edges stay split. The crease angle must sit
             // ABOVE the mesh's quantization step (~30–50° between adjacent
-            // faces on a curved region) and BELOW the real edges (~90° chine,
-            // deck-to-side, box corners); at 80° curved runs merge into one
-            // smooth cluster. Attributes other than position are stripped
-            // BEFORE the weld — mergeVertices only fuses vertices whose
-            // attributes all match — except the armour thickness vertex
-            // colours, which must survive for the armor overlay.
+            // faces on a curved region) and BELOW the real edges — right-
+            // angled chines, deck-to-side corners, box structures. 80° merged
+            // those true 90° structure edges into the smooth cluster too,
+            // smearing T-posts and deck steps into the plating; 65° keeps the
+            // whole quantized curve range merged while every ≈90° edge splits.
+            // Attributes other than position are stripped BEFORE the weld —
+            // mergeVertices only fuses vertices whose attributes all match —
+            // except the armour thickness vertex colours, which must survive
+            // for the armor overlay.
             const welded = mesh.geometry.clone();
             for (const attr of Object.keys(welded.attributes)) {
               if (attr !== "position" && attr !== "color") welded.deleteAttribute(attr);
             }
             welded.morphAttributes = {};
-            mesh.geometry = computeSmoothNormals(mergeVertices(welded, 1e-4), 80);
+            mesh.geometry = computeSmoothNormals(mergeVertices(welded, 1e-4), 65);
             mesh.geometry.computeBoundingBox();
             mesh.geometry.computeBoundingSphere();
           }
@@ -1087,10 +1090,13 @@ export default defineComponent({
         /** Pre-defined base hues (0-360) for known category names.  Each
          *  category name always maps to the same hue — no hash drift. */
         const PRESET_HUES: Record<string, number> = {
-          // Hull armour belts — cool spectrum (185°–230°, visible separation)
-          hull_bow:    185,
-          hull_mid:    205,
-          hull_stern:  170,
+          // Hull — ONE hue for the whole plating. The bow/mid/stern split is
+          // a bake-chunk boundary, not a visible structure: giving each chunk
+          // its own hue painted three mismatched pastel slabs over a
+          // continuous hull, one of the main "mushy patchwork" cues.
+          hull_bow:    195,
+          hull_mid:    195,
+          hull_stern:  195,
           hull_body:   195,
           deck_house:  220,
           // Superstructure — green-cyan, distinct from blue hull body
@@ -1163,6 +1169,10 @@ export default defineComponent({
             const c = colorForCategory(name);
             mat.uniforms.baseColor.value.copy(c.base);
             mat.uniforms.fresnelColor.value.copy(c.fresnel);
+            // Definition layer: smooth-normal headlight + measuring grid so
+            // broad panels read as surfaces instead of a flat pastel fill.
+            mat.uniforms.uLightGain.value = 0.40;
+            mat.uniforms.uLinesGain.value = 0.20;
             materialCache.set(name, mat);
           }
           mesh.material = mat;
