@@ -1,14 +1,14 @@
 {
-  "title": "Centro de mods",
-  "subtitle": "Plugins instalados en el directorio res_mods del juego.",
+  "title": "Gestor de mods",
+  "subtitle": "Mods instalados en el directorio res_mods del juego.",
   "scan": "Volver a escanear",
   "scanning": "Escaneando…",
   "noGame": "No se detectó ninguna instalación del juego — configura primero la ruta del juego en Ajustes.",
-  "installed": "Plugins instalados",
-  "empty": "Aún no hay plugins reconocibles en res_mods. Instala uno desde el catálogo en línea.",
+  "installed": "Mods instalados",
+  "empty": "Aún no hay mods reconocibles en res_mods. Instala uno desde el catálogo en línea.",
   "filterAll": "Todos",
   "installSection": "Instalar desde carpeta",
-  "installHint": "Apunta a una carpeta de plugin descomprimida (paquete de voz, skin PnF, iconos de cintas, parche ime_config). Por ahora, .zip/.7z hay que descomprimirlos antes.",
+  "installHint": "Apunta a una carpeta de mod descomprimida (paquete de voz, skin PnF, iconos de cintas, parche ime_config). Por ahora, .zip/.7z hay que descomprimirlos antes.",
   "pathPlaceholder": "D:\\…\\MiPaqueteDeVoz",
   "browse": "Analizar",
   "analyzing": "Analizando…",
@@ -33,13 +33,17 @@
     "script": "Mod de script"
   },
   "catalogTitle": "Catálogo en línea",
-  "catalogHint": "Plugins de tipo herramienta seleccionados del hub de mods de WoWSP. Cada uno incluye una versión y un SHA-256; la instalación descarga directamente del release de GitHub del proyecto.",
+  "catalogHint": "Mods de tipo herramienta seleccionados del hub de mods de WoWSP. Cada uno incluye una versión y un SHA-256; la instalación descarga directamente del release de GitHub del proyecto.",
   "refresh": "Actualizar",
   "refreshing": "Actualizando…",
-  "catalogSearch": "Buscar plugins…",
+  "catalogSearch": "Buscar mods…",
   "catalogEmpty": "El catálogo está vacío — pulsa «Actualizar» para obtener la lista en línea.",
   "catalogError": "No se pudo cargar el catálogo en línea: {error}",
-  "catalogSource": "{count} plugins · catálogo {source} · actualizado {time}",
+  "catalogSource": "{count} mods · catálogo {source} · actualizado {time}",
+  "searchMod": "Buscar mods",
+  "searching": "Buscando…",
+  "listFilter": "Filtrar mods…",
+  "countLine": "{count} en total",
   "install": "Instalar",
   "update": "Actualizar",
   "installedBadge": "Instalado",
@@ -62,10 +66,14 @@
     "text": "Textos y chat",
     "patch": "Parches"
   },
-  "tab": {
-    "catalog": "Catálogo en línea",
-    "installed": "Instalados",
-    "local": "Desde carpeta"
+  "big": {
+    "function": "Funciones",
+    "texture": "Texturas",
+    "voice": "Voces"
+  },
+  "source": {
+    "online": "En línea",
+    "installed": "Instalados"
   },
   "enabled": "Activado",
   "disabled": "Desactivado",

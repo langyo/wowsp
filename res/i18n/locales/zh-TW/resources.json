@@ -1,11 +1,11 @@
 {
-  "title": "模組中心",
+  "title": "模組管理",
   "subtitle": "管理已安裝到遊戲 res_mods 目錄的模組。",
   "scan": "重新掃描",
   "scanning": "掃描中…",
   "noGame": "尚未偵測到遊戲安裝——請先在設定中指定遊戲路徑。",
   "installed": "已安裝模組",
-  "empty": "res_mods 下還沒有可識別的模組，可以在「線上目錄」中安裝一個。",
+  "empty": "res_mods 下還沒有可識別的模組，可以在「線上搜尋」中安裝一個。",
   "filterAll": "全部",
   "installSection": "從資料夾安裝",
   "installHint": "指向解壓後的模組資料夾（語音包 / PnF 塗裝 / 勳帶圖示 / ime_config 補丁）。.zip/.7z 目前需先手動解壓。",
@@ -30,7 +30,7 @@
     "textures": "貼圖覆蓋",
     "gui": "介面圖示",
     "patch": "設定補丁",
-    "script": "腳本插件"
+    "script": "腳本模組"
   },
   "catalogTitle": "線上模組目錄",
   "catalogHint": "來自 WoWSP 模組倉庫的精選工具類模組。每個模組都帶版本號與 SHA-256 驗證，安裝時直接從專案的 GitHub release 下載。",
@@ -40,6 +40,10 @@
   "catalogEmpty": "目錄為空——點擊「重新整理」以拉取線上列表。",
   "catalogError": "線上目錄載入失敗：{error}",
   "catalogSource": "{count} 個模組 · 目錄 {source} · 更新於 {time}",
+  "searchMod": "搜尋模組",
+  "searching": "搜尋中…",
+  "listFilter": "篩選模組…",
+  "countLine": "共 {count} 個",
   "install": "安裝",
   "update": "升級",
   "installedBadge": "已安裝",
@@ -62,17 +66,21 @@
     "text": "文字與聊天",
     "patch": "官方補丁"
   },
-  "tab": {
-    "catalog": "線上目錄",
-    "installed": "已安裝",
-    "local": "本機安裝"
+  "big": {
+    "function": "功能",
+    "texture": "材質",
+    "voice": "語音"
+  },
+  "source": {
+    "online": "線上搜尋",
+    "installed": "已安裝"
   },
   "enabled": "已啟用",
   "disabled": "已停用",
   "unitEnabled": "已啟用「{name}」。",
   "unitDisabled": "已停用「{name}」—— 檔案已加 .bak 後綴。",
   "confirmUnitUninstall": "卸載「{name}」？將刪除其全部檔案（含停用的 .bak 副本），並還原被覆蓋的原始檔案。",
-  "manifestOnly": "未在 res_mods 中找到對應檔案（僅插件清單記錄）。",
+  "manifestOnly": "未在 res_mods 中找到對應檔案（僅模組清單記錄）。",
   "manifestOnlyShort": "僅清單記錄",
   "experimental": "此功能不穩定，仍在開發中，不保證可以使用。",
   "tex": {

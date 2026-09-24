@@ -1,5 +1,6 @@
-// Mod Hub (Resources page). Category accents follow the plugin taxonomy from
-// docs/<lang>/designs/mod-formats.md — hue per kind, neutral chrome otherwise.
+// Mod Hub (Resources page) — VSCode-marketplace style. Category accents
+// follow the mod taxonomy from docs/<lang>/designs/mod-formats.md — hue per
+// kind on the row tiles, neutral chrome otherwise.
 
 .resources-view {
   padding: 1.5rem 2rem;
@@ -25,79 +26,99 @@
     font-size: var(--text-sm);
     color: rgb(var(--color-muted));
   }
+}
 
-  &__rescan {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-primary));
-    background: rgb(var(--color-surface));
-    border: 1px solid rgb(var(--color-border) / 25%);
-    border-radius: 6px;
-    cursor: pointer;
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    .spin {
-      animation: resources-spin 0.9s linear infinite;
-    }
-  }
-
-  /* Top-level tab strip (online catalog / installed / from folder). */
-  &__tabs {
-    margin-bottom: 1rem;
-  }
+/* Shared spinner glyph class (refresh icon, list rows, drawer). Top-level
+   because the detail drawer teleports to <body>, outside .resources-view. */
+.spin {
+  animation: resources-spin 0.9s linear infinite;
 }
 
 @keyframes resources-spin {
   to { transform: rotate(360deg); }
 }
 
-.resources-section {
+// ── The marketplace column ──────────────────────────────────────────────────
+
+.mod-hub {
+  display: flex;
+  justify-content: center;
+}
+
+.mod-side {
+  width: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1rem;
   background: rgb(var(--color-surface));
   border: 1px solid rgb(var(--color-border) / 15%);
   border-radius: var(--radius-md);
-  padding: 1.25rem;
-  margin-bottom: 1rem;
 
-  &__head {
+  /* Row shells: the filter row and the source row share one geometry —
+     inputs grow, trailing buttons stay fixed and single-line. */
+  &__row {
     display: flex;
+    /* Centred by default: the icon buttons carry a definite height of their
+       own, so `stretch` would top-align them against a taller input. */
     align-items: center;
     gap: 0.5rem;
-    color: rgb(var(--color-primary));
+    flex-wrap: nowrap;
+    min-width: 0;
 
-    h2 {
-      margin: 0;
-      font-size: var(--text-md);
-      font-weight: 600;
-      color: rgb(var(--color-text));
+    /* The source row is the exception — its trailing search trigger must
+       stretch to the segmented strip's height (that "same height as the tab
+       group" rule is the water-meter row's whole point). */
+    &--source {
+      align-items: stretch;
     }
   }
 
-  /* Head action (refresh / rescan) rides the row's far end. */
-  &__action {
-    margin-left: auto;
+  /* The source strip's grow slot (HTabs shrink-wraps itself). */
+  &__rowmain {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
   }
 
-  &__desc {
-    margin: 0.5rem 0 1rem;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-muted));
-    line-height: 1.5;
+  &__filter {
+    flex: 1;
+    min-width: 0;
   }
 
-  &__placeholder {
+  /* The scrolling list: bounded by the viewport, not by content. */
+  &__list {
+    flex: 1;
+    min-height: 4rem;
+    max-height: 60vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  /* Empty list: a placeholder block, not a bare string (the list is a
+     flex column of rows and would otherwise render text flush). */
+  &__empty {
+    padding: 1.25rem 0.75rem;
     text-align: center;
-    padding: 2rem;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-    background: rgb(var(--color-bg));
-    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted) / 80%);
+  }
+
+  &__foot {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted) / 75%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Chips sit flush inside the panel (the page-level margins would
+     double-pad in here). */
+  .resources-chips {
+    margin: 0;
   }
 }
 
@@ -126,57 +147,45 @@
   }
 }
 
-// ── Installed-plugin cards ──────────────────────────────────────────────────
+// ── Compact mod rows (list + search-combo tiles) ────────────────────────────
 
-.mod-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
-  gap: 0.625rem;
-}
-
-.mod-card {
-  --accent: var(--color-primary);
+.mod-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: rgb(var(--color-bg));
-  border: 1px solid rgb(var(--color-border) / 12%);
-  border-left: 3px solid rgb(var(--accent) / 70%);
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  font-size: inherit;
+  background: transparent;
+  border: none;
   border-radius: var(--radius-sm);
-  transition: opacity 0.2s ease;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 
-  &--voice     { --accent: 48, 148, 245; }   // blue — audio waves
-  &--skin      { --accent: 168, 85, 247; }   // violet — paint
-  &--script    { --accent: 20, 184, 166; }   // teal — python scripts
-  &--gui       { --accent: 234, 179, 8; }    // amber — icons
-  &--patch     { --accent: 16, 185, 129; }   // green — patch note
-  &--textures  { --accent: 148, 163, 184; }  // grey — raw overrides
+  &:hover {
+    background: rgb(var(--color-bg));
+  }
 
-  // Temporarily disabled via `.bak` — dim the whole card so the state
-  // reads at a glance, the switch stays the obvious way back.
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: -2px;
+  }
+
+  // Disabled via `.bak` — dim the whole row, the drawer switch is the
+  // obvious way back.
   &--disabled {
     opacity: 0.55;
-
-    .mod-card__name {
-      text-decoration: line-through;
-      text-decoration-color: rgb(var(--color-muted) / 60%);
-    }
   }
 
-  &__main {
-    display: flex;
-    gap: 0.625rem;
+  &__body {
+    flex: 1;
     min-width: 0;
-
-    > svg {
-      flex: none;
-      margin-top: 0.125rem;
-      color: rgb(var(--accent));
-    }
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
   }
-
-  &__body { min-width: 0; flex: 1; }
 
   &__name {
     display: flex;
@@ -190,94 +199,125 @@
     white-space: nowrap;
   }
 
-  &__version {
+  &__ver {
     flex: none;
     max-width: 50%;
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 0.6875rem;
     font-weight: 500;
-    color: rgb(var(--accent));
-    background: rgb(var(--accent) / 10%);
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 14%);
     border-radius: var(--radius-sm);
     padding: 0 0.25rem;
   }
 
-  &__kind {
-    font-size: var(--text-xs);
-    color: rgb(var(--accent));
-    margin-top: 0.125rem;
-  }
-
-  &__detail {
+  &__sub {
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
-    margin-top: 0.125rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  &__path {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.6875rem;
-    color: rgb(var(--color-muted) / 75%);
-    margin-top: 0.375rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__uninstall {
+  &__tail {
     flex: none;
-    align-self: flex-start;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 1.625rem;
-    height: 1.625rem;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: rgb(var(--color-muted));
-    cursor: pointer;
-    transition: color 0.15s ease, background-color 0.15s ease;
+  }
 
-    &:hover:not(:disabled) {
-      color: rgb(239, 68, 68);
-      background: rgb(239 68 68 / 10%);
+  &__badge {
+    padding: 0.0625rem 0.375rem;
+    font-size: var(--text-xs);
+    border-radius: 999px;
+    white-space: nowrap;
+
+    &--ok {
+      color: rgb(var(--color-success));
+      background: rgb(var(--color-success) / 12%);
+      border: 1px solid rgb(var(--color-success) / 30%);
     }
 
-    &:disabled { opacity: 0.4; cursor: not-allowed; }
-  }
+    &--up {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+      border: 1px solid rgb(var(--color-primary) / 35%);
+    }
 
-  // Bottom strip: the per-plugin enable switch sits at the left edge.
-  &__foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px dashed rgb(var(--color-border) / 25%);
-  }
-
-  &__foot-note {
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted) / 70%);
+    &--off {
+      color: rgb(var(--color-muted));
+      background: rgb(var(--color-border) / 14%);
+      border: 1px solid rgb(var(--color-border) / 25%);
+    }
   }
 
   &__spinner {
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 0.875rem;
+    height: 0.875rem;
     flex: none;
-    border: 2px solid rgb(var(--accent) / 25%);
-    border-top-color: rgb(var(--accent));
+    border: 2px solid rgb(var(--color-primary) / 25%);
+    border-top-color: rgb(var(--color-primary));
     border-radius: 50%;
     animation: resources-spin 0.9s linear infinite;
   }
 }
 
-// ── Texture-override analysis breakdown (mod cards & plan card) ─────────────
+// ── Row tiles: 40×40 rounded icon block, hue per kind ───────────────────────
+
+.mod-row__tile {
+  --accent: var(--color-muted);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  color: rgb(var(--accent));
+  background: rgb(var(--accent) / 12%);
+
+  /* Online catalog rows stay neutral: their category is curated browsing
+     metadata (battle / minimap / port / text / patch), not the on-disk kind
+     taxonomy the hue system below encodes — the glyph carries the category,
+     the neutral tile keeps the two sources' rows visually distinct. */
+  &--cat       { --accent: var(--color-muted); }
+
+  &--voice     { --accent: 48, 148, 245; }   // blue — audio waves
+  &--skin      { --accent: 168, 85, 247; }   // violet — paint
+  &--script    { --accent: 20, 184, 166; }   // teal — python scripts
+  &--gui       { --accent: 234, 179, 8; }    // amber — icons
+  &--patch     { --accent: 16, 185, 129; }   // green — patch note
+  &--textures  { --accent: 148, 163, 184; }  // grey — raw overrides
+
+  &--sm {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+  }
+
+  &--lg {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+// ── Search-combo candidate innards (row chrome lives in the combo) ──────────
+
+.mod-hub__combo-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mod-hub__combo-ver {
+  flex: none;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+// ── Texture-override analysis breakdown (drawer & plan card) ────────────────
 
 .tex-analysis {
   display: flex;
@@ -335,7 +375,7 @@
   }
 }
 
-// ── Install row + plan preview ──────────────────────────────────────────────
+// ── Install row + plan preview (folder-install drawer flow) ─────────────────
 
 .resources-installrow {
   display: flex;
@@ -508,75 +548,84 @@
   }
 }
 
-// ── Online catalog ──────────────────────────────────────────────────────────
-
-.resources-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-
-  &__meta {
-    margin-left: auto;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-    white-space: nowrap;
-  }
+// The catalog-error banner rides inside the panel — cancel the page-level
+// top offset so it sits flush with the rows.
+.mod-side .resources-banner {
+  margin-top: 0;
 }
 
-.catalog-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: 0.625rem;
-}
+// ── Detail drawer body (panelClass="mod-drawer") ────────────────────────────
 
-.catalog-card {
+.mod-detail {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.75rem;
-  background: rgb(var(--color-bg));
-  border: 1px solid rgb(var(--color-border) / 20%);
-  border-radius: var(--radius-sm);
+  gap: 0.75rem;
+  font-size: var(--text-sm);
 
   &__head {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  &__id {
+    flex: 1;
+    min-width: 0;
   }
 
   &__name {
-    font-size: var(--text-sm);
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    font-size: var(--text-md);
     font-weight: 600;
     color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__en {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
   }
 
   &__badge {
-    flex-shrink: 0;
-    padding: 0.0625rem 0.375rem;
+    padding: 0.0625rem 0.5rem;
     font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    border: 1px solid rgb(var(--color-border) / 30%);
     border-radius: 999px;
-    color: rgb(var(--color-success));
 
     &--ok {
+      color: rgb(var(--color-success));
       background: rgb(var(--color-success) / 12%);
-      border: 1px solid rgb(var(--color-success) / 30%);
+      border-color: rgb(var(--color-success) / 30%);
     }
   }
 
-  &__sub {
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
+  &__desc {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    color: rgb(var(--color-text) / 85%);
+    white-space: pre-line;
   }
 
-  &__desc {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+  &__hint {
+    margin: 0;
     font-size: var(--text-xs);
-    line-height: 1.45;
+    line-height: 1.5;
     color: rgb(var(--color-muted));
   }
 
@@ -586,26 +635,75 @@
     gap: 0.375rem 0.625rem;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
+  }
 
-    span {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.1875rem;
+  &__pkgs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    li {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.625rem;
+      padding: 0.3125rem 0.5rem;
+      background: rgb(var(--color-bg));
+      border-radius: var(--radius-sm);
     }
   }
 
-  &__ver {
-    color: rgb(var(--color-primary));
+  &__pkgname {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text) / 85%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__pkgsize {
+    flex: none;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__paths {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    li {
+      padding: 0.25rem 0.5rem;
+      font-family: var(--font-mono, monospace);
+      font-size: 0.6875rem;
+      color: rgb(var(--color-muted) / 85%);
+      background: rgb(var(--color-bg));
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+  }
+
+  &__switch {
+    padding: 0.125rem 0;
   }
 
   &__actions {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.25rem;
   }
 
-  &__uninstall {
+  &__danger {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -629,7 +727,7 @@
 
   // Opens through open_external (default browser) — a <button> in the Tauri
   // shell, where target="_blank" anchors are swallowed by the webview.
-  &__thread {
+  &__link {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -661,9 +759,20 @@
   }
 }
 
-/* ── Phone layout (≤767px): tighter page gutters ───────────────────────── */
+/* ── Phone layout (≤767px): full-width panel, tighter rows, the tool
+   rows stay single-line (fixed-size trailing buttons never wrap) ── */
 @media (max-width: 767px) {
   .resources-view {
     padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mod-side {
+    width: 100%;
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .mod-row {
+    padding: 0.4375rem 0.5rem;
   }
 }
