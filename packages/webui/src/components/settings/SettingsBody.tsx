@@ -15,6 +15,7 @@ import {
   Moon,
   Palette,
   Plus,
+  Power,
   RefreshCw,
   Smartphone,
   Sun,
@@ -33,6 +34,7 @@ import {
   HSettingsHint,
   HSettingsSub,
   HOtpInput,
+  HRadio,
   HSelect,
   HSlider,
   HSpinner,
@@ -84,6 +86,7 @@ import {
   useSettingsUiStore,
   type SettingsSection,
 } from "@/stores/settingsUi";
+import { useCloseBehaviorStore, type CloseAction } from "@/stores/closeBehavior";
 import { useCacheStore } from "@/stores/cache";
 import { useUpdaterStore } from "@/stores/updater";
 import { entryKey, usePairingStore } from "@/stores/pairing";
@@ -114,8 +117,9 @@ function css(rgb: { r: number; g: number; b: number }): string {
  * hatches) key off `active` so they fire identically when the modal opens
  * and when the page mounts.
  *
- * On the phone app build the gamePath and overlay sections are filtered
- * out of the rail (no local game install / no overlay window there).
+ * On the phone app build the gamePath, overlay and closeBehavior sections
+ * are filtered out of the rail (no local game install / no overlay window
+ * there / no tray or window close button to configure).
  */
 export default defineComponent({
   name: "SettingsBody",
@@ -126,6 +130,7 @@ export default defineComponent({
   },
   setup(props) {
     const ui = useSettingsUiStore();
+    const closeBehavior = useCloseBehaviorStore();
     const theme = useTheme();
     const wallpaper = useWallpaper();
     const lang = useLanguage();
@@ -611,11 +616,12 @@ export default defineComponent({
     // The left rail mirrors the main sidebar's nav look; only the active
     // section's card renders in the content pane. Section identity lives in
     // the settingsUi store so openers can land on a specific one. The phone
-    // app build drops the gamePath / overlay sections (nothing to configure
-    // there).
+    // app build drops the gamePath / overlay / closeBehavior sections
+    // (nothing to configure there).
     const SECTION_ICONS = {
       language: Languages,
       appearance: Palette,
+      closeBehavior: Power,
       stats: BarChart3,
       gamePath: FolderCog,
       account: UserRound,
@@ -629,6 +635,7 @@ export default defineComponent({
     const sectionLabels = computed<Record<SettingsSection, string>>(() => ({
       language: t("settings.language"),
       appearance: t("settings.themeMode"),
+      closeBehavior: t("settings.closeBehavior"),
       stats: t("settings.statsSection"),
       gamePath: t("settings.gamePath"),
       account: t("settings.account"),
@@ -950,6 +957,33 @@ export default defineComponent({
               ) : null}
             </p>
             <HSettingsHint>{t("settings.geolocationHint")}</HSettingsHint>
+          </HSettingsGroup>
+
+          </>
+          ),
+          closeBehavior: () => (
+          <>
+          {/* closeBehavior — the only place to read, change or clear what the
+              close dialog's "remember my choice" checkbox wrote: without it
+              a remembered choice is a one-way trip (the dialog never asks
+              again). Same store the dialog uses, so the two cannot disagree;
+              the minimize/quit labels reuse the dialog's tray.* strings so
+              the wording cannot drift apart either. */}
+          <HSettingsGroup title={t("settings.closeBehavior")}>
+            <HRadio
+              direction="vertical"
+              modelValue={closeBehavior.action}
+              onUpdate:modelValue={(v: string | number) =>
+                closeBehavior.setAction(v as CloseAction)
+              }
+              options={[
+                { value: "ask", label: t("settings.closeAsk") },
+                { value: "minimize", label: t("tray.minimize") },
+                { value: "quit", label: t("tray.quit") },
+              ]}
+            />
+            <HSettingsHint>{t("settings.closeBehaviorHint")}</HSettingsHint>
+            <HSettingsHint>{t("settings.closeRememberHint")}</HSettingsHint>
           </HSettingsGroup>
 
           </>
