@@ -11,12 +11,20 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.wowsp_tauri"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <!-- windowSoftInputMode=adjustResize pins the keyboard interaction
+             mode. Left unset, Android is free to pick adjustPan, which pans
+             the whole window up under the IME and fights the webview's own
+             IME-inset margin (MainActivity.applyBarInsets). The resize
+             itself is not done by the framework — enableEdgeToEdge() turns
+             decor-fits-system-windows off, so the app applies the IME inset
+             itself; this attribute only chooses the mode. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
             android:label="@string/main_activity_title"
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

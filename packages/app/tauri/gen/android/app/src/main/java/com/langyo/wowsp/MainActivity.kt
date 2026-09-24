@@ -1,6 +1,7 @@
 package com.langyo.wowsp
 
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -19,7 +20,8 @@ class MainActivity : TauriActivity() {
   }
 
   /**
-   * Phone-shell system-bar handling, applied to the webview wry hands us.
+   * Phone-shell system-bar AND soft-keyboard handling, applied to the
+   * webview wry hands us.
    *
    * Android 15+ forces edge-to-edge, so the page lays out under the status
    * and navigation bars. The webui's SCSS pads by env(safe-area-inset-*),
@@ -63,7 +65,34 @@ class MainActivity : TauriActivity() {
     val bars = insets.getInsets(
       WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
     )
-    Log.d("WoWSPInsets", "t=${bars.top} b=${bars.bottom} l=${bars.left} r=${bars.right}")
+    // The IME is an inset of its own, and nothing shrinks the window for
+    // us: enableEdgeToEdge turns decor-fits-system-windows off, so from
+    // API 30 up `adjustResize` has no window resize to perform and the
+    // keyboard would simply paint over the webview. The page therefore kept
+    // its full layout height while the IME was up — the CSS viewport never
+    // changed, so the phone sheets (capped at 100dvh minus the top inset)
+    // stayed put and the field being typed into sat under the keyboard
+    // (user report 2026-09-24: the create-player dialog's nickname box on
+    // a narrow screen).
+    //
+    // Gated on API 30: below that the framework still honours the legacy
+    // adjustResize and shrinks the window for the keyboard itself, so
+    // applying the inset as well would leave the webview a keyboard short
+    // twice over — a dead band above the IME. Below 30 the bars term alone
+    // is what this app has always shipped.
+    val imeBottom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+    } else {
+      0
+    }
+    // max(), not sum: while the IME is up its inset already includes the
+    // strip the navigation bar sits in, and adding both would leave a
+    // nav-bar-tall gap above the keyboard.
+    val bottom = maxOf(bars.bottom, imeBottom)
+    Log.d(
+      "WoWSPInsets",
+      "t=${bars.top} b=${bars.bottom} ime=$imeBottom l=${bars.left} r=${bars.right}"
+    )
     // WebView ignores View padding for web content (the page paints across
     // the padding), so inset the view itself through layout MARGINS — the
     // WebView then measures smaller and its CSS viewport shrinks to the
@@ -71,7 +100,7 @@ class MainActivity : TauriActivity() {
     val lp = view.layoutParams
     if (lp is android.view.ViewGroup.MarginLayoutParams) {
       lp.topMargin = bars.top
-      lp.bottomMargin = bars.bottom
+      lp.bottomMargin = bottom
       lp.leftMargin = bars.left
       lp.rightMargin = bars.right
       view.layoutParams = lp

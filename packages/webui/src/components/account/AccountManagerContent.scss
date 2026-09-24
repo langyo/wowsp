@@ -87,6 +87,35 @@
   }
 }
 
+/* ── Add-player dialog frame (HModal `contentClass`) ───────────────────
+   Phone-only height floor. Below 768px hikari docks the modal as a
+   content-hugging bottom sheet, so the add dialog opened with nothing but
+   the search row in it and every staged lookup then GREW it — the row the
+   user was typing in (and the keyboard sitting under it) moved on each
+   result. Holding the frame at the height the result needs keeps the
+   search row still and gives the preview card + confirm row a space to
+   land in instead of pushing one open.
+
+   The min() against the sheet's own cap is load-bearing: min-height beats
+   max-height in CSS, so a flat floor would override hikari's
+   keyboard-aware `100dvh` cap and drop the sheet back under the IME. The
+   cap's terms are mirrored exactly (top inset AND bottom gap) so the floor
+   stays under it even if a host ever lifts the sheet via
+   --hk-sheet-bottom-gap. Plain-vh line first for dvh-less engines, same
+   fallback order hikari uses on the cap itself. */
+@media (max-width: 767px) {
+  .acct-add-modal {
+    min-height: min(
+      21rem,
+      calc(100vh - var(--hk-sheet-top-inset, 4.25rem) - var(--hk-sheet-bottom-gap, 0px))
+    );
+    min-height: min(
+      21rem,
+      calc(100dvh - var(--hk-sheet-top-inset, 4.25rem) - var(--hk-sheet-bottom-gap, 0px))
+    );
+  }
+}
+
 /* ── Account card ──────────────────────────────────────────────────────
    Each bound account is a horizontal card: avatar circle + name/clan/meta
    stats (winrate, battles) + remove button. Clicking the card switches the

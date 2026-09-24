@@ -6,8 +6,19 @@
          lays out under the status/navigation bars; without the key the
          WebView reports every env(safe-area-inset-*) as 0 and the phone
          shell's top bar (hamburger/gear) ends up untouchable under the
-         status bar. The shell SCSS already pads by the insets. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+         status bar. The shell SCSS already pads by the insets.
+
+         interactive-widget=resizes-content: with the Chromium default
+         (resizes-visual) the soft keyboard leaves the LAYOUT viewport at
+         full height, so 100vh/100dvh keep their value and the phone's
+         docked bottom sheets — capped at 100dvh minus the top inset — stay
+         put while the field being typed into sits under the IME. Asking for
+         resizes-content makes the layout viewport follow the keyboard, which
+         is what those sheets measure against. Engines that do not implement
+         the key ignore it; inside the Android app they are covered anyway,
+         because the shell shrinks the webview by the IME inset itself
+         (MainActivity.applyBarInsets). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
