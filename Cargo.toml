@@ -110,7 +110,7 @@ zip = { version = "^8", default-features = false, features = ["deflate"] }
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
 # window-close lifecycle). Published to crates.io.
-malkuth = { version = "^0.2", default-features = false, features = ["signals"] }
+malkuth = { version = "^0.3", default-features = false, features = ["signals"] }
 
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.56"
