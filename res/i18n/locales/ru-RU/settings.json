@@ -143,6 +143,13 @@
     "resetFailed": "Не удалось сбросить печать"
   },
   "updates": "Обновления",
+  "changelog": "Список изменений",
+  "changelogHint": "Примечания к выпускам загружаются напрямую со страницы GitHub Releases проекта.",
+  "changelogLoading": "Загрузка списка изменений…",
+  "changelogEmpty": "Выпусков пока нет.",
+  "changelogFailed": "Не удалось загрузить список изменений.",
+  "changelogRefresh": "Обновить",
+  "changelogCurrent": "Текущая",
   "updatesAppTitle": "Приложение",
   "updatesAppHint": "Приложение обновляется по тегам версий GitHub; обновление всегда скачивает компактный установщик — ресурсный пакет идёт по своему каналу.",
   "updatesAppName": "Приложение WoWSP",

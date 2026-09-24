@@ -34,6 +34,7 @@
     "hint": "Escribe un nombre de buque, pinyin o nombre en inglés"
   },
   "retry": "Reintentar",
+  "close": "Cerrar",
   "gamePath": {
     "title": "Ruta del juego",
     "desc": "WoWSP necesita la carpeta de instalación de World of Warships para leer los datos de blindaje y balística de los buques, las repeticiones y los recursos de mods.",

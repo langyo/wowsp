@@ -12,6 +12,8 @@
   "updateNow": "立即更新",
   "updateLater": "稍後",
   "upToDate": "已是最新",
+  "updateAppliedTitle": "WoWSP 已更新到 v{version}",
+  "updateAppliedView": "查看更新日誌",
   "checking": "檢查中...",
   "downloading": "下載中...",
   "issues": "回報問題",

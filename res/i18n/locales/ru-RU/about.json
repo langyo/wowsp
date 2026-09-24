@@ -12,6 +12,8 @@
   "updateNow": "Обновить сейчас",
   "updateLater": "Позже",
   "upToDate": "Актуальная версия",
+  "updateAppliedTitle": "WoWSP обновлён до v{version}",
+  "updateAppliedView": "Посмотреть список изменений",
   "checking": "Проверка...",
   "downloading": "Загрузка...",
   "issues": "Сообщить о проблеме",
