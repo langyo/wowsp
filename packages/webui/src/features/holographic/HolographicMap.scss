@@ -123,6 +123,22 @@
     pointer-events: auto;
   }
 
+  /* The tactical board's tall form: toolbar + timeline docked directly
+     above the playback row, sharing its surface so the two read as one
+     taller progress bar. */
+  &__tac-dock {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% - 1px);
+    min-width: min(720px, calc(100vw - 48px));
+    pointer-events: auto;
+    background: var(--holo-hud-bg);
+    border: 1px solid var(--holo-hud-border);
+    border-bottom: none;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    backdrop-filter: blur(6px);
+  }
+
   &__shipcard {
     position: absolute;
     left: 0;
@@ -751,8 +767,17 @@
      free here: the absolute inset:0 overlay never sizes from content. */
   container-type: size;
   /* Reserve the playback bar's footprint (bottom 12px + ~42px tall) so the
-     centered map + tactical step strip never slide behind it. */
+     centered map never slides behind it. With the tactical board on, the
+     bar grows its tall form (toolbar + timeline above the row) — the extra
+     padding pushes the centered map UP with an eased slide, and back down
+     when the board turns off. */
   padding: 8px 8px 64px;
+  transition: padding 0.38s cubic-bezier(0.33, 1, 0.4, 1);
+
+  &--tac-space {
+    /* toolbar (~36) + timeline (~140) + controls row (~42) + stack gaps */
+    padding-bottom: 252px;
+  }
 }
 .holo-map__mmzoom-head {
   display: flex;

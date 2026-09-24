@@ -59,13 +59,13 @@ export interface TimelineUserMarker {
 }
 
 const RULER_H = 20;
-const LANES_H = 64;
+const LANES_H = 78;
 const OVERVIEW_H = 18;
 const PAD = 4;
 const CANVAS_H = RULER_H + LANES_H + OVERVIEW_H + PAD;
-const MAX_ROWS = 4;
+const MAX_ROWS = 6;
 /** Above this many visible markers, icons give way to a density histogram. */
-const DENSITY_LIMIT = 260;
+const DENSITY_LIMIT = 420;
 
 type Hit =
   | { kind: "user"; id: string; x: number; y: number; lines: string[] }
