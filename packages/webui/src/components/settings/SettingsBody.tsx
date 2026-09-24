@@ -47,7 +47,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
-import { THEME_PRESET_ORDER } from "@/theme";
+import { themePresetIds } from "@/theme";
 import {
   setThemeModePreference,
   themeModePreference,
@@ -103,11 +103,6 @@ import "../layout/SettingsModal.scss";
 function css(rgb: { r: number; g: number; b: number }): string {
   return `rgb(${rgb.r} ${rgb.g} ${rgb.b})`;
 }
-
-// The shipped presets in display order (Nord first, Synthwave '84 last —
-// see THEME_PRESET_ORDER). Resolved at render time through themePresets so
-// cards appear even though the registry is mutated at runtime.
-const presetIds = THEME_PRESET_ORDER.filter((id) => id in themePresets);
 
 /**
  * Shared settings body: the section rail + the section cards. Rendered by
@@ -732,10 +727,16 @@ export default defineComponent({
             />
 
             {/* color preset — uniform card chrome; the theme only peeks
-                through the preview chip so the row reads as one control */}
+                through the preview chip so the row reads as one control.
+                Cards come from hikari's LIVE preset table on each render
+                (themePresetIds, display order: Nord first, Synthwave '84
+                last), so whatever the installed hikari ships gets a card —
+                the four named looks, or the single `default` pair that
+                replaced them — instead of a fixed id list that can match
+                nothing at all. */}
             <HSettingsSub title={t("settings.themePreset")}>
               <div class="settings-modal__presets">
-                {presetIds.map((id) => {
+                {themePresetIds().map((id) => {
                   // Use the effective mode so light-mode users see a light preview.
                   const tokens = getThemeTokens(id, theme.effectiveMode.value);
                   if (!tokens) return null;

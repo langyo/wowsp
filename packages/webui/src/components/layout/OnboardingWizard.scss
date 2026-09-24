@@ -91,8 +91,11 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    /* Color presets: four cards in a 2×2 grid — a 3+1 wrap reads lopsided,
-       and 4-up squeezes each under the 9.5rem legibility floor. */
+    /* Color presets: two per row — a 3+1 wrap reads lopsided, and 4-up
+       squeezes each under the 9.5rem legibility floor. The count follows
+       hikari's preset table (four looks through 0.55.60, the single
+       `default` pair after its collapse), so this class name is the only
+       thing still counting to four. */
     &--four {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

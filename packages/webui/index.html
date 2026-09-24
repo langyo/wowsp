@@ -54,11 +54,27 @@
     <div id="app"></div>
     <script>
       // Theme globals read by hikari's theme module at import time (before
-      // any bundle code runs): Nord is the WoWSP default — a stored id that
-      // no longer resolves (e.g. the retired "ocean" brand preset) drops to
-      // it at boot. Also migrate the pre-hikari localStorage keys once so
-      // existing installs keep their mode/preset choice.
+      // any bundle code runs): a stored id that no longer resolves (e.g. the
+      // retired "ocean" brand preset) drops to __celestiaDefaultTheme at boot.
+      //
+      // "nord" is the boot look WoWSP has always shipped, and it holds on
+      // both sides of hikari's stock-preset collapse: the four-preset table
+      // (0.55.60 and earlier — 0.55.53 is what this package installs today)
+      // resolves it to Nord. The collapsed table (0.55.61, same 0.55.x minor
+      // and therefore already inside our ^0.55.53 range) retired the id, so
+      // there hikari falls back to its own `default`. That fallback is no
+      // regression in the DARK: `default.dark` IS Nord's palette, slot for
+      // slot (18/18 measured identical). It does change the LIGHT scheme —
+      // `default.light` is the retired Synthwave '84 light pair (11 of 18
+      // slots differ from nord.light) and the default mode is "system", so a
+      // daytime boot lands there; that palette is the library's own
+      // replacement and WoWSP cannot keep nord.light without re-shipping it.
+      // Naming "default" here instead would regress today's build: the
+      // four-preset table carries no such id and would drop to Synthwave '84
+      // (verified against the installed 0.55.53: it resolves synthwave84).
       window.__celestiaDefaultTheme = "nord";
+      // One-shot migration of the pre-hikari localStorage keys so existing
+      // installs keep their mode/preset choice.
       (function () {
         try {
           // Seed hikari's own mode key from WoWSP's authoritative one. Only
