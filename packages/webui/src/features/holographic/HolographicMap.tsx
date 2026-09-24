@@ -486,13 +486,15 @@ export default defineComponent({
     const minimapShowTrails = ref(true);
     /** The game's A–J / 1–10 grid with edge coordinate labels (default on). */
     const minimapShowGrid = ref(true);
-    /** Map rotation in degrees (canvas rotate convention, +45° per click).
+    /** Map rotation in degrees (canvas rotate convention, +90° per click).
      *  The whole world frame — art, trails, annotations — rotates; the grid
      *  labels stay pinned to the screen's top/left edges. */
     const mmRotationDeg = ref(0);
     const mmRotationRad = computed(() => (mmRotationDeg.value * Math.PI) / 180);
     function rotateMap(steps: number): void {
-      mmRotationDeg.value += steps * 45;
+      // 90° steps keep the square map filling its viewport (45° would leave
+      // dark corner wedges).
+      mmRotationDeg.value += steps * 90;
     }
     /** Tactical board editing on the enlarged 2D map (annotations stay
      *  rendered read-only when off, so a composed view survives toggling). */
@@ -1658,23 +1660,11 @@ export default defineComponent({
                     : "rgba(60, 180, 120, 0.5)";
               zctx.lineWidth = 1.5;
               zctx.beginPath();
-              // Trails grow with the playhead: only samples observed at or
-              // before the current battle time. Drawing the FULL recorded
-              // path made every line run ahead of its ship into the future —
-              // scrubbed views read as "trails offset past the ships".
-              const now = current.value;
-              let end = tr.samples.length;
-              if (tr.samples[end - 1].time > now) {
-                let lo = 0;
-                let hi = end - 1;
-                while (lo < hi) {
-                  const mid = (lo + hi) >> 1;
-                  if (tr.samples[mid].time <= now) lo = mid + 1;
-                  else hi = mid;
-                }
-                end = lo;
-              }
-              for (let i = 0; i < end; i++) {
+              // FULL recorded path, independent of the playhead — the trails
+              // toggle exists to review the whole battle's manoeuvres. (A
+              // playhead-clipped variant shipped once and hid the trails
+              // entirely at early battle times.)
+              for (let i = 0; i < tr.samples.length; i++) {
                 const s = tr.samples[i];
                 const px = zwx(s.x);
                 const py = zwz(-s.z);

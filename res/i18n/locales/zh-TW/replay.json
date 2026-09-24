@@ -122,8 +122,8 @@
     "zoom": "放大地圖",
     "trails": "船隻軌跡",
     "grid": "地圖網格（A–J / 1–10）",
-    "rotateCcw": "地圖逆時針旋轉 45°",
-    "rotateCw": "地圖順時針旋轉 45°"
+    "rotateCcw": "地圖逆時針旋轉 90°",
+    "rotateCw": "地圖順時針旋轉 90°"
   },
   "labels": {
     "hide": "隱藏標籤",
