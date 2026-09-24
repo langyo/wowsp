@@ -146,6 +146,7 @@
     "waitingTitle": "Esperando el inicio de la batalla",
     "waitingHint": "El juego está en ejecución: las composiciones y estadísticas se cargan aquí automáticamente al entrar en batalla",
     "settling": "Calculando",
+    "ended": "Batalla terminada",
     "hiddenProfile": "Este jugador ha ocultado sus estadísticas",
     "viewProfile": "Ver las estadísticas de este jugador",
     "detectedRows": "Ubicado · {n} filas",

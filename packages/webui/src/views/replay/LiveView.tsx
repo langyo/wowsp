@@ -67,34 +67,15 @@ export default defineComponent({
     /** Live battle clock (from tempArenaInfo's dateTime) — feeds the
      *  battle-duration cap below; the visible clock rides the panel. */
     const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
-    /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
-     *  (the settling watcher never fires) and the game deletes
-     *  tempArenaInfo.json, which only the poll notices — so a stale roster
-     *  + ticking clock can survive forever. Past the cap the roster is
-     *  force-cleared until the next arena-info event repopulates it. */
-    const battleCapHit = computed(() => {
-      const a = overlay.arenaInfo;
-      const elapsed = liveClock.elapsed.value;
-      if (!a || elapsed == null) return false;
-      const key = modeKey(a.matchGroup, a.scenario, null, a.botCount ?? 0);
-      const pvp =
-        key === "pvp" ||
-        key === "ranked" ||
-        key === "clan" ||
-        key === "brawl" ||
-        key === "squad" ||
-        key === "armsrace";
-      return elapsed >= (pvp ? PVP_BATTLE_CAP_SECS : PVE_BATTLE_CAP_SECS);
-    });
-    watch(battleCapHit, (hit) => {
-      if (hit) overlay.clearArenaInfo();
-    });
 
     /** Battle lifecycle: while the game runs, watch the replays folder —
      *  the game writes the .wowsreplay file when the battle ENDS, so a new
      *  file is the direct "match over" signal. On detection: flip to
      *  SETTLING (结算中 — stats screen, replay not yet final). When the
-     *  game process exits, return to idle. */
+     *  game process exits, return to idle. A NEXT battle's roster (fresh
+     *  tempArenaInfo dateTime) re-arms the battle phase — without this the
+     *  settling pill would stick for every battle after the first in one
+     *  game session. */
     const livePhase = ref<"idle" | "battle" | "settling">("idle");
     let baselineFiles: Set<string> | null = null;
     async function snapshotReplayDir(): Promise<Set<string> | null> {
@@ -125,6 +106,42 @@ export default defineComponent({
         }
       },
     );
+    watch(
+      () => overlay.arenaInfo?.dateTime ?? null,
+      (stamp, prev) => {
+        if (stamp != null && stamp !== prev && gameStatus.process.running) {
+          void armBattlePhase();
+        }
+      },
+    );
+
+    /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
+     *  (the settling watcher never fires) and the game deletes
+     *  tempArenaInfo.json — the poll then flags the battle ended and the
+     *  roster is retained on purpose, so the cap only guards a battle that
+     *  is still LIVE (roster present, not ended, page in the battle phase):
+     *  past the cap the roster is force-cleared until the next arena-info
+     *  event repopulates it. Declared after the lifecycle block above —
+     *  its getter reads `livePhase`, and `watch` evaluates the getter
+     *  synchronously. */
+    const battleCapHit = computed(() => {
+      if (livePhase.value !== "battle" || overlay.battleEnded) return false;
+      const a = overlay.arenaInfo;
+      const elapsed = liveClock.elapsed.value;
+      if (!a || elapsed == null) return false;
+      const key = modeKey(a.matchGroup, a.scenario, null, a.botCount ?? 0);
+      const pvp =
+        key === "pvp" ||
+        key === "ranked" ||
+        key === "clan" ||
+        key === "brawl" ||
+        key === "squad" ||
+        key === "armsrace";
+      return elapsed >= (pvp ? PVP_BATTLE_CAP_SECS : PVE_BATTLE_CAP_SECS);
+    });
+    watch(battleCapHit, (hit) => {
+      if (hit) overlay.clearArenaInfo();
+    });
     let endPoll: number | null = null;
     watch(
       livePhase,
@@ -156,7 +173,8 @@ export default defineComponent({
 
     // While the page is open, poll the game's tempArenaInfo.json so the
     // roster refreshes as players load in / the battle ends (the game
-    // DELETES the file at battle end — an absent read drops the roster).
+    // DELETES the file at battle end — an absent read flags the battle
+    // ended and keeps the last roster on screen).
     let arenaTimer: number | null = null;
     onMounted(async () => {
       await gd.detect();
@@ -175,7 +193,9 @@ export default defineComponent({
     });
 
     /** Panel body: mount it while the game runs or a roster exists. With
-     *  neither there is nothing live to watch — show the placeholder. */
+     *  neither there is nothing live to watch — show the placeholder. A
+     *  finished battle keeps its roster in the store (battleEnded), so the
+     *  panel stays up with the "ended" badge instead of blanking. */
     const battleLive = computed(
       () => gameStatus.process.running || overlay.arenaInfo != null,
     );
@@ -190,6 +210,7 @@ export default defineComponent({
             <LiveBattlePanel
               arena={overlay.arenaInfo}
               settling={livePhase.value === "settling"}
+              ended={overlay.battleEnded}
               realm={realm.value}
             />
           ) : (

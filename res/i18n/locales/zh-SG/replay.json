@@ -146,6 +146,7 @@
     "waitingTitle": "等待对局开始",
     "waitingHint": "游戏已启动——进入战斗后，双方阵容与水表会自动载入本页",
     "settling": "结算中",
+    "ended": "对局已结束",
     "hiddenProfile": "该玩家隐藏了水表",
     "viewProfile": "查看该玩家的水表",
     "detectedRows": "已定位 · {n} 行",

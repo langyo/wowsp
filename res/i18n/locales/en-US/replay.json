@@ -146,6 +146,7 @@
     "waitingTitle": "Waiting for the battle to start",
     "waitingHint": "The game is running — rosters and stats load here automatically once you enter a battle",
     "settling": "Settling",
+    "ended": "Battle ended",
     "hiddenProfile": "This player has hidden their stats",
     "viewProfile": "View this player's stats",
     "detectedRows": "Located · {n} rows",

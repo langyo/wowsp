@@ -23,6 +23,13 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
    *  `dateTime`; kept in the STORE (not the panel) so it survives panel
    *  unmounts — the live pane closes and reopens while a battle runs. */
   const tabOrder = ref<TabRowOrder | null>(null);
+  /** True once the current roster's battle is KNOWN over: the game deleted
+   *  tempArenaInfo.json (battle end / return to port / mid-battle quit).
+   *  The roster itself is deliberately KEPT — the live page keeps showing
+   *  the last battle (with an "ended" badge) instead of blanking into the
+   *  waiting state, until a new battle's roster replaces it or the hard
+   *  duration cap clears it. */
+  const battleEnded = ref(false);
 
   let arenaUnlisten: (() => void) | null = null;
 
@@ -53,14 +60,22 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
 
   /** One-shot read of tempArenaInfo.json (if the game is in a battle). The
    *  game DELETES the file when the battle ends / the player returns to
-   *  port (mid-battle quits included — no .wowsreplay is written then), so
-   *  an absent file must drop the cached roster instead of leaving a stale
-   *  one ticking forever. A partially-written file fails the read (throws)
-   *  and keeps the current value. */
+   *  port (mid-battle quits included — no .wowsreplay is written then):
+   *  an absent read flips `battleEnded` on but KEEPS the roster, so the
+   *  live page keeps presenting the last battle until the next one starts.
+   *  Stale-roster drift is bounded elsewhere — the hard duration cap (see
+   *  ReplayView's battleCap watcher) force-clears, and a new battle's file
+   *  replaces the roster and clears the flag. A partially-written file
+   *  fails the read (throws) and keeps the current value. */
   async function refreshArenaInfo(dir?: string) {
     try {
       const info = await api.readTempArenaInfo(dir);
-      arenaInfo.value = info ?? null;
+      if (info) {
+        arenaInfo.value = info;
+        battleEnded.value = false;
+      } else if (arenaInfo.value) {
+        battleEnded.value = true;
+      }
     } catch (e) {
       error.value = (e as Error).message;
     }
@@ -68,10 +83,13 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
 
   /** Force-drop the cached roster (hard battle-duration cap — see
    *  ReplayView's battleCap watcher). Also drops the Tab row order: it
-   *  belongs to that battle only. */
+   *  belongs to that battle only. Unlike the poll's end-of-battle path this
+   *  clears outright — a roster past its mode's duration cap is stale
+   *  garbage, not a finished battle worth keeping on screen. */
   function clearArenaInfo() {
     arenaInfo.value = null;
     tabOrder.value = null;
+    battleEnded.value = false;
   }
 
   /** Store the latest recognized in-game Tab row order (written by
@@ -87,7 +105,10 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
     try {
       await api.startArenaWatcher(dir);
       arenaUnlisten = (await api.listenArenaInfo((info) => {
+        // Watcher events only fire for a NEWER tempArenaInfo.json — i.e. a
+        // new battle's roster, which ends the retained-battle state.
         arenaInfo.value = info;
+        battleEnded.value = false;
       })) as (() => void) | null;
       watching.value = true;
     } catch (e) {
@@ -113,6 +134,7 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
     allies,
     enemies,
     tabOrder,
+    battleEnded,
     watching,
     error,
     initRealm,
