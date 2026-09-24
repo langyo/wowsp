@@ -5236,7 +5236,13 @@ export default defineComponent({
         />
         {/* Enlarged minimap overlay: trails + class glyphs, closeable */}
         {minimapZoom.value ? (
-          <div class="holo-map__mmzoom" onClick={() => { minimapZoom.value = false; }}>
+          <div
+            class={[
+              "holo-map__mmzoom",
+              tacticalOn.value ? "holo-map__mmzoom--tac-space" : "",
+            ]}
+            onClick={() => { minimapZoom.value = false; }}
+          >
             {/* The pill is chrome, not scrim — clicking its labels must not
                 close the view (only the scrim around the map does). Icon
                 toggles light up (primary) while active; tooltips name them. */}
@@ -5318,6 +5324,16 @@ export default defineComponent({
         ) : null}
         {props.replayPath ? (
           <div class="holo-map__controls">
+          {/* Tactical dock: the toolbar + timeline teleport here when the
+              board is on — the playback bar's "tall form", with the map
+              sliding up via the mmzoom --tac-space padding. */}
+          {minimapZoom.value && tacticalOn.value ? (
+            <div
+              class="holo-map__tac-dock"
+              id="holo-map-tac-dock"
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            />
+          ) : null}
           {/* Phone sheet scrim: while a HUD pop-up menu is docked as a
               bottom sheet (≤767px only — the CSS docks the panels), taps on
               the scrim dismiss both menus, mirroring the hikari sheet

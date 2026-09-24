@@ -8,6 +8,7 @@
 import {
   computed,
   defineComponent,
+  Teleport,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -1233,31 +1234,11 @@ export default defineComponent({
             </div>
           ) : null}
           {edit ? (
+            <Teleport defer to="#holo-map-tac-dock">
             <div
               class={["tac-dock", offlineRendering.value ? "tac-dock--busy" : ""]}
               onClick={(e: MouseEvent) => e.stopPropagation()}
             >
-              <Timeline
-                getTime={props.getTime}
-                getDuration={props.getDuration}
-                getPlaying={props.getPlaying}
-                play={() => { if (!props.getPlaying()) props.play(); }}
-                pause={() => { if (props.getPlaying()) props.pause(); }}
-                seekTo={props.seekTo}
-                actions={props.actions}
-                labelOf={props.labelOf}
-                steps={stepsSorted.value}
-                currentStepIndex={currentStepIndex.value}
-                userMarkers={userMarkers.value}
-                presentMode={presentMode.value}
-                addStep={addStepHere}
-                stepPrev={stepPrev}
-                stepNext={stepNext}
-                togglePresent={togglePresent}
-                goToStep={goToStep}
-                removeStep={removeStepById}
-                removeUserMarker={removeUserMarkerById}
-              />
               <TacticalToolbar
                 store={store}
                 regionActive={regionMode.value}
@@ -1280,7 +1261,29 @@ export default defineComponent({
                   resetView: () => props.viewApi.reset(),
                 }}
               />
+              <Timeline
+                getTime={props.getTime}
+                getDuration={props.getDuration}
+                getPlaying={props.getPlaying}
+                play={() => { if (!props.getPlaying()) props.play(); }}
+                pause={() => { if (props.getPlaying()) props.pause(); }}
+                seekTo={props.seekTo}
+                actions={props.actions}
+                labelOf={props.labelOf}
+                steps={stepsSorted.value}
+                currentStepIndex={currentStepIndex.value}
+                userMarkers={userMarkers.value}
+                presentMode={presentMode.value}
+                addStep={addStepHere}
+                stepPrev={stepPrev}
+                stepNext={stepNext}
+                togglePresent={togglePresent}
+                goToStep={goToStep}
+                removeStep={removeStepById}
+                removeUserMarker={removeUserMarkerById}
+              />
             </div>
+            </Teleport>
           ) : null}
           <input
             ref={jsonInput}
