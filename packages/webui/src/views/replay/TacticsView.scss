@@ -56,28 +56,6 @@
     padding: 0.25rem 0.75rem 1rem;
   }
 
-  &__empty {
-    margin: 0;
-    padding: 0.75rem 0.5rem;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-    line-height: 1.5;
-  }
-
-  &__state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1.5rem 0.5rem;
-
-    p {
-      margin: 0;
-      color: rgb(var(--color-muted));
-      font-size: var(--text-sm);
-    }
-  }
-
   &__items {
     list-style: none;
     margin: 0;
@@ -139,42 +117,9 @@
   /* The warning alert's message body — hikari renders default-slot content
      inside .hk-alert-text, which already carries the colour / size /
      line-height the message prop would have gotten; only the <p>'s UA
-     margin needs resetting (the gap to the rows below is their own
-     margin-top). */
+     margin needs resetting. */
   &__warning-text {
     margin: 0;
-  }
-
-  /* The warning alert's detail rows (修改时间 / 路径) — same label/value
-     shape as the rail cards, with the long .pkg path truncated by ellipsis
-     (the full path rides the title attribute on hover). */
-  &__detail-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    margin-top: 0.35rem;
-  }
-
-  &__detail-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.6rem;
-    font-size: var(--text-xs);
-    min-width: 0;
-  }
-
-  &__detail-label {
-    flex-shrink: 0;
-    color: rgb(var(--color-muted));
-  }
-
-  &__detail-val {
-    min-width: 0;
-    color: rgb(var(--color-text));
-    font-variant-numeric: tabular-nums;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* Map art fills the remaining pane height, contained on a dark backdrop
@@ -267,29 +212,6 @@
       background: rgb(var(--color-warning) / 18%);
       color: rgb(var(--color-warning));
     }
-  }
-
-  &__row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    font-size: var(--text-xs);
-  }
-
-  &__label {
-    flex-shrink: 0;
-    color: rgb(var(--color-muted));
-  }
-
-  &__val {
-    min-width: 0;
-    color: rgb(var(--color-text));
-    font-variant-numeric: tabular-nums;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: right;
   }
 }
 
