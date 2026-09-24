@@ -18,6 +18,7 @@ import {
   Power,
   RefreshCw,
   Smartphone,
+  ScrollText,
   Sun,
   SunMoon,
   Trash2,
@@ -89,6 +90,7 @@ import {
 import { useCloseBehaviorStore, type CloseAction } from "@/stores/closeBehavior";
 import { useCacheStore } from "@/stores/cache";
 import { useUpdaterStore } from "@/stores/updater";
+import { useChangelogStore } from "@/stores/changelog";
 import { entryKey, usePairingStore } from "@/stores/pairing";
 import { AboutContent } from "@/components/layout/AboutModal";
 import { pickTelemetryNotice } from "@/components/layout/announcementVariants";
@@ -98,6 +100,7 @@ import AuthorMark from "@/components/base/AuthorMark";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import SealCustomizer from "@/components/stats/SealCustomizer";
 import FontSizeControl from "@/components/layout/FontSizeControl";
+import ChangelogSection from "@/components/settings/ChangelogSection";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
 import "../layout/SettingsModal.scss";
@@ -352,6 +355,7 @@ export default defineComponent({
     // ── Updates (app binary + resource pack + mirror + aux caches) ─────
     const cacheStore = useCacheStore();
     const updater = useUpdaterStore();
+    const changelog = useChangelogStore();
     // ── Pairing (phone ↔ desktop replay transfer) ───────────────────────
     // Desktop build: the SERVER section (toggle, big gateway-allocated code,
     // regenerate, LAN-fallback hint). Phone build: the CLIENT section (open
@@ -443,6 +447,9 @@ export default defineComponent({
         } else {
           stopPairingPoll();
         }
+        // The changelog feed streams from GitHub Releases on demand —
+        // never at startup — so opening the section is what loads it.
+        if (id === "changelog") void changelog.ensureLoaded();
         if (id !== "updates") return;
         void cacheStore.refreshStatus();
         void cacheStore.loadMirror().then(() => {
@@ -466,6 +473,7 @@ export default defineComponent({
           void pairingStore.refreshServerStatus();
           startPairingPoll();
         }
+        if (open && ui.section === "changelog") void changelog.ensureLoaded();
         if (!open) stopPairingPoll();
       },
     );
@@ -478,6 +486,7 @@ export default defineComponent({
       void pairingStore.refreshServerStatus();
       startPairingPoll();
     }
+    if (ui.section === "changelog") void changelog.ensureLoaded();
 
     async function saveMirror() {
       if (!mirrorDirty.value) return;
@@ -628,6 +637,7 @@ export default defineComponent({
       network: Globe,
       pairing: Smartphone,
       updates: RefreshCw,
+      changelog: ScrollText,
       overlay: Layers,
       about: Info,
       attributions: Copyright,
@@ -642,6 +652,7 @@ export default defineComponent({
       network: t("settings.network"),
       pairing: mobileApp ? t("settings.pairingMobile") : t("settings.pairing"),
       updates: t("settings.updates"),
+      changelog: t("settings.changelog"),
       overlay: t("settings.overlay"),
       about: t("settings.about"),
       attributions: t("settings.attributions"),
@@ -1593,6 +1604,17 @@ export default defineComponent({
             ))}
           </HSettingsGroup>
 
+          </>
+          ),
+          changelog: () => (
+          <>
+          {/* changelog — release notes streamed live from the project's
+              GitHub Releases (the repo keeps no changelog file; the
+              Releases page IS the history). One article per release,
+              newest first, with a 当前 badge on the running build; the
+              section activators above load the feed on demand and the
+              component owns only the explicit refresh. */}
+          <ChangelogSection />
           </>
           ),
           overlay: () => (

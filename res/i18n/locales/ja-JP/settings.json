@@ -141,6 +141,13 @@
     "resetFailed": "印章を既定に戻すのに失敗しました"
   },
   "updates": "アップデート",
+  "changelog": "更新履歴",
+  "changelogHint": "リリースノートはプロジェクトの GitHub Releases からリアルタイムに取得されます。",
+  "changelogLoading": "更新履歴を読み込み中…",
+  "changelogEmpty": "リリースはまだありません。",
+  "changelogFailed": "更新履歴の読み込みに失敗しました。",
+  "changelogRefresh": "再読み込み",
+  "changelogCurrent": "現在のバージョン",
   "updatesAppTitle": "アプリ本体",
   "updatesAppHint": "アプリ本体は GitHub のバージョンタグに従います。更新時は軽量インストーラーのみをダウンロードし、リソースパックは独自の経路で別途更新されます。",
   "updatesAppName": "WoWSP アプリ本体",

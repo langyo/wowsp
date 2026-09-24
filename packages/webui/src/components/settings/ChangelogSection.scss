@@ -1,0 +1,130 @@
+// ChangelogSection — the settings' 更新日志 pane: one bordered article
+// per GitHub release (version chip + 当前 badge + publish date in the
+// header, the markdown body rendered below). Surface colors come from
+// the hikari tokens so both theme modes read correctly.
+
+.changelog {
+  &__state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--hi-space-12, 12px);
+    padding: var(--hi-space-24, 24px) 0;
+    color: var(--hi-color-text-secondary);
+  }
+
+  &__state-text {
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--hi-color-danger);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__empty {
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-12, 12px);
+    margin-top: var(--hi-space-12, 12px);
+  }
+
+  &__release {
+    padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+    border: 1px solid var(--hi-color-border);
+    border-radius: var(--hi-radius-sm, 4px);
+  }
+
+  &__release-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__release-version {
+    font-weight: 600;
+    font-size: var(--hi-text-md, 1rem);
+    color: var(--hi-color-text-primary);
+  }
+
+  &__current {
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    background: rgb(var(--hi-color-primary-rgb, 64 156 255) / 16%);
+    color: var(--hi-color-primary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  &__release-date {
+    margin-left: auto;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    white-space: nowrap;
+  }
+}
+
+// ReleaseMarkdown — the release body's rendered markdown subset. The
+// What's Changed headers read as quiet section titles, bullets as a
+// tight list; links are plain text buttons routed through openExternal.
+.release-md {
+  margin-top: var(--hi-space-8, 8px);
+  color: var(--hi-color-text-primary);
+  font-size: var(--hi-text-sm, 0.8125rem);
+  line-height: 1.6;
+
+  &__heading {
+    margin: var(--hi-space-12, 12px) 0 var(--hi-space-4, 4px);
+    color: var(--hi-color-text-primary);
+    font-weight: 600;
+    font-size: var(--hi-text-sm, 0.8125rem);
+
+    &:first-child {
+      margin-top: 0;
+    }
+
+    &--major {
+      font-size: var(--hi-text-md, 1rem);
+    }
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: var(--hi-space-4, 4px) 0;
+    padding-left: 1.25em;
+  }
+
+  &__item {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__para {
+    margin: var(--hi-space-4, 4px) 0;
+  }
+
+  &__link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--hi-color-primary);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.8;
+    }
+  }
+}

@@ -34,6 +34,7 @@
     "hint": "Type a ship name, pinyin, or English name"
   },
   "retry": "Retry",
+  "close": "Close",
   "gamePath": {
     "title": "Game path",
     "desc": "WoWSP needs the World of Warships install folder to read ship armor & ballistics data, replays, and mod resources.",

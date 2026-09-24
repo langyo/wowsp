@@ -141,6 +141,13 @@
     "resetFailed": "Error al restaurar el sello"
   },
   "updates": "Actualizaciones",
+  "changelog": "Historial de cambios",
+  "changelogHint": "Las notas de versión se obtienen en directo de las GitHub Releases del proyecto.",
+  "changelogLoading": "Cargando el historial de cambios…",
+  "changelogEmpty": "Aún no hay versiones publicadas.",
+  "changelogFailed": "No se pudo cargar el historial de cambios.",
+  "changelogRefresh": "Actualizar",
+  "changelogCurrent": "Actual",
   "updatesAppTitle": "Aplicación",
   "updatesAppHint": "La aplicación sigue las etiquetas de versión de GitHub; una actualización solo descarga el instalador ligero — el paquete de recursos sigue por su propio canal.",
   "updatesAppName": "Aplicación WoWSP",

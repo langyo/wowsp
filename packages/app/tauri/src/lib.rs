@@ -468,6 +468,10 @@ pub fn run() {
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
             commands::ranked::get_ranked_stats,
+            // Changelog feed for the settings' 更新日志 section — GitHub
+            // Releases via the mirror ladder; platform-neutral (the phone
+            // app serves the same feed).
+            commands::changelog::changelog_list,
             // Self-update ships a Windows NSIS installer artifact; mobile has
             // no installer flow (store updates instead) — the frontend hides
             // the updater on mobile.

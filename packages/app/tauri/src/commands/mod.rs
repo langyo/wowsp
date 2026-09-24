@@ -6,6 +6,7 @@
 
 pub mod appdata;
 pub mod arena_info;
+pub mod changelog;
 pub mod encyclopedia;
 pub mod exports;
 pub mod game_config;

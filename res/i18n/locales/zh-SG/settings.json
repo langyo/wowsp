@@ -141,6 +141,13 @@
     "resetFailed": "还原默认印章失败"
   },
   "updates": "更新",
+  "changelog": "更新日志",
+  "changelogHint": "更新日志实时拉取自项目的 GitHub Releases。",
+  "changelogLoading": "正在加载更新日志…",
+  "changelogEmpty": "还没有发布记录。",
+  "changelogFailed": "更新日志加载失败。",
+  "changelogRefresh": "刷新",
+  "changelogCurrent": "当前版本",
   "updatesAppTitle": "应用更新",
   "updatesAppHint": "应用本体跟随 GitHub 版本号更新；更新时只下载精简安装包，资源包会通过自己的通道单独跟进。",
   "updatesAppName": "WoWSP 应用本体",
