@@ -53,7 +53,7 @@ export async function initModelPack(fetch: () => Promise<string>): Promise<void>
   }
   try {
     _modelCacheRoot = await fetch();
-    console.log("[modelLoader] using cache:", _modelCacheRoot);
+    if (import.meta.env.DEV) console.log("[modelLoader] using cache:", _modelCacheRoot);
   } catch {
     console.warn("[modelLoader] model pack unavailable, falling back to publicDir");
   }
@@ -647,12 +647,12 @@ function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
     bytes[i] = 0x20; // space
     fixed = true;
   }
-  if (fixed) console.log("[modelLoader] fixed GLB JSON-chunk NUL padding");
+  if (fixed && import.meta.env.DEV) console.log("[modelLoader] fixed GLB JSON-chunk NUL padding");
   return buffer;
 }
 
 export function loadGlbModel(url: string): Promise<THREE.Group> {
-  console.log("[modelLoader] loading:", url);
+  if (import.meta.env.DEV) console.log("[modelLoader] loading:", url);
   return fetchModelResource(url)
     .then((resp) => {
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
@@ -667,7 +667,7 @@ export function loadGlbModel(url: string): Promise<THREE.Group> {
           blobUrl,
           (gltf) => {
             URL.revokeObjectURL(blobUrl);
-            console.log("[modelLoader] loaded:", url);
+            if (import.meta.env.DEV) console.log("[modelLoader] loaded:", url);
             resolve(gltf.scene);
           },
           undefined,

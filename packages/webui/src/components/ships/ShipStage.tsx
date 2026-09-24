@@ -438,11 +438,11 @@ export default defineComponent({
         const mb = new THREE.Box3().setFromObject(mesh);
         b.expandByPoint(mb.min).expandByPoint(mb.max);
       });
-      console.log("[armor] cloned", cloneCount, "hull meshes, sections:", [...sections.keys()]);
+      if (import.meta.env.DEV) console.log("[armor] cloned", cloneCount, "hull meshes, sections:", [...sections.keys()]);
 
       // Armour zone boxes.
       const boxes = buildArmorOverlay(sections, props.armorZones ?? []);
-      console.log("[armor] boxes:", boxes ? boxes.children.length : "null", "zones:", props.armorZones?.map(z => `${z.name}=${z.thickness}mm`) ?? []);
+      if (import.meta.env.DEV) console.log("[armor] boxes:", boxes ? boxes.children.length : "null", "zones:", props.armorZones?.map(z => `${z.name}=${z.thickness}mm`) ?? []);
       if (boxes) armorSc.add(boxes);
 
       // Waterline plane + grid.
@@ -1153,7 +1153,7 @@ export default defineComponent({
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
         });
-        console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
+        if (import.meta.env.DEV) console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
 
         for (const mesh of meshes) {
           const name = mesh.name || "misc";

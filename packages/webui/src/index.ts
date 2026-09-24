@@ -9,5 +9,4 @@ export * from "@/rpc";
 export * from "@/transport";
 export * from "@/stores/config";
 export * from "@/stores/overlay";
-export * from "@/stores/popupRegistry";
 export * from "@/stores/replay";

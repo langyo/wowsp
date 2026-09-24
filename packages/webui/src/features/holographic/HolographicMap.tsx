@@ -62,7 +62,7 @@ import planeIcon from "./planeIcons";
 import { shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
   HoloScorebar, HoloLabel, HoloShipCard, registerHoloShipIcons,
-  captureSecondsRemaining, formatEta,
+  captureSecondsRemaining, formatEta, tierToRoman,
   type HoloCapZone, type HoloHudState, type HoloShip, type HoloShipCardData,
 } from "@wowsp/holo";
 
@@ -178,7 +178,6 @@ function inferGrouping(
  *  encyclopedia (tactical/shellTypes.ts) — the timeline's action markers
  *  read the same tables. */
 
-import { tierToRoman } from "@/utils/tierRoman";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
