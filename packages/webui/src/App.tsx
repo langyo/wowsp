@@ -10,7 +10,7 @@ import { t } from "@/i18n";
 
 /**
  * Root component for the MAIN window — mounts AppTitleBar (our shell around
- * hikari's HTitleBar, frameless window chrome) above the AppShell (sidebar +
+ * hikari's HkTitleBar, frameless window chrome) above the AppShell (sidebar +
  * content). The title bar carries the running version as its subtitle,
  * resolved from the Tauri app API on mount, plus the settings gear as a
  * custom caption action (left of minimize). The wrapper self-guards:

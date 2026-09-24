@@ -3,7 +3,7 @@ import { ref } from "vue";
 
 /**
  * Phone-layout navigation drawer state. The toggle (title-bar hamburger)
- * and the surface (AppShell's HDrawer-hosted sidebar) are distant siblings,
+ * and the surface (AppShell's HkDrawer-hosted sidebar) are distant siblings,
  * so the open flag lives here. Only ever opened on phone LAYOUT — the
  * desktop sidebar is persistent and never routes through this store.
  */

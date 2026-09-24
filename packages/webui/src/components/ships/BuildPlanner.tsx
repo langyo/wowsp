@@ -1,7 +1,7 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
 import { Ban, Coins, Lock, RotateCcw } from "@lucide/vue";
 
-import { HButton } from "@celestia-island/hikari";
+import { HkButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
@@ -1116,7 +1116,7 @@ export default defineComponent({
                 ? t("ships.skills.remaining", { n: remaining.value })
                 : t("ships.skills.overBudget")}
             </span>
-            <HButton
+            <HkButton
               variant="ghost"
               size="sm"
               onClick={() =>
@@ -1124,7 +1124,7 @@ export default defineComponent({
               }
             >
               <RotateCcw size={12} /> {t("ships.skills.reset")}
-            </HButton>
+            </HkButton>
           </div>
 
           <div class="planner-v__body">

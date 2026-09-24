@@ -1,6 +1,6 @@
 import { computed, defineComponent, watch } from "vue";
 
-import { HButton, HSpinner } from "@celestia-island/hikari";
+import { HkButton, HkSpinner } from "@celestia-island/hikari";
 
 import { useTrendsStore } from "@/stores/trends";
 import { t } from "@/i18n";
@@ -83,16 +83,16 @@ export default defineComponent({
 
         {trends.serverLoading ? (
           <div class="server-trend__loading">
-            <HSpinner center size="md" />
+            <HkSpinner center size="md" />
           </div>
         ) : trends.serverError ? (
           <div class="server-trend__error">
             <span class="server-trend__error-msg">
               {t("ships.detail.server.failed", { error: trends.serverError })}
             </span>
-            <HButton size="sm" variant="secondary" onClick={() => void trends.loadServerStats(props.shipId)}>
+            <HkButton size="sm" variant="secondary" onClick={() => void trends.loadServerStats(props.shipId)}>
               {t("common.retry")}
-            </HButton>
+            </HkButton>
           </div>
         ) : trends.serverStats ? (
           <>

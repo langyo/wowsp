@@ -13,11 +13,11 @@
  * map HUD buttons…) are covered with no per-component wiring.
  *
  * The popup is deliberately NOT a restyle: it reuses the exact
- * `.hk-tooltip-popup` structure and classes the HTooltip component
+ * `.hk-tooltip-popup` structure and classes the HkTooltip component
  * teleports (same fade cadence, same dark-mode palette from
  * HkTooltip.scss), and registers with usePopupManager kind "tooltip" so
  * it holds the tooltip z band — above modals/drawers, below toasts.
- * The one deliberate delta over HTooltip: placement clamps to the
+ * The one deliberate delta over HkTooltip: placement clamps to the
  * viewport, so hints anchored at screen edges stay readable.
  */
 import { usePopupManager } from "@celestia-island/hikari";
@@ -58,7 +58,7 @@ function tagsFor(el: HTMLElement): HintTag[] {
   );
 }
 
-/** Parity with HTooltip's default hover delay. */
+/** Parity with HkTooltip's default hover delay. */
 const SHOW_DELAY_MS = 300;
 /** ≥ the popup's --hk-pop-in-duration fade (0.2s) before unmounting it. */
 const HIDE_FADE_MS = 220;

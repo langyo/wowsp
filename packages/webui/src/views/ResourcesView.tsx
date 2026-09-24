@@ -12,12 +12,12 @@ import {
 } from "@lucide/vue";
 
 import {
-  HButton,
-  HConfirmDialog,
-  HIconButton,
-  HSearchInput,
-  HSwitch,
-  HTabs,
+  HkButton,
+  HkConfirmDialog,
+  HkIconButton,
+  HkSearchInput,
+  HkSwitch,
+  HkTabs,
   useToast,
 } from "@celestia-island/hikari";
 
@@ -673,7 +673,7 @@ export default defineComponent({
                   </button>
                 )}
                 {!upToDate && (
-                  <HButton
+                  <HkButton
                     size="sm"
                     variant="primary"
                     disabled={!!busyState || !gameRoot.value}
@@ -685,7 +685,7 @@ export default defineComponent({
                       : record
                         ? t("resources.update")
                         : t("resources.install")}
-                  </HButton>
+                  </HkButton>
                 )}
               </div>
             </div>
@@ -735,14 +735,14 @@ export default defineComponent({
           <div class="mod-detail__foot">
             <div class="mod-detail__foot-row">
               {mod.paths.length > 0 ? (
-                <HSwitch
+                <HkSwitch
                   size="sm"
                   modelValue={!mod.disabled}
                   disabled={!!state}
                   onUpdate:modelValue={(v: boolean) => toggleUnit(mod, v)}
                 >
                   {mod.disabled ? t("resources.disabled") : t("resources.enabled")}
-                </HSwitch>
+                </HkSwitch>
               ) : (
                 <span class="mod-detail__hint">{t("resources.manifestOnlyShort")}</span>
               )}
@@ -842,7 +842,7 @@ export default defineComponent({
           <div class="mod-detail__foot">
             <div class="mod-detail__foot-row">
               <div class="mod-detail__actions">
-                <HButton
+                <HkButton
                   size="sm"
                   variant="primary"
                   disabled={!plan.value || installing.value || !gameRoot.value}
@@ -850,7 +850,7 @@ export default defineComponent({
                   onClick={confirmInstall}
                 >
                   {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
-                </HButton>
+                </HkButton>
               </div>
             </div>
           </div>
@@ -915,7 +915,7 @@ export default defineComponent({
           <div class="mod-hub">
             <aside class="mod-side">
               {/* Big category — the row-filling segmented strip. */}
-              <HTabs
+              <HkTabs
                 variant="segmented"
                 block
                 modelValue={bigCat.value}
@@ -927,7 +927,7 @@ export default defineComponent({
               {/* Source switch + search-combo button ride one row. */}
               <div class="mod-side__row mod-side__row--source">
                 <div class="mod-side__rowmain">
-                  <HTabs
+                  <HkTabs
                     variant="segmented"
                     modelValue={source.value}
                     onUpdate:modelValue={(v: string) => pickSource(v as "online" | "installed")}
@@ -956,13 +956,13 @@ export default defineComponent({
 
               {/* List filter + refresh + folder-install entry. */}
               <div class="mod-side__row">
-                <HSearchInput
+                <HkSearchInput
                   class="mod-side__filter"
                   modelValue={listQuery.value}
                   onUpdate:modelValue={(v: string) => (listQuery.value = v)}
                   placeholder={t("resources.listFilter")}
                 />
-                <HIconButton
+                <HkIconButton
                   size={36}
                   disabled={refreshDisabled.value}
                   data-hint={source.value === "online" ? t("resources.refresh") : t("resources.scan")}
@@ -972,15 +972,15 @@ export default defineComponent({
                   onClick={refresh}
                 >
                   <RefreshCw size={16} class={refreshSpinning.value ? "spin" : undefined} />
-                </HIconButton>
-                <HIconButton
+                </HkIconButton>
+                <HkIconButton
                   size={36}
                   data-hint={t("resources.installSection")}
                   aria-label={t("resources.installSection")}
                   onClick={openLocal}
                 >
                   <FolderSearch size={16} />
-                </HIconButton>
+                </HkIconButton>
               </div>
 
               {source.value === "online" && catalogError.value && (
@@ -1136,7 +1136,7 @@ export default defineComponent({
             <section class="mod-detail-pane">{renderPane()}</section>
           </div>
 
-          <HConfirmDialog
+          <HkConfirmDialog
             open={!!confirmTarget.value}
             title={t("resources.uninstall")}
             message={t("resources.confirmUninstall", { name: confirmTarget.value?.nameZh || confirmTarget.value?.nameEn || "" })}
@@ -1147,7 +1147,7 @@ export default defineComponent({
             }}
           />
 
-          <HConfirmDialog
+          <HkConfirmDialog
             open={!!unitTarget.value}
             title={t("resources.uninstall")}
             message={t("resources.confirmUnitUninstall", {

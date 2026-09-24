@@ -1264,6 +1264,10 @@ export const api = {
   getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
   setOverlayConfig: (table: string, roster: string) =>
     transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
+  /** Whether the Windows OCR engine is usable on this machine (an OCR
+   *  language pack is installed). The settings UI probes this once to offer
+   *  the `ocr` roster mode or gray it out. */
+  overlayOcrAvailable: () => transport.invoke<boolean>(RPC.overlay_ocr_available),
   /** Remembered game-install path — sanitized + persisted as TOML by the
    *  shell (see commands/game_config.rs). */
   getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),

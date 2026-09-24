@@ -1,6 +1,6 @@
 import { defineComponent, type PropType } from "vue";
 
-import { HTabs } from "@celestia-island/hikari";
+import { HkTabs } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import {
@@ -41,10 +41,10 @@ export default defineComponent({
     const tr = (key: string) => t(`${props.ns}.${key}`);
 
     return () => (
-      <HTabs
+      <HkTabs
         block
         variant="segmented"
-        // HTabs keys are strings — bind the level through its stringified
+        // HkTabs keys are strings — bind the level through its stringified
         // form and convert back on update.
         modelValue={String(fontScaleLevel.value)}
         onUpdate:modelValue={(v: string) => setFontScaleLevel(Number(v) as FontScaleLevel)}

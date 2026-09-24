@@ -11,7 +11,7 @@ import "./IdentityHead.scss";
  *
  * Slots:
  *   avatar — leading visual (PlayerBadge on the player card).
- *   badges — trailing HTag row.
+ *   badges — trailing HkTag row.
  */
 export default defineComponent({
   name: "IdentityHead",

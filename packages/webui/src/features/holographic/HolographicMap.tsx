@@ -183,7 +183,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
-import { HIconButton, HTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
 import TacticalBoard from "./tactical/TacticalBoard";
 import {
   TACTICAL_MAX_SCALE,
@@ -5247,46 +5247,46 @@ export default defineComponent({
                 close the view (only the scrim around the map does). Icon
                 toggles light up (primary) while active; tooltips name them. */}
             <div class="holo-map__mmzoom-head" onClick={(e: MouseEvent) => e.stopPropagation()}>
-              <HTooltip text={i18nT("replay.minimap.rotateCcw")} placement="bottom">
-                <HIconButton size={24} onClick={() => rotateMap(-1)}>
+              <HkTooltip text={i18nT("replay.minimap.rotateCcw")} placement="bottom">
+                <HkIconButton size={24} onClick={() => rotateMap(-1)}>
                   <RotateCcw size={13} />
-                </HIconButton>
-              </HTooltip>
+                </HkIconButton>
+              </HkTooltip>
               <span>{i18nT("replay.minimap.zoom")}</span>
               <span class="holo-map__mmzoom-head-toggles">
-                <HTooltip text={i18nT("replay.minimap.trails")} placement="bottom">
-                  <HIconButton
+                <HkTooltip text={i18nT("replay.minimap.trails")} placement="bottom">
+                  <HkIconButton
                     size={24}
                     variant={minimapShowTrails.value ? "primary" : "ghost"}
                     onClick={() => { minimapShowTrails.value = !minimapShowTrails.value; }}
                   >
                     <Spline size={13} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip text={i18nT("replay.minimap.grid")} placement="bottom">
-                  <HIconButton
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip text={i18nT("replay.minimap.grid")} placement="bottom">
+                  <HkIconButton
                     size={24}
                     variant={minimapShowGrid.value ? "primary" : "ghost"}
                     onClick={() => { minimapShowGrid.value = !minimapShowGrid.value; }}
                   >
                     <Grid3x3 size={13} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip text={i18nT("replay.tactical.toggle")} placement="bottom">
-                  <HIconButton
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip text={i18nT("replay.tactical.toggle")} placement="bottom">
+                  <HkIconButton
                     size={24}
                     variant={tacticalOn.value ? "primary" : "ghost"}
                     onClick={() => { tacticalOn.value = !tacticalOn.value; }}
                   >
                     <PenLine size={13} />
-                  </HIconButton>
-                </HTooltip>
+                  </HkIconButton>
+                </HkTooltip>
               </span>
-              <HTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
-                <HIconButton size={24} onClick={() => rotateMap(1)}>
+              <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
+                <HkIconButton size={24} onClick={() => rotateMap(1)}>
                   <RotateCw size={13} />
-                </HIconButton>
-              </HTooltip>
+                </HkIconButton>
+              </HkTooltip>
             </div>
             {/* Stage: base map canvas + tactical annotation layer. The map
                 keeps its full size in tactical mode — the board docks INSIDE

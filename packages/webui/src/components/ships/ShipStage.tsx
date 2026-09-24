@@ -14,7 +14,7 @@ import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { Pause, Play, RotateCcw, X } from "@lucide/vue";
 
-import { HSpinner, HTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
+import { HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
@@ -1522,7 +1522,7 @@ export default defineComponent({
               ) : null}
               {loading.value ? (
                 <div class="ship-stage__overlay">
-                  <HSpinner center size="md" />
+                  <HkSpinner center size="md" />
                 </div>
               ) : null}
               {errorMsg.value ? (
@@ -1652,7 +1652,7 @@ export default defineComponent({
                     </button>
                   </div>
                 ) : null}
-                <HTabs
+                <HkTabs
                   variant="segmented"
                   modelValue={viewMode.value}
                   onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}

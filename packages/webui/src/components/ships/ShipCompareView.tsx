@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { X } from "@lucide/vue";
 
-import { HButton, HIconButton, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HkButton, HkIconButton, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
@@ -115,23 +115,23 @@ export default defineComponent({
           {ships.value.length === 0 ? (
             <div class="ship-compare__empty">
               <p>{t("ships.compare.empty")}</p>
-              <HButton size="sm" onClick={() => (pickerOpen.value = true)}>
+              <HkButton size="sm" onClick={() => (pickerOpen.value = true)}>
                 {t("ships.compare.addShips")}
-              </HButton>
+              </HkButton>
             </div>
           ) : (
             <>
               <div class="ship-compare__toolbar">
-                <HButton size="sm" onClick={() => (pickerOpen.value = true)}>
+                <HkButton size="sm" onClick={() => (pickerOpen.value = true)}>
                   {t("ships.compare.addShips")}
-                </HButton>
-                <HButton variant="secondary" size="sm" onClick={() => (shipIds.value = [])}>
+                </HkButton>
+                <HkButton variant="secondary" size="sm" onClick={() => (shipIds.value = [])}>
                   {t("ships.compare.removeAll")}
-                </HButton>
-                <HTag variant="default" size="sm">
+                </HkButton>
+                <HkTag variant="default" size="sm">
                   {t("ships.compare.count", { n: shipIds.value.length })}
-                </HTag>
-                <HTabs
+                </HkTag>
+                <HkTabs
                   class="ship-compare__groups"
                   variant="segmented"
                   modelValue={groupKey.value}
@@ -161,17 +161,17 @@ export default defineComponent({
                         <tr key={s.shipId}>
                           <td class="ship-compare__sticky ship-compare__sticky--remove">
                             {/* Slot content wins over the icon prop. */}
-                            <HIconButton
+                            <HkIconButton
                               size={24}
                               variant="ghost"
                               aria-label={t("ships.compare.remove")}
                               onClick={() => removeShip(s.shipId)}
                             >
                               <X size={16} />
-                            </HIconButton>
+                            </HkIconButton>
                           </td>
                           <td class="ship-compare__sticky ship-compare__sticky--tier">
-                            <HTag variant="primary" size="sm">{tierLabel(s.tier)}</HTag>
+                            <HkTag variant="primary" size="sm">{tierLabel(s.tier)}</HkTag>
                           </td>
                           {/* The td must stay a table-cell (a flex td breaks
                               table layout → detached white block); the inner
@@ -189,7 +189,7 @@ export default defineComponent({
                               })
                             : (
                               <td key="na" class="ship-compare__na" colspan={group.columns.length}>
-                                <HTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HTag>
+                                <HkTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HkTag>
                               </td>
                             )}
                         </tr>

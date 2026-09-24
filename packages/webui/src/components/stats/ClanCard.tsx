@@ -12,7 +12,7 @@
  */
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HTag } from "@celestia-island/hikari";
+import { HkTag } from "@celestia-island/hikari";
 import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import IdentityHead from "@/components/stats/IdentityHead";
@@ -188,7 +188,7 @@ export default defineComponent({
           tag={props.clan.tag}
           v-slots={{
             badges: () => (
-              <HTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HTag>
+              <HkTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HkTag>
             ),
           }}
         />

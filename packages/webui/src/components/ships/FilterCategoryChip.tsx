@@ -10,13 +10,13 @@
  * chunk cannot rely on the LookupView chunk to carry the styles (Vite
  * dedupes the CSS module, so both surfaces stay in lockstep).
  *
- * The popup renders through hikari HPopover: it teleports to body level and
+ * The popup renders through hikari HkPopover: it teleports to body level and
  * positions against the chip button, so an overflow ancestor (the ship
- * picker's HModal body is a scroll container) can never clip it.
+ * picker's HkModal body is a scroll container) can never clip it.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
 
-import { HPopover, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
 import { X } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -45,7 +45,7 @@ export default defineComponent({
     clear: () => true,
   },
   setup(props, { emit }) {
-    // Phone layout signal for the HPopover sheet dock (sheetOnMobile +
+    // Phone layout signal for the HkPopover sheet dock (sheetOnMobile +
     // scrim-rendering closeOnBackdrop — hikari convention: on phones
     // nothing floats anchored, not even popups over a modal sheet).
     const { isMobile } = useBreakpoint();
@@ -53,7 +53,7 @@ export default defineComponent({
     // check: several chip anchors coexist on one page and each must close
     // only for events landing outside itself.
     const root = ref<HTMLElement | null>(null);
-    // The chip BUTTON anchors the teleported HPopover panel. The panel
+    // The chip BUTTON anchors the teleported HkPopover panel. The panel
     // content element rides along in the outside-close test: it renders at
     // body level, outside `root`, so a press on an option must not count as
     // an outside press (it would kill the panel before the option's click).
@@ -73,7 +73,7 @@ export default defineComponent({
 
     // The outside-close listener lives exactly while the popup is open — a
     // closed chip must not intercept document events, and sibling chips each
-    // attach their own. Escape close is HPopover's own (closeOnEscape).
+    // attach their own. Escape close is HkPopover's own (closeOnEscape).
     watch(
       () => props.open,
       (open) => {
@@ -110,7 +110,7 @@ export default defineComponent({
         >
           <span>{chipLabel.value}</span>
         </button>
-        {/* Desktop keeps closeOnBackdrop off: HPopover's own document
+        {/* Desktop keeps closeOnBackdrop off: HkPopover's own document
             listener would close on the re-click of the open chip before
             that click re-opens it, making the open chip impossible to
             dismiss; the pointerdown listener above is the outside-close and
@@ -121,7 +121,7 @@ export default defineComponent({
             chrome reuse comes free: the panel reuses ShipFilterBar's flat
             classes, and ShipFilterBar.scss already restyles
             .hk-popover-panel.hk-is-sheet for this exact markup. */}
-        <HPopover
+        <HkPopover
           modelValue={props.open}
           onUpdate:modelValue={(v: boolean) => {
             if (!v) close();
@@ -168,7 +168,7 @@ export default defineComponent({
             </div>
             <div class="ship-filter-bar__pop-hint">{t("ships.filter.hintMulti")}</div>
           </div>
-        </HPopover>
+        </HkPopover>
       </div>
     );
   },

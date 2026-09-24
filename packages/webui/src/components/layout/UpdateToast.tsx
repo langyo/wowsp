@@ -1,6 +1,6 @@
 import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
 
-import { HSpinner } from "@celestia-island/hikari";
+import { HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
@@ -104,7 +104,7 @@ export default defineComponent({
           <div class={["update-toast", leaving.value ? "update-toast--leave" : ""]} role="status">
             <div class="update-toast__row">
               <span class="update-toast__icon">
-                <HSpinner size="xs" tone="current" />
+                <HkSpinner size="xs" tone="current" />
               </span>
               <p class="update-toast__message">{statusText}</p>
               {downloading && (

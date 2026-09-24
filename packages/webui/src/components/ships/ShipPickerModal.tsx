@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HButton, HCheckbox, HModal, HSearchInput, HTag } from "@celestia-island/hikari";
+import { HkButton, HkCheckbox, HkModal, HkSearchInput, HkTag } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
@@ -13,7 +13,7 @@ import { t } from "@/i18n";
 import "./ShipPickerModal.scss";
 
 /** Render cap for the result list — a loose filter can match half the
- *  encyclopedia and the DOM (plus HCheckbox instances) must stay small.
+ *  encyclopedia and the DOM (plus HkCheckbox instances) must stay small.
  *  The truncation is display-only: "add all" still covers every match. */
 const RENDER_CAP = 150;
 const TIERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
@@ -150,11 +150,11 @@ export default defineComponent({
       checked.value = new Set();
     }
 
-    // Buttons live in HModal's named footer slot (a right-aligned strip
+    // Buttons live in HkModal's named footer slot (a right-aligned strip
     // OUTSIDE the scroll body) — inside the default slot the footer used to
     // get clipped by .hk-modal-body's overflow when the list grew tall.
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("ships.compare.addShips")}
@@ -199,7 +199,7 @@ export default defineComponent({
                   onClear={() => (selectedNations.value = new Set())}
                   edge
                 />
-                <HSearchInput
+                <HkSearchInput
                   class="ship-picker__search"
                   size="sm"
                   modelValue={searchText.value}
@@ -226,18 +226,18 @@ export default defineComponent({
                           toggle(s.shipId);
                         }}
                       >
-                        <HCheckbox
+                        <HkCheckbox
                           size="sm"
                           modelValue={already || checked.value.has(s.shipId)}
                           disabled={already}
                           onUpdate:modelValue={() => toggle(s.shipId)}
                         />
-                        <HTag variant="primary" size="sm">{tierLabel(s.tier)}</HTag>
+                        <HkTag variant="primary" size="sm">{tierLabel(s.tier)}</HkTag>
                         <span class="ship-picker__name">{encyclopedia.shipDisplayName(s)}</span>
                         {already ? (
-                          <HTag variant="info" size="sm">{t("ships.compare.added")}</HTag>
+                          <HkTag variant="info" size="sm">{t("ships.compare.added")}</HkTag>
                         ) : null}
-                        <HTag variant="default" size="sm">{typeLabel(s.type)}</HTag>
+                        <HkTag variant="default" size="sm">{typeLabel(s.type)}</HkTag>
                         <NationFlag nation={s.nation} label={nationLabel(s.nation)} variant="flag" size="sm" />
                       </div>
                     );
@@ -256,25 +256,25 @@ export default defineComponent({
           ),
           footer: () => (
             <>
-              <HButton
+              <HkButton
                 variant="secondary"
                 size="sm"
                 disabled={addableShips.value.length === 0}
                 onClick={() => emitAdd(addableShips.value)}
               >
                 {t("ships.compare.addAll")}
-              </HButton>
-              <HButton
+              </HkButton>
+              <HkButton
                 size="sm"
                 disabled={checkedShips.value.length === 0}
                 onClick={() => emitAdd(checkedShips.value)}
               >
                 {t("ships.compare.addSelected", { n: checkedShips.value.length })}
-              </HButton>
+              </HkButton>
             </>
           ),
         }}
-      </HModal>
+      </HkModal>
     );
   },
 });

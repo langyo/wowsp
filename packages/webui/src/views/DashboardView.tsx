@@ -3,7 +3,7 @@ import { useRouter } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import { HTag, HTabs, HButton } from "@celestia-island/hikari";
+import { HkTag, HkTabs, HkButton } from "@celestia-island/hikari";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
@@ -179,9 +179,9 @@ export default defineComponent({
               </div>
               <h2 class="dashboard-view__title">{t("dashboard.noAccount")}</h2>
               <p class="dashboard-view__hint">{t("dashboard.noAccountHint")}</p>
-              <HButton onClick={() => (showModal.value = true)}>
+              <HkButton onClick={() => (showModal.value = true)}>
                 {t("account.search")}
-              </HButton>
+              </HkButton>
             </div>
           ) : currentStats.value ? (
             <div class="dashboard-view__content" key="content">
@@ -236,7 +236,7 @@ export default defineComponent({
               {/* ── Ship stats: date range + inline filter chips ── */}
               <section class="dash-section">
                 <div class="dash-section__controls">
-                  <HTabs
+                  <HkTabs
                     variant="segmented"
                     modelValue={dateRange.value}
                     onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
@@ -306,7 +306,7 @@ export default defineComponent({
                         }}
                       >
                         <span class="dash-ship-table__col-name">
-                          <HTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HTag>
+                          <HkTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HkTag>
                           <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
                         </span>
                         <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>

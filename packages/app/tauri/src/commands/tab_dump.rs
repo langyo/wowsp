@@ -283,12 +283,14 @@ fn write_dump_files(
         anchor_json,
     )
     .map_err(|e| format!("write anchor json: {e}"))?;
-    // The raw texts belong to ONE recognition pass; a row count that does not
-    // match the anchor's grid means the stash is stale (a miss detection
-    // never runs recognition, so it would otherwise inherit the previous
-    // pass's rows) — omit the artifact rather than write a misleading one.
+    // The raw texts belong to ONE recognition pass — the OCR mode's. A
+    // non-OCR anchor (inferred derives its names without OCR; off names
+    // nothing) must not pair with a stash a previous OCR pass left behind,
+    // and neither should a row count that disagrees with the anchor's grid
+    // (a miss detection never runs recognition). Omit rather than write a
+    // misleading artifact.
     let texts = LAST_ROW_TEXTS.lock().map(|t| t.clone()).unwrap_or_default();
-    if texts.len() == anchor.row_centers.len() {
+    if anchor.roster_mode == "ocr" && texts.len() == anchor.row_centers.len() {
         let rows_json =
             serde_json::to_string_pretty(&texts).map_err(|e| format!("serialize rows: {e}"))?;
         std::fs::write(
@@ -386,6 +388,7 @@ mod tests {
             row_alive: None,
             row_players_pending: false,
             stale: false,
+            roster_mode: String::new(),
         }
     }
 
@@ -515,6 +518,7 @@ mod tests {
             row_alive: None,
             row_players_pending: false,
             stale: false,
+            roster_mode: String::new(),
         };
         let arena_text = r#"{"dateTime":"20260917T120000","vehicles":[{"id":11}]}"#;
         write_dump_files(&dir, "20260917-120000", "", b"png", arena_text, &anchor)

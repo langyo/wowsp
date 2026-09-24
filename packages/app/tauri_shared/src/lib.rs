@@ -452,6 +452,17 @@ pub struct OverlayAnchor {
     /// frontends deserializing the payload unchanged.
     #[serde(default)]
     pub stale: bool,
+    /// Roster attribution mode in force when this anchor was emitted —
+    /// `"inferred"` | `"ocr"` | `"off"` (absent = an older backend; the
+    /// frontend then keeps its OCR-era behavior). `"inferred"` tells the
+    /// overlay page to derive the row→name mapping ITSELF from the arena
+    /// roster plus this anchor's `row_alive` (verified Tab sort rule:
+    /// `[alive by class+tier] ++ [sunk by class+tier]`), so `row_players`
+    /// is deliberately `None` there without meaning "fallback to the index
+    /// guess". `"ocr"` carries recognized `row_players` as before; `"off"`
+    /// is the historical index mapping.
+    #[serde(default)]
+    pub roster_mode: String,
 }
 
 /// An axis-aligned rectangle in screen pixel coordinates.

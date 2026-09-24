@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
 
-import { HAlert, HButton, HInput, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HkAlert, HkButton, HkInput, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
@@ -232,7 +232,7 @@ export default defineComponent({
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
           <div class="ships-view__header-right">
-            <HTabs
+            <HkTabs
               variant="segmented"
               modelValue={viewMode.value}
               onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid" | "compare")}
@@ -245,10 +245,10 @@ export default defineComponent({
             {/* Passive badge: the realm is followed from the sidebar's app-wide
                 server selector, so it's shown here read-only. */}
             <div class="ships-view__realm">
-              <HTag variant="info" size="sm">{accounts.activeRealm.toUpperCase()}</HTag>
-              <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+              <HkTag variant="info" size="sm">{accounts.activeRealm.toUpperCase()}</HkTag>
+              <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
-              </HButton>
+              </HkButton>
             </div>
           </div>
         </header>
@@ -267,15 +267,15 @@ export default defineComponent({
           <div class="ships-view__error-banner">
             <AlertTriangle size={16} />
             <span>{encyclopedia.error}</span>
-            <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+            <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
               <RotateCcw size={12} /> {t("ships.retry")}
-            </HButton>
+            </HkButton>
           </div>
         ) : null}
 
         {/* ── image banner (shown above content when portraits fail en masse) ── */}
         {showImageBanner.value ? (
-          <HAlert
+          <HkAlert
             class="ships-view__image-banner"
             variant="warning"
             size="sm"
@@ -291,7 +291,7 @@ export default defineComponent({
                 {t("ships.banner.action")}
               </RouterLink>
             </span>
-          </HAlert>
+          </HkAlert>
         ) : null}
 
         {/* ── scrollable content body ──
@@ -302,14 +302,14 @@ export default defineComponent({
 
         {/* ── loading state ── */}
         {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
-          <div class="ships-view__status"><HSpinner center size="md" /></div>
+          <div class="ships-view__status"><HkSpinner center size="md" /></div>
         ) : null}
 
         {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
         {viewMode.value === "grid" ? (
           <div class="ships-view__filters">
             <div class="ships-view__filter-top">
-              <HInput
+              <HkInput
                 modelValue={searchText.value}
                 onUpdate:modelValue={(v: string) => (searchText.value = v)}
                 placeholder={t("ships.search")}
@@ -399,9 +399,9 @@ export default defineComponent({
             <div class="ships-view__status ships-view__status--error" key="error">
               <AlertTriangle size={24} />
               <p>{encyclopedia.error}</p>
-              <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+              <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
-              </HButton>
+              </HkButton>
             </div>
           ) : viewMode.value === "tree" ? (
             <div class="ships-view__tree-body" key="tree">
@@ -473,9 +473,9 @@ export default defineComponent({
                       <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
-                    <HTag variant="default" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</HTag>
+                    <HkTag variant="default" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</HkTag>
                     <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
-                    <HTag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</HTag>
+                    <HkTag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</HkTag>
                   </div>
                   <div class="ship-card__stats">
                     {hp(ship) != null ? (

@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package } from "@lucide/vue";
 
-import { HTag, HTooltip } from "@celestia-island/hikari";
+import { HkTag, HkTooltip } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
 import PlatformIcon from "@/components/base/PlatformIcon";
@@ -35,7 +35,7 @@ import "./Sidebar.scss";
  * install path.
  *
  * `variant="drawer"` re-hosts the same nav inside the phone-layout nav
- * drawer (AppShell's HDrawer): the brand row drops (the drawer header
+ * drawer (AppShell's HkDrawer): the brand row drops (the drawer header
  * carries the title) and the footer keeps the safe-area breathing room.
  * On the phone APP build the client button is hidden (its settings section
  * is unavailable there).
@@ -159,15 +159,15 @@ export default defineComponent({
             {running.value ? (
               <div class="sidebar__game-detail">
                 {clientLabel.value ? (
-                  <HTooltip
+                  <HkTooltip
                     text={proc.value.exePath ?? ""}
                     placement="right"
                   >
                     <span class="sidebar__game-client">{clientLabel.value}</span>
-                  </HTooltip>
+                  </HkTooltip>
                 ) : null}
                 {proc.value.pid != null ? (
-                  <HTooltip text={t("common.clickToCopy")} placement="right">
+                  <HkTooltip text={t("common.clickToCopy")} placement="right">
                     <span
                       class="sidebar__game-pid"
                       onClick={(e: MouseEvent) => {
@@ -178,7 +178,7 @@ export default defineComponent({
                       {t("common.game.pid")}:{" "}
                       <span class="sidebar__game-pid-val">{proc.value.pid}</span>
                     </span>
-                  </HTooltip>
+                  </HkTooltip>
                 ) : null}
               </div>
             ) : null}
@@ -189,7 +189,7 @@ export default defineComponent({
               Phone app build: no local installs to switch — the whole row
               (and its settings section) is desktop-app territory. */}
           {!isMobileApp() ? (
-          <HTooltip
+          <HkTooltip
             class="sidebar__footer-slot"
             text={activeInstallPath.value || t("common.gamePath.noneFound")}
             placement="right"
@@ -210,13 +210,13 @@ export default defineComponent({
                     : t("common.gamePath.unset")}
                 </span>
                 {activeInstall.value?.realm ? (
-                  <HTag variant="default" size="sm">
+                  <HkTag variant="default" size="sm">
                     {activeInstall.value.realm.toUpperCase()}
-                  </HTag>
+                  </HkTag>
                 ) : null}
               </span>
             </button>
-          </HTooltip>
+          </HkTooltip>
           ) : null}
 
           {/* active account — opens settings on the 账户 section */}
@@ -233,9 +233,9 @@ export default defineComponent({
                   <span class="sidebar__footer-btn-text">
                     {accounts.activeAccount.nickname}
                   </span>
-                  <HTag variant="default" size="sm">
+                  <HkTag variant="default" size="sm">
                     {accounts.activeAccount.realm.toUpperCase()}
-                  </HTag>
+                  </HkTag>
                 </>
               ) : (
                 <span class="sidebar__footer-btn-text">{t("account.notBound")}</span>

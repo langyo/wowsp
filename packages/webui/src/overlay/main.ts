@@ -17,6 +17,10 @@ import { careerStamp, damageColor, winrateColor, type StampKind } from "@/utils/
 // Pure-TS transport wrapper (no Vue/Pinia) — safe for this bare-DOM page,
 // same as @/utils/winrate above.
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
+// Inferred roster mode: the row→name mapping derived from the verified Tab
+// sort rule over the roster + the anchor's alive flags (no OCR) — see
+// inferredOrder.ts.
+import { inferredRowMapping } from "./inferredOrder";
 // The square 2x2 faces the in-app surfaces use, plus the flat one-line
 // recuts of the four-char seals (res/stamps-wide) — the chip rows are far
 // too short for a 2x2 face, so ONLY this page swaps the flat faces in
@@ -79,6 +83,7 @@ interface Vehicle {
   id: number;
   name: string;
   relation: number;
+  shipId: number;
 }
 
 interface ArenaInfo {
@@ -117,6 +122,13 @@ interface OverlayAnchor {
    *  change again within seconds. Purely informational — a "roster
    *  updating" badge renders while it is up. */
   stale?: boolean;
+  /** Roster attribution mode in force backend-side — "inferred" | "ocr" |
+   *  "off". "inferred" (the default) means rowPlayers is deliberately null
+   *  WITHOUT meaning "index fallback": this page derives the mapping itself
+   *  from the arena roster + rowAlive via the verified Tab sort rule (see
+   *  inferredOrder.ts). "ocr" carries recognized rowPlayers; "off" or an
+   *  absent field (older backend) is the historical index mapping. */
+  rosterMode?: string;
 }
 
 interface Stat {
@@ -418,21 +430,30 @@ function render() {
   const enemies = arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
-  // Row → name recognition payload (optional, PR 3a): usable only when at
-  // least one row matched (the watcher's own trust bar — an all-null read
-  // is honest silence). A usable payload is remembered per battle and
-  // bridges the gap while a fresh anchor's recognition has not landed yet;
-  // only when neither exists do the chips fall back to the legacy index
-  // mapping. Alive flags ride along with whichever payload is in force.
+  // Row → name attribution. Three sources, by mode:
+  //
+  // - INFERRED (the default): this page derives the mapping itself from the
+  //   arena roster + the anchor's alive vector via the verified Tab sort
+  //   rule (inferredRowMapping) — rowPlayers is null there BY DESIGN, not
+  //   an invitation to fall through;
+  // - OCR: a usable rowPlayers payload (at least one row matched — the
+  //   watcher's own trust bar; an all-null read is honest silence),
+  //   remembered per battle in `trustedRows` to bridge the gap while a
+  //   fresh anchor's recognition has not landed yet;
+  // - otherwise the legacy index mapping (recognition off / old backend).
   const anchorPlayers = usableRowPlayers(anchor.rowPlayers);
-  const players =
+  let players =
     anchorPlayers ??
     (trustedRows && arena.dateTime != null && trustedRows.battle === arena.dateTime
       ? usableRowPlayers(trustedRows.players)
       : null);
-  const aliveArr = players
+  let aliveArr = players
     ? (anchorPlayers ? anchor.rowAlive : trustedRows?.alive) ?? null
     : null;
+  if (anchor.rosterMode === "inferred") {
+    aliveArr = anchor.rowAlive ?? null;
+    players = inferredRowMapping(arena.vehicles, aliveArr);
+  }
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
   const fontSize = Math.min(15, Math.max(9, pitch * 0.42));

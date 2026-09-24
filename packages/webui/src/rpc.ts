@@ -74,6 +74,7 @@ export const RPC = {
   set_network_config: "set_network_config",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
+  overlay_ocr_available: "overlay_ocr_available",
   get_game_config: "get_game_config",
   set_game_config: "set_game_config",
   update_check: "update_check",

@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HTag } from "@celestia-island/hikari";
+import { HkTag } from "@celestia-island/hikari";
 import IdentityHead from "@/components/stats/IdentityHead";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import RatingStamp from "@/components/base/RatingStamp";
@@ -202,9 +202,9 @@ export default defineComponent({
             ),
             badges: () => (
               <>
-                <HTag variant="default" size="sm">{props.stats.realm.toUpperCase()}</HTag>
+                <HkTag variant="default" size="sm">{props.stats.realm.toUpperCase()}</HkTag>
                 {props.stats.hidden ? (
-                  <HTag variant="danger" size="sm">{t("stats.hidden")}</HTag>
+                  <HkTag variant="danger" size="sm">{t("stats.hidden")}</HkTag>
                 ) : null}
               </>
             ),

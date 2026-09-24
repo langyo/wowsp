@@ -24,7 +24,7 @@
  *    to one pick on load;
  *  - selections survive an unmount/remount cycle.
  *
- * The option popups render through hikari HPopover: their DOM teleports to
+ * The option popups render through hikari HkPopover: their DOM teleports to
  * document.body (overflow ancestors can never clip them), so popup queries
  * scope to body and each open/close is polled to let the popover machine's
  * timer-driven enter/leave settle.
@@ -102,7 +102,7 @@ const order = (wrapper: ReturnType<typeof mountBar>) =>
 const chip = (wrapper: ReturnType<typeof mountBar>, key: string) =>
   wrapper.find(`[data-chip="${key}"]`);
 /** Popup options follow the category's option order: index 0 is 全部…. The
- *  popups teleport to body (HPopover), so they are queried there. */
+ *  popups teleport to body (HkPopover), so they are queried there. */
 const bodyPops = () => [
   ...document.body.querySelectorAll<HTMLElement>(".ship-filter-bar__pop"),
 ];

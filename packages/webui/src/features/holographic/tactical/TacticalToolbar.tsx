@@ -5,11 +5,11 @@
  * collapses into popovers that open upward — shapes, unit markers, the
  * colour/width/dash style sheet and a "more" menu holding the time-anchor
  * toggles, history, JSON import/export and the whole export/record group.
- * Built on hikari primitives (HIconButton, HTooltip, HSwitch) over the
+ * Built on hikari primitives (HkIconButton, HkTooltip, HkSwitch) over the
  * stage's --holo-hud-* tokens.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
-import { HIconButton, HSwitch, HTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkSwitch, HkTooltip } from "@celestia-island/hikari";
 import {
   ArrowRight,
   Camera,
@@ -182,8 +182,8 @@ export default defineComponent({
     const toolButton = (tl: ToolMeta, onPick?: () => void) => {
       const Icon = tl.icon;
       return (
-        <HTooltip key={tl.id} text={i18nT(`replay.tactical.${tl.key}`)} placement="top">
-          <HIconButton
+        <HkTooltip key={tl.id} text={i18nT(`replay.tactical.${tl.key}`)} placement="top">
+          <HkIconButton
             variant={tool.value === tl.id ? "primary" : "ghost"}
             size={32}
             onClick={() => {
@@ -193,8 +193,8 @@ export default defineComponent({
             }}
           >
             <Icon size={14} />
-          </HIconButton>
-        </HTooltip>
+          </HkIconButton>
+        </HkTooltip>
       );
     };
 
@@ -223,15 +223,15 @@ export default defineComponent({
 
         {/* Shapes + text */}
         <span class={["tac-bar__anchor", isShapeTool.value ? "tac-bar__anchor--on" : ""]}>
-          <HTooltip text={i18nT("replay.tactical.menu.shapes")} placement="top">
-            <HIconButton
+          <HkTooltip text={i18nT("replay.tactical.menu.shapes")} placement="top">
+            <HkIconButton
               variant={isShapeTool.value ? "primary" : "ghost"}
               size={32}
               onClick={() => toggle("shapes")}
             >
               {isShapeTool.value ? <shapeIcon.value size={14} /> : <ChevronUp size={14} />}
-            </HIconButton>
-          </HTooltip>
+            </HkIconButton>
+          </HkTooltip>
           {open.value === "shapes" ? (
             <div class="tac-bar__pop">
               {SHAPE_TOOLS.map((tl) => menuItem(tl))}
@@ -241,15 +241,15 @@ export default defineComponent({
 
         {/* Unit markers + path pin */}
         <span class={["tac-bar__anchor", isMarkerTool.value ? "tac-bar__anchor--on" : ""]}>
-          <HTooltip text={i18nT("replay.tactical.menu.markers")} placement="top">
-            <HIconButton
+          <HkTooltip text={i18nT("replay.tactical.menu.markers")} placement="top">
+            <HkIconButton
               variant={isMarkerTool.value ? "primary" : "ghost"}
               size={32}
               onClick={() => toggle("markers")}
             >
               {isMarkerTool.value ? <markerIcon.value size={14} /> : <Ship size={14} />}
-            </HIconButton>
-          </HTooltip>
+            </HkIconButton>
+          </HkTooltip>
           {open.value === "markers" ? (
             <div class="tac-bar__pop">
               {markerTools.value.map((tl) => menuItem(tl))}
@@ -284,7 +284,7 @@ export default defineComponent({
 
         {/* Style: colour swatch (opens palette + width + dash) */}
         <span class="tac-bar__anchor">
-          <HTooltip text={i18nT("replay.tactical.style.color")} placement="top">
+          <HkTooltip text={i18nT("replay.tactical.style.color")} placement="top">
             <button
               class={["tac-bar__color", open.value === "style" ? "tac-bar__color--on" : ""]}
               style={{ background: style.value.color }}
@@ -292,7 +292,7 @@ export default defineComponent({
             >
               <Palette size={12} class="tac-bar__color-ico" />
             </button>
-          </HTooltip>
+          </HkTooltip>
           {open.value === "style" ? (
             <div class="tac-bar__pop tac-bar__pop--wide">
               <div class="tac-bar__swatches">
@@ -340,22 +340,22 @@ export default defineComponent({
 
         <span class="tac-bar__sep" />
 
-        <HTooltip text={i18nT("replay.tactical.action.undo")} placement="top">
-          <HIconButton size={32} disabled={!props.store.canUndo.value} onClick={() => props.store.undo()}>
+        <HkTooltip text={i18nT("replay.tactical.action.undo")} placement="top">
+          <HkIconButton size={32} disabled={!props.store.canUndo.value} onClick={() => props.store.undo()}>
             <Undo2 size={14} />
-          </HIconButton>
-        </HTooltip>
-        <HTooltip text={i18nT("replay.tactical.action.redo")} placement="top">
-          <HIconButton size={32} disabled={!props.store.canRedo.value} onClick={() => props.store.redo()}>
+          </HkIconButton>
+        </HkTooltip>
+        <HkTooltip text={i18nT("replay.tactical.action.redo")} placement="top">
+          <HkIconButton size={32} disabled={!props.store.canRedo.value} onClick={() => props.store.redo()}>
             <Redo2 size={14} />
-          </HIconButton>
-        </HTooltip>
+          </HkIconButton>
+        </HkTooltip>
 
         <span class="tac-bar__sep" />
 
         {props.hasSelection ? (
-          <HTooltip text={i18nT("replay.tactical.action.delete")} placement="top">
-            <HIconButton
+          <HkTooltip text={i18nT("replay.tactical.action.delete")} placement="top">
+            <HkIconButton
               size={32}
               variant="danger"
               onClick={() => {
@@ -364,51 +364,51 @@ export default defineComponent({
               }}
             >
               <Trash2 size={14} />
-            </HIconButton>
-          </HTooltip>
+            </HkIconButton>
+          </HkTooltip>
         ) : (
-          <HTooltip text={i18nT("replay.tactical.action.clear")} placement="top">
-            <HIconButton
+          <HkTooltip text={i18nT("replay.tactical.action.clear")} placement="top">
+            <HkIconButton
               size={32}
               variant="danger"
               disabled={props.store.elements.value.length === 0}
               onClick={() => props.store.clearAll()}
             >
               <Trash2 size={14} />
-            </HIconButton>
-          </HTooltip>
+            </HkIconButton>
+          </HkTooltip>
         )}
 
         {/* Everything else */}
         <span class="tac-bar__anchor tac-bar__anchor--right">
-          <HTooltip text={i18nT("replay.tactical.menu.more")} placement="top">
-            <HIconButton
+          <HkTooltip text={i18nT("replay.tactical.menu.more")} placement="top">
+            <HkIconButton
               size={32}
               variant={open.value === "more" ? "primary" : "ghost"}
               onClick={() => toggle("more")}
             >
               <MoreHorizontal size={14} />
-            </HIconButton>
-          </HTooltip>
+            </HkIconButton>
+          </HkTooltip>
           {open.value === "more" ? (
             <div class="tac-bar__pop tac-bar__pop--wide tac-bar__pop--right">
               <div class="tac-bar__toggles">
-                <HSwitch
+                <HkSwitch
                   modelValue={props.store.anchorToTime.value}
                   onUpdate:modelValue={(v: boolean) => {
                     props.store.anchorToTime.value = v;
                   }}
                 >
                   {i18nT("replay.tactical.time.anchor")}
-                </HSwitch>
-                <HSwitch
+                </HkSwitch>
+                <HkSwitch
                   modelValue={props.store.showGhostFuture.value}
                   onUpdate:modelValue={(v: boolean) => {
                     props.store.showGhostFuture.value = v;
                   }}
                 >
                   {i18nT("replay.tactical.time.ghost")}
-                </HSwitch>
+                </HkSwitch>
                 <button class="tac-bar__item" onClick={() => { props.actions.resetView(); close(); }}>
                   <Maximize2 size={14} />
                   <span>{i18nT("replay.tactical.view.reset")}</span>
@@ -473,21 +473,21 @@ export default defineComponent({
                   </select>
                 </label>
               </div>
-              <HSwitch
+              <HkSwitch
                 modelValue={props.exportSettings.timestamp}
                 onUpdate:modelValue={(v: boolean) => {
                   props.exportSettings.timestamp = v;
                 }}
               >
                 {i18nT("replay.tactical.export.timestamp")}
-              </HSwitch>
+              </HkSwitch>
               <div class="tac-bar__row tac-bar__row--actions">
-                <HTooltip text={i18nT("replay.tactical.export.full")} placement="top">
-                  <HIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportFull(); close(); }}>
+                <HkTooltip text={i18nT("replay.tactical.export.full")} placement="top">
+                  <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportFull(); close(); }}>
                     <Camera size={14} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip
                   text={
                     props.pendingRegion
                       ? i18nT("replay.tactical.export.regionRun")
@@ -495,16 +495,16 @@ export default defineComponent({
                   }
                   placement="top"
                 >
-                  <HIconButton
+                  <HkIconButton
                     size={32}
                     variant={props.regionActive || props.pendingRegion ? "primary" : "ghost"}
                     disabled={props.busy}
                     onClick={() => { props.actions.exportRegion(); close(); }}
                   >
                     <Crop size={14} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip
                   text={
                     props.recording
                       ? i18nT("replay.tactical.record.stop")
@@ -512,35 +512,35 @@ export default defineComponent({
                   }
                   placement="top"
                 >
-                  <HIconButton
+                  <HkIconButton
                     size={32}
                     variant={props.recording ? "danger" : "ghost"}
                     disabled={props.busy || (!props.recording && !props.recordingSupported)}
                     onClick={() => { props.actions.recordToggle(); close(); }}
                   >
                     <Video size={14} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip text={i18nT("replay.tactical.export.offline")} placement="top">
-                  <HIconButton
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip text={i18nT("replay.tactical.export.offline")} placement="top">
+                  <HkIconButton
                     size={32}
                     variant="primary"
                     disabled={props.busy || props.recording}
                     onClick={() => { props.actions.offlineExport(); close(); }}
                   >
                     <FastForward size={14} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip text={i18nT("replay.tactical.action.exportJson")} placement="top">
-                  <HIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportJson(); close(); }}>
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip text={i18nT("replay.tactical.action.exportJson")} placement="top">
+                  <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportJson(); close(); }}>
                     <Download size={14} />
-                  </HIconButton>
-                </HTooltip>
-                <HTooltip text={i18nT("replay.tactical.action.importJson")} placement="top">
-                  <HIconButton size={32} disabled={props.busy} onClick={() => { props.actions.importJson(); close(); }}>
+                  </HkIconButton>
+                </HkTooltip>
+                <HkTooltip text={i18nT("replay.tactical.action.importJson")} placement="top">
+                  <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.importJson(); close(); }}>
                     <Upload size={14} />
-                  </HIconButton>
-                </HTooltip>
+                  </HkIconButton>
+                </HkTooltip>
               </div>
               <div class="tac-bar__count">
                 {i18nT("replay.tactical.count", { n: props.store.elements.value.length })}
