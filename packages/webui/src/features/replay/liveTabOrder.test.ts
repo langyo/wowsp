@@ -21,6 +21,11 @@ import { orderForTab } from "./liveTabOrder";
  *  2 = "destroyer" — injected so the offline ship DB never loads. */
 const rankOf = (shipId: number) => (shipId % 10) as number;
 
+/** Tier weight that keeps the tier key OUT of the picture (every ship the
+ *  same tier) for the tests about the other keys — the tier key has its own
+ *  test below, and the real one reads the offline ship DB. */
+const noTier = () => 0;
+
 function vehicle(name: string, shipId: number, relation = 1): VehicleEntry {
   return { id: shipId * 100 + name.length, name, relation, shipId };
 }
@@ -38,7 +43,7 @@ describe("orderForTab", () => {
       vehicle("Ca2", 21),
       vehicle("Bb2", 20),
     ];
-    expect(names(orderForTab(list, null, rankOf))).toEqual([
+    expect(names(orderForTab(list, null, rankOf, noTier))).toEqual([
       "Bb1",
       "Bb2",
       "Ca1",
@@ -53,10 +58,33 @@ describe("orderForTab", () => {
       vehicle("Other", 11),
       vehicle("TwinA", 10),
     ];
-    expect(names(orderForTab(list, null, rankOf))).toEqual([
+    expect(names(orderForTab(list, null, rankOf, noTier))).toEqual([
       "TwinB",
       "TwinA",
       "Other",
+    ]);
+  });
+
+  it("sorts tiers descending inside a class, as the game does", () => {
+    // Verified against captured frames of real battles: within a class the
+    // game lists HIGHER tiers first (a T8/T8/T7 battleship block, a T6/T5
+    // destroyer block, ...). shipId doubles as the tier here.
+    const oneClass = () => 0;
+    const tierOf = (shipId: number) => shipId;
+    const list = [vehicle("T7", 7), vehicle("T8", 8), vehicle("T6", 6)];
+    expect(names(orderForTab(list, null, oneClass, tierOf))).toEqual([
+      "T8",
+      "T7",
+      "T6",
+    ]);
+
+    // A ship the offline DB does not know sorts after every known tier
+    // instead of jumping to the front of its class.
+    const withUnknown = (shipId: number) => (shipId === 6 ? -1 : shipId);
+    const list2 = [vehicle("Unknown", 6), vehicle("T5", 5)];
+    expect(names(orderForTab(list2, null, oneClass, withUnknown))).toEqual([
+      "T5",
+      "Unknown",
     ]);
   });
 
@@ -76,7 +104,7 @@ describe("orderForTab", () => {
       { name: "Ca2", alive: false },
       { name: "Ca1", alive: false },
     ];
-    const ordered = orderForTab(list, rows, rankOf);
+    const ordered = orderForTab(list, rows, rankOf, noTier);
     expect(names(ordered)).toEqual(["Bb1", "Dd1", "Ca2", "Ca1"]);
     expect(ordered.map((o) => o.sunk)).toEqual([false, false, true, true]);
   });
@@ -93,7 +121,7 @@ describe("orderForTab", () => {
       { name: null, alive: true },
       { name: "Bb1", alive: true },
     ];
-    expect(names(orderForTab(list, rows, rankOf))).toEqual([
+    expect(names(orderForTab(list, rows, rankOf, noTier))).toEqual([
       "Bb1",
       "Ca1",
       "Dd1",
@@ -108,11 +136,11 @@ describe("orderForTab", () => {
       { name: "Enemy", alive: false },
       { name: "Ally", alive: true },
     ];
-    expect(names(orderForTab(list, rows, rankOf))).toEqual(["Ally", "Mate"]);
+    expect(names(orderForTab(list, rows, rankOf, noTier))).toEqual(["Ally", "Mate"]);
   });
 
   it("treats an empty row list as no recognition", () => {
     const list = [vehicle("Ca1", 11), vehicle("Bb1", 10)];
-    expect(names(orderForTab(list, [], rankOf))).toEqual(["Bb1", "Ca1"]);
+    expect(names(orderForTab(list, [], rankOf, noTier))).toEqual(["Bb1", "Ca1"]);
   });
 });
