@@ -48,25 +48,48 @@ export default defineComponent({
     // show winrate/battles/clan without re-hitting the WG API).
     const statsById = ref<Map<string, PlayerStats>>(new Map());
 
+    /** Bumped by every event that invalidates a lookup in flight: a new
+     *  query, a realm switch, the dialog being reopened. `doSearch` stamps
+     *  its own attempt with the value it took at launch and drops the
+     *  result when the counter has moved on, so a stale response can never
+     *  stage a preview into a dialog that no longer asked for it. */
+    let searchSeq = 0;
+
     /** Open the add dialog from the dashed list row — start from a clean
      *  slate (no stale query / preview / error from a previous visit). */
     function openAdd() {
+      // Reopening invalidates an attempt still in flight: it was aimed at
+      // the previous visit's query and must not stage a preview here.
+      searchSeq++;
       searchError.value = null;
       found.value = null;
       searchName.value = "";
       addOpen.value = true;
     }
 
+    /** Floor under the search button's busy state (ms).
+     *
+     *  A lookup that the stats cache can answer lands in a couple of
+     *  animation frames, and Vue's scheduler flips the ring back off in the
+     *  same frame that painted it: measured 2 frames out of ~500 over a 3s
+     *  window, i.e. the search button looked like it never reacted to the
+     *  tap (user report 2026-09-24, phone — "the ring isn't there"). The
+     *  floor holds `searching` long enough for the ring to register as a
+     *  busy state on every path, cached or not. */
+    const SEARCH_BUSY_FLOOR_MS = 400;
+
     /** Lookup-only step: resolve the nickname on the selected realm and
      *  stage it as the preview; the actual bind happens in confirmAdd.
-     *  `searchSeq` discards results that resolve after a reset (dialog
-     *  reopened, realm switched, newer query) so only the current query can
-     *  stage a preview. */
-    let searchSeq = 0;
+     *  The query and the staged profile both use the realm captured when
+     *  the search started — reading `searchRealm` again after the await
+     *  could pair one realm's account_id with another realm's label and
+     *  bind the wrong account. */
     async function doSearch() {
       const name = searchName.value.trim();
       if (!name || searching.value) return;
+      const realm = searchRealm.value;
       const seq = ++searchSeq;
+      const startedAt = Date.now();
       searching.value = true;
       searchError.value = null;
       // Any new query invalidates the previously staged preview (a failed
@@ -74,20 +97,31 @@ export default defineComponent({
       found.value = null;
       try {
         // lookup also resolves the account_id + caches stats.
-        const result = await stats.lookup(name, searchRealm.value);
+        //
+        // force: an explicit query must re-pull from the WG API — that is
+        // the documented rule for user-driven lookups (the lookup page and
+        // the dashboard refresh both pass it). Without it a nickname the
+        // cache already knows resolved from disk and the dialog previewed
+        // possibly-months-old stats as if they were the bind's source of
+        // truth, while the busy ring never had a reason to stay up.
+        const result = await stats.lookup(name, realm, { force: true });
         if (seq !== searchSeq) return;
         found.value = {
-          profile: {
-            accountId: result.accountId,
-            nickname: result.name,
-            realm: searchRealm.value,
-          },
+          profile: { accountId: result.accountId, nickname: result.name, realm },
           stats: result,
         };
       } catch (e) {
         if (seq !== searchSeq) return;
         searchError.value = (e as Error).message;
       } finally {
+        // Hold the ring to the floor before clearing the busy state (see
+        // SEARCH_BUSY_FLOOR_MS) so a cache-fast lookup still reads as busy.
+        const remaining = SEARCH_BUSY_FLOOR_MS - (Date.now() - startedAt);
+        if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+        // Clearing unconditionally is safe because `doSearch` refuses to
+        // start while `searching` is set: only one attempt is ever in
+        // flight, so this release can never land on a newer attempt's ring
+        // (a superseded attempt returns here and simply stops early).
         searching.value = false;
       }
     }
@@ -252,13 +286,20 @@ export default defineComponent({
           onUpdate:modelValue={(v: boolean) => (addOpen.value = v)}
           title={t("account.addPlayer")}
           width="30rem"
+          // Phone sheet keeps the height the staged result needs up front
+          // (see .acct-add-modal in AccountManagerContent.scss).
+          contentClass="acct-add-modal"
         >
           <div class="acct-modal__search">
             <HSelect
               modelValue={searchRealm.value}
               onUpdate:modelValue={(v: string) => {
                 searchRealm.value = v;
-                // The staged preview belongs to the realm it was found on.
+                // The staged preview belongs to the realm it was found on,
+                // and an attempt still in flight was aimed at the previous
+                // one — drop both rather than let the old realm's result
+                // stage against the new realm's label.
+                searchSeq++;
                 found.value = null;
               }}
               options={realms.map((r) => ({ value: r, label: r.toUpperCase() }))}
