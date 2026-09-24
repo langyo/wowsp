@@ -11,6 +11,12 @@
 //! write/remove a marker file + a placeholder PnFMods loader under
 //! `res_mods/<latest_bin_version>/`. The loader body is a TODO that, once the
 //! BigWorld mod entrypoint is reverse-engineered, shells out to the WoWSP exe.
+//!
+//! Tracking: the placeholder ships until that reverse-engineering lands. Scope,
+//! motivation and the remaining gaps are tracked in `docs/en/designs/mod-hub.md`
+//! (M6 mod hub — "What exists today" lists this module, gap G8 covers PnFMods
+//! script packs). There is no separate issue anchor, so update that document
+//! when the loader contract is confirmed.
 
 use std::fs;
 use std::path::PathBuf;
@@ -20,7 +26,9 @@ use std::path::PathBuf;
 const MOD_FILES: &[(&str, &str)] = &[
     // The PnFMods loader the WoWS client imports at startup. The real body
     // registers WoWSP's payload; TODO(M6-bigworld): fill in once the loader
-    // contract is confirmed against a running game.
+    // contract is confirmed against a running game. Tracked in
+    // docs/en/designs/mod-hub.md (M6 mod hub) — a placeholder, not a finished
+    // integration.
     (
         "PnFMods.py",
         "# WoWSP loader placeholder — see packages/app/tauri/src/commands/mod_install.rs\n",
