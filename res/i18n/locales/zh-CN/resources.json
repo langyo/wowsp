@@ -1,14 +1,14 @@
 {
-  "title": "插件中心",
-  "subtitle": "管理已安装到游戏 res_mods 目录的插件。",
+  "title": "模组管理",
+  "subtitle": "管理已安装到游戏 res_mods 目录的模组。",
   "scan": "重新扫描",
   "scanning": "扫描中…",
   "noGame": "尚未检测到游戏安装——请先在设置中指定游戏路径。",
-  "installed": "已安装插件",
-  "empty": "res_mods 下还没有可识别的插件，可以在「在线目录」中安装一个。",
+  "installed": "已安装模组",
+  "empty": "res_mods 下还没有可识别的模组，可以在「在线搜索」中安装一个。",
   "filterAll": "全部",
   "installSection": "从文件夹安装",
-  "installHint": "指向解压后的插件文件夹（语音包 / PnF 涂装 / 勋带图标 / ime_config 补丁）。.zip/.7z 目前需先手动解压。",
+  "installHint": "指向解压后的模组文件夹（语音包 / PnF 涂装 / 勋带图标 / ime_config 补丁）。.zip/.7z 目前需先手动解压。",
   "pathPlaceholder": "D:\\…\\语音包名",
   "browse": "解析",
   "analyzing": "解析中…",
@@ -30,16 +30,20 @@
     "textures": "贴图覆盖",
     "gui": "界面图标",
     "patch": "配置补丁",
-    "script": "脚本插件"
+    "script": "脚本模组"
   },
-  "catalogTitle": "在线插件目录",
-  "catalogHint": "来自 WoWSP 插件仓库的精选工具类插件。每个插件都带版本号与 SHA-256 校验，安装时直接从项目 GitHub release 下载。",
+  "catalogTitle": "在线模组目录",
+  "catalogHint": "来自 WoWSP 模组仓库的精选工具类模组。每个模组都带版本号与 SHA-256 校验，安装时直接从项目 GitHub release 下载。",
   "refresh": "刷新",
   "refreshing": "刷新中…",
-  "catalogSearch": "搜索插件…",
+  "catalogSearch": "搜索模组…",
   "catalogEmpty": "目录为空——点击「刷新」拉取在线列表。",
   "catalogError": "在线目录加载失败：{error}",
-  "catalogSource": "{count} 个插件 · 目录 {source} · 更新于 {time}",
+  "catalogSource": "{count} 个模组 · 目录 {source} · 更新于 {time}",
+  "searchMod": "搜索模组",
+  "searching": "搜索中…",
+  "listFilter": "筛选模组…",
+  "countLine": "共 {count} 个",
   "install": "安装",
   "update": "升级",
   "installedBadge": "已安装",
@@ -62,17 +66,21 @@
     "text": "文本与聊天",
     "patch": "官方补丁"
   },
-  "tab": {
-    "catalog": "在线目录",
-    "installed": "已安装",
-    "local": "本地安装"
+  "big": {
+    "function": "功能",
+    "texture": "材质",
+    "voice": "语音"
+  },
+  "source": {
+    "online": "在线搜索",
+    "installed": "已安装"
   },
   "enabled": "已启用",
   "disabled": "已停用",
   "unitEnabled": "已启用「{name}」。",
   "unitDisabled": "已停用「{name}」—— 文件已加 .bak 后缀。",
   "confirmUnitUninstall": "卸载「{name}」？将删除其全部文件（含停用的 .bak 副本），并还原被覆盖的原始文件。",
-  "manifestOnly": "未在 res_mods 中找到对应文件（仅插件清单记录）。",
+  "manifestOnly": "未在 res_mods 中找到对应文件（仅模组清单记录）。",
   "manifestOnlyShort": "仅清单记录",
   "experimental": "该功能不稳定，仍在开发中，不保证可以使用。",
   "tex": {

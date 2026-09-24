@@ -1,14 +1,14 @@
 {
-  "title": "모드 허브",
-  "subtitle": "게임의 res_mods 디렉터리에 설치된 플러그인을 관리합니다.",
+  "title": "모드 관리",
+  "subtitle": "게임의 res_mods 디렉터리에 설치된 모드를 관리합니다.",
   "scan": "다시 검사",
   "scanning": "검사 중…",
   "noGame": "게임 설치가 감지되지 않았습니다 — 먼저 설정에서 게임 경로를 지정하세요.",
-  "installed": "설치된 플러그인",
-  "empty": "res_mods 아래에 인식 가능한 플러그인이 아직 없습니다. 온라인 카탈로그에서 설치하세요.",
+  "installed": "설치된 모드",
+  "empty": "res_mods 아래에 인식 가능한 모드가 아직 없습니다. 온라인에서 설치하세요.",
   "filterAll": "전체",
   "installSection": "폴더에서 설치",
-  "installHint": "압축을 푼 플러그인 폴더(음성 팩, PnF 스킨, 리본 아이콘, ime_config 패치)를 지정하세요. .zip/.7z는 현재 직접 압축을 풀어야 합니다.",
+  "installHint": "압축을 푼 모드 폴더(음성 팩, PnF 스킨, 리본 아이콘, ime_config 패치)를 지정하세요. .zip/.7z는 현재 직접 압축을 풀어야 합니다.",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
   "browse": "분석",
   "analyzing": "분석 중…",
@@ -33,13 +33,17 @@
     "script": "스크립트 모드"
   },
   "catalogTitle": "온라인 카탈로그",
-  "catalogHint": "WoWSP 모드 허브에서 엄선한 도구형 플러그인입니다. 각 항목에는 버전과 SHA-256이 포함되어 있으며, 설치 시 프로젝트의 GitHub release에서 바로 다운로드합니다.",
+  "catalogHint": "WoWSP 모드 허브에서 엄선한 도구형 모드입니다. 각 항목에는 버전과 SHA-256이 포함되어 있으며, 설치 시 프로젝트의 GitHub release에서 바로 다운로드합니다.",
   "refresh": "새로고침",
   "refreshing": "새로고침 중…",
-  "catalogSearch": "플러그인 검색…",
+  "catalogSearch": "모드 검색…",
   "catalogEmpty": "카탈로그가 비어 있습니다 — 새로고침을 눌러 온라인 목록을 가져오세요.",
   "catalogError": "온라인 카탈로그를 불러오지 못했습니다: {error}",
-  "catalogSource": "플러그인 {count}개 · 카탈로그 {source} · {time} 업데이트",
+  "catalogSource": "모드 {count}개 · 카탈로그 {source} · {time} 업데이트",
+  "searchMod": "모드 검색",
+  "searching": "검색 중…",
+  "listFilter": "모드 필터…",
+  "countLine": "{count}개",
   "install": "설치",
   "update": "업데이트",
   "installedBadge": "설치됨",
@@ -62,10 +66,14 @@
     "text": "텍스트 및 채팅",
     "patch": "공식 패치"
   },
-  "tab": {
-    "catalog": "온라인 카탈로그",
-    "installed": "설치됨",
-    "local": "폴더에서 설치"
+  "big": {
+    "function": "기능",
+    "texture": "텍스처",
+    "voice": "음성"
+  },
+  "source": {
+    "online": "온라인",
+    "installed": "설치됨"
   },
   "enabled": "활성화됨",
   "disabled": "비활성화됨",

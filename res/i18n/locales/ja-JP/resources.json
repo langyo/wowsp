@@ -1,14 +1,14 @@
 {
-  "title": "MOD ハブ",
-  "subtitle": "ゲームの res_mods ディレクトリにインストールされたプラグインを管理します。",
+  "title": "Mod管理",
+  "subtitle": "ゲームの res_mods ディレクトリにインストールされた Mod を管理します。",
   "scan": "再スキャン",
   "scanning": "スキャン中…",
   "noGame": "ゲームのインストールが検出されていません。先に設定でゲームパスを指定してください。",
-  "installed": "インストール済みプラグイン",
-  "empty": "res_mods の下にはまだ認識可能なプラグインがありません。オンラインカタログからインストールできます。",
+  "installed": "インストール済み Mod",
+  "empty": "res_mods の下にはまだ認識可能な Mod がありません。オンラインからインストールできます。",
   "filterAll": "すべて",
   "installSection": "フォルダからインストール",
-  "installHint": "解凍済みのプラグインフォルダを指定してください（音声パック / PnF スキン / リボンアイコン / ime_config パッチ）。.zip/.7z は現状、手動での解凍が必要です。",
+  "installHint": "解凍済みの Mod フォルダを指定してください（音声パック / PnF スキン / リボンアイコン / ime_config パッチ）。.zip/.7z は現状、手動での解凍が必要です。",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
   "browse": "解析",
   "analyzing": "解析中…",
@@ -33,13 +33,17 @@
     "script": "スクリプト型MOD"
   },
   "catalogTitle": "オンラインカタログ",
-  "catalogHint": "WoWSP MOD ハブ厳選のツール系プラグイン。各プラグインにはバージョンと SHA-256 が付いており、インストール時はプロジェクトの GitHub リリースから直接ダウンロードします。",
+  "catalogHint": "WoWSP Mod ハブ厳選のツール系 Mod。各 Mod にはバージョンと SHA-256 が付いており、インストール時はプロジェクトの GitHub リリースから直接ダウンロードします。",
   "refresh": "更新",
   "refreshing": "更新中…",
-  "catalogSearch": "プラグインを検索…",
+  "catalogSearch": "Mod を検索…",
   "catalogEmpty": "カタログは空です。「更新」を押すとオンラインの一覧を取得します。",
   "catalogError": "オンラインカタログの読み込みに失敗しました：{error}",
-  "catalogSource": "プラグイン {count} 件 · カタログ {source} · 更新 {time}",
+  "catalogSource": "Mod {count} 件 · カタログ {source} · 更新 {time}",
+  "searchMod": "Mod を検索",
+  "searching": "検索中…",
+  "listFilter": "Mod を絞り込み…",
+  "countLine": "{count} 件",
   "install": "インストール",
   "update": "アップデート",
   "installedBadge": "インストール済み",
@@ -62,10 +66,14 @@
     "text": "テキストとチャット",
     "patch": "公式パッチ"
   },
-  "tab": {
-    "catalog": "オンラインカタログ",
-    "installed": "インストール済み",
-    "local": "フォルダからインストール"
+  "big": {
+    "function": "機能",
+    "texture": "テクスチャ",
+    "voice": "音声"
+  },
+  "source": {
+    "online": "オンライン",
+    "installed": "インストール済み"
   },
   "enabled": "有効",
   "disabled": "無効",
