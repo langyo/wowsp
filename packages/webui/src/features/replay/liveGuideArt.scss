@@ -1,0 +1,101 @@
+/* Token-themed internals for the inline vector art in liveGuideArt.tsx —
+   flat `live-guide-art__*` classes so each <path> carries exactly one class
+   and the art recolors itself through the app's RGB-channel tokens in both
+   themes. The radar's motion parts honor prefers-reduced-motion. */
+
+.live-guide-art {
+  display: block;
+
+  /* 2px accent line work (ship rigging, viewfinder brackets, keycaps). */
+  &__ln-accent {
+    stroke: rgb(var(--color-primary));
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &__ln-accent-thin {
+    stroke: rgb(var(--color-primary));
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Secondary elements (waves, rows, idle keycaps) sit back in muted gray. */
+  &__ln-muted {
+    stroke: rgb(var(--color-muted) / 55%);
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &__ln-muted-thin {
+    stroke: rgb(var(--color-muted) / 38%);
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &__fill-soft {
+    fill: rgb(var(--color-primary) / 10%);
+  }
+
+  &__fill-accent {
+    fill: rgb(var(--color-primary));
+  }
+
+  /* The "Tab" label inside its keycap (svg <text> inherits font-family). */
+  &__txt {
+    fill: rgb(var(--color-primary));
+    font-weight: 700;
+  }
+
+  /* Radar sweep: wedge + leading edge rotate about the scope center. */
+  &__sweep {
+    transform-origin: 32px 32px;
+    animation: live-guide-art-sweep 2.6s linear infinite;
+  }
+
+  /* Contacts light up as the beam passes, then fade. */
+  &__blip {
+    animation: live-guide-art-blip 2.6s ease-out infinite;
+  }
+
+  &__blip--late {
+    /* Negative delay: the late contact starts half a cycle back instead of
+       sitting at full opacity for the first 1.3s. */
+    animation-delay: -1.3s;
+  }
+}
+
+@keyframes live-guide-art-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes live-guide-art-blip {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-guide-art__sweep,
+  .live-guide-art__blip {
+    animation: none;
+  }
+}

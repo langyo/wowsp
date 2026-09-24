@@ -18,6 +18,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
+import { WaitingRadarArt } from "./liveGuideArt";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
@@ -210,10 +211,15 @@ export default defineComponent({
     }
 
     return () => {
+      // Game running but no roster yet (or the roster just cleared): a
+      // radar-scope waiting state — the roster loads itself the moment the
+      // player enters a battle.
       if (!props.arena || props.arena.vehicles.length === 0) {
         return (
           <div class="live-battle live-battle--empty">
-            <p class="live-battle__empty-text">{t("replay.live.notStarted")}</p>
+            <WaitingRadarArt class="live-battle__empty-art" />
+            <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
+            <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
           </div>
         );
       }

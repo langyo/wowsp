@@ -1,0 +1,159 @@
+/* Two-step onboarding guide for the live-battle page's idle state (see
+   LiveIdleGuide.tsx). The guide fills the page body, centers its content,
+   and scrolls when the window is too short for the step cards. */
+
+.live-idle-guide {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+
+  &__inner {
+    margin: auto;
+    padding: 2.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 640px;
+  }
+
+  /* "Game offline" chip — mirrors the sidebar footer's status pill. */
+  &__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.7rem;
+    border-radius: var(--radius-full);
+    border: 1px solid rgb(var(--color-border));
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  &__status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgb(var(--color-muted) / 60%);
+  }
+
+  &__title {
+    margin: 1rem 0 0;
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: rgb(var(--color-text));
+  }
+
+  &__subtitle {
+    margin: 0.35rem 0 1.5rem;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+
+  &__steps {
+    display: flex;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin: 0 0 1.25rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Chevron between the two cards (a decorative <li> so the <ol> only ever
+     holds list items). */
+  &__arrow {
+    flex: none;
+    align-self: center;
+    display: flex;
+    color: rgb(var(--color-muted) / 55%);
+
+    svg {
+      display: block;
+      width: 22px;
+      height: 22px;
+    }
+  }
+
+  &__step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 232px;
+    padding: 1.1rem 1.1rem 1.15rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgb(var(--color-border) / 60%);
+    background: rgb(var(--color-surface));
+  }
+
+  &__art {
+    width: 100%;
+    height: auto;
+    margin-bottom: 0.4rem;
+  }
+
+  /* Step number pressed onto the card's top border. */
+  &__step-no {
+    position: absolute;
+    top: -11px;
+    left: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-primary));
+    color: rgb(var(--color-surface));
+    font-size: var(--text-2xs);
+    font-weight: 700;
+  }
+
+  &__step-title {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__step-hint {
+    margin: 0.35rem 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: rgb(var(--color-muted));
+  }
+
+  &__footnote {
+    margin: 0;
+    color: rgb(var(--color-muted) / 80%);
+    font-size: var(--text-xs);
+  }
+}
+
+/* ── Narrow layout (≤767px): stack the step cards, point the arrow down ─── */
+@media (max-width: 767px) {
+  .live-idle-guide {
+    &__inner {
+      padding: 1.5rem 0.75rem;
+    }
+
+    &__steps {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.9rem;
+    }
+
+    &__arrow {
+      transform: rotate(90deg);
+
+      svg {
+        margin: auto;
+      }
+    }
+
+    &__step {
+      width: min(232px, 100%);
+    }
+  }
+}
