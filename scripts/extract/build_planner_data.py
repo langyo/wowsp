@@ -62,6 +62,10 @@ WOWSFT_SKILLS_URL = (
 WOWSINFO_LANG_URL = "https://raw.githubusercontent.com/wowsinfo/data/master/live/app/lang/lang.json"
 # WG online encyclopedia (ship basics for the offline fallback bundle) —
 # application id mirrors wg_realm.rs (asia realm; CN is served from ASIA).
+# WG public API application_id — a client-side public identifier issued by
+# Wargaming for their open API, designed to be embedded in client
+# applications; NOT a credential/secret. See
+# https://developers.wargaming.net/ for registration.
 WG_SHIPS_URL = (
     "https://api.worldofwarships.asia/wows/encyclopedia/ships/"
     "?application_id=447ec579e994976e39dec0e7d0bac644&language=en&limit=100"
@@ -503,6 +507,10 @@ def main() -> int:
 
         # Version-stamped: a game patch changes ship data, so the cache must
         # not serve a stale bundle to the next extraction.
+        # Same WG public API application_id as WG_SHIPS_URL above (and
+        # WG_APP_ID in wg_realm.rs) — a client-side public identifier
+        # designed to be embedded in client applications, NOT a
+        # credential/secret; the three copies must stay in sync.
         version = wg_get(
             "https://api.worldofwarships.asia/wows/encyclopedia/info/"
             "?application_id=447ec579e994976e39dec0e7d0bac644&language=en"
