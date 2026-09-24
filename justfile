@@ -176,7 +176,7 @@ bundle-site:
     # MSYS2_ENV_CONV_EXCL: Git Bash would otherwise rewrite the /wowsp/
     # env value into a Windows path on its way to node.
     MSYS2_ENV_CONV_EXCL="WOWSP_SITE_BASE" WOWSP_SITE_BASE=/wowsp/ pnpm --filter @wowsp/website build
-    node scripts/build_worker_site.mjs dist/website packages/pairing-relay/assets
+    python scripts/build_worker_site.py dist/website packages/pairing-relay/assets
 # ── android ───────────────────────────────────────────────────────────
 # Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
 # clang wrappers cargo's CC/AR env (and later the target linker) point at;
