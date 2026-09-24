@@ -272,7 +272,11 @@
     "depthChargeDamage": "Урон глубинных бомб",
     "depthChargePacks": "Наборов ГБ",
     "depthChargeBombs": "Бомб в наборе",
-    "depthChargeReload": "Перезарядка ГБ"
+    "depthChargeReload": "Перезарядка ГБ",
+    "secondaryRange": "Дальность ПМК",
+    "aswRange": "Дальность авиаудара",
+    "aswCharges": "Заряды авиаудара",
+    "aswReload": "Перезарядка авиаудара"
   },
   "skills": {
     "title": "Конструктор навыков командира",
@@ -462,6 +466,21 @@
     "showing": "Показаны первые {shown} из {total}",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "Ремонтная команда",
+    "crashCrew": "Аварийная партия",
+    "spotter": "Корректировщик",
+    "fighter": "Истребитель",
+    "smoke": "Дымовая завеса",
+    "speedBoost": "Форсаж",
+    "hydro": "Гидроакустический поиск",
+    "radar": "Радар",
+    "hydrophone": "Гидрофон",
+    "subLocator": "Локатор подлодок",
+    "torpReload": "Форсаж торпед",
+    "artyReload": "Форсаж ГК",
+    "defensiveAA": "Заградительный огонь ПВО"
+  },
   "techTree": {
     "title": "Дерево исследований",
     "branch": "Ветвь",
@@ -532,5 +551,14 @@
     "downloadStart": "Для 3D-просмотра нужен пакет моделей (~1,2 ГБ) — загрузка началась…",
     "ready": "Пакет моделей готов",
     "failed": "Не удалось скачать пакет моделей — попробуйте позже"
+  },
+  "module": {
+    "fireControl": "СУО",
+    "sonar": "Сонар",
+    "fighter": "Истребитель",
+    "diveBomber": "Пикирующий бомбардировщик",
+    "torpedoBomber": "Торпедоносец",
+    "skipBomber": "Штурмовик",
+    "flightControl": "Управление полётами"
   }
 }

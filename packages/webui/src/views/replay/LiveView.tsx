@@ -3,9 +3,9 @@
  * ReplayView live pane: while the game runs it watches the replays folder
  * (a fresh .wowsreplay = battle over → SETTLING) and polls
  * tempArenaInfo.json every 3s so LiveBattlePanel's roster stays fresh; the
- * panel itself renders the LIVE/settling pill, the battle clock, the mode
- * pill and the map name in its own head — this page only adds the page
- * title and the full-height body around it.
+ * panel renders the LIVE/settling pill, the battle clock, the mode pill and
+ * the map name in its own head — this page only wraps the full-height body
+ * around it (no page title of its own: the panel's heading IS the title).
  *
  * While the game is off (and no roster lingers) the body shows the
  * LiveIdleGuide two-step onboarding instead of the panel. The phone app
@@ -202,9 +202,9 @@ export default defineComponent({
 
     return () => (
       <main class="live-view">
-        <header class="live-view__head">
-          <h2 class="live-view__title">{t("nav.live")}</h2>
-        </header>
+        {/* No page-level header: the panel renders the page title itself
+            ("实时对局" used to appear twice — the slim eyebrow here plus the
+            panel's own heading), and the idle guide carries its own. */}
         <div class="live-view__body">
           {battleLive.value ? (
             <LiveBattlePanel

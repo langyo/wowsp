@@ -272,7 +272,11 @@
     "depthChargeDamage": "Depth charge damage",
     "depthChargePacks": "Depth charge packs",
     "depthChargeBombs": "Bombs per pack",
-    "depthChargeReload": "Depth charge reload"
+    "depthChargeReload": "Depth charge reload",
+    "secondaryRange": "Secondary Range",
+    "aswRange": "Airstrike Range",
+    "aswCharges": "Airstrike Charges",
+    "aswReload": "Airstrike Reload"
   },
   "skills": {
     "title": "Captain Skill Builder",
@@ -462,6 +466,21 @@
     "showing": "Showing first {shown} of {total} ships",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "Repair Party",
+    "crashCrew": "Damage Control Party",
+    "spotter": "Spotting Aircraft",
+    "fighter": "Catapult Fighter",
+    "smoke": "Smoke Generator",
+    "speedBoost": "Engine Boost",
+    "hydro": "Hydroacoustic Search",
+    "radar": "Radar",
+    "hydrophone": "Hydrophone",
+    "subLocator": "Submarine Surveillance",
+    "torpReload": "Torpedo Reload Booster",
+    "artyReload": "Main Battery Reload Booster",
+    "defensiveAA": "Defensive AA Fire"
+  },
   "techTree": {
     "title": "Tech Tree",
     "branch": "Branch",
@@ -532,5 +551,14 @@
     "downloadStart": "The 3D view needs the model pack (~1.2 GB) — download started…",
     "ready": "Model pack ready",
     "failed": "Model pack download failed — try again later"
+  },
+  "module": {
+    "fireControl": "Fire Control",
+    "sonar": "Sonar",
+    "fighter": "Fighter",
+    "diveBomber": "Dive Bomber",
+    "torpedoBomber": "Torpedo Bomber",
+    "skipBomber": "Skip Bomber",
+    "flightControl": "Flight Control"
   }
 }
