@@ -17,7 +17,7 @@ export interface ArmorZone {
   thickness: number;
 }
 
-/** The app's fixed thickness buckets (ballistics.ts ARMOR_BUCKETS). */
+/** Fixed thickness buckets for the armor-plate overlay colours. */
 const ARMOR_BUCKETS: { lo: number; hi: number; color: string }[] = [
   { lo: 0, hi: 32, color: "#8a9099" },
   { lo: 33, hi: 99, color: "#5fb0d8" },
@@ -27,7 +27,7 @@ const ARMOR_BUCKETS: { lo: number; hi: number; color: string }[] = [
   { lo: 410, hi: -1, color: "#f1c40f" },
 ];
 
-/** Plate colour for a thickness (mm), matching the app's buckets. */
+/** Plate colour for a thickness (mm), matching the buckets above. */
 export function armorColor(mm: number): string {
   if (mm == null || mm <= 0) return "#3a4048";
   for (const b of ARMOR_BUCKETS) {

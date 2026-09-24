@@ -45,7 +45,7 @@ import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { shipClassRank } from "@/utils/shipClass";
 import { shipTypeClass } from "@/features/holographic/shipIcons";
-import { tierToRoman } from "@/utils/tierRoman";
+import { tierToRoman } from "@wowsp/holo";
 import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";

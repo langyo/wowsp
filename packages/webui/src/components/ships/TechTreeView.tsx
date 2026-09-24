@@ -4,7 +4,7 @@ import { t } from "@/i18n";
 import { resolveShipImage } from "@/utils/shipImages";
 import { nationTree, techTreeNode, type TechTreeNode } from "@/utils/techTreeData";
 import { archetypeKey } from "@/utils/archetypeLabels";
-import { tierToRoman } from "@/utils/tierRoman";
+import { tierToRoman } from "@wowsp/holo";
 import { GitBranch } from "@lucide/vue";
 import { AssetImage } from "@/components/base/AssetImage";
 import { recordShipImageFailure } from "@/utils/shipImageFailures";

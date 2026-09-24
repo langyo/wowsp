@@ -5,9 +5,6 @@
  *
  * The in-game overlay window does NOT use this store — it is a static page
  * (overlay.html) listening to the same events with its own tiny script.
- *
- * Distinct from the popup registry (`stores/popupRegistry.ts`) which
- * coordinates modal/drawer z-index stacking in the main window.
  */
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
