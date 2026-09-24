@@ -87,24 +87,10 @@ function hasLeg(a: MarkerElement, b: MarkerElement): boolean {
   return isInterpolatedKind(a.action) || isInterpolatedKind(b.action);
 }
 
-/** One interpolated segment, in document terms. */
-export interface PlanLeg {
-  fromId: string;
-  toId: string;
-  fromT: number;
-  toT: number;
-}
-
-/** Every interpolated leg of the document, in unit/item order. */
-export function planLegs(elements: TacticalElement[]): PlanLeg[] {
-  const out: PlanLeg[] = [];
-  for (const unit of unitChains(elements).values()) {
-    for (const { el, next } of chainActions(unit)) {
-      if (!hasLeg(el, next)) continue;
-      out.push({ fromId: el.id, toId: next.id, fromT: el.t0, toT: next.t0 });
-    }
-  }
-  return out;
+/** Is this action scripted onto a hand-drawn route? Such an action travels
+ *  its own path (render.ts), not a leg toward the next mark. */
+function isScripted(el: MarkerElement): boolean {
+  return el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0;
 }
 
 /** Tween target per action id: where a leg carries this action's hull, and
@@ -122,12 +108,19 @@ export function planTweenTargets(elements: TacticalElement[]): Map<string, PlanT
 
 /** The second at which a later action of the same unit takes over from this
  *  one — a keyframe the hull has already left must not paint a second hull
- *  (one unit = one hull at any time; its successor draws it). Only the last
- *  action of a unit is never superseded, so it holds the map for good. */
+ *  (one unit = one hull at any time; its successor draws it). A scripted
+ *  action instead hands over when its ROUTE finishes sailing, and only the
+ *  last action of a unit is never superseded, so it holds the map for good. */
 export function planNextActionT(elements: TacticalElement[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const unit of unitChains(elements).values()) {
     for (const { el, next } of chainActions(unit)) {
+      if (isScripted(el)) {
+        // The route, not the successor's clock, ends this hull's travel.
+        const end = el.t0 + (el.moveDur ?? 0);
+        if (end > el.t0) out.set(el.id, end);
+        continue;
+      }
       // A same-second successor (the author dropped two actions on one mark)
       // must not blank the first hull before it is ever drawn.
       if (next.t0 <= el.t0) continue;
@@ -184,7 +177,8 @@ export function planTracks(elements: TacticalElement[]): PlanTrack[] {
           t: el.t0,
           kind: el.action ?? "move",
           ...(end ? { tweenEndT: end.t } : {}),
-          ...(next != null ? { nextT: next } : {}),
+          // A scripted action travels its own route — no "jump" connector.
+          ...(next != null && !isScripted(el) ? { nextT: next } : {}),
         };
       }),
     });

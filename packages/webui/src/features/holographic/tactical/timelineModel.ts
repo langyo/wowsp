@@ -202,10 +202,11 @@ export function layoutPlanRows(
   if (keys.length === 0) return [];
   const collapsed: boolean[] = keys.map((k) => collapsedKeys.has(k));
   const expandedCount = collapsed.filter((c) => !c).length;
-  // Headers give way first (down to a 7px floor); expanded bodies keep their
-  // floor so keyframes never collapse into an unreadable stripe.
+  // Headers give way first (down to an 11px floor — the 10px row label must
+  // stay inside its row); expanded bodies keep their floor so keyframes never
+  // collapse into an unreadable stripe.
   const headerH = Math.max(
-    7,
+    11,
     Math.min(TRACK_HEADER_H, (lanesH - expandedCount * TRACK_BODY_MIN_H) / keys.length),
   );
   const bodyH = expandedCount

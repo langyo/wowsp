@@ -23,7 +23,7 @@ import {
 } from "vue";
 import { ChevronsLeft, Pause, Play, Plus, ZoomIn, ZoomOut } from "@lucide/vue";
 import { HIconButton, HTooltip } from "@celestia-island/hikari";
-import { t as i18nT } from "@/i18n";
+import { i18n, t as i18nT } from "@/i18n";
 import type { TacticalStep } from "./types";
 import type { ShipAction } from "./actions";
 import type { PlanTrack } from "./plan";
@@ -261,7 +261,7 @@ export default defineComponent({
       // The locale belongs in the key: canvas strings (unit labels, action
       // counts) are painted outside any reactive effect, so a language switch
       // would otherwise keep the old wording until the next scrub.
-      const key = `${t.toFixed(2)}|${win.value.start.toFixed(2)}|${win.value.end.toFixed(2)}|${width.value}|${laidActions.value.length}|${props.steps.length}|${props.userMarkers.length}|${props.tracks.length}|${collapsed.value.size}|${lanesH.value}|${props.currentStepIndex}|${props.getPlaying()}|${i18nT("nav.tactics")}`;
+      const key = `${t.toFixed(2)}|${win.value.start.toFixed(2)}|${win.value.end.toFixed(2)}|${width.value}|${laidActions.value.length}|${props.steps.length}|${props.userMarkers.length}|${props.tracks.length}|${collapsed.value.size}|${lanesH.value}|${props.currentStepIndex}|${props.getPlaying()}|${i18n.global.locale.value}`;
       if (key === lastKey) return;
       lastKey = key;
       draw();

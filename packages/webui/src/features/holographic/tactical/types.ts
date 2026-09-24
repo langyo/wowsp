@@ -96,7 +96,9 @@ export interface MarkerElement extends BaseElement {
   /** Travel time in battle seconds (default 30). */
   moveDur?: number;
   /** Plan-board action kind. Absent on the replay annotation board, whose
-   *  markers stay static unless a `route` is scripted. */
+   *  markers stay static unless a `route` is scripted. (A plan document
+   *  IMPORTED onto the replay board still animates — the renderer honors
+   *  `action` on every host; only the toolbar stops stamping it off-plan.) */
   action?: TacticalActionKind;
 }
 

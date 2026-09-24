@@ -106,7 +106,7 @@ describe("assignRows / layoutMarkers", () => {
 
 describe("layoutPlanRows", () => {
   /** Shortest band a row can occupy: header floor + body floor. */
-  const ROW_FLOOR_H = 7 + TRACK_BODY_MIN_H;
+  const ROW_FLOOR_H = 11 + TRACK_BODY_MIN_H;
   const usedH = (rows: PlanRowLayout[]) => {
     const visible = rows.filter((r) => !r.hidden);
     const last = visible[visible.length - 1];
@@ -158,9 +158,9 @@ describe("layoutPlanRows", () => {
   it("flags the rows the band cannot host as hidden, parked at the band edge", () => {
     const lanesH = 320; // LANES_H_TALL_MAX
     const rows = layoutPlanRows(planKeys(20), new Set(), lanesH);
-    // 20 expanded rows at the 7 px header + 10 px body floors need 340 px,
-    // so the last two have no room: they are flagged, not laid out.
-    expect(rows.filter((r) => r.hidden)).toHaveLength(2);
+    // 20 expanded rows at the 11 px header + 10 px body floors need 420 px,
+    // so only 15 fit: the tail is flagged, not laid out.
+    expect(rows.filter((r) => r.hidden)).toHaveLength(5);
     for (const r of rows.filter((r) => r.hidden)) {
       expect(r).toMatchObject({ top: lanesH, headerH: 0, bodyH: 0 });
     }
@@ -171,14 +171,14 @@ describe("layoutPlanRows", () => {
   });
 
   it("hides exactly the rows that do not fit — one pixel short hides the last", () => {
-    // Four rows at the floors occupy 68 px; 67 px leaves the last one out.
-    expect(layoutPlanRows(planKeys(4), new Set(), 68).map((r) => r.hidden)).toEqual([
+    // Four rows at the floors occupy 84 px; 83 px leaves the last one out.
+    expect(layoutPlanRows(planKeys(4), new Set(), 84).map((r) => r.hidden)).toEqual([
       false,
       false,
       false,
       false,
     ]);
-    expect(layoutPlanRows(planKeys(4), new Set(), 67).map((r) => r.hidden)).toEqual([
+    expect(layoutPlanRows(planKeys(4), new Set(), 83).map((r) => r.hidden)).toEqual([
       false,
       false,
       false,
@@ -198,8 +198,9 @@ describe("layoutPlanRows", () => {
   });
 
   it("shares one header height across rows, shrinking it when cramped", () => {
-    const rows = layoutPlanRows(["a", "b", "c", "d"], new Set(["a", "c"]), 60);
-    expect(new Set(rows.map((r) => r.headerH)).size).toBe(1);
+    // 68 px hosts exactly: header (68 - 2*10) / 4 = 12 < the 15 px preferred.
+    const rows = layoutPlanRows(["a", "b", "c", "d"], new Set(["a", "c"]), 68);
+    expect(new Set(rows.filter((r) => !r.hidden).map((r) => r.headerH)).size).toBe(1);
     expect(rows[0].headerH).toBeLessThan(TRACK_HEADER_H);
     expect(rows[0].headerH).toBeGreaterThan(0);
   });
@@ -235,10 +236,10 @@ describe("planBandHeight", () => {
   });
 
   it("cannot host a 20-unit plan: the cap wins and the overflow is reported, not clipped", () => {
-    // 20 expanded rows at the floors need 20 * 17 = 340 px, but the 320 px cap
-    // is reached first, so two units come back flagged for the hidden badge.
+    // 20 expanded rows at the floors need 20 * 21 = 420 px, but the 320 px
+    // cap is reached first, so five units come back flagged for the badge.
     const lanesH = planBandHeight(20, 20, 172, 320);
     expect(lanesH).toBe(320);
-    expect(layoutPlanRows(planKeys(20), new Set(), lanesH).filter((r) => r.hidden)).toHaveLength(2);
+    expect(layoutPlanRows(planKeys(20), new Set(), lanesH).filter((r) => r.hidden)).toHaveLength(5);
   });
 });

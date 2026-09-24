@@ -6,7 +6,6 @@ import { commitMarker, commitRouteMarker, commitShape, commitText } from "./mode
 import {
   isInterpolatedKind,
   isPlanAction,
-  planLegs,
   planNextActionT,
   planTracks,
   planTweenTargets,
@@ -144,43 +143,6 @@ describe("planTweenTargets", () => {
   });
 });
 
-describe("planLegs", () => {
-  it("links consecutive actions when either end is a move", () => {
-    const move = frame(0, p(0, 0), "move", "Alpha");
-    const strike = frame(10, p(0, 100), "attack", "Alpha");
-    const back = frame(20, p(0, 0), "move", "Alpha");
-    expect(planLegs([move, strike, back])).toEqual([
-      { fromId: move.id, toId: strike.id, fromT: 0, toT: 10 },
-      { fromId: strike.id, toId: back.id, fromT: 10, toT: 20 },
-    ]);
-  });
-
-  it("invents no leg between two instantaneous events", () => {
-    expect(planLegs([frame(0, p(0, 0), "attack", "Alpha"), frame(10, p(9, 9), "spot", "Alpha")])).toEqual([]);
-  });
-
-  it("never links across units and leaves routed motion to its route", () => {
-    const first = frame(0, p(0, 0), "move", "Alpha");
-    const second = frame(30, p(100, 0), "move", "Alpha");
-    // Bravo's action sits between them in time and must not be pulled in.
-    const intruder = frame(10, p(500, 500), "move", "Bravo");
-    expect(planLegs([first, intruder, second])).toEqual([
-      { fromId: first.id, toId: second.id, fromT: 0, toT: 30 },
-    ]);
-    const routed: MarkerElement = {
-      ...commitRouteMarker([p(0, 0), p(50, 0)], "#c00", 0, 0.5, 10)!,
-      label: "Charlie",
-      action: "move",
-    };
-    const after = frame(40, p(90, 0), "move", "Charlie");
-    expect(planLegs([routed, after])).toEqual([]);
-  });
-
-  it("has no leg to a same-second successor", () => {
-    expect(planLegs([frame(10, p(0, 0), "move"), frame(10, p(90, 0), "move")])).toEqual([]);
-  });
-});
-
 describe("planNextActionT", () => {
   it("reports the takeover second of every action but the last", () => {
     const strike = frame(0, p(0, 0), "attack", "Alpha");
@@ -204,6 +166,19 @@ describe("planNextActionT", () => {
     const first = frame(10, p(0, 0), "attack", "Alpha");
     const second = frame(10, p(0, 0), "spot", "Alpha");
     expect(planNextActionT([first, second]).size).toBe(0);
+  });
+
+  it("hands a scripted action over when its route finishes sailing, not at the successor", () => {
+    const routed: MarkerElement = {
+      ...commitRouteMarker([p(0, 0), p(50, 0)], "#c00", 0, 0.5, 10)!,
+      label: "Charlie",
+      action: "move",
+    };
+    const after = frame(40, p(90, 0), "move", "Charlie");
+    expect(planNextActionT([routed, after]).get(routed.id)).toBe(10);
+    // The timeline shows no "jump" connector for a travelling route.
+    const [track] = planTracks([routed, after]);
+    expect(track.actions[0]).toEqual({ id: routed.id, t: 0, kind: "move" });
   });
 
   it("only chains within a unit", () => {

@@ -433,7 +433,12 @@ function drawElement(
           )
         : markerPoseAt(el, t, mode === "normal" ? tween : null);
       const p = proj.toPx(pose.at);
-      ctx.globalAlpha = alpha * progress;
+      // A plan hull is the unit itself, not an annotation appearing: no
+      // draw-on fade, or it would blink invisible at every takeover second
+      // (the predecessor just lost ownership while the successor is still at
+      // progress 0) and stay invisible right after being dropped.
+      const planHull = mode === "normal" && el.action != null;
+      ctx.globalAlpha = alpha * (planHull ? 1 : progress);
       ctx.save();
       ctx.translate(p.x, p.y);
       // Heading 0 = north (up); glyph art points right at rest → −90°.

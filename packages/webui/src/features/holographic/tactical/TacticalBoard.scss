@@ -7,9 +7,9 @@
   inset: 0;
   /* Above the base map canvas, below the mmzoom head (outside the stage). */
   z-index: 2;
-  /* Selection / focus accent for every tactical chrome below (SCSS side;
-     the canvas renderer keeps its own literal). */
-  --tac-accent-rgb: 0, 195, 255;
+  /* --tac-accent-rgb comes from the HOST (hudTokens.scss): the toolbar and
+     timeline teleport out of this subtree into the dock, so the token has to
+     be defined where both the layer and the dock inherit it. */
 }
 
 .tac-layer__canvas {

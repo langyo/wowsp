@@ -97,8 +97,11 @@ const MARKER_TOOLS: ToolMeta[] = [
 ];
 
 /** Plan boards carry no replay, so the path pin (which picks a live ship)
- *  has nothing to pick: the marker menu drops it. */
-const PLAN_MARKER_TOOLS: ToolMeta[] = MARKER_TOOLS.filter((tl) => tl.id !== "pinPath");
+ *  has nothing to pick — and the route tool would paint a hull that is
+ *  neither a keyframe nor a timeline row, so both stay replay-only. */
+const PLAN_MARKER_TOOLS: ToolMeta[] = MARKER_TOOLS.filter(
+  (tl) => tl.id !== "pinPath" && tl.id !== "markerRoute",
+);
 
 /** Icons for the placement action kinds, in toolbar order. */
 const ACTION_ICONS: Record<TacticalActionKind, typeof Pen> = {

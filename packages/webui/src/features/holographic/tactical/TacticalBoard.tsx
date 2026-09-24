@@ -82,6 +82,11 @@ type Drag =
 const MIN_SHAPE_PX = 8;
 const MIN_REGION_PX = 24;
 
+/** After committing a plan action, the clock jumps this far ahead so the NEXT
+ *  drop of the same unit lands after this one and chains a leg without the
+ *  author having to scrub between clicks. */
+const PLAN_KEYFRAME_STEP_S = 30;
+
 export default defineComponent({
   name: "TacticalBoard",
   props: {
@@ -652,6 +657,12 @@ export default defineComponent({
               props.planMode ? store.actionKind.value : undefined,
             ),
           );
+          // Plan flow: jump the clock past the mark just placed so the next
+          // drop of the same unit lands after it (two actions on one second
+          // would stack instead of chaining a tween leg).
+          if (props.planMode) {
+            props.seekTo(Math.min(props.getDuration(), props.getTime() + PLAN_KEYFRAME_STEP_S));
+          }
           break;
         case "move":
           break;
