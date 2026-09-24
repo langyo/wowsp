@@ -54,3 +54,23 @@ export function isPveSpace(spaceId: string): boolean {
     /^00_co_/i.test(id)
   );
 }
+
+/** Static space-id fingerprints of NON-battle spaces: the harbors, docks and
+ *  exteriors the client ships as spaces (`Dock`, `Dock_Kure`, `dock_*`,
+ *  `Exterior`, `Shipyard_*`). A few of them carry minimap art, but there is
+ *  no battle to analyse on them, so the tactics rail leaves them out. */
+export function isHarborSpace(spaceId: string): boolean {
+  const id = spaceId ?? "";
+  return /^dock/i.test(id) || /^exterior$/i.test(id) || /^shipyard/i.test(id);
+}
+
+/** The tactics rail's inventory: catalog entries that are analysable battle
+ *  maps — a battle space (not a harbor) whose minimap art is bundled.
+ *  `hasArt` is the synchronous art probe (`resolveMapMinimapUrl`), injected
+ *  so this rule stays testable without the asset glob. */
+export function battleMapIds(
+  catalogIds: readonly string[],
+  hasArt: (spaceId: string) => boolean,
+): string[] {
+  return catalogIds.filter((id) => !isHarborSpace(id) && hasArt(id));
+}

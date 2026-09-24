@@ -324,6 +324,20 @@
         "marker": "Virtual unit",
         "path": "Pinned track"
       }
+    },
+    "plan": {
+      "act": {
+        "move": "Move",
+        "attack": "Attack",
+        "spot": "Spot"
+      },
+      "actionLabel": "Action",
+      "hint": "Drop the same unit again later and it sails there on its own: the timeline draws the tween arrow between the two marks.",
+      "tween": "Tween",
+      "unitN": "Unit {n}",
+      "actionCount": "{n} actions",
+      "collapse": "Click to collapse",
+      "expand": "Click to expand"
     }
   },
   "chatLog": "Battle chat",

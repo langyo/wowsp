@@ -5,10 +5,14 @@
     "all": "All",
     "random": "Random",
     "ranked": "Ranked",
-    "clan": "Clan"
+    "clan": "Clan",
+    "pve": "Scenario"
   },
   "badge": {
-    "limited": "Limited support"
+    "limited": "Limited support",
+    "legacy": "Old version",
+    "legacyTip": "Superseded by {name}",
+    "current": "New version"
   },
   "warning": {
     "message": "Support for this map (scenario / special mode) in tactics analysis is incomplete: terrain and overlay data may be missing. For preview only."
@@ -18,5 +22,8 @@
     "filterEmpty": "No maps match this mode yet — play some battles and they will show up here."
   },
   "select": "Select a map to start analysing",
-  "noArt": "This map has no minimap art"
+  "noArt": "This map has no minimap art",
+  "plan": {
+    "noBounds": "This map ships no world-bounds data, so a tactical plan cannot be pinned to it."
+  }
 }

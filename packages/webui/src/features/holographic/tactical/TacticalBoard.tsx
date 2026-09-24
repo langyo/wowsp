@@ -24,8 +24,10 @@ import TacticalToolbar from "./TacticalToolbar";
 import Timeline, { type TimelineUserMarker } from "./Timeline";
 import { useTactical } from "./useTactical";
 import type { ShipAction } from "./actions";
+import { planTracks as planTracksOf, type PlanTrack } from "./plan";
 import {
   makeProjection,
+  planTweensOf,
   renderTactical,
   TACTICAL_SIZE,
   type TacticalProjection,
@@ -129,6 +131,14 @@ export default defineComponent({
       type: Function as PropType<() => HTMLCanvasElement | null>,
       required: true,
     },
+    /** Plan board (no replay behind it): virtual units render SOLID (they are
+     *  the subject here, not a plan sketched over someone else's fight),
+     *  markers carry action kinds and the timeline switches to accordion unit
+     *  rows with tween arrows. */
+    planMode: { type: Boolean, default: false },
+    /** Anchor the teleported toolbar/timeline dock. The replay host docks the
+     *  board into the playback bar's tall form; a plan host docks its own. */
+    dockSelector: { type: String, default: "#holo-map-tac-dock" },
   },
   setup(props) {
     const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -176,29 +186,40 @@ export default defineComponent({
 
     /** User-authored markers on the timeline: virtual ships/planes and
      *  pinned real paths, anchored at their reveal time. Over a replay
-     *  context these render hollow (they are plans, not observed events). */
-    const userMarkers = computed<TimelineUserMarker[]>(() =>
-      store.elements.value
-        .filter((el) => el.kind === "marker" || el.kind === "replayPath")
-        .map((el) =>
-          el.kind === "marker"
-            ? {
-                id: el.id,
-                t0: el.t0,
-                color: el.color,
-                label: el.label,
-                kind: "marker" as const,
-                solid: false,
-              }
-            : {
-                id: el.id,
-                t0: el.t0,
-                color: el.color,
-                label: props.labelOf(el.entityId),
-                kind: "path" as const,
-                solid: false,
-              },
-        ),
+     *  context these render hollow (they are plans, not observed events);
+     *  a plan board owns its units, so they render solid.
+     *
+     *  Markers carrying an action kind are NOT listed here — they are the
+     *  plan tracks, which the timeline draws as accordion rows instead. */
+    const userMarkers = computed<TimelineUserMarker[]>(() => {
+      const out: TimelineUserMarker[] = [];
+      for (const el of store.elements.value) {
+        if (el.kind === "replayPath") {
+          out.push({
+            id: el.id,
+            t0: el.t0,
+            color: el.color,
+            label: props.labelOf(el.entityId),
+            kind: "path",
+            solid: props.planMode,
+          });
+        } else if (el.kind === "marker" && el.action == null) {
+          out.push({
+            id: el.id,
+            t0: el.t0,
+            color: el.color,
+            label: el.label,
+            kind: "marker",
+            solid: props.planMode,
+          });
+        }
+      }
+      return out;
+    });
+    /** Accordion rows for the plan timeline (empty on a replay board, whose
+     *  markers are annotations rather than unit keyframes). */
+    const planTracks = computed<PlanTrack[]>(() =>
+      props.planMode ? planTracksOf(store.elements.value) : [],
     );
     function removeUserMarkerById(id: string): void {
       store.removeElement(id);
@@ -327,9 +348,10 @@ export default defineComponent({
         preview: previewElement.value,
         regionRect,
         showGhostFuture: store.showGhostFuture.value,
-        // The board always runs over a replay: virtual units are plans, so
-        // their glyphs render hollow (standalone boards would own solids).
-        hollowMarkers: true,
+        // Over a replay the virtual units are PLANS drawn hollow, so they
+        // never read as observed contacts; a plan board has no contacts of
+        // its own, so its units own the solid glyph.
+        hollowMarkers: !props.planMode,
       });
       if (rotRad.value !== 0) ctx.restore();
       // Keep the text editor glued to its world anchor (screen-rotated).
@@ -485,9 +507,10 @@ export default defineComponent({
     function eraseAt(p: Vec2, pr: TacticalProjection): void {
       const t = props.getTime();
       const padWorld = 10 * pr.worldPerPx * 1.6;
+      const tweens = planTweensOf(store.elements.value);
       for (let i = store.elements.value.length - 1; i >= 0; i--) {
         const el = store.elements.value[i];
-        if (hitTestElement(el, p, padWorld, t)) {
+        if (hitTestElement(el, p, padWorld, t, tweens.get(el.id))) {
           store.removeElement(el.id);
           return;
         }
@@ -608,6 +631,10 @@ export default defineComponent({
               store.tool.value === "markerPlane" ? "plane" : "ship",
               store.style.value.color,
               anchorT0(),
+              "",
+              // On a plan board every marker is a keyframe; over a replay the
+              // marker stays a plain annotation (no action, no tweening).
+              props.planMode ? store.actionKind.value : undefined,
             ),
           );
           break;
@@ -661,9 +688,10 @@ export default defineComponent({
     function hitTest(p: Vec2, pr: TacticalProjection): TacticalElement | null {
       const t = props.getTime();
       const padWorld = Math.max(6, store.style.value.width) * pr.worldPerPx;
+      const tweens = planTweensOf(store.elements.value);
       for (let i = store.elements.value.length - 1; i >= 0; i--) {
         const el = store.elements.value[i];
-        if (hitTestElement(el, p, padWorld, t)) return el;
+        if (hitTestElement(el, p, padWorld, t, tweens.get(el.id))) return el;
       }
       return null;
     }
@@ -791,6 +819,8 @@ export default defineComponent({
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         const tool = TOOL_KEYS[e.key.toLowerCase()];
         if (tool) {
+          // The plan board has no replay to pin a path from.
+          if (props.planMode && tool === "pinPath") return;
           store.tool.value = tool as typeof store.tool.value;
           regionMode.value = false;
           return;
@@ -1234,13 +1264,14 @@ export default defineComponent({
             </div>
           ) : null}
           {edit ? (
-            <Teleport defer to="#holo-map-tac-dock">
+            <Teleport defer to={props.dockSelector}>
             <div
               class={["tac-dock", offlineRendering.value ? "tac-dock--busy" : ""]}
               onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <TacticalToolbar
                 store={store}
+                plan={props.planMode}
                 regionActive={regionMode.value}
                 pendingRegion={pendingRegion.value != null}
                 recording={recording.value}
@@ -1273,6 +1304,8 @@ export default defineComponent({
                 steps={stepsSorted.value}
                 currentStepIndex={currentStepIndex.value}
                 userMarkers={userMarkers.value}
+                tracks={planTracks.value}
+                tall={props.planMode}
                 presentMode={presentMode.value}
                 addStep={addStepHere}
                 stepPrev={stepPrev}

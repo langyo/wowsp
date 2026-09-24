@@ -6,6 +6,11 @@
  * view (zoom floor: one screen shows at least 15 s of battle). User-placed
  * markers (virtual ships, pinned paths) render alongside replay actions;
  * right-click deletes them.
+ *
+ * Plan boards swap the collision lanes for accordion unit rows (`tracks`):
+ * one collapsible row per unit, its actions as keyframes, and an AE/Flash
+ * style tween arrow spanning every interpolated leg. `tall` gives the strip
+ * its plan-board proportions (deeper lanes, a fatter progress bar).
  */
 import {
   computed,
@@ -21,18 +26,23 @@ import { HIconButton, HTooltip } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import type { TacticalStep } from "./types";
 import type { ShipAction } from "./actions";
+import type { PlanTrack } from "./plan";
 import {
   assignRows,
   clampWindow,
   fmtClock,
   fullWindow,
   layoutMarkers,
+  layoutPlanRows,
   rulerTicks,
   zoomWindow,
   type TimeWindow,
 } from "./timelineModel";
 import {
   drawPlane,
+  drawPlanKeyframe,
+  drawPlanTicks,
+  drawPlanTween,
   drawShell,
   drawStepFlag,
   drawTorpedo,
@@ -42,6 +52,7 @@ import {
   drawWaveStop,
   drawWaveUp,
   ICON_PX,
+  PLAN_TRACK_COLORS,
   TL_COLORS,
 } from "./timelineIcons";
 import "./Timeline.scss";
@@ -60,17 +71,30 @@ export interface TimelineUserMarker {
 
 const RULER_H = 20;
 const LANES_H = 78;
+/** Plan-board bands: room for accordion rows and a real progress bar. */
+const LANES_H_TALL = 172;
 const OVERVIEW_H = 18;
+const OVERVIEW_H_TALL = 30;
 const PAD = 4;
-const CANVAS_H = RULER_H + LANES_H + OVERVIEW_H + PAD;
 const MAX_ROWS = 6;
 /** Above this many visible markers, icons give way to a density histogram. */
 const DENSITY_LIMIT = 420;
+/** Width of a track's clickable label chip (collapse toggle). */
+const TRACK_CHIP_W = 108;
 
 type Hit =
   | { kind: "user"; id: string; x: number; y: number; lines: string[] }
   | { kind: "step"; id: string; index: number; x: number; y: number; lines: string[] }
-  | { kind: "action"; x: number; y: number; lines: string[]; time: number };
+  | { kind: "action"; x: number; y: number; lines: string[]; time: number }
+  | { kind: "track"; key: string; x: number; y: number; lines: string[] };
+
+interface RowGeometry {
+  track: PlanTrack;
+  top: number;
+  headerH: number;
+  bodyH: number;
+  collapsed: boolean;
+}
 
 export default defineComponent({
   name: "TacticalTimeline",
@@ -86,6 +110,11 @@ export default defineComponent({
     steps: { type: Array as PropType<TacticalStep[]>, required: true },
     currentStepIndex: { type: Number, default: -1 },
     userMarkers: { type: Array as PropType<TimelineUserMarker[]>, required: true },
+    /** Plan-board unit rows; non-empty switches the lanes band to accordion
+     *  tracks (replay-action icons stay out of that band). */
+    tracks: { type: Array as PropType<PlanTrack[]>, default: () => [] },
+    /** Plan-board proportions: deeper lanes + a fatter progress bar. */
+    tall: { type: Boolean, default: false },
     presentMode: { type: Boolean, default: false },
     addStep: { type: Function as PropType<() => void>, required: true },
     stepPrev: { type: Function as PropType<() => void>, required: true },
@@ -101,6 +130,8 @@ export default defineComponent({
     const width = ref(600);
     const win = ref<TimeWindow>(fullWindow(props.getDuration()));
     const tooltip = ref<Hit | null>(null);
+    /** Collapsed accordion rows, by track key (survives doc edits). */
+    const collapsed = ref<ReadonlySet<string>>(new Set<string>());
 
     // Re-fit when a new battle (different duration) mounts.
     watch(
@@ -111,6 +142,19 @@ export default defineComponent({
     );
 
     const duration = computed(() => Math.max(0.001, props.getDuration()));
+    const lanesH = computed(() => (props.tall ? LANES_H_TALL : LANES_H));
+    const overviewH = computed(() => (props.tall ? OVERVIEW_H_TALL : OVERVIEW_H));
+    const canvasH = computed(() => RULER_H + lanesH.value + overviewH.value + PAD);
+    const overviewTop = computed(() => RULER_H + lanesH.value + PAD / 2);
+    const planMode = computed(() => props.tracks.length > 0);
+    /** Accordion rows: position + height of every unit, in track order. */
+    const rows = computed(() =>
+      layoutPlanRows(
+        props.tracks.map((t) => t.key),
+        collapsed.value,
+        lanesH.value,
+      ),
+    );
     const timeToX = (t: number): number =>
       ((t - win.value.start) / Math.max(1e-6, win.value.end - win.value.start)) * width.value;
     const xToTime = (x: number): number =>
@@ -132,7 +176,47 @@ export default defineComponent({
         .map((m, i) => ({ marker: m, x: laid[i].x, row: laid[i].row }))
         .filter((um) => um.marker.t0 >= win.value.start && um.marker.t0 <= win.value.end);
     });
-    const dense = computed(() => laidActions.value.length > DENSITY_LIMIT);
+    const dense = computed(() => !planMode.value && laidActions.value.length > DENSITY_LIMIT);
+
+    /** Row band geometry (header on top, keyframe body below it). */
+    function rowGeometry(index: number): RowGeometry | null {
+      const row = rows.value[index];
+      const track = props.tracks[index];
+      if (!row || !track) return null;
+      return {
+        track,
+        top: RULER_H + row.top,
+        headerH: row.headerH,
+        bodyH: row.bodyH,
+        collapsed: row.collapsed,
+      };
+    }
+    /** Y a track's keyframes and tween arrows sit on (header centre when the
+     *  row is collapsed and has no body). */
+    function rowCenterY(geo: RowGeometry): number {
+      return geo.collapsed ? geo.top + geo.headerH / 2 : geo.top + geo.headerH + geo.bodyH / 2;
+    }
+    function kindLabel(kind: PlanTrack["actions"][number]["kind"]): string {
+      return i18nT(`replay.tactical.plan.act.${kind}`);
+    }
+    /** Unit name shown on the row: the authored label, else "Unit N" counted
+     *  over the unlabelled units in row order. */
+    function displayLabel(index: number): string {
+      const track = props.tracks[index];
+      if (!track) return "";
+      if (track.label) return track.label;
+      let n = 0;
+      for (let i = 0; i <= index; i++) {
+        if (!props.tracks[i]?.label) n++;
+      }
+      return i18nT("replay.tactical.plan.unitN", { n });
+    }
+    function toggleRow(key: string): void {
+      const next = new Set(collapsed.value);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      collapsed.value = next;
+    }
 
     function actionLines(a: ShipAction): string[] {
       const label = props.labelOf(a.entityId);
@@ -151,13 +235,16 @@ export default defineComponent({
     let lastKey = "";
     // Data swaps (replay reload, doc import) invalidate the repaint key even
     // when lengths/playhead are unchanged.
-    watch([() => props.actions, () => props.steps, () => props.userMarkers], () => {
-      lastKey = "";
-    });
+    watch(
+      [() => props.actions, () => props.steps, () => props.userMarkers, () => props.tracks],
+      () => {
+        lastKey = "";
+      },
+    );
     function frame(): void {
       raf = requestAnimationFrame(frame);
       const t = props.getTime();
-      const key = `${t.toFixed(2)}|${win.value.start.toFixed(2)}|${win.value.end.toFixed(2)}|${width.value}|${laidActions.value.length}|${props.steps.length}|${props.userMarkers.length}|${props.currentStepIndex}|${props.getPlaying()}`;
+      const key = `${t.toFixed(2)}|${win.value.start.toFixed(2)}|${win.value.end.toFixed(2)}|${width.value}|${laidActions.value.length}|${props.steps.length}|${props.userMarkers.length}|${props.tracks.length}|${collapsed.value.size}|${lanesH.value}|${props.currentStepIndex}|${props.getPlaying()}`;
       if (key === lastKey) return;
       lastKey = key;
       draw();
@@ -168,14 +255,14 @@ export default defineComponent({
       if (!cvs) return;
       const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
       const px = Math.round(width.value * dpr);
-      if (cvs.width !== px) {
+      if (cvs.width !== px || cvs.height !== Math.round(canvasH.value * dpr)) {
         cvs.width = px;
-        cvs.height = Math.round(CANVAS_H * dpr);
+        cvs.height = Math.round(canvasH.value * dpr);
       }
       const ctx = cvs.getContext("2d");
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width.value, CANVAS_H);
+      ctx.clearRect(0, 0, width.value, canvasH.value);
       const W = width.value;
 
       // Ruler band.
@@ -207,8 +294,10 @@ export default defineComponent({
       // Lanes band.
       const lanesTop = RULER_H;
       const rowY = (row: number): number =>
-        lanesTop + 10 + row * ((LANES_H - 20) / Math.max(1, MAX_ROWS - 1));
-      if (dense.value) {
+        lanesTop + 10 + row * ((lanesH.value - 20) / Math.max(1, MAX_ROWS - 1));
+      if (planMode.value) {
+        for (let i = 0; i < props.tracks.length; i++) drawTrack(ctx, W, i);
+      } else if (dense.value) {
         const buckets = Math.max(1, Math.floor(W / 3));
         const counts = new Array<number>(buckets).fill(0);
         for (const lm of laidActions.value) {
@@ -218,8 +307,8 @@ export default defineComponent({
         ctx.fillStyle = "rgba(0, 195, 255, 0.5)";
         for (let b = 0; b < buckets; b++) {
           if (!counts[b]) continue;
-          const h = Math.max(2, (counts[b] / max) * (LANES_H - 8));
-          ctx.fillRect(b * 3, lanesTop + (LANES_H - h) / 2, 2, h);
+          const h = Math.max(2, (counts[b] / max) * (lanesH.value - 8));
+          ctx.fillRect(b * 3, lanesTop + (lanesH.value - h) / 2, 2, h);
         }
       } else {
         for (const lm of laidActions.value) drawAction(ctx, lm.action, lm.x, rowY(lm.row));
@@ -232,25 +321,56 @@ export default defineComponent({
         else drawUserShip(ctx, um.x, rowY(um.row), m.color, m.solid);
       }
 
-      // Overview strip: full battle + viewport window + density.
-      const ovY = RULER_H + LANES_H + PAD / 2;
+      drawOverview(ctx, W);
+
+      // Playhead across everything.
+      const handX = timeToX(props.getTime());
+      ctx.strokeStyle = TL_COLORS.accent;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(handX, 2);
+      ctx.lineTo(handX, RULER_H + lanesH.value);
+      ctx.stroke();
+      ctx.fillStyle = TL_COLORS.accent;
+      ctx.beginPath();
+      ctx.moveTo(handX - 4, 0);
+      ctx.lineTo(handX + 4, 0);
+      ctx.lineTo(handX, 7);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    /** Overview strip: the played-progress fill, marker density, and the
+     *  viewport window (the stretchy part of the bar). */
+    function drawOverview(ctx: CanvasRenderingContext2D, W: number): void {
+      const ovY = overviewTop.value;
+      const ovH = overviewH.value;
       ctx.fillStyle = "rgba(148, 163, 184, 0.14)";
       ctx.beginPath();
-      ctx.roundRect(0, ovY, W, OVERVIEW_H, 4);
+      ctx.roundRect(0, ovY, W, ovH, 4);
       ctx.fill();
       const dur = duration.value;
       const buckets = Math.max(1, Math.floor(W / 2));
       const counts = new Array<number>(buckets).fill(0);
-      for (const a of props.actions) {
-        const b = Math.floor((a.time / Math.max(1e-6, dur)) * buckets);
+      const bump = (t: number): void => {
+        const b = Math.floor((t / Math.max(1e-6, dur)) * buckets);
         if (b >= 0 && b < buckets) counts[b]++;
-      }
+      };
+      for (const a of props.actions) bump(a.time);
+      for (const m of props.userMarkers) bump(m.t0);
+      for (const track of props.tracks) for (const a of track.actions) bump(a.t);
       const max = Math.max(...counts, 1);
+      // Played progress under the density: the strip reads as a real bar.
+      const playedX = (props.getTime() / Math.max(1e-6, dur)) * W;
+      ctx.fillStyle = "rgba(0, 195, 255, 0.18)";
+      ctx.beginPath();
+      ctx.roundRect(0, ovY, Math.max(0, playedX), ovH, 4);
+      ctx.fill();
       ctx.fillStyle = "rgba(148, 163, 184, 0.4)";
       for (let b = 0; b < buckets; b++) {
         if (!counts[b]) continue;
-        const h = Math.max(1, (counts[b] / max) * (OVERVIEW_H - 4));
-        ctx.fillRect(b * 2, ovY + (OVERVIEW_H - h) / 2, 1.4, h);
+        const h = Math.max(1, (counts[b] / max) * (ovH - 4));
+        ctx.fillRect(b * 2, ovY + (ovH - h) / 2, 1.4, h);
       }
       const wx0 = (win.value.start / dur) * W;
       const wx1 = (win.value.end / dur) * W;
@@ -258,25 +378,78 @@ export default defineComponent({
       ctx.strokeStyle = "rgba(0, 195, 255, 0.85)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect(wx0 + 0.5, ovY + 0.5, Math.max(10, wx1 - wx0) - 1, OVERVIEW_H - 1, 4);
+      ctx.roundRect(wx0 + 0.5, ovY + 0.5, Math.max(10, wx1 - wx0) - 1, ovH - 1, 4);
       ctx.fill();
       ctx.stroke();
+    }
 
-      // Playhead across everything.
-      const px2 = timeToX(props.getTime());
-      ctx.strokeStyle = TL_COLORS.accent;
-      ctx.lineWidth = 1.4;
+    /** One accordion row: header (caret + unit chip + action count), then —
+     *  unless collapsed — the unit's tween arrows and keyframes. */
+    function drawTrack(ctx: CanvasRenderingContext2D, W: number, index: number): void {
+      const geo = rowGeometry(index);
+      if (!geo) return;
+      const { track, top, headerH, bodyH, collapsed: isCollapsed } = geo;
+      const cy = top + headerH / 2;
+      ctx.save();
+      ctx.fillStyle = PLAN_TRACK_COLORS.headerBg;
       ctx.beginPath();
-      ctx.moveTo(px2, 2);
-      ctx.lineTo(px2, RULER_H + LANES_H);
-      ctx.stroke();
-      ctx.fillStyle = TL_COLORS.accent;
+      ctx.roundRect(2, top + 1, Math.max(0, W - 4), Math.max(0, headerH - 2), 3);
+      ctx.fill();
+      // Caret mark (the collapse toggle sits at the row's left edge).
+      ctx.fillStyle = PLAN_TRACK_COLORS.headerText;
       ctx.beginPath();
-      ctx.moveTo(px2 - 4, 0);
-      ctx.lineTo(px2 + 4, 0);
-      ctx.lineTo(px2, 7);
+      if (isCollapsed) {
+        ctx.moveTo(8, cy - 3.2);
+        ctx.lineTo(13, cy);
+        ctx.lineTo(8, cy + 3.2);
+      } else {
+        ctx.moveTo(6.4, cy - 2);
+        ctx.lineTo(11.4, cy - 2);
+        ctx.lineTo(8.9, cy + 2.4);
+      }
       ctx.closePath();
       ctx.fill();
+      // Unit chip.
+      ctx.fillStyle = track.color;
+      ctx.font = "600 10px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(displayLabel(index), 18, cy, TRACK_CHIP_W - 24);
+      ctx.fillStyle = PLAN_TRACK_COLORS.headerText;
+      ctx.font = "500 9px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText(
+        i18nT("replay.tactical.plan.actionCount", { n: track.actions.length }),
+        TRACK_CHIP_W,
+        cy,
+      );
+      ctx.restore();
+
+      if (isCollapsed) {
+        // Collapsed: fold the row's shape into its header as ticks.
+        drawPlanTicks(
+          ctx,
+          track.actions.map((a) => timeToX(a.t)),
+          top + headerH - 3.5,
+          track.color,
+        );
+        return;
+      }
+      const bodyY = top + headerH + bodyH / 2;
+      const t = props.getTime();
+      // Tween arrows first so keyframes sit on top of their spans.
+      for (const a of track.actions) {
+        if (a.tweenEndT == null) continue;
+        const x0 = timeToX(a.t);
+        const x1 = timeToX(a.tweenEndT);
+        if (x1 < -20 || x0 > W + 20) continue;
+        const head = t >= a.t && t <= a.tweenEndT ? timeToX(t) : null;
+        drawPlanTween(ctx, x0, x1, bodyY, track.color, head);
+      }
+      for (const a of track.actions) {
+        const x = timeToX(a.t);
+        if (x < -8 || x > W + 8) continue;
+        drawPlanKeyframe(ctx, x, bodyY, track.color, a.kind);
+      }
     }
 
     function drawAction(ctx: CanvasRenderingContext2D, a: ShipAction, x: number, y: number): void {
@@ -308,7 +481,7 @@ export default defineComponent({
     // ── Hit testing (hover tooltip / right-click delete) ─────────────────
     function hitAt(mx: number, my: number): Hit | null {
       const rowY = (row: number): number =>
-        RULER_H + 10 + row * ((LANES_H - 20) / Math.max(1, MAX_ROWS - 1));
+        RULER_H + 10 + row * ((lanesH.value - 20) / Math.max(1, MAX_ROWS - 1));
       // User markers and step flags stay hit-testable in every mode — the
       // density histogram only condenses the replay-action icons.
       let best: Hit | null = null;
@@ -331,7 +504,44 @@ export default defineComponent({
         }
       }
       if (best) return best;
-      if (!dense.value) {
+      // Plan tracks: keyframes first, then the tween spans under them.
+      for (let i = 0; i < props.tracks.length; i++) {
+        const geo = rowGeometry(i);
+        if (!geo) continue;
+        const cy = rowCenterY(geo);
+        const name = displayLabel(i);
+        for (const a of geo.track.actions) {
+          const x = timeToX(a.t);
+          if (a.t >= win.value.start - 1 && a.t <= win.value.end + 1 && Math.hypot(x - mx, cy - my) < 8) {
+            return {
+              kind: "user",
+              id: a.id,
+              x,
+              y: cy,
+              lines: [name, kindLabel(a.kind), `T+${fmtClock(a.t)}`],
+            };
+          }
+        }
+        for (const a of geo.track.actions) {
+          if (a.tweenEndT == null) continue;
+          const x0 = Math.min(timeToX(a.t), timeToX(a.tweenEndT));
+          const x1 = Math.max(timeToX(a.t), timeToX(a.tweenEndT));
+          if (mx >= x0 - 2 && mx <= x1 + 2 && Math.abs(my - cy) <= 5) {
+            return {
+              kind: "user",
+              id: a.id,
+              x: mx,
+              y: cy,
+              lines: [
+                name,
+                `${i18nT("replay.tactical.plan.tween")} · ${kindLabel(a.kind)}`,
+                `T+${fmtClock(a.t)} → T+${fmtClock(a.tweenEndT)}`,
+              ],
+            };
+          }
+        }
+      }
+      if (!dense.value && !planMode.value) {
         for (const lm of laidActions.value) {
           const d = Math.hypot(lm.x - mx, rowY(lm.row) - my);
           if (d < bestD) {
@@ -358,7 +568,41 @@ export default defineComponent({
           };
         }
       });
-      return bestStep;
+      if (bestStep) return bestStep;
+      // Track header chips last — they span the row's left edge.
+      const key = trackHeaderKeyAt(mx, my);
+      if (key != null) {
+        const index = props.tracks.findIndex((t) => t.key === key);
+        const geo = rowGeometry(index);
+        if (geo) {
+          return {
+            kind: "track",
+            key,
+            x: mx,
+            y: geo.top + geo.headerH / 2,
+            lines: [
+              displayLabel(index),
+              i18nT("replay.tactical.plan.actionCount", { n: geo.track.actions.length }),
+              i18nT(
+                geo.collapsed ? "replay.tactical.plan.expand" : "replay.tactical.plan.collapse",
+              ),
+            ],
+          };
+        }
+      }
+      return null;
+    }
+
+    /** Track header chip under the pointer (click = collapse/expand). */
+    function trackHeaderKeyAt(mx: number, my: number): string | null {
+      for (let i = 0; i < props.tracks.length; i++) {
+        const geo = rowGeometry(i);
+        if (!geo) continue;
+        if (my >= geo.top && my <= geo.top + geo.headerH && mx <= TRACK_CHIP_W) {
+          return geo.track.key;
+        }
+      }
+      return null;
     }
 
     function localXY(e: MouseEvent): { x: number; y: number } {
@@ -378,10 +622,10 @@ export default defineComponent({
       e.stopPropagation();
       if (e.button === 2) return;
       const { x, y } = localXY(e);
-      const ovY = RULER_H + LANES_H + PAD / 2;
+      const ovY = overviewTop.value;
       const dur = duration.value;
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      if (y >= ovY && y <= ovY + OVERVIEW_H) {
+      if (y >= ovY && y <= ovY + overviewH.value) {
         const wx0 = (win.value.start / dur) * width.value;
         const wx1 = (win.value.end / dur) * width.value;
         if (Math.abs(x - wx0) <= 5) drag = { kind: "ovLeft" };
@@ -394,6 +638,13 @@ export default defineComponent({
           win.value = clampWindow({ start: centre - span / 2, end: centre + span / 2 }, dur);
           drag = { kind: "ovMove", grabX: Math.min(Math.max(10, (x - wx0)), Math.max(10, wx1 - wx0)), start: win.value.start };
         }
+        return;
+      }
+      // Accordion header chip → collapse/expand, never a scrub.
+      const headerKey = trackHeaderKeyAt(x, y);
+      if (headerKey != null) {
+        toggleRow(headerKey);
+        drag = null;
         return;
       }
       // Step flag click → step navigation; anything else scrubs.
@@ -545,6 +796,7 @@ export default defineComponent({
           <canvas
             ref={canvasRef}
             class="tac-timeline__canvas"
+            style={{ height: `${canvasH.value}px` }}
             onPointerdown={onPointerDown}
             onPointermove={onPointerMove}
             onPointerup={onPointerUp}

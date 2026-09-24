@@ -65,9 +65,20 @@ export interface TextElement extends BaseElement {
 
 export type MarkerVariant = "ship" | "plane";
 
+/** What a plan-board marker DOES at its anchored second. `move` is the
+ *  interpolatable kind: it carries the unit from its own position to the
+ *  unit's NEXT action over the seconds between the two — the auto-tween the
+ *  timeline draws an arrow for. `attack` / `spot` are instantaneous events
+ *  parked at the unit's position for that moment. */
+export type TacticalActionKind = "move" | "attack" | "spot";
+
 /** Extra unit marker the author places on top of the replay. Static (at +
  *  heading) unless a `route` is scripted, in which case the marker sails the
- *  smoothed route from t0 over `moveDur` seconds, heading along the tangent. */
+ *  smoothed route from t0 over `moveDur` seconds, heading along the tangent.
+ *
+ *  On a plan board (`action` set) the marker becomes one keyframe of a unit's
+ *  timeline: markers sharing a variant and label are the same unit, and a
+ *  `move` action's position tweens toward the unit's next action (plan.ts). */
 export interface MarkerElement extends BaseElement {
   kind: "marker";
   at: Vec2;
@@ -79,10 +90,14 @@ export interface MarkerElement extends BaseElement {
   /** Glyph length in 760-unit logical map space. */
   size: number;
   /** Optional scripted route (world points, ≥2); rendered dashed while the
-   *  marker advances along its smoothed curve. */
+   *  marker advances along its smoothed curve. A scripted route wins over an
+   *  `action` tween — the hand-drawn path is the more specific instruction. */
   route?: Vec2[];
   /** Travel time in battle seconds (default 30). */
   moveDur?: number;
+  /** Plan-board action kind. Absent on the replay annotation board, whose
+   *  markers stay static unless a `route` is scripted. */
+  action?: TacticalActionKind;
 }
 
 /** A pinned REAL trajectory from the replay, restyled as an annotation.

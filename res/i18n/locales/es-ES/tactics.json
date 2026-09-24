@@ -5,10 +5,14 @@
     "all": "Todas",
     "random": "Aleatorio",
     "ranked": "Clasificatoria",
-    "clan": "Clan"
+    "clan": "Clan",
+    "pve": "Escenario"
   },
   "badge": {
-    "limited": "Soporte limitado"
+    "limited": "Soporte limitado",
+    "legacy": "Versión antigua",
+    "legacyTip": "Sustituida por {name}",
+    "current": "Versión nueva"
   },
   "warning": {
     "message": "La compatibilidad de este mapa (escenario / modo especial) en el análisis táctico es incompleta: pueden faltar los datos de terreno y superposición. Solo como vista previa."
@@ -18,5 +22,8 @@
     "filterEmpty": "Aún no hay mapas para este modo: juega algunas batallas y aparecerán aquí."
   },
   "select": "Selecciona un mapa para empezar el análisis",
-  "noArt": "Este mapa no tiene material de minimapa"
+  "noArt": "Este mapa no tiene material de minimapa",
+  "plan": {
+    "noBounds": "Este mapa no tiene datos de extensión, así que no se puede trazar un plan táctico sobre él."
+  }
 }

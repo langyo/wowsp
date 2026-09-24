@@ -148,3 +148,55 @@ export function layoutMarkers(
   }
   return out;
 }
+
+// ── Plan tracks (accordion rows) ───────────────────────────────────────────
+
+/** Header height of one unit row (its label chip / collapse caret). */
+export const TRACK_HEADER_H = 15;
+/** Expanded body floor/ceiling — the band the keyframes and tween arrows
+ *  live in. The ceiling keeps a single-unit plan from stretching into a wall
+ *  of empty space. */
+export const TRACK_BODY_MIN_H = 10;
+export const TRACK_BODY_MAX_H = 34;
+
+/** One laid-out unit row: `top` is relative to the lanes band. */
+export interface PlanRowLayout {
+  key: string;
+  top: number;
+  headerH: number;
+  bodyH: number;
+  collapsed: boolean;
+}
+
+/** Accordion layout for the plan tracks: every unit gets a header, expanded
+ *  units additionally a body sized from the leftover height. Headers shrink
+ *  (never the bodies) once a plan has more units than the band can host, so
+ *  a row never escapes the band and nothing is silently clipped away. */
+export function layoutPlanRows(
+  keys: string[],
+  collapsedKeys: ReadonlySet<string>,
+  lanesH: number,
+): PlanRowLayout[] {
+  if (keys.length === 0) return [];
+  const collapsed: boolean[] = keys.map((k) => collapsedKeys.has(k));
+  const expandedCount = collapsed.filter((c) => !c).length;
+  // Headers give way first (down to a 7px floor); expanded bodies keep their
+  // floor so keyframes never collapse into an unreadable stripe.
+  const headerH = Math.max(
+    7,
+    Math.min(TRACK_HEADER_H, (lanesH - expandedCount * TRACK_BODY_MIN_H) / keys.length),
+  );
+  const bodyH = expandedCount
+    ? Math.max(
+        TRACK_BODY_MIN_H,
+        Math.min(TRACK_BODY_MAX_H, (lanesH - headerH * keys.length) / expandedCount),
+      )
+    : 0;
+  const out: PlanRowLayout[] = [];
+  let top = 0;
+  keys.forEach((key, i) => {
+    out.push({ key, top, headerH, bodyH: collapsed[i] ? 0 : bodyH, collapsed: collapsed[i] });
+    top += headerH + (collapsed[i] ? 0 : bodyH);
+  });
+  return out;
+}
