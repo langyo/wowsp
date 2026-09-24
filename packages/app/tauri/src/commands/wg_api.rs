@@ -1175,13 +1175,13 @@ impl PvpStats {
             _ => None,
         };
 
-        let ships_played = get_i64(pvp, "battles").and({
-            // ships_played is approximated by counting ship entries — but
-            // account/info doesn't include per-ship; we leave it as battles
-            // count fallback (the ships/{shipId} endpoint gives the real count
-            // in a follow-up call). Set to None for now.
-            None::<i64>
-        });
+        // Always None: `account/info` has no per-ship breakdown, so a real
+        // "ships played" count would need the `ships/{shipId}` endpoint (not
+        // called here). `battles` must NOT stand in for it — one ship can be
+        // played many times, so that number would be wrong rather than merely
+        // approximate. The field stays `Option<i64>` so the wire shape does not
+        // change once a real source is wired in.
+        let ships_played: Option<i64> = None;
 
         // Career PR: ApeRadar-style weighted winrate over the division
         // splits, falling back to the overall PvP winrate when the account
