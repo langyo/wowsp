@@ -4,7 +4,7 @@ import {
   Boxes, ShieldCheck, Sparkles, MessagesSquare, ChevronRight,
   Compass, DownloadCloud, BadgeCheck, RefreshCcw,
 } from "@lucide/vue";
-import { HButton, HCheckbox, HInput, HRadio, HTag } from "@celestia-island/hikari";
+import { HkButton, HkCheckbox, HkInput, HkRadio, HkTag } from "@celestia-island/hikari";
 import { LinkButton, Reveal } from "@/components/ui";
 import "./ModsView.scss";
 
@@ -60,9 +60,9 @@ export default defineComponent({
             </Reveal>
             <Reveal delay={240}>
               <div class="mods__badges">
-                <HTag variant="primary">{t("mods.hero.badgeAslain")}</HTag>
-                <HTag variant="warning">{t("mods.hero.badgeGh")}</HTag>
-                <HTag variant="success">{t("mods.hero.badgeCc0")}</HTag>
+                <HkTag variant="primary">{t("mods.hero.badgeAslain")}</HkTag>
+                <HkTag variant="warning">{t("mods.hero.badgeGh")}</HkTag>
+                <HkTag variant="success">{t("mods.hero.badgeCc0")}</HkTag>
               </div>
             </Reveal>
           </div>
@@ -118,7 +118,7 @@ export default defineComponent({
             <div class="mods__installer glass-panel">
               <div class="mods__installer-col">
                 <span class="mods__installer-label">{t("mods.installer.sourceLabel")}</span>
-                <HRadio
+                <HkRadio
                   modelValue={source.value}
                   onUpdate:modelValue={(v: string | number) => (source.value = String(v))}
                   direction="vertical"
@@ -131,12 +131,12 @@ export default defineComponent({
               </div>
               <div class="mods__installer-col">
                 <span class="mods__installer-label">{t("mods.installer.optionsLabel")}</span>
-                <HCheckbox v-model={optRestore.value} label={t("mods.installer.optRestore")} />
-                <HCheckbox v-model={optHash.value} label={t("mods.installer.optHash")} />
-                <HCheckbox v-model={optMigrate.value} label={t("mods.installer.optMigrate")} />
+                <HkCheckbox v-model={optRestore.value} label={t("mods.installer.optRestore")} />
+                <HkCheckbox v-model={optHash.value} label={t("mods.installer.optHash")} />
+                <HkCheckbox v-model={optMigrate.value} label={t("mods.installer.optMigrate")} />
               </div>
               <div class="mods__installer-col mods__installer-col--wide">
-                <HInput
+                <HkInput
                   v-model={url.value}
                   type="url"
                   label={t("mods.installer.urlLabel")}
@@ -144,7 +144,7 @@ export default defineComponent({
                   hint={t("mods.installer.urlHint")}
                 />
                 <div class="mods__installer-actions">
-                  <HButton disabled>{t("mods.installer.install")}</HButton>
+                  <HkButton disabled>{t("mods.installer.install")}</HkButton>
                   <span class="mods__installer-note">{t("mods.installer.note")}</span>
                 </div>
               </div>
@@ -185,9 +185,9 @@ export default defineComponent({
                   <div class="mods__road-body">
                     <h3 class="mods__road-title">
                       {t(`mods.roadmap.${r.key}.title`)}
-                      <HTag variant={r.shipped ? "success" : "default"}>
+                      <HkTag variant={r.shipped ? "success" : "default"}>
                         {t(r.shipped ? "mods.roadmap.statusShipped" : "mods.roadmap.statusPlanned")}
-                      </HTag>
+                      </HkTag>
                     </h3>
                     <p class="mods__road-desc">{t(`mods.roadmap.${r.key}.desc`)}</p>
                   </div>

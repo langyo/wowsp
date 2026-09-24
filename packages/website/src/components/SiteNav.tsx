@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 import { Languages, Download } from "@lucide/vue";
 import { LOCALE_OPTIONS, type Locale } from "@/locales";
 import { siteBase } from "@/composables/siteBase";
-import { HButton, HMenu } from "@celestia-island/hikari";
+import { HkButton, HkMenu } from "@celestia-island/hikari";
 import "./SiteNav.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -81,7 +81,7 @@ export default defineComponent({
                 <Languages size={14} />
                 <span class="site-nav__lang-code">{current.value.native}</span>
               </button>
-              <HMenu
+              <HkMenu
                 items={langItems.value}
                 open={langOpen.value}
                 anchorRef={langAnchor.value}
@@ -91,10 +91,10 @@ export default defineComponent({
             </span>
             <RouterLink to="/download" custom>
               {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                <HButton size="sm" class="site-nav__cta" onClick={navigate}>
+                <HkButton size="sm" class="site-nav__cta" onClick={navigate}>
                   <Download size={14} />
                   {t("nav.download")}
-                </HButton>
+                </HkButton>
               )}
             </RouterLink>
           </div>

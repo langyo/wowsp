@@ -109,3 +109,4 @@ packages/webui/src/res/images/ships/_index.json
 
 # Local release staging (installers are uploaded to GitHub Releases)
 dist-release/
+node_modules
