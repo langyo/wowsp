@@ -113,9 +113,7 @@
     "armor": {
       "toggle": "Alternar la superposición del cinturón de blindaje",
       "short": "Blindaje",
-      "noData": "No hay datos de blindaje disponibles.",
       "legend": "Blindaje (mm)",
-      "estimated": "aproximado",
       "zone": {
         "bow": "Proa",
         "midship": "Centro",
@@ -131,13 +129,6 @@
         "torpedoBelt": "Mamparo antitorpedas",
         "bowBelt": "Cinturón de proa",
         "superstructure": "Superestructura"
-      },
-      "overmatchThreshold": "El overmatch requiere un calibre de ≥{n} mm",
-      "outcome": {
-        "overmatch": "Overmatch",
-        "pen": "Penetración",
-        "overpen": "Sobrepenetración",
-        "bounce": "Rebote"
       },
       "restore": "Restaurar",
       "solo": "Solo",
