@@ -324,6 +324,21 @@
         "marker": "虚拟单位",
         "path": "钉取航迹"
       }
+    },
+    "plan": {
+      "act": {
+        "move": "移动",
+        "attack": "攻击",
+        "spot": "侦察"
+      },
+      "actionLabel": "动作",
+      "hint": "同一单位稍后再放一个动作，它就会自行驶向那里：时间轴会在两个关键帧之间自动画出补间箭头。",
+      "tween": "补间",
+      "unitN": "单位 {n}",
+      "actionCount": "{n} 个动作",
+      "collapse": "点击折叠",
+      "expand": "点击展开",
+      "hiddenUnits": "…另有 {n} 个单位（轨道已满）"
     }
   },
   "chatLog": "聊天记录",

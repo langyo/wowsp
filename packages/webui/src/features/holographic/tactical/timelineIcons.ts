@@ -281,3 +281,122 @@ export function drawStepFlag(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.fill();
   ctx.restore();
 }
+
+// ── Plan tracks: keyframes and tweens ──────────────────────────────────────
+// The editor convention (After Effects / Flash): a keyframe is a shape on the
+// property row, and the span between two interpolated keyframes is a bar with
+// an arrowhead — "the value travels this way between these seconds".
+
+export const PLAN_TRACK_COLORS = {
+  headerBg: "rgba(148, 163, 184, 0.10)",
+  headerText: "rgba(203, 213, 225, 0.85)",
+  tweenBar: 0.32,
+} as const;
+
+/** One plan keyframe. `move` = diamond (position keyframe), `attack` = solid
+ *  down-triangle, `spot` = ring — readable at 8 px and distinguishable in
+ *  grayscale, so colour never has to carry the meaning alone. */
+export function drawPlanKeyframe(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  kind: "move" | "attack" | "spot",
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.4;
+  if (kind === "move") {
+    ctx.beginPath();
+    ctx.moveTo(0, -4.6);
+    ctx.lineTo(4.6, 0);
+    ctx.lineTo(0, 4.6);
+    ctx.lineTo(-4.6, 0);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === "attack") {
+    ctx.beginPath();
+    ctx.moveTo(-4.4, -4);
+    ctx.lineTo(4.4, -4);
+    ctx.lineTo(0, 4.4);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(0, 0, 3.8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Tween span: a translucent bar from the source keyframe to the target with
+ *  an arrowhead landing on the target (and a tail notch on the source), plus
+ *  the interpolated position of the playhead when it is inside the span. */
+export function drawPlanTween(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  x1: number,
+  y: number,
+  color: string,
+  head: number | null,
+): void {
+  const dir = x1 >= x0 ? 1 : -1;
+  const left = Math.min(x0, x1);
+  const right = Math.max(x0, x1);
+  ctx.save();
+  ctx.globalAlpha = PLAN_TRACK_COLORS.tweenBar;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(left, y - 3.5, Math.max(2, right - left), 7, 3.5);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  const size = 5.4;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x1, y);
+  ctx.lineTo(x1 - dir * size, y - size * 0.72);
+  ctx.lineTo(x1 - dir * size, y + size * 0.72);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x0 + dir * size * 0.9, y - size * 0.6);
+  ctx.lineTo(x0 + dir * size * 0.9, y + size * 0.6);
+  ctx.closePath();
+  ctx.fill();
+  if (head != null) {
+    const hx = Math.max(left, Math.min(right, head));
+    ctx.strokeStyle = "#00c3ff";
+    ctx.fillStyle = "rgba(5, 8, 15, 0.9)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(hx, y, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Collapsed-row sparkline: every keyframe as a tick over a hairline span —
+ *  enough to see where a unit's work sits without expanding the row. */
+export function drawPlanTicks(
+  ctx: CanvasRenderingContext2D,
+  xs: number[],
+  y: number,
+  color: string,
+): void {
+  if (xs.length === 0) return;
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = color;
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  if (right - left > 1) ctx.fillRect(left, y - 0.5, right - left, 1);
+  for (const x of xs) ctx.fillRect(x - 0.5, y - 3.5, 1.6, 7);
+  ctx.restore();
+}

@@ -5,7 +5,13 @@
  * composable is the single source of truth for "what is on the board".
  */
 import { computed, ref, watch, type Ref } from "vue";
-import type { DashStyle, TacticalElement, TacticalStep, TacticalToolId } from "./types";
+import type {
+  DashStyle,
+  TacticalActionKind,
+  TacticalElement,
+  TacticalStep,
+  TacticalToolId,
+} from "./types";
 import { commitStep, docStorageKey, parseDoc, serializeDoc } from "./model";
 
 export interface TacticalStyleState {
@@ -41,6 +47,8 @@ export function useTactical(replayPath: Ref<string>) {
   const tool = ref<TacticalToolId>("select");
   const style = ref<TacticalStyleState>({ color: "#f43f5e", width: 4, dash: "solid" });
   const selectedId = ref<string | null>(null);
+  /** Action kind stamped on markers placed on a plan board (see types.ts). */
+  const actionKind = ref<TacticalActionKind>("move");
   /** New elements get t0 = current replay time (slide-deck anchoring). */
   const anchorToTime = ref(true);
   /** Reveal not-yet-reached elements as faint ghosts while scrubbing. */
@@ -215,6 +223,7 @@ export function useTactical(replayPath: Ref<string>) {
     stepsSorted,
     tool,
     style,
+    actionKind,
     selectedId,
     selected,
     anchorToTime,

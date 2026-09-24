@@ -148,3 +148,97 @@ export function layoutMarkers(
   }
   return out;
 }
+
+// ── Plan tracks (accordion rows) ───────────────────────────────────────────
+
+/** Header height of one unit row (its label chip / collapse caret). */
+export const TRACK_HEADER_H = 15;
+/** Expanded body floor/ceiling — the band the keyframes and tween arrows
+ *  live in. The ceiling keeps a single-unit plan from stretching into a wall
+ *  of empty space. */
+export const TRACK_BODY_MIN_H = 10;
+export const TRACK_BODY_MAX_H = 34;
+
+/** One laid-out unit row: `top` is relative to the lanes band. */
+export interface PlanRowLayout {
+  key: string;
+  top: number;
+  headerH: number;
+  bodyH: number;
+  collapsed: boolean;
+  /** Too little band left to host this row: the caller must not draw or
+   *  hit-test it (the timeline reports the count instead of clipping rows
+   *  into invisible geometry). */
+  hidden: boolean;
+}
+
+/** Preferred body height for a plan row when the band has room to spare. */
+export const TRACK_BODY_PREF_H = 30;
+
+/** Band height a plan with `units` rows (of which `expanded` carry keyframes)
+ *  wants, clamped into `[min, max]`. The plan timeline grows with the plan
+ *  instead of squeezing rows out of sight, and stops at `max` so a runaway
+ *  plan cannot push the map off screen. */
+export function planBandHeight(
+  units: number,
+  expanded: number,
+  min: number,
+  max: number,
+): number {
+  const wanted = units * TRACK_HEADER_H + Math.max(0, expanded) * TRACK_BODY_PREF_H + 8;
+  return Math.max(min, Math.min(max, wanted));
+}
+
+/** Accordion layout for the plan tracks: every unit gets a header, expanded
+ *  units additionally a body sized from the leftover height. Headers shrink
+ *  (never the bodies) once a plan has more units than the band can host, and
+ *  a row with no room left at all is flagged `hidden` rather than laid out
+ *  past the band — so nothing is ever half-drawn under the progress strip. */
+export function layoutPlanRows(
+  keys: string[],
+  collapsedKeys: ReadonlySet<string>,
+  lanesH: number,
+): PlanRowLayout[] {
+  if (keys.length === 0) return [];
+  const collapsed: boolean[] = keys.map((k) => collapsedKeys.has(k));
+  const expandedCount = collapsed.filter((c) => !c).length;
+  // Headers give way first (down to an 11px floor — the 10px row label must
+  // stay inside its row); expanded bodies keep their floor so keyframes never
+  // collapse into an unreadable stripe.
+  const headerH = Math.max(
+    11,
+    Math.min(TRACK_HEADER_H, (lanesH - expandedCount * TRACK_BODY_MIN_H) / keys.length),
+  );
+  const bodyH = expandedCount
+    ? Math.max(
+        TRACK_BODY_MIN_H,
+        Math.min(TRACK_BODY_MAX_H, (lanesH - headerH * keys.length) / expandedCount),
+      )
+    : 0;
+  const out: PlanRowLayout[] = [];
+  let top = 0;
+  keys.forEach((key, i) => {
+    const rowH = headerH + (collapsed[i] ? 0 : bodyH);
+    if (top + rowH > lanesH + 1e-6) {
+      out.push({
+        key,
+        top: lanesH,
+        headerH: 0,
+        bodyH: 0,
+        collapsed: collapsed[i],
+        hidden: true,
+      });
+      return;
+    }
+    out.push({
+      key,
+      top,
+      headerH,
+      bodyH: collapsed[i] ? 0 : bodyH,
+      collapsed: collapsed[i],
+      hidden: false,
+    });
+    top += rowH;
+  });
+  return out;
+}

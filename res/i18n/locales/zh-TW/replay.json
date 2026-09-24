@@ -324,6 +324,21 @@
         "marker": "虛擬單位",
         "path": "釘取航跡"
       }
+    },
+    "plan": {
+      "act": {
+        "move": "移動",
+        "attack": "攻擊",
+        "spot": "偵察"
+      },
+      "actionLabel": "動作",
+      "hint": "同一單位稍後再放一個動作，它就會自行駛向那裡：時間軸會在兩個關鍵影格之間自動畫出補間箭頭。",
+      "tween": "補間",
+      "unitN": "單位 {n}",
+      "actionCount": "{n} 個動作",
+      "collapse": "點擊收合",
+      "expand": "點擊展開",
+      "hiddenUnits": "…另有 {n} 個單位（軌道已滿）"
     }
   },
   "chatLog": "聊天記錄",

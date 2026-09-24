@@ -1,20 +1,24 @@
 /**
  * Tactics-analysis page (/tactics): a two-pane explorer over the app's
- * bundled map catalog. The rail lists every space id in the shared
- * map_names table (`@/data/map_names.json` — the same authoritative catalog
- * replay review resolves display names from), so the list is synchronous
- * and always populated — it never depends on a usable local game install.
- * The right pane previews a map's minimap art from the same shared resource
- * pool (`resolveMapMinimapUrl`) the replay-review map canvas paints. A
- * coarse mode filter (all / random / ranked / clan) narrows the rail.
+ * bundled BATTLE map catalog. The rail lists the analysable spaces — catalog
+ * entries that are battle maps (`battleMapIds`: not a harbor) AND carry
+ * bundled minimap art (`resolveMapMinimapUrl`, the same resource pool the
+ * replay-review map canvas paints). A map without a minimap cannot be
+ * analysed at all, so it is not offered, and the count matches exactly what
+ * is listed.
  *
- * Replay history is optional enrichment: buckets observed in the active
- * install's replays dir refine the filter tags, merging in when they arrive.
- * When no client or history is available every standard PVP map stays at
- * its "random" baseline and PVE maps at "pve", so the filter keeps working.
- * Scenario / special-mode maps (isPveSpace) — and maps whose observed
- * history is exclusively PvE — have incomplete support: selecting one shows
- * a warning instead of pretending full analysis exists.
+ * Every card carries at least one badge. Mode pills come from the replay
+ * history observed on the active install, falling back to the same "random"
+ * bucket the mode filter itself assumes for a map with no history yet; the
+ * version pills (旧版 / 新版) come from the curated succession table
+ * (utils/legacyMaps) that marks a superseded map version and its successor.
+ *
+ * The right pane is a full tactical PLAN board (TacticalPlanStage): the same
+ * toolbar, marker facilities, timeline and export/record paths replay review
+ * uses, hosted over the bare map with a fixed 20-minute planning clock and
+ * accordion unit tracks that tween a unit between its marked actions.
+ * Scenario / special-mode maps (isPveSpace) keep their "incomplete support"
+ * warning.
  */
 import { computed, defineComponent, onMounted, ref, watch, type DefineComponent } from "vue";
 
@@ -23,10 +27,12 @@ import { HAlert, HTabs } from "@celestia-island/hikari";
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import { resolveMapMinimapUrl } from "@/features/holographic/modelLoader";
+import TacticalPlanStage from "@/features/holographic/tactical/PlanStage";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { MAP_NAMES, displayMapName, replaysDir } from "@/utils/mapNames";
-import { bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
+import { battleMapIds, bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
+import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { modeKey } from "@/utils/modeColors";
 import { isMobileApp } from "@/utils/platform";
 import "./TacticsView.scss";
@@ -50,10 +56,12 @@ const FILTERS: { key: FilterKey; labelKey: string }[] = [
   { key: "clan", labelKey: "tactics.filter.clan" },
 ];
 
-/** The rail's map inventory: every space id in the bundled catalog, shared
- *  with replay review's name resolution — available synchronously, no game
- *  install required. */
-const CATALOG_SPACE_IDS = Object.keys(MAP_NAMES);
+/** The rail's map inventory: battle spaces of the bundled catalog whose
+ *  minimap art ships with the app — synchronous, no game install required. */
+const RAIL_SPACE_IDS = battleMapIds(Object.keys(MAP_NAMES), (id) => resolveMapMinimapUrl(id) !== null);
+
+/** Pill order inside a card's badge row. */
+const BUCKET_ORDER: MapModeBucket[] = ["random", "ranked", "clan", "pve"];
 
 export default defineComponent({
   name: "TacticsView",
@@ -135,9 +143,9 @@ export default defineComponent({
       }
     });
 
-    /** Static + observed buckets for a space. A non-PVE space with no
-     *  observed history defaults to "random" (the bucketOf fallback
-     *  family) so the mode filters stay usable on a fresh install. */
+    /** Buckets a map counts as for the mode filter: observed history plus
+     *  the static PVE fingerprint, defaulting to the filter's own "random"
+     *  baseline so a map with no history is still reachable. */
     function modeBuckets(spaceId: string): Set<MapModeBucket> {
       const set = new Set<MapModeBucket>();
       if (isPveSpace(spaceId)) set.add("pve");
@@ -159,7 +167,7 @@ export default defineComponent({
 
     const filtered = computed(() => {
       const f = filter.value;
-      return CATALOG_SPACE_IDS.filter((id) => f === "all" || modeBuckets(id).has(f));
+      return RAIL_SPACE_IDS.filter((id) => f === "all" || modeBuckets(id).has(f));
     });
 
     /** Selected incomplete map first, then incomplete/PVE maps, then the
@@ -182,15 +190,11 @@ export default defineComponent({
         .map((e) => e.id);
     });
 
-    /** Small pills for a complete (PVP) card: the observed buckets that
-     *  carry a filter label — skipped entirely when history observed none. */
-    function observedPvpBuckets(spaceId: string): MapModeBucket[] {
-      const obs = observed.value.get(spaceId);
-      if (!obs) return [];
-      return [...obs].filter((b) => b !== "pve");
+    /** Badge pills for a complete (PVP) card, in rail order. */
+    function badgeBuckets(spaceId: string): MapModeBucket[] {
+      const set = modeBuckets(spaceId);
+      return BUCKET_ORDER.filter((b) => set.has(b));
     }
-
-    const artUrl = computed(() => resolveMapMinimapUrl(selected.value ?? undefined));
 
     return () => {
       const list = sorted.value;
@@ -218,6 +222,8 @@ export default defineComponent({
                 <ul class="tactics-view__items">
                   {list.map((id) => {
                     const inc = isIncomplete(id);
+                    const lineage = mapLineage(id);
+                    const legacy = legacyMapOf(id);
                     return (
                       <li key={id} class="tactics-view__item">
                         <button
@@ -233,12 +239,36 @@ export default defineComponent({
                                 {t("tactics.badge.limited")}
                               </span>
                             ) : (
-                              observedPvpBuckets(id).map((b) => (
+                              badgeBuckets(id).map((b) => (
                                 <span key={b} class="tactics-card__badge">
                                   {t(`tactics.filter.${b}`)}
                                 </span>
                               ))
                             )}
+                            {/* Version pills: the superseded map names its
+                                successor, the successor is marked as the one
+                                a plan should target. */}
+                            {lineage === "legacy" ? (
+                              <span
+                                class="tactics-card__badge tactics-card__badge--legacy"
+                                title={
+                                  legacy
+                                    ? t("tactics.badge.legacyTip", {
+                                        // Both generations share a display name,
+                                        // so the id is what tells them apart.
+                                        name: `${displayMapName(legacy.replacedBy, dataLanguage.value)} · ${legacy.replacedBy}`,
+                                      })
+                                    : undefined
+                                }
+                              >
+                                {t("tactics.badge.legacy")}
+                              </span>
+                            ) : null}
+                            {lineage === "current" ? (
+                              <span class="tactics-card__badge tactics-card__badge--current">
+                                {t("tactics.badge.current")}
+                              </span>
+                            ) : null}
                           </span>
                         </button>
                       </li>
@@ -259,6 +289,9 @@ export default defineComponent({
                     {displayMapName(sel, dataLanguage.value)}
                   </strong>
                   <span class="tactics-view__detail-id">{sel}</span>
+                  {mapLineage(sel) === "legacy" ? (
+                    <span class="tactics-view__detail-note">{t("tactics.badge.legacy")}</span>
+                  ) : null}
                 </header>
                 {/* hikari's HkAlert renders `slots.default ?
                     slots.default() : props.message` — a default slot
@@ -273,17 +306,13 @@ export default defineComponent({
                     <p class="tactics-view__warning-text">{t("tactics.warning.message")}</p>
                   </SlotHAlert>
                 ) : null}
-                <div class="tactics-view__art">
-                  {artUrl.value ? (
-                    <img
-                      class="tactics-view__art-img"
-                      src={artUrl.value}
-                      alt={displayMapName(sel, dataLanguage.value)}
-                    />
-                  ) : (
-                    <div class="tactics-view__no-art">{t("tactics.noArt")}</div>
-                  )}
-                </div>
+                {/* A fresh board per map: the plan document, viewport, clock
+                    and collapsed rows all belong to the selected map. */}
+                <TacticalPlanStage
+                  key={sel}
+                  spaceId={sel}
+                  mapName={displayMapName(sel, dataLanguage.value)}
+                />
               </div>
             )}
           </section>

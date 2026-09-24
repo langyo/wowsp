@@ -5,10 +5,14 @@
     "all": "Tout",
     "random": "Aléatoire",
     "ranked": "Classée",
-    "clan": "Clan"
+    "clan": "Clan",
+    "pve": "Scénario"
   },
   "badge": {
-    "limited": "Prise en charge limitée"
+    "limited": "Prise en charge limitée",
+    "legacy": "Ancienne version",
+    "legacyTip": "Remplacée par {name}",
+    "current": "Nouvelle version"
   },
   "warning": {
     "message": "La prise en charge de cette carte (scénario / mode spécial) dans l'analyse tactique est incomplète : les données de terrain et de superposition peuvent manquer. Aperçu uniquement."
@@ -18,5 +22,7 @@
     "filterEmpty": "Aucune carte pour ce mode pour l'instant — jouez des batailles et elles apparaîtront ici."
   },
   "select": "Sélectionnez une carte pour commencer l'analyse",
-  "noArt": "Cette carte n'a pas de mini-carte"
+  "plan": {
+    "noBounds": "Cette carte n'a pas de données d'étendue, impossible d'y tracer un plan tactique."
+  }
 }

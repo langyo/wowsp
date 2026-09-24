@@ -4,10 +4,12 @@
  *    modes to "random";
  *  - isPveSpace flags scenario / special-mode spaces by their id shape
  *    (s01_…, *_op_*, halloween, naval_mission, 00_co_*) while regular
- *    PVP-map ids stay unflagged. */
+ *    PVP-map ids stay unflagged;
+ *  - isHarborSpace flags the non-battle spaces (docks / exteriors /
+ *    shipyards) and battleMapIds keeps only analysable, art-backed maps. */
 import { describe, expect, it } from "vitest";
 
-import { bucketOf, isPveSpace } from "./mapModes";
+import { battleMapIds, bucketOf, isHarborSpace, isPveSpace } from "./mapModes";
 
 describe("bucketOf", () => {
   it("keeps ranked and its variants ranked", () => {
@@ -81,5 +83,39 @@ describe("isPveSpace", () => {
     expect(isPveSpace("A_OP_DDAYS")).toBe(true);
     expect(isPveSpace("HALLOWEEN_MAP")).toBe(true);
     expect(isPveSpace("")).toBe(false);
+  });
+});
+
+describe("isHarborSpace", () => {
+  it("flags docks, exteriors and shipyards", () => {
+    for (const id of ["Dock", "Dock_Kure", "dock_dry", "Exterior", "Shipyard_GERZH1"]) {
+      expect(isHarborSpace(id)).toBe(true);
+    }
+  });
+
+  it("leaves battle spaces unflagged, whatever their flavour", () => {
+    for (const id of ["05_Ring", "58_RidgeNew", "s01_NavalBase", ""]) {
+      expect(isHarborSpace(id)).toBe(false);
+    }
+  });
+});
+
+describe("battleMapIds", () => {
+  const CATALOG = ["05_Ring", "Dock_Kure", "58_RidgeNew", "s01_NavalBase", "dock_dry"];
+  /** Docks ship minimap art too — they are dropped for being harbors. */
+  const ART = new Set(["05_Ring", "58_RidgeNew", "Dock_Kure", "dock_dry"]);
+
+  it("keeps the art-backed battle maps in catalog order", () => {
+    expect(battleMapIds(CATALOG, (id) => ART.has(id))).toEqual(["05_Ring", "58_RidgeNew"]);
+  });
+
+  it("drops art-less entries and never probes a harbor for art", () => {
+    const probed: string[] = [];
+    const kept = battleMapIds(CATALOG, (id) => {
+      probed.push(id);
+      return true;
+    });
+    expect(kept).toEqual(["05_Ring", "58_RidgeNew", "s01_NavalBase"]);
+    expect(probed).toEqual(kept);
   });
 });
