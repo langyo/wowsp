@@ -146,6 +146,7 @@
     "waitingTitle": "En attente du début de la bataille",
     "waitingHint": "Le jeu est lancé — les compositions et les stats se chargent ici automatiquement dès que vous entrez en bataille",
     "settling": "Résolution",
+    "ended": "Bataille terminée",
     "hiddenProfile": "Ce joueur a masqué ses statistiques",
     "viewProfile": "Voir les statistiques de ce joueur",
     "detectedRows": "Localisé · {n} lignes",

@@ -64,6 +64,11 @@ export default defineComponent({
      *  (the game writes the file when the battle ends) — the battle is on
      *  the results screen, stats final but replay still settling. */
     settling: { type: Boolean, default: false },
+    /** The battle is over for good (the game deleted tempArenaInfo.json —
+     *  returned to port or quit): the roster on screen is the LAST battle's,
+     *  kept until the next one starts. Renders the "battle ended" badge in
+     *  place of LIVE/settling and retires the elapsed clock. */
+    ended: { type: Boolean, default: false },
     /** Realm the battle is played on (from the active client install);
      *  used for both the stats lookup and the lookup-view jump. */
     realm: { type: String, default: "" },
@@ -359,7 +364,11 @@ export default defineComponent({
         <div class="live-battle">
           <div class="live-battle__head live-battle__head--status">
             <span class="live-battle__title">{t("replay.live.title")}</span>
-            {props.settling ? (
+            {props.ended ? (
+              <span class="live-battle__pill live-battle__pill--ended">
+                {t("replay.live.ended")}
+              </span>
+            ) : props.settling ? (
               <span class="live-battle__pill live-battle__pill--settling">
                 {t("replay.live.settling")}
               </span>
@@ -367,7 +376,7 @@ export default defineComponent({
               <span class="live-battle__pill live-battle__pill--live">LIVE</span>
             )}
             {modePill}
-            {clockLabel.value ? (
+            {!props.ended && clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>
             ) : null}
             <span class="live-battle__map">

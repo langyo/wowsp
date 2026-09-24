@@ -146,6 +146,7 @@
     "waitingTitle": "戦闘の開始を待機中",
     "waitingHint": "ゲームは起動中です。戦闘に入ると両チームの編成と戦績が自動で読み込まれます",
     "settling": "集計中",
+    "ended": "戦闘終了",
     "hiddenProfile": "このプレイヤーは戦績を非公開にしています",
     "viewProfile": "このプレイヤーの戦績を見る",
     "detectedRows": "位置特定済み · {n} 行",
