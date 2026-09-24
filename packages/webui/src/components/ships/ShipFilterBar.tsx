@@ -1,8 +1,10 @@
 /**
  * ShipFilterBar — business component that packages ALL ship-table filtering
- * into one inline strip, meant to sit on the same row as the view's date
- * range tabs. Emits `change` with the filtered + sorted flat list whenever
- * any control moves.
+ * into one strip sharing the view's controls row with the date range tabs:
+ * internally two fixed rows — the meta row (summary + search) pinned to the
+ * tabs row's right end, the category chips claiming a full row below.
+ * Emits `change` with the filtered + sorted flat list whenever any control
+ * moves.
  *
  * Interaction model:
  *   - Four filter categories — type / tier / winrate / battles — render as
@@ -596,194 +598,203 @@ export default defineComponent({
 
     return () => (
       <div ref={chipsRow} class="ship-filter-bar" data-dragging={chipDragging.value || undefined}>
-        {order.value.map((key) => {
-          const def = CAT_DEFS[key];
-          const cur = sel.value[key];
-          // Labels render in canonical option order (not click order) so a
-          // ≥60% + 50–60% pick always reads "50–60%·≥60%".
-          const byOrder = (a: string, b: string) => {
-            const opts = catOptions.value[key];
+        {/* Two fixed rows (styled in ShipFilterBar.scss): the chip group
+            always claims a full row of its own while the meta group rides
+            the first row's right end, beside the view's date tabs. Chips
+            stay first in the DOM so tab order is unchanged — the visual
+            order is flex `order`'s job, not the markup's. */}
+        <div class="ship-filter-bar__chips">
+          {order.value.map((key) => {
+            const def = CAT_DEFS[key];
+            const cur = sel.value[key];
+            // Labels render in canonical option order (not click order) so a
+            // ≥60% + 50–60% pick always reads "50–60%·≥60%".
+            const byOrder = (a: string, b: string) => {
+              const opts = catOptions.value[key];
+              return (
+                opts.findIndex((o) => o.value === a) - opts.findIndex((o) => o.value === b)
+              );
+            };
+            const chipLabel =
+              [...cur.values]
+                .sort(byOrder)
+                .map((v) => catOptions.value[key].find((o) => o.value === v)?.label ?? v)
+                .join("·") || t(def.allLabel);
             return (
-              opts.findIndex((o) => o.value === a) - opts.findIndex((o) => o.value === b)
-            );
-          };
-          const chipLabel =
-            [...cur.values]
-              .sort(byOrder)
-              .map((v) => catOptions.value[key].find((o) => o.value === v)?.label ?? v)
-              .join("·") || t(def.allLabel);
-          return (
-            <div key={key} class="ship-filter-bar__chip-anchor">
-              <button
-                type="button"
-                ref={(el) => {
-                  chipEls.set(key, (el as HTMLElement | null) ?? null);
-                }}
-                class={[
-                  "ship-filter-bar__chip",
-                  cur.values.length
-                    ? "ship-filter-bar__chip--on"
-                    : cur.allSort
-                      ? "ship-filter-bar__chip--sort"
-                      : "ship-filter-bar__chip--all",
-                ]}
-                data-chip={key}
-                data-dragging={chipDragging.value === key || undefined}
-                data-hint={chipTitle(key)}
-                onPointerdown={(e: PointerEvent) => onChipPointerDown(e, key)}
-                onClick={() => onChipClick(key)}
-              >
-                <GripHorizontal size={12} class="ship-filter-bar__chip-grip" />
-                <span>{chipLabel}</span>
-                {isSortCat(key) ? dirIcon(cur.dir) : null}
-              </button>
-              {/* The popup teleports to body (HkPopover) — no overflow
-                  ancestor can clip it. On phones it docks as a bottom
-                  sheet (sheetOnMobile — hikari convention: phones never
-                  float anchored menus; the anchored desktop panel would
-                  clip at the screen edge and read translucent where the
-                  engine lacks backdrop-filter). The scrim + tap-outside
-                  close ride closeOnBackdrop on phones only: the sheet
-                  branch renders its dismissal scrim from that prop, while
-                  desktop keeps the bar-level pointerdown outside-close
-                  with hikari's own listener off (chip re-click switching
-                  runs through onChipClick untouched either way). */}
-              <HkPopover
-                modelValue={openPop.value === key}
-                onUpdate:modelValue={(v: boolean) => {
-                  if (!v && openPop.value === key) openPop.value = null;
-                }}
-                anchorRef={chipEls.get(key) ?? null}
-                // The right-most chip's popup opens leftwards so it never
-                // leaves the strip (the old data-edge CSS hook).
-                placement={
-                  key === order.value[order.value.length - 1] ? "bottom-end" : "bottom-start"
-                }
-                closeOnBackdrop={isMobile.value}
-                sheetOnMobile
-                title={t(def.title)}
-              >
-                <div
-                  ref={(el) => {
-                    popPanelEls.set(key, (el as HTMLElement | null) ?? null);
-                  }}
-                  class="ship-filter-bar__pop"
-                >
-                  <div class="ship-filter-bar__pop-head">
-                    <span>{t(def.title)}</span>
-                    <button
-                      type="button"
-                      class="ship-filter-bar__pop-close"
-                      onClick={() => (openPop.value = null)}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                  {/* Option group in the segmented track look (multi-select
-                      for type/tier, single for winrate/battles).
-                      全部… always shows the direction arrow; concrete types
-                      never do (pure filters). */}
-                  <div class="ship-filter-bar__opts">
-                    {catOptions.value[key].map((o) => {
-                      const isAll = o.value === "";
-                      const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
-                      return (
-                        <button
-                          key={o.value}
-                          type="button"
-                          class="ship-filter-bar__opt"
-                          data-active={on || undefined}
-                          onClick={() => clickOption(key, o.value)}
-                        >
-                          <span>{o.label}</span>
-                          {isAll || (on && key !== "type") ? dirIcon(cur.dir) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div class="ship-filter-bar__pop-hint">{popHint(key)}</div>
-                </div>
-              </HkPopover>
-            </div>
-          );
-        })}
-        <span class="ship-filter-bar__summary">
-          {t("ships.filter.summary", {
-            ships: filteredShips.value.length,
-            battles: totalBattles.value.toLocaleString(),
-          })}
-        </span>
-        {/* Search — one button; the input lives in a popup panel that opens
-            leftwards from the button (roomier than an inline box; HkPopover
-            placement, teleported to body). The button stays highlighted
-            while a query is in effect so the bypass-everything state is
-            never invisible. */}
-        <div class="ship-filter-bar__search-anchor">
-          <button
-            type="button"
-            ref={searchBtnEl}
-            class={[
-              "ship-filter-bar__search-btn",
-              searchOpen.value || shipQuery.value.trim() ? "ship-filter-bar__search-btn--on" : "",
-            ]}
-            onClick={() => {
-              openPop.value = null;
-              searchOpen.value = !searchOpen.value;
-            }}
-          >
-            <Search size={13} />
-            <span>{t("common.search.fuzzy")}</span>
-          </button>
-          <HkPopover
-            modelValue={searchOpen.value}
-            onUpdate:modelValue={(v: boolean) => {
-              if (!v) searchOpen.value = false;
-            }}
-            anchorRef={searchBtnEl.value}
-            placement="bottom-end"
-            closeOnBackdrop={isMobile.value}
-            sheetOnMobile
-            title={t("common.search.fuzzy")}
-          >
-            <div ref={searchPanelEl} class="ship-filter-bar__search-panel">
-              <div class="ship-filter-bar__search-panel-head">
-                <span>{t("common.search.fuzzy")}</span>
+              <div key={key} class="ship-filter-bar__chip-anchor">
                 <button
                   type="button"
-                  class="ship-filter-bar__search-close"
-                  onClick={() => (searchOpen.value = false)}
+                  ref={(el) => {
+                    chipEls.set(key, (el as HTMLElement | null) ?? null);
+                  }}
+                  class={[
+                    "ship-filter-bar__chip",
+                    cur.values.length
+                      ? "ship-filter-bar__chip--on"
+                      : cur.allSort
+                        ? "ship-filter-bar__chip--sort"
+                        : "ship-filter-bar__chip--all",
+                  ]}
+                  data-chip={key}
+                  data-dragging={chipDragging.value === key || undefined}
+                  data-hint={chipTitle(key)}
+                  onPointerdown={(e: PointerEvent) => onChipPointerDown(e, key)}
+                  onClick={() => onChipClick(key)}
                 >
-                  <X size={12} />
+                  <GripHorizontal size={12} class="ship-filter-bar__chip-grip" />
+                  <span>{chipLabel}</span>
+                  {isSortCat(key) ? dirIcon(cur.dir) : null}
                 </button>
+                {/* The popup teleports to body (HkPopover) — no overflow
+                    ancestor can clip it. On phones it docks as a bottom
+                    sheet (sheetOnMobile — hikari convention: phones never
+                    float anchored menus; the anchored desktop panel would
+                    clip at the screen edge and read translucent where the
+                    engine lacks backdrop-filter). The scrim + tap-outside
+                    close ride closeOnBackdrop on phones only: the sheet
+                    branch renders its dismissal scrim from that prop, while
+                    desktop keeps the bar-level pointerdown outside-close
+                    with hikari's own listener off (chip re-click switching
+                    runs through onChipClick untouched either way). */}
+                <HkPopover
+                  modelValue={openPop.value === key}
+                  onUpdate:modelValue={(v: boolean) => {
+                    if (!v && openPop.value === key) openPop.value = null;
+                  }}
+                  anchorRef={chipEls.get(key) ?? null}
+                  // The right-most chip's popup opens leftwards so it never
+                  // leaves the strip (the old data-edge CSS hook).
+                  placement={
+                    key === order.value[order.value.length - 1] ? "bottom-end" : "bottom-start"
+                  }
+                  closeOnBackdrop={isMobile.value}
+                  sheetOnMobile
+                  title={t(def.title)}
+                >
+                  <div
+                    ref={(el) => {
+                      popPanelEls.set(key, (el as HTMLElement | null) ?? null);
+                    }}
+                    class="ship-filter-bar__pop"
+                  >
+                    <div class="ship-filter-bar__pop-head">
+                      <span>{t(def.title)}</span>
+                      <button
+                        type="button"
+                        class="ship-filter-bar__pop-close"
+                        onClick={() => (openPop.value = null)}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    {/* Option group in the segmented track look (multi-select
+                        for type/tier, single for winrate/battles).
+                        全部… always shows the direction arrow; concrete types
+                        never do (pure filters). */}
+                    <div class="ship-filter-bar__opts">
+                      {catOptions.value[key].map((o) => {
+                        const isAll = o.value === "";
+                        const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
+                        return (
+                          <button
+                            key={o.value}
+                            type="button"
+                            class="ship-filter-bar__opt"
+                            data-active={on || undefined}
+                            onClick={() => clickOption(key, o.value)}
+                          >
+                            <span>{o.label}</span>
+                            {isAll || (on && key !== "type") ? dirIcon(cur.dir) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div class="ship-filter-bar__pop-hint">{popHint(key)}</div>
+                  </div>
+                </HkPopover>
               </div>
-              <HkSearchInput
-                modelValue={shipQuery.value}
-                onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
-                placeholder={t("common.search.fuzzy")}
-              />
-              {shipQuery.value.trim() && searchCandidates.value.length > 0 ? (
-                <div class="ship-filter-bar__candidates">
-                  {searchCandidates.value.slice(0, 12).map((c) => (
-                    <button
-                      key={c.value}
-                      type="button"
-                      class="ship-filter-bar__candidate"
-                      onClick={() => {
-                        shipQuery.value = c.value;
-                        searchOpen.value = false;
-                      }}
-                    >
-                      <span>{c.label}</span>
-                      {c.sub ? <em>{c.sub}</em> : null}
-                    </button>
-                  ))}
+            );
+          })}
+        </div>
+        <div class="ship-filter-bar__meta">
+          <span class="ship-filter-bar__summary">
+            {t("ships.filter.summary", {
+              ships: filteredShips.value.length,
+              battles: totalBattles.value.toLocaleString(),
+            })}
+          </span>
+          {/* Search — one button; the input lives in a popup panel that opens
+              leftwards from the button (roomier than an inline box; HkPopover
+              placement, teleported to body). The button stays highlighted
+              while a query is in effect so the bypass-everything state is
+              never invisible. */}
+          <div class="ship-filter-bar__search-anchor">
+            <button
+              type="button"
+              ref={searchBtnEl}
+              class={[
+                "ship-filter-bar__search-btn",
+                searchOpen.value || shipQuery.value.trim() ? "ship-filter-bar__search-btn--on" : "",
+              ]}
+              onClick={() => {
+                openPop.value = null;
+                searchOpen.value = !searchOpen.value;
+              }}
+            >
+              <Search size={13} />
+              <span>{t("common.search.fuzzy")}</span>
+            </button>
+            <HkPopover
+              modelValue={searchOpen.value}
+              onUpdate:modelValue={(v: boolean) => {
+                if (!v) searchOpen.value = false;
+              }}
+              anchorRef={searchBtnEl.value}
+              placement="bottom-end"
+              closeOnBackdrop={isMobile.value}
+              sheetOnMobile
+              title={t("common.search.fuzzy")}
+            >
+              <div ref={searchPanelEl} class="ship-filter-bar__search-panel">
+                <div class="ship-filter-bar__search-panel-head">
+                  <span>{t("common.search.fuzzy")}</span>
+                  <button
+                    type="button"
+                    class="ship-filter-bar__search-close"
+                    onClick={() => (searchOpen.value = false)}
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
-              ) : null}
-              {!shipQuery.value.trim() ? (
-                <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>
-              ) : null}
-            </div>
-          </HkPopover>
+                <HkSearchInput
+                  modelValue={shipQuery.value}
+                  onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
+                  placeholder={t("common.search.fuzzy")}
+                />
+                {shipQuery.value.trim() && searchCandidates.value.length > 0 ? (
+                  <div class="ship-filter-bar__candidates">
+                    {searchCandidates.value.slice(0, 12).map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        class="ship-filter-bar__candidate"
+                        onClick={() => {
+                          shipQuery.value = c.value;
+                          searchOpen.value = false;
+                        }}
+                      >
+                        <span>{c.label}</span>
+                        {c.sub ? <em>{c.sub}</em> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {!shipQuery.value.trim() ? (
+                  <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>
+                ) : null}
+              </div>
+            </HkPopover>
+          </div>
         </div>
       </div>
     );
