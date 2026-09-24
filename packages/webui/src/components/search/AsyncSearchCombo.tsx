@@ -4,9 +4,9 @@
  * ship fuzzy-search popup (ShipFilterBar), but network-backed and generic:
  * the component knows nothing about players/clans/ships — callers pass a
  * `search` callback plus row renderers. The panel renders through hikari
- * HPopover (body-level teleport) so overflow ancestors can never clip it.
+ * HkPopover (body-level teleport) so overflow ancestors can never clip it.
  *
- * Debounce + Enter-flush come from hikari's HSearchInput (`debounce` prop +
+ * Debounce + Enter-flush come from hikari's HkSearchInput (`debounce` prop +
  * `search` event); the race token mirrors HkKeywordSearchModal's semantic
  * search (a stale in-flight response must never overwrite a newer one).
  * Numeric queries bypass the minimum-length gate (UID lookups).
@@ -21,7 +21,7 @@ import {
   type VNodeChild,
 } from "vue";
 
-import { HPopover, HSearchInput, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
 import { Search, X } from "@lucide/vue";
 
 import "./AsyncSearchCombo.scss";
@@ -51,14 +51,14 @@ export default defineComponent({
     searchingText: { type: String, default: "" },
     /** Minimum trimmed length that triggers a query (UIDs exempt). */
     minChars: { type: Number, default: 3 },
-    /** Passed straight to HSearchInput's debounce (ms). */
+    /** Passed straight to HkSearchInput's debounce (ms). */
     debounceMs: { type: Number, default: 300 },
     /** Popup horizontal anchor relative to the button. */
     align: { type: String as PropType<"left" | "right">, default: "left" },
   },
   setup(props) {
     const open = ref(false);
-    // Phone layout signal for the HPopover sheet dock (sheetOnMobile +
+    // Phone layout signal for the HkPopover sheet dock (sheetOnMobile +
     // scrim-rendering closeOnBackdrop, mirroring ShipFilterBar's chips).
     const { isMobile } = useBreakpoint();
     const query = ref("");
@@ -68,7 +68,7 @@ export default defineComponent({
     /** True once a query has completed (drives the "no results" state). */
     const searched = ref(false);
     const anchor = ref<HTMLElement | null>(null);
-    // The BUTTON anchors the teleported HPopover panel; the panel element
+    // The BUTTON anchors the teleported HkPopover panel; the panel element
     // joins the outside-close test — it renders at body level, outside
     // `anchor`, so a press inside it must not count as an outside press.
     const btnEl = ref<HTMLButtonElement | null>(null);
@@ -111,7 +111,7 @@ export default defineComponent({
       props.onSelect(item);
     }
 
-    /** HPopover placement — the align prop's popup-side choice, expressed
+    /** HkPopover placement — the align prop's popup-side choice, expressed
      *  as the anchored placement (left = panel grows rightwards). */
     const placement = computed(() =>
       props.align === "right" ? ("bottom-end" as const) : ("bottom-start" as const),
@@ -151,7 +151,7 @@ export default defineComponent({
               crushing a CSS-sized-only svg down to zero width. */}
           <Search size={14} />
         </button>
-        {/* Desktop keeps closeOnBackdrop off: HPopover's own document
+        {/* Desktop keeps closeOnBackdrop off: HkPopover's own document
             listener would close on the re-click of the open trigger before
             that click re-opens it; the pointerdown listener above is the
             outside-close and Escape rides closeOnEscape. Phones dock the
@@ -159,7 +159,7 @@ export default defineComponent({
             nothing floats anchored on phones), where the sheet branch
             renders its dismissal scrim from closeOnBackdrop; tapping the
             scrim also trips the listener above (same close, one path). */}
-        <HPopover
+        <HkPopover
           modelValue={open.value}
           onUpdate:modelValue={(v: boolean) => {
             if (!v) open.value = false;
@@ -183,7 +183,7 @@ export default defineComponent({
                 </button>
               </div>
             ) : null}
-            <HSearchInput
+            <HkSearchInput
               modelValue={query.value}
               onUpdate:modelValue={(v: string) => (query.value = v)}
               onSearch={(v: string) => void run(v.trim())}
@@ -215,7 +215,7 @@ export default defineComponent({
               <div class="async-search-combo__hint">{props.noResultsText}</div>
             ) : null}
           </div>
-        </HPopover>
+        </HkPopover>
       </div>
     );
   },

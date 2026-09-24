@@ -40,7 +40,7 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import type { PlayerShipStats } from "@/api";
 import { ArrowDown, ArrowUp, GripHorizontal, Search, X } from "@lucide/vue";
 
-import { HPopover, HSearchInput, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -307,7 +307,7 @@ export default defineComponent({
      *  is open (capture so it precedes every inside handler). Presses inside
      *  the bar root are ignored here — the chip's own click then toggles or
      *  switches popups, keeping one-click switching. The open panel itself
-     *  teleports to body (HPopover), outside the bar root, so its element is
+     *  teleports to body (HkPopover), outside the bar root, so its element is
      *  containment-checked too: a press on an option must reach its click. */
     function onDocPointerDown(e: PointerEvent) {
       const target = e.target as Node;
@@ -637,7 +637,7 @@ export default defineComponent({
                 <span>{chipLabel}</span>
                 {isSortCat(key) ? dirIcon(cur.dir) : null}
               </button>
-              {/* The popup teleports to body (HPopover) — no overflow
+              {/* The popup teleports to body (HkPopover) — no overflow
                   ancestor can clip it. On phones it docks as a bottom
                   sheet (sheetOnMobile — hikari convention: phones never
                   float anchored menus; the anchored desktop panel would
@@ -648,7 +648,7 @@ export default defineComponent({
                   desktop keeps the bar-level pointerdown outside-close
                   with hikari's own listener off (chip re-click switching
                   runs through onChipClick untouched either way). */}
-              <HPopover
+              <HkPopover
                 modelValue={openPop.value === key}
                 onUpdate:modelValue={(v: boolean) => {
                   if (!v && openPop.value === key) openPop.value = null;
@@ -703,7 +703,7 @@ export default defineComponent({
                   </div>
                   <div class="ship-filter-bar__pop-hint">{popHint(key)}</div>
                 </div>
-              </HPopover>
+              </HkPopover>
             </div>
           );
         })}
@@ -714,7 +714,7 @@ export default defineComponent({
           })}
         </span>
         {/* Search — one button; the input lives in a popup panel that opens
-            leftwards from the button (roomier than an inline box; HPopover
+            leftwards from the button (roomier than an inline box; HkPopover
             placement, teleported to body). The button stays highlighted
             while a query is in effect so the bypass-everything state is
             never invisible. */}
@@ -734,7 +734,7 @@ export default defineComponent({
             <Search size={13} />
             <span>{t("common.search.fuzzy")}</span>
           </button>
-          <HPopover
+          <HkPopover
             modelValue={searchOpen.value}
             onUpdate:modelValue={(v: boolean) => {
               if (!v) searchOpen.value = false;
@@ -756,7 +756,7 @@ export default defineComponent({
                   <X size={12} />
                 </button>
               </div>
-              <HSearchInput
+              <HkSearchInput
                 modelValue={shipQuery.value}
                 onUpdate:modelValue={(v: string) => (shipQuery.value = v)}
                 placeholder={t("common.search.fuzzy")}
@@ -783,7 +783,7 @@ export default defineComponent({
                 <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>
               ) : null}
             </div>
-          </HPopover>
+          </HkPopover>
         </div>
       </div>
     );

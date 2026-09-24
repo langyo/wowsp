@@ -1,6 +1,6 @@
 import { computed, defineComponent } from "vue";
 
-import { HSpinner } from "@celestia-island/hikari";
+import { HkSpinner } from "@celestia-island/hikari";
 
 import RatingStamp from "@/components/base/RatingStamp";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -165,7 +165,7 @@ export default defineComponent({
       if (!s) {
         return props.loading ? (
           <div class="ship-my-stats ship-my-stats--loading">
-            <HSpinner center size="md" />
+            <HkSpinner center size="md" />
           </div>
         ) : (
           <p class="ship-detail__empty">{t("ships.detail.noMyStats")}</p>

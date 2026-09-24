@@ -1,6 +1,6 @@
 import { computed, defineComponent, type PropType } from "vue";
 
-import { HAlert } from "@celestia-island/hikari";
+import { HkAlert } from "@celestia-island/hikari";
 
 import type { LookupErrorPayload } from "@/transport/types";
 import { t } from "@/i18n";
@@ -54,7 +54,7 @@ export default defineComponent({
           : t("lookup.error.clanNotFoundDesc", { query: p.query, realm: realmUpper.value });
         return (
           <div class="lookup-error-notice">
-            <HAlert variant="warning" title={isPlayer ? t("lookup.error.playerNotFoundTitle") : t("lookup.error.clanNotFoundTitle")} message={desc}>
+            <HkAlert variant="warning" title={isPlayer ? t("lookup.error.playerNotFoundTitle") : t("lookup.error.clanNotFoundTitle")} message={desc}>
               <div class="lookup-error-notice__body">
                 <p class="lookup-error-notice__desc">{desc}</p>
                 {isPlayer ? (
@@ -81,7 +81,7 @@ export default defineComponent({
                   <code>{p.message}</code>
                 </details>
               </div>
-            </HAlert>
+            </HkAlert>
           </div>
         );
       }
@@ -94,7 +94,7 @@ export default defineComponent({
       const desc = rawOnly ? props.raw! : t("lookup.error.apiErrorDesc");
       return (
         <div class="lookup-error-notice">
-          <HAlert variant="error" title={t("lookup.error.apiErrorTitle")} message={desc}>
+          <HkAlert variant="error" title={t("lookup.error.apiErrorTitle")} message={desc}>
             <div class="lookup-error-notice__body">
               <p class="lookup-error-notice__desc">{desc}</p>
               {rateLimited.value ? (
@@ -109,7 +109,7 @@ export default defineComponent({
                 </details>
               ) : null}
             </div>
-          </HAlert>
+          </HkAlert>
         </div>
       );
     };

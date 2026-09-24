@@ -25,8 +25,10 @@
 //! and the `WOWSP_ROW_RECOGNIZER` env; PR 3b added the real on-device engine
 //! (`windows-ocr`, the OS-bundled Windows.Media.Ocr — see
 //! [`row_ocr_windows`]), which is now the DEFAULT: recognition runs unless
-//! the user's settings switch it off (`overlay-config.toml` `roster: "off"`,
-//! read via [`super::overlay_config`]) or the env explicitly opts out
+//! the user's settings select it (`overlay-config.toml` `roster: "ocr"`;
+//! the default `"inferred"` mode derives the mapping from the verified Tab
+//! sort rule instead, and `"off"` skips attribution entirely — both read
+//! via [`super::overlay_config`]) or the env explicitly opts out
 //! (`off` / `null`). The pipeline stays
 //! IO-LIGHT: the one arena-file read happens only after some text was
 //! actually recognized, and a disabled engine short-circuits before any
@@ -147,29 +149,42 @@ fn select_recognizer(raw: Option<std::ffi::OsString>) -> Option<Box<dyn RowRecog
     }
 }
 
-/// Whether row recognition is ON under the current environment AND the
-/// user's settings: the parsed engine kind selects Windows OCR AND the OS
-/// can actually build the engine — a machine with no OCR language pack can
-/// never produce a row mapping, so the pending machinery (anchor
-/// `row_players_pending`, watcher catch-up) must not wait for one. The
-/// settings file takes CLEAR precedence: a `roster: "off"` in
-/// `overlay-config.toml` disables the pipeline outright, while `"ocr"` or
-/// an absent file defers to the env below (the env stays the dev override).
-/// Consumed by `compute_anchor` and by the Tab watcher's recognition
-/// catch-up gate.
-pub(crate) fn recognizer_enabled() -> bool {
-    recognizer_enabled_with(super::overlay_config::roster_recognition_off())
+/// Whether the OCR pipeline is ON under the user's settings AND the current
+/// environment: the settings mode must be `ocr` (the `inferred` mode derives
+/// its mapping without OCR and `off` skips attribution entirely), AND the
+/// OS must actually build the engine — a machine with no OCR language pack
+/// can never produce a row mapping, so the pending machinery (anchor
+/// `row_players_pending`, watcher catch-up) must not wait for one. The env
+/// stays the dev override WITHIN the `ocr` mode (it picks or disables the
+/// engine, never the mode). Consumed by `compute_anchor` and by the Tab
+/// watcher's recognition catch-up gate.
+pub(crate) fn ocr_active() -> bool {
+    ocr_active_with(super::overlay_config::roster_mode())
 }
 
-/// Config-injected core of [`recognizer_enabled`] (testable without
-/// touching the real settings file): a settings `roster: "off"` wins over
-/// everything; any other config value leaves the env-based behavior in
-/// charge.
-fn recognizer_enabled_with(config_off: bool) -> bool {
-    if config_off {
+/// Config-injected core of [`ocr_active`] (testable without touching the
+/// real settings file): only the `ocr` mode leaves the env-based behavior
+/// in charge.
+fn ocr_active_with(mode: super::overlay_config::RosterRecognition) -> bool {
+    if mode != super::overlay_config::RosterRecognition::Ocr {
         return false;
     }
     recognizer_enabled_for(std::env::var_os(RECOGNIZER_ENV).as_deref())
+}
+
+/// Whether the Windows OCR engine could be built on THIS machine at all
+/// (an installed OCR language pack) — independent of the settings mode and
+/// the dev env override. This is what the settings UI probes once to offer
+/// or gray out the `ocr` option.
+pub(crate) fn engine_available() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        row_ocr_windows::WindowsOcrRecognizer::acquire().is_some()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 /// Env-injected core of [`recognizer_enabled`] (testable without mutating
@@ -232,11 +247,11 @@ pub(crate) struct RowRecognition {
 /// only after at least one row produced text (i.e. never with the null
 /// engine).
 pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<RowRecognition> {
-    // Settings gate FIRST — roster recognition switched off in the app's
-    // settings must skip the whole pipeline (no crops, no OCR): the anchor
-    // then keeps `row_players = None`, which the frontend reads as the
-    // historical index mapping.
-    if super::overlay_config::roster_recognition_off() {
+    // Settings gate FIRST — only the `ocr` mode runs the OCR pipeline (the
+    // inferred mode derives its mapping from the sort rule, `off` skips
+    // attribution): the anchor then keeps `row_players = None`, which the
+    // frontend reads as the inferred/historical mapping.
+    if super::overlay_config::roster_mode() != super::overlay_config::RosterRecognition::Ocr {
         return None;
     }
     // Env gate — with no engine configured this is the whole function.
@@ -484,23 +499,29 @@ mod tests {
     }
 
     #[test]
-    fn settings_roster_off_beats_the_env_default() {
-        // The settings switch (`overlay-config.toml` `roster`) takes
-        // precedence over the env default: with the env UNSET — the default
-        // that enables recognition on Windows whenever the OS engine is
-        // constructible — a config `off` still disables the pipeline. On
-        // non-Windows builds the env default is already off, so the config
-        // merely agrees with it.
+    fn ocr_runs_only_in_the_ocr_mode() {
+        // The settings mode (`overlay-config.toml` `roster`) gates the OCR
+        // pipeline before the env is even consulted: only `ocr` leaves the
+        // env in charge — `inferred` derives its mapping without OCR and
+        // `off` skips attribution, so neither may report active even when
+        // the machine has a working engine and the env would enable it.
+        use crate::commands::overlay_config::RosterRecognition;
+        assert!(!ocr_active_with(RosterRecognition::Inferred));
+        assert!(!ocr_active_with(RosterRecognition::Off));
+        // Within the `ocr` mode the env default decides, exactly as before:
+        // on Windows enabled iff the engine is constructible; on
+        // non-Windows builds the env default is off.
         #[cfg(target_os = "windows")]
         {
             if row_ocr_windows::WindowsOcrRecognizer::acquire().is_some() {
                 assert!(
-                    recognizer_enabled_with(false),
+                    ocr_active_with(RosterRecognition::Ocr),
                     "env default (unset) enables recognition when the engine exists"
                 );
             }
         }
-        assert!(!recognizer_enabled_with(true));
+        #[cfg(not(target_os = "windows"))]
+        assert!(!ocr_active_with(RosterRecognition::Ocr));
     }
 
     #[test]

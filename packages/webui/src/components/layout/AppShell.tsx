@@ -2,13 +2,13 @@ import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import {
-  HBlockingToast,
-  HCheckbox,
-  HDrawer,
-  HErrorBoundary,
-  HModal,
-  HScrollContainer,
-  HToast,
+  HkBlockingToast,
+  HkCheckbox,
+  HkDrawer,
+  HkErrorBoundary,
+  HkModal,
+  HkScrollContainer,
+  HkToast,
   useBreakpoint,
 } from "@celestia-island/hikari";
 
@@ -39,7 +39,7 @@ import "./AppShell.scss";
 /**
  * Root layout shell: sidebar (left) + main content (right). Loads accounts +
  * starts the game-status poller on mount. Listens for the Rust close-requested
- * event to show a quit-vs-minimize confirm dialog (HModal with a footer
+ * event to show a quit-vs-minimize confirm dialog (HkModal with a footer
  * action group), unless a choice was already remembered in the closeBehavior
  * store (the same one the settings' closeBehavior section edits) — then that
  * action runs straight away. On first launch (until completed) it also runs
@@ -294,7 +294,7 @@ export default defineComponent({
           // entry on open, so the Android back gesture (and the desktop
           // browser's back) closes it before anything else; route changes
           // close it via the watcher above.
-          <HDrawer
+          <HkDrawer
             modelValue={navUi.open}
             onUpdate:modelValue={(v: boolean) => (navUi.open = v)}
             side="left"
@@ -302,7 +302,7 @@ export default defineComponent({
             size="min(18.75rem, 84vw)"
           >
             <Sidebar variant="drawer" />
-          </HDrawer>
+          </HkDrawer>
         ) : (
           <Sidebar />
         )}
@@ -310,8 +310,8 @@ export default defineComponent({
           {/* Shared page scroll region: the hikari scroll container owns the
               scrollbar (auto-hiding overlay track on the window's right edge)
               and every routed page scrolls inside its viewport. */}
-          <HScrollContainer class="app-shell__scroll">
-            <HErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
+          <HkScrollContainer class="app-shell__scroll">
+            <HkErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
               <router-view
                 v-slots={{
                   default: ({ Component, route }: { Component: unknown; route: { path: string } }) => (
@@ -321,21 +321,21 @@ export default defineComponent({
                   ),
                 }}
               />
-            </HErrorBoundary>
-          </HScrollContainer>
+            </HkErrorBoundary>
+          </HkScrollContainer>
         </main>
-        <HToast />
+        <HkToast />
         {/* Blocking-toast host: mounts right after the transient stack so
             the update prompt card paints above it (hikari's shell
             convention — the two share one top-right column). */}
-        <HBlockingToast />
+        <HkBlockingToast />
         {/* Updater pass card (download / install progress): renders nothing
             while the store is idle, so it mounts unconditionally next to
             the blocking host in the same top-right column. */}
         <UpdateToast />
 
         {/* Close confirm dialog — footer carries the action button group. */}
-        <HModal
+        <HkModal
           modelValue={showCloseDialog.value}
           onUpdate:modelValue={(v: boolean) => (showCloseDialog.value = v)}
           title={t("tray.closeTitle")}
@@ -359,7 +359,7 @@ export default defineComponent({
             default: () => (
               <div class="close-dialog__body">
                 <p class="close-dialog__msg">{t("tray.closeMsg")}</p>
-                <HCheckbox
+                <HkCheckbox
                   modelValue={rememberChoice.value}
                   onUpdate:modelValue={(v: boolean) => (rememberChoice.value = v)}
                   label={t("tray.remember")}
@@ -367,7 +367,7 @@ export default defineComponent({
               </div>
             ),
           }}
-        </HModal>
+        </HkModal>
 
         {/* First-launch setup wizard — a non-closable window on the shared
             modal shell; the only way forward is finishing it (its first step

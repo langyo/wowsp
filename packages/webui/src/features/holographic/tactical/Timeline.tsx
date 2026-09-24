@@ -22,7 +22,7 @@ import {
   type PropType,
 } from "vue";
 import { ChevronsLeft, Pause, Play, Plus, ZoomIn, ZoomOut } from "@lucide/vue";
-import { HIconButton, HTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
 import { i18n, t as i18nT } from "@/i18n";
 import type { TacticalStep } from "./types";
 import type { ShipAction } from "./actions";
@@ -802,44 +802,44 @@ export default defineComponent({
       <div class="tac-timeline" onClick={(e: MouseEvent) => e.stopPropagation()}>
         <div class="tac-timeline__head">
           <div class="tac-timeline__transport">
-            <HTooltip text={i18nT("replay.tactical.steps.prev")} placement="top">
-              <HIconButton size={24} onClick={() => props.stepPrev()}>
+            <HkTooltip text={i18nT("replay.tactical.steps.prev")} placement="top">
+              <HkIconButton size={24} onClick={() => props.stepPrev()}>
                 <ChevronsLeft size={13} />
-              </HIconButton>
-            </HTooltip>
-            <HTooltip text={i18nT("replay.tactical.steps.add")} placement="top">
-              <HIconButton size={24} variant="primary" onClick={() => props.addStep()}>
+              </HkIconButton>
+            </HkTooltip>
+            <HkTooltip text={i18nT("replay.tactical.steps.add")} placement="top">
+              <HkIconButton size={24} variant="primary" onClick={() => props.addStep()}>
                 <Plus size={13} />
-              </HIconButton>
-            </HTooltip>
-            <HTooltip
+              </HkIconButton>
+            </HkTooltip>
+            <HkTooltip
               text={i18nT(props.presentMode ? "replay.tactical.steps.presentStop" : "replay.tactical.steps.present")}
               placement="top"
             >
-              <HIconButton size={24} variant={props.presentMode ? "danger" : "ghost"} onClick={() => props.togglePresent()}>
+              <HkIconButton size={24} variant={props.presentMode ? "danger" : "ghost"} onClick={() => props.togglePresent()}>
                 {props.presentMode ? <Pause size={13} /> : <Play size={13} />}
-              </HIconButton>
-            </HTooltip>
-            <HTooltip text={i18nT("replay.tactical.steps.next")} placement="top">
-              <HIconButton size={24} onClick={() => props.stepNext()}>
+              </HkIconButton>
+            </HkTooltip>
+            <HkTooltip text={i18nT("replay.tactical.steps.next")} placement="top">
+              <HkIconButton size={24} onClick={() => props.stepNext()}>
                 <ChevronsLeft size={13} style={{ transform: "scaleX(-1)" }} />
-              </HIconButton>
-            </HTooltip>
+              </HkIconButton>
+            </HkTooltip>
           </div>
           <span class="tac-timeline__clock">
             T+{fmtClock(props.getTime())} / {fmtClock(duration.value)}
           </span>
           <div class="tac-timeline__zoom">
-            <HTooltip text={i18nT("replay.tactical.timeline.zoomOut")} placement="top">
-              <HIconButton size={24} onClick={() => zoomStep(1 / 1.6)}>
+            <HkTooltip text={i18nT("replay.tactical.timeline.zoomOut")} placement="top">
+              <HkIconButton size={24} onClick={() => zoomStep(1 / 1.6)}>
                 <ZoomOut size={13} />
-              </HIconButton>
-            </HTooltip>
-            <HTooltip text={i18nT("replay.tactical.timeline.zoomIn")} placement="top">
-              <HIconButton size={24} onClick={() => zoomStep(1.6)}>
+              </HkIconButton>
+            </HkTooltip>
+            <HkTooltip text={i18nT("replay.tactical.timeline.zoomIn")} placement="top">
+              <HkIconButton size={24} onClick={() => zoomStep(1.6)}>
                 <ZoomIn size={13} />
-              </HIconButton>
-            </HTooltip>
+              </HkIconButton>
+            </HkTooltip>
             <button
               class="tac-timeline__fit"
               title={i18nT("replay.tactical.timeline.zoomFit")}

@@ -1333,6 +1333,7 @@ mod tests {
             row_alive: None,
             row_players_pending: false,
             stale: false,
+            roster_mode: String::new(),
         }
     }
 
@@ -1833,6 +1834,9 @@ pub(crate) fn build_anchor(
         row_alive: None,
         row_players_pending: false,
         stale: false,
+        // Set to the live settings mode at EMIT time (place_and_show) —
+        // construction-time anchors are mode-agnostic.
+        roster_mode: String::new(),
     };
     (overlay, anchor)
 }

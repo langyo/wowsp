@@ -290,6 +290,15 @@ pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the Windows OCR engine could be built on this machine (an
+/// installed OCR language pack) — the settings UI probes this once to offer
+/// the `ocr` roster mode or gray it out. Desktop only (no overlay on
+/// mobile), `false` everywhere the engine does not exist.
+#[tauri::command]
+pub async fn overlay_ocr_available() -> bool {
+    row_recognize::engine_available()
+}
+
 /// Show or hide the overlay window manually (debug / settings preview). The
 /// Tab watcher is the authoritative visibility driver in normal operation.
 /// NEVER focuses the overlay — focus must stay on the game while playing.
@@ -534,7 +543,10 @@ fn manual_row_centers(rect: &Rect, team_sizes: (usize, usize)) -> Vec<i32> {
 /// ON PURPOSE: the OCR pipeline is not run on a hand-drawn box — the per-row
 /// player count comes from the roster and need not match the drawn rows, so
 /// an index guess could pin the wrong stats onto chips. Honest silence (no
-/// chips on an off-count row) beats confidently wrong data.
+/// chips on an off-count row) beats confidently wrong data. In the inferred
+/// mode the overlay page goes one better and names the rows itself from the
+/// verified sort rule (the drawn grid mirrors the roster's team sizes, the
+/// same closed-set contract the automatic flow deduces from).
 fn build_manual_anchor(m: &ManualAnchor, game_screen: Rect) -> OverlayAnchor {
     let rows = manual_row_centers(&m.rect, m.team_sizes);
     let (_, anchor) = overlay_detect::build_anchor(&game_screen, &m.rect, rows, 0.5, true);
@@ -1250,7 +1262,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             } else if should_catch_up_recognition(
                 Some(&anchor),
                 fsm.stale,
-                row_recognize::recognizer_enabled(),
+                row_recognize::ocr_active(),
                 fsm.last_catch_up.is_none_or(|t| {
                     t.elapsed()
                         >= if fsm.stale {
@@ -1883,9 +1895,15 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
         return;
     };
     let sunk = alive.iter().filter(|&&v| !v).count();
-    // A row's alive flag settled: update the pin, re-place (chips gray out
-    // + re-sort + tab-order re-emitted when the mapping is trusted), flag
-    // stale, and arm the fast OCR re-map.
+    // A row's alive flag settled: update the pin and re-place. In the OCR
+    // mode the names→rows attribution is stale until the re-read lands, so
+    // the pin flags stale and the fast OCR re-map re-derives the (re-sorted)
+    // mapping. The INFERRED mode needs no re-read at all: the overlay page
+    // re-derives its mapping from the alive vector the moment this anchor
+    // lands ([alive by sort rule] ++ [sunk by sort rule] — the same
+    // permutation the game just applied), so no stale badge, no remap.
+    let inferred =
+        super::overlay_config::roster_mode() == super::overlay_config::RosterRecognition::Inferred;
     let mut updated = fsm
         .pinned_anchor
         .as_ref()
@@ -1893,16 +1911,19 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
         .anchor
         .clone();
     updated.row_alive = Some(alive);
-    fsm.stale = true;
-    fsm.last_catch_up = None;
+    if !inferred {
+        fsm.stale = true;
+        fsm.last_catch_up = None;
+    }
     if let Some(pin) = fsm.pinned_anchor.as_mut() {
         pin.anchor = updated.clone();
     }
-    place_and_show(app, &updated, true);
+    place_and_show(app, &updated, !inferred);
     tracing::info!(
         sunk,
         rows = updated.row_centers.len(),
-        "sink probe: alive flags changed — pin updated, stale, fast re-map armed"
+        inferred,
+        "sink probe: alive flags changed — pin updated"
     );
 }
 
@@ -1956,6 +1977,11 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor, stale: bool) {
     };
     let mut payload = anchor.clone();
     payload.stale = stale;
+    // The attribution mode rides on EVERY emitted anchor (single emit point,
+    // manual anchors included): the overlay page branches on it per render,
+    // so a settings flip applies from the next Tab press on — no window
+    // reload, no extra event.
+    payload.roster_mode = super::overlay_config::roster_mode().as_str().to_string();
     if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, &payload) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
     }
@@ -2225,19 +2251,31 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
             },
         }
     };
-    // Row → player-name recognition. Runs on the DETECTED capture-relative
-    // geometry, before build_anchor re-bases it to the overlay origin; ON by
-    // default (WOWSP_ROW_RECOGNIZER, engine `windows-ocr`) and a no-op then
-    // only when it fails — the anchor keeps row_players = None, which the
-    // frontend reads as the historical index mapping. Explicitly disabled
-    // with the settings switch (`overlay-config.toml` `roster: "off"`) or
-    // the env (`off` / `null`). Every failure inside degrades to None and
-    // must never disturb the anchor flow. `ally_rows` is the SAME
-    // team_sizes read the detection grid above was built from — the single
-    // source of truth for the pipeline's block split. The payload carries
-    // BOTH the matched names and the per-row alive/sunk classification read
-    // off the same name strips (sunk rows render dim gray).
-    let row_state = if detected {
+    // Row attribution, per the settings mode. All three run on the DETECTED
+    // capture-relative geometry, before build_anchor re-bases it to the
+    // overlay origin. `ally_rows` is the SAME team_sizes read the detection
+    // grid above was built from — the single source of truth for the block
+    // split.
+    //
+    // - `ocr`: the Windows OCR pipeline names the rows and classifies them
+    //   alive/sunk off the same name strips. Every failure inside degrades
+    //   to None and must never disturb the anchor flow.
+    // - `inferred` (default): NO OCR — the overlay page derives the
+    //   row→name mapping from the verified Tab sort rule over the roster,
+    //   so this side only contributes the per-row alive/sunk classification
+    //   (pure luma, no text recognition). The mapping it implies is exact
+    //   for the group structure the game renders and leaves only the
+    //   within-(class, tier) ties to chance.
+    // - `off`: neither — the frontend falls back to the historical index
+    //   mapping, all rows read alive.
+    let mode = super::overlay_config::roster_mode();
+    let row_state = if !detected {
+        None
+    } else if mode == super::overlay_config::RosterRecognition::Inferred {
+        let alive =
+            overlay_detect::read_row_alive(&rgba, w, h, &roster_rel, &rows, split, team_sizes.0);
+        Some((None, alive))
+    } else {
         row_recognize::recognize_row_players(&row_recognize::RowFrame {
             rgba: &rgba,
             width: w,
@@ -2247,8 +2285,7 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
             team_split: split,
             ally_rows: team_sizes.0,
         })
-    } else {
-        None
+        .map(|s| (Some(s.names), s.alive))
     };
     let (overlay, mut anchor) = overlay_detect::build_anchor(
         &rect_from_win32(game.rect),
@@ -2257,18 +2294,20 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
         split,
         detected,
     );
-    anchor.row_players = row_state.as_ref().map(|s| s.names.clone());
-    anchor.row_alive = row_state.map(|s| s.alive);
-    // Pending flag: recognition is ENABLED but this anchor carries no
-    // trusted row→name mapping yet — the arena roster was not ready, OCR
-    // read nothing, or no row's text matched the roster (an all-`None` vec
-    // is honest silence, NOT a trusted mapping). The overlay shows its
-    // "recognizing roster" badge and the watcher keeps re-running
-    // recognition (catch-up) until something actually matches. Manual
-    // anchors never reach this code and keep the serde-default false; with
-    // recognition off the engine gate is false as well.
-    anchor.row_players_pending =
-        row_recognize::recognizer_enabled() && mapping_untrusted(&anchor.row_players);
+    let (names, alive) = match row_state {
+        Some((n, a)) => (Some(n), Some(a)),
+        None => (None, None),
+    };
+    anchor.row_players = names.flatten();
+    anchor.row_alive = alive;
+    // Pending flag: only the OCR mode can be "still working on names" — the
+    // inferred mode's mapping is derived the moment the roster exists and
+    // `off` never names rows. (An all-`None` OCR vec is honest silence, NOT
+    // a trusted mapping.) Manual anchors never reach this code and keep the
+    // serde-default false.
+    anchor.row_players_pending = mode == super::overlay_config::RosterRecognition::Ocr
+        && row_recognize::ocr_active()
+        && mapping_untrusted(&anchor.row_players);
     tracing::info!(
         detected,
         overlay = format!(
@@ -2698,6 +2737,7 @@ mod tests {
             row_alive: None,
             row_players_pending: pending,
             stale: false,
+            roster_mode: String::new(),
         }
     }
 

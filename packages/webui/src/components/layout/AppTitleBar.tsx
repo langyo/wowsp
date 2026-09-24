@@ -1,5 +1,5 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
-import { HTitleBar } from "@celestia-island/hikari";
+import { HkTitleBar } from "@celestia-island/hikari";
 import { Menu } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -9,7 +9,7 @@ import { t } from "@/i18n";
 import "./AppTitleBar.scss";
 
 /**
- * WoWSP shell around hikari's HTitleBar. The upstream component is
+ * WoWSP shell around hikari's HkTitleBar. The upstream component is
  * deliberately shell-agnostic — it renders the bar and emits caption
  * events; this wrapper wires them to the Tauri window (webui talks to the
  * npm `@tauri-apps/api`), tracks the maximized state for the restore
@@ -21,7 +21,7 @@ import "./AppTitleBar.scss";
  * settings gear there) pass through verbatim; their clicks surface as the
  * `action` emit with the button's id.
  *
- * The title block is provided through HTitleBar's `left` slot so a nav
+ * The title block is provided through HkTitleBar's `left` slot so a nav
  * hamburger can ride ahead of it — hidden above 767px (desktop is
  * pixel-identical to the upstream default) and toggling the phone-layout
  * nav drawer below. On the phone app build the window caption buttons
@@ -98,7 +98,7 @@ export default defineComponent({
         onPointerdown={onPointerDown}
         onDblclick={onDblClick}
       >
-        <HTitleBar
+        <HkTitleBar
           icon={props.icon}
           title={props.title}
           subtitle={props.subtitle}

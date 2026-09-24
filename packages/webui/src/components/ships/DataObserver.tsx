@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, type PropType } from "vue";
 import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
-import { HIconButtonGroup } from "@celestia-island/hikari";
+import { HkIconButtonGroup } from "@celestia-island/hikari";
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { t } from "@/i18n";
@@ -13,7 +13,7 @@ import "./DataObserver.scss";
  * ship's base specs change after applying the current build (skills + flags +
  * upgrades) at the selected HP level.
  *
- * One category is visible at a time, picked via an HIconButtonGroup strip —
+ * One category is visible at a time, picked via an HkIconButtonGroup strip —
  * the panel is only 300px wide, so stacking every group made it an endless
  * scroll. buildShipSpecs already omits empty groups (destroyers get no
  * Anti-Air block), so the selector only ever offers what THIS ship has.
@@ -125,7 +125,7 @@ export default defineComponent({
       return (
         <div class="data-observer">
           {options.length > 0 ? (
-            <HIconButtonGroup
+            <HkIconButtonGroup
               mode="single"
               size="sm"
               options={options}

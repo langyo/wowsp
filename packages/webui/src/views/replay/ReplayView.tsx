@@ -39,7 +39,7 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HButton, HScrollPin, HSpinner, useToast } from "@celestia-island/hikari";
+import { HkButton, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -121,7 +121,7 @@ function rosterStatCols(
       tip = t("replay.botNote");
       body = <em>—</em>;
     } else if (!stat || loading) {
-      body = <HSpinner size="xs" tone="current" />;
+      body = <HkSpinner size="xs" tone="current" />;
     } else {
       const v = pick(stat);
       if (v == null) {
@@ -438,7 +438,7 @@ const PostBattlePanel = defineComponent({
                   <div class="replay-view__postbattle-global">
                     {globalLoading.value ? (
                       <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                        <HSpinner size="md" tone="current" />
+                        <HkSpinner size="md" tone="current" />
                       </span>
                     ) : globalStats.value ? (
                       <StatsCard stats={globalStats.value} />
@@ -786,7 +786,7 @@ const PostBattleFallbackPanel = defineComponent({
                     <div class="replay-view__postbattle-global">
                       {globalLoading.value ? (
                         <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                          <HSpinner size="md" tone="current" />
+                          <HkSpinner size="md" tone="current" />
                         </span>
                       ) : globalStats.value ? (
                         <StatsCard stats={globalStats.value} />
@@ -1183,14 +1183,14 @@ const ChatLogPanel = defineComponent({
       return (
         <>
           {/* Pinned above the scroll: the timeline (and its legend) rides an
-              HScrollPin so the message list scrolls underneath it instead of
+              HkScrollPin so the message list scrolls underneath it instead of
               carrying it away. Bleed contract: the pin must stay the FIRST
               element of the scroll body (host class + pad var on
               __modal-body), and the timeline keeps its gap as padding so the
               pin's painted box covers it. */}
-          <HScrollPin side="top">
+          <HkScrollPin side="top">
             <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
-          </HScrollPin>
+          </HkScrollPin>
           <ul class="replay-view__chat-list">
             {rows.value.map((r, i) => (
               <li key={i} class={["replay-view__chat-row", `replay-view__chat-row--${r.channel}`]}>
@@ -1260,7 +1260,7 @@ const ChatLogPanel = defineComponent({
                     <div class="replay-view__postbattle-global">
                       {globalLoading.value ? (
                         <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                          <HSpinner size="md" tone="current" />
+                          <HkSpinner size="md" tone="current" />
                         </span>
                       ) : globalStats.value ? (
                         <StatsCard stats={globalStats.value} />
@@ -1775,7 +1775,7 @@ export default defineComponent({
                     {/* Phone build: the native pick dialog is unavailable
                         (pick_replay_files errors on mobile) — the HTML file
                         input + pairing wizard take over. */}
-                    <HButton
+                    <HkButton
                       size="sm"
                       variant="ghost"
                       loading={importing.value}
@@ -1783,18 +1783,18 @@ export default defineComponent({
                       ariaLabel={t("replay.acquire.pickFiles")}
                     >
                       <FileUp size={14} />
-                    </HButton>
-                    <HButton
+                    </HkButton>
+                    <HkButton
                       size="sm"
                       variant="ghost"
                       onClick={() => (wizardOpen.value = true)}
                       ariaLabel={t("replay.acquire.fromDesktop")}
                     >
                       <Laptop size={14} />
-                    </HButton>
+                    </HkButton>
                   </>
                 ) : (
-                  <HButton
+                  <HkButton
                     size="sm"
                     variant="ghost"
                     loading={openingExternal.value}
@@ -1802,9 +1802,9 @@ export default defineComponent({
                     ariaLabel={t("replay.list.openExternal")}
                   >
                     <FolderOpen size={14} />
-                  </HButton>
+                  </HkButton>
                 )}
-                <HButton
+                <HkButton
                   size="sm"
                   variant="ghost"
                   disabled={(!hasClient.value && !isMobileApp()) || refreshing.value}
@@ -1812,7 +1812,7 @@ export default defineComponent({
                   ariaLabel={t("replay.refresh")}
                 >
                   <RefreshCw size={14} class={refreshing.value ? "replay-view__spin" : ""} />
-                </HButton>
+                </HkButton>
               </span>
             </div>
 
@@ -1840,21 +1840,21 @@ export default defineComponent({
                   <p class="replay-view__acquire-title">{t("replay.acquire.emptyTitle")}</p>
                   <p class="replay-view__acquire-hint">{t("replay.acquire.emptyHint")}</p>
                   <div class="replay-view__acquire-actions">
-                    <HButton
+                    <HkButton
                       variant="primary"
                       loading={importing.value}
                       onClick={onPickFiles}
                     >
                       <FileUp size={15} />
                       {t("replay.acquire.pickFiles")}
-                    </HButton>
-                    <HButton
+                    </HkButton>
+                    <HkButton
                       variant="secondary"
                       onClick={() => (wizardOpen.value = true)}
                     >
                       <Laptop size={15} />
                       {t("replay.acquire.fromDesktop")}
-                    </HButton>
+                    </HkButton>
                   </div>
                 </div>
               ) : !hasClient.value ? (
@@ -1919,7 +1919,7 @@ export default defineComponent({
                 {resultsLoading.value ? (
                   <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
                     {t("replay.results")}
-                    <HSpinner size="xs" tone="current" />
+                    <HkSpinner size="xs" tone="current" />
                   </span>
                 ) : battleResults.value || trajectories.value.length > 0 ? (
                   <button
@@ -2085,7 +2085,7 @@ export default defineComponent({
         ) : null}
 
         {/* Phone-build pairing wizard (sheet-driven; docks as a bottom sheet
-            on phone layout through hikari's HModal). */}
+            on phone layout through hikari's HkModal). */}
         <PairingWizard
           open={wizardOpen.value}
           onClose={() => (wizardOpen.value = false)}

@@ -7,8 +7,12 @@
 //!   the pixel-detected team table; `"off"` disables the whole Tab overlay:
 //!   the webui never creates the overlay window, and the Rust Tab watcher
 //!   (belt-and-suspenders — see `watch_tab_tick`) suppresses every show.
-//! - `roster` — roster recognition. `"ocr"` (default) keeps the Windows OCR
-//!   row→name pipeline; `"off"` skips it entirely — the anchor carries no
+//! - `roster` — roster attribution. `"inferred"` (default) derives the
+//!   row→name mapping from the verified Tab sort rule (class rank, then
+//!   tier descending, then ship id) over the roster plus the luma probe's
+//!   alive flags — no OCR at all; `"ocr"` keeps the Windows OCR row→name
+//!   pipeline (exact, but unavailable on systems without an OCR language
+//!   pack); `"off"` skips attribution entirely — the anchor carries no
 //!   `row_players` payload, the overlay page falls back to the historical
 //!   roster/index order, and no "recognizing roster" pending badge is ever
 //!   reported.
@@ -35,8 +39,8 @@
 //! cache bounds the disk traffic (the watcher asks on every ~30 ms tick),
 //! and every failure degrades to the defaults instead of blocking or
 //! panicking the watcher thread. Precedence against the `WOWSP_ROW_RECOGNIZER`
-//! env lives in `row_recognize::recognizer_enabled`: config `off` always
-//! wins; config `ocr`/absent leaves the env-based dev override in charge.
+//! env lives in `row_recognize::ocr_active`: only the `ocr` mode lets the
+//! env pick (or disable) the engine — `inferred` and `off` never run it.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -55,7 +59,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"ocr\" | \"off\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"inferred\" | \"ocr\" | \"off\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -76,7 +80,14 @@ pub(crate) enum TableAnchor {
 /// Roster recognition switch (schema v2 `roster` field).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RosterRecognition {
-    /// Windows OCR row→name matching — the current default pipeline.
+    /// Rule-inferred row→name mapping (the default and preferred mode): the
+    /// verified Tab sort rule (class rank, then tier descending, then ship
+    /// id) turns the roster plus the luma probe's per-row alive flags into
+    /// the row order with ZERO OCR — the overlay page derives the mapping
+    /// itself from the arena roster the anchor's `row_alive` vector.
+    Inferred,
+    /// Windows OCR row→name matching — the exact-but-fragile fallback (the
+    /// settings UI offers it only when the OS OCR engine is available).
     Ocr,
     /// Recognition off: chips follow the roster/index order.
     Off,
@@ -92,8 +103,9 @@ impl TableAnchor {
 }
 
 impl RosterRecognition {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
+            RosterRecognition::Inferred => "inferred",
             RosterRecognition::Ocr => "ocr",
             RosterRecognition::Off => "off",
         }
@@ -112,7 +124,7 @@ impl Default for OverlayConfig {
     fn default() -> Self {
         Self {
             table: TableAnchor::Detect,
-            roster: RosterRecognition::Ocr,
+            roster: RosterRecognition::Inferred,
         }
     }
 }
@@ -132,9 +144,10 @@ fn parse_table_field(raw: &str) -> TableAnchor {
 /// Parse the v2 `roster` field with the same unknown-value contract.
 fn parse_roster_field(raw: &str) -> RosterRecognition {
     match raw {
+        "ocr" => RosterRecognition::Ocr,
         "off" => RosterRecognition::Off,
-        // "ocr" and anything unrecognized (incl. future values).
-        _ => RosterRecognition::Ocr,
+        // "inferred" and anything unrecognized (incl. future values).
+        _ => RosterRecognition::Inferred,
     }
 }
 
@@ -160,7 +173,7 @@ fn resolve_fields(fields: RawOverlayFields) -> OverlayConfig {
     };
     let roster = match fields.roster.as_deref() {
         Some(raw) => parse_roster_field(raw),
-        None => RosterRecognition::Ocr,
+        None => RosterRecognition::Inferred,
     };
     OverlayConfig { table, roster }
 }
@@ -293,9 +306,10 @@ pub(crate) fn current() -> OverlayConfig {
     cfg
 }
 
-/// Whether roster recognition is switched OFF in the user's settings.
-pub(crate) fn roster_recognition_off() -> bool {
-    current().roster == RosterRecognition::Off
+/// The roster attribution mode in force: the overlay pipeline (and, via the
+/// anchor payload, the overlay page) branches on this.
+pub(crate) fn roster_mode() -> RosterRecognition {
+    current().roster
 }
 
 /// Whether the whole Tab overlay (table anchoring) is switched OFF.
@@ -378,10 +392,13 @@ mod tests {
         let cfg = parse_config(r#"{"table":"detect","roster":"off"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Off);
+        let cfg = parse_config(r#"{"roster":"inferred"}"#);
+        assert_eq!(cfg.roster, RosterRecognition::Inferred);
     }
 
-    /// v1 migration: `{enabled:true}` → detect + ocr, `{enabled:false}` →
-    /// off + ocr (recognition had no v1 switch and keeps its default).
+    /// v1 migration: `{enabled:true}` → detect + inferred,
+    /// `{enabled:false}` → off + inferred (recognition had no v1 switch and
+    /// keeps its default).
     #[test]
     fn migrates_legacy_enabled() {
         let cfg = parse_config(r#"{"enabled":true}"#);
@@ -389,7 +406,7 @@ mod tests {
             cfg,
             OverlayConfig {
                 table: TableAnchor::Detect,
-                roster: RosterRecognition::Ocr,
+                roster: RosterRecognition::Inferred,
             }
         );
         let cfg = parse_config(r#"{"enabled":false}"#);
@@ -397,7 +414,7 @@ mod tests {
             cfg,
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Ocr,
+                roster: RosterRecognition::Inferred,
             }
         );
     }
@@ -410,7 +427,7 @@ mod tests {
                 parse_config(raw),
                 OverlayConfig {
                     table: TableAnchor::Detect,
-                    roster: RosterRecognition::Ocr,
+                    roster: RosterRecognition::Inferred,
                 },
                 "raw: {raw:?}"
             );
@@ -424,10 +441,10 @@ mod tests {
     fn unknown_values_fall_back_per_field() {
         let cfg = parse_config(r#"{"table":"plugin","roster":"plugin"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
-        assert_eq!(cfg.roster, RosterRecognition::Ocr);
+        assert_eq!(cfg.roster, RosterRecognition::Inferred);
         let cfg = parse_config(r#"{"table":42,"roster":null}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
-        assert_eq!(cfg.roster, RosterRecognition::Ocr);
+        assert_eq!(cfg.roster, RosterRecognition::Inferred);
         // v2 field present wins over a leftover legacy `enabled: false`.
         let cfg = parse_config(r#"{"enabled":false,"table":"detect"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
@@ -461,7 +478,7 @@ mod tests {
             resolve_fields(fields_from_toml("enabled = false\n")),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Ocr,
+                roster: RosterRecognition::Inferred,
             }
         );
     }
