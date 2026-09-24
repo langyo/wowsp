@@ -299,17 +299,6 @@ pub(crate) fn bucket_by_version(snapshots: &[StatsSnapshot]) -> Vec<TrendBucket>
         .collect()
 }
 
-/// Filter patches to those affecting a given ship (by `ship_ids` membership).
-/// Used by the ship-detail modal to annotate the trend chart with balance
-/// changes that touched the viewed ship.
-#[allow(dead_code)]
-pub(crate) fn patches_for_ship(patches: &[PatchNote], ship_id: i64) -> Vec<&PatchNote> {
-    patches
-        .iter()
-        .filter(|p| p.ship_ids.contains(&ship_id))
-        .collect()
-}
-
 fn mean(xs: &[f32]) -> f32 {
     if xs.is_empty() {
         return 0.0;
@@ -425,31 +414,6 @@ mod tests {
         assert!((buckets[0].winrate_max - 55.0).abs() < 0.01);
         assert_eq!(buckets[0].pr_avg, None);
         assert_eq!(buckets[0].battle_delta, 0, "single snapshot → no delta");
-    }
-
-    #[test]
-    fn patches_for_ship_filters_by_ship_id() {
-        let patches = vec![
-            PatchNote {
-                version: "0.11.4".into(),
-                date: "2024-01-01".into(),
-                ship_ids: vec![100, 200],
-                summary: "Buffed BB accuracy".into(),
-                changes: vec![],
-            },
-            PatchNote {
-                version: "0.11.5".into(),
-                date: "2024-02-01".into(),
-                ship_ids: vec![300],
-                summary: "Nerfed DD concealment".into(),
-                changes: vec![],
-            },
-        ];
-        let for_100 = patches_for_ship(&patches, 100);
-        assert_eq!(for_100.len(), 1);
-        assert_eq!(for_100[0].version, "0.11.4");
-        let for_999 = patches_for_ship(&patches, 999);
-        assert_eq!(for_999.len(), 0);
     }
 
     #[test]
