@@ -7,11 +7,51 @@
 // useSolarTime (deleted in the hikari sync) — same API surface, upstream
 // maintained.
 
-/** Display order of the shipped color presets, shared by the settings
- *  appearance section and the onboarding wizard: Nord first (also the boot
- *  default — index.html declares __celestiaDefaultTheme so a stored id that
- *  no longer resolves snaps here), Synthwave '84 deliberately last. */
-export const THEME_PRESET_ORDER = ["nord", "gruvbox", "tokyonight", "synthwave84"] as const;
+// Imported as well as re-exported (below): an indirect `export … from`
+// binds no local name, and themePresetIds reads the table per call.
+import { themePresets } from "@celestia-island/hikari";
+
+/** Preferred display order of the shipped color presets, shared by the
+ *  settings appearance section and the onboarding wizard: Nord first,
+ *  Synthwave '84 deliberately last, and hikari's collapsed `default` pair
+ *  after the ids it retired (see themePresetIds). Naming an id here states a
+ *  PREFERENCE, never a whitelist of what a picker may show. */
+export const THEME_PRESET_ORDER = [
+  "nord",
+  "gruvbox",
+  "tokyonight",
+  "synthwave84",
+  "default",
+] as const;
+
+/**
+ * The preset ids a picker may show, derived from the LIVE hikari preset
+ * table: every preset the table carries, in THEME_PRESET_ORDER where that
+ * order names it and in table order for anything else. Resolved per call
+ * (the idiom hikari itself uses for its scheme-editor seed), so the list
+ * follows whatever table the running build ends up with.
+ *
+ * What this replaces: hikari collapsed its four stock presets into a single
+ * `default` (0.55.61 — the SAME 0.55.x minor, so it is already inside this
+ * package's `^0.55.53` range and arrives on a routine lock refresh). The
+ * settings row kept a whitelist of the four retired ids and filtered it
+ * against the table; the wizard mapped that same whitelist and dropped every
+ * id whose tokens no longer resolved. Either way the collapsed table left
+ * both rows with ZERO cards — no error, nothing that fails a build. Deriving
+ * the list from the table yields the shipped presets on both sides of the
+ * collapse (four before it, one after) and is never empty while the table
+ * holds anything.
+ *
+ * `known` is the seam that pins BOTH shipped tables in tests (the
+ * pre-collapse four ids and the collapsed one); production callers pass
+ * nothing and read the installed table.
+ */
+export function themePresetIds(known: readonly string[] = Object.keys(themePresets)): string[] {
+  const present = new Set(known);
+  const ordered: string[] = THEME_PRESET_ORDER.filter((id) => present.has(id));
+  const named = new Set(ordered);
+  return [...ordered, ...known.filter((id) => !named.has(id))];
+}
 
 export {
   initTheme,
