@@ -158,7 +158,28 @@
     "manualDragHint": "Drag to box-select the scoreboard area in the game window",
     "manualConfirm": "Confirm",
     "manualCancel": "Cancel",
-    "manualTooSmall": "Selection is too small"
+    "manualTooSmall": "Selection is too small",
+    "param": {
+      "mainGun": "Main",
+      "secondary": "Secondary",
+      "aa": "AA",
+      "torpedo": "Torpedoes",
+      "airstrike": "Airstrike",
+      "concealment": "Concealment",
+      "speed": "Speed"
+    },
+    "card": {
+      "loadout": "Loadout & upgrades",
+      "consumables": "Consumable slots",
+      "upgrades": "Researchable modules",
+      "upgradesNone": "Fully researched (no modules left)",
+      "flags": "Signal flag capacity",
+      "commander": "Legendary commander (nation)",
+      "loadoutNote": "Ship capability only — actual loadouts are not exposed by the battle data",
+      "enemyNote": "Enemy loadout info is hidden by policy",
+      "noData": "No parameters for this ship"
+    },
+    "tier": "Tier"
   },
   "postbattle": {
     "loadingGlobal": "Loading {name}'s global stats…",

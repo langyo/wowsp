@@ -1,0 +1,221 @@
+/* Ship-identity strip riding the middle of each live-battle roster card, and
+   the teleported hover combat card. Tokens mirror LiveBattlePanel.scss. */
+
+.live-ship-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  padding: 0 4px;
+  align-self: stretch;
+
+  /* Tier roman / class code / nation flag. */
+  &__id {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+  }
+
+  &__tier {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5em;
+    padding: 0 3px;
+    border-radius: 4px;
+    background: rgb(var(--color-primary, 96 165 250) / 22%);
+    color: rgb(var(--color-primary, 96 165 250));
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  &__type {
+    color: rgb(var(--color-text) / 0.5);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  &__chips {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 5px;
+    min-width: 0;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgb(var(--color-text) / 0.06);
+    font-size: var(--text-2xs);
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+
+  &__chip-label {
+    color: rgb(var(--color-text) / 0.45);
+  }
+
+  &__chip-value {
+    color: rgb(var(--color-text) / 0.85);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  &__badges {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+    min-width: 0;
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 5px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-success, 74 222 128) / 35%);
+    color: rgb(var(--color-success, 74 222 128));
+    font-size: 10px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  &__badge--upg {
+    border-color: rgb(var(--color-text) / 25%);
+    color: rgb(var(--color-text) / 65%);
+  }
+
+  &__badge--flag {
+    border-color: rgb(var(--color-warning, 251 191 36) / 40%);
+    color: rgb(var(--color-warning, 251 191 36));
+  }
+}
+
+/* ── Hover combat card (teleported to <body>, fixed position) ───────────── */
+
+.live-ship-card {
+  position: fixed;
+  /* Above the app shell and the floating band (--z-floating: 50), below
+     hikari modals (1000+) so a modal opening over the panel wins. */
+  z-index: 60;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 0.7rem 0.85rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--color-text) / 14%);
+  /* Solid: the card floats over live roster rows — anything translucent lets
+     them ghost through the text. */
+  background: rgb(var(--color-bg, 15 23 42));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  color: rgb(var(--color-text));
+  font-size: var(--text-xs);
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 0.45rem;
+    margin-bottom: 0.45rem;
+    border-bottom: 1px solid rgb(var(--color-text) / 10%);
+    font-size: var(--text-sm);
+  }
+
+  &__tier {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.7em;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: rgb(var(--color-primary, 96 165 250) / 22%);
+    color: rgb(var(--color-primary, 96 165 250));
+    font-weight: 700;
+  }
+
+  &__type {
+    color: rgb(var(--color-text) / 0.6);
+    font-size: var(--text-2xs);
+  }
+
+  &__enemy-note {
+    margin-left: auto;
+    color: rgb(var(--color-text) / 0.45);
+    font-size: var(--text-2xs);
+  }
+
+  &__groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem 0.9rem;
+  }
+
+  &__group-title {
+    color: rgb(var(--color-text) / 0.45);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.06em;
+    margin-bottom: 2px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    line-height: 1.7;
+  }
+
+  &__row-label {
+    color: rgb(var(--color-text) / 0.6);
+    white-space: nowrap;
+  }
+
+  &__row-value {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__empty {
+    margin: 0.2rem 0 0;
+    color: rgb(var(--color-text) / 0.5);
+  }
+
+  &__loadout {
+    margin-top: 0.55rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgb(var(--color-text) / 10%);
+  }
+
+  &__line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin: 0;
+    line-height: 1.7;
+  }
+
+  &__line-label {
+    flex: none;
+    min-width: 5.5em;
+    color: rgb(var(--color-text) / 0.45);
+    font-size: var(--text-2xs);
+  }
+
+  &__note {
+    margin: 0.35rem 0 0;
+    color: rgb(var(--color-text) / 0.4);
+    font-size: var(--text-2xs);
+    line-height: 1.5;
+  }
+}

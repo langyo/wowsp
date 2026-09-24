@@ -281,7 +281,11 @@
     "depthChargeDamage": "Daño de cargas de profundidad",
     "depthChargePacks": "Lotes de cargas",
     "depthChargeBombs": "Bombas por lote",
-    "depthChargeReload": "Recarga de cargas"
+    "depthChargeReload": "Recarga de cargas",
+    "secondaryRange": "Alcance de la artillería secundaria",
+    "aswRange": "Alcance del ataque aéreo",
+    "aswCharges": "Cargas de ataque aéreo",
+    "aswReload": "Recarga del ataque aéreo"
   },
   "skills": {
     "title": "Editor de habilidades del capitán",
@@ -471,6 +475,21 @@
     "showing": "Mostrando los primeros {shown} de {total}",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "Equipo de reparación",
+    "crashCrew": "Equipo de control de daños",
+    "spotter": "Avión de observación",
+    "fighter": "Caza catapultado",
+    "smoke": "Generador de humo",
+    "speedBoost": "Acelerador",
+    "hydro": "Búsqueda hidroacústica",
+    "radar": "Radar",
+    "hydrophone": "Hidrófono",
+    "subLocator": "Localizador de submarinos",
+    "torpReload": "Potenciador de torpedos",
+    "artyReload": "Potenciador de batería principal",
+    "defensiveAA": "Fuego AA defensivo"
+  },
   "techTree": {
     "title": "Árbol tecnológico",
     "branch": "Rama",
@@ -541,5 +560,14 @@
     "downloadStart": "La vista 3D necesita el paquete de modelos (~1,2 GB) — descarga iniciada…",
     "ready": "Paquete de modelos listo",
     "failed": "Falló la descarga del paquete de modelos — inténtalo más tarde"
+  },
+  "module": {
+    "fireControl": "Control de tiro",
+    "sonar": "Sonar",
+    "fighter": "Caza",
+    "diveBomber": "Bombardero en picado",
+    "torpedoBomber": "Torpedero",
+    "skipBomber": "Bombardero de rebote",
+    "flightControl": "Control de vuelo"
   }
 }

@@ -1,8 +1,12 @@
 /**
- * Live-battle panel (the first item in the replay rail while the game is
- * running). Shows the current battle's mode, map, roster with per-player
- * WR / PR (fetched via the shared roster batch pipeline — see
- * `composables/useRosterStats.ts`) and the elapsed battle clock.
+ * Live-battle panel (the /live page body). Shows the current battle's mode,
+ * map, roster with per-player WR / PR (fetched via the shared roster batch
+ * pipeline — see `composables/useRosterStats.ts`) and the elapsed battle
+ * clock. Every row's middle ground carries the ship's combat card
+ * (`LiveShipMeta` — tier, class, nation, parameter ranges, and on ally rows
+ * the consumable/module/flag summary); hovering it floats the condensed ship
+ * card. The panel's head title is the /live page title (the view itself has
+ * no header — it used to duplicate this one).
  *
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
@@ -18,6 +22,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
+import LiveShipMeta from "./LiveShipMeta";
 import { WaitingRadarArt } from "./liveGuideArt";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
@@ -340,6 +345,10 @@ export default defineComponent({
         const content = (
           <>
             {main}
+            {/* Ship identity + parameters ride the card's middle ground;
+                ally rows additionally carry the consumable/module/flag
+                summary. Enemies get parameters only. */}
+            <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
             {seal}
           </>
         );
@@ -363,7 +372,9 @@ export default defineComponent({
       return (
         <div class="live-battle">
           <div class="live-battle__head live-battle__head--status">
-            <span class="live-battle__title">{t("replay.live.title")}</span>
+            {/* The page title — the only "实时对局" on screen (the view-level
+                duplicate was dropped; see LiveView). */}
+            <h1 class="live-battle__title">{t("replay.live.title")}</h1>
             {props.ended ? (
               <span class="live-battle__pill live-battle__pill--ended">
                 {t("replay.live.ended")}

@@ -281,7 +281,11 @@
     "depthChargeDamage": "深弹伤害",
     "depthChargePacks": "深弹组数",
     "depthChargeBombs": "每组深弹数",
-    "depthChargeReload": "深弹装填"
+    "depthChargeReload": "深弹装填",
+    "secondaryRange": "副炮射程",
+    "aswRange": "空袭距离",
+    "aswCharges": "空袭次数",
+    "aswReload": "空袭装填"
   },
   "skills": {
     "title": "舰长加点模拟",
@@ -471,6 +475,21 @@
     "showing": "显示前 {shown} 艘 / 共 {total} 艘",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "维修小组",
+    "crashCrew": "损管小组",
+    "spotter": "侦察机",
+    "fighter": "战斗机",
+    "smoke": "发烟器",
+    "speedBoost": "引擎增压",
+    "hydro": "水听器",
+    "radar": "雷达",
+    "hydrophone": "水听器（潜艇）",
+    "subLocator": "潜艇探测",
+    "torpReload": "鱼雷装填助推器",
+    "artyReload": "主炮装填助推器",
+    "defensiveAA": "防空弹幕"
+  },
   "techTree": {
     "title": "科技树",
     "branch": "分支",
@@ -541,5 +560,14 @@
     "downloadStart": "3D 视图需要下载模型资源包（约 1.2 GB），已开始下载…",
     "ready": "模型资源包就绪",
     "failed": "模型资源包下载失败，请稍后重试"
+  },
+  "module": {
+    "fireControl": "射击系统",
+    "sonar": "声呐",
+    "fighter": "战斗机",
+    "diveBomber": "俯冲轰炸机",
+    "torpedoBomber": "鱼雷机",
+    "skipBomber": "跳弹轰炸机",
+    "flightControl": "飞行控制"
   }
 }

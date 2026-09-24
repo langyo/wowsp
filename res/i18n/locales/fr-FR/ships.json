@@ -281,7 +281,11 @@
     "depthChargeDamage": "Dégâts des charges de profondeur",
     "depthChargePacks": "Lots de charges",
     "depthChargeBombs": "Bombes par lot",
-    "depthChargeReload": "Rechargement des charges"
+    "depthChargeReload": "Rechargement des charges",
+    "secondaryRange": "Portée de l'artillerie secondaire",
+    "aswRange": "Portée de la frappe aérienne",
+    "aswCharges": "Charges de frappe aérienne",
+    "aswReload": "Rechargement de la frappe aérienne"
   },
   "skills": {
     "title": "Planificateur de compétences de commandant",
@@ -471,6 +475,21 @@
     "showing": "{shown} premiers affichés sur {total}",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "Équipe de réparation",
+    "crashCrew": "Équipe de contrôle des dégâts",
+    "spotter": "Avion de repérage",
+    "fighter": "Chasseur catapulté",
+    "smoke": "Fumigène",
+    "speedBoost": "Accélérateur",
+    "hydro": "Recherche hydroacoustique",
+    "radar": "Radar",
+    "hydrophone": "Hydrophone",
+    "subLocator": "Localisateur de sous-marins",
+    "torpReload": "Boosteur de torpilles",
+    "artyReload": "Boosteur d'artillerie principale",
+    "defensiveAA": "Feu AA défensif"
+  },
   "techTree": {
     "title": "Arbre technologique",
     "branch": "Branche",
@@ -541,5 +560,14 @@
     "downloadStart": "La vue 3D nécessite le pack de modèles (~1,2 Go) — téléchargement lancé…",
     "ready": "Pack de modèles prêt",
     "failed": "Échec du téléchargement du pack de modèles — réessayez plus tard"
+  },
+  "module": {
+    "fireControl": "Conduite de tir",
+    "sonar": "Sonar",
+    "fighter": "Chasseur",
+    "diveBomber": "Bombardier en piqué",
+    "torpedoBomber": "Bombardier-torpilleur",
+    "skipBomber": "Bombardier à ricochet",
+    "flightControl": "Contrôle aérien"
   }
 }

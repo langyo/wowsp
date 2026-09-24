@@ -158,7 +158,28 @@
     "manualDragHint": "마우스 왼쪽 버튼을 드래그해 게임 내 전적 표를 선택하세요",
     "manualConfirm": "확인",
     "manualCancel": "취소",
-    "manualTooSmall": "선택 영역이 너무 작습니다"
+    "manualTooSmall": "선택 영역이 너무 작습니다",
+    "param": {
+      "mainGun": "주포",
+      "secondary": "부포",
+      "aa": "대공",
+      "torpedo": "어뢰",
+      "airstrike": "공습",
+      "concealment": "은폐",
+      "speed": "속력"
+    },
+    "card": {
+      "loadout": "장비 및 업그레이드",
+      "consumables": "소모품 슬롯",
+      "upgrades": "연구 가능한 장비",
+      "upgradesNone": "연구 완료(남은 장비 없음)",
+      "flags": "신호기 최대 개수",
+      "commander": "해당 국가 전설 함장",
+      "loadoutNote": "함선 구성 가능 항목만 표시합니다. 실제 장비 구성은 전투 데이터로 확인할 수 없습니다",
+      "enemyNote": "규칙에 따라 적 함선의 장비 정보는 표시하지 않습니다",
+      "noData": "이 함선의 제원이 없습니다"
+    },
+    "tier": "티어"
   },
   "postbattle": {
     "loadingGlobal": "{name}의 전체 전적을 불러오는 중…",

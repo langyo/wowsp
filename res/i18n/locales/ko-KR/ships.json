@@ -281,7 +281,11 @@
     "depthChargeDamage": "폭뢰 피해",
     "depthChargePacks": "폭뢰 세트 수",
     "depthChargeBombs": "세트당 폭뢰 수",
-    "depthChargeReload": "폭뢰 장전"
+    "depthChargeReload": "폭뢰 장전",
+    "secondaryRange": "부포 사거리",
+    "aswRange": "공습 사거리",
+    "aswCharges": "공습 횟수",
+    "aswReload": "공습 재장전"
   },
   "skills": {
     "title": "함장 스킬 시뮬레이터",
@@ -471,6 +475,21 @@
     "showing": "처음 {shown}척 표시 / 총 {total}척",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "수리반",
+    "crashCrew": "손상 관리팀",
+    "spotter": "정찰기",
+    "fighter": "전투기",
+    "smoke": "연막 발생기",
+    "speedBoost": "엔진 부스트",
+    "hydro": "수중 음파 탐지",
+    "radar": "레이더",
+    "hydrophone": "수중청음기",
+    "subLocator": "잠수함 탐지기",
+    "torpReload": "어뢰 재장전 부스터",
+    "artyReload": "주포 재장전 부스터",
+    "defensiveAA": "대공 탄막"
+  },
   "techTree": {
     "title": "테크 트리",
     "branch": "분기",
@@ -541,5 +560,14 @@
     "downloadStart": "3D 보기에는 모델 팩(약 1.2 GB)이 필요합니다 — 다운로드를 시작했습니다…",
     "ready": "모델 팩 준비 완료",
     "failed": "모델 팩 다운로드 실패 — 나중에 다시 시도하세요"
+  },
+  "module": {
+    "fireControl": "사격 통제 장치",
+    "sonar": "소나",
+    "fighter": "전투기",
+    "diveBomber": "급강하 폭격기",
+    "torpedoBomber": "뇌격기",
+    "skipBomber": "도탄 폭격기",
+    "flightControl": "항공 통제"
   }
 }
