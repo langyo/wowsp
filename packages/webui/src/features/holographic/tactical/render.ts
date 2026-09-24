@@ -28,7 +28,7 @@ import {
   sliceSegmentByFraction,
   smoothPolyline,
 } from "./geometry";
-import { planTweenTargets, type PlanTweenTarget } from "./plan";
+import { planNextActionT, planTweenTargets, type PlanTweenTarget } from "./plan";
 import { trajectoryPolylines } from "./replayPath";
 
 /** Logical map space the enlarged 2D view draws in (matches zoomCanvas). */
@@ -261,6 +261,17 @@ export function planTweensOf(elements: TacticalElement[]): Map<string, PlanTween
   return out;
 }
 
+/** Takeover seconds per plan action, memoized like the tween targets. */
+const nextCache = new WeakMap<object, Map<string, number>>();
+
+export function planNextOf(elements: TacticalElement[]): Map<string, number> {
+  const hit = nextCache.get(elements);
+  if (hit) return hit;
+  const out = planNextActionT(elements);
+  nextCache.set(elements, out);
+  return out;
+}
+
 function drawElement(
   ctx: CanvasRenderingContext2D,
   el: TacticalElement,
@@ -370,6 +381,11 @@ function drawElement(
     }
     case "marker": {
       const tween = planTweensOf(opts.elements).get(el.id) ?? null;
+      // One unit = one hull at any second: once a later action of the same
+      // unit has taken over, this keyframe keeps drawing its leg (the unit's
+      // course is worth keeping on screen) but no longer its glyph.
+      const handover = planNextOf(opts.elements).get(el.id);
+      const owns = handover == null || handover > t || mode !== "normal";
       // Scripted routes: dashed guide line + the marker sailing along it.
       if (el.route != null && el.route.length >= 2) {
         const routePts = cachedSmooth(el, el.route, () => smoothPolyline(el.route!));
@@ -382,8 +398,8 @@ function drawElement(
         ctx.setLineDash([]);
         ctx.globalAlpha = alpha;
       } else if (tween && mode === "normal") {
-        // Auto tween: the straight leg this action travels, dashed, ending in
-        // an arrowhead plus an arrival ring on the spot it is ordered to (the
+        // Leg: the straight line this action travels, dashed, ending in an
+        // arrowhead plus an arrival ring on the spot it is ordered to (the
         // map twin of the timeline's tween arrow). Faded once the unit has
         // arrived — a travelled leg is history, not plan.
         const lw = Math.max(1.2, el.size / 28);
@@ -406,6 +422,7 @@ function drawElement(
         ctx.stroke();
         ctx.globalAlpha = alpha;
       }
+      if (!owns) break;
       const scripted = el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0;
       const pose = scripted
         ? pointAlongPolyline(

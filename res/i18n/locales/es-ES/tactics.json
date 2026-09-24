@@ -22,7 +22,6 @@
     "filterEmpty": "Aún no hay mapas para este modo: juega algunas batallas y aparecerán aquí."
   },
   "select": "Selecciona un mapa para empezar el análisis",
-  "noArt": "Este mapa no tiene material de minimapa",
   "plan": {
     "noBounds": "Este mapa no tiene datos de extensión, así que no se puede trazar un plan táctico sobre él."
   }

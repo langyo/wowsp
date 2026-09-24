@@ -254,7 +254,9 @@ export default defineComponent({
                                 title={
                                   legacy
                                     ? t("tactics.badge.legacyTip", {
-                                        name: displayMapName(legacy.replacedBy, dataLanguage.value),
+                                        // Both generations share a display name,
+                                        // so the id is what tells them apart.
+                                        name: `${displayMapName(legacy.replacedBy, dataLanguage.value)} · ${legacy.replacedBy}`,
                                       })
                                     : undefined
                                 }

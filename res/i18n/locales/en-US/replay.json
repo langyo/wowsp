@@ -337,7 +337,8 @@
       "unitN": "Unit {n}",
       "actionCount": "{n} actions",
       "collapse": "Click to collapse",
-      "expand": "Click to expand"
+      "expand": "Click to expand",
+      "hiddenUnits": "…and {n} more units (band full)"
     }
   },
   "chatLog": "Battle chat",

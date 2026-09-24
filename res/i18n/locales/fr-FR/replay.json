@@ -337,7 +337,8 @@
       "unitN": "Unité {n}",
       "actionCount": "{n} actions",
       "collapse": "Cliquer pour réduire",
-      "expand": "Cliquer pour déplier"
+      "expand": "Cliquer pour déplier",
+      "hiddenUnits": "…et {n} unités de plus (bande pleine)"
     }
   },
   "chatLog": "Chat de bataille",

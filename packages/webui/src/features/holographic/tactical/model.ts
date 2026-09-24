@@ -28,7 +28,7 @@ import {
   simplifyRDP,
   smoothPolyline,
 } from "./geometry";
-import { ACTION_KINDS, isInterpolatedKind } from "./plan";
+import { ACTION_KINDS } from "./plan";
 
 let _idSeq = 0;
 
@@ -134,9 +134,10 @@ export function commitRouteMarker(
 }
 
 /** Where a marker sits at battle time t. Explicit motion wins over plan
- *  tweening: a scripted route interpolates along its smoothed polyline, else a
- *  `move` action with a tween target sails straight to the unit's next action
- *  (arriving exactly at its second) and holds there afterwards. */
+ *  tweening: a scripted route interpolates along its smoothed polyline — the
+ *  hand-drawn path being the more specific instruction — else a leg target
+ *  sails the hull straight to the unit's next action (arriving exactly on its
+ *  second) and holds there afterwards. */
 export function markerPoseAt(
   el: MarkerElement,
   t: number,
@@ -146,7 +147,7 @@ export function markerPoseAt(
     const frac = Math.max(0, Math.min(1, (t - el.t0) / el.moveDur));
     return pointAlongPolyline(el.route, frac);
   }
-  if (tween && tween.t > el.t0 && el.action != null && isInterpolatedKind(el.action)) {
+  if (tween && tween.t > el.t0 && el.action != null) {
     const frac = Math.max(0, Math.min(1, (t - el.t0) / (tween.t - el.t0)));
     const dx = tween.at.x - el.at.x;
     const dz = tween.at.z - el.at.z;

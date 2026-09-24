@@ -337,7 +337,8 @@
       "unitN": "유닛 {n}",
       "actionCount": "행동 {n}개",
       "collapse": "클릭하여 접기",
-      "expand": "클릭하여 펼치기"
+      "expand": "클릭하여 펼치기",
+      "hiddenUnits": "…외 {n}개 유닛(트랙 가득 참)"
     }
   },
   "chatLog": "채팅 기록",

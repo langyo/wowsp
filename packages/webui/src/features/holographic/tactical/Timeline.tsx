@@ -34,6 +34,7 @@ import {
   fullWindow,
   layoutMarkers,
   layoutPlanRows,
+  planBandHeight,
   rulerTicks,
   zoomWindow,
   type TimeWindow,
@@ -71,8 +72,10 @@ export interface TimelineUserMarker {
 
 const RULER_H = 20;
 const LANES_H = 78;
-/** Plan-board bands: room for accordion rows and a real progress bar. */
+/** Plan-board bands: room for accordion rows and a real progress bar. The
+ *  lanes grow with the plan (one row per unit) up to the tall cap. */
 const LANES_H_TALL = 172;
+const LANES_H_TALL_MAX = 320;
 const OVERVIEW_H = 18;
 const OVERVIEW_H_TALL = 30;
 const PAD = 4;
@@ -142,7 +145,15 @@ export default defineComponent({
     );
 
     const duration = computed(() => Math.max(0.001, props.getDuration()));
-    const lanesH = computed(() => (props.tall ? LANES_H_TALL : LANES_H));
+    /** Expanded (visible-body) unit count, for the band sizing below. */
+    const expandedUnits = computed(
+      () => props.tracks.filter((t) => !collapsed.value.has(t.key)).length,
+    );
+    const lanesH = computed(() =>
+      props.tall
+        ? planBandHeight(props.tracks.length, expandedUnits.value, LANES_H_TALL, LANES_H_TALL_MAX)
+        : LANES_H,
+    );
     const overviewH = computed(() => (props.tall ? OVERVIEW_H_TALL : OVERVIEW_H));
     const canvasH = computed(() => RULER_H + lanesH.value + overviewH.value + PAD);
     const overviewTop = computed(() => RULER_H + lanesH.value + PAD / 2);
@@ -178,11 +189,12 @@ export default defineComponent({
     });
     const dense = computed(() => !planMode.value && laidActions.value.length > DENSITY_LIMIT);
 
-    /** Row band geometry (header on top, keyframe body below it). */
+    /** Row band geometry (header on top, keyframe body below it); null for a
+     *  row the band had no room for. */
     function rowGeometry(index: number): RowGeometry | null {
       const row = rows.value[index];
       const track = props.tracks[index];
-      if (!row || !track) return null;
+      if (!row || !track || row.hidden) return null;
       return {
         track,
         top: RULER_H + row.top,
@@ -191,6 +203,8 @@ export default defineComponent({
         collapsed: row.collapsed,
       };
     }
+    /** Units the band could not host at all (drawn as a "+N" count). */
+    const hiddenUnits = computed(() => rows.value.filter((r) => r.hidden).length);
     /** Y a track's keyframes and tween arrows sit on (header centre when the
      *  row is collapsed and has no body). */
     function rowCenterY(geo: RowGeometry): number {
@@ -244,7 +258,10 @@ export default defineComponent({
     function frame(): void {
       raf = requestAnimationFrame(frame);
       const t = props.getTime();
-      const key = `${t.toFixed(2)}|${win.value.start.toFixed(2)}|${win.value.end.toFixed(2)}|${width.value}|${laidActions.value.length}|${props.steps.length}|${props.userMarkers.length}|${props.tracks.length}|${collapsed.value.size}|${lanesH.value}|${props.currentStepIndex}|${props.getPlaying()}`;
+      // The locale belongs in the key: canvas strings (unit labels, action
+      // counts) are painted outside any reactive effect, so a language switch
+      // would otherwise keep the old wording until the next scrub.
+      const key = `${t.toFixed(2)}|${win.value.start.toFixed(2)}|${win.value.end.toFixed(2)}|${width.value}|${laidActions.value.length}|${props.steps.length}|${props.userMarkers.length}|${props.tracks.length}|${collapsed.value.size}|${lanesH.value}|${props.currentStepIndex}|${props.getPlaying()}|${i18nT("nav.tactics")}`;
       if (key === lastKey) return;
       lastKey = key;
       draw();
@@ -297,6 +314,23 @@ export default defineComponent({
         lanesTop + 10 + row * ((lanesH.value - 20) / Math.max(1, MAX_ROWS - 1));
       if (planMode.value) {
         for (let i = 0; i < props.tracks.length; i++) drawTrack(ctx, W, i);
+        if (hiddenUnits.value > 0) {
+          // Rows the band could not host: said out loud instead of clipped
+          // (and never hit-tested — rowGeometry returns null for them).
+          const label = i18nT("replay.tactical.plan.hiddenUnits", { n: hiddenUnits.value });
+          ctx.font = "600 9px ui-sans-serif, system-ui, sans-serif";
+          const tw = ctx.measureText(label).width;
+          const bx = W - tw - 12;
+          const by = RULER_H + lanesH.value - 16;
+          ctx.fillStyle = "rgba(5, 8, 15, 0.78)";
+          ctx.beginPath();
+          ctx.roundRect(bx, by, tw + 8, 14, 7);
+          ctx.fill();
+          ctx.fillStyle = PLAN_TRACK_COLORS.headerText;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, bx + 4, by + 7.5);
+        }
       } else if (dense.value) {
         const buckets = Math.max(1, Math.floor(W / 3));
         const counts = new Array<number>(buckets).fill(0);
@@ -360,12 +394,16 @@ export default defineComponent({
       for (const m of props.userMarkers) bump(m.t0);
       for (const track of props.tracks) for (const a of track.actions) bump(a.t);
       const max = Math.max(...counts, 1);
-      // Played progress under the density: the strip reads as a real bar.
-      const playedX = (props.getTime() / Math.max(1e-6, dur)) * W;
-      ctx.fillStyle = "rgba(0, 195, 255, 0.18)";
-      ctx.beginPath();
-      ctx.roundRect(0, ovY, Math.max(0, playedX), ovH, 4);
-      ctx.fill();
+      // Played progress under the density: on the PLAN board the strip is the
+      // progress bar itself, so it reads as a real one. (The replay strip
+      // keeps its master look.)
+      if (props.tall) {
+        const playedX = (props.getTime() / Math.max(1e-6, dur)) * W;
+        ctx.fillStyle = "rgba(0, 195, 255, 0.18)";
+        ctx.beginPath();
+        ctx.roundRect(0, ovY, Math.max(0, playedX), ovH, 4);
+        ctx.fill();
+      }
       ctx.fillStyle = "rgba(148, 163, 184, 0.4)";
       for (let b = 0; b < buckets; b++) {
         if (!counts[b]) continue;
@@ -436,7 +474,26 @@ export default defineComponent({
       }
       const bodyY = top + headerH + bodyH / 2;
       const t = props.getTime();
-      // Tween arrows first so keyframes sit on top of their spans.
+      // Connectors first: a dotted hairline where the unit JUMPS (two marks
+      // with no leg between them — the author left out the travel), then the
+      // tween arrows, then the keyframes on top of both.
+      for (const a of track.actions) {
+        if (a.nextT == null || a.tweenEndT != null) continue;
+        const x0 = timeToX(a.t);
+        const x1 = timeToX(a.nextT);
+        if (x1 < -20 || x0 > W + 20) continue;
+        ctx.save();
+        ctx.strokeStyle = track.color;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x0, bodyY);
+        ctx.lineTo(x1, bodyY);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // Tween arrows.
       for (const a of track.actions) {
         if (a.tweenEndT == null) continue;
         const x0 = timeToX(a.t);

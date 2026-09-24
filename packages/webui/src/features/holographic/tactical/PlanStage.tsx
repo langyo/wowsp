@@ -19,7 +19,6 @@ import {
   onMounted,
   ref,
   watch,
-  type PropType,
 } from "vue";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
 import { t as i18nT } from "@/i18n";
@@ -276,6 +275,7 @@ export default defineComponent({
     //    art only when one of them actually changed. ─────────────────────
     let raf = 0;
     let last = 0;
+    let lastDpr = 0;
     function frame(now: number): void {
       raf = requestAnimationFrame(frame);
       const dt = last ? Math.min(0.25, (now - last) / 1000) : 0;
@@ -290,6 +290,14 @@ export default defineComponent({
         }
       }
       if (advanceViewTween()) dirty.value = true;
+      // The backing store is sized in DEVICE px: dragging the window onto a
+      // different-DPR monitor changes no CSS size, so the art would stay at
+      // the old resolution unless the ratio itself invalidates the paint.
+      const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      if (dpr !== lastDpr) {
+        lastDpr = dpr;
+        dirty.value = true;
+      }
       if (dirty.value) {
         dirty.value = false;
         paintArt();
@@ -382,5 +390,3 @@ export default defineComponent({
     );
   },
 });
-
-export type { MapBounds };

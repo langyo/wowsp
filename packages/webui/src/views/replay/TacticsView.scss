@@ -141,32 +141,6 @@
   &__warning-text {
     margin: 0;
   }
-
-  /* Map art fills the remaining pane height, contained on a dark backdrop
-     (minimap pngs are dark-by-dark — same near-black as the modal backdrop
-     in ReplayView). */
-  &__art {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-md);
-    background: rgb(2 4 8 / 55%);
-    border: 1px solid rgb(var(--color-border) / 18%);
-    overflow: hidden;
-  }
-
-  &__art-img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  &__no-art {
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-  }
 }
 
 /* ── Map card (rail entry) ───────────────────────────────────────────────── */

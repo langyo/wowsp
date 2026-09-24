@@ -337,7 +337,8 @@
       "unitN": "单位 {n}",
       "actionCount": "{n} 个动作",
       "collapse": "点击折叠",
-      "expand": "点击展开"
+      "expand": "点击展开",
+      "hiddenUnits": "…另有 {n} 个单位（轨道已满）"
     }
   },
   "chatLog": "聊天记录",

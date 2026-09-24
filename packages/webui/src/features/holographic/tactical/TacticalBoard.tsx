@@ -27,6 +27,7 @@ import type { ShipAction } from "./actions";
 import { planTracks as planTracksOf, type PlanTrack } from "./plan";
 import {
   makeProjection,
+  planNextOf,
   planTweensOf,
   renderTactical,
   TACTICAL_SIZE,
@@ -203,7 +204,10 @@ export default defineComponent({
             kind: "path",
             solid: props.planMode,
           });
-        } else if (el.kind === "marker" && el.action == null) {
+        } else if (el.kind === "marker" && (el.action == null || !props.planMode)) {
+          // Action markers belong to the accordion tracks on a plan board —
+          // but a plan document opened on the REPLAY board has no tracks, so
+          // there they stay ordinary markers (chips, tooltips, right-click).
           out.push({
             id: el.id,
             t0: el.t0,
@@ -508,13 +512,24 @@ export default defineComponent({
       const t = props.getTime();
       const padWorld = 10 * pr.worldPerPx * 1.6;
       const tweens = planTweensOf(store.elements.value);
+      const nexts = planNextOf(store.elements.value);
       for (let i = store.elements.value.length - 1; i >= 0; i--) {
         const el = store.elements.value[i];
+        if (!ownsUnitAt(el, t, nexts)) continue; // superseded: no glyph on screen
         if (hitTestElement(el, p, padWorld, t, tweens.get(el.id))) {
           store.removeElement(el.id);
           return;
         }
       }
+    }
+
+    /** Is this element's glyph on screen at time t? Plan chains draw only the
+     *  hull of the action that currently owns the unit (render.ts), so hit
+     *  testing and the eraser must skip the keyframes it has moved past. */
+    function ownsUnitAt(el: TacticalElement, t: number, nexts: Map<string, number>): boolean {
+      if (el.kind !== "marker" || el.action == null) return true;
+      const handover = nexts.get(el.id);
+      return handover == null || t < handover;
     }
 
     function onPointerMove(e: PointerEvent): void {
@@ -678,9 +693,11 @@ export default defineComponent({
       if (!target) return;
       if (target.kind === "text") openTextEditor(target.at, target.id);
       else if (target.kind === "marker") {
-        // Anchor at the marker's pose right now (a scripted one may be
-        // anywhere along its route, not at its route start).
-        openTextEditor(markerPoseAt(target, props.getTime()).at, target.id);
+        // Anchor at the marker's pose right now: a scripted one may be
+        // anywhere along its route and a plan action mid-leg is between its
+        // two marks — never at the authored `at`.
+        const tween = planTweensOf(store.elements.value).get(target.id) ?? null;
+        openTextEditor(markerPoseAt(target, props.getTime(), tween).at, target.id);
       }
     }
 
@@ -689,8 +706,10 @@ export default defineComponent({
       const t = props.getTime();
       const padWorld = Math.max(6, store.style.value.width) * pr.worldPerPx;
       const tweens = planTweensOf(store.elements.value);
+      const nexts = planNextOf(store.elements.value);
       for (let i = store.elements.value.length - 1; i >= 0; i--) {
         const el = store.elements.value[i];
+        if (!ownsUnitAt(el, t, nexts)) continue;
         if (hitTestElement(el, p, padWorld, t, tweens.get(el.id))) return el;
       }
       return null;

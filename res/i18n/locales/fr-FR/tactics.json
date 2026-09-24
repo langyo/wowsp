@@ -22,7 +22,6 @@
     "filterEmpty": "Aucune carte pour ce mode pour l'instant — jouez des batailles et elles apparaîtront ici."
   },
   "select": "Sélectionnez une carte pour commencer l'analyse",
-  "noArt": "Cette carte n'a pas de mini-carte",
   "plan": {
     "noBounds": "Cette carte n'a pas de données d'étendue, impossible d'y tracer un plan tactique."
   }

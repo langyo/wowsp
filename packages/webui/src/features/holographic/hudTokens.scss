@@ -6,6 +6,11 @@
  * plan stage can paint the same chrome without duplicating the ramp. */
 
 @mixin holo-hud-dark {
+  /* Board accent (selection, hover, tween head). Lives HERE and not on
+     .tac-layer because the toolbar and timeline are teleported out of the
+     board's subtree into the host's dock — where a var() set on the layer
+     would no longer be inherited. */
+  --tac-accent-rgb: 0, 195, 255;
   --holo-hud-bg: rgb(8 12 20 / 62%);
   --holo-hud-chip: rgb(0 0 0 / 40%);
   --holo-hud-menu: rgb(12 16 26 / 96%);
@@ -23,6 +28,7 @@
 
 @mixin holo-hud-light {
   /* Ink tones are DARK GREY (gray-700 family), never near-black. */
+  --tac-accent-rgb: 0, 130, 190;
   --holo-hud-bg: rgb(255 255 255 / 74%);
   --holo-hud-chip: rgb(255 255 255 / 62%);
   --holo-hud-menu: rgb(255 255 255 / 96%);

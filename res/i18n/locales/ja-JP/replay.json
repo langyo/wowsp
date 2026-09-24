@@ -337,7 +337,8 @@
       "unitN": "ユニット {n}",
       "actionCount": "アクション {n} 件",
       "collapse": "クリックで折りたたむ",
-      "expand": "クリックで展開"
+      "expand": "クリックで展開",
+      "hiddenUnits": "…ほか {n} ユニット（表示領域が満杯）"
     }
   },
   "chatLog": "チャット記録",

@@ -337,7 +337,8 @@
       "unitN": "單位 {n}",
       "actionCount": "{n} 個動作",
       "collapse": "點擊收合",
-      "expand": "點擊展開"
+      "expand": "點擊展開",
+      "hiddenUnits": "…另有 {n} 個單位（軌道已滿）"
     }
   },
   "chatLog": "聊天記錄",

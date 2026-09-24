@@ -166,12 +166,34 @@ export interface PlanRowLayout {
   headerH: number;
   bodyH: number;
   collapsed: boolean;
+  /** Too little band left to host this row: the caller must not draw or
+   *  hit-test it (the timeline reports the count instead of clipping rows
+   *  into invisible geometry). */
+  hidden: boolean;
+}
+
+/** Preferred body height for a plan row when the band has room to spare. */
+export const TRACK_BODY_PREF_H = 30;
+
+/** Band height a plan with `units` rows (of which `expanded` carry keyframes)
+ *  wants, clamped into `[min, max]`. The plan timeline grows with the plan
+ *  instead of squeezing rows out of sight, and stops at `max` so a runaway
+ *  plan cannot push the map off screen. */
+export function planBandHeight(
+  units: number,
+  expanded: number,
+  min: number,
+  max: number,
+): number {
+  const wanted = units * TRACK_HEADER_H + Math.max(0, expanded) * TRACK_BODY_PREF_H + 8;
+  return Math.max(min, Math.min(max, wanted));
 }
 
 /** Accordion layout for the plan tracks: every unit gets a header, expanded
  *  units additionally a body sized from the leftover height. Headers shrink
- *  (never the bodies) once a plan has more units than the band can host, so
- *  a row never escapes the band and nothing is silently clipped away. */
+ *  (never the bodies) once a plan has more units than the band can host, and
+ *  a row with no room left at all is flagged `hidden` rather than laid out
+ *  past the band — so nothing is ever half-drawn under the progress strip. */
 export function layoutPlanRows(
   keys: string[],
   collapsedKeys: ReadonlySet<string>,
@@ -195,8 +217,27 @@ export function layoutPlanRows(
   const out: PlanRowLayout[] = [];
   let top = 0;
   keys.forEach((key, i) => {
-    out.push({ key, top, headerH, bodyH: collapsed[i] ? 0 : bodyH, collapsed: collapsed[i] });
-    top += headerH + (collapsed[i] ? 0 : bodyH);
+    const rowH = headerH + (collapsed[i] ? 0 : bodyH);
+    if (top + rowH > lanesH + 1e-6) {
+      out.push({
+        key,
+        top: lanesH,
+        headerH: 0,
+        bodyH: 0,
+        collapsed: collapsed[i],
+        hidden: true,
+      });
+      return;
+    }
+    out.push({
+      key,
+      top,
+      headerH,
+      bodyH: collapsed[i] ? 0 : bodyH,
+      collapsed: collapsed[i],
+      hidden: false,
+    });
+    top += rowH;
   });
   return out;
 }

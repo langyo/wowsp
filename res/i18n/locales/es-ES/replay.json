@@ -337,7 +337,8 @@
       "unitN": "Unidad {n}",
       "actionCount": "{n} acciones",
       "collapse": "Clic para contraer",
-      "expand": "Clic para expandir"
+      "expand": "Clic para expandir",
+      "hiddenUnits": "…y {n} unidades más (banda llena)"
     }
   },
   "chatLog": "Chat de batalla",
