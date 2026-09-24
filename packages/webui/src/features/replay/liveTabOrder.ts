@@ -3,32 +3,37 @@
  *
  * The game orders each team's Tab rows as
  *
- *     [alive ships sorted by ship class] ++ [sunk ships sorted by ship class]
+ *     [alive ships] ++ [sunk ships], each block by
+ *     class rank (carrier < battleship < cruiser < destroyer < submarine),
+ *     then TIER DESCENDING inside the class
  *
- * and re-sorts live as ships sink — verified against ground-truth Tab dumps
- * (a sunk ship drops below every alive ship even when it shares its ship
- * type with them, and stays with its group's class order inside the sunk
- * block). tempArenaInfo.json is written once at battle start and never
- * reflects any of that, so two sources build the order here:
+ * and re-sorts live as ships sink — the block structure is verified against
+ * ground-truth Tab dumps (a sunk ship drops below every alive ship even when
+ * it shares its ship type with them, and stays with its group's class order
+ * inside the sunk block), and the tier-descending key is verified against
+ * captured frames of real battles (every class block of every captured frame
+ * listed its higher tiers first). tempArenaInfo.json is written once at
+ * battle start and never reflects any of that, so two sources build the
+ * order here:
  *
  *  - the `wowsp://tab-order` event (`TabRowPlayer[]` per side, matched by
  *    the battle's `dateTime`) — the EXACT on-screen row order plus per-row
  *    alive flags, read off the frame by the Tab watcher's recognition
  *    pass. Whenever it exists it wins;
- *  - otherwise a PREDICTED order: stable sort by ship class (the same
- *    convention the replay roster uses) with same-ship players adjacent,
- *    everyone treated as alive. This matches the game's initial layout for
- *    every battle whose Tab table nobody has held yet, and stays a sane
- *    approximation afterwards.
+ *  - otherwise a PREDICTED order: stable sort by class rank, then tier
+ *    descending, then ship id so same-ship players (the classic division)
+ *    stay adjacent, everyone treated as alive. This matches the game's
+ *    initial layout for every battle whose Tab table nobody has held yet,
+ *    and stays a sane approximation afterwards.
  *
- * The within-class tiebreak of the game's own sort is not derivable from
- * the arena file (it clusters players in ways the file does not record);
- * only the recognized row order is exact there — rows that did not match a
- * roster name keep their slot, and roster entries no row claims are
- * appended after the recognized ones in predicted order.
+ * The within-(class, tier) tiebreak of the game's own sort is not derivable
+ * from the arena file (checked against the captured frames: neither ship id
+ * nor nation explains it); only the recognized row order is exact there —
+ * rows that did not match a roster name keep their slot, and roster entries
+ * no row claims are appended after the recognized ones in predicted order.
  */
 import type { TabRowPlayer, VehicleEntry } from "@/api";
-import { shipClassRank } from "@/utils/shipClass";
+import { shipClassRank, shipTierWeight } from "@/utils/shipClass";
 
 /** One roster entry with its display state after Tab-ordering. */
 export interface TabOrderedVehicle {
@@ -47,11 +52,14 @@ export interface TabOrderedVehicle {
  *        trusted recognition pass exists for this battle (null otherwise).
  * @param rankOf ship-class rank injector (tests); defaults to the offline
  *        ship DB's class ranking.
+ * @param tierWeightOf ship-tier weight injector (tests); defaults to the
+ *        offline ship DB's tier weighting (higher tiers sort first).
  */
 export function orderForTab(
   list: VehicleEntry[],
   rows?: TabRowPlayer[] | null,
   rankOf: (shipId: number) => number = shipClassRank,
+  tierWeightOf: (shipId: number) => number = shipTierWeight,
 ): TabOrderedVehicle[] {
   const claimed = new Set<string>();
   const ordered: TabOrderedVehicle[] = [];
@@ -66,13 +74,15 @@ export function orderForTab(
   }
   // Roster entries no row claimed (recognition missed them, or no
   // recognition ran at all): predicted order — stable by class rank, then
-  // ship id so same-ship players (the classic division) stay adjacent.
+  // tier descending, then ship id so same-ship players (the classic
+  // division) stay adjacent.
   const rest = list
     .filter((v) => !claimed.has(v.name))
     .map((v, i) => ({ v, i }))
     .sort(
       (a, b) =>
         rankOf(a.v.shipId) - rankOf(b.v.shipId) ||
+        tierWeightOf(b.v.shipId) - tierWeightOf(a.v.shipId) ||
         a.v.shipId - b.v.shipId ||
         a.i - b.i,
     )
