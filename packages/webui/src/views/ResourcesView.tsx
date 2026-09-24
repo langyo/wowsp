@@ -3,28 +3,25 @@ import {
   AlertTriangle,
   AudioLines,
   ExternalLink,
-  FileCode,
   FolderSearch,
-  Globe,
-  Hash,
   ImageIcon,
-  PackageCheck,
-  Palette,
   Puzzle,
   RefreshCw,
-  ScrollText,
   Trash2,
 } from "@lucide/vue";
 
 import {
   HButton,
   HConfirmDialog,
+  HDrawer,
+  HIconButton,
   HSearchInput,
   HSwitch,
   HTabs,
   useToast,
 } from "@celestia-island/hikari";
 
+import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
 import {
   api,
   type CatalogEntry,
@@ -35,43 +32,49 @@ import {
   type PackagePlan,
   type TextureAnalysis,
 } from "@/api";
+import {
+  CATALOG_CATS,
+  KIND_BIG,
+  KIND_META,
+  KIND_ORDER,
+  catBig,
+  catIcon,
+  isCatalogCat,
+  type BigCat,
+  type CatalogCat,
+} from "@/features/modhub/taxonomy";
 import { openExternal } from "@/utils/openExternal";
 import { useConfigStore } from "@/stores/config";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
 
-const KIND_ORDER: ModKind[] = ["voice", "skin", "script", "gui", "patch", "textures"];
-
-/** lucide glyph + accent hue per plugin category. */
-const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> = {
-  voice: { icon: AudioLines, class: "voice" },
-  skin: { icon: Palette, class: "skin" },
-  script: { icon: FileCode, class: "script" },
-  gui: { icon: ImageIcon, class: "gui" },
-  patch: { icon: ScrollText, class: "patch" },
-  textures: { icon: PackageCheck, class: "textures" },
-};
-
-type CatalogCat = "battle" | "minimap" | "port" | "text" | "patch";
-const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text", "patch"];
-
-/** Top-level tabs (VSCode-marketplace style): the three former stacked
- *  sections become switchable views, the online catalog first. */
-type HubTab = "catalog" | "installed" | "local";
+/** Marketplace column: one big-category switch (function / texture / voice)
+ *  narrows BOTH sources, then a source switch (online / installed) picks the
+ *  list. Filters and the drawer hang off this pair instead of tabs. */
+type DrawerState =
+  | { mode: "catalog"; entry: CatalogEntry }
+  | { mode: "installed"; mod: InstalledMod }
+  | { mode: "local" };
 
 const REPO = "langyo/wowsp";
 
 /**
- * Mod Hub (Resources page).
+ * Mod Hub (Resources page) — VSCode-marketplace style.
  *
- * Top-level tabs pick the surface first, VSCode-marketplace style:
- * - Online catalog: curated tool-type plugins from `mod-index.json` (built
- *   from GitHub Discussions by scripts/mod_hub_publish.py). Install downloads
- *   the release asset, verifies SHA-256 and unpacks through the same pipeline
- *   as local installs.
- * - Installed: scan what is already under the latest `bin/<version>/res_mods/`.
- * - From folder: unpacked-package classifier flow (local zips still manual).
+ * A single centered column carries the whole hub: the big-category strip
+ * (function / texture / voice) narrows everything, the source strip swaps
+ * between the online catalog and installed mods, and the trailing search
+ * button opens the AsyncSearchCombo popup for direct jumps into entries.
+ * Each list is compact rows (tile + name + one-line sub + status badge);
+ * clicking a row opens the right-hand detail drawer where every action
+ * lives (install / upgrade / toggle / uninstall / discussion link). The
+ * folder-install classifier flow also docks into that drawer.
+ *
+ * Online catalog: curated tool-type mods from `mod-index.json` (built from
+ * GitHub Discussions by scripts/mod_hub_publish.py). Install downloads the
+ * release asset, verifies SHA-256 and unpacks through the same pipeline as
+ * local installs. Installed: scan of the latest `bin/<version>/res_mods/`.
  */
 export default defineComponent({
   name: "ResourcesView",
@@ -80,10 +83,17 @@ export default defineComponent({
     const toast = useToast();
     const { uiLocale, dataLanguage } = useLanguage();
 
-    const activeTab = ref<HubTab>("catalog");
+    const source = ref<"online" | "installed">("online");
+    const bigCat = ref<BigCat>("function");
+    // Shared filter box — one query across both sources keeps the row (and
+    // the muscle memory) stable while swapping lists.
+    const listQuery = ref("");
+    const catalogFilter = ref<"all" | CatalogCat>("all");
+    const filter = ref<"all" | ModKind>("all");
+    const drawer = ref<DrawerState | null>(null);
+
     const installed = ref<InstalledMod[]>([]);
     const scanning = ref(false);
-    const filter = ref<"all" | ModKind>("all");
 
     const sourcePath = ref("");
     const analyzing = ref(false);
@@ -98,18 +108,16 @@ export default defineComponent({
     const catalogFetched = ref("");
     const catalogLoading = ref(false);
     const catalogError = ref("");
-    const catalogFilter = ref<"all" | CatalogCat>("all");
-    const catalogSearch = ref("");
     const records = ref<ModInstallRecord[]>([]);
-    // Per-plugin busy/progress maps (Vue instruments collection mutations,
-    // so `.set`/`.delete` re-render). Only the plugins currently being
-    // processed appear here — every other card stays fully clickable while
+    // Per-mod busy/progress maps (Vue instruments collection mutations,
+    // so `.set`/`.delete` re-render). Only the mods currently being
+    // processed appear here — every other row stays fully clickable while
     // one download runs, and parallel installs each track their own state.
     const busy = ref(new Map<string, "install" | "uninstall">());
     const progresses = ref(new Map<string, CatalogProgress>());
     const confirmTarget = ref<CatalogEntry | null>(null);
 
-    // Installed-tab unit actions: relPath → "toggle" | "uninstall".
+    // Installed-unit actions: relPath → "toggle" | "uninstall".
     const unitBusy = ref(new Map<string, "toggle" | "uninstall">());
     const unitTarget = ref<InstalledMod | null>(null);
 
@@ -277,36 +285,20 @@ export default defineComponent({
       }
     }
 
-    const byKind = computed(() => {
-      const map = new Map<ModKind, number>();
-      for (const m of installed.value) map.set(m.kind, (map.get(m.kind) ?? 0) + 1);
-      return map;
-    });
+    // ── Marketplace filtering: big category → chips → shared query ──
 
-    const shown = computed(() =>
-      filter.value === "all"
-        ? installed.value
-        : installed.value.filter((m) => m.kind === filter.value),
+    const catalogInCat = computed(() =>
+      catalog.value.filter((m) => catBig(m.category) === bigCat.value),
+    );
+    const installedInCat = computed(() =>
+      installed.value.filter((m) => KIND_BIG[m.kind] === bigCat.value),
     );
 
-    const catCounts = computed(() => {
-      const map = new Map<string, number>();
-      for (const m of catalog.value) map.set(m.category, (map.get(m.category) ?? 0) + 1);
-      return map;
-    });
-
-    const catalogShown = computed(() => {
-      const q = catalogSearch.value.trim().toLowerCase();
-      return catalog.value.filter((m) => {
-        if (catalogFilter.value !== "all" && m.category !== catalogFilter.value) return false;
-        if (!q) return true;
-        return (
-          m.id.includes(q) ||
-          m.nameEn.toLowerCase().includes(q) ||
-          m.nameZh.toLowerCase().includes(q) ||
-          m.title.toLowerCase().includes(q)
-        );
-      });
+    // A chip picked under one big category must not leak an empty list into
+    // the next one — reset both sub-filters on the category switch.
+    watch(bigCat, () => {
+      catalogFilter.value = "all";
+      filter.value = "all";
     });
 
     /** Localized name/description from the thread's wowsp:i18n block:
@@ -332,10 +324,171 @@ export default defineComponent({
       return { name: entry.nameZh || entry.nameEn, desc: entry.description };
     }
 
+    /** Query match for online entries: identity, published names and every
+     *  localized variant (a user types what their UI language shows). */
+    function entryMatches(entry: CatalogEntry, q: string): boolean {
+      if (
+        entry.id.includes(q) ||
+        entry.nameEn.toLowerCase().includes(q) ||
+        entry.nameZh.toLowerCase().includes(q) ||
+        entry.title.toLowerCase().includes(q)
+      ) {
+        return true;
+      }
+      const text = localized(entry);
+      if (text.name.toLowerCase().includes(q) || text.desc.toLowerCase().includes(q)) return true;
+      return Object.values(entry.i18n ?? {}).some(
+        (v) =>
+          v.name?.toLowerCase().includes(q) || v.description?.toLowerCase().includes(q) || false,
+      );
+    }
+
+    const modMatches = (m: InstalledMod, q: string) =>
+      m.name.toLowerCase().includes(q) || m.relPath.toLowerCase().includes(q);
+
+    const kindCounts = computed(() => {
+      const map = new Map<ModKind, number>();
+      for (const m of installedInCat.value) map.set(m.kind, (map.get(m.kind) ?? 0) + 1);
+      return map;
+    });
+
+    const catCounts = computed(() => {
+      const map = new Map<string, number>();
+      for (const m of catalogInCat.value) map.set(m.category, (map.get(m.category) ?? 0) + 1);
+      return map;
+    });
+
+    const catalogShown = computed(() => {
+      const q = listQuery.value.trim().toLowerCase();
+      return catalogInCat.value.filter((m) => {
+        if (catalogFilter.value !== "all" && m.category !== catalogFilter.value) return false;
+        return !q || entryMatches(m, q);
+      });
+    });
+
+    const shown = computed(() => {
+      const q = listQuery.value.trim().toLowerCase();
+      return installedInCat.value.filter((m) => {
+        if (filter.value !== "all" && m.kind !== filter.value) return false;
+        return !q || modMatches(m, q);
+      });
+    });
+
+    // ── Row → drawer navigation ──
+
+    function openCatalog(entry: CatalogEntry) {
+      source.value = "online";
+      drawer.value = { mode: "catalog", entry };
+    }
+
+    function openInstalled(mod: InstalledMod) {
+      source.value = "installed";
+      drawer.value = { mode: "installed", mod };
+    }
+
+    function openLocal() {
+      drawer.value = { mode: "local" };
+    }
+
+    const drawerTitle = computed(() => {
+      const d = drawer.value;
+      if (!d) return "";
+      if (d.mode === "catalog") {
+        const text = localized(d.entry);
+        return text.name || d.entry.title || d.entry.nameEn;
+      }
+      if (d.mode === "installed") return d.mod.name;
+      return t("resources.installSection");
+    });
+
+    // ── Trailing search combo: jump straight into a mod ──
+    // Scoped to the ACTIVE source — a popup that kept returning catalog hits
+    // while the installed list is on screen would be a different list than
+    // the one behind it. The combo is re-keyed on source change (see the
+    // render below) so a swap drops the previous source's candidates instead
+    // of re-rendering them through the other branch's row renderer.
+
+    async function comboSearch(query: string): Promise<unknown[]> {
+      const q = query.trim().toLowerCase();
+      if (!q) return [];
+      return source.value === "online"
+        ? catalog.value.filter((m) => entryMatches(m, q)).slice(0, 12)
+        : installed.value.filter((m) => modMatches(m, q)).slice(0, 12);
+    }
+
+    function comboRenderItem(raw: unknown) {
+      if (source.value === "installed") {
+        const mod = raw as InstalledMod;
+        const meta = KIND_META[mod.kind];
+        const Icon = meta.icon;
+        return (
+          <>
+            <span class={["mod-row__tile", `mod-row__tile--${meta.class}`, "mod-row__tile--sm"]}>
+              <Icon size={14} />
+            </span>
+            <span class="mod-hub__combo-name">{mod.name}</span>
+            {mod.version && <span class="mod-hub__combo-ver">{mod.version}</span>}
+          </>
+        );
+      }
+      const entry = raw as CatalogEntry;
+      const Icon = catIcon(entry.category);
+      const text = localized(entry);
+      return (
+        <>
+          <span class="mod-row__tile mod-row__tile--cat mod-row__tile--sm">
+            <Icon size={14} />
+          </span>
+          <span class="mod-hub__combo-name">{text.name || entry.title || entry.nameEn}</span>
+          <span class="mod-hub__combo-ver">v{entry.version}</span>
+        </>
+      );
+    }
+
+    function comboSelect(raw: unknown) {
+      if (source.value === "installed") openInstalled(raw as InstalledMod);
+      else openCatalog(raw as CatalogEntry);
+    }
+
+    /** Empty-state text node — the list is a flex column of rows, so a bare
+     *  string would render flush and full-contrast instead of reading as a
+     *  placeholder. */
+    const emptyNote = (text: string) => <div class="mod-side__empty">{text}</div>;
+
+    /** What an empty online list means depends on WHY it is empty: mid-fetch
+     *  is not the same as "nothing matched", and a failed fetch is already
+     *  talking through the error banner above the list. */
+    const catalogEmptyNote = () => {
+      if (catalogLoading.value) return emptyNote(t("resources.refreshing"));
+      if (catalogError.value) return null;
+      return emptyNote(
+        catalog.value.length === 0 ? t("resources.catalogEmpty") : t("resources.empty"),
+      );
+    };
+
+    const installedEmptyNote = () =>
+      emptyNote(scanning.value ? t("resources.scanning") : t("resources.empty"));
+
+    // ── Row 3 refresh: source decides what "refresh" means ──
+
+    function refresh() {
+      if (source.value === "online") void loadCatalog(true);
+      else void scan();
+    }
+
+    const refreshSpinning = computed(() =>
+      source.value === "online" ? catalogLoading.value : scanning.value,
+    );
+    // The online catalog works without a game install; rescanning installed
+    // mods needs the res_mods root, hence the asymmetric disable.
+    const refreshDisabled = computed(() => source.value === "installed" && !gameRoot.value);
+
     const catalogKb = (entry: CatalogEntry) =>
       entry.packages.reduce((sum, p) => sum + p.size, 0) > 0
         ? Math.max(1, Math.round(entry.packages.reduce((s, p) => s + p.size, 0) / 1024))
         : 0;
+
+    const pkgKb = (size: number) => Math.max(1, Math.round(size / 1024));
 
     const discussionUrl = (n?: number | null) =>
       n ? `https://github.com/${REPO}/discussions/${n}` : "";
@@ -353,8 +506,8 @@ export default defineComponent({
     }
 
     /** Compact breakdown of a texture-override tree — category / nation /
-     *  species tags, the covered ship units, file-kind counts. Shared by the
-     *  installed cards and the install plan card. */
+     *  species tags, the covered ship units, file-kind counts. Shared by
+     *  the installed drawer and the install plan card. */
     function renderTexAnalysis(a: TextureAnalysis) {
       const tags = [
         ...a.categories.map((c) => ({
@@ -415,440 +568,544 @@ export default defineComponent({
       loadRecords();
     });
 
-    return () => (
-      <div class="resources-view">
-        <div class="resources-view__head">
-          <h1 class="resources-view__title">{t("resources.title")}</h1>
-        </div>
-        <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+    // ── Detail drawer body (branch per mode; the switch narrows the union) ──
 
-        <div class="resources-banner resources-banner--warn">
-          <AlertTriangle size={16} />
-          {t("resources.experimental")}
+    function renderCatalogDetail(entry: CatalogEntry) {
+      const text = localized(entry);
+      const record = recordOf(entry.id);
+      const upToDate = !!record && record.version === entry.version;
+      const busyState = busy.value.get(entry.id);
+      const busyInstall = busyState === "install";
+      const busyUninstall = busyState === "uninstall";
+      const progressEntry = progresses.value.get(entry.id);
+      const url = discussionUrl(entry.discussion);
+      const kb = catalogKb(entry);
+      const CatIcon = catIcon(entry.category);
+      return (
+        <div class="mod-detail">
+          <div class="mod-detail__head">
+            <span class="mod-row__tile mod-row__tile--cat mod-row__tile--lg">
+              <CatIcon size={24} />
+            </span>
+            <div class="mod-detail__id">
+              <div class="mod-detail__name">{text.name || entry.title || entry.nameEn}</div>
+              <div class="mod-detail__en">{entry.nameEn}</div>
+            </div>
+          </div>
+          <div class="mod-detail__badges">
+            {isCatalogCat(entry.category) && (
+              <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
+            )}
+            <span class="mod-detail__badge">v{entry.version}</span>
+            {upToDate && (
+              <span class="mod-detail__badge mod-detail__badge--ok">
+                {t("resources.installedBadge")}
+              </span>
+            )}
+          </div>
+          {(text.desc || entry.description) && (
+            <p class="mod-detail__desc">{text.desc || entry.description}</p>
+          )}
+          <div class="mod-detail__meta">
+            <span>{t("resources.gameRange", { game: entry.game })}</span>
+            {kb > 0 && (
+              <span>{t("resources.pkgCount", { count: entry.packages.length, kb })}</span>
+            )}
+          </div>
+          {entry.packages.length > 0 && (
+            <ul class="mod-detail__pkgs">
+              {entry.packages.map((p) => (
+                <li key={p.url}>
+                  <span class="mod-detail__pkgname">{p.name}</span>
+                  {p.size > 0 && <span class="mod-detail__pkgsize">{pkgKb(p.size)} KB</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div class="mod-detail__actions">
+            {!upToDate && (
+              <HButton
+                size="sm"
+                variant="primary"
+                disabled={!!busyState || !gameRoot.value}
+                loading={busyInstall}
+                onClick={() => installMod(entry)}
+              >
+                {busyInstall
+                  ? t("resources.installingMod")
+                  : record
+                    ? t("resources.update")
+                    : t("resources.install")}
+              </HButton>
+            )}
+            {record && (
+              <button
+                class="mod-detail__danger"
+                data-hint={t("resources.uninstall")}
+                aria-label={t("resources.uninstall")}
+                disabled={!!busyState}
+                onClick={() => (confirmTarget.value = entry)}
+              >
+                <Trash2 size={13} />
+                {busyUninstall ? t("resources.uninstalling") : t("resources.uninstall")}
+              </button>
+            )}
+            {url && (
+              <button class="mod-detail__link" data-hint={t("resources.openDiscussion")} onClick={() => openExternal(url)}>
+                <ExternalLink size={13} />
+                {t("resources.discuss")}
+              </button>
+            )}
+          </div>
+          {busyInstall && progressEntry && (
+            <div class="mod-detail__progress">
+              <div
+                class="mod-detail__progress-bar"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    progressEntry.total > 0
+                      ? (progressEntry.received / progressEntry.total) * 100
+                      : 12,
+                  )}%`,
+                }}
+              />
+            </div>
+          )}
         </div>
+      );
+    }
 
-        {!gameRoot.value && (
+    function renderInstalledDetail(mod: InstalledMod) {
+      const meta = KIND_META[mod.kind];
+      const Icon = meta.icon;
+      const state = unitBusy.value.get(mod.relPath);
+      return (
+        <div class="mod-detail">
+          <div class="mod-detail__head">
+            <span class={["mod-row__tile", `mod-row__tile--${meta.class}`, "mod-row__tile--lg"]}>
+              <Icon size={24} />
+            </span>
+            <div class="mod-detail__id">
+              <div class="mod-detail__name">
+                {mod.name}
+                {mod.version && <span class="mod-row__ver">{mod.version}</span>}
+              </div>
+              <div class="mod-detail__en">{kindLabel(mod.kind)}</div>
+            </div>
+          </div>
+          {mod.paths.length > 0 ? (
+            <div class="mod-detail__switch">
+              <HSwitch
+                size="sm"
+                modelValue={!mod.disabled}
+                disabled={!!state}
+                onUpdate:modelValue={(v: boolean) => toggleUnit(mod, v)}
+              >
+                {mod.disabled ? t("resources.disabled") : t("resources.enabled")}
+              </HSwitch>
+            </div>
+          ) : (
+            <div class="mod-detail__meta">{t("resources.manifestOnly")}</div>
+          )}
+          {mod.textureAnalysis && renderTexAnalysis(mod.textureAnalysis)}
+          {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
+          {mod.paths.length > 0 && (
+            <ul class="mod-detail__paths">
+              {mod.paths.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          )}
+          <div class="mod-detail__actions">
+            <button
+              class="mod-detail__danger"
+              data-hint={t("resources.uninstall")}
+              aria-label={t("resources.uninstall")}
+              disabled={!!state}
+              onClick={() => (unitTarget.value = mod)}
+            >
+              <Trash2 size={13} />
+              {state === "uninstall" ? t("resources.uninstalling") : t("resources.uninstall")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    function renderLocalDetail() {
+      return (
+        <div class="mod-detail">
+          <p class="mod-detail__hint">{t("resources.installHint")}</p>
+          <div class="resources-installrow">
+            <input
+              type="text"
+              v-model={sourcePath.value}
+              placeholder={t("resources.pathPlaceholder")}
+              spellcheck={false}
+            />
+            <button
+              disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
+              onClick={analyze}
+            >
+              {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
+            </button>
+          </div>
+          {planError.value && (
+            <div class="resources-banner resources-banner--error">{planError.value}</div>
+          )}
+          {report.value && (
+            <div class="resources-banner resources-banner--ok">
+              {t("resources.installedOk", {
+                name: report.value.name,
+                count: report.value.count,
+                version: report.value.version,
+              })}
+            </div>
+          )}
+          {plan.value && (
+            <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
+              <div class="plan-card__head">
+                {(() => {
+                  const Icon = KIND_META[plan.value!.kind].icon;
+                  return <Icon size={18} />;
+                })()}
+                <strong>{plan.value.name}</strong>
+                <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
+                {plan.value.detail && <span class="plan-card__detail">{plan.value.detail}</span>}
+              </div>
+              {plan.value.textureAnalysis && renderTexAnalysis(plan.value.textureAnalysis)}
+              {plan.value.entries.length > 0 && (
+                <table class="plan-card__files">
+                  <caption>{t("resources.planFiles")}</caption>
+                  <tbody>
+                    {plan.value.entries.map((e) => (
+                      <tr key={e.fromRel + e.toRel}>
+                        <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
+                        <td>→</td>
+                        <td>{e.toRel}/</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {plan.value.warnings.length > 0 && (
+                <ul class="plan-card__warnings">
+                  {plan.value.warnings.map((w) => (
+                    <li key={w}>
+                      <AlertTriangle size={12} /> {w}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button class="plan-card__go" disabled={installing.value} onClick={confirmInstall}>
+                {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function renderDrawerBody() {
+      const d = drawer.value;
+      if (!d) return null;
+      switch (d.mode) {
+        case "catalog":
+          return renderCatalogDetail(d.entry);
+        case "installed":
+          return renderInstalledDetail(d.mod);
+        case "local":
+          return renderLocalDetail();
+      }
+    }
+
+    return () => {
+      const sourceTabs = [
+        { key: "online", label: t("resources.source.online") },
+        { key: "installed", label: t("resources.source.installed") },
+      ];
+      const bigCatTabs = [
+        { key: "function", label: t("resources.big.function"), icon: <Puzzle size={14} /> },
+        { key: "texture", label: t("resources.big.texture"), icon: <ImageIcon size={14} /> },
+        { key: "voice", label: t("resources.big.voice"), icon: <AudioLines size={14} /> },
+      ];
+      return (
+        <div class="resources-view">
+          <div class="resources-view__head">
+            <h1 class="resources-view__title">{t("resources.title")}</h1>
+          </div>
+          <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+
           <div class="resources-banner resources-banner--warn">
             <AlertTriangle size={16} />
-            {t("resources.noGame")}
+            {t("resources.experimental")}
           </div>
-        )}
 
-        {/* ── Tab strip: pick the surface first, then work inside it ── */}
-        <HTabs
-          class="resources-view__tabs"
-          modelValue={activeTab.value}
-          onUpdate:modelValue={(v: string) => (activeTab.value = v as HubTab)}
-          tabs={[
-            { key: "catalog", label: t("resources.tab.catalog"), icon: <Globe size={14} /> },
-            { key: "installed", label: t("resources.tab.installed"), icon: <Puzzle size={14} /> },
-            { key: "local", label: t("resources.tab.local"), icon: <FolderSearch size={14} /> },
-          ]}
-          variant="pill"
-          scrollable={false}
-          renderPanels={false}
-        />
+          {!gameRoot.value && (
+            <div class="resources-banner resources-banner--warn">
+              <AlertTriangle size={16} />
+              {t("resources.noGame")}
+            </div>
+          )}
 
-        {/* Panels swap instantly (VSCode-style); the tab strip's sliding
-            indicator already carries the motion feedback. */}
-        <div key={activeTab.value}>
-            {/* ── Online catalog: curated tool plugins from the mod-hub release ── */}
-            {activeTab.value === "catalog" && (
-              <section class="resources-section">
-                <div class="resources-section__head">
-                  <Globe size={18} />
-                  <h2>{t("resources.catalogTitle")}</h2>
-                  <button
-                    class="resources-view__rescan resources-section__action"
-                    disabled={catalogLoading.value}
-                    onClick={() => loadCatalog(true)}
-                  >
-                    <RefreshCw size={14} class={catalogLoading.value ? "spin" : undefined} />
-                    {catalogLoading.value ? t("resources.refreshing") : t("resources.refresh")}
-                  </button>
+          {/* ── The marketplace column: category strip, source strip +
+              search, filter row, chips, compact rows, meta foot ── */}
+          <div class="mod-hub">
+            <aside class="mod-side">
+              {/* Big category — the row-filling segmented strip. */}
+              <HTabs
+                variant="segmented"
+                block
+                modelValue={bigCat.value}
+                onUpdate:modelValue={(v: string) => (bigCat.value = v as BigCat)}
+                tabs={bigCatTabs}
+                renderPanels={false}
+              />
+
+              {/* Source switch + search-combo button ride one row. */}
+              <div class="mod-side__row mod-side__row--source">
+                <div class="mod-side__rowmain">
+                  <HTabs
+                    variant="segmented"
+                    modelValue={source.value}
+                    onUpdate:modelValue={(v: string) => (source.value = v as "online" | "installed")}
+                    tabs={sourceTabs}
+                    renderPanels={false}
+                  />
                 </div>
-                <p class="resources-section__desc">{t("resources.catalogHint")}</p>
+                <AsyncSearchCombo
+                  key={source.value}
+                  search={comboSearch}
+                  itemKey={(raw: unknown) =>
+                    source.value === "installed"
+                      ? (raw as InstalledMod).relPath
+                      : (raw as CatalogEntry).id
+                  }
+                  renderItem={comboRenderItem}
+                  onSelect={comboSelect}
+                  title={t("resources.searchMod")}
+                  placeholder={t("resources.listFilter")}
+                  searchingText={t("resources.searching")}
+                  minChars={1}
+                  align="right"
+                  noResultsText={t("resources.empty")}
+                />
+              </div>
 
-                {catalogError.value && (
-                  <div class="resources-banner resources-banner--error">
-                    {t("resources.catalogError", { error: catalogError.value })}
-                  </div>
-                )}
+              {/* List filter + refresh + folder-install entry. */}
+              <div class="mod-side__row">
+                <HSearchInput
+                  class="mod-side__filter"
+                  modelValue={listQuery.value}
+                  onUpdate:modelValue={(v: string) => (listQuery.value = v)}
+                  placeholder={t("resources.listFilter")}
+                />
+                <HIconButton
+                  size={36}
+                  disabled={refreshDisabled.value}
+                  data-hint={source.value === "online" ? t("resources.refresh") : t("resources.scan")}
+                  aria-label={
+                    source.value === "online" ? t("resources.refresh") : t("resources.scan")
+                  }
+                  onClick={refresh}
+                >
+                  <RefreshCw size={16} class={refreshSpinning.value ? "spin" : undefined} />
+                </HIconButton>
+                <HIconButton
+                  size={36}
+                  data-hint={t("resources.installSection")}
+                  aria-label={t("resources.installSection")}
+                  onClick={openLocal}
+                >
+                  <FolderSearch size={16} />
+                </HIconButton>
+              </div>
 
-                {catalog.value.length > 0 && (
+              {source.value === "online" && catalogError.value && (
+                <div class="resources-banner resources-banner--error">
+                  {t("resources.catalogError", { error: catalogError.value })}
+                </div>
+              )}
+
+              {/* Sub-division chips, scoped to the active big category. */}
+              <div class="resources-chips">
+                {source.value === "online" ? (
                   <>
-                    <div class="resources-toolbar">
-                      <HSearchInput
-                        modelValue={catalogSearch.value}
-                        onUpdate:modelValue={(v: string) => (catalogSearch.value = v)}
-                        placeholder={t("resources.catalogSearch")}
-                      />
-                      <span class="resources-toolbar__meta">
-                        {t("resources.catalogSource", {
-                          count: catalog.value.length,
-                          source: catalogSource.value,
-                          time: catalogFetched.value.slice(0, 10),
-                        })}
-                      </span>
-                    </div>
-
-                    <div class="resources-chips">
+                    <button
+                      class={["chip", catalogFilter.value === "all" && "chip--on"]}
+                      onClick={() => (catalogFilter.value = "all")}
+                    >
+                      {t("resources.cat.all")} · {catalogInCat.value.length}
+                    </button>
+                    {CATALOG_CATS.filter(
+                      (c) =>
+                        catBig(c) === bigCat.value && (catCounts.value.get(c) ?? 0) > 0,
+                    ).map((c) => (
                       <button
-                        class={["chip", catalogFilter.value === "all" && "chip--on"]}
-                        onClick={() => (catalogFilter.value = "all")}
+                        key={c}
+                        class={["chip", catalogFilter.value === c && "chip--on"]}
+                        onClick={() => (catalogFilter.value = c)}
                       >
-                        {t("resources.cat.all")} · {catalog.value.length}
+                        {t(`resources.cat.${c}`)} · {catCounts.value.get(c)}
                       </button>
-                      {CATALOG_CATS.filter((c) => (catCounts.value.get(c) ?? 0) > 0).map((c) => (
-                        <button
-                          key={c}
-                          class={["chip", catalogFilter.value === c && "chip--on"]}
-                          onClick={() => (catalogFilter.value = c)}
-                        >
-                          {t(`resources.cat.${c}`)} · {catCounts.value.get(c)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {catalogShown.value.length === 0 ? (
-                      <div class="resources-section__placeholder">{t("resources.empty")}</div>
-                    ) : (
-                      <div class="catalog-grid">
-                        {catalogShown.value.map((entry) => {
-                          const text = localized(entry);
-                          const record = recordOf(entry.id);
-                          const upToDate = record && record.version === entry.version;
-                          const busyState = busy.value.get(entry.id);
-                          const busyInstall = busyState === "install";
-                          const busyUninstall = busyState === "uninstall";
-                          const progressEntry = progresses.value.get(entry.id);
-                          const url = discussionUrl(entry.discussion);
-                          const kb = catalogKb(entry);
-                          return (
-                            <div key={entry.id} class="catalog-card">
-                              <div class="catalog-card__head">
-                                <span class="catalog-card__name">
-                                  {text.name || entry.title || entry.nameEn}
-                                </span>
-                                {upToDate && (
-                                  <span class="catalog-card__badge catalog-card__badge--ok">
-                                    {t("resources.installedBadge")}
-                                  </span>
-                                )}
-                              </div>
-                              {text.name && text.name !== entry.nameEn && (
-                                <div class="catalog-card__sub">{entry.nameEn}</div>
-                              )}
-                              {text.desc && (
-                                <div class="catalog-card__desc" data-hint={text.desc}>
-                                  {text.desc}
-                                </div>
-                              )}
-                              <div class="catalog-card__meta">
-                                <span class="catalog-card__ver">
-                                  <Hash size={11} />
-                                  {record && !upToDate
-                                    ? `${record.version} → ${entry.version}`
-                                    : entry.version}
-                                </span>
-                                {kb > 0 && (
-                                  <span>
-                                    {t("resources.pkgCount", {
-                                      count: entry.packages.length,
-                                      kb,
-                                    })}
-                                  </span>
-                                )}
-                                <span>{t("resources.gameRange", { game: entry.game })}</span>
-                              </div>
-                              <div class="catalog-card__actions">
-                                {!upToDate && (
-                                  <HButton
-                                    size="sm"
-                                    variant="primary"
-                                    disabled={!!busyState || !gameRoot.value}
-                                    loading={busyInstall}
-                                    onClick={() => installMod(entry)}
-                                  >
-                                    {busyInstall
-                                      ? t("resources.installingMod")
-                                      : record
-                                        ? t("resources.update")
-                                        : t("resources.install")}
-                                  </HButton>
-                                )}
-                                {record && (
-                                  <button
-                                    class="catalog-card__uninstall"
-                                    data-hint={t("resources.uninstall")}
-                                    aria-label={t("resources.uninstall")}
-                                    disabled={!!busyState}
-                                    onClick={() => (confirmTarget.value = entry)}
-                                  >
-                                    <Trash2 size={13} />
-                                    {busyUninstall ? t("resources.uninstalling") : ""}
-                                  </button>
-                                )}
-                                {url && (
-                                  <button
-                                    class="catalog-card__thread"
-                                    data-hint={t("resources.openDiscussion")}
-                                    onClick={() => openExternal(url)}
-                                  >
-                                    <ExternalLink size={13} />
-                                    {t("resources.discuss")}
-                                  </button>
-                                )}
-                              </div>
-                              {busyInstall && progressEntry && (
-                                <div class="catalog-card__progress">
-                                  <div
-                                    class="catalog-card__progress-bar"
-                                    style={{
-                                      width: `${Math.min(
-                                        100,
-                                        progressEntry.total > 0
-                                          ? (progressEntry.received / progressEntry.total) * 100
-                                          : 12,
-                                      )}%`,
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      class={["chip", filter.value === "all" && "chip--on"]}
+                      onClick={() => (filter.value = "all")}
+                    >
+                      {t("resources.filterAll")} · {installedInCat.value.length}
+                    </button>
+                    {KIND_ORDER.filter(
+                      (k) => KIND_BIG[k] === bigCat.value && (kindCounts.value.get(k) ?? 0) > 0,
+                    ).map((k) => (
+                      <button
+                        key={k}
+                        class={["chip", filter.value === k && "chip--on"]}
+                        onClick={() => (filter.value = k)}
+                      >
+                        {kindLabel(k)} · {kindCounts.value.get(k)}
+                      </button>
+                    ))}
                   </>
                 )}
+              </div>
 
-                {!catalogLoading.value && catalog.value.length === 0 && !catalogError.value && (
-                  <div class="resources-section__placeholder">{t("resources.catalogEmpty")}</div>
-                )}
-              </section>
-            )}
-
-            {/* ── Installed plugins, browsable by category ─────────────────── */}
-            {activeTab.value === "installed" && (
-              <section class="resources-section">
-                <div class="resources-section__head">
-                  <Puzzle size={18} />
-                  <h2>{t("resources.installed")}</h2>
-                  <button
-                    class="resources-view__rescan resources-section__action"
-                    disabled={!gameRoot.value || scanning.value}
-                    onClick={scan}
-                  >
-                    <RefreshCw size={14} class={scanning.value ? "spin" : undefined} />
-                    {scanning.value ? t("resources.scanning") : t("resources.scan")}
-                  </button>
-                </div>
-
-                <div class="resources-chips">
-                  <button
-                    class={["chip", filter.value === "all" && "chip--on"]}
-                    onClick={() => (filter.value = "all")}
-                  >
-                    {t("resources.filterAll")} · {installed.value.length}
-                  </button>
-                  {KIND_ORDER.filter((k) => (byKind.value.get(k) ?? 0) > 0).map((k) => (
-                    <button
-                      key={k}
-                      class={["chip", filter.value === k && "chip--on"]}
-                      onClick={() => (filter.value = k)}
-                    >
-                      {kindLabel(k)} · {byKind.value.get(k)}
-                    </button>
-                  ))}
-                </div>
-
-                {shown.value.length === 0 ? (
-                  <div class="resources-section__placeholder">{t("resources.empty")}</div>
-                ) : (
-                  <div class="mod-grid">
-                    {shown.value.map((m) => {
-                      const meta = KIND_META[m.kind];
-                      const Icon = meta.icon;
-                      const state = unitBusy.value.get(m.relPath);
-                      const busyToggle = state === "toggle";
-                      return (
-                        <div
-                          key={m.relPath}
-                          class={[
-                            "mod-card",
-                            `mod-card--${meta.class}`,
-                            m.disabled && "mod-card--disabled",
-                          ]}
-                        >
-                          <div class="mod-card__main">
-                            <Icon size={20} />
-                            <div class="mod-card__body">
-                              <div class="mod-card__name">
-                                {m.name}
-                                {m.version && (
-                                  <span class="mod-card__version">{m.version}</span>
-                                )}
-                              </div>
-                              <div class="mod-card__kind">{kindLabel(m.kind)}</div>
-                              {m.textureAnalysis && renderTexAnalysis(m.textureAnalysis)}
-                              {m.detail && <div class="mod-card__detail">{m.detail}</div>}
-                              <div class="mod-card__path" title={m.paths.join("\n")}>
-                                {m.relPath}
-                                {m.paths.length > 1 && ` +${m.paths.length - 1}`}
-                              </div>
-                              {m.paths.length === 0 && (
-                                <div class="mod-card__detail">{t("resources.manifestOnly")}</div>
-                              )}
-                            </div>
-                            <button
-                              class="mod-card__uninstall"
-                              data-hint={t("resources.uninstall")}
-                              aria-label={t("resources.uninstall")}
-                              disabled={!!state}
-                              onClick={() => (unitTarget.value = m)}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                          <div class="mod-card__foot">
-                            {m.paths.length > 0 ? (
-                              <HSwitch
-                                size="sm"
-                                modelValue={!m.disabled}
-                                disabled={!!state}
-                                onUpdate:modelValue={(v: boolean) => toggleUnit(m, v)}
-                              >
-                                {m.disabled
-                                  ? t("resources.disabled")
-                                  : t("resources.enabled")}
-                              </HSwitch>
-                            ) : (
-                              <span class="mod-card__foot-note">
-                                {t("resources.manifestOnlyShort")}
+              {/* ── The compact list ── */}
+              <div class="mod-side__list">
+                {source.value === "online"
+                  ? catalogShown.value.length === 0
+                    ? catalogEmptyNote()
+                    : catalogShown.value.map((entry) => {
+                        const text = localized(entry);
+                        const record = recordOf(entry.id);
+                        const upToDate = !!record && record.version === entry.version;
+                        const busyInstall = busy.value.get(entry.id) === "install";
+                        const RowIcon = catIcon(entry.category);
+                        return (
+                          <button
+                            key={entry.id}
+                            class="mod-row"
+                            onClick={() => openCatalog(entry)}
+                          >
+                            <span class="mod-row__tile mod-row__tile--cat">
+                              <RowIcon size={20} />
+                            </span>
+                            <span class="mod-row__body">
+                              <span class="mod-row__name">
+                                {text.name || entry.title || entry.nameEn}
+                                <span class="mod-row__ver">v{entry.version}</span>
                               </span>
-                            )}
-                            {busyToggle && <span class="mod-card__spinner" />}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
+                              <span class="mod-row__sub">{text.desc || entry.nameEn}</span>
+                            </span>
+                            <span class="mod-row__tail">
+                              {busyInstall ? (
+                                <span class="mod-row__spinner" />
+                              ) : upToDate ? (
+                                <span class="mod-row__badge mod-row__badge--ok">
+                                  {t("resources.installedBadge")}
+                                </span>
+                              ) : record ? (
+                                <span class="mod-row__badge mod-row__badge--up">
+                                  {t("resources.update")}
+                                </span>
+                              ) : null}
+                            </span>
+                          </button>
+                        );
+                      })
+                  : shown.value.length === 0
+                    ? installedEmptyNote()
+                    : shown.value.map((m) => {
+                        const meta = KIND_META[m.kind];
+                        const Icon = meta.icon;
+                        const state = unitBusy.value.get(m.relPath);
+                        return (
+                          <button
+                            key={m.relPath}
+                            class={["mod-row", m.disabled && "mod-row--disabled"]}
+                            onClick={() => openInstalled(m)}
+                          >
+                            <span class={["mod-row__tile", `mod-row__tile--${meta.class}`]}>
+                              <Icon size={20} />
+                            </span>
+                            <span class="mod-row__body">
+                              <span class="mod-row__name">
+                                {m.name}
+                                {m.version && <span class="mod-row__ver">{m.version}</span>}
+                              </span>
+                              <span class="mod-row__sub">
+                                {kindLabel(m.kind)} · {m.relPath}
+                              </span>
+                            </span>
+                            <span class="mod-row__tail">
+                              {state ? (
+                                <span class="mod-row__spinner" />
+                              ) : m.disabled ? (
+                                <span class="mod-row__badge mod-row__badge--off">
+                                  {t("resources.disabled")}
+                                </span>
+                              ) : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+              </div>
 
-            {/* ── Install from an unpacked folder via the classifier ───────── */}
-            {activeTab.value === "local" && (
-              <section class="resources-section">
-                <div class="resources-section__head">
-                  <FolderSearch size={18} />
-                  <h2>{t("resources.installSection")}</h2>
-                </div>
-                <p class="resources-section__desc">{t("resources.installHint")}</p>
-
-                <div class="resources-installrow">
-                  <input
-                    type="text"
-                    v-model={sourcePath.value}
-                    placeholder={t("resources.pathPlaceholder")}
-                    spellcheck={false}
-                  />
-                  <button
-                    disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
-                    onClick={analyze}
-                  >
-                    {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
-                  </button>
-                </div>
-
-                {planError.value && (
-                  <div class="resources-banner resources-banner--error">{planError.value}</div>
-                )}
-                {report.value && (
-                  <div class="resources-banner resources-banner--ok">
-                    {t("resources.installedOk", {
-                      name: report.value.name,
-                      count: report.value.count,
-                      version: report.value.version,
-                    })}
-                  </div>
-                )}
-
-                {plan.value && (
-                  <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
-                    <div class="plan-card__head">
-                      {(() => {
-                        const Icon = KIND_META[plan.value!.kind].icon;
-                        return <Icon size={18} />;
-                      })()}
-                      <strong>{plan.value.name}</strong>
-                      <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
-                      {plan.value.detail && (
-                        <span class="plan-card__detail">{plan.value.detail}</span>
-                      )}
-                    </div>
-                    {plan.value.textureAnalysis && renderTexAnalysis(plan.value.textureAnalysis)}
-                    {plan.value.entries.length > 0 && (
-                      <table class="plan-card__files">
-                        <caption>{t("resources.planFiles")}</caption>
-                        <tbody>
-                          {plan.value.entries.map((e) => (
-                            <tr key={e.fromRel + e.toRel}>
-                              <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
-                              <td>→</td>
-                              <td>{e.toRel}/</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                    {plan.value.warnings.length > 0 && (
-                      <ul class="plan-card__warnings">
-                        {plan.value.warnings.map((w) => (
-                          <li key={w}>
-                            <AlertTriangle size={12} /> {w}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <button
-                      class="plan-card__go"
-                      disabled={installing.value}
-                      onClick={confirmInstall}
-                    >
-                      {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
+              <div class="mod-side__foot">
+                {source.value === "online"
+                  ? t("resources.catalogSource", {
+                      count: catalog.value.length,
+                      source: catalogSource.value,
+                      time: catalogFetched.value.slice(0, 10),
+                    })
+                  : t("resources.countLine", { count: installed.value.length })}
+              </div>
+            </aside>
           </div>
 
-        <HConfirmDialog
-          open={!!confirmTarget.value}
-          title={t("resources.uninstall")}
-          message={t("resources.confirmUninstall", { name: confirmTarget.value?.nameZh || confirmTarget.value?.nameEn || "" })}
-          confirmLabel={t("resources.uninstall")}
-          onConfirm={uninstallMod}
-          onUpdate:open={(v: boolean) => {
-            if (!v) confirmTarget.value = null;
-          }}
-        />
+          {/* ── Detail drawer: every per-mod action lives in here now ── */}
+          <HDrawer
+            modelValue={!!drawer.value}
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) drawer.value = null;
+            }}
+            side="right"
+            size="min(440px, 92vw)"
+            panelClass="mod-drawer"
+            title={drawerTitle.value}
+          >
+            {renderDrawerBody()}
+          </HDrawer>
 
-        <HConfirmDialog
-          open={!!unitTarget.value}
-          title={t("resources.uninstall")}
-          message={t("resources.confirmUnitUninstall", {
-            name: unitTarget.value?.name || "",
-          })}
-          confirmLabel={t("resources.uninstall")}
-          onConfirm={uninstallUnit}
-          onUpdate:open={(v: boolean) => {
-            if (!v) unitTarget.value = null;
-          }}
-        />
-      </div>
-    );
+          <HConfirmDialog
+            open={!!confirmTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.confirmUninstall", { name: confirmTarget.value?.nameZh || confirmTarget.value?.nameEn || "" })}
+            confirmLabel={t("resources.uninstall")}
+            onConfirm={uninstallMod}
+            onUpdate:open={(v: boolean) => {
+              if (!v) confirmTarget.value = null;
+            }}
+          />
+
+          <HConfirmDialog
+            open={!!unitTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.confirmUnitUninstall", {
+              name: unitTarget.value?.name || "",
+            })}
+            confirmLabel={t("resources.uninstall")}
+            onConfirm={uninstallUnit}
+            onUpdate:open={(v: boolean) => {
+              if (!v) unitTarget.value = null;
+            }}
+          />
+        </div>
+      );
+    };
   },
 });

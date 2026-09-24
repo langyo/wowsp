@@ -1,14 +1,14 @@
 {
-  "title": "Mod Hub",
-  "subtitle": "Plugins installed into the game's res_mods directory.",
+  "title": "Mod Manager",
+  "subtitle": "Mods installed into the game's res_mods directory.",
   "scan": "Rescan",
   "scanning": "Scanning…",
   "noGame": "No game install detected — set the game path in Settings first.",
-  "installed": "Installed plugins",
-  "empty": "No recognizable plugins under res_mods yet. Install one from the Online catalog.",
+  "installed": "Installed mods",
+  "empty": "No recognizable mods under res_mods yet. Install one from the online catalog.",
   "filterAll": "All",
   "installSection": "Install from folder",
-  "installHint": "Point at an unpacked plugin folder (voice pack, PnF skin, ribbon icons, ime_config patch). .zip/.7z need extracting for now.",
+  "installHint": "Point at an unpacked mod folder (voice pack, PnF skin, ribbon icons, ime_config patch). .zip/.7z need extracting for now.",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
   "browse": "Analyze",
   "analyzing": "Analyzing…",
@@ -33,13 +33,17 @@
     "script": "Script mod"
   },
   "catalogTitle": "Online catalog",
-  "catalogHint": "Curated tool-type plugins from the WoWSP mod hub. Each ships with a version and a SHA-256; install downloads straight from the project's GitHub release.",
+  "catalogHint": "Curated tool-type mods from the WoWSP mod hub. Each ships with a version and a SHA-256; install downloads straight from the project's GitHub release.",
   "refresh": "Refresh",
   "refreshing": "Refreshing…",
-  "catalogSearch": "Search plugins…",
+  "catalogSearch": "Search mods…",
   "catalogEmpty": "Catalog is empty — press Refresh to fetch the online list.",
   "catalogError": "Failed to load the online catalog: {error}",
-  "catalogSource": "{count} plugins · catalog {source} · updated {time}",
+  "catalogSource": "{count} mods · catalog {source} · updated {time}",
+  "searchMod": "Search mods",
+  "searching": "Searching…",
+  "listFilter": "Filter mods…",
+  "countLine": "{count} total",
   "install": "Install",
   "update": "Update",
   "installedBadge": "Installed",
@@ -62,10 +66,14 @@
     "text": "Texts & chat",
     "patch": "Patches"
   },
-  "tab": {
-    "catalog": "Online catalog",
-    "installed": "Installed",
-    "local": "From folder"
+  "big": {
+    "function": "Function",
+    "texture": "Textures",
+    "voice": "Voice"
+  },
+  "source": {
+    "online": "Online",
+    "installed": "Installed"
   },
   "enabled": "Enabled",
   "disabled": "Disabled",
