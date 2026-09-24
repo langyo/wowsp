@@ -45,6 +45,14 @@ use wowsp_tauri_shared::{ArenaInfo, OverlayAnchor};
 /// Environment variable that enables the dumps (set to a directory path).
 const TAB_DUMP_DIR_ENV: &str = "WOWSP_TAB_DUMP_DIR";
 
+/// Per-row RAW recognized text of the most recent recognition pass, aligned
+/// 1:1 with the anchor's `row_centers`. Stashed by [`stash_row_texts`] only
+/// while the dump gate is on, so a `.rows.json` artifact can carry what the
+/// OCR engine actually saw next to the names the matcher made of it — the two
+/// together are what answers "why did THIS row not match?" offline (raw text
+/// and crop geometry included, from the frame artifact written beside it).
+static LAST_ROW_TEXTS: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
+
 /// Signatures of every (battle, layout) already dumped — a seen-SET, not a
 /// last-write slot: the phase refinement moves the grid by up to ±pitch/3
 /// (well over one 8 px bucket), so jitter can ALTERNATE the quantized first
@@ -116,6 +124,22 @@ pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor:
     match write_dump_files(&dir, &stem, variant, &png, &arena_json, anchor) {
         Ok(()) => tracing::info!(dir = %dir.display(), "tab roster dump written"),
         Err(e) => tracing::warn!(error = %e, "tab roster dump write failed"),
+    }
+}
+
+/// Whether the dump gate is on right now. The recognition pass asks BEFORE
+/// stashing the raw row texts, so a build without `WOWSP_TAB_DUMP_DIR` pays
+/// one env read per pass and never touches the stash (the shipped hot path
+/// stays allocation-free).
+pub(crate) fn dump_enabled() -> bool {
+    dump_dir(std::env::var_os(TAB_DUMP_DIR_ENV)).is_some()
+}
+
+/// Stash the raw per-row recognized texts for the next dump. Poisoned by a
+/// panic elsewhere — stay silent and leave the overlay flow untouched.
+pub(crate) fn stash_row_texts(texts: &[Option<String>]) {
+    if let Ok(mut slot) = LAST_ROW_TEXTS.lock() {
+        *slot = texts.to_vec();
     }
 }
 
@@ -219,18 +243,20 @@ fn encode_frame_png(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     out.into_inner()
 }
 
-/// Write the three ground-truth artifacts for one detection:
+/// Write the ground-truth artifacts for one detection:
 ///
 /// - `tab-<stem><variant>.frame.png` — the game-window frame the detector
 ///   ran on;
 /// - `tab-<stem><variant>.arena.json` — tempArenaInfo.json's raw JSON text;
-/// - `tab-<stem><variant>.anchor.json` — the serialized [`OverlayAnchor`].
+/// - `tab-<stem><variant>.anchor.json` — the serialized [`OverlayAnchor`];
+/// - `tab-<stem><variant>.rows.json` — the raw recognized text per row, when
+///   a recognition pass for THIS row count stashed one (the OCR's own view,
+///   beside the names the matcher made of it).
 ///
-/// All three share the timestamp stem; `variant` is `""` for a confirmed
-/// detection and `".miss"` for a failed one. File names carry no player
-/// name, but the arena.json artifact IS the roster text and contains every
-/// player's nickname — a dump directory must be sanitized before it is
-/// shared.
+/// All share the timestamp stem; `variant` is `""` for a confirmed detection
+/// and `".miss"` for a failed one. File names carry no player name, but the
+/// arena.json artifact IS the roster text and contains every player's
+/// nickname — a dump directory must be sanitized before it is shared.
 fn write_dump_files(
     dir: &Path,
     stem: &str,
@@ -257,6 +283,20 @@ fn write_dump_files(
         anchor_json,
     )
     .map_err(|e| format!("write anchor json: {e}"))?;
+    // The raw texts belong to ONE recognition pass; a row count that does not
+    // match the anchor's grid means the stash is stale (a miss detection
+    // never runs recognition, so it would otherwise inherit the previous
+    // pass's rows) — omit the artifact rather than write a misleading one.
+    let texts = LAST_ROW_TEXTS.lock().map(|t| t.clone()).unwrap_or_default();
+    if texts.len() == anchor.row_centers.len() {
+        let rows_json =
+            serde_json::to_string_pretty(&texts).map_err(|e| format!("serialize rows: {e}"))?;
+        std::fs::write(
+            dir.join(format!("tab-{stem}{variant}.rows.json")),
+            rows_json,
+        )
+        .map_err(|e| format!("write rows json: {e}"))?;
+    }
     Ok(())
 }
 
