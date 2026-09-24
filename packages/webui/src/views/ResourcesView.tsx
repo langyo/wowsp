@@ -5,6 +5,7 @@ import {
   ExternalLink,
   FolderSearch,
   ImageIcon,
+  MousePointerClick,
   Puzzle,
   RefreshCw,
   Trash2,
@@ -13,7 +14,6 @@ import {
 import {
   HButton,
   HConfirmDialog,
-  HDrawer,
   HIconButton,
   HSearchInput,
   HSwitch,
@@ -49,10 +49,10 @@ import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
 
-/** Marketplace column: one big-category switch (function / texture / voice)
- *  narrows BOTH sources, then a source switch (online / installed) picks the
- *  list. Filters and the drawer hang off this pair instead of tabs. */
-type DrawerState =
+/** Right-hand pane content: the selected catalog entry, the selected
+ *  installed unit, or the folder-install flow (which has no list row of its
+ *  own — it is opened from the list's action row). */
+type Selection =
   | { mode: "catalog"; entry: CatalogEntry }
   | { mode: "installed"; mod: InstalledMod }
   | { mode: "local" };
@@ -60,19 +60,15 @@ type DrawerState =
 const REPO = "langyo/wowsp";
 
 /**
- * Mod Hub (Resources page) — VSCode-marketplace style.
+ * Mod Hub (Resources page) — master/detail, the replay page's shape.
  *
- * A single centered column carries the whole hub: the big-category strip
- * (function / texture / voice) narrows everything, the source strip swaps
- * between the online catalog and installed mods, and the trailing search
- * button opens the AsyncSearchCombo popup for direct jumps into entries.
- * Each list is compact rows (tile + name + one-line sub + status badge);
- * clicking a row opens the right-hand detail drawer where every action
- * lives (install / upgrade / toggle / uninstall / discussion link). The
- * folder-install classifier flow also docks into that drawer.
+ * The left column owns the whole filter stack (big category, source, list
+ * filter, chips) above the scrolling row list; the right pane shows what the
+ * selected row is and carries every action for it — nothing is hidden behind
+ * a modal, and the pane keeps a placeholder until something is picked.
  *
  * Online catalog: curated tool-type mods from `mod-index.json` (built from
- * GitHub Discussions by scripts/mod_hub_publish.py). Install downloads the
+ * GitHub Discussions by scripts/mod_hub_publish.py); install downloads the
  * release asset, verifies SHA-256 and unpacks through the same pipeline as
  * local installs. Installed: scan of the latest `bin/<version>/res_mods/`.
  */
@@ -90,7 +86,7 @@ export default defineComponent({
     const listQuery = ref("");
     const catalogFilter = ref<"all" | CatalogCat>("all");
     const filter = ref<"all" | ModKind>("all");
-    const drawer = ref<DrawerState | null>(null);
+    const selection = ref<Selection | null>(null);
 
     const installed = ref<InstalledMod[]>([]);
     const scanning = ref(false);
@@ -374,31 +370,38 @@ export default defineComponent({
       });
     });
 
-    // ── Row → drawer navigation ──
+    // ── Row → pane selection (the master/detail pair) ──
 
-    function openCatalog(entry: CatalogEntry) {
+    function selectCatalog(entry: CatalogEntry) {
       source.value = "online";
-      drawer.value = { mode: "catalog", entry };
+      selection.value = { mode: "catalog", entry };
     }
 
-    function openInstalled(mod: InstalledMod) {
+    function selectInstalled(mod: InstalledMod) {
       source.value = "installed";
-      drawer.value = { mode: "installed", mod };
+      selection.value = { mode: "installed", mod };
     }
 
     function openLocal() {
-      drawer.value = { mode: "local" };
+      selection.value = { mode: "local" };
     }
 
-    const drawerTitle = computed(() => {
-      const d = drawer.value;
-      if (!d) return "";
-      if (d.mode === "catalog") {
-        const text = localized(d.entry);
-        return text.name || d.entry.title || d.entry.nameEn;
-      }
-      if (d.mode === "installed") return d.mod.name;
-      return t("resources.installSection");
+    /** Source switch: the list underneath is about to be a different dataset,
+     *  so a selection that belongs to the other one is dropped (picking a
+     *  combo hit re-selects right after, in the same tick). The folder flow
+     *  is source-independent and survives. */
+    function pickSource(next: "online" | "installed") {
+      if (next === source.value) return;
+      source.value = next;
+      const mode = selection.value?.mode;
+      if (mode === "catalog" || mode === "installed") selection.value = null;
+    }
+
+    const selectedRowKey = computed(() => {
+      const sel = selection.value;
+      if (sel?.mode === "catalog") return sel.entry.id;
+      if (sel?.mode === "installed") return sel.mod.relPath;
+      return "";
     });
 
     // ── Trailing search combo: jump straight into a mod ──
@@ -446,8 +449,8 @@ export default defineComponent({
     }
 
     function comboSelect(raw: unknown) {
-      if (source.value === "installed") openInstalled(raw as InstalledMod);
-      else openCatalog(raw as CatalogEntry);
+      if (source.value === "installed") selectInstalled(raw as InstalledMod);
+      else selectCatalog(raw as CatalogEntry);
     }
 
     /** Empty-state text node — the list is a flex column of rows, so a bare
@@ -506,8 +509,8 @@ export default defineComponent({
     }
 
     /** Compact breakdown of a texture-override tree — category / nation /
-     *  species tags, the covered ship units, file-kind counts. Shared by
-     *  the installed drawer and the install plan card. */
+     *  species tags, the covered ship units, file-kind counts. Shared by the
+     *  installed pane and the install plan card. */
     function renderTexAnalysis(a: TextureAnalysis) {
       const tags = [
         ...a.categories.map((c) => ({
@@ -568,7 +571,9 @@ export default defineComponent({
       loadRecords();
     });
 
-    // ── Detail drawer body (branch per mode; the switch narrows the union) ──
+    // ── Detail pane (one branch per mode; the switch narrows the union) ──
+    // Every mode renders head / scrolling body / footer, so the action row
+    // stays pinned to the pane's bottom-right while long content scrolls.
 
     function renderCatalogDetail(entry: CatalogEntry) {
       const text = localized(entry);
@@ -592,86 +597,99 @@ export default defineComponent({
               <div class="mod-detail__en">{entry.nameEn}</div>
             </div>
           </div>
-          <div class="mod-detail__badges">
-            {isCatalogCat(entry.category) && (
-              <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
-            )}
-            <span class="mod-detail__badge">v{entry.version}</span>
-            {upToDate && (
-              <span class="mod-detail__badge mod-detail__badge--ok">
-                {t("resources.installedBadge")}
-              </span>
-            )}
-          </div>
-          {(text.desc || entry.description) && (
-            <p class="mod-detail__desc">{text.desc || entry.description}</p>
-          )}
-          <div class="mod-detail__meta">
-            <span>{t("resources.gameRange", { game: entry.game })}</span>
-            {kb > 0 && (
-              <span>{t("resources.pkgCount", { count: entry.packages.length, kb })}</span>
-            )}
-          </div>
-          {entry.packages.length > 0 && (
-            <ul class="mod-detail__pkgs">
-              {entry.packages.map((p) => (
-                <li key={p.url}>
-                  <span class="mod-detail__pkgname">{p.name}</span>
-                  {p.size > 0 && <span class="mod-detail__pkgsize">{pkgKb(p.size)} KB</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div class="mod-detail__actions">
-            {!upToDate && (
-              <HButton
-                size="sm"
-                variant="primary"
-                disabled={!!busyState || !gameRoot.value}
-                loading={busyInstall}
-                onClick={() => installMod(entry)}
-              >
-                {busyInstall
-                  ? t("resources.installingMod")
-                  : record
-                    ? t("resources.update")
-                    : t("resources.install")}
-              </HButton>
-            )}
-            {record && (
-              <button
-                class="mod-detail__danger"
-                data-hint={t("resources.uninstall")}
-                aria-label={t("resources.uninstall")}
-                disabled={!!busyState}
-                onClick={() => (confirmTarget.value = entry)}
-              >
-                <Trash2 size={13} />
-                {busyUninstall ? t("resources.uninstalling") : t("resources.uninstall")}
-              </button>
-            )}
-            {url && (
-              <button class="mod-detail__link" data-hint={t("resources.openDiscussion")} onClick={() => openExternal(url)}>
-                <ExternalLink size={13} />
-                {t("resources.discuss")}
-              </button>
-            )}
-          </div>
-          {busyInstall && progressEntry && (
-            <div class="mod-detail__progress">
-              <div
-                class="mod-detail__progress-bar"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    progressEntry.total > 0
-                      ? (progressEntry.received / progressEntry.total) * 100
-                      : 12,
-                  )}%`,
-                }}
-              />
+          <div class="mod-detail__scroll">
+            <div class="mod-detail__badges">
+              {isCatalogCat(entry.category) && (
+                <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
+              )}
+              <span class="mod-detail__badge">v{entry.version}</span>
+              {record && !upToDate && (
+                <span class="mod-detail__badge mod-detail__badge--warn">
+                  {t("resources.installedAt", { version: record.version })}
+                </span>
+              )}
+              {upToDate && (
+                <span class="mod-detail__badge mod-detail__badge--ok">
+                  {t("resources.installedBadge")}
+                </span>
+              )}
             </div>
-          )}
+            {(text.desc || entry.description) && (
+              <p class="mod-detail__desc">{text.desc || entry.description}</p>
+            )}
+            <div class="mod-detail__meta">
+              <span>{t("resources.gameRange", { game: entry.game })}</span>
+              {kb > 0 && (
+                <span>{t("resources.pkgCount", { count: entry.packages.length, kb })}</span>
+              )}
+            </div>
+            {entry.packages.length > 0 && (
+              <ul class="mod-detail__pkgs">
+                {entry.packages.map((p) => (
+                  <li key={p.url}>
+                    <span class="mod-detail__pkgname">{p.name}</span>
+                    {p.size > 0 && <span class="mod-detail__pkgsize">{pkgKb(p.size)} KB</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div class="mod-detail__foot">
+            {busyInstall && progressEntry && (
+              <div class="mod-detail__progress">
+                <div
+                  class="mod-detail__progress-bar"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      progressEntry.total > 0
+                        ? (progressEntry.received / progressEntry.total) * 100
+                        : 12,
+                    )}%`,
+                  }}
+                />
+              </div>
+            )}
+            <div class="mod-detail__foot-row">
+              {url && (
+                <button
+                  class="mod-detail__link"
+                  data-hint={t("resources.openDiscussion")}
+                  onClick={() => openExternal(url)}
+                >
+                  <ExternalLink size={13} />
+                  {t("resources.discuss")}
+                </button>
+              )}
+              <div class="mod-detail__actions">
+                {record && (
+                  <button
+                    class="mod-detail__danger"
+                    disabled={!!busyState}
+                    onClick={() => (confirmTarget.value = entry)}
+                  >
+                    <Trash2 size={13} />
+                    {busyUninstall ? t("resources.uninstalling") : t("resources.uninstall")}
+                  </button>
+                )}
+                {!upToDate && (
+                  <HButton
+                    size="sm"
+                    variant="primary"
+                    disabled={!!busyState || !gameRoot.value}
+                    loading={busyInstall}
+                    onClick={() => installMod(entry)}
+                  >
+                    {busyInstall
+                      ? t("resources.installingMod")
+                      : record
+                        ? t("resources.update")
+                        : t("resources.install")}
+                  </HButton>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
@@ -694,40 +712,51 @@ export default defineComponent({
               <div class="mod-detail__en">{kindLabel(mod.kind)}</div>
             </div>
           </div>
-          {mod.paths.length > 0 ? (
-            <div class="mod-detail__switch">
-              <HSwitch
-                size="sm"
-                modelValue={!mod.disabled}
-                disabled={!!state}
-                onUpdate:modelValue={(v: boolean) => toggleUnit(mod, v)}
-              >
-                {mod.disabled ? t("resources.disabled") : t("resources.enabled")}
-              </HSwitch>
+          <div class="mod-detail__scroll">
+            {mod.disabled && (
+              <div class="mod-detail__badges">
+                <span class="mod-detail__badge mod-detail__badge--warn">
+                  {t("resources.disabled")}
+                </span>
+              </div>
+            )}
+            {mod.textureAnalysis && renderTexAnalysis(mod.textureAnalysis)}
+            {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
+            {mod.paths.length > 0 ? (
+              <ul class="mod-detail__paths">
+                {mod.paths.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            ) : (
+              <p class="mod-detail__hint">{t("resources.manifestOnly")}</p>
+            )}
+          </div>
+          <div class="mod-detail__foot">
+            <div class="mod-detail__foot-row">
+              {mod.paths.length > 0 ? (
+                <HSwitch
+                  size="sm"
+                  modelValue={!mod.disabled}
+                  disabled={!!state}
+                  onUpdate:modelValue={(v: boolean) => toggleUnit(mod, v)}
+                >
+                  {mod.disabled ? t("resources.disabled") : t("resources.enabled")}
+                </HSwitch>
+              ) : (
+                <span class="mod-detail__hint">{t("resources.manifestOnlyShort")}</span>
+              )}
+              <div class="mod-detail__actions">
+                <button
+                  class="mod-detail__danger"
+                  disabled={!!state}
+                  onClick={() => (unitTarget.value = mod)}
+                >
+                  <Trash2 size={13} />
+                  {state === "uninstall" ? t("resources.uninstalling") : t("resources.uninstall")}
+                </button>
+              </div>
             </div>
-          ) : (
-            <div class="mod-detail__meta">{t("resources.manifestOnly")}</div>
-          )}
-          {mod.textureAnalysis && renderTexAnalysis(mod.textureAnalysis)}
-          {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
-          {mod.paths.length > 0 && (
-            <ul class="mod-detail__paths">
-              {mod.paths.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-          )}
-          <div class="mod-detail__actions">
-            <button
-              class="mod-detail__danger"
-              data-hint={t("resources.uninstall")}
-              aria-label={t("resources.uninstall")}
-              disabled={!!state}
-              onClick={() => (unitTarget.value = mod)}
-            >
-              <Trash2 size={13} />
-              {state === "uninstall" ? t("resources.uninstalling") : t("resources.uninstall")}
-            </button>
           </div>
         </div>
       );
@@ -736,85 +765,116 @@ export default defineComponent({
     function renderLocalDetail() {
       return (
         <div class="mod-detail">
-          <p class="mod-detail__hint">{t("resources.installHint")}</p>
-          <div class="resources-installrow">
-            <input
-              type="text"
-              v-model={sourcePath.value}
-              placeholder={t("resources.pathPlaceholder")}
-              spellcheck={false}
-            />
-            <button
-              disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
-              onClick={analyze}
-            >
-              {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
-            </button>
-          </div>
-          {planError.value && (
-            <div class="resources-banner resources-banner--error">{planError.value}</div>
-          )}
-          {report.value && (
-            <div class="resources-banner resources-banner--ok">
-              {t("resources.installedOk", {
-                name: report.value.name,
-                count: report.value.count,
-                version: report.value.version,
-              })}
+          <div class="mod-detail__head">
+            <span class="mod-row__tile mod-row__tile--lg">
+              <FolderSearch size={24} />
+            </span>
+            <div class="mod-detail__id">
+              <div class="mod-detail__name">{t("resources.installSection")}</div>
+              <div class="mod-detail__en">{t("resources.installHint")}</div>
             </div>
-          )}
-          {plan.value && (
-            <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
-              <div class="plan-card__head">
-                {(() => {
-                  const Icon = KIND_META[plan.value!.kind].icon;
-                  return <Icon size={18} />;
-                })()}
-                <strong>{plan.value.name}</strong>
-                <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
-                {plan.value.detail && <span class="plan-card__detail">{plan.value.detail}</span>}
-              </div>
-              {plan.value.textureAnalysis && renderTexAnalysis(plan.value.textureAnalysis)}
-              {plan.value.entries.length > 0 && (
-                <table class="plan-card__files">
-                  <caption>{t("resources.planFiles")}</caption>
-                  <tbody>
-                    {plan.value.entries.map((e) => (
-                      <tr key={e.fromRel + e.toRel}>
-                        <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
-                        <td>→</td>
-                        <td>{e.toRel}/</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {plan.value.warnings.length > 0 && (
-                <ul class="plan-card__warnings">
-                  {plan.value.warnings.map((w) => (
-                    <li key={w}>
-                      <AlertTriangle size={12} /> {w}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <button class="plan-card__go" disabled={installing.value} onClick={confirmInstall}>
-                {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
+          </div>
+          <div class="mod-detail__scroll">
+            <div class="resources-installrow">
+              <input
+                type="text"
+                v-model={sourcePath.value}
+                placeholder={t("resources.pathPlaceholder")}
+                spellcheck={false}
+              />
+              <button
+                disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
+                onClick={analyze}
+              >
+                {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
               </button>
             </div>
-          )}
+            {planError.value && (
+              <div class="resources-banner resources-banner--error">{planError.value}</div>
+            )}
+            {report.value && (
+              <div class="resources-banner resources-banner--ok">
+                {t("resources.installedOk", {
+                  name: report.value.name,
+                  count: report.value.count,
+                  version: report.value.version,
+                })}
+              </div>
+            )}
+            {plan.value && (
+              <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
+                <div class="plan-card__head">
+                  {(() => {
+                    const Icon = KIND_META[plan.value!.kind].icon;
+                    return <Icon size={18} />;
+                  })()}
+                  <strong>{plan.value.name}</strong>
+                  <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
+                  {plan.value.detail && <span class="plan-card__detail">{plan.value.detail}</span>}
+                </div>
+                {plan.value.textureAnalysis && renderTexAnalysis(plan.value.textureAnalysis)}
+                {plan.value.entries.length > 0 && (
+                  <table class="plan-card__files">
+                    <caption>{t("resources.planFiles")}</caption>
+                    <tbody>
+                      {plan.value.entries.map((e) => (
+                        <tr key={e.fromRel + e.toRel}>
+                          <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
+                          <td>→</td>
+                          <td>{e.toRel}/</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {plan.value.warnings.length > 0 && (
+                  <ul class="plan-card__warnings">
+                    {plan.value.warnings.map((w) => (
+                      <li key={w}>
+                        <AlertTriangle size={12} /> {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+          <div class="mod-detail__foot">
+            <div class="mod-detail__foot-row">
+              <div class="mod-detail__actions">
+                <HButton
+                  size="sm"
+                  variant="primary"
+                  disabled={!plan.value || installing.value || !gameRoot.value}
+                  loading={installing.value}
+                  onClick={confirmInstall}
+                >
+                  {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
+                </HButton>
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
 
-    function renderDrawerBody() {
-      const d = drawer.value;
-      if (!d) return null;
-      switch (d.mode) {
+    function renderPane() {
+      const sel = selection.value;
+      if (!sel) {
+        return (
+          <div class="mod-detail mod-detail--empty">
+            <div class="mod-detail__placeholder">
+              <MousePointerClick size={30} />
+              <p>{t("resources.pickHint")}</p>
+            </div>
+          </div>
+        );
+      }
+      switch (sel.mode) {
         case "catalog":
-          return renderCatalogDetail(d.entry);
+          return renderCatalogDetail(sel.entry);
         case "installed":
-          return renderInstalledDetail(d.mod);
+          return renderInstalledDetail(sel.mod);
         case "local":
           return renderLocalDetail();
       }
@@ -830,12 +890,13 @@ export default defineComponent({
         { key: "texture", label: t("resources.big.texture"), icon: <ImageIcon size={14} /> },
         { key: "voice", label: t("resources.big.voice"), icon: <AudioLines size={14} /> },
       ];
+      const selKey = selectedRowKey.value;
       return (
         <div class="resources-view">
-          <div class="resources-view__head">
+          <header class="resources-view__head">
             <h1 class="resources-view__title">{t("resources.title")}</h1>
-          </div>
-          <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+            <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+          </header>
 
           <div class="resources-banner resources-banner--warn">
             <AlertTriangle size={16} />
@@ -849,8 +910,8 @@ export default defineComponent({
             </div>
           )}
 
-          {/* ── The marketplace column: category strip, source strip +
-              search, filter row, chips, compact rows, meta foot ── */}
+          {/* ── Master/detail: the filter stack + list on the left, the
+              selected mod's pane on the right ── */}
           <div class="mod-hub">
             <aside class="mod-side">
               {/* Big category — the row-filling segmented strip. */}
@@ -869,7 +930,7 @@ export default defineComponent({
                   <HTabs
                     variant="segmented"
                     modelValue={source.value}
-                    onUpdate:modelValue={(v: string) => (source.value = v as "online" | "installed")}
+                    onUpdate:modelValue={(v: string) => pickSource(v as "online" | "installed")}
                     tabs={sourceTabs}
                     renderPanels={false}
                   />
@@ -974,7 +1035,7 @@ export default defineComponent({
                 )}
               </div>
 
-              {/* ── The compact list ── */}
+              {/* ── The compact list (the master half) ── */}
               <div class="mod-side__list">
                 {source.value === "online"
                   ? catalogShown.value.length === 0
@@ -988,8 +1049,8 @@ export default defineComponent({
                         return (
                           <button
                             key={entry.id}
-                            class="mod-row"
-                            onClick={() => openCatalog(entry)}
+                            class={["mod-row", selKey === entry.id && "mod-row--active"]}
+                            onClick={() => selectCatalog(entry)}
                           >
                             <span class="mod-row__tile mod-row__tile--cat">
                               <RowIcon size={20} />
@@ -1026,8 +1087,12 @@ export default defineComponent({
                         return (
                           <button
                             key={m.relPath}
-                            class={["mod-row", m.disabled && "mod-row--disabled"]}
-                            onClick={() => openInstalled(m)}
+                            class={[
+                              "mod-row",
+                              m.disabled && "mod-row--disabled",
+                              selKey === m.relPath && "mod-row--active",
+                            ]}
+                            onClick={() => selectInstalled(m)}
                           >
                             <span class={["mod-row__tile", `mod-row__tile--${meta.class}`]}>
                               <Icon size={20} />
@@ -1065,21 +1130,11 @@ export default defineComponent({
                   : t("resources.countLine", { count: installed.value.length })}
               </div>
             </aside>
-          </div>
 
-          {/* ── Detail drawer: every per-mod action lives in here now ── */}
-          <HDrawer
-            modelValue={!!drawer.value}
-            onUpdate:modelValue={(v: boolean) => {
-              if (!v) drawer.value = null;
-            }}
-            side="right"
-            size="min(440px, 92vw)"
-            panelClass="mod-drawer"
-            title={drawerTitle.value}
-          >
-            {renderDrawerBody()}
-          </HDrawer>
+            {/* ── The detail half: what the selected row is, and every
+                action for it, with the actions pinned bottom-right ── */}
+            <section class="mod-detail-pane">{renderPane()}</section>
+          </div>
 
           <HConfirmDialog
             open={!!confirmTarget.value}
