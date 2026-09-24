@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 import {
   MonitorPlay, Eye, BarChart3, ChevronDown, ChevronRight, Download,
 } from "@lucide/vue";
-import { HButton } from "@celestia-island/hikari";
+import { HkButton } from "@celestia-island/hikari";
 import GithubMark from "@/components/GithubMark";
 import { LinkButton, Reveal, FitScale } from "@/components/ui";
 import ModWindow from "@/components/showcase/ModWindow";
@@ -121,17 +121,17 @@ export default defineComponent({
               <div class="hero__actions">
                 <RouterLink to="/download" custom>
                   {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                    <HButton size="lg" onClick={navigate}>
+                    <HkButton size="lg" onClick={navigate}>
                       <Download size={17} />
                       {t("hero.download")}
-                    </HButton>
+                    </HkButton>
                   )}
                 </RouterLink>
                 <RouterLink to="/mods" custom>
                   {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                    <HButton size="lg" variant="secondary" onClick={navigate}>
+                    <HkButton size="lg" variant="secondary" onClick={navigate}>
                       {t("hero.mods")}
-                    </HButton>
+                    </HkButton>
                   )}
                 </RouterLink>
                 <LinkButton size="lg" variant="ghost" href={GITHUB} external>
@@ -253,10 +253,10 @@ export default defineComponent({
             <Reveal delay={220}>
               <RouterLink to="/mods" custom>
                 {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                  <HButton variant="ghost" onClick={navigate}>
+                  <HkButton variant="ghost" onClick={navigate}>
                     {t("showcase.mods.link")}
                     <ChevronRight size={15} />
-                  </HButton>
+                  </HkButton>
                 )}
               </RouterLink>
             </Reveal>
@@ -310,10 +310,10 @@ export default defineComponent({
               <div class="cta-band__actions">
                 <RouterLink to="/download" custom>
                   {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                    <HButton size="lg" onClick={navigate}>
+                    <HkButton size="lg" onClick={navigate}>
                       <Download size={17} />
                       {t("cta.download")}
-                    </HButton>
+                    </HkButton>
                   )}
                 </RouterLink>
                 <LinkButton size="lg" variant="ghost" href={GITHUB} external>

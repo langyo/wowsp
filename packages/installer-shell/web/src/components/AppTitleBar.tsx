@@ -1,11 +1,11 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
-import { HTitleBar } from "@celestia-island/hikari";
+import { HkTitleBar } from "@celestia-island/hikari";
 
 import { tauriWindow, type TauriWindow } from "../tauri";
 import "./AppTitleBar.scss";
 
 /**
- * WoWSP shell around hikari's HTitleBar. The upstream component is
+ * WoWSP shell around hikari's HkTitleBar. The upstream component is
  * deliberately shell-agnostic — it renders the bar and emits caption
  * events; this wrapper wires them to the Tauri window via the
  * `withGlobalTauri` global API (the shell frontend carries no
@@ -69,7 +69,7 @@ export default defineComponent({
         onPointerdown={onPointerDown}
         onDblclick={onDblClick}
       >
-        <HTitleBar
+        <HkTitleBar
           icon={props.icon}
           title={props.title}
           subtitle={props.subtitle}

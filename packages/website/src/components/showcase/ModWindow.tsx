@@ -4,7 +4,7 @@ import {
   Ship, Crosshair, Map, SlidersHorizontal, Volume2, Palette, Layers,
   Search, Waves, CloudFog, Radar, Timer, Crosshair as CrosshairIcon,
 } from "@lucide/vue";
-import { HButton, HSwitch, HTag } from "@celestia-island/hikari";
+import { HkButton, HkSwitch, HkTag } from "@celestia-island/hikari";
 import "./ModWindow.scss";
 
 /** Category tabs mirror Aslain's real modpack groups (no catch-all "all"). */
@@ -127,7 +127,7 @@ export default defineComponent({
           <span class="mod-win__title">
             <Layers size={13} />
             {t("showcase.mods.win.title")}
-            <HTag variant="default">{t("showcase.mods.win.aslainTag")}</HTag>
+            <HkTag variant="default">{t("showcase.mods.win.aslainTag")}</HkTag>
           </span>
           <span class="mod-win__search">
             <Search size={12} />
@@ -168,19 +168,19 @@ export default defineComponent({
                 <span class="mod-win__meta">
                   <span class="mod-win__name">
                     {rowText(row.id, "name")}
-                    <HTag variant={row.cat === "voice" ? "warning" : row.cat === "skins" ? "primary" : "default"}>
+                    <HkTag variant={row.cat === "voice" ? "warning" : row.cat === "skins" ? "primary" : "default"}>
                       {row.version}
-                    </HTag>
+                    </HkTag>
                   </span>
                   <span class="mod-win__desc">{rowText(row.id, "desc")} · {row.size}</span>
                 </span>
                 <span class="mod-win__action">
                   {rowState === "install" ? (
-                    <HButton size="sm" onClick={() => { state.rows[row.id] = "enabled"; }}>
+                    <HkButton size="sm" onClick={() => { state.rows[row.id] = "enabled"; }}>
                       {t("showcase.mods.win.install")}
-                    </HButton>
+                    </HkButton>
                   ) : (
-                    <HSwitch
+                    <HkSwitch
                       modelValue={rowState === "enabled"}
                       onUpdate:modelValue={(v: boolean) => { state.rows[row.id] = v ? "enabled" : "off"; }}
                       aria-label={rowText(row.id, "name")}

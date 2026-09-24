@@ -47,7 +47,7 @@ export const LOCALE_LABELS: Record<InstallerLocale, string> = {
   pt: "Português",
 };
 
-/** HSelect options for the picker, in display order. */
+/** HkSelect options for the picker, in display order. */
 export const LOCALE_OPTIONS: { value: InstallerLocale; label: string }[] =
   LOCALES.map((locale) => ({ value: locale, label: LOCALE_LABELS[locale] }));
 
