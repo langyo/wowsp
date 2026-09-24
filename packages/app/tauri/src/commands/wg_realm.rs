@@ -75,6 +75,21 @@ pub fn encyclopedia_host(realm: &str) -> Result<&'static str, String> {
 
 /// Application id for one realm: the env override wins everywhere, otherwise
 /// the Lesta id on "ru" and the WG id on the international realms.
+///
+/// These are WG public API application ids — client-side public identifiers
+/// issued by Wargaming (resp. Lesta) for their open API, designed to be
+/// embedded in client applications; NOT credentials/secrets (the open API
+/// is rate-limited per IP instead of per-key auth). See
+/// <https://developers.wargaming.net/> for registration.
+///
+/// [`WG_APP_ID`] is this repo's only Wargaming application id; the same value
+/// is hardcoded twice in `scripts/extract/build_planner_data.py` (offline
+/// planner bundle build) — keep the copies in sync. Registration & rotation:
+/// the id originates from ApeRadar's open-source client (see the README
+/// acknowledgement), not from a registration held by this project; an
+/// application record for a self-registered replacement id is still pending
+/// (申请记录待补). Rotation needs no release — `WOWSP_WG_APPLICATION_ID`
+/// swaps either id at runtime.
 pub fn application_id(realm: &str) -> String {
     std::env::var("WOWSP_WG_APPLICATION_ID").unwrap_or_else(|_| {
         if realm == "ru" {
