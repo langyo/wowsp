@@ -143,6 +143,13 @@
     "resetFailed": "Failed to reset the seal to its default"
   },
   "updates": "Updates",
+  "changelog": "Changelog",
+  "changelogHint": "Release notes are streamed live from the project's GitHub Releases.",
+  "changelogLoading": "Loading the changelog…",
+  "changelogEmpty": "No releases published yet.",
+  "changelogFailed": "Failed to load the changelog.",
+  "changelogRefresh": "Refresh",
+  "changelogCurrent": "Current",
   "updatesAppTitle": "Application",
   "updatesAppHint": "The app binary follows the GitHub version tags; an update always downloads the slim installer — the resource pack follows on its own channel.",
   "updatesAppName": "WoWSP application",

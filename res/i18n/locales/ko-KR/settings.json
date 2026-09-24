@@ -143,6 +143,13 @@
     "resetFailed": "인장을 기본값으로 되돌리기 실패"
   },
   "updates": "업데이트",
+  "changelog": "업데이트 기록",
+  "changelogHint": "릴리스 노트는 프로젝트의 GitHub Releases에서 실시간으로 가져옵니다.",
+  "changelogLoading": "업데이트 기록을 불러오는 중…",
+  "changelogEmpty": "아직 게시된 릴리스가 없습니다.",
+  "changelogFailed": "업데이트 기록을 불러오지 못했습니다.",
+  "changelogRefresh": "새로 고침",
+  "changelogCurrent": "현재 버전",
   "updatesAppTitle": "앱 업데이트",
   "updatesAppHint": "앱 본체는 GitHub 버전 태그를 따릅니다. 업데이트 시 슬림 설치 관리자만 내려받으며, 리소스 팩은 자체 채널을 통해 별도로 진행됩니다.",
   "updatesAppName": "WoWSP 앱 본체",

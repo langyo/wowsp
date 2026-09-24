@@ -143,6 +143,13 @@
     "resetFailed": "還原預設印章失敗"
   },
   "updates": "更新",
+  "changelog": "更新日誌",
+  "changelogHint": "更新日誌即時擷取自專案的 GitHub Releases。",
+  "changelogLoading": "正在載入更新日誌…",
+  "changelogEmpty": "還沒有發布記錄。",
+  "changelogFailed": "更新日誌載入失敗。",
+  "changelogRefresh": "重新整理",
+  "changelogCurrent": "目前版本",
   "updatesAppTitle": "應用更新",
   "updatesAppHint": "應用本體跟隨 GitHub 版本號更新；更新時只下載精簡安裝包，資源包會透過自己的通道單獨跟進。",
   "updatesAppName": "WoWSP 應用本體",

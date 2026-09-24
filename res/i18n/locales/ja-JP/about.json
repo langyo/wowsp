@@ -12,6 +12,8 @@
   "updateNow": "今すぐ更新",
   "updateLater": "後で",
   "upToDate": "最新です",
+  "updateAppliedTitle": "WoWSP は v{version} に更新されました",
+  "updateAppliedView": "更新履歴を見る",
   "checking": "確認中...",
   "downloading": "ダウンロード中...",
   "issues": "問題を報告",

@@ -34,6 +34,7 @@
     "hint": "함선 이름, 병음 또는 영어 이름을 입력하세요"
   },
   "retry": "재시도",
+  "close": "닫기",
   "gamePath": {
     "title": "게임 경로",
     "desc": "WoWSP가 함선 장갑·탄도 데이터, 리플레이, MOD 리소스를 읽으려면 World of Warships 설치 폴더가 필요합니다.",

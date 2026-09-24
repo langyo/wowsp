@@ -34,6 +34,7 @@
     "hint": "Saisissez un nom de navire, un pinyin ou un nom anglais"
   },
   "retry": "Réessayer",
+  "close": "Fermer",
   "gamePath": {
     "title": "Chemin du jeu",
     "desc": "WoWSP a besoin du dossier d'installation de World of Warships pour lire les données de blindage et de balistique des navires, les replays et les ressources de mods.",

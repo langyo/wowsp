@@ -80,6 +80,7 @@ export const RPC = {
   update_check: "update_check",
   update_download: "update_download",
   update_cancel: "update_cancel",
+  changelog_list: "changelog_list",
   mod_hub_scan_installed: "mod_hub_scan_installed",
   mod_hub_classify_path: "mod_hub_classify_path",
   mod_hub_install: "mod_hub_install",

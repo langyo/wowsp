@@ -15,6 +15,7 @@ export type SettingsSection =
   | "network"
   | "pairing"
   | "updates"
+  | "changelog"
   | "overlay"
   | "about"
   | "attributions";
@@ -29,6 +30,7 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = [
   "network",
   "pairing",
   "updates",
+  "changelog",
   "overlay",
   "about",
   "attributions",

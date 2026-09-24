@@ -143,6 +143,13 @@
     "resetFailed": "Échec de la réinitialisation du sceau"
   },
   "updates": "Mises à jour",
+  "changelog": "Notes de mise à jour",
+  "changelogHint": "Les notes de version sont récupérées en direct depuis les GitHub Releases du projet.",
+  "changelogLoading": "Chargement des notes de mise à jour…",
+  "changelogEmpty": "Aucune version publiée pour le moment.",
+  "changelogFailed": "Échec du chargement des notes de mise à jour.",
+  "changelogRefresh": "Actualiser",
+  "changelogCurrent": "Actuelle",
   "updatesAppTitle": "Application",
   "updatesAppHint": "L'application suit les tags de version GitHub ; une mise à jour ne télécharge que l'installateur allégé — le pack de ressources suit via son propre canal.",
   "updatesAppName": "Application WoWSP",

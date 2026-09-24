@@ -29,6 +29,7 @@ import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import UpdateToast from "./UpdateToast";
+import UpdateAppliedToast from "./UpdateAppliedToast";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -333,6 +334,12 @@ export default defineComponent({
             while the store is idle, so it mounts unconditionally next to
             the blocking host in the same top-right column. */}
         <UpdateToast />
+        {/* After-update success card (已更新到 v…): raises once on the
+            first boot following an installer pass — the version moved
+            since the last recorded run — and its 查看 action lands in
+            the settings' changelog section. Renders nothing outside the
+            desktop Tauri shell, so it mounts unconditionally here. */}
+        <UpdateAppliedToast />
 
         {/* Close confirm dialog — footer carries the action button group. */}
         <HkModal

@@ -12,6 +12,8 @@
   "updateNow": "Mettre à jour",
   "updateLater": "Plus tard",
   "upToDate": "À jour",
+  "updateAppliedTitle": "WoWSP a été mis à jour en v{version}",
+  "updateAppliedView": "Voir les notes de mise à jour",
   "checking": "Vérification...",
   "downloading": "Téléchargement...",
   "issues": "Signaler un problème",
