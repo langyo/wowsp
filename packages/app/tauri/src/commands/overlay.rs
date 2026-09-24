@@ -303,7 +303,12 @@ pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), St
             tracing::warn!(error = %e, "emit overlay-visibility failed");
         }
         if let Ok(hwnd) = win.hwnd() {
-            show_async(windows::Win32::Foundation::HWND(hwnd.0));
+            let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
+            // Same band re-assert every other show path does (see
+            // [`place_and_show_async`]): a preview shown from the settings
+            // window must land on top of the game, not behind it.
+            reassert_topmost(hwnd);
+            show_async(hwnd);
         }
     } else {
         if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, false) {
@@ -1993,7 +1998,7 @@ fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor, stale: bool) {
 #[cfg(target_os = "windows")]
 fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
+        HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SetWindowPos,
     };
     unsafe {
         // ASYNCWINDOWPOS is load-bearing: without it a cross-thread
@@ -2001,14 +2006,24 @@ fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
         // a main thread busy with WebView2 resize work then stalls THIS
         // watcher thread — Tab polling stops, and rapid pressing feels
         // permanently dead.
+        //
+        // HWND_TOPMOST (re-asserted on EVERY show, instead of the previous
+        // SWP_NOZORDER "leave the band alone") is load-bearing too: the
+        // topmost bit set at window CREATION does not survive ordinary use —
+        // switching windows, Alt-Tab and the game re-entering its own
+        // topmost/fullscreen state all reorder the topmost band, and once
+        // the overlay sits below the game it stays there: every later show
+        // would place a window nobody can see. Re-stamping the band here
+        // makes the first Tab press after any of that put the chips back on
+        // top. SWP_NOACTIVATE still keeps the game focused (never steal it).
         let _ = SetWindowPos(
             hwnd,
-            None,
+            Some(HWND_TOPMOST),
             r.x,
             r.y,
             r.width.max(1),
             r.height.max(1),
-            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER,
+            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE,
         );
         show_async(hwnd);
     }
@@ -2022,6 +2037,28 @@ fn show_async(hwnd: windows::Win32::Foundation::HWND) {
     use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindowAsync};
     unsafe {
         let _ = ShowWindowAsync(hwnd, SW_SHOWNOACTIVATE);
+    }
+}
+
+/// Geometry-free twin of the band re-assert inside [`place_and_show_async`]
+/// (move/resize/activate all left alone) for show paths that only need the
+/// window brought to the top of the topmost band.
+#[cfg(target_os = "windows")]
+fn reassert_topmost(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+        SWP_NOSIZE, SetWindowPos,
+    };
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER,
+        );
     }
 }
 

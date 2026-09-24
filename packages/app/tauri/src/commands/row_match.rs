@@ -27,8 +27,14 @@
 //!   dilute the score, decides.
 //!
 //! Assignment is one-to-one: each roster player may occupy at most one row,
-//! resolved greedily by descending score so the strongest evidence wins.
-//! Everything here is a pure function — unit-testable without frames.
+//! resolved greedily by descending score so the strongest evidence wins. A
+//! row left without a partner stays `None` (the frontend shows its silent
+//! placeholder) — except when the leftovers make the answer unambiguous: the
+//! row set and the candidate set describe the SAME players, so a single
+//! unmatched row and a single unassigned candidate are necessarily each
+//! other ([`fill_by_elimination`], guarded by the strength of the evidence
+//! already placed). Everything here is a pure function — unit-testable
+//! without frames.
 //!
 //! Known collision class, resolved by tie order: a SHORTER roster name can
 //! appear inside the noisy line that belongs to a LONGER one. The usual
@@ -56,6 +62,14 @@ pub(crate) const MATCH_THRESHOLD: f32 = 0.75;
 /// strictly stronger evidence) and ABOVE the generic edit-similarity hits
 /// (which start at [`MATCH_THRESHOLD`]).
 const TRUNCATED_PREFIX_SCORE: f32 = 0.9;
+
+/// Quantized floor (see `assign_rows`'s u32 scores) a pair must reach to
+/// count as STRONG evidence: a clean containment or a truncated-prefix read,
+/// i.e. the nickname was read essentially verbatim rather than reconstructed
+/// from fuzzy edit similarity. Only strong-pair assignments unlock the
+/// elimination stage ([`fill_by_elimination`]), so the worst a fuzzy read can
+/// do is leave a chip silent — never move a leftover name onto a wrong row.
+const STRONG_QUANTIZED: u32 = (TRUNCATED_PREFIX_SCORE * 10_000.0) as u32;
 
 /// Floor (in chars) for a truncated-name head to count as evidence at all —
 /// a 1–3 char head could prefix half the roster's short names by accident.
@@ -229,7 +243,8 @@ pub(crate) fn pair_score(name: &[char], text: &[char]) -> f32 {
 /// name (a longer exact containment is the more specific read — see the
 /// module docs' collision class), then row index, then roster order, so the
 /// result is deterministic. A row left without a partner stays `None` and
-/// the frontend shows its silent placeholder.
+/// the frontend shows its silent placeholder — unless the leftovers make the
+/// answer unambiguous ([`fill_by_elimination`]).
 pub(crate) fn assign_rows(
     ocr_texts: &[Option<String>],
     roster: &[VehicleEntry],
@@ -273,15 +288,69 @@ pub(crate) fn assign_rows(
     });
     let mut taken_row = vec![false; ocr_texts.len()];
     let mut taken_cand = vec![false; roster.len()];
-    for (_, _, row, cand) in pairs {
+    // Evidence ledger for the elimination stage below: how many pairs were
+    // placed, and whether EVERY one of them was a strong read (verbatim
+    // containment, or a truncated-prefix one).
+    let mut matched = 0usize;
+    let mut all_strong = true;
+    for (score, _, row, cand) in pairs {
         if taken_row[row] || taken_cand[cand] {
             continue;
         }
+        if score < STRONG_QUANTIZED {
+            all_strong = false;
+        }
+        matched += 1;
         taken_row[row] = true;
         taken_cand[cand] = true;
         out[row] = Some(roster[cand].name.clone());
     }
+    // At least ONE row must have matched on its own text and every match must
+    // be solid, so a block where recognition established nothing (all-`None`
+    // reads, unrelated text) keeps its honest silence instead of being filled
+    // by pure counting.
+    if matched > 0 && all_strong {
+        fill_by_elimination(&mut out, &taken_row, &taken_cand, roster);
+    }
     out
+}
+
+/// Fill the ONE leftover row by elimination: the row set and the candidate
+/// set describe the same players — the grid is built from the roster's own
+/// team size (and padded to it when a row is occluded), so each side's table
+/// lists exactly its roster subset — which makes the unmatched rows and the
+/// unassigned candidates the SAME leftover players. When exactly one of each
+/// remains, that pairing is a deduction, not a guess, and it is what fills a
+/// chip OCR could not read on its own (the reported "one or two rows keep
+/// dotting" case). Two or more leftovers stay ambiguous — no pairing is
+/// attempted, the chips keep their honest silence.
+///
+/// Called only with evidence already on screen (at least one matched pair,
+/// all of them strong — see the caller): a single false-positive or fuzzy
+/// match must not drag the leftover name onto the wrong row, and the
+/// closed-set contract every other stage relies on is what makes the
+/// deduction sound.
+fn fill_by_elimination(
+    out: &mut [Option<String>],
+    taken_row: &[bool],
+    taken_cand: &[bool],
+    roster: &[VehicleEntry],
+) {
+    let mut free_rows = taken_row.iter().enumerate().filter(|(_, t)| !**t);
+    let Some((row, _)) = free_rows.next() else {
+        return;
+    };
+    if free_rows.next().is_some() {
+        return;
+    }
+    let mut free_cands = taken_cand.iter().enumerate().filter(|(_, t)| !**t);
+    let Some((cand, _)) = free_cands.next() else {
+        return;
+    };
+    if free_cands.next().is_some() {
+        return;
+    }
+    out[row] = Some(roster[cand].name.clone());
 }
 
 #[cfg(test)]
@@ -373,7 +442,10 @@ mod tests {
     fn exact_line_matches_by_containment() {
         let roster = vec![veh("PlayerOne"), veh("SeaWolf")];
         let out = assign_rows(&lines(&[Some("playerone gneisenau 45k 12"), None]), &roster);
-        assert_eq!(out, vec![Some("PlayerOne".into()), None]);
+        // Row 0 by clean containment; row 1 is the sole leftover, so the sole
+        // remaining roster entry is deduced onto it (see
+        // `fill_by_elimination`).
+        assert_eq!(out, vec![Some("PlayerOne".into()), Some("SeaWolf".into())]);
     }
 
     #[test]
@@ -593,11 +665,15 @@ mod tests {
 
     #[test]
     fn stronger_evidence_wins_the_conflict() {
-        // Row 1's read is a clean containment; row 0's is a typo. Alice must
-        // land on row 1 even though row 0 comes first.
+        // Row 1's read is a clean containment; row 0's is a typo. PlayerOne
+        // must land on row 1 even though row 0 comes first — and row 0, the
+        // only row left with the only candidate left ("filler"), is then the
+        // elimination deduction (see `fill_by_elimination`) rather than a
+        // silent placeholder: the row IS filler, since PlayerOne's row is
+        // already spoken for.
         let roster = vec![veh("PlayerOne"), veh("filler")];
         let out = assign_rows(&lines(&[Some("PiayerOue"), Some("playerone 45k")]), &roster);
-        assert_eq!(out, vec![None, Some("PlayerOne".into())]);
+        assert_eq!(out, vec![Some("filler".into()), Some("PlayerOne".into())]);
     }
 
     #[test]
@@ -605,11 +681,92 @@ mod tests {
         // The row shows "[WOLF] SeaDog" but the OCR lost the tag brackets:
         // the normalized line "wolf seadog" contains BOTH roster names as
         // clean 1.0 containments. The longer name is the more specific read
-        // and claims the row; the short tag-letter name it was a fragment
-        // of stays unmatched instead of being force-pinned to another row.
+        // and claims the row; the short tag-letter name it was a fragment of
+        // must NOT be pinned to this row — with one row and one candidate
+        // left over it goes to the UNREAD row instead, which is the same
+        // deduction read the other way round.
         let roster = vec![veh("Wolf"), veh("SeaDog")];
         let out = assign_rows(&lines(&[Some("wolf seadog"), None]), &roster);
-        assert_eq!(out, vec![Some("SeaDog".into()), None]);
+        assert_eq!(out, vec![Some("SeaDog".into()), Some("Wolf".into())]);
+    }
+
+    // ── elimination (the single leftover row) ────────────────────────────
+
+    #[test]
+    fn single_leftover_row_is_filled_by_elimination() {
+        // The reported shape: the neighbours read cleanly and one row's strip
+        // came back with text that fits nobody (a glare-mangled read, a
+        // partly-covered strip) — its chip would otherwise dot for the whole
+        // battle. One row and one roster entry left: the pairing is forced.
+        let roster = vec![veh("Alpha"), veh("MOCHI91"), veh("Gamma")];
+        let out = assign_rows(
+            &lines(&[Some("[CLAN]Alpha 45k"), Some("???"), Some("gamma 8k")]),
+            &roster,
+        );
+        assert_eq!(
+            out,
+            vec![
+                Some("Alpha".into()),
+                Some("MOCHI91".into()),
+                Some("Gamma".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn elimination_fills_an_unread_row_next_to_read_ones() {
+        // Two clean reads and one row whose strip produced no text at all
+        // (occluded / out of frame): the third roster name can only belong to
+        // it.
+        let roster = vec![veh("Alpha"), veh("Beta"), veh("Gamma")];
+        let out = assign_rows(
+            &lines(&[Some("alpha 12k"), None, Some("gamma 8k")]),
+            &roster,
+        );
+        assert_eq!(
+            out,
+            vec![
+                Some("Alpha".into()),
+                Some("Beta".into()),
+                Some("Gamma".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn elimination_needs_exactly_one_leftover_each() {
+        // Two unread rows against TWO unassigned candidates: any pairing
+        // would be a coin flip, so both stay silent.
+        let roster = vec![veh("Alpha"), veh("Beta"), veh("Gamma")];
+        let out = assign_rows(&lines(&[Some("alpha 12k"), None, None]), &roster);
+        assert_eq!(
+            out,
+            vec![Some("Alpha".into()), None, None],
+            "2×2 leftovers must stay ambiguous"
+        );
+        // A row with no partner candidate (more rows than roster entries, the
+        // padded/occluded case) is likewise left alone.
+        let out = assign_rows(&lines(&[Some("alpha 12k"), None, None]), &roster[..1]);
+        assert_eq!(out, vec![Some("Alpha".into()), None, None]);
+    }
+
+    #[test]
+    fn elimination_stays_off_without_strong_evidence() {
+        let roster = vec![veh("PlayerOne"), veh("filler")];
+        // Row 0's read is a FUZZY hit (0.78: two wrong letters in nine) —
+        // accepted, but not solid enough to extend the assignment to the row
+        // that read nothing. The leftover stays silent.
+        let out = assign_rows(&lines(&[Some("PiayerOue"), None]), &roster);
+        assert_eq!(
+            out,
+            vec![Some("PlayerOne".into()), None],
+            "a fuzzy match must not unlock the elimination fill"
+        );
+        // A block where NOTHING matched keeps its honest silence too, even
+        // when the counts would line up 1:1.
+        let single = vec![veh("苍蓝蔷薇")];
+        let out = assign_rows(&lines(&[Some("铁血老兵")]), &single);
+        assert_eq!(out, vec![None]);
     }
 
     #[test]
