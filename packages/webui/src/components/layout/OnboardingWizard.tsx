@@ -4,7 +4,7 @@ import { HButton, HModal, HStepFlow, useToast, getThemeTokens, themePresets, use
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t } from "@/i18n";
-import { THEME_PRESET_ORDER } from "@/theme";
+import { themePresetIds } from "@/theme";
 import {
   setThemeModePreference,
   themeModePreference,
@@ -201,9 +201,11 @@ export default defineComponent({
 
     // Color-preset cards (the settings appearance row, mirrored): swatch =
     // the preset's own background at the effective mode, click applies the
-    // theme immediately for a live preview.
+    // theme immediately for a live preview. The ids come from hikari's live
+    // preset table (themePresetIds), so a retired-id whitelist cannot empty
+    // the row.
     const presetCards = computed(() =>
-      THEME_PRESET_ORDER.map((id) => {
+      themePresetIds().map((id) => {
         const tokens = getThemeTokens(id, theme.effectiveMode.value);
         if (!tokens) return null;
         const on = theme.currentTheme.value === id;
@@ -302,9 +304,10 @@ export default defineComponent({
                       {themeCards.value}
                     </div>
 
-                    {/* Color scheme — the four shipped presets in the shared
-                        display order (THEME_PRESET_ORDER, Synthwave '84
-                        last), same cards as the settings appearance row. */}
+                    {/* Color scheme — every preset hikari's live table
+                        carries, in the shared display order (themePresetIds:
+                        Synthwave '84 last), same cards as the settings
+                        appearance row. */}
                     <h3 class="onboarding__subtitle">{t("settings.themePreset")}</h3>
                     <div class="onboarding__options onboarding__options--four">
                       {presetCards.value}
