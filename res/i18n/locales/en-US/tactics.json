@@ -11,16 +11,12 @@
     "limited": "Limited support"
   },
   "warning": {
-    "message": "Support for this map (scenario / special mode) in tactics analysis is incomplete: terrain and overlay data may be missing. For preview only.",
-    "modified": "Modified",
-    "path": "Path"
+    "message": "Support for this map (scenario / special mode) in tactics analysis is incomplete: terrain and overlay data may be missing. For preview only."
   },
   "list": {
-    "error": "Could not read the game asset index. Make sure the game client is available.",
-    "empty": "No maps found in the game client.",
-    "noClient": "No game client detected"
+    "noClient": "No game client detected",
+    "filterEmpty": "No maps match this mode yet — play some battles and they will show up here."
   },
   "select": "Select a map to start analysing",
-  "noArt": "This map has no minimap art",
-  "loading": "Loading map list…"
+  "noArt": "This map has no minimap art"
 }
