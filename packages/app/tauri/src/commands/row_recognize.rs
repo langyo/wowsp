@@ -242,6 +242,13 @@ pub(crate) fn recognize_row_players(frame: &RowFrame) -> Option<RowRecognition> 
     // Env gate — with no engine configured this is the whole function.
     let engine = select_recognizer(std::env::var_os(RECOGNIZER_ENV))?;
     let (texts, alive) = recognize_row_state(engine.as_ref(), frame);
+    // Ground-truth dump aid (opt-in, no-op without WOWSP_TAB_DUMP_DIR): the
+    // OCR's raw per-row read rides along so a dump can answer "why did this
+    // row not match?" — before the all-`None` bail below so a pass that read
+    // nothing is diagnosable too.
+    if super::tab_dump::dump_enabled() {
+        super::tab_dump::stash_row_texts(&texts);
+    }
     // No row produced any text → recognition yielded nothing usable at all
     // (alive flags without names cannot be attributed to players either):
     // the anchor keeps row_players = None and the frontend falls back to
@@ -633,13 +640,19 @@ mod tests {
         // Grid count 2 agrees with the roster's relation count here.
         let out = row_match_blocks(&texts, &info, 2);
         // Ally rows resolve within the ally subset only: row 0's enemy text
-        // is far from every ally name → unmatched.
-        assert_eq!(out[0], None);
+        // matches no ally name on its own, so row 1's clean read claims the
+        // ally TwinName — and row 0, the ally block's single leftover, takes
+        // the subset's one remaining entry. That deduction still draws from
+        // the ALLY set, which is the side-isolation contract this test
+        // guards: no name ever crosses a block boundary.
+        assert_eq!(out[0], Some("AllyMate".into()));
         assert_eq!(out[1], Some("TwinName".into()));
         // Enemy rows resolve within the enemy subset; the ally nickname's
-        // text in an enemy row slot matches nothing over there.
+        // text in an enemy row slot matches nothing over there, so the row
+        // falls to that block's own leftover deduction — inside the enemy
+        // set again.
         assert_eq!(out[2], Some("TwinName".into()));
-        assert_eq!(out[3], None);
+        assert_eq!(out[3], Some("FoeMate".into()));
     }
 
     #[test]
