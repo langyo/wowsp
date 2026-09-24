@@ -122,8 +122,8 @@
     "zoom": "확대 맵",
     "trails": "함선 궤적",
     "grid": "맵 그리드(A–J / 1–10)",
-    "rotateCcw": "맵 반시계 방향 45° 회전",
-    "rotateCw": "맵 시계 방향 45° 회전"
+    "rotateCcw": "맵 반시계 방향 90° 회전",
+    "rotateCw": "맵 시계 방향 90° 회전"
   },
   "labels": {
     "hide": "라벨 숨기기",

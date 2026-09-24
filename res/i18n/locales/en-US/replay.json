@@ -122,8 +122,8 @@
     "zoom": "Zoomed map",
     "trails": "Ship trails",
     "grid": "Map grid (A–J / 1–10)",
-    "rotateCcw": "Rotate map counter-clockwise 45°",
-    "rotateCw": "Rotate map clockwise 45°"
+    "rotateCcw": "Rotate map counter-clockwise 90°",
+    "rotateCw": "Rotate map clockwise 90°"
   },
   "labels": {
     "hide": "Hide labels",
