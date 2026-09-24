@@ -11,16 +11,12 @@
     "limited": "Soporte limitado"
   },
   "warning": {
-    "message": "La compatibilidad de este mapa (escenario / modo especial) en el análisis táctico es incompleta: pueden faltar los datos de terreno y superposición. Solo como vista previa.",
-    "modified": "Modificado",
-    "path": "Ruta"
+    "message": "La compatibilidad de este mapa (escenario / modo especial) en el análisis táctico es incompleta: pueden faltar los datos de terreno y superposición. Solo como vista previa."
   },
   "list": {
-    "error": "No se pudo leer el índice de recursos del juego. Comprueba que el cliente del juego esté disponible.",
-    "empty": "No se encontraron mapas en el cliente del juego.",
-    "noClient": "No se detectó ningún cliente del juego"
+    "noClient": "No se detectó ningún cliente del juego",
+    "filterEmpty": "Aún no hay mapas para este modo: juega algunas batallas y aparecerán aquí."
   },
   "select": "Selecciona un mapa para empezar el análisis",
-  "noArt": "Este mapa no tiene material de minimapa",
-  "loading": "Cargando la lista de mapas…"
+  "noArt": "Este mapa no tiene material de minimapa"
 }
