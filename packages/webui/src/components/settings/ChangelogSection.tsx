@@ -1,7 +1,7 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 
-import { HButton, HSettingsGroup, HSettingsHint, HSpinner } from "@celestia-island/hikari";
+import { HkButton, HkSettingsGroup, HkSettingsHint, HkSpinner } from "@celestia-island/hikari";
 
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -52,29 +52,29 @@ export default defineComponent({
 
     return () => (
       <>
-      <HSettingsGroup>
+      <HkSettingsGroup>
         <div class="settings-modal__packs-head">
           <h2 class="hk-settings-group-title">{t("settings.changelog")}</h2>
-          <HButton
+          <HkButton
             size="sm"
             loading={changelog.loading}
             disabled={changelog.loading}
             onClick={() => void changelog.refresh()}
           >
             {t("settings.changelogRefresh")}
-          </HButton>
+          </HkButton>
         </div>
-        <HSettingsHint>{t("settings.changelogHint")}</HSettingsHint>
+        <HkSettingsHint>{t("settings.changelogHint")}</HkSettingsHint>
         {changelog.error && !changelog.releases.length ? (
           <div class="changelog__state">
             <p class="changelog__error">{t("settings.changelogFailed")}</p>
-            <HButton size="sm" onClick={() => void changelog.refresh()}>
+            <HkButton size="sm" onClick={() => void changelog.refresh()}>
               {t("common.retry")}
-            </HButton>
+            </HkButton>
           </div>
         ) : changelog.loading && !changelog.releases.length ? (
           <div class="changelog__state">
-            <HSpinner size="sm" />
+            <HkSpinner size="sm" />
             <span class="changelog__state-text">{t("settings.changelogLoading")}</span>
           </div>
         ) : !changelog.releases.length ? (
@@ -102,7 +102,7 @@ export default defineComponent({
             ))}
           </div>
         )}
-      </HSettingsGroup>
+      </HkSettingsGroup>
       </>
     );
   },

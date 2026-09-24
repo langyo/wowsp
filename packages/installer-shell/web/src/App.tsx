@@ -11,14 +11,14 @@ import {
   XCircle,
 } from "lucide-vue-next";
 import {
-  HAlert,
-  HButton,
-  HCheckbox,
-  HProgressBar,
-  HScrollContainer,
-  HSelect,
-  HSelectionGrid,
-  HTimeline,
+  HkAlert,
+  HkButton,
+  HkCheckbox,
+  HkProgressBar,
+  HkScrollContainer,
+  HkSelect,
+  HkSelectionGrid,
+  HkTimeline,
 } from "@celestia-island/hikari";
 
 import AnnouncementCard from "./components/AnnouncementCard";
@@ -540,21 +540,21 @@ export default defineComponent({
               <h1>{s.uninstall.heading}</h1>
               <p class="wizard-sub">{s.uninstall.sub}</p>
               <div class="wizard-uninstall__actions">
-                <HButton variant="ghost" onClick={closeWindow}>
+                <HkButton variant="ghost" onClick={closeWindow}>
                   {s.uninstall.cancel}
-                </HButton>
-                <HButton variant="ghost" onClick={runRepair}>
+                </HkButton>
+                <HkButton variant="ghost" onClick={runRepair}>
                   {s.uninstall.repair}
-                </HButton>
-                <HButton variant="danger" onClick={runUninstall}>
+                </HkButton>
+                <HkButton variant="danger" onClick={runUninstall}>
                   {s.uninstall.uninstall}
-                </HButton>
+                </HkButton>
               </div>
             </section>
           ) : uninstallPhase.value === "running" || uninstallPhase.value === "repairing" ? (
             <section class="wizard-pane wizard-pane--center wizard-uninstall">
               <img src="/logo.webp" alt="" class="wizard-logo" />
-              <HProgressBar status="loading" size="md" />
+              <HkProgressBar status="loading" size="md" />
               <p class="wizard-step">
                 {uninstallPhase.value === "repairing" ? s.uninstall.repairing : s.uninstall.uninstalling}
               </p>
@@ -570,9 +570,9 @@ export default defineComponent({
                 {uninstallPhase.value === "repaired" ? s.uninstall.doneRepair : s.uninstall.doneUninstall}
               </p>
               <div class="wizard-uninstall__actions">
-                <HButton variant="primary" onClick={closeWindow}>
+                <HkButton variant="primary" onClick={closeWindow}>
                   {s.uninstall.close}
-                </HButton>
+                </HkButton>
               </div>
             </section>
           ) : (
@@ -587,9 +587,9 @@ export default defineComponent({
               </p>
               <p class="wizard-uninstall__error">{uninstallError.value}</p>
               <div class="wizard-uninstall__actions">
-                <HButton variant="primary" onClick={closeWindow}>
+                <HkButton variant="primary" onClick={closeWindow}>
                   {s.uninstall.close}
-                </HButton>
+                </HkButton>
               </div>
             </section>
           );
@@ -634,7 +634,7 @@ export default defineComponent({
             <div class="wizard-language">
               <span class="wizard-language__label" id="locale-label">{s.languageLabel}</span>
               <div class="wizard-language__select">
-                <HSelect
+                <HkSelect
                   modelValue={locale.value}
                   options={LOCALE_OPTIONS}
                   onUpdate:modelValue={changeLocale}
@@ -642,7 +642,7 @@ export default defineComponent({
               </div>
             </div>
 
-            <HSelectionGrid
+            <HkSelectionGrid
               items={modeItems}
               selectedId={mode.value}
               columns={modeItems.length as 2}
@@ -680,7 +680,7 @@ export default defineComponent({
                     candidate.writable &&
                     candidate.path === firstWritableCandidate.value?.path;
                   return (
-                    <HButton
+                    <HkButton
                       key={candidate.path}
                       variant="ghost"
                       size="sm"
@@ -693,7 +693,7 @@ export default defineComponent({
                     >
                       <Icon size={13} />
                       {candidate.kind === "drive" ? candidate.path : meta.label}
-                    </HButton>
+                    </HkButton>
                   );
                 })}
               </div>
@@ -730,12 +730,12 @@ export default defineComponent({
             <h1>{s.license.title}</h1>
             <p class="wizard-sub">{s.license.sub}</p>
             <AnnouncementCard locale={locale.value} />
-            <HScrollContainer class="license-box" axis="vertical">
+            <HkScrollContainer class="license-box" axis="vertical">
               <pre>{licenseDocs.value[licenseIndex.value]?.body ?? ""}</pre>
-            </HScrollContainer>
+            </HkScrollContainer>
             {licenseDocs.value.length > 1 && (
               <div class="license-pager">
-                <HButton
+                <HkButton
                   variant="ghost"
                   size="sm"
                   disabled={licenseIndex.value <= 0}
@@ -743,12 +743,12 @@ export default defineComponent({
                   onClick={() => (licenseIndex.value -= 1)}
                 >
                   <ChevronLeft size={15} />
-                </HButton>
+                </HkButton>
                 <span class="license-pager__label">
                   {licenseIndex.value + 1}/{licenseDocs.value.length}{" "}
                   {licenseDocs.value[licenseIndex.value]?.title ?? ""}
                 </span>
-                <HButton
+                <HkButton
                   variant="ghost"
                   size="sm"
                   disabled={licenseIndex.value >= licenseDocs.value.length - 1}
@@ -756,10 +756,10 @@ export default defineComponent({
                   onClick={() => (licenseIndex.value += 1)}
                 >
                   <ChevronRight size={15} />
-                </HButton>
+                </HkButton>
               </div>
             )}
-            <HCheckbox
+            <HkCheckbox
               modelValue={agreed.value}
               label={s.license.agree}
               onUpdate:modelValue={(v: boolean) => (agreed.value = v)}
@@ -770,7 +770,7 @@ export default defineComponent({
             <div class="wizard-install__main">
               <img src="/logo.webp" alt="" class="wizard-logo" />
               <p class="wizard-pane__title">WoWSP</p>
-              <HProgressBar
+              <HkProgressBar
                 status="loading"
                 size="md"
                 value={overall.value ?? undefined}
@@ -811,12 +811,12 @@ export default defineComponent({
               />
             </div>
             <div class="wizard-done__actions">
-              <HButton variant="primary" onClick={start}>
+              <HkButton variant="primary" onClick={start}>
                 {s.done.retry}
-              </HButton>
-              <HButton variant="ghost" onClick={() => tauriWindow()?.close()}>
+              </HkButton>
+              <HkButton variant="ghost" onClick={() => tauriWindow()?.close()}>
                 {s.done.close}
-              </HButton>
+              </HkButton>
             </div>
           </section>
         ) : (
@@ -834,19 +834,19 @@ export default defineComponent({
             <div class="wizard-done__shortcuts">
               {mode.value === "local" && (
                 <>
-                  <HCheckbox
+                  <HkCheckbox
                     modelValue={startMenuShortcut.value}
                     label={s.done.shortcutMenu}
                     onUpdate:modelValue={(v: boolean) => toggleMenu(v)}
                   />
-                  <HCheckbox
+                  <HkCheckbox
                     modelValue={desktopShortcut.value}
                     label={s.done.shortcutDesktop}
                     onUpdate:modelValue={(v: boolean) => toggleDesktop(v)}
                   />
                 </>
               )}
-              <HCheckbox
+              <HkCheckbox
                 modelValue={launchAfterInstall.value}
                 label={s.done.launchAfter}
                 onUpdate:modelValue={(v: boolean) => (launchAfterInstall.value = v)}
@@ -865,7 +865,7 @@ export default defineComponent({
           />
           <main class="installer">
             <div class="wizard-layout wizard-layout--left">
-              <HTimeline
+              <HkTimeline
                 steps={timelineSteps}
                 currentKey={step.value}
                 orientation="vertical"
@@ -874,7 +874,7 @@ export default defineComponent({
             </div>
 
             {note.value && (
-              <HAlert
+              <HkAlert
                 variant={note.value.kind === "err" ? "error" : "success"}
                 message={note.value.text}
                 banner
@@ -884,39 +884,39 @@ export default defineComponent({
             <footer class="installer__footer">
               <div class="installer__nav">
                 {running.value ? null : step.value === "mode" && (
-                  <HButton
+                  <HkButton
                     variant="primary"
                     size="lg"
                     disabled={dirWritable.value === false}
                     onClick={() => go("license")}
                   >
                     {s.nav.next}
-                  </HButton>
+                  </HkButton>
                 )}
                 {step.value === "license" && (
                   <>
-                    <HButton variant="ghost" onClick={() => go("mode")}>
+                    <HkButton variant="ghost" onClick={() => go("mode")}>
                       {s.nav.back}
-                    </HButton>
-                    <HButton
+                    </HkButton>
+                    <HkButton
                       variant="primary"
                       size="lg"
                       disabled={!agreed.value || noticeCountdown.value > 0}
                       onClick={start}
                     >
                       {s.license.agreeInstall(noticeCountdown.value)}
-                    </HButton>
+                    </HkButton>
                   </>
                 )}
                 {step.value === "done" && !installFailed.value && (
-                  <HButton
+                  <HkButton
                     variant="primary"
                     size="lg"
                     disabled={finishing.value}
                     onClick={finish}
                   >
                     {s.done.finish}
-                  </HButton>
+                  </HkButton>
                 )}
               </div>
             </footer>

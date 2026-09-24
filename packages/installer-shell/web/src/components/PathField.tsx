@@ -2,7 +2,7 @@ import { computed, defineComponent, type PropType } from "vue";
 
 import { ChevronDown, FolderOpen } from "lucide-vue-next";
 
-import { HAffixPicker, HButton, HInput, type HkAffixOption } from "@celestia-island/hikari";
+import { HkAffixPicker, HkButton, HkInput, type HkAffixOption } from "@celestia-island/hikari";
 
 import type { PathFieldStrings } from "../i18n";
 
@@ -20,7 +20,7 @@ const DRIVE_PREFIX = /^[A-Za-z]:[\\/]/;
 
 /**
  * PathField — the install-location editor, composed like hikari's own
- * HkPhoneInput: a mono HInput holding the full path, with the prefix
+ * HkPhoneInput: a mono HkInput holding the full path, with the prefix
  * slot carrying an HkAffixPicker chip for the drive the path starts
  * with. Picking a mount rewrites the path in place (old prefix stripped,
  * leading separators trimmed), the typed remainder stays untouched. The
@@ -89,7 +89,7 @@ export default defineComponent({
 
     return () => (
       <div class="path-field">
-        <HInput
+        <HkInput
           modelValue={props.modelValue}
           onUpdate:modelValue={(v: string) => emit("update:modelValue", v)}
           disabled={props.disabled}
@@ -101,7 +101,7 @@ export default defineComponent({
         >
           {{
             prefix: () => (
-              <HAffixPicker
+              <HkAffixPicker
                 options={options.value}
                 mode="single"
                 side="prefix"
@@ -124,18 +124,18 @@ export default defineComponent({
                     </>
                   ),
                 }}
-              </HAffixPicker>
+              </HkAffixPicker>
             ),
           }}
-        </HInput>
-        <HButton
+        </HkInput>
+        <HkButton
           variant="ghost"
           disabled={props.disabled}
           onClick={() => emit("browse")}
         >
           <FolderOpen size={14} />
           {props.labels.browse}
-        </HButton>
+        </HkButton>
       </div>
     );
   },

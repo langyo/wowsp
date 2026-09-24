@@ -13,7 +13,7 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - '@lucide/vue@1.38.0'
-  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74'
+  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75'
 overrides:
   postcss: ^8.5.18
   "brace-expansion@<1.1.18": 1.1.18
