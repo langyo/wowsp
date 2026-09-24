@@ -19,6 +19,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
 import { useNavUiStore } from "@/stores/navUi";
 import { useSettingsUiStore } from "@/stores/settingsUi";
+import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { api } from "@/api";
@@ -39,8 +40,10 @@ import "./AppShell.scss";
  * Root layout shell: sidebar (left) + main content (right). Loads accounts +
  * starts the game-status poller on mount. Listens for the Rust close-requested
  * event to show a quit-vs-minimize confirm dialog (HModal with a footer
- * action group). On first launch (until completed) it also runs the
- * four-step onboarding wizard, whose first step carries the mandatory
+ * action group), unless a choice was already remembered in the closeBehavior
+ * store (the same one the settings' closeBehavior section edits) — then that
+ * action runs straight away. On first launch (until completed) it also runs
+ * the four-step onboarding wizard, whose first step carries the mandatory
  * free & open-source notice. Mounts the shared hikari service
  * containers: the toast host and an error boundary around the routed
  * content.
@@ -63,6 +66,7 @@ export default defineComponent({
     const cacheStore = useCacheStore();
     const navUi = useNavUiStore();
     const settingsUi = useSettingsUiStore();
+    const closeBehavior = useCloseBehaviorStore();
     const route = useRoute();
     const router = useRouter();
     // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
@@ -119,8 +123,10 @@ export default defineComponent({
     });
 
     async function handleCloseChoice(action: "quit" | "minimize") {
+      // "Remember my choice" writes the SAME slot the settings' closeBehavior
+      // radio edits, so a remembered close is always reversible there.
       if (rememberChoice.value) {
-        localStorage.setItem("wowsp-close-action", action);
+        closeBehavior.setAction(action);
       }
       closing.value = action;
       showCloseDialog.value = false;
@@ -253,14 +259,18 @@ export default defineComponent({
       // close dialog is desktop-app-only anyway).
       if (isTauri()) {
         unlistenClose = await listen("close-requested", () => {
-          const saved = localStorage.getItem("wowsp-close-action");
-          if (saved === "quit" || saved === "minimize") {
+          // The remembered action (AppShell's dialog checkbox / the settings'
+          // closeBehavior radio — one store, one slot). "ask" is the stored
+          // absence of a choice, and the store's loader already swept any
+          // junk value on import, so no heal-write is needed here.
+          const saved = closeBehavior.action;
+          if (saved !== "ask") {
             void handleCloseChoice(saved);
           } else {
-            // Heal-write: a saved-but-invalid value is swept so the ask
-            // dialog (the default behavior) is a deliberate choice again,
-            // not a stale value re-failing validation on every close.
-            if (saved != null) localStorage.removeItem("wowsp-close-action");
+            // Fresh ask: the checkbox writes the SAME slot the settings'
+            // closeBehavior radio edits, so a tick left over from an earlier
+            // close would silently re-arm an action the user just cleared.
+            rememberChoice.value = false;
             showCloseDialog.value = true;
           }
         });

@@ -8,6 +8,7 @@ import { isMobileApp, isPhoneLayout } from "@/utils/platform";
 export type SettingsSection =
   | "language"
   | "appearance"
+  | "closeBehavior"
   | "stats"
   | "gamePath"
   | "account"
@@ -21,6 +22,7 @@ export type SettingsSection =
 export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = [
   "language",
   "appearance",
+  "closeBehavior",
   "stats",
   "gamePath",
   "account",
@@ -33,13 +35,17 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = [
 ];
 
 /** Sections that make no sense on the phone app build: no local game
- *  install to pick (gamePath) and no second overlay window (overlay). The
+ *  install to pick (gamePath), no second overlay window (overlay), and no
+ *  tray or close button to configure a close behavior for. The
  *  PAIRING section shows on BOTH builds — a CLIENT variant on the phone
  *  (open the wizard, manage paired computers) and the SERVER variant on the
  *  desktop. The rail filters only the truly inapplicable ones. */
 const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   "gamePath",
   "overlay",
+  // Desktop-only: the phone build has no system tray and no window close
+  // button, so there is no close behavior to configure.
+  "closeBehavior",
 ];
 
 /** Clamp a section request to what the current build can show. */
