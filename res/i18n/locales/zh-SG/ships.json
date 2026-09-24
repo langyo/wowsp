@@ -113,9 +113,7 @@
     "armor": {
       "toggle": "切换装甲带覆盖视图",
       "short": "装甲",
-      "noData": "无装甲数据。",
       "legend": "装甲 (mm)",
-      "estimated": "估算",
       "zone": {
         "bow": "舰首",
         "midship": "中段",
@@ -131,13 +129,6 @@
         "torpedoBelt": "防雷舱壁",
         "bowBelt": "舰首装甲带",
         "superstructure": "上层建筑"
-      },
-      "overmatchThreshold": "碾压需 ≥{n}mm 口径",
-      "outcome": {
-        "overmatch": "碾压",
-        "pen": "穿透",
-        "overpen": "过穿",
-        "bounce": "跳弹"
       },
       "restore": "还原",
       "solo": "只看",

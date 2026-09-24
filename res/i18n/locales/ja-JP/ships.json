@@ -113,9 +113,7 @@
     "armor": {
       "toggle": "装甲帯オーバーレイの表示を切り替え",
       "short": "装甲",
-      "noData": "装甲データはありません。",
       "legend": "装甲 (mm)",
-      "estimated": "推定",
       "zone": {
         "bow": "艦首",
         "midship": "船体中央",
@@ -131,13 +129,6 @@
         "torpedoBelt": "魚雷防御隔壁",
         "bowBelt": "艦首装甲帯",
         "superstructure": "上部構造物"
-      },
-      "overmatchThreshold": "オーバーマッチには {n}mm 以上の口径が必要",
-      "outcome": {
-        "overmatch": "オーバーマッチ",
-        "pen": "貫通",
-        "overpen": "過貫通",
-        "bounce": "跳弾"
       },
       "restore": "元に戻す",
       "solo": "表示のみ",
