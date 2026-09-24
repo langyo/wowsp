@@ -82,9 +82,15 @@ export default defineComponent({
     const filter = ref<FilterKey>("all");
     const selected = ref<string | null>(null);
 
+    /** Generation token for loadHistory: switching installs mid-scan lets
+     *  the slower previous scan resolve last — without this it would
+     *  clobber `observed` with the old install's stale buckets. */
+    let historySeq = 0;
+
     /** Replay-history aggregation: one bucket per battle via
      *  modeKey+bucketOf, keyed by the replay's map (space) name. */
     async function loadHistory() {
+      const seq = ++historySeq;
       const acc = new Map<string, Set<MapModeBucket>>();
       if (activePath.value) {
         try {
@@ -102,6 +108,7 @@ export default defineComponent({
           // history is enrichment only — empty buckets are fine
         }
       }
+      if (seq !== historySeq) return; // a newer install's scan superseded us
       observed.value = acc;
     }
 
@@ -169,7 +176,7 @@ export default defineComponent({
         .sort((a, b) => {
           const r = rank(a.id) - rank(b.id);
           if (r !== 0) return r;
-          const byName = a.name.localeCompare(b.name);
+          const byName = a.name.localeCompare(b.name, lang);
           return byName !== 0 ? byName : a.id.localeCompare(b.id);
         })
         .map((e) => e.id);
@@ -205,36 +212,40 @@ export default defineComponent({
               />
             </div>
             <div class="tactics-view__list-scroll">
-              <ul class="tactics-view__items">
-                {list.map((id) => {
-                  const inc = isIncomplete(id);
-                  return (
-                    <li key={id} class="tactics-view__item">
-                      <button
-                        type="button"
-                        class={["tactics-card", sel === id ? "tactics-card--active" : ""]}
-                        onClick={() => (selected.value = id)}
-                      >
-                        <span class="tactics-card__name">{displayMapName(id, dataLanguage.value)}</span>
-                        <span class="tactics-card__id">{id}</span>
-                        <span class="tactics-card__badges">
-                          {inc ? (
-                            <span class="tactics-card__badge tactics-card__badge--limited">
-                              {t("tactics.badge.limited")}
-                            </span>
-                          ) : (
-                            observedPvpBuckets(id).map((b) => (
-                              <span key={b} class="tactics-card__badge">
-                                {t(`tactics.filter.${b}`)}
+              {list.length === 0 ? (
+                <p class="tactics-view__empty">{t("tactics.list.filterEmpty")}</p>
+              ) : (
+                <ul class="tactics-view__items">
+                  {list.map((id) => {
+                    const inc = isIncomplete(id);
+                    return (
+                      <li key={id} class="tactics-view__item">
+                        <button
+                          type="button"
+                          class={["tactics-card", sel === id ? "tactics-card--active" : ""]}
+                          onClick={() => (selected.value = id)}
+                        >
+                          <span class="tactics-card__name">{displayMapName(id, dataLanguage.value)}</span>
+                          <span class="tactics-card__id">{id}</span>
+                          <span class="tactics-card__badges">
+                            {inc ? (
+                              <span class="tactics-card__badge tactics-card__badge--limited">
+                                {t("tactics.badge.limited")}
                               </span>
-                            ))
-                          )}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                            ) : (
+                              observedPvpBuckets(id).map((b) => (
+                                <span key={b} class="tactics-card__badge">
+                                  {t(`tactics.filter.${b}`)}
+                                </span>
+                              ))
+                            )}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           </aside>
 

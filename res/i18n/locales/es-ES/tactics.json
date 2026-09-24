@@ -14,7 +14,8 @@
     "message": "La compatibilidad de este mapa (escenario / modo especial) en el análisis táctico es incompleta: pueden faltar los datos de terreno y superposición. Solo como vista previa."
   },
   "list": {
-    "noClient": "No se detectó ningún cliente del juego"
+    "noClient": "No se detectó ningún cliente del juego",
+    "filterEmpty": "Aún no hay mapas para este modo: juega algunas batallas y aparecerán aquí."
   },
   "select": "Selecciona un mapa para empezar el análisis",
   "noArt": "Este mapa no tiene material de minimapa"

@@ -14,7 +14,8 @@
     "message": "La prise en charge de cette carte (scénario / mode spécial) dans l'analyse tactique est incomplète : les données de terrain et de superposition peuvent manquer. Aperçu uniquement."
   },
   "list": {
-    "noClient": "Aucun client de jeu détecté"
+    "noClient": "Aucun client de jeu détecté",
+    "filterEmpty": "Aucune carte pour ce mode pour l'instant — jouez des batailles et elles apparaîtront ici."
   },
   "select": "Sélectionnez une carte pour commencer l'analyse",
   "noArt": "Cette carte n'a pas de mini-carte"

@@ -69,6 +69,16 @@
     position: relative;
   }
 
+  /* Filtered to zero (e.g. ranked / clan on a fresh install with no
+     history yet) — the in-rail muted placeholder instead of a blank list. */
+  &__empty {
+    margin: 0;
+    padding: 0.75rem 0.5rem;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+
   &__main {
     flex: 1;
     min-width: 0;

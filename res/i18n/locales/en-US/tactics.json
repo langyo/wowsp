@@ -14,7 +14,8 @@
     "message": "Support for this map (scenario / special mode) in tactics analysis is incomplete: terrain and overlay data may be missing. For preview only."
   },
   "list": {
-    "noClient": "No game client detected"
+    "noClient": "No game client detected",
+    "filterEmpty": "No maps match this mode yet — play some battles and they will show up here."
   },
   "select": "Select a map to start analysing",
   "noArt": "This map has no minimap art"
