@@ -26,7 +26,7 @@ import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
-import { tierToRoman } from "@/utils/tierRoman";
+import { tierToRoman } from "@wowsp/holo";
 import "./ShipDetailModal.scss";
 
 /**

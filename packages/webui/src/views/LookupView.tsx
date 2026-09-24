@@ -19,7 +19,7 @@ import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
-import { tierToRoman } from "@/utils/tierRoman";
+import { tierToRoman } from "@wowsp/holo";
 import { winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
