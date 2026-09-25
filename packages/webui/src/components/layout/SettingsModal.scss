@@ -74,37 +74,33 @@
     font-weight: 500;
   }
 
-  /* ── color presets ──────────────────────────────────────────────────────
-     Uniform card chrome; each theme only peeks through a small preview
-     chip, so the unselected cards no longer read as random colored slabs. */
+  /* ── color schemes ──────────────────────────────────────────────────────
+     One row per theme — hikari's built-ins plus the user's custom schemes,
+     the same list the shittim-chest picker shows (a custom shadowing a
+     builtin id dedupes to ONE row flagged custom, so its delete doubles as
+     "restore the factory preset"). Rows select live; the pencil affordance
+     opens the full scheme-editor window; the dashed row starts a blank
+     custom scheme. The swatch ball rides the row's leading cell (cut
+     diagonally into the scheme's primary/secondary halves, like chest's
+     iconless theme rows). */
 
-  &__presets {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0.5rem;
+  &__themes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
   }
 
-  &__preset {
+  &__theme {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.6rem;
     background: rgb(var(--color-surface));
-    /* Reserved border — selection never shifts the grid. */
+    /* Reserved border — selection never shifts the list. */
     border: 2px solid transparent;
     border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: border-color var(--duration-short) var(--ease-standard),
-                transform var(--duration-short) var(--ease-standard);
+    transition: border-color var(--duration-short) var(--ease-standard);
 
     &:hover {
-      transform: translateY(-1px);
       border-color: rgb(var(--color-border) / 30%);
-    }
-
-    &:focus-visible {
-      outline: 2px solid rgb(var(--color-primary));
-      outline-offset: 1px;
     }
 
     &--on {
@@ -112,39 +108,101 @@
     }
   }
 
-  &__preset-preview {
+  &__theme-pick {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 3px;
+    gap: 0.55rem;
+    padding: 0.35rem 0.6rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  &__theme-swatch {
     flex: none;
-    width: 2.4rem;
-    height: 1.5rem;
-    border-radius: var(--radius-xs);
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
     border: 1px solid rgb(var(--color-border) / 25%);
   }
 
-  &__preset-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-  }
-
-  &__preset-name {
+  &__theme-name {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    text-align: left;
     font-size: var(--text-xs);
     font-weight: 500;
     color: rgb(var(--color-text));
   }
 
-  &__preset-check {
+  &__theme-check {
     flex: none;
     color: rgb(var(--color-primary));
+  }
+
+  /* Trailing affordance column — the standard hikari functional icon
+     buttons (ghost/24) for edit (every row) and delete (custom rows, where
+     "delete" on an overridden builtin restores the factory preset). */
+  &__theme-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding-right: 0.35rem;
+  }
+
+  /* Dashed "new scheme" row — the list's last item; opens the scheme
+     editor on a blank canvas (seeded from the stock default preset). */
+  &__theme-add {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.35rem 0.6rem;
+    background: none;
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: rgb(var(--color-muted));
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover,
+    &:focus-visible {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 5%);
+      color: rgb(var(--color-primary));
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  /* Scheme editor window footnote (ThemeSchemeDialog — teleported outside
+     the settings shell, so it styles as a standalone flat class): the
+     derived-tokens note, quiet like an HkSettingsHint. */
+  &__theme-editor-hint {
+    margin: 0.6rem 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
   }
 
   /* ── wallpaper ────────────────────────────────────────────────────────── */
@@ -164,8 +222,13 @@
 
   &__wallpaper {
     position: relative;
-    /* Fixed footprint — cards neither shrink nor grow in the strip. */
+    /* Fixed footprint — cards neither shrink nor grow in the strip.
+       min-width: 0 is the load-bearing half of that contract: a flex
+       item's automatic minimum size tracks its min-content, so a long
+       unbroken wallpaper filename would otherwise stretch its card well
+       past the basis while the neighbours stay at 120px. */
     flex: 0 0 120px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     background: rgb(var(--color-surface));
@@ -182,13 +245,16 @@
     }
   }
 
-  /* Clickable body of a wallpaper card (select as active). */
+  /* Clickable body of a wallpaper card (select as active). Buttons carry
+     the same automatic-minimum-size trap as their card parent, so the
+     shrink allowance repeats here for the ellipsis to actually bite. */
   &__wallpaper-pick {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.35rem;
     width: 100%;
+    min-width: 0;
     padding: 0.5rem;
     background: none;
     border: none;
@@ -248,6 +314,7 @@
      account / game-path dashed add rows. */
   &__wallpaper-add {
     flex: 0 0 120px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;

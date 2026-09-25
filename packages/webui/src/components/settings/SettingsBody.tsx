@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Smartphone,
   ScrollText,
+  SquarePen,
   Sun,
   SunMoon,
   Trash2,
@@ -28,6 +29,7 @@ import {
 import {
   HkButton,
   HkDivider,
+  HkIconButton,
   HkInput,
   HkModal,
   HkSettingsBody,
@@ -42,7 +44,6 @@ import {
   HkTabs,
   HkTag,
   getThemeTokens,
-  themePresets,
   useTheme,
   useToast,
   type ModalAction,
@@ -50,7 +51,6 @@ import {
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
-import { themePresetIds } from "@/theme";
 import {
   setThemeModePreference,
   themeModePreference,
@@ -101,6 +101,7 @@ import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import SealCustomizer from "@/components/stats/SealCustomizer";
 import FontSizeControl from "@/components/layout/FontSizeControl";
 import ChangelogSection from "@/components/settings/ChangelogSection";
+import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
 import "../layout/SettingsModal.scss";
@@ -136,6 +137,41 @@ export default defineComponent({
     const closeBehavior = useCloseBehaviorStore();
     const theme = useTheme();
     const wallpaper = useWallpaper();
+
+    // ── color scheme editor window ────────────────────────────────────────
+    // The scheme list's row affordances raise one shared editor window
+    // (ThemeSchemeDialog): the pencil prefills it with that row's scheme
+    // (customs AND builtin presets — a preset save lands as a same-id
+    // override), the dashed "new scheme" row opens a blank canvas.
+    const schemeDialogOpen = ref(false);
+    /** Row being edited (null = the new-scheme row opened a blank canvas). */
+    const editSchemeId = ref<string | null>(null);
+    function openSchemeEditor(id: string | null) {
+      editSchemeId.value = id;
+      schemeDialogOpen.value = true;
+    }
+    /** Row swatch: the scheme's primary/secondary halves under the current
+     *  effective mode — customs first (an override shadows its builtin),
+     *  then the preset table (the same precedence hikari applies). */
+    function schemeSwatchColors(id: string): [{ r: number; g: number; b: number }, { r: number; g: number; b: number }] | null {
+      const custom = theme.customThemes.value.find((c) => c.id === id);
+      if (custom) {
+        const s = theme.effectiveMode.value === "dark" ? custom.dark : custom.light;
+        return [s.primary, s.secondary];
+      }
+      const tokens = getThemeTokens(id, theme.effectiveMode.value);
+      return tokens ? [tokens.primary, tokens.secondary] : null;
+    }
+    /** Row delete — offered only on custom-flagged rows (a custom shadowing
+     *  a builtin id stays flagged custom, so this covers both a plain
+     *  delete and "restore the factory preset"). hikari re-points the
+     *  selection itself when the deleted id was active — back to the
+     *  factory preset when the id resolves as a builtin, otherwise to the
+     *  default theme. */
+    function removeScheme(id: string) {
+      theme.removeCustomTheme(id);
+    }
+
     const lang = useLanguage();
     const overlayCfg = useOverlayConfigStore();
     // Windows OCR availability (an installed OCR language pack): the `ocr`
@@ -767,39 +803,79 @@ export default defineComponent({
               ]}
             />
 
-            {/* color preset — uniform card chrome; the theme only peeks
-                through the preview chip so the row reads as one control.
-                Cards come from hikari's LIVE preset table on each render
-                (themePresetIds, display order: Nord first, Synthwave '84
-                last), so whatever the installed hikari ships gets a card —
-                the four named looks, or the single `default` pair that
-                replaced them — instead of a fixed id list that can match
-                nothing at all. */}
+            {/* color scheme — the live theme list in hikari's picker
+                grammar (what shittim-chest shows): builtin presets plus the
+                user's custom schemes, ONE row per id (a custom shadowing a
+                builtin id dedupes to one row flagged custom — its delete
+                doubles as "restore the factory preset"). A row click
+                applies the theme live; the pencil raises the full scheme
+                editor window (ThemeSchemeDialog) prefilled with that row;
+                the dashed row at the end starts a blank custom scheme.
+                Unlike the old preset-card grid this list can never go
+                stale against the installed hikari: it reads the theme
+                engine's own merged view (allThemeList), not a local
+                whitelist. */}
             <HkSettingsSub title={t("settings.themePreset")}>
-              <div class="settings-modal__presets">
-                {themePresetIds().map((id) => {
-                  // Use the effective mode so light-mode users see a light preview.
-                  const tokens = getThemeTokens(id, theme.effectiveMode.value);
-                  if (!tokens) return null;
-                  const on = theme.currentTheme.value === id;
+              <div class="settings-modal__themes">
+                {theme.allThemeList.value.map((th) => {
+                  const on = theme.currentTheme.value === th.id;
+                  const colors = schemeSwatchColors(th.id);
                   return (
-                    <button
-                      type="button"
-                      aria-pressed={on}
-                      class={["settings-modal__preset", on ? "settings-modal__preset--on" : ""]}
-                      onClick={() => theme.setTheme(id)}
+                    <div
+                      key={th.id}
+                      class={["settings-modal__theme", on ? "settings-modal__theme--on" : ""]}
                     >
-                      <span class="settings-modal__preset-preview" style={{ background: css(tokens.background) }}>
-                        <span class="settings-modal__preset-dot" style={{ background: css(tokens.primary) }} />
-                        <span class="settings-modal__preset-dot" style={{ background: css(tokens.accent) }} />
-                        <span class="settings-modal__preset-dot" style={{ background: css(tokens.success) }} />
+                      <button
+                        type="button"
+                        aria-pressed={on}
+                        class="settings-modal__theme-pick"
+                        onClick={() => theme.setTheme(th.id)}
+                      >
+                        {colors ? (
+                          <span
+                            class="settings-modal__theme-swatch"
+                            style={{
+                              background:
+                                `linear-gradient(135deg, ${css(colors[0])} 0 50%, ${css(colors[1])} 50% 100%)`,
+                            }}
+                          />
+                        ) : null}
+                        <span class="settings-modal__theme-name">{th.name}</span>
+                        {on ? <Check size={12} class="settings-modal__theme-check" /> : null}
+                      </button>
+                      <span class="settings-modal__theme-actions">
+                        <HkIconButton
+                          size={24}
+                          variant="ghost"
+                          aria-label={t("settings.themeEdit")}
+                          onClick={() => openSchemeEditor(th.id)}
+                        >
+                          <SquarePen size={14} />
+                        </HkIconButton>
+                        {th.isCustom ? (
+                          <HkIconButton
+                            size={24}
+                            variant="ghost"
+                            aria-label={t("settings.themeDelete")}
+                            onClick={() => removeScheme(th.id)}
+                          >
+                            <Trash2 size={14} />
+                          </HkIconButton>
+                        ) : null}
                       </span>
-                      <span class="settings-modal__preset-name">{themePresets[id].name}</span>
-                      {on ? <Check size={14} class="settings-modal__preset-check" /> : null}
-                    </button>
+                    </div>
                   );
                 })}
+                <button
+                  type="button"
+                  class="settings-modal__theme-add"
+                  onClick={() => openSchemeEditor(null)}
+                >
+                  <Palette size={14} />
+                  {t("settings.themeNew")}
+                </button>
               </div>
+              <HkSettingsHint>{t("settings.themeSchemeHint")}</HkSettingsHint>
             </HkSettingsSub>
 
             <HkDivider />
@@ -991,6 +1067,16 @@ export default defineComponent({
               ) : null}
             </p>
             <HkSettingsHint>{t("settings.geolocationHint")}</HkSettingsHint>
+
+            {/* The scheme editor window — hosted at the appearance section's
+                root so any scheme row (and the new-scheme row) can raise it.
+                HkModal teleports to the overlay layer; placement in the tree
+                only decides that it lives and dies with this section. */}
+            <ThemeSchemeDialog
+              modelValue={schemeDialogOpen.value}
+              onUpdate:modelValue={(v: boolean) => (schemeDialogOpen.value = v)}
+              schemeId={editSchemeId.value}
+            />
           </HkSettingsGroup>
 
           </>
