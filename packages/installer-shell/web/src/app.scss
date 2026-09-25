@@ -295,16 +295,75 @@ body {
   border-radius: var(--radius-md);
   background: rgb(var(--color-surface) / 55%);
 
-  pre {
-    margin: 0;
+  // Rich agreement body (richText.ts output) — regular text face instead
+  // of the old monospace <pre>, with a small heading/paragraph rhythm
+  // tuned for dense legal text (hard line breaks from the source are
+  // preserved, so only vertical spacing is styled here).
+  .license-doc {
     padding: 12px 14px;
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    line-height: 1.5;
+    font-size: var(--text-sm);
+    line-height: 1.6;
     color: rgb(var(--color-text));
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: text;
+
+    h2,
+    h3,
+    h4 {
+      margin: 16px 0 6px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    h2 {
+      font-size: var(--text-lg);
+    }
+
+    h3 {
+      font-size: var(--text-md);
+    }
+
+    h4 {
+      font-size: var(--text-sm);
+    }
+
+    // The body's first block hugs the box padding; later blocks open up.
+    :is(h2, h3, h4, p, ul):first-child {
+      margin-top: 0;
+    }
+
+    p {
+      margin: 0 0 8px;
+    }
+
+    ul {
+      margin: 0 0 8px;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 0 0 3px;
+    }
+
+    strong {
+      font-weight: 600;
+    }
+
+    a {
+      color: rgb(var(--color-primary));
+
+      &:hover,
+      &:focus-visible {
+        text-decoration: underline;
+      }
+    }
+
+    hr {
+      height: 1px;
+      margin: 12px 0;
+      border: none;
+      background: rgb(var(--color-border));
+    }
   }
 
   &:focus-visible {

@@ -21,7 +21,7 @@ import {
   HkTimeline,
 } from "@celestia-island/hikari";
 
-import AnnouncementCard from "./components/AnnouncementCard";
+import { composeAgreementDocs } from "./agreementDoc";
 import AppTitleBar from "./components/AppTitleBar";
 import PathField, { type DriveInfo } from "./components/PathField";
 import LogPane, { type LogLine } from "./components/LogPane";
@@ -32,6 +32,7 @@ import {
   strings,
   type InstallerLocale,
 } from "./i18n";
+import { renderRichText } from "./richText";
 import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 
 /**
@@ -45,8 +46,10 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  * failure lands on the done step as a failure variant with retry/close
  * actions — nothing returns to earlier steps once the install started.
  * The license step pages through the localized documents the backend
- * resolves at build time (a copyright notice + the SySL agreement);
- * agreeing covers all of them.
+ * resolves at build time, rendered as restricted rich text; its first
+ * document merges the copyright notice with the free & open-source
+ * announcement and the short telemetry disclosure, and agreeing covers
+ * all of them.
  *
  * When the shell runs as the uninstaller (`/uninstall`, probed via
  * `is_uninstall_mode`), the wizard layout is replaced by a standalone
@@ -142,10 +145,17 @@ export default defineComponent({
     const dirWritable = ref<boolean | null>(null);
     const licenseDocs = ref<LicenseDoc[]>([]);
     const licenseIndex = ref(0);
+    // The displayed agreement pages: the backend's copyright notice opens a
+    // merged first document (the FOSS notice and the short telemetry
+    // disclosure ride along as markdown sections); a locale switch
+    // recomposes it live.
+    const agreementDocs = computed(() =>
+      composeAgreementDocs(licenseDocs.value, locale.value),
+    );
     const agreed = ref(false);
     // License-step notice countdown: holds the agree button for five
-    // seconds on EVERY license-step entry so the free & open-source
-    // announcement card cannot be skipped unseen.
+    // seconds on EVERY license-step entry so the merged free & open-source
+    // sections opening the first agreement page cannot be skipped unseen.
     const noticeCountdown = ref(5);
     const desktopShortcut = ref(true);
     const startMenuShortcut = ref(true);
@@ -729,11 +739,15 @@ export default defineComponent({
           <section class="wizard-pane">
             <h1>{s.license.title}</h1>
             <p class="wizard-sub">{s.license.sub}</p>
-            <AnnouncementCard locale={locale.value} />
             <HkScrollContainer class="license-box" axis="vertical">
-              <pre>{licenseDocs.value[licenseIndex.value]?.body ?? ""}</pre>
+              <div
+                class="license-doc"
+                innerHTML={renderRichText(
+                  agreementDocs.value[licenseIndex.value]?.body ?? "",
+                )}
+              />
             </HkScrollContainer>
-            {licenseDocs.value.length > 1 && (
+            {agreementDocs.value.length > 1 && (
               <div class="license-pager">
                 <HkButton
                   variant="ghost"
@@ -745,13 +759,13 @@ export default defineComponent({
                   <ChevronLeft size={15} />
                 </HkButton>
                 <span class="license-pager__label">
-                  {licenseIndex.value + 1}/{licenseDocs.value.length}{" "}
-                  {licenseDocs.value[licenseIndex.value]?.title ?? ""}
+                  {licenseIndex.value + 1}/{agreementDocs.value.length}{" "}
+                  {agreementDocs.value[licenseIndex.value]?.title ?? ""}
                 </span>
                 <HkButton
                   variant="ghost"
                   size="sm"
-                  disabled={licenseIndex.value >= licenseDocs.value.length - 1}
+                  disabled={licenseIndex.value >= agreementDocs.value.length - 1}
                   ariaLabel={s.license.nextDoc}
                   onClick={() => (licenseIndex.value += 1)}
                 >
