@@ -724,6 +724,62 @@
     padding: 2px; /* avoid focus-ring clipping */
   }
 
+  /* Positioned row around each install card — the card is a button and
+     buttons don't nest, so the two-step delete control hangs off this
+     wrapper instead (same structure as the wallpaper tiles). */
+  &__install {
+    position: relative;
+  }
+
+  &__install-remove {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.3rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-family: inherit;
+    white-space: nowrap;
+    opacity: 0;
+    transition:
+      opacity var(--duration-short) var(--ease-standard),
+      color var(--duration-short) var(--ease-standard),
+      border-color var(--duration-short) var(--ease-standard);
+
+    .settings-modal__install:hover &,
+    .settings-modal__install:focus-within & {
+      opacity: 1;
+    }
+
+    &:hover {
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 50%);
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    /* Armed second step — an inline "Remove?" label in place of the icon. */
+    &--confirm {
+      width: auto;
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 50%);
+      font-weight: 600;
+    }
+  }
+
   /* Install card — mirrors the account card's anatomy (round badge + body +
      trailing state), so the 游戏路径 and 账户 lists read as one family.
      Clicking a card activates that client. Its rules live at the file's
@@ -823,6 +879,9 @@
     border-color: rgb(var(--color-primary) / 50%);
     background: rgb(var(--color-primary) / 8%);
     box-shadow: inset 3px 0 0 rgb(var(--color-primary));
+    /* Extra right padding keeps the trailing 使用中 tag clear of the
+       hover-revealed remove button anchored to the row's top-right. */
+    padding-right: 2.2rem;
   }
 
   &__body {

@@ -104,6 +104,7 @@ import ChangelogSection from "@/components/settings/ChangelogSection";
 import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
+import { sameGamePath } from "@/utils/gamePath";
 import "../layout/SettingsModal.scss";
 
 /** Hikari token → CSS rgb() color. */
@@ -210,6 +211,9 @@ export default defineComponent({
     const pickingPath = ref(false);
     /** Whether the add-path dialog (detection / browse actions) is open. */
     const addPathOpen = ref(false);
+    /** Two-step delete confirm per install card (path of the armed row) —
+     *  the same arm → confirm pattern as the wallpaper strip. */
+    const installArmed = ref<string | null>(null);
 
     const installRows = computed<GameInstall[]>(() => configStore.installs);
     const activePath = computed(() => configStore.activeInstall?.path ?? "");
@@ -220,10 +224,19 @@ export default defineComponent({
     const runningInstall = computed<GameInstall | null>(() => {
       const p = gameStatus.process;
       if (!p.running || !p.matchedInstall) return null;
-      if (installRows.value.some((i) => i.path === p.matchedInstall!.path)) return null;
-      if (p.matchedInstall.path === activePath.value) return null;
+      if (installRows.value.some((i) => sameGamePath(i.path, p.matchedInstall!.path))) return null;
+      if (sameGamePath(p.matchedInstall.path, activePath.value)) return null;
       return p.matchedInstall;
     });
+
+    /** Drop an install row (two-step confirm): remove it from the store —
+     *  removed rows are remembered as ignored, so re-detection doesn't
+     *  resurrect them. */
+    async function removeInstall(i: GameInstall) {
+      installArmed.value = null;
+      await configStore.removeInstall(i.path);
+      toast.info(t("common.gamePath.removed"));
+    }
 
     /** Follow a client switch to that realm's preferred account. */
     async function followRealm(realm?: string | null) {
@@ -235,7 +248,7 @@ export default defineComponent({
     }
 
     async function activateInstall(i: GameInstall) {
-      if (i.path === activePath.value) return;
+      if (sameGamePath(i.path, activePath.value)) return;
       await configStore.selectInstall(i.path);
       await followRealm(i.realm);
       toast.info(t("common.gamePath.applied"));
@@ -1128,8 +1141,10 @@ export default defineComponent({
               left, client + realm tag + path in the body; clicking a card
               activates it, which switches the app-wide client context
               (replay list, armor/ballistics loader, stats realm) and follows
-              that realm's preferred account. A dashed add row at the end
-              opens the dialog hosting detection and the native folder
+              that realm's preferred account. Each card carries a two-step
+              delete (arm → confirm, like the wallpaper strip) that removes
+              the row and ignores it on future scans. A dashed add row at the
+              end opens the dialog hosting detection and the native folder
               picker. Unreachable on the phone app build (the rail filters
               the section out). */}
           <HkSettingsGroup title={t("settings.gamePath")}>
@@ -1139,29 +1154,53 @@ export default defineComponent({
             ) : (
               <div class="settings-modal__installs">
                 {installRows.value.map((i) => {
-                  const active = i.path === activePath.value;
+                  const active = sameGamePath(i.path, activePath.value);
                   return (
-                    <button
-                      key={i.path}
-                      type="button"
-                      class={["install-card", active ? "install-card--active" : ""]}
-                      onClick={() => void activateInstall(i)}
-                    >
-                      <PlatformIcon kind={i.kind} size={38} />
-                      <span class="install-card__body">
-                        <span class="install-card__head">
-                          <span class="install-card__name">{kindLabel(i.kind)}</span>
-                          {i.realm ? (
-                            <HkTag variant="default" size="sm">{i.realm.toUpperCase()}</HkTag>
-                          ) : null}
-                          {active ? <Check size={12} class="install-card__check" /> : null}
+                    // The card is a button and buttons don't nest — the
+                    // delete control lives on a positioned wrapper beside it
+                    // (same structure as the wallpaper tiles).
+                    <div key={i.path} class="settings-modal__install">
+                      <button
+                        type="button"
+                        class={["install-card", active ? "install-card--active" : ""]}
+                        onClick={() => void activateInstall(i)}
+                      >
+                        <PlatformIcon kind={i.kind} size={38} />
+                        <span class="install-card__body">
+                          <span class="install-card__head">
+                            <span class="install-card__name">{kindLabel(i.kind)}</span>
+                            {i.realm ? (
+                              <HkTag variant="default" size="sm">{i.realm.toUpperCase()}</HkTag>
+                            ) : null}
+                            {active ? <Check size={12} class="install-card__check" /> : null}
+                          </span>
+                          <span class="install-card__path" title={i.path}>{i.path}</span>
                         </span>
-                        <span class="install-card__path" title={i.path}>{i.path}</span>
-                      </span>
-                      {active ? (
-                        <HkTag variant="success" size="sm">{t("common.gamePath.inUse")}</HkTag>
-                      ) : null}
-                    </button>
+                        {active ? (
+                          <HkTag variant="success" size="sm">{t("common.gamePath.inUse")}</HkTag>
+                        ) : null}
+                      </button>
+                      {sameGamePath(i.path, installArmed.value) ? (
+                        <button
+                          type="button"
+                          autofocus
+                          class="settings-modal__install-remove settings-modal__install-remove--confirm"
+                          onClick={() => void removeInstall(i)}
+                        >
+                          {t("common.gamePath.removeConfirm")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          class="settings-modal__install-remove"
+                          title={t("common.gamePath.removeAction")}
+                          aria-label={t("common.gamePath.removeAction")}
+                          onClick={() => (installArmed.value = i.path)}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>

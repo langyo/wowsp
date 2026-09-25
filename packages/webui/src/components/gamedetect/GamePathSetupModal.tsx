@@ -9,6 +9,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { api, type GameInstall } from "@/api";
 import { t } from "@/i18n";
 import { installLabelOf } from "@/utils/installLabel";
+import { sameGamePath } from "@/utils/gamePath";
 import "./GamePathSetupModal.scss";
 
 /**
@@ -51,8 +52,8 @@ export default defineComponent({
       if (!p.running || !p.matchedInstall) return null;
       // Only when it's NOT already one of the detected installs (those are
       // listed above) and not already active.
-      if (installs.value.some((i) => i.path === p.matchedInstall!.path)) return null;
-      if (p.matchedInstall.path === activePath.value) return null;
+      if (installs.value.some((i) => sameGamePath(i.path, p.matchedInstall!.path))) return null;
+      if (sameGamePath(p.matchedInstall.path, activePath.value)) return null;
       return p.matchedInstall;
     });
 
@@ -154,7 +155,7 @@ export default defineComponent({
                   type="button"
                   class={[
                     "game-path-modal__install",
-                    i.path === activePath.value ? "is-active" : "",
+                    sameGamePath(i.path, activePath.value) ? "is-active" : "",
                   ]}
                   onClick={() => void pickInstall(i)}
                 >

@@ -52,6 +52,9 @@
     "applied": "遊戲路徑已更新",
     "invalid": "所選目錄無效",
     "setAction": "指定遊戲路徑",
+    "removeAction": "移除此路徑",
+    "removeConfirm": "確認移除？",
+    "removed": "遊戲路徑已移除",
     "inUse": "使用中"
   }
 }

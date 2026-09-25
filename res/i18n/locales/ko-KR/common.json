@@ -52,6 +52,9 @@
     "applied": "게임 경로가 업데이트되었습니다",
     "invalid": "선택한 폴더가 유효하지 않습니다",
     "setAction": "게임 경로 지정",
+    "removeAction": "이 경로 제거",
+    "removeConfirm": "제거할까요?",
+    "removed": "게임 경로가 제거되었습니다",
     "inUse": "사용 중"
   }
 }
