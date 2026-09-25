@@ -17,12 +17,19 @@
  * every boot because initThemeModePreference() re-applies after initTheme().
  * The retired wowsp-side "system" value (OS prefers-color-scheme follower)
  * migrates onto "solar" as well.
+ *
+ * The preference drives the mode UNIFORMLY — no wallpaper-dependent
+ * override. The solid background used to force dark (its paint was assumed
+ * to be a dark base), but the renderer has always been mode-aware: a light
+ * mode paints the light solid with the light palette's own text colors, so
+ * the override only ever succeeded in pinning the whole app to the dark
+ * scheme (hikari default dark = the blue Nord look) for anyone on the
+ * shipped solid default. Dropping it lets hikari's own defaults show
+ * through — solar days resolve to the light scheme, nights to dark.
  */
-import { ref, watch } from "vue";
+import { ref } from "vue";
 
 import { useTheme } from "@celestia-island/hikari";
-
-import { useWallpaper } from "./useWallpaper";
 
 export type ThemeModePreference = "dark" | "light" | "solar";
 
@@ -84,19 +91,6 @@ function applyPreference(mode: ThemeModePreference) {
   useTheme().setMode(mode === "solar" ? "system" : mode);
 }
 
-// Solid wallpapers always present dark: their paint is the dark theme
-// color, so the whole shell must use the dark palette to keep text light
-// and readable day and night (a light palette over the dark solid would
-// paint dark-on-dark everywhere). Image wallpapers follow the stored
-// preference, whose light mode keeps dark-on-light-glass readable.
-const wallpaper = useWallpaper();
-
-/** Effective-mode applier: the stored preference, overridden to dark while
- *  a solid background is active. */
-function applyEffectivePreference() {
-  applyPreference(wallpaper.isSolid.value ? "dark" : themeModePreference.value);
-}
-
 /** Change + persist + apply immediately (settings section, onboarding
  *  wizard — both want live preview). */
 export function setThemeModePreference(mode: ThemeModePreference) {
@@ -106,13 +100,11 @@ export function setThemeModePreference(mode: ThemeModePreference) {
   } catch {
     // storage unavailable — the preference holds for the session
   }
-  applyEffectivePreference();
+  applyPreference(mode);
 }
 
 /** Boot hook: apply the stored preference after hikari's initTheme() so the
- *  authoritative key wins over whatever hikari restored — and keep
- *  re-applying whenever the wallpaper flips between solid and image. */
+ *  authoritative key wins over whatever hikari restored. */
 export function initThemeModePreference() {
-  applyEffectivePreference();
-  watch(wallpaper.isSolid, applyEffectivePreference);
+  applyPreference(themeModePreference.value);
 }

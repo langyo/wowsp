@@ -11,11 +11,13 @@
 // binds no local name, and themePresetIds reads the table per call.
 import { themePresets } from "@celestia-island/hikari";
 
-/** Preferred display order of the shipped color presets, shared by the
- *  settings appearance section and the onboarding wizard: Nord first,
+/** Preferred display order of the shipped color presets, used by the
+ *  onboarding wizard's theme step (the settings appearance section now
+ *  reads the theme engine's merged view directly — presets + custom
+ *  schemes — so it has no use for a preset-id order): Nord first,
  *  Synthwave '84 deliberately last, and hikari's collapsed `default` pair
- *  after the ids it retired (see themePresetIds). Naming an id here states a
- *  PREFERENCE, never a whitelist of what a picker may show. */
+ *  after the ids it retired (see themePresetIds). Naming an id here states
+ *  a PREFERENCE, never a whitelist of what a picker may show. */
 export const THEME_PRESET_ORDER = [
   "nord",
   "gruvbox",
@@ -25,11 +27,11 @@ export const THEME_PRESET_ORDER = [
 ] as const;
 
 /**
- * The preset ids a picker may show, derived from the LIVE hikari preset
- * table: every preset the table carries, in THEME_PRESET_ORDER where that
- * order names it and in table order for anything else. Resolved per call
- * (the idiom hikari itself uses for its scheme-editor seed), so the list
- * follows whatever table the running build ends up with.
+ * The preset ids the WIZARD's picker may show, derived from the LIVE hikari
+ * preset table: every preset the table carries, in THEME_PRESET_ORDER where
+ * that order names it and in table order for anything else. Resolved per
+ * call (the idiom hikari itself uses for its scheme-editor seed), so the
+ * list follows whatever table the running build ends up with.
  *
  * What this replaces: hikari collapsed its four stock presets into a single
  * `default` (0.55.61 — the SAME 0.55.x minor, so it is already inside this
