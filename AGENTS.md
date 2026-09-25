@@ -69,6 +69,30 @@
 - 独立子任务并行发起；串行任务等待结果再继续。
 - 每个 subagent 返回前必须验证自己的工作；重要工作由另一个 subagent 交叉验证。
 
+### Worktree PR 工作方式
+
+主 checkout 常驻 master；有并行任务、或当前任务与主 checkout 上的构建状态
+可能互相干扰时，一律用独立 `git worktree` 开分支：
+
+1. **创建**：`git worktree add ../<repo>-wt-<task> -b <type>/<name> master`
+   —— 兄弟目录、`-wt-` 前缀命名（如 `wowsp-wt-detect`）；所有改动、commit、
+   push、`gh pr create` 都在 worktree 内进行，主 checkout 保持 master 不动。
+2. **依赖不共享**：worktree 的 `node_modules` 是空的，进入后先 `pnpm install`
+   （pnpm store 全局共享，装得很快）；Rust `target/` 同样独立，首次
+   `cargo check` / `cargo test` 全量编译属预期。
+   - `tauri::generate_context!()` 在编译期嵌入 `dist/webui`，新 worktree 里
+     该目录不存在会直接编译失败——本地跑 Rust 测试前先 `pnpm build` 出真
+     产物，或像 CI 一样放一个占位 `dist/webui/index.html`（`dist/` 已
+     gitignore，不会进提交）。
+   - 可选加速：临时 `CARGO_TARGET_DIR` 指到主 checkout 的 `target/` 复用
+     依赖产物（cargo 自带文件锁，串行安全；两个 worktree 并行构建时不要
+     共享，且注意这会让主 checkout 下次构建重编改动过的 crate）。
+3. **合并后清理**：squash merge 并删除远端分支后，回主 checkout 执行
+   `git worktree remove ../<repo>-wt-<task>`（有未提交改动时加
+   `--force` 前先确认内容已进 PR）；残留的失效 worktree 用
+   `git worktree prune` 清理，本地分支 `git branch -d <type>/<name>`。
+4. worktree 内不再嵌套切出二级 worktree；一个 worktree 只服务一个分支。
+
 ### 验证门禁
 
 提交前 `just lint`（或分目标 `just lint rust` / `just lint webui`）、

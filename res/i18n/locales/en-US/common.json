@@ -52,6 +52,9 @@
     "applied": "Game path updated",
     "invalid": "The selected folder is not a valid install",
     "setAction": "Set game path",
+    "removeAction": "Remove this path",
+    "removeConfirm": "Remove?",
+    "removed": "Game path removed",
     "inUse": "In use"
   }
 }

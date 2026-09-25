@@ -52,6 +52,9 @@
     "applied": "Ruta del juego actualizada",
     "invalid": "La carpeta seleccionada no es válida",
     "setAction": "Establecer ruta del juego",
+    "removeAction": "Quitar esta ruta",
+    "removeConfirm": "¿Quitar?",
+    "removed": "Ruta del juego eliminada",
     "inUse": "En uso"
   }
 }

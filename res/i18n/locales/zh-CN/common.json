@@ -52,6 +52,9 @@
     "applied": "游戏路径已更新",
     "invalid": "所选目录无效",
     "setAction": "指定游戏路径",
+    "removeAction": "移除此路径",
+    "removeConfirm": "确认移除？",
+    "removed": "游戏路径已移除",
     "inUse": "使用中"
   }
 }
