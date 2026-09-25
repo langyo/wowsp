@@ -46,73 +46,19 @@ body {
 .wizard-layout--left {
   display: grid;
   grid-template-columns: auto 1fr;
+  // Clamp the single row to the layout's real height: an auto row would
+  // size to the tallest item (the pane), so the rail would be stretched
+  // to fit forever and HkTimeline's height-overflow collapse could never
+  // see a shortage. With the clamp the rail's host gets the true
+  // available height and collapse="auto" can fold it when needed.
+  grid-template-rows: minmax(0, 1fr);
   gap: 26px;
 
-  // hikari's HkTimeline ships horizontal geometry only; the vertical rail
-  // layout lives here until the component styles this orientation itself.
-  .hk-timeline[data-orientation="vertical"] {
-    --rail-node: 26px;
-    --rail-gap: 16px;
-
-    display: flex;
-    flex-direction: column;
-  }
-
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-step {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: var(--rail-gap) 0;
-  }
-
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-step [data-el="indicator"] {
-    // hikari pins the indicator with min/max clamps — override them too,
-    // or the node renders 24px while the connector assumes the var size.
-    width: var(--rail-node);
-    height: var(--rail-node);
-    min-width: var(--rail-node);
-    min-height: var(--rail-node);
-    max-width: var(--rail-node);
-    max-height: var(--rail-node);
-    flex: none;
-  }
-
-  // Connectors: two halves per inter-node span so the rail is continuous
-  // regardless of node internals — the top half (previous node center →
-  // step start) rides on ::before of the FOLLOWING step, the bottom half
-  // (this node center → step end) on ::after of every non-last step.
-  // Both sit behind the indicator, which carries an opaque background.
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-step + .hk-timeline-step::before {
-    content: "";
-    position: absolute;
-    left: calc(var(--rail-node) / 2 - 1px);
-    top: 0;
-    height: calc(var(--rail-gap) + var(--rail-node) / 2);
-    width: 2px;
-    background: rgb(var(--color-border));
-  }
-
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-step:not([data-last])::after {
-    content: "";
-    position: absolute;
-    left: calc(var(--rail-node) / 2 - 1px);
-    top: calc(var(--rail-gap) + var(--rail-node) / 2);
-    bottom: 0;
-    width: 2px;
-    background: rgb(var(--color-border));
-  }
-
-  // Opaque node fills so the rail never shows through the translucent
-  // active tint (hikari's active indicator is 15% primary over nothing).
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-step[data-status="active"] [data-el="indicator"] {
-    background-color: color-mix(in srgb, var(--hi-color-primary) 15%, rgb(var(--color-surface)));
-  }
-
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-step [data-el="indicator"] {
-    position: relative;
-    z-index: 1;
-  }
+  // The vertical rail is hikari's own these days (full mode stacks the
+  // nodes with a node-centered connector; collapse="auto" folds a tall
+  // rail into the three-cell window when the host runs out of height),
+  // so nothing is overridden here — the old local shim fought the
+  // component's geometry and drew short, off-center connector stubs.
 
   .wizard-identity {
     margin: 0;
@@ -120,16 +66,12 @@ body {
     color: rgb(var(--color-muted));
   }
 
-  // Align the pane's first heading with the rail's first node: the rail
-  // spends its top gap plus half a node before the indicator center.
-  // Rail-only — the standalone uninstall pane has no rail and must
-  // center without the offset.
+  // Align the pane's first heading with the rail's first node: the native
+  // vertical rail puts the 24px node's center 12px below the timeline's
+  // top edge. Rail-only — the standalone uninstall pane has no rail and
+  // must center without the offset.
   .wizard-layout__pane {
-    padding-top: var(--rail-gap, 16px);
-  }
-
-  .hk-timeline[data-orientation="vertical"] .hk-timeline-links {
-    display: none;
+    padding-top: calc(var(--hk-timeline-node-size, 24px) / 2);
   }
 }
 
