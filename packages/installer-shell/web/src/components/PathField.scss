@@ -20,6 +20,19 @@
 
 // The drive chip rides the input's prefix slot (the shared
 // .hk-affix-chip base supplies the chrome; these are content hooks).
+// The pill itself is tighter than the shared affix-chip base reserves —
+// the drive label reads as part of the field, not a button-sized
+// control — and the freed space goes BETWEEN the chip and the path
+// text: the inline-end margin widens the affix slot that HkInput
+// measures (--hk-input-affix-start-w), so the text reservation grows
+// with it. The doubled-class selector out-ranks the (0,1,0) base rule
+// regardless of stylesheet order.
+.path-field .path-field-chip {
+  padding: 1px 3px;
+  gap: 0.15rem;
+  margin-inline-end: 8px;
+}
+
 .path-field-chip__mount {
   font-weight: 600;
   font-size: var(--text-sm);
