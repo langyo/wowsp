@@ -5,9 +5,10 @@
  * string in App.tsx and the components resolves from `strings(locale)`
  * per render, so a locale switch re-renders everything live. zh-Hans is
  * the original copy (kept verbatim); the other nine are authored
- * translations. The AnnouncementCard (announcement.ts) carries its own
- * per-locale content and receives the wizard locale as a prop — its
- * variant list is out of this table's scope. The LogPane's structural
+ * translations. The agreement step's FOSS notice and telemetry copy live
+ * in announcement.ts and compose into the first agreement document
+ * (agreementDoc.ts) — their texts are out of this table's scope. The
+ * LogPane's structural
  * chrome (title / expand / collapse) lives in `logPane` and reaches the
  * component as props, and the composed log LINES (backend progress
  * verbs, file echoes, script starts) resolve from `install.progress`
