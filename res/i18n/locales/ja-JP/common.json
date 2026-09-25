@@ -52,6 +52,9 @@
     "applied": "ゲームパスを更新しました",
     "invalid": "選択されたフォルダーは無効です",
     "setAction": "ゲームパスを設定",
+    "removeAction": "このパスを削除",
+    "removeConfirm": "削除しますか？",
+    "removed": "ゲームパスを削除しました",
     "inUse": "使用中"
   }
 }

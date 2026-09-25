@@ -52,6 +52,9 @@
     "applied": "Chemin du jeu mis à jour",
     "invalid": "Le dossier sélectionné n'est pas valide",
     "setAction": "Définir le chemin du jeu",
+    "removeAction": "Retirer ce chemin",
+    "removeConfirm": "Retirer ?",
+    "removed": "Chemin du jeu retiré",
     "inUse": "Utilisé"
   }
 }
