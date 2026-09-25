@@ -201,26 +201,13 @@ body {
   color: rgb(var(--color-muted));
 }
 
-/* ── mode pane: wizard-language picker row ────────────────────────── */
+/* ── language pane: the wizard's first step ───────────────────────── */
 
-// The locale picker sits at the top of the mode step: one muted label on
-// the left, the hikari select capped to setting-row width on the right.
-.wizard-language {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-
-  .wizard-language__label {
-    flex: none;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-muted));
-  }
-
-  // HkSelect's wrapper is width:100%; cap it so the row reads as a
-  // setting rather than a full-width field.
-  .wizard-language__select {
-    width: 200px;
-  }
+// One centered block — heading, sub and the picker (capped to
+// setting-row width) — the pane's --center layout puts it in the
+// vertical + horizontal middle of the step.
+.wizard-language .wizard-language__select {
+  width: 200px;
 }
 
 .wizard-pane__title {
@@ -437,4 +424,23 @@ body {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+/* ── hikari dropdown rows: taller highlight face ──────────────────── */
+
+// hikari's unified menu-row spec caps desktop rows at 34px (affix rows
+// 36px) with tight vertical padding, so in the installer's small popouts
+// the hover/checked wash reads as a thin strip between roomier slots.
+// Lift the rows' own metrics through their token contract — the same
+// custom properties the sheet context re-declares — so the highlight
+// fills a taller row. Installer-only: the npm package's defaults stay
+// untouched for every other consumer.
+.hk-select-popout .hk-select-option {
+  --hk-menu-item-min-h: 40px;
+  --hk-menu-item-pad-y: 8px;
+}
+
+.hk-affix-scroll .hk-affix-row {
+  min-height: 2.5rem;
+  padding-block: 6px;
 }
