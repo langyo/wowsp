@@ -182,3 +182,122 @@ jobs:
     permissions:
       contents: write
     uses: celestia-island/celestia-devtools/.github/workflows/release-notes.yml@master
+
+  publish:
+    # The draft's tag association is the fragile part. GitHub files — or
+    # asynchronously reverts — a draft's tag_name to an `untagged-<hash>`
+    # slug (v0.3.1, v0.4.3, v0.4.4, v0.4.8). On v0.4.8 the draft read back
+    # as v0.4.8 through every in-run check: the create, the upload step's
+    # settle loop, and even the release-notes job's by-tag lookup. The
+    # notes job then patched only the release body — and within ~60s the
+    # tag_name silently reverted to the untagged slug, AFTER the run went
+    # green. Reads taken right after our own writes therefore prove
+    # nothing; the clobber lands late.
+    #
+    # This job is the last writer. Once every other writer (upload, notes)
+    # has gone quiet it waits out the observed clobber window, repairs the
+    # tag if the revert already landed, verifies the assets, and publishes.
+    # Publishing is what actually freezes the association: the untagged
+    # phenomenon is draft-only, a published release owns its tag binding.
+    # It also removes the manual `gh release edit` step, where publishing
+    # a dangling draft would mint a literal `untagged-…` git tag and
+    # orphan the real one.
+    needs: release-notes
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Settle, guard the tag, publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout in this job — `gh release edit` below resolves the
+          # repo from this (gh api calls spell their path out instead).
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ref="${{ github.ref_name }}"
+          ver="${ref#v}"
+          api_base="repos/$GITHUB_REPOSITORY"
+
+          echo "note: settling 180s — observed tag reverts land ~1 min after a write"
+          sleep 180
+
+          # Resolve the run's release: by tag first (works once tag_name is
+          # right, and for a re-run after a previous publish), else page the
+          # release list for OUR draft by its deterministic title — the only
+          # release ever named "WoWSP $ref" (a reverted draft is invisible
+          # by tag: its tag_name IS the untagged slug).
+          rel_id="$(gh api "$api_base/releases/tags/$ref" --jq .id 2>/dev/null)" || rel_id=""
+          if [ -z "$rel_id" ] || [ "$rel_id" = "null" ]; then
+            echo "note: $ref not resolvable by tag — paging for the draft by title"
+            for page in 1 2 3 4 5; do
+              rel_id="$(gh api "$api_base/releases?per_page=100&page=$page" \
+                --jq "[.[] | select(.name == \"WoWSP $ref\")][0].id" 2>/dev/null)" || rel_id=""
+              [ -n "$rel_id" ] && [ "$rel_id" != "null" ] && break
+            done
+          fi
+          if [ -z "$rel_id" ] || [ "$rel_id" = "null" ]; then
+            echo "::error::no release found for $ref — refusing to publish"
+            exit 1
+          fi
+
+          tag="$(gh api "$api_base/releases/$rel_id" --jq .tag_name)"
+          echo "note: release $rel_id currently tagged '$tag'"
+          if [ "$tag" != "$ref" ]; then
+            echo "note: re-pointing release $rel_id at $ref (with target_commitish)"
+            obj="$(gh api "$api_base/git/ref/tags/$ref")"
+            obj_sha="$(echo "$obj" | jq -r .object.sha)"
+            # Release tags here are annotated: deref the tag object to the
+            # commit SHA — target_commitish wants a commitish, not a tag SHA
+            # (ignored while the tag exists, but kept semantically right).
+            if [ "$(echo "$obj" | jq -r .object.type)" = "tag" ]; then
+              obj_sha="$(gh api "$api_base/git/tags/$obj_sha" --jq .object.sha)"
+            fi
+            gh api -X PATCH "$api_base/releases/$rel_id" \
+              -f tag_name="$ref" -f target_commitish="$obj_sha" --silent
+          fi
+
+          # Re-verify only after a quiet period: reads immediately after a
+          # PATCH agreed on v0.4.4/v0.4.8 while the revert was still in
+          # flight. On a flip, re-point and wait out another window.
+          tag_ok=""
+          for attempt in 1 2 3; do
+            sleep 90
+            cur="$(gh api "$api_base/releases/$rel_id" --jq .tag_name)"
+            if [ "$cur" = "$ref" ]; then tag_ok=1; break; fi
+            echo "note: tag reads '$cur' (attempt $attempt) — re-pointing"
+            gh api -X PATCH "$api_base/releases/$rel_id" -f tag_name="$ref" --silent
+          done
+          if [ -z "$tag_ok" ]; then
+            echo "::error::release $rel_id never settled on tag $ref — refusing to publish"
+            exit 1
+          fi
+
+          # Never publish a half-uploaded release.
+          assets="$(gh api "$api_base/releases/$rel_id" --jq '.assets[].name')"
+          for want in \
+            "WoWSP_${ver}_x64-installer.exe" \
+            "WoWSP_${ver}_x64-installer-lite.exe" \
+            "WoWSP_${ver}_x64-installer-webview2.exe" \
+            latest; do
+            echo "$assets" | grep -qxF "$want" || {
+              echo "::error::asset '$want' missing from release $rel_id — refusing to publish"
+              exit 1
+            }
+          done
+
+          gh release edit "$ref" --draft=false --latest
+
+          # A revert racing the publish would leave a published release on
+          # the untagged slug — the one unrecoverable-by-retry state, so
+          # fail loudly for manual repair instead of dying silently. The
+          # publish is itself a write, hence the full clobber-window wait.
+          sleep 90
+          state="$(gh api "$api_base/releases/$rel_id" \
+            --jq '"\(.tag_name) draft=\(.draft)"')"
+          if [ "$state" != "$ref draft=false" ]; then
+            echo "::error::post-publish state is '$state' (wanted '$ref draft=false') — manual repair needed"
+            exit 1
+          fi
+          echo "note: published $ref ($state)"
