@@ -36,15 +36,17 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
 
 /**
  * Installer shell UI — a step-driven delivery wizard rendered with hikari
- * components: a left step rail (mode → license → install → done), centered
- * panes, the bundled SySL 1.0 license agreement, and done-page shortcut
- * toggles plus an optional immediate launch, all applied only when the
- * final confirmation runs (nothing is created during the install itself).
- * An install failure lands on the done step as a failure variant with
- * retry/close actions — nothing returns to earlier steps once the install
- * started. The license step pages through the localized documents the
- * backend resolves at build time (a copyright notice + the SySL
- * agreement); agreeing covers all of them.
+ * components: a left step rail (language → mode → license → install →
+ * done), centered panes, the bundled SySL 1.0 license agreement, and
+ * done-page shortcut toggles plus an optional immediate launch, all
+ * applied only when the final confirmation runs (nothing is created
+ * during the install itself). The wizard opens on the language step,
+ * whose picker alone decides the locale for every later pane. An install
+ * failure lands on the done step as a failure variant with retry/close
+ * actions — nothing returns to earlier steps once the install started.
+ * The license step pages through the localized documents the backend
+ * resolves at build time (a copyright notice + the SySL agreement);
+ * agreeing covers all of them.
  *
  * When the shell runs as the uninstaller (`/uninstall`, probed via
  * `is_uninstall_mode`), the wizard layout is replaced by a standalone
@@ -54,7 +56,7 @@ import { invoke, listen, openDirectory, tauriWindow } from "./tauri";
  */
 
 type Mode = "local" | "usb";
-type StepKey = "mode" | "license" | "install" | "done";
+type StepKey = "language" | "mode" | "license" | "install" | "done";
 
 interface DirCandidate {
   kind: string;
@@ -103,20 +105,21 @@ const CANDIDATE_META: Record<string, { label: string; icon: typeof HardDrive }> 
   drive: { label: "", icon: HardDrive },
 };
 
-// Step keys in rail order; the labels resolve from the string table per
-// render so a locale switch relabels the timeline live.
-const STEP_KEYS = ["mode", "license", "install", "done"] as const;
+// Step keys in rail order (language leads, the wizard's first step); the
+// labels resolve from the string table per render so a locale switch
+// relabels the timeline live.
+const STEP_KEYS = ["language", "mode", "license", "install", "done"] as const;
 
 export default defineComponent({
   name: "InstallerApp",
   setup() {
     // `?step=` preview hook (static previews / dev); production passes no
-    // query and starts at the mode pane.
+    // query and starts at the language pane.
     const initialStep = (new URLSearchParams(window.location.search).get(
       "step",
     ) ?? "") as StepKey;
     const step = ref<StepKey>(
-      (STEP_KEYS as readonly string[]).includes(initialStep) ? initialStep : "mode",
+      (STEP_KEYS as readonly string[]).includes(initialStep) ? initialStep : "language",
     );
     const mode = ref<Mode>("local");
     // Wizard locale — resolved synchronously from the system so first paint
@@ -377,22 +380,12 @@ export default defineComponent({
       }
     }
 
-    async function selectMode(id: string | number | boolean | undefined) {
-      if (step.value !== "mode") return;
-      mode.value = (id as Mode) ?? "local";
-      await refreshDefaults().catch((err) => { hintKind.value = "error"; hintError.value = String(err); });
-    }
-
-    // Picker change: remember the choice for the next run — portable (USB)
-    // runs skip the write, so a removable copy scatters no state onto the
-    // host. The ref itself drives every label on the next render.
+    // Picker change: the ref alone drives every label on the next render;
+    // the choice is persisted once the install starts (start()), when the
+    // mode — and with it the portable write-skip — is finally known.
     function changeLocale(value: string) {
       if (!isInstallerLocale(value)) return;
       locale.value = value;
-      void invoke("save_language", {
-        language: value,
-        portable: mode.value === "usb",
-      }).catch(() => {});
     }
 
     /** 裸盘符根目录（如选中的 D:\）不直接接收载荷：shun 0.3 的根盘
@@ -414,6 +407,12 @@ export default defineComponent({
       // 手动输入的裸盘根目录先垫好文件夹再开跑——完成页与后续的
       // 快捷方式 / 启动命令用的都是改写后的真实路径。
       await applyNestRootDir(dir.value).catch(() => {});
+      // 语言偏好在这里（而非选择器切换时）落盘：此刻安装方式已定，
+      // portable (USB) 运行会跳过写入，不在宿主机上留下状态。
+      void invoke("save_language", {
+        language: locale.value,
+        portable: mode.value === "usb",
+      }).catch(() => {});
       go("install");
       try {
         await invoke("start_install", {
@@ -626,21 +625,22 @@ export default defineComponent({
       ];
 
       const pane =
-        step.value === "mode" ? (
+        step.value === "language" ? (
+          <section class="wizard-pane wizard-pane--center wizard-language">
+            <h1>{s.language.title}</h1>
+            <p class="wizard-sub">{s.language.sub}</p>
+            <div class="wizard-language__select">
+              <HkSelect
+                modelValue={locale.value}
+                options={LOCALE_OPTIONS}
+                onUpdate:modelValue={changeLocale}
+              />
+            </div>
+          </section>
+        ) : step.value === "mode" ? (
           <section class="wizard-pane">
             <h1>{s.mode.title}</h1>
             <p class="wizard-sub">{s.mode.sub}</p>
-
-            <div class="wizard-language">
-              <span class="wizard-language__label" id="locale-label">{s.languageLabel}</span>
-              <div class="wizard-language__select">
-                <HkSelect
-                  modelValue={locale.value}
-                  options={LOCALE_OPTIONS}
-                  onUpdate:modelValue={changeLocale}
-                />
-              </div>
-            </div>
 
             <HkSelectionGrid
               items={modeItems}
@@ -883,15 +883,25 @@ export default defineComponent({
 
             <footer class="installer__footer">
               <div class="installer__nav">
-                {running.value ? null : step.value === "mode" && (
-                  <HkButton
-                    variant="primary"
-                    size="lg"
-                    disabled={dirWritable.value === false}
-                    onClick={() => go("license")}
-                  >
+                {running.value ? null : step.value === "language" && (
+                  <HkButton variant="primary" size="lg" onClick={() => go("mode")}>
                     {s.nav.next}
                   </HkButton>
+                )}
+                {running.value ? null : step.value === "mode" && (
+                  <>
+                    <HkButton variant="ghost" onClick={() => go("language")}>
+                      {s.nav.back}
+                    </HkButton>
+                    <HkButton
+                      variant="primary"
+                      size="lg"
+                      disabled={dirWritable.value === false}
+                      onClick={() => go("license")}
+                    >
+                      {s.nav.next}
+                    </HkButton>
+                  </>
                 )}
                 {step.value === "license" && (
                   <>

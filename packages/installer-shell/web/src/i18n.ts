@@ -133,9 +133,15 @@ export interface InstallerStrings {
   title: string;
   /** Title-bar text for the uninstall window. */
   uninstallTitle: string;
-  /** The language picker's row label on the mode step. */
-  languageLabel: string;
-  steps: { mode: string; license: string; install: string; done: string };
+  steps: {
+    language: string;
+    mode: string;
+    license: string;
+    install: string;
+    done: string;
+  };
+  /** The wizard's first step: the language chooser pane. */
+  language: { title: string; sub: string };
   mode: {
     title: string;
     sub: string;
@@ -204,8 +210,11 @@ export interface InstallerStrings {
 const zhHans: InstallerStrings = {
   title: "WoWSP 安装器",
   uninstallTitle: "WoWSP 卸载",
-  languageLabel: "安装向导语言",
-  steps: { mode: "安装方式", license: "用户协议", install: "安装", done: "完成" },
+  steps: { language: "安装语言", mode: "安装方式", license: "用户协议", install: "安装", done: "完成" },
+  language: {
+    title: "选择安装向导的语言",
+    sub: "向导的其余步骤都将以所选语言显示。",
+  },
   mode: {
     title: "选择 WoWSP 的安装方式",
     sub: "选择此副本的安装方式及其数据存放位置；2D / 3D 模型资源包将一并安装。",
@@ -317,8 +326,11 @@ const zhHans: InstallerStrings = {
 const zhHant: InstallerStrings = {
   title: "WoWSP 安裝器",
   uninstallTitle: "WoWSP 解除安裝",
-  languageLabel: "安裝精靈語言",
-  steps: { mode: "安裝方式", license: "使用者協議", install: "安裝", done: "完成" },
+  steps: { language: "安裝語言", mode: "安裝方式", license: "使用者協議", install: "安裝", done: "完成" },
+  language: {
+    title: "選擇安裝精靈的語言",
+    sub: "精靈的其餘步驟都將以所選語言顯示。",
+  },
   mode: {
     title: "選擇 WoWSP 的安裝方式",
     sub: "選擇此副本的安裝方式及其資料存放位置；2D / 3D 模型資源包將一併安裝。",
@@ -430,8 +442,11 @@ const zhHant: InstallerStrings = {
 const en: InstallerStrings = {
   title: "WoWSP Installer",
   uninstallTitle: "Uninstall WoWSP",
-  languageLabel: "Installer language",
-  steps: { mode: "Mode", license: "License", install: "Install", done: "Done" },
+  steps: { language: "Language", mode: "Mode", license: "License", install: "Install", done: "Done" },
+  language: {
+    title: "Choose the installer language",
+    sub: "The rest of the wizard will be shown in the selected language.",
+  },
   mode: {
     title: "Choose how to install WoWSP",
     sub: "Choose how this copy is installed and where its data lives; the 2D / 3D model packs are installed along with it.",
@@ -545,8 +560,11 @@ const en: InstallerStrings = {
 const ru: InstallerStrings = {
   title: "Установщик WoWSP",
   uninstallTitle: "Удаление WoWSP",
-  languageLabel: "Язык установщика",
-  steps: { mode: "Режим", license: "Лицензия", install: "Установка", done: "Готово" },
+  steps: { language: "Язык", mode: "Режим", license: "Лицензия", install: "Установка", done: "Готово" },
+  language: {
+    title: "Выберите язык установщика",
+    sub: "Остальные шаги мастера будут отображаться на выбранном языке.",
+  },
   mode: {
     title: "Выберите способ установки WoWSP",
     sub: "Выберите способ установки этой копии и место хранения её данных; пакеты 2D / 3D-моделей устанавливаются вместе с ней.",
@@ -657,12 +675,16 @@ const ru: InstallerStrings = {
 const ja: InstallerStrings = {
   title: "WoWSP インストーラー",
   uninstallTitle: "WoWSP のアンインストール",
-  languageLabel: "インストーラーの言語",
   steps: {
+    language: "言語",
     mode: "インストール方式",
     license: "使用許諾契約",
     install: "インストール",
     done: "完了",
+  },
+  language: {
+    title: "インストーラーの言語を選択",
+    sub: "以降のステップは選択した言語で表示されます。",
   },
   mode: {
     title: "WoWSP のインストール方式を選択",
@@ -786,12 +808,16 @@ const ja: InstallerStrings = {
 const ko: InstallerStrings = {
   title: "WoWSP 설치 관리자",
   uninstallTitle: "WoWSP 제거",
-  languageLabel: "설치 관리자 언어",
   steps: {
+    language: "언어",
     mode: "설치 방식",
     license: "사용권 계약",
     install: "설치",
     done: "완료",
+  },
+  language: {
+    title: "설치 관리자 언어 선택",
+    sub: "이후 단계는 선택한 언어로 표시됩니다.",
   },
   mode: {
     title: "WoWSP 설치 방식 선택",
@@ -910,8 +936,11 @@ const ko: InstallerStrings = {
 const fr: InstallerStrings = {
   title: "Programme d'installation WoWSP",
   uninstallTitle: "Désinstaller WoWSP",
-  languageLabel: "Langue de l'installateur",
-  steps: { mode: "Mode", license: "Licence", install: "Installation", done: "Terminé" },
+  steps: { language: "Langue", mode: "Mode", license: "Licence", install: "Installation", done: "Terminé" },
+  language: {
+    title: "Choisissez la langue de l'installateur",
+    sub: "Les étapes suivantes s'afficheront dans la langue choisie.",
+  },
   mode: {
     title: "Choisissez comment installer WoWSP",
     sub: "Choisissez le mode d'installation de cette copie et l'emplacement de ses données ; les packs de modèles 2D / 3D sont installés en même temps.",
@@ -1036,8 +1065,11 @@ const fr: InstallerStrings = {
 const es: InstallerStrings = {
   title: "Instalador de WoWSP",
   uninstallTitle: "Desinstalar WoWSP",
-  languageLabel: "Idioma del instalador",
-  steps: { mode: "Modo", license: "Licencia", install: "Instalar", done: "Hecho" },
+  steps: { language: "Idioma", mode: "Modo", license: "Licencia", install: "Instalar", done: "Hecho" },
+  language: {
+    title: "Elige el idioma del instalador",
+    sub: "Los pasos siguientes se mostrarán en el idioma seleccionado.",
+  },
   mode: {
     title: "Elige cómo instalar WoWSP",
     sub: "Elige cómo se instala esta copia y dónde residen sus datos; los paquetes de modelos 2D / 3D se instalan junto con ella.",
@@ -1162,8 +1194,11 @@ const es: InstallerStrings = {
 const de: InstallerStrings = {
   title: "WoWSP-Installer",
   uninstallTitle: "WoWSP deinstallieren",
-  languageLabel: "Installersprache",
-  steps: { mode: "Modus", license: "Lizenz", install: "Installation", done: "Fertig" },
+  steps: { language: "Sprache", mode: "Modus", license: "Lizenz", install: "Installation", done: "Fertig" },
+  language: {
+    title: "Wählen Sie die Sprache des Installationsassistenten",
+    sub: "Die weiteren Schritte des Assistenten erscheinen in der gewählten Sprache.",
+  },
   mode: {
     title: "Wählen Sie, wie WoWSP installiert werden soll",
     sub: "Wählen Sie, wie diese Kopie installiert wird und wo ihre Daten liegen; die 2D-/3D-Modellpakete werden mitinstalliert.",
@@ -1287,8 +1322,11 @@ const de: InstallerStrings = {
 const pt: InstallerStrings = {
   title: "Instalador do WoWSP",
   uninstallTitle: "Desinstalar o WoWSP",
-  languageLabel: "Idioma do instalador",
-  steps: { mode: "Modo", license: "Licença", install: "Instalar", done: "Concluído" },
+  steps: { language: "Idioma", mode: "Modo", license: "Licença", install: "Instalar", done: "Concluído" },
+  language: {
+    title: "Escolha o idioma do instalador",
+    sub: "As etapas seguintes serão exibidas no idioma selecionado.",
+  },
   mode: {
     title: "Escolha como instalar o WoWSP",
     sub: "Escolha como esta cópia é instalada e onde residem os seus dados; os pacotes de modelos 2D / 3D são instalados em conjunto.",
