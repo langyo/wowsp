@@ -21,10 +21,11 @@ import {
   watch,
 } from "vue";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
+import { HMinimap } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import TacticalBoard from "./TacticalBoard";
 import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
-import { MAP_GRID_COLUMNS, gridLabelLayout } from "./mapGrid";
+import { MAP_GRID_COLUMNS, gridLabelLayoutForView } from "./mapGrid";
 import { TACTICAL_MAX_SCALE } from "./geometry";
 import "./PlanStage.scss";
 
@@ -52,6 +53,8 @@ export default defineComponent({
     let artImage: HTMLImageElement | null = null;
     const fullBounds = ref<MapBounds | null>(null);
     const boundsReady = ref(false);
+    /** Minimap art URL (the overview card's background); null until loaded. */
+    const mapArtUrl = ref<string | null>(null);
     /** Cancels stale loads when the selected map switches mid-flight. */
     let loadEpoch = 0;
     const dirty = ref(true);
@@ -61,8 +64,10 @@ export default defineComponent({
       artImage = null;
       fullBounds.value = null;
       boundsReady.value = false;
+      mapArtUrl.value = null;
       const url = resolveMapMinimapUrl(props.spaceId);
       if (url) {
+        mapArtUrl.value = url;
         const img = new Image();
         img.onload = () => {
           if (epoch !== loadEpoch) return;
@@ -186,6 +191,61 @@ export default defineComponent({
       },
     };
 
+    // ── Overview card (hikari HMinimap): full-map art with the view window
+    //    boxed + a zoom bar, so a zoomed-in author always knows where on the
+    //    map they are looking. HMinimap speaks translate(panX,panY)+scale
+    //    over its content rect; the props below express the plan's world
+    //    camera in NORMALISED art space (the unit square), where the window's
+    //    normalised size is exactly 1/scale — hence viewportWidth/Height 1. ─
+    const minimap = computed(() => {
+      const full = fullBounds.value;
+      if (!full || !mapArtUrl.value) return null;
+      const vb = viewBounds(full);
+      const zoom = view.value.scale;
+      const w = full.maxX - full.minX || 1;
+      const h = full.maxZ - full.minZ || 1;
+      return {
+        imageSrc: mapArtUrl.value,
+        zoom,
+        panX: (-(vb.minX - full.minX) / w) * zoom,
+        panY: (-(full.maxZ - vb.maxZ) / h) * zoom,
+        zoomPercent: Math.round(zoom * 100),
+        canZoomIn: zoom < TACTICAL_MAX_SCALE - 1e-9,
+        canZoomOut: zoom > 1 + 1e-9,
+      };
+    });
+
+    /** Zoom-bar request (both the ± steps and the slider speak absolute
+     *  percent rungs): re-aim the camera at that zoom, centre unchanged. */
+    function setZoomPercent(percent: number): void {
+      const full = fullBounds.value;
+      if (!full) return;
+      const vb = viewBounds(full);
+      viewTween = null;
+      view.value = {
+        cx: (vb.minX + vb.maxX) / 2,
+        cz: (vb.minZ + vb.maxZ) / 2,
+        scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, percent / 100)),
+      };
+    }
+
+    /** Overview drag: HMinimap emits pan deltas in content units × its zoom
+     *  prop (dragging the box right shows terrain to the right); converted
+     *  back through the same normalisation into world-space centre moves. */
+    function panFromMinimap(dx: number, dy: number): void {
+      const full = fullBounds.value;
+      if (!full) return;
+      const vb = viewBounds(full);
+      const w = full.maxX - full.minX || 1;
+      const h = full.maxZ - full.minZ || 1;
+      viewTween = null;
+      view.value = {
+        cx: (vb.minX + vb.maxX) / 2 - (dx / view.value.scale) * w,
+        cz: (vb.minZ + vb.maxZ) / 2 + (dy / view.value.scale) * h,
+        scale: view.value.scale,
+      };
+    }
+
     // ── Planning clock: realtime playback over a fixed-length plan ───────
     const time = ref(0);
     const playing = ref(false);
@@ -257,16 +317,38 @@ export default defineComponent({
       }
       ctx.stroke();
       // Edge rulers (screen-frame, always upright) — the same A–J/1–10
-      // coordinate language the replay's enlarged map shows.
-      const layout = gridLabelLayout(0, TACTICAL_SIZE);
-      ctx.fillStyle = "rgba(203, 213, 225, 0.72)";
+      // coordinate language the replay's enlarged map shows. Each label is
+      // projected through the view window like the grid lines it names, so
+      // it rides its square under pan/zoom instead of sitting at a fixed
+      // decile slot (which decoupled from the lines on first zoom).
+      const colCenters: number[] = [];
+      const rowCenters: number[] = [];
+      for (let i = 0; i < MAP_GRID_COLUMNS; i++) {
+        colCenters.push(
+          gx(full.minX + ((full.maxX - full.minX) * (i + 0.5)) / MAP_GRID_COLUMNS),
+        );
+        // Row 1 is the NORTHERNMOST band (+worldZ is up), so count the row
+        // centres off maxZ — minZ-first would mirror 1–10 onto the south.
+        rowCenters.push(
+          gz(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS),
+        );
+      }
+      const layout = gridLabelLayoutForView(0, TACTICAL_SIZE, colCenters, rowCenters);
       ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      for (const l of layout.top) ctx.fillText(l.text, l.x, 3);
+      for (const l of layout.top) {
+        // Clamped = its square is off-canvas (deep zoom); it names the
+        // nearest square THAT way, so it steps back visually.
+        ctx.fillStyle = l.clamped ? "rgba(203, 213, 225, 0.38)" : "rgba(203, 213, 225, 0.72)";
+        ctx.fillText(l.text, l.x, 3);
+      }
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      for (const l of layout.left) ctx.fillText(l.text, 4, l.y);
+      for (const l of layout.left) {
+        ctx.fillStyle = l.clamped ? "rgba(203, 213, 225, 0.38)" : "rgba(203, 213, 225, 0.72)";
+        ctx.fillText(l.text, 4, l.y);
+      }
       ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
       ctx.strokeRect(0.5, 0.5, TACTICAL_SIZE - 1, TACTICAL_SIZE - 1);
     }
@@ -381,6 +463,29 @@ export default defineComponent({
                   pickShipAt={() => null}
                   baseCanvas={() => artCanvas.value}
                 />
+                {minimap.value && (
+                  <HMinimap
+                    class="plan-stage__minimap"
+                    imageSrc={minimap.value.imageSrc}
+                    imageBounds={{ x: 0, y: 0, w: 1, h: 1 }}
+                    contentBounds={{ x: 0, y: 0, w: 1, h: 1 }}
+                    zoom={minimap.value.zoom}
+                    panX={minimap.value.panX}
+                    panY={minimap.value.panY}
+                    viewportWidth={1}
+                    viewportHeight={1}
+                    zoomPercent={minimap.value.zoomPercent}
+                    zoomStepPercent={22}
+                    minZoomPercent={100}
+                    maxZoomPercent={1200}
+                    canZoomIn={minimap.value.canZoomIn}
+                    canZoomOut={minimap.value.canZoomOut}
+                    showReset
+                    onZoomTo={setZoomPercent}
+                    onReset={() => viewApi.reset()}
+                    onPanDelta={panFromMinimap}
+                  />
+                )}
               </div>
             </div>
             <div class="plan-stage__dock" id={PLAN_DOCK_ID} />
