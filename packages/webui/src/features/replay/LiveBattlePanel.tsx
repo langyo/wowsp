@@ -333,7 +333,7 @@ export default defineComponent({
         const main = (
           <span class="live-battle__player-main">
             <span class="live-battle__player-name">
-              {v.name}
+              <span class="live-battle__player-nick">{v.name}</span>
               {isAiName(v.name) ? (
                 <em class="live-battle__player-bot">{t("replay.bot")}</em>
               ) : null}

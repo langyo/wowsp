@@ -175,22 +175,27 @@
     border-bottom: 1px solid rgb(var(--color-text) / 0.1);
   }
 
+  /* Strict three-track card: a fixed name column, an elastic-but-clipping
+     middle for the ship-meta strip, and a fixed seal column. Every card in
+     both rosters shares the same tracks, so the left/middle/right grounds
+     line up across the whole panel and no content can push them around. */
   &__player {
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr) 1.75rem;
+    column-gap: 10px;
     align-items: center;
-    gap: 8px;
     padding: 7px 9px;
     border-radius: 6px;
     background: rgb(var(--color-text) / 0.04);
   }
 
-  /* Text stack (name / ship / stat line). A capped column so the ship-meta
-     strip owns the card's middle ground; `min-width: 0` lets it give way
-     instead of pushing the seal out of the card. */
+  /* Text stack (name / ship / stat line), first grid track. `min-width: 0`
+     keeps long names ellipsizing inside the fixed track. Explicit placement
+     keeps every card's geometry identical even when a middle piece renders
+     nothing (ship missing from the offline DBs) — auto-placement would then
+     slide the seal into the middle track. */
   &__player-main {
-    flex: 0 1 auto;
-    width: 34%;
+    grid-column: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -198,11 +203,12 @@
   }
 
   /* Career seal pinned to the card's right edge, vertically centered — the
-     same "pressed onto the card" look as the account card's stamp. A flex
-     sibling (not inline text) can never wrap onto its own line. */
+     same "pressed onto the card" look as the account card's stamp. Its grid
+     track stays reserved even for cards without a seal (hidden stats, prefs
+     off), so both rosters keep identical column geometry. */
   &__player-stamp {
-    flex: none;
-    align-self: center;
+    grid-column: 3;
+    justify-self: center;
   }
 
   /* Human players: the whole card jumps to the lookup view. */
@@ -238,7 +244,15 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     font-size: var(--text-sm);
+  }
+
+  /* The name itself: a real ellipsis inside the fixed track (the flex
+     container above cannot ellipsize its anonymous text node). */
+  &__player-nick {
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -247,6 +261,7 @@
   &__player-bot {
     display: inline-flex;
     align-items: center;
+    flex: none;
     height: 1.2em;
     padding: 0 5px;
     border-radius: 4px;

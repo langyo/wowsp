@@ -4,13 +4,13 @@
  * Sits in the middle of every player card (between the name/ship/stat stack
  * and the career seal) and shows, synchronously from the baked
  * `ship_live_stats.json`: the tier (roman), the class icon + short code, the
- * nation flag, the combat-relevant parameters (main/secondary/torpedo range,
- * ASW airstrike, outer AA band, concealment, speed), and — ALLY ROWS ONLY —
- * the ship's notable consumable slots, researchable-module kinds, signal-flag
- * capacity and legendary commanders. Enemy rows carry identity + parameters
- * only: loadout data does not exist in the battle data (neither GameParams
- * nor the WG API exposes per-player fits), and inventing "intelligence" about
- * enemy builds would be fabrication.
+ * nation flag, the leading combat-relevant parameters (main/secondary/
+ * torpedo range, ASW airstrike — capped so the strip holds one line), and —
+ * ALLY ROWS ONLY — the ship's notable consumable slots, researchable-module
+ * kinds, signal-flag capacity and legendary commanders. Enemy rows carry
+ * identity + parameters only: loadout data does not exist in the battle data
+ * (neither GameParams nor the WG API exposes per-player fits), and inventing
+ * "intelligence" about enemy builds would be fabrication.
  *
  * Hovering the strip floats a condensed ship card (teleported to <body>,
  * fixed position): the full spec groups plus the loadout section on ally
@@ -60,6 +60,12 @@ function badgeFamilies(load: string[] | undefined): string[] {
   return (load ?? []).filter((f) => isBadgeConsumable(f));
 }
 
+/** Parameter chips kept on the inline row: the leading few of the canonical
+ *  order only (main/secondary/torpedo/airstrike). The rest — AA band,
+ *  concealment, speed — live one hover away in the flyout card, so the strip
+ *  stays inside its fixed column instead of wrapping into the card's height. */
+const INLINE_PARAM_LIMIT = 4;
+
 export default defineComponent({
   name: "LiveShipMeta",
   props: {
@@ -85,7 +91,9 @@ export default defineComponent({
         ? nationNameFromDb(nation.value, dataLanguage.value) ?? nation.value
         : "",
     );
-    const chips = computed(() => (stats.value ? formatShipParams(stats.value) : []));
+    const chips = computed(() =>
+      stats.value ? formatShipParams(stats.value, INLINE_PARAM_LIMIT) : [],
+    );
     const badges = computed(() =>
       props.ally && stats.value ? badgeFamilies(stats.value.load) : [],
     );
@@ -346,10 +354,14 @@ export default defineComponent({
           onMouseenter={(e: MouseEvent) => armFlyout(e.currentTarget as HTMLElement)}
           onMouseleave={disarmZone}
         >
-          {identity}
-          {chipEls.length ? (
-            <span class="live-ship-meta__chips">{chipEls}</span>
-          ) : null}
+          {/* One clipping line: identity + the leading parameter chips. The
+              badges ride a second line below (ally rows only). */}
+          <span class="live-ship-meta__row">
+            {identity}
+            {chipEls.length ? (
+              <span class="live-ship-meta__chips">{chipEls}</span>
+            ) : null}
+          </span>
           {badgeEls.length ? (
             <span class="live-ship-meta__badges">{badgeEls}</span>
           ) : null}

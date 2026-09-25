@@ -152,8 +152,11 @@ function fmtKm(v: number): string {
  * main-gun range, secondary range, torpedo range, ASW-airstrike range, the
  * outermost AA band, surface concealment, top speed. Chips without data are
  * skipped (a destroyer has no secondary range; a submarine no AA band).
+ *
+ * `limit` caps the result to the FIRST chips of that order — the inline row
+ * keeps only the leading essentials and hands the tail to the hover card.
  */
-export function formatShipParams(s: ShipLiveStats): ShipParamChip[] {
+export function formatShipParams(s: ShipLiveStats, limit = Infinity): ShipParamChip[] {
   const chips: ShipParamChip[] = [];
   const push = (param: string, spec: string, value: string) =>
     chips.push({ label: t(`replay.live.param.${param}`), value, hint: `${t(spec)}: ${value}` });
@@ -173,7 +176,7 @@ export function formatShipParams(s: ShipLiveStats): ShipParamChip[] {
   }
   if (s.det) push("concealment", "ships.spec.surfaceDetect", fmtKm(s.det));
   if (s.spd) push("speed", "ships.spec.maxSpeed", `${s.spd}kn`);
-  return chips;
+  return chips.slice(0, limit);
 }
 
 /**
