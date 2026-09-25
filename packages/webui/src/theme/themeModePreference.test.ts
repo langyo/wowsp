@@ -2,48 +2,16 @@
  *  onto hikari's mode (observable through hikari's own persisted key —
  *  hikari's setMode writes `hikari-theme-mode`, which is exactly what our
  *  apply step drives). The module initializes its ref at import time, so
- *  each case re-imports against freshly seeded storage.
- *
- *  The wallpaper composable is mocked: outside Tauri its active id always
- *  falls back to the solid preset, and solid pins the effective mode to
- *  dark — every mapping assertion would hide behind that override. The
- *  mock's isSolid ref is steered per case to exercise both branches. */
-import { nextTick } from "vue";
+ *  each case re-imports against freshly seeded storage. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { THEME_MODE_PREFERENCE_STORAGE_KEY } from "./themeModePreference";
 
 const LEGACY_KEY = "hikari-theme-mode";
 
-vi.mock("./useWallpaper", async () => {
-  const { ref } = await import("vue");
-  const isSolid = ref(true);
-  return {
-    useWallpaper: () => ({ isSolid }),
-    // Test handle: the real composable only reaches an image wallpaper
-    // with the Tauri filesystem behind it.
-    __testIsSolid: isSolid,
-  };
-});
-
-/** The mocked wallpaper state the freshly imported modules share. */
-async function testIsSolid(): Promise<{ value: boolean }> {
-  const mod = (await import("./useWallpaper")) as unknown as {
-    __testIsSolid: { value: boolean };
-  };
-  return mod.__testIsSolid;
-}
-
-/** An image wallpaper is active — the stored preference maps through
- *  un-overridden. */
-async function imageWallpaper() {
-  (await testIsSolid()).value = false;
-}
-
-beforeEach(async () => {
+beforeEach(() => {
   localStorage.clear();
   vi.resetModules();
-  (await testIsSolid()).value = true;
 });
 
 async function freshModule() {
@@ -101,7 +69,6 @@ describe("readStoredThemeModePreference", () => {
 
 describe("setThemeModePreference", () => {
   it("persists the preference and drives hikari's mode", async () => {
-    await imageWallpaper();
     const { setThemeModePreference, themeModePreference } = await freshModule();
     setThemeModePreference("dark");
     expect(themeModePreference.value).toBe("dark");
@@ -111,14 +78,12 @@ describe("setThemeModePreference", () => {
   });
 
   it("maps solar onto hikari's sun-following 'system' mode", async () => {
-    await imageWallpaper();
     const { setThemeModePreference } = await freshModule();
     setThemeModePreference("solar");
     expect(localStorage.getItem(LEGACY_KEY)).toBe("system");
   });
 
   it("maps light verbatim", async () => {
-    await imageWallpaper();
     const { setThemeModePreference } = await freshModule();
     setThemeModePreference("light");
     expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
@@ -127,21 +92,19 @@ describe("setThemeModePreference", () => {
     expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
   });
 
-  it("overrides every preference with dark while a solid wallpaper is active", async () => {
+  it("drives hikari's mode regardless of the active wallpaper — the retired solid-forces-dark override stays retired", async () => {
+    // Regression guard for the 2026-09 override removal: the preference
+    // used to be masked to dark whenever the solid background was active,
+    // which pinned every default install to the dark scheme. The stored
+    // preference must now map through verbatim (solid renders per mode).
     const { setThemeModePreference } = await freshModule();
-    setThemeModePreference("solar");
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("dark");
     setThemeModePreference("light");
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("dark");
-    // The override is presentation-only: the stored key keeps the true
-    // preference so an image wallpaper restores it verbatim.
-    expect(localStorage.getItem(THEME_MODE_PREFERENCE_STORAGE_KEY)).toBe("light");
+    expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
   });
 });
 
 describe("initThemeModePreference", () => {
   it("applies the stored preference over whatever hikari restored", async () => {
-    await imageWallpaper();
     // Simulate a boot where hikari restored "light" (its own last state)
     // but our authoritative key says dark.
     localStorage.setItem(LEGACY_KEY, "light");
@@ -149,23 +112,5 @@ describe("initThemeModePreference", () => {
     const { initThemeModePreference } = await freshModule();
     initThemeModePreference();
     expect(localStorage.getItem(LEGACY_KEY)).toBe("dark");
-  });
-
-  it("re-applies when the wallpaper flips between image and solid", async () => {
-    const isSolid = await testIsSolid();
-    await imageWallpaper();
-    localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, "light");
-    const { initThemeModePreference } = await freshModule();
-    initThemeModePreference();
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
-
-    // Switching to the solid background forces dark; switching back
-    // restores the stored preference. The watcher flushes on microtask.
-    isSolid.value = true;
-    await nextTick();
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("dark");
-    isSolid.value = false;
-    await nextTick();
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("light");
   });
 });
