@@ -1,15 +1,32 @@
 /* Ship-identity strip riding the middle of each live-battle roster card, and
    the teleported hover combat card. Tokens mirror LiveBattlePanel.scss. */
 
+/* The card's middle grid track (between the name stack and the career seal):
+   identity + leading params on one line, badges on a second (ally rows).
+   Explicitly the second track so a null render can never shuffle the seal. */
 .live-ship-meta {
-  flex: 1 1 auto;
+  grid-column: 2;
   min-width: 0;
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px 6px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
   padding: 0 4px;
   align-self: stretch;
+
+  /* The identity + chips line. A fixed one-line track: the row never wraps,
+     so the card's middle ground keeps a constant height and the columns on
+     its left/right stay put. The fade sits here — the row always spans the
+     full track, so it only shows once content actually reaches the edge. */
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+  }
 
   /* Tier roman / class code / nation flag. */
   &__id {
@@ -40,12 +57,16 @@
     letter-spacing: 0.04em;
   }
 
+  /* Parameter chips: one line, clipped past the fixed column instead of
+     wrapping — the hover card carries the full list. */
   &__chips {
     display: inline-flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 2px 5px;
+    gap: 5px;
+    flex: 0 1 auto;
     min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
 
   &__chip {
@@ -58,6 +79,7 @@
     font-size: var(--text-2xs);
     line-height: 1.6;
     white-space: nowrap;
+    flex: none;
   }
 
   &__chip-label {
@@ -70,12 +92,17 @@
     font-weight: 600;
   }
 
+  /* Consumable/module/flag badges (ally rows): also a single clipping line
+     under the chips, same contract as __chips. */
   &__badges {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 2px 4px;
+    gap: 4px;
     min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
   }
 
   &__badge {
@@ -89,6 +116,7 @@
     font-size: 10px;
     line-height: 1.5;
     white-space: nowrap;
+    flex: none;
   }
 
   &__badge--upg {

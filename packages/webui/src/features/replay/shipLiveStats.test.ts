@@ -72,6 +72,17 @@ describe("shipLiveStats", () => {
     expect(labels).not.toContain("空袭");
   });
 
+  it("caps the strip to the leading chips when limited", () => {
+    const all = formatShipParams(shipLiveStats(MONTANA)!);
+    const inline = formatShipParams(shipLiveStats(MONTANA)!, 4);
+    // The inline row keeps the FIRST chips of the display order; the tail
+    // (concealment, speed) stays available in the hover card.
+    expect(inline).toEqual(all.slice(0, 4));
+    expect(inline.map((c) => c.label)).toEqual(["主炮", "副炮", "空袭", "防空"]);
+    // A limit past the chip count changes nothing.
+    expect(formatShipParams(shipLiveStats(MONTANA)!, 12)).toEqual(all);
+  });
+
   it("groups the hover-card specs", () => {
     const groups = formatShipSpecGroups(shipLiveStats(U2501)!);
     const names = groups.map(([g]) => g);
