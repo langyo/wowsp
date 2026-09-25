@@ -20,11 +20,16 @@ const DRIVE_PREFIX = /^[A-Za-z]:[\\/]/;
 
 /**
  * PathField — the install-location editor, composed like hikari's own
- * HkPhoneInput: a mono HkInput holding the full path, with the prefix
- * slot carrying an HkAffixPicker chip for the drive the path starts
- * with. Picking a mount rewrites the path in place (old prefix stripped,
- * leading separators trimmed), the typed remainder stays untouched. The
- * right end keeps the classic 浏览… directory browse.
+ * HkPhoneInput: the drive lives in the prefix slot as an HkAffixPicker
+ * chip (the mount is shown once, on the chip), while the mono HkInput
+ * holds only the rest of the path relative to that mount. Picking a
+ * mount rewrites the path in place (old prefix stripped, leading
+ * separators trimmed), the typed remainder stays untouched. Typing or
+ * pasting a drive-prefixed absolute path into the box is accepted
+ * verbatim, and an emptied box falls back to the bare mount root. The
+ * contract with the host is unchanged — modelValue always carries the
+ * full absolute path in both directions. The right end keeps the
+ * classic 浏览… directory browse.
  *
  * Presentational only — drives come in through props, both events go
  * out; the field's blur re-emits so the host can run its root-dir
@@ -70,6 +75,35 @@ export default defineComponent({
       })),
     );
 
+    /** What the input box shows: the modelValue minus the chip's mount
+     *  (and any leftover separators) — the drive itself is displayed once,
+     *  on the chip, so the box never repeats the prefix. */
+    const rest = computed<string>(() =>
+      selectedMount.value
+        ? props.modelValue
+            .slice(selectedMount.value.length)
+            .replace(/^[\\/]+/, "")
+        : props.modelValue,
+    );
+
+    /** Input edits re-join the box's remainder onto the chip's mount. A
+     *  value that carries its own drive prefix (typed or pasted absolute
+     *  path) passes through verbatim; an emptied box falls back to the
+     *  bare mount root (the host's blur pass re-nests a product folder
+     *  under it). */
+    function editRest(v: string) {
+      if (DRIVE_PREFIX.test(v)) {
+        emit("update:modelValue", v);
+      } else if (!v) {
+        emit("update:modelValue", selectedMount.value || "");
+      } else {
+        emit(
+          "update:modelValue",
+          selectedMount.value ? selectedMount.value + v : v,
+        );
+      }
+    }
+
     /** Rewrites the path around the picked mount: strip whatever prefix
      *  the value currently starts with, trim the leftover separators,
      *  then join onto the new mount (which already ends with its own). */
@@ -90,8 +124,8 @@ export default defineComponent({
     return () => (
       <div class="path-field">
         <HkInput
-          modelValue={props.modelValue}
-          onUpdate:modelValue={(v: string) => emit("update:modelValue", v)}
+          modelValue={rest.value}
+          onUpdate:modelValue={editRest}
           disabled={props.disabled}
           spellcheck={false}
           align="start"
