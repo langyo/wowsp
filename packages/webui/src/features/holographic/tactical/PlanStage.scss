@@ -52,6 +52,15 @@
     flex-shrink: 0;
   }
 
+  /* Overview card (hikari HMinimap): full-map art + view box + zoom bar,
+     floating in the board's bottom-right corner above the canvases. */
+  &__minimap {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 4;
+  }
+
   /* Empty-state notice: art without world bounds — nothing to project the
      author's actions onto. */
   &__notice {
@@ -83,6 +92,12 @@
       width: 100%;
       height: auto;
       max-height: 46vh;
+    }
+
+    /* The 160px card would eat ~40% of a phone-width board. */
+    &__minimap {
+      transform: scale(0.85);
+      transform-origin: bottom right;
     }
   }
 }

@@ -6,7 +6,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Crosshair, Eye, EyeOff, Grid3x3, MessageSquare, Orbit, Pause, PenLine, Play, RotateCcw, RotateCw, Shield, Skull, Spline, Swords, Trophy, Video } from "@lucide/vue";
 import { PLANE_TYPES, shellAmmoOf } from "./tactical/shellTypes";
 import { extractActions } from "./tactical/actions";
-import { gridLabelLayout, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
+import { gridLabelLayoutForView, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { useBreakpoint } from "@celestia-island/hikari";
 
 import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
@@ -1780,12 +1780,29 @@ export default defineComponent({
           zctx.restore(); // world frame (rotation)
           // Grid coordinate labels live in the SCREEN frame: pinned to the
           // top / left edges, upright at any rotation (families swap edges
-          // past 45° — see mapGrid.gridLabelLayout).
+          // past 45° — see mapGrid.gridLabelLayoutForView). Each label is
+          // projected through the view window like the grid lines it names,
+          // so it rides its square under pan/zoom.
           if (minimapShowGrid.value) {
-            const { top, left } = gridLabelLayout(rotRad, zw);
+            const colCenters: number[] = [];
+            const rowCenters: number[] = [];
+            for (let i = 0; i < MAP_GRID_COLUMNS; i++) {
+              colCenters.push(
+                zwx(full.minX + ((full.maxX - full.minX) * (i + 0.5)) / MAP_GRID_COLUMNS),
+              );
+              // Row 1 is the NORTHERNMOST band (+worldZ is up), so count the
+              // row centres off maxZ — minZ-first would mirror 1–10 south.
+              rowCenters.push(
+                zwz(-(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS)),
+              );
+            }
+            const { top, left } = gridLabelLayoutForView(rotRad, zw, colCenters, rowCenters);
             for (const l of [...top, ...left]) {
               zctx.save();
               zctx.translate(l.x, l.y);
+              // Clamped = its square is off-canvas (deep zoom); it names the
+              // nearest square THAT way, so it steps back visually.
+              zctx.globalAlpha = l.clamped ? 0.45 : 1;
               zctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
               zctx.textAlign = "center";
               zctx.textBaseline = l.y === 0 ? "top" : "middle";

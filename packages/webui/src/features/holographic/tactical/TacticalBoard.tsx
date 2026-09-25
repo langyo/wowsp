@@ -71,7 +71,8 @@ export interface ShipPick {
 type Drag =
   | { kind: "draw"; raw: Vec2[] }
   | { kind: "shape"; from: Vec2; to: Vec2 }
-  | { kind: "marker"; at: Vec2; heading: number; moved: boolean }
+  | { kind: "marker"; at: Vec2; start: Vec2; heading: number }
+  | { kind: "rotate"; id: string; pushed: boolean }
   | { kind: "move"; id: string; grab: Vec2; last: Vec2; pushed: boolean }
   | { kind: "region"; from: Vec2; to: Vec2 }
   | { kind: "pan"; lastLx: number; lastLy: number }
@@ -153,6 +154,11 @@ export default defineComponent({
     const toast = useToast();
 
     const drag = ref<Drag | null>(null);
+    /** Heading shown for the marker being Shift-spun. The element adopts the
+     *  new heading live (one undo step per gesture), but a marker mid-tween
+     *  is DRAWN along its leg's tangent — this override keeps the glyph
+     *  pointing where the pointer says during the spin (render.ts). */
+    const rotateOverride = ref<Map<string, number> | null>(null);
     /** Waiting for the user to drag the export-crop rectangle. */
     const regionMode = ref(false);
     /** Finished crop rectangle, kept highlighted until exported/cancelled. */
@@ -357,6 +363,7 @@ export default defineComponent({
         preview: previewElement.value,
         regionRect,
         showGhostFuture: store.showGhostFuture.value,
+        headingOverrides: rotateOverride.value ?? undefined,
         // Over a replay the virtual units are PLANS drawn hollow, so they
         // never read as observed contacts; a plan board has no contacts of
         // its own, so its units own the solid glyph.
@@ -477,7 +484,7 @@ export default defineComponent({
           break;
         case "markerShip":
         case "markerPlane":
-          drag.value = { kind: "marker", at: hit.p, heading: 0, moved: false };
+          drag.value = { kind: "marker", at: hit.p, start: hit.p, heading: 0 };
           break;
         case "markerRoute":
           drag.value = { kind: "route", raw: [hit.p] };
@@ -502,7 +509,16 @@ export default defineComponent({
         case "select": {
           const target = hitTest(hit.p, hit.p2);
           store.selectedId.value = target?.id ?? null;
-          if (target && target.kind !== "replayPath") {
+          // Shift+drag a marker = spin it in place: precise heading control
+          // without re-dropping the unit. Scripted route markers are exempt
+          // — they sail their route and are drawn along its tangent, so a
+          // manual heading would be invisible the moment the pointer lifts.
+          const spinnable =
+            target?.kind === "marker" &&
+            !(target.route != null && target.route.length >= 2 && !!target.moveDur && target.moveDur > 0);
+          if (target && spinnable && e.shiftKey) {
+            drag.value = { kind: "rotate", id: target.id, pushed: false };
+          } else if (target && target.kind !== "replayPath") {
             drag.value = { kind: "move", id: target.id, grab: hit.p, last: hit.p, pushed: false };
           }
           break;
@@ -574,11 +590,44 @@ export default defineComponent({
           d.to = hit.p;
           break;
         case "marker": {
-          const dx = hit.p.x - d.at.x;
-          const dz = hit.p.z - d.at.z;
+          // The marker rides the pointer — release drops it exactly where
+          // the cursor is, so placement is as precise as the pointer itself.
+          // Once the drag pulls away from the press point the heading follows
+          // the pull direction (referenced to the FIXED start, so the bow
+          // doesn't jitter with every detour); a plain click keeps north.
+          d.at = hit.p;
+          const dx = hit.p.x - d.start.x;
+          const dz = hit.p.z - d.start.z;
           if (Math.hypot(dx, dz) > hit.p2.worldPerPx * 4) {
             d.heading = Math.atan2(dx, dz); // clockwise from north
-            d.moved = true;
+          }
+          break;
+        }
+        case "rotate": {
+          const el = store.elements.value.find((x) => x.id === d.id);
+          if (el && el.kind === "marker") {
+            // Spin about the glyph the user can see right now (a scripted or
+            // mid-tween marker is drawn somewhere along its leg, not at its
+            // authored `at`).
+            const pose = markerPoseAt(
+              el,
+              props.getTime(),
+              planTweensOf(store.elements.value).get(el.id) ?? null,
+            );
+            const dx = hit.p.x - pose.at.x;
+            const dz = hit.p.z - pose.at.z;
+            if (Math.hypot(dx, dz) > hit.p2.worldPerPx * 2) {
+              // History only once the spin actually turns the unit — a
+              // Shift-click with pointer jitter must not push an empty
+              // undo step.
+              if (!d.pushed) {
+                store.pushHistory();
+                d.pushed = true;
+              }
+              const heading = Math.atan2(dx, dz); // clockwise from north
+              store.replaceElement(d.id, { ...el, heading });
+              rotateOverride.value = new Map([[d.id, heading]]);
+            }
           }
           break;
         }
@@ -600,16 +649,27 @@ export default defineComponent({
       }
     }
 
+    /** End any in-flight gesture without committing it — shared by Escape,
+     *  pointercancel/leave, recording start and the edit-mode watch (the
+     *  pointer-up path owns its own commit). Also drops the spin override so
+     *  an interrupted rotation doesn't leave a tweening glyph pinned. */
+    function cancelDrag(): void {
+      drag.value = null;
+      rotateOverride.value = null;
+    }
+
     function onPointerUp(e: PointerEvent): void {
       e.stopPropagation();
       if (e.button !== 0) return; // only the primary button ends a gesture
       const d = drag.value;
       drag.value = null;
+      rotateOverride.value = null;
       if (!d) return;
       const pr = proj();
       switch (d.kind) {
         case "pan":
         case "erase":
+        case "rotate":
           break;
         case "draw":
           if (d.raw.length >= 2) {
@@ -802,7 +862,7 @@ export default defineComponent({
       if (e.key === "Escape") {
         if (textEdit.value) return; // the input handles its own Escape
         if (drag.value) {
-          drag.value = null;
+          cancelDrag();
           return;
         }
         if (regionMode.value || pendingRegion.value) {
@@ -927,7 +987,7 @@ export default defineComponent({
       }
       pendingRegion.value = null; // a crop box must not record into the take
       regionMode.value = false;
-      drag.value = null;
+      cancelDrag();
       const rec = new TacticalRecorder(
         (ctx, size) => composePaintedFrame(ctx, size, props.getTime()),
         1280,
@@ -1132,7 +1192,7 @@ export default defineComponent({
       () => props.editMode,
       (on) => {
         if (on) return;
-        drag.value = null;
+        cancelDrag();
         regionMode.value = false;
         pendingRegion.value = null;
         if (textEdit.value) commitTextEdit();
@@ -1245,11 +1305,11 @@ export default defineComponent({
               // Lost pointer capture mid-gesture — drop the stroke, don't
               // leave a frozen preview on screen.
               e.stopPropagation();
-              drag.value = null;
+              cancelDrag();
             }}
             onPointerleave={(e: PointerEvent) => {
               if (drag.value && e.buttons === 0) {
-                drag.value = null;
+                cancelDrag();
                 e.stopPropagation();
               }
             }}
