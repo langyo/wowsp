@@ -184,6 +184,10 @@ export interface RenderOptions {
   /** Draw marker glyphs hollow (outline only) — the replay-context style for
    *  virtual units (standalone boards own solid markers). */
   hollowMarkers?: boolean;
+  /** Live heading override by marker id (a Shift-drag spin in progress):
+   *  the glyph turns with the pointer even while the element's own pose —
+   *  a tweening plan action — would point it along its leg. */
+  headingOverrides?: Map<string, number>;
 }
 
 export function renderTactical(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
@@ -442,7 +446,7 @@ function drawElement(
       ctx.save();
       ctx.translate(p.x, p.y);
       // Heading 0 = north (up); glyph art points right at rest → −90°.
-      ctx.rotate(pose.heading - Math.PI / 2);
+      ctx.rotate((opts.headingOverrides?.get(el.id) ?? pose.heading) - Math.PI / 2);
       if (el.variant === "ship") {
         drawShipGlyph(ctx, undefined, 0, 0, el.size, el.color, {
           outline: opts.hollowMarkers === true,
