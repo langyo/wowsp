@@ -293,10 +293,12 @@ export function createShipStage(
         b2mR: 0.35,
         m2sR: 0.68,
       };
-      const { group, fades } = buildArmorPlates(spec, opts.armorZones ?? []);
+      const { group, fades, geometries } = buildArmorPlates(spec, opts.armorZones ?? []);
       const armorScene = new THREE.Group();
       armorScene.add(group);
       armorFades.push(...fades);
+      disposables.push(...fades.map((f) => f.mat));
+      disposables.push(...geometries);
       const cloneMat = new THREE.MeshBasicMaterial({
         color: 0x0d4a6a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
       });
@@ -320,6 +322,7 @@ export function createShipStage(
     grid.position.y = ys[0] - 0.5;
     scene.add(grid);
     disposables.push(gridMat);
+    disposables.push(grid.geometry);
 
     scene.add(turntable);
     camera.position.set(0, 4.2, 13.5);
