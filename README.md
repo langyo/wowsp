@@ -40,7 +40,7 @@ WoWSP is a next-generation battle analysis dashboard for **World of Warships**. 
 
 ## Android edition
 
-Since 0.5.0 WoWSP also ships a phone edition — the same review dashboard with phone-native layouts that pulls replays straight from your desktop: the computer shows up automatically on the same Wi-Fi, or from anywhere by entering its six-digit pairing code (relayed through the built-in Cloudflare Worker at `gateway.wowsp.langyo.xyz`; source and one-command deploy instructions live in [`packages/pairing-relay`](./packages/pairing-relay/README.md)). The APK bundles the 3D model pack and the offline ship-data pack, so reviews render with no network at all once the replays are on the phone.
+WoWSP also ships a phone edition — the same review dashboard with phone-native layouts that pulls replays straight from your desktop: the computer shows up automatically on the same Wi-Fi, or from anywhere by entering its six-digit pairing code (relayed through the built-in Cloudflare Worker at `wowsp.langyo.xyz`; source and one-command deploy instructions live in [`packages/pairing-relay`](./packages/pairing-relay/README.md)). The APK bundles the 3D model pack and the offline ship-data pack, so reviews render with no network at all once the replays are on the phone.
 
 Building it from source needs the Android SDK + NDK 26.1 and a JDK 17 (`ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME` can be overridden in the environment — see the android notes in the [`justfile`](./justfile)):
 
@@ -55,7 +55,7 @@ The replay parsing, game-detection, and `tempArenaInfo.json` polling principles 
 
 ## Documentation
 
-Architecture, design, and guides live under [`docs/`](./docs) (English + 简体中文), built with [lagrange](https://github.com/celestia-island/lagrange).
+Architecture, design, and guides live under [`docs/`](./docs) in nine languages (English and 简体中文 are fully translated; the other seven mirror the English technical guides with localized index and hub pages), built with [lagrange](https://github.com/celestia-island/lagrange).
 
 Source: [wowsp](https://github.com/langyo/wowsp).
 

@@ -15,13 +15,14 @@ without launching the game.
 ```mermaid
 flowchart TD
     A[".wowsreplay file"] --> B["Rust: parse 8-byte magic + JSON descriptor block (commands/replay.rs)"]
-    B --> C["Rust: decode packet stream → per-entity event timeline (M3, TODO)"]
+    B --> C["Rust: decode packet stream → per-entity event timeline (commands/packets/)"]
     C --> D["webui: three.js holographic map scrubs the timeline (features/holographic)"]
 ```
 
 Map and ship geometry come from GLB produced by `scripts/model_convert/`
-(`convert_map.py`, `convert_ship.py`). Adding a new map or ship = drop the source
-asset in `scripts/mock/fixtures/` and re-run the converter — no app change.
+(`convert_map.py`, `convert_ship.py`), which pull the source assets straight
+from the detected game install (`just convert-map --name ...` /
+`just convert-ship --name ...`) — no app change needed for new maps or ships.
 
 ### Mode 2 — In-game overlay
 
@@ -58,8 +59,10 @@ N bytes  json_block  = match descriptor (roster, map, match type)
 ...      packets     = encrypted/zlib packet stream
 ```
 
-`commands/replay.rs` implements the magic check + JSON block extraction in
-Phase 1. The packet-stream decode lands in M3.
+`commands/replay.rs` implements the magic check + JSON block extraction; the
+packet-stream decoder lives in `commands/packets/` (frames → payloads →
+per-entity events, with per-version method tables) and feeds the event
+timeline the holographic map scrubs.
 
 ## Tech stack
 

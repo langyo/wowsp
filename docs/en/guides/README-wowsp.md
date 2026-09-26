@@ -5,7 +5,7 @@
 <div align="center">
 
 [![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/langyo/wowsp/blob/master/LICENSE)
-[![GitHub](https://img.shields.io/badge/github-celestia--island%2Fwowsp-blue.svg)](https://github.com/langyo/wowsp)
+[![GitHub](https://img.shields.io/badge/github-langyo%2Fwowsp-blue.svg)](https://github.com/langyo/wowsp)
 
 </div>
 

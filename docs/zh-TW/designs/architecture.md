@@ -1,6 +1,6 @@
 # Architecture
 
-> **Version**: 0.1.0 — Active scaffold development.
+> **Version**: 0.4.8 — M1–M9 complete; pre-release hardening.
 
 ## Scope
 
@@ -10,12 +10,12 @@ a lagrange documentation site.
 
 | Component | Tech | Role | Status |
 | --- | --- | --- | --- |
-| **tauri** | Rust + Tauri 2 | Desktop shell: game detection, replay parsing, overlay capture | 🟡 Skeleton |
+| **tauri** | Rust + Tauri 2 | Desktop shell: game detection, replay parsing, overlay capture | 🟢 Implemented |
 | **tauri_shared** | Rust | Shared DTOs across the IPC boundary | 🟢 Implemented |
-| **webui** | Vue 3 + Vite (TSX) | Frontend: replay review, holographic map, overlay roster | 🟡 Skeleton |
-| **mock** | Python + FastAPI | Mock backend for browser/e2e development | 🟡 Skeleton |
-| **model_convert** | Python | Ship/map native assets → GLB for three.js | 🟡 Skeleton |
-| **docs** | lagrange | Multilingual documentation site | 🟢 en + zhs |
+| **webui** | Vue 3 + Vite (TSX) | Frontend: replay review, holographic map, overlay roster | 🟢 Implemented |
+| **mock** | Python + FastAPI | Mock backend for browser/e2e development | 🟢 Implemented |
+| **model_convert** | Python | Ship/map native assets → GLB for three.js | 🟢 Implemented |
+| **docs** | lagrange | Multilingual documentation site | 🟢 9 languages |
 
 ## Architecture diagram
 

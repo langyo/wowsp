@@ -24,28 +24,30 @@ git clone https://github.com/langyo/wowsp.git
 cd wowsp
 cp .env.example .env
 just init
-just dev --mock      # frontend + FastAPI mock, no game needed
+just dev mock       # frontend + FastAPI mock, no game needed
 ```
 
 ## Code Style
 
 ```bash
 just fmt     # Rust (cargo fmt + clippy) + TS import grouping
-just lint    # fmt-check + clippy + pnpm lint
+just lint    # fmt-check + clippy + pnpm lint + i18n parity
 just test    # cargo test --workspace
 ```
 
 - Rust: `snake_case` functions, `CamelCase` types, `workspace = true` deps.
 - TypeScript: Vue 3 TSX (`defineComponent`), strict mode, Pinia stores.
-- i18n: add new UI strings to both `en` and `zhs` under `res/i18n/locales/`.
+- i18n: add new UI strings to both `en-US` and `zh-CN` under `res/i18n/locales/`.
 
 ## Pull Request Process
 
-1. Branch from `dev`: `git checkout -b feat/my-feature dev`.
-2. Atomic commits, [Conventional Commits](https://www.conventionalcommits.org/):
-   `feat(replay): ...`, `fix(overlay): ...`, `docs: ...`.
+1. Branch from `master`: `git checkout -b feat/my-feature master` (the `dev`
+   branch is deprecated).
+2. Atomic commits with gitmoji subjects (`✨ Add ...`, `🐛 Fix ...`) — see
+   `AGENTS.md` §1 and `scripts/commit_msg_lint.py`; Conventional Commits
+   prefixes are rejected by CI.
 3. `just lint && just test` before pushing.
-4. Open a PR against `dev`.
+4. Open a PR against `master` (squash-merged).
 
 ## License & CLA
 
