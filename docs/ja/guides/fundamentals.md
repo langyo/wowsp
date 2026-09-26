@@ -28,9 +28,12 @@ three.js. The game's native asset formats are converted by Python scripts under
 - `convert_map.py` — map space data → GLB
 - `convert_ship.py` — ship hull → GLB
 
-Adding a new map or ship is a data-only operation: drop the source asset into
-`scripts/mock/fixtures/`, run `just convert-model map` (or `ship`), and the
-frontend picks it up. No Rust or TS changes required.
+Both pull their source assets straight from the (auto-detected or
+`--game-dir`-overridden) game install and write the GLB into
+`packages/webui/src/res/models/`. Adding a new map or ship is a data-only
+operation: run `just convert-map --name <space_id>` (or
+`just convert-ship --name <ship>`), and the frontend picks it up. No Rust or
+TS changes required.
 
 ## Overlay interaction model
 

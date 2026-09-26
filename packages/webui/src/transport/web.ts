@@ -1,6 +1,6 @@
 /**
  * Browser/mock transport: shims the Tauri command surface onto the mock FastAPI
- * backend under `/api`. Lets the webui run in `just dev --mock` and the Playwright
+ * backend under `/api`. Lets the webui run in `just dev mock` and the Playwright
  * e2e harness without the Tauri shell.
  *
  * The mock backend exposes `GET /api/<cmd>` and `POST /api/<cmd>` mirroring the

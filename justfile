@@ -39,10 +39,11 @@ import? "./.just/git-bash-interop.just"
 import? "./.just/celestia-devtools.just"
 
 # ── dev ───────────────────────────────────────────────────────────────
-# Usage: just dev [tauri] [--mock]
+# Usage: just dev [target] [flags]
 #   just dev          → cargo tauri dev (default)
 #   just dev tauri    → same as above
 #   just dev webui    → Vite dev server
+#   just dev mock     → FastAPI mock backend + Vite (browser-only, no game)
 #   just dev site     → site dev server (landing page)
 #   just dev test     → tauri dev with test-harness feature
 
@@ -51,6 +52,9 @@ _dev-tauri *FLAGS='':
 
 _dev-webui *FLAGS='':
     python scripts/dev.py webui {{FLAGS}}
+
+_dev-mock *FLAGS='':
+    python scripts/dev.py webui --mock {{FLAGS}}
 
 _dev-site port='4173':
     @command -v lagrange >/dev/null 2>&1 || cargo install lagrange-library
@@ -63,12 +67,13 @@ dev target='tauri' *FLAGS='':
     @just _dev-{{target}} {{FLAGS}}
 
 # ── build ─────────────────────────────────────────────────────────────
+#   just build                   → webui + Rust shell (release by default)
 #   just build app [--release]   → cargo build (release by default)
 #   just build webui             → pnpm build @wowsp/webui
 #   just build site              → site + lagrange docs → dist/
 #   just build package           → cargo tauri build (app only, no install bundles)
 #   just build installers [--flavors ...] → shun installers (full ± webview2)
-#   just build wowsunpack        → clone + compile vendored wowsunpack
+#   just build wowsunpack        → compile the vendored wowsunpack
 #   just build all               → webui + site + app
 
 _build-all *FLAGS='':
@@ -96,17 +101,20 @@ _build-installers *FLAGS='':
     python scripts/build_installers.py {{FLAGS}}
 
 _build-wowsunpack:
-    @echo "Cloning/building wowsunpack (landaire/wows-toolkit)..."
-    -git -C packages/tools/wowsunpack-vendor pull --rebase 2>/dev/null || git clone https://github.com/landaire/wows-toolkit.git packages/tools/wowsunpack-vendor
+    @# The vendor tree is TRACKED IN-TREE (packages/tools/wowsunpack-vendor),
+    @# never a nested clone: it is updated by explicitly syncing from upstream
+    @# (landaire/wows-toolkit) — never by a pull from inside this checkout.
+    @echo "Building vendored wowsunpack (landaire/wows-toolkit, tracked in-tree)..."
     cargo build --release -p wowsunpack
 
-build target *FLAGS='':
+build target='app' *FLAGS='':
     @just _build-{{target}} {{FLAGS}}
 
 # ── test ──────────────────────────────────────────────────────────────
-#   just test unit      → cargo test
-#   just test visual    → visual regression (needs dev-test running)
-#   just test e2e       → Playwright browser tests
+#   just test          → cargo test --workspace (default)
+#   just test unit     → same as above
+#   just test visual   → visual regression (needs dev-test running)
+#   just test e2e      → Playwright browser tests
 
 _test-unit *FLAGS='':
     cargo test --workspace {{FLAGS}}
@@ -117,7 +125,7 @@ _test-visual *FLAGS='':
 _test-e2e *FLAGS='':
     python -m pytest scripts/e2e -c scripts/pyproject.toml {{FLAGS}} -m ui
 
-test target *FLAGS='':
+test target='unit' *FLAGS='':
     @just _test-{{target}} {{FLAGS}}
 
 # ── lint ──────────────────────────────────────────────────────────────
@@ -149,6 +157,12 @@ _lint-i18n *FLAGS='':
 
 lint target='full' *FLAGS='':
     @just _lint-{{target}} {{FLAGS}}
+
+# Standalone i18n parity check (same script as `just lint i18n`).
+#   just i18n-check          → i18n parity check
+#   just i18n-check --quiet  → suppress per-key detail
+i18n-check *FLAGS='':
+    @python scripts/check_i18n.py {{FLAGS}}
 
 check:
     cargo check --workspace
@@ -341,9 +355,9 @@ gen-icons:
     python scripts/ensure_tauri_icons.py
 
 # ── convert ───────────────────────────────────────────────────────────
-#   just convert ship --name Yamato       → ship → GLB
-#   just convert map --name 18_NE_ice_islands  → map → GLB
-#   just convert map-holo --name 18_NE_ice_islands → contour holomap
+#   just convert-ship --name Yamato            → ship → GLB
+#   just convert-map --name 18_NE_ice_islands  → map → GLB
+#   just convert-map-holo --name 18_NE_ice_islands → contour holomap
 
 convert-ship *ARGS:
     python scripts/model_convert/convert_ship.py {{ARGS}}
@@ -355,9 +369,9 @@ convert-map-holo *ARGS:
     WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
 
 # ── bake ──────────────────────────────────────────────────────────────
-#   just bake model raw.glb -o ship.glb --triangles 2000
-#   just bake ships
-#   just bake maps
+#   just bake-model raw.glb -o ship.glb --triangles 2000
+#   just bake-ships
+#   just bake-maps
 
 bake-model *ARGS:
     python scripts/model_convert/bake_model.py {{ARGS}}

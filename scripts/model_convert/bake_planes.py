@@ -58,7 +58,7 @@ def find_wowsunpack() -> Path:
     exe = REPO_ROOT / "target" / "model-tools" / "wowsunpack.exe"
     if exe.exists():
         return exe
-    raise FileNotFoundError("wowsunpack.exe not found — run just build-wowsunpack-patched")
+    raise FileNotFoundError("wowsunpack.exe not found — run just build wowsunpack")
 
 
 def export_and_bake(wowsunpack: Path, game: str, vfs_path: str, out_glb: Path,

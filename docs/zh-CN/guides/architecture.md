@@ -13,11 +13,11 @@ WoWSP 是一个 Tauri 2 桌面应用，配一个前端（Vue 3 + three.js），�
 ```mermaid
 flowchart TD
     A[".wowsreplay 文件"] --> B["Rust：解析 8 字节 magic + JSON 描述块（commands/replay.rs）"]
-    B --> C["Rust：解码数据包流 → 各实体事件时间线（M3，TODO）"]
+    B --> C["Rust：解码数据包流 → 各实体事件时间线（commands/packets/）"]
     C --> D["webui：three.js 全息地图按时间线播放（features/holographic）"]
 ```
 
-地图与船体几何由 `scripts/model_convert/`（`convert_map.py`、`convert_ship.py`）转成的 GLB 提供。新增地图或船只只需把源资产放入 `scripts/mock/fixtures/` 并重新跑转换器，无需改动应用代码。
+地图与船体几何由 `scripts/model_convert/`（`convert_map.py`、`convert_ship.py`）转成的 GLB 提供，源资产直接取自检测到的游戏安装目录（`just convert-map --name ...` / `just convert-ship --name ...`），新增地图或船只无需改动应用代码。
 
 ### 模式二 — 游戏内覆盖层
 
@@ -48,7 +48,7 @@ N 字节  json_block  = 对局描述（阵容、地图、对局类型）
 ...     packets     = 加密/zlib 数据包流
 ```
 
-`commands/replay.rs` 在第一阶段实现 magic 校验 + JSON 块抽取。数据包流解码在 M3 完成。
+`commands/replay.rs` 实现 magic 校验 + JSON 块抽取；数据包流解码器位于 `commands/packets/`（帧 → 载荷 → 各实体事件，按版本查方法表），为全息地图提供可拖动的事件时间线。
 
 ## 技术栈
 

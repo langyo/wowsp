@@ -23,7 +23,7 @@ WoWSP 是一个 Tauri 桌面应用。同一个可执行文件既能跑独立复�
 - `convert_map.py` —— 地图空间数据 → GLB
 - `convert_ship.py` —— 船体 → GLB
 
-新增地图或船只是纯数据操作：把源资产放入 `scripts/mock/fixtures/`，跑 `just convert-model map`（或 `ship`），前端自动加载。无需改动 Rust 或 TS。
+两个脚本都直接从（自动检测或 `--game-dir` 覆盖的）游戏安装目录拉取源资产，GLB 输出到 `packages/webui/src/res/models/`。新增地图或船只是纯数据操作：跑 `just convert-map --name <space_id>`（或 `just convert-ship --name <船名>`），前端自动加载。无需改动 Rust 或 TS。
 
 ## 覆盖层交互模型
 
