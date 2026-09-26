@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Crosshair, Eye, EyeOff, Grid3x3, MessageSquare, Orbit, Pause, PenLine, Play, Shield, Skull, Spline, Swords, Trophy, Video } from "@lucide/vue";
+import { Eye, EyeOff, Grid3x3, Pause, PenLine, Play, Spline } from "@lucide/vue";
 import { PLANE_TYPES, shellAmmoOf } from "./tactical/shellTypes";
 import { extractActions } from "./tactical/actions";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
@@ -30,9 +30,25 @@ import {
   type ShipModelSpec,
 } from "./modelLoader";
 import { makeHoloContourMaterial } from "./holoContourShader";
-import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerCache, SHIP_CLASS_LEN, shipClassTargetLen } from "./shipMarker";
+import { buildShipMarker, buildMarkerFromSource, disposeMarker, clearShipMarkerCache, shipClassTargetLen } from "./shipMarker";
 import { buildPropMarker, clearPropMarkerCache } from "./propMarker";
 import { TEAM_COLOR, roleFromRelation, type TeamRole } from "./teamColors";
+import { formationOffsets, inferGrouping } from "./planeFormation";
+import { resolveMarkerContext, resolveRosterAssignments } from "./rosterRoles";
+import { sampleAt, hpAtTime, progressAtTime } from "./trajectoryMath";
+import { clampXZ, disposeAny, frustumCorners } from "./sceneUtils";
+import { drawShipGlyph } from "./shipGlyph";
+import { makeHullOutline } from "./hullOutline";
+import {
+  CAP_RING_PX, CAP_SPRITE_PX, SMOKE_RING_PX, SMOKE_SPRITE_PX,
+  WARD_RING_PX, circlePositions, makeOverlayRing, paintCapSprite,
+} from "./screenOverlays";
+import { KILL_PTS, SPECIAL_CAP_MAPS, isCaptureZone, type CapZoneState } from "./capZones";
+import type { ShipLabel } from "./shipLabel";
+import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
+import HoloCameraMenu from "./HoloCameraMenu";
+import HoloRosterOverlay from "./HoloRosterOverlay";
+import HoloSelfCard from "./HoloSelfCard";
 import type {
   AchievementEvent,
   CameraSample,
@@ -59,10 +75,10 @@ import type {
 } from "@/api";
 import { foldDamageStats } from "@/api";
 import planeIcon from "./planeIcons";
-import { shipIconUrl, shipTypeClass } from "./shipIcons";
+import { shipIconUrl } from "./shipIcons";
 import {
-  HoloScorebar, HoloLabel, HoloShipCard, registerHoloShipIcons,
-  captureSecondsRemaining, formatEta, tierToRoman,
+  HoloScorebar, HoloLabel, registerHoloShipIcons,
+  captureSecondsRemaining, formatEta,
   type HoloCapZone, type HoloHudState, type HoloShip, type HoloShipCardData,
 } from "@wowsp/holo";
 
@@ -88,97 +104,10 @@ const achievementNames = achievementNamesRaw as Record<
   { key: string; type: string; names: Partial<Record<string, string>> }
 >;
 
-/** Per-plane local offsets inside ONE flight group (the group's own wedge):
- *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front
- *  and the rest trailing. Positive oz is BACKWARD along the heading (the
- *  leader flies at the front of the formation). */
-function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
-  const p = 9;
-  if (n <= 1) return [{ ox: 0, oz: 0 }];
-  if (n === 2) return [{ ox: -p, oz: 0 }, { ox: p, oz: 0 }];
-  if (n === 3) return [{ ox: 0, oz: -p }, { ox: -p, oz: p }, { ox: p, oz: p }];
-  const out: { ox: number; oz: number }[] = [
-    { ox: -p, oz: -p },
-    { ox: p, oz: -p },
-  ];
-  for (let i = 2; i < n; i++) {
-    out.push({ ox: (i % 2 === 0 ? -1 : 1) * p, oz: p });
-  }
-  return out;
-}
-
-/** Filled-wedge layout over flight GROUPS: row r holds r+1 groups (1, 2, 3,
- *  …); a leftover group that cannot fill the next row sits centered in it.
- *  Examples: 6 groups → rows 1,2,3; 4 groups → 1,2,1; 7 → 1,2,3,1. */
-function formationOffsets(groupCount: number, groupSize: number): { ox: number; oz: number }[] {
-  const out: { ox: number; oz: number }[] = [];
-  let rem = groupCount;
-  const rows: number[] = [];
-  for (let r = 0; rem > 0; r++) {
-    const n = Math.min(r + 1, rem);
-    rows.push(n);
-    rem -= n;
-  }
-  const gSpacing = 20;
-  const gDepth = 15;
-  rows.forEach((n, r) => {
-    for (let k = 0; k < n; k++) {
-      const gx = (k - (n - 1) / 2) * gSpacing;
-      const gz = -r * gDepth;
-      for (const it of groupInnerOffsets(groupSize)) {
-        out.push({ ox: gx + it.ox, oz: gz + it.oz });
-      }
-    }
-  });
-  return out;
-}
-
-/** Infer the squadron's group layout by greedy-clustering the aircraft
- *  positions right after launch: planes spawn in groups (2/group, 3/group,
- *  …), so the median cluster size is the per-group count and the cluster
- *  count is the number of flight groups. */
-function inferGrouping(
-  entries: { trail: { id: number; samples: SquadronPlane[] } }[],
-  sampleAtFn: (tr: { samples: SquadronPlane[] }, t: number) => { x: number; z: number } | null,
-): { groupSize: number; groupCount: number } {
-  const t0 = Math.min(...entries.map((e) => e.trail.samples[0]?.time ?? 0));
-  const pts: { x: number; z: number }[] = [];
-  for (const e of entries) {
-    const s = sampleAtFn(e.trail, t0 + 0.05);
-    if (s) pts.push(s);
-  }
-  if (pts.length < 2) return { groupSize: 1, groupCount: Math.max(1, pts.length) };
-  const clusters: { members: { x: number; z: number }[]; cx: number; cz: number }[] = [];
-  for (const p of pts) {
-    let best: (typeof clusters)[number] | null = null;
-    let bestD = 45;
-    for (const c of clusters) {
-      const d = Math.hypot(c.cx - p.x, c.cz - p.z);
-      if (d < bestD) {
-        bestD = d;
-        best = c;
-      }
-    }
-    if (best) {
-      best.members.push(p);
-      best.cx = best.members.reduce((a, q) => a + q.x, 0) / best.members.length;
-      best.cz = best.members.reduce((a, q) => a + q.z, 0) / best.members.length;
-    } else {
-      clusters.push({ members: [p], cx: p.x, cz: p.z });
-    }
-  }
-  const sizes = clusters.map((c) => c.members.length).sort((a, b) => a - b);
-  return {
-    groupSize: sizes[Math.floor(sizes.length / 2)] || 1,
-    groupCount: clusters.length,
-  };
-}
-
 /** paramsId → plane/shell metadata comes from the shared tactical
  *  encyclopedia (tactical/shellTypes.ts) — the timeline's action markers
  *  read the same tables. */
 
-import BattleIcon from "@/components/base/BattleIcon";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
 import { useAccountStore } from "@/stores/account";
@@ -237,69 +166,6 @@ interface ShellTraceSlot {
   dots: THREE.Points;
   dotMat: THREE.PointsMaterial;
   shell: THREE.Object3D;
-}
-
-// --- Screen-space overlay sizing -------------------------------------------
-//
-// The cap/smoke/ward rings and the cap-letter / smoke-countdown sprites used
-// to be sized in world units (fat torus + fixed sprite scale), so zooming in
-// blew them up into fat donuts and blurry billboards. They are now sized in
-// SCREEN pixels: the rings are Line2 objects whose pixel linewidth never
-// changes, and the sprites get a distance-derived world scale each frame so
-// they always occupy the same number of CSS pixels. Canvas resolutions are
-// bumped accordingly so the textures stay supersampled (crisp) at that size.
-
-/** Constant on-screen sizes (CSS px) for the zoom-independent overlays. */
-const CAP_RING_PX = 3;
-const SMOKE_RING_PX = 2;
-const WARD_RING_PX = 2;
-const CAP_SPRITE_PX = 64;
-const SMOKE_SPRITE_PX = 30;
-
-/** Circle tessellation for the screen-space rings (closed loop). */
-const OVERLAY_RING_SEGMENTS = 96;
-
-/** Flat circle vertex positions in the XZ plane (closed loop). */
-function circlePositions(radius: number): number[] {
-  const pts: number[] = [];
-  for (let i = 0; i <= OVERLAY_RING_SEGMENTS; i++) {
-    const a = (i / OVERLAY_RING_SEGMENTS) * Math.PI * 2;
-    pts.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
-  }
-  return pts;
-}
-
-/** Build a flat circle in the XZ plane as a Line2 with a pixel linewidth. */
-function makeOverlayRing(radius: number, pxWidth: number, opacity: number): Line2 {
-  const geom = new LineGeometry();
-  geom.setPositions(circlePositions(radius));
-  const mat = new LineMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    // worldUnits defaults to false → linewidth is screen pixels.
-    linewidth: pxWidth,
-  });
-  return new Line2(geom, mat);
-}
-
-/** Paint the cap-point sprite: big zone letter on top, optional capture
- *  countdown below. Shared by the initial draw and the per-frame redraw so
- *  both stay on the same hi-res layout. */
-function paintCapSprite(canvas: HTMLCanvasElement, letter: string, eta: string) {
-  const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.font = "bold 140px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(letter, canvas.width / 2, canvas.height * 0.34);
-  if (eta) {
-    ctx.fillStyle = "rgba(251,191,36,0.95)";
-    ctx.font = "bold 56px sans-serif";
-    ctx.fillText(eta, canvas.width / 2, canvas.height * 0.78);
-  }
 }
 
 /** Playback surface exposed to parents via the template ref. The clock refs
@@ -663,48 +529,6 @@ export default defineComponent({
     // approximation of the domination scoring shown in the top bar.
     const allyScore = ref(0);
     const enemyScore = ref(0);
-    // Transient "X sunk Y" feed, newest first; entries expire after a few
-    // seconds. Each side renders its own ship name with the player nickname
-    // underneath (killer left-aligned, victim right-aligned, "sank" centred).
-    interface KillEvent {
-      id: number;
-      /** Victim's player nickname. */
-      text: string;
-      /** Victim's ship display name. */
-      shipName: string;
-      /** Victim's ship type (for the HUD icon). */
-      shipType: string | null;
-      /** Killer's ship display name. */
-      killerShipName: string;
-      /** Killer's ship type (for the HUD icon). */
-      killerShipType: string | null;
-      /** Killer's player nickname (resolved from the post-battle payload). */
-      killerName: string | null;
-      /** Role of the KILLER (the card tint is the killer's side). */
-      role: TeamRole;
-    }
-    /** A battle-chat bubble (sender joined from the roster). */
-    interface ChatFeedEntry {
-      id: number;
-      sender: string;
-      /** Sender is on the enemy side (roster relation ≥ 2) — drives the tint. */
-      enemy: boolean;
-      message: string;
-    }
-    /** An achievement award (localized name resolved from the bundle). */
-    interface AchievementFeedEntry {
-      id: number;
-      sender: string;
-      enemy: boolean;
-      /** Display name (raw id fallback when unmapped). */
-      name: string;
-      /** Game's achievement class (heroic/honorable/squad/...) — empty if unknown. */
-      grade: string;
-    }
-    type FeedEntry =
-      | ({ kind: "kill" } & KillEvent)
-      | ({ kind: "chat" } & ChatFeedEntry)
-      | ({ kind: "achievement" } & AchievementFeedEntry);
     /** Unified bottom-left event feed (sinks + chat + achievements), newest
      *  first; entries auto-expire after a few seconds. */
     const feed = ref<FeedEntry[]>([]);
@@ -777,44 +601,6 @@ export default defineComponent({
           grade: bundle?.type ?? "",
         });
       }
-    }
-    // The capture-zone entities + their ownership timelines. InteractiveZone
-    // (type 14) covers ALL interactive areas — capture points, strike zones,
-    // event regions. The AUTHORITATIVE discriminator is the create packet's
-    // `controlPoint` component (`controlPointIndex`): only real domination
-    // points carry it, and it ships with the EntityCreate itself, so the rule
-    // holds even for replays that record no ownership/progress updates after
-    // the zone spawns. The ownership/progress-stream checks below are kept
-    // only as a fallback for very old replays predating the component.
-    /** True capture point vs event/strike zone, from the replay streams
-     *  themselves (the authoritative per-match source — a map can ship in
-     *  multiple versions, so game resources alone can't be trusted):
-     *  - controlPoint component (create state) — always a real point
-     *    (older clients; 15.7+ no longer ships it)
-     *  - capSamples (ownership stream) — real point when present
-     *  - capProgress DYNAMICS (15.7+ discriminator, measured on real
-     *    dumps): a capture point's progress is a tug-of-war — dozens of
-     *    samples (66..223 on a 2-cap Canada match) rising and falling as
-     *    ships enter/leave/contest. Strike/event targets carry 2-3
-     *    samples that decay monotonically from a high start (health-style,
-     *    often >1000) straight to zero when destroyed. The old
-     *    "ended-at-zero" heuristic rejected a real point whose final
-     *    contest bled out — the very state "each side holds one point"
-     *    ends in — which collapsed a 2-cap map to a single chip.
-     */
-    function isCaptureZone(t: EntityTrajectory): boolean {
-      if (t.kind?.controlPointIndex != null) return true;
-      if ((t.capSamples?.length ?? 0) > 0) return true;
-      const cp = t.capProgress ?? [];
-      if (cp.length === 0) return false;
-      if (cp.length >= 10) return true; // living tug-of-war stream
-      const first = cp[0].value;
-      if (first >= 1000) return false; // strike-target health pool
-      const last = cp[cp.length - 1].value;
-      if (last > 0) return true;
-      // Few samples ending at zero: only a point NOBODY ever touched stays
-      // zero the whole match. Strike targets decay from non-zero.
-      return !cp.some((s) => s.value > 0);
     }
     const capZones = computed(() => {
       const zones = props.trajectories.filter((t) => {
@@ -1000,33 +786,6 @@ export default defineComponent({
     let mapModel: THREE.Group | null = null;
     let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
 
-    /** Per-marker display info for the floating HTML labels. Rebuilt alongside
-     *  the markers; positions are updated each frame by projecting the marker's
-     *  world position into screen space. */
-    interface ShipLabel {
-      entityId: number;
-      role: TeamRole;
-      name: string;
-      shipName: string;
-      /** WG shipId (roster/trajectory join) — drives the hull silhouette. */
-      shipId?: number;
-      tier: number | null;
-      type: string | null;
-      hp: number | null;
-      maxHp: number | null;
-      /** "plane" renders the aircraft icon + carrier name instead of the ship glyph. */
-      kind?: "ship" | "plane";
-      /** Aircraft type name (fighter/dive/...) for plane labels. */
-      planeType?: string | null;
-      /** Ghost (unseen/sunk) state: label gets a dashed border and the HP bar
-       *  is replaced by a "gone for N s" countdown text. */
-      ghostText?: string | null;
-      /** Screen-space left/top in px (relative to the canvas). Updated per-frame. */
-      x: number;
-      y: number;
-      visible: boolean;
-      dead: boolean;
-    }
     const shipLabels = ref<ShipLabel[]>([]);
     /** Follow-menu roster grouped by allegiance: self alone, then allies,
      *  then enemies (roster order within each group). Plane entities are
@@ -1118,19 +877,6 @@ export default defineComponent({
         };
       }
       return bounds;
-    }
-
-    /** Clamp an XZ point into a rect (null rect = no clamp). */
-    function clampXZ(
-      x: number,
-      z: number,
-      rect: { minX: number; maxX: number; minZ: number; maxZ: number } | null,
-    ): { x: number; z: number } {
-      if (!rect) return { x, z };
-      return {
-        x: Math.min(rect.maxX, Math.max(rect.minX, x)),
-        z: Math.min(rect.maxZ, Math.max(rect.minZ, z)),
-      };
     }
 
     /** Effective bounds in WORLD coordinates: the map's minimap bounds when
@@ -1832,182 +1578,10 @@ export default defineComponent({
       return idx >= 0 && idx < shipEntityIds.length / 2 ? "ally" : "enemy";
     }
 
-    function frustumCorners(cam: THREE.PerspectiveCamera): THREE.Vector3[] {
-      const hw = 0.5;
-      const hh = hw / cam.aspect;
-      const corners: THREE.Vector3[] = [];
-      for (let i = 0; i < 4; i++) {
-        const sx = i === 0 || i === 3 ? -hw : hw;
-        const sy = i < 2 ? -hh : hh;
-        const pt = new THREE.Vector3(sx, sy, 1).unproject(cam);
-        const ray = pt.clone().sub(cam.position).normalize();
-        const t = -(cam.position.y) / ray.y;
-        corners.push(cam.position.clone().add(ray.multiplyScalar(t)));
-      }
-      return corners;
-    }
-
-    /** Class hull lengths for the 3D outline markers — the SAME true-scale
-     *  table the ship GLBs are scaled to (SHIP_CLASS_LEN in @wowsp/holo,
-     *  ≈ 4.5 m per world unit), so outline and installed model always agree. */
-    const HULL_LEN: Record<string, number> = SHIP_CLASS_LEN;
-
-    /** Build a ship-shaped LINE LOOP for the 3D scene: a pointed bow,
-     *  parallel midbody and tapered stern, laid out on XZ with the bow along
-     *  +Z (matching the marker cone / model convention). Doubles as the
-     *  live outline (child of the marker, follows position + yaw) and the
-     *  "last known position" ghost. */
-    function makeHullOutline(
-      color: number,
-      type: string | null | undefined,
-      scale = 1,
-    ): THREE.LineLoop {
-      const t = (type ?? "").toLowerCase();
-      const len =
-        (HULL_LEN[
-          Object.keys(HULL_LEN).find((k) => t.includes(k)) ?? "cruiser"
-        ] ?? HULL_LEN.cruiser) * scale;
-      const beam = len * 0.24;
-      // (x, z) around the hull, bow at +Z.
-      const pts: [number, number][] = [
-        [0, 0.5],
-        [0.5, 0.3],
-        [0.5, 0.0],
-        [0.42, -0.36],
-        [0, -0.5],
-        [-0.42, -0.36],
-        [-0.5, 0.0],
-        [-0.5, 0.3],
-      ];
-      const arr = new Float32Array(pts.length * 3);
-      pts.forEach(([px, pz], i) => {
-        arr[i * 3] = px * beam;
-        arr[i * 3 + 1] = 0.6;
-        arr[i * 3 + 2] = pz * len;
-      });
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
-      geo.computeBoundingSphere();
-      return new THREE.LineLoop(
-        geo,
-        new THREE.LineBasicMaterial({
-          color,
-          transparent: true,
-          opacity: 0.9,
-          depthWrite: false,
-        }),
-      );
-    }
-
-    /** Ship-class glyph polygons TRACED from the game's own 28×28 HUD
-     *  bitmaps (scripts/trace_icons.mjs: connected-component boundary
-     *  extraction + Douglas-Peucker). Each class is a list of solid
-     *  polygons; the GAPS between them reproduce the icons' engraved class
-     *  separators — battleship: two slanted cuts, cruiser: one, carrier:
-     *  deck line + bow joint, submarine: tail joint, destroyer: plain
-     *  triangle. Bow points RIGHT (+x) at 0 rotation. */
-    const SHIP_GLYPH_POLYS: Record<string, number[][][]> = {
-      destroyer: [
-        [[5.5, 9.5], [21.5, 13.5], [5.5, 17.5]],
-      ],
-      cruiser: [
-        [[16.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [11.5, 17.5], [15.5, 10.5]],
-        [[5.5, 9.5], [13.5, 9.5], [8.5, 17.5], [5.5, 17.5]],
-      ],
-      battleship: [
-        [[5.5, 9.5], [11.5, 9.5], [6.5, 17.5], [5.5, 17.5]],
-        [[14.5, 9.5], [15.5, 9.5], [11.5, 16.5], [9.5, 17.5], [13.5, 10.5]],
-        [[18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [13.5, 17.5], [17.5, 10.5]],
-      ],
-      aircarrier: [
-        [[16.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [16.5, 17.5]],
-        [[5.5, 9.5], [14.5, 9.5], [14.5, 12.5], [5.5, 12.5]],
-        [[5.5, 14.5], [14.5, 14.5], [14.5, 17.5], [5.5, 17.5]],
-      ],
-      submarine: [
-        [[5.5, 9.5], [6.5, 9.5], [6.5, 17.5], [5.5, 17.5]],
-        [[9.5, 10.5], [21.5, 13.5], [9.5, 16.5]],
-      ],
-    };
-
-    /** Draw a WoWS class glyph on a canvas context, centered at (x, y),
-     *  `size` px tall, in the given color. Solid mode fills the traced
-     *  polygons (vector — anti-aliased at any scale/rotation, where the
-     *  raster HUD PNGs alias); outline mode strokes each polygon with a
-     *  THIN line and no fill — the inter-polygon gaps stay transparent so
-     *  the class engraving reads as a proper cut-out (thick strokes would
-     *  bridge the 1-2px seams between the traced bands). */
-    function drawShipGlyph(
-      ctx: CanvasRenderingContext2D,
-      type: string | undefined,
-      x: number,
-      y: number,
-      size: number,
-      color: number,
-      opts?: { outline?: boolean; lineWidth?: number },
-    ) {
-      const t = type?.toLowerCase() ?? "";
-      const cls = t.includes("destroyer")
-        ? "destroyer"
-        : t.includes("battleship")
-          ? "battleship"
-          : t.includes("aircarrier") || t.includes("aircar")
-            ? "aircarrier"
-            : t.includes("submarine")
-              ? "submarine"
-              : "cruiser"; // auxiliary + unknown fall back to cruiser
-      const polys = SHIP_GLYPH_POLYS[cls];
-      const s = size / 28;
-      const hex = `#${color.toString(16).padStart(6, "0")}`;
-      for (const poly of polys) {
-        ctx.beginPath();
-        ctx.moveTo(x + poly[0][0] * s, y + poly[0][1] * s);
-        for (let i = 1; i < poly.length; i++) {
-          ctx.lineTo(x + poly[i][0] * s, y + poly[i][1] * s);
-        }
-        ctx.closePath();
-        if (opts?.outline) {
-          // Hairline engraved outline: 0.75 device px per polygon edge (the
-          // seams between the traced bands read as the class engraving).
-          // Modern displays rasterise sub-pixel strokes cleanly, and thin
-          // beats thick here — the traced polygons sit 1-2 atlas units
-          // apart, so fat strokes bridge the seams. NOTE the scale is the
-          // rotation-invariant magnitude (a alone is s·cosθ and would make
-          // diagonally-rotated glyphs ~41% thicker).
-          const m = ctx.getTransform();
-          const devScale = Math.max(1e-6, Math.hypot(m.a, m.b) || 1);
-          ctx.strokeStyle = hex;
-          ctx.lineWidth = 0.75 / devScale;
-          ctx.lineJoin = "round";
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = hex;
-          ctx.fill();
-        }
-      }
-    }
-
     /** Tokens used to cancel in-flight async marker loads when actors are
      *  rebuilt/unmounted before a GLB resolves. Each rebuild bumps the epoch;
      *  stale loads compare against the live epoch before mutating the scene. */
     let markerEpoch = 0;
-
-    /** Dispose an Object3D generically — primitive mesh or wrapped GLB group.
-     *  Materials are always disposed (per-instance). Geometry is disposed too,
-     *  EXCEPT for GLB-derived groups (userData.sharedGeometry): their buffers
-     *  are shared with the decode cache and must survive until the cache is
-     *  cleared on unmount. */
-    function disposeAny(obj: THREE.Object3D): void {
-      const shared = obj.userData.sharedGeometry === true;
-      obj.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        if (!shared) mesh.geometry?.dispose();
-        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-        if (!mat) return;
-        for (const m of Array.isArray(mat) ? mat : [mat]) m.dispose();
-      });
-    }
 
     function clearActors() {
       markerEpoch++;
@@ -2341,103 +1915,6 @@ export default defineComponent({
       ctrl.update();
     }
 
-    /** Assign each ship trajectory its roster entry via the EntityCreate
-     *  `shipId` (recovered from the state stream by the backend). Most shipIds
-     *  are unique per match; when two players sail the same ship (mirror
-     *  picks, bots), the collision is broken by spawn-side: centroids are
-     *  computed from the unambiguous joins, and each ambiguous entity takes
-     *  the same-side roster entry. Entities with no roster hit get `null` and
-     *  fall back to the spawn-order team heuristic in `resolveMarkerContext`. */
-    function resolveRosterAssignments(
-      shipTrajs: EntityTrajectory[],
-    ): Map<number, VehicleEntry | null> {
-      const byShipId = new Map<number, VehicleEntry[]>();
-      for (const v of props.vehicles) {
-        const arr = byShipId.get(v.shipId) ?? [];
-        arr.push(v);
-        byShipId.set(v.shipId, arr);
-      }
-      const spawnOf = (t: EntityTrajectory) => ({
-        x: t.kind?.initialX ?? t.samples[0]?.x ?? 0,
-        z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
-      });
-      const assignments = new Map<number, VehicleEntry | null>();
-      const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
-      for (const traj of shipTrajs) {
-        const sid = traj.kind?.shipId;
-        const entries = sid != null ? byShipId.get(sid) : undefined;
-        if (entries && entries.length === 1) {
-          assignments.set(traj.entityId, entries[0]);
-        } else if (entries && entries.length > 1) {
-          ambiguous.push({ traj, entries });
-        } else {
-          assignments.set(traj.entityId, null);
-        }
-      }
-      if (ambiguous.length > 0) {
-        let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
-        // Roster entries already taken by unique joins — ambiguous picks must
-        // not steal them, and two ambiguous entities must not share an entry.
-        const claimed = new Set<VehicleEntry>();
-        for (const traj of shipTrajs) {
-          const a = assignments.get(traj.entityId);
-          if (!a) continue;
-          claimed.add(a);
-          const s = spawnOf(traj);
-          if (a.relation <= 1) { ax += s.x; az += s.z; an++; }
-          else { ex += s.x; ez += s.z; en++; }
-        }
-        for (const { traj, entries } of ambiguous) {
-          const unclaimed = entries.filter((e) => !claimed.has(e));
-          let pick: VehicleEntry;
-          if (an > 0 && en > 0) {
-            const s = spawnOf(traj);
-            const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
-            const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
-            const wantAlly = dAlly < dEnemy;
-            pick =
-              unclaimed.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
-              unclaimed[0] ??
-              entries[0];
-          } else {
-            pick = unclaimed[0] ?? entries[0];
-          }
-          claimed.add(pick);
-          assignments.set(traj.entityId, pick);
-        }
-      }
-      return assignments;
-    }
-
-    /** Map each ship trajectory to its roster entry (for team role + ship
-     *  model) via the precomputed roster assignments. When a trajectory has
-     *  no matching roster entry (older replay, decode gap), the role falls
-     *  back to the entity-id spawn-order heuristic: the client spawns team A
-     *  before team B, so the first half of ships (by entity id) are treated
-     *  as allies. Unresolved ships never claim the "self" role, so the
-     *  recorder's own marker stays uniquely white. */
-    function resolveMarkerContext(
-      traj: EntityTrajectory,
-      shipEntityIds: number[],
-      assignments: Map<number, VehicleEntry | null>,
-    ): { role: TeamRole; shipInfo: ShipInfo | null; entry: VehicleEntry | null } {
-      const entry = assignments.get(traj.entityId) ?? null;
-      let role: TeamRole;
-      let shipInfo: ShipInfo | null;
-      if (entry) {
-        role = roleFromRelation(entry.relation);
-        shipInfo = props.encyclopedia.get(entry.shipId) ?? null;
-      } else {
-        // Fallback: entity-id spawn order (team A spawns before team B).
-        // Never "self" — only the exact match earns the recorder tint.
-        const idx = shipEntityIds.indexOf(traj.entityId);
-        const isAlly = idx >= 0 && idx < shipEntityIds.length / 2;
-        role = isAlly ? "ally" : "enemy";
-        shipInfo = null;
-      }
-      return { role, shipInfo, entry };
-    }
-
     /** Build the trajectory lines + ship markers from the decoded data.
      *
      *  Each ship gets a colored trajectory line (team-tinted) and a marker.
@@ -2469,7 +1946,7 @@ export default defineComponent({
         t.kind?.entityType === 2 && t.samples.length > 1;
       const shipTrajs = props.trajectories.filter(isShip);
       shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
-      rosterAssignments = resolveRosterAssignments(shipTrajs);
+      rosterAssignments = resolveRosterAssignments(shipTrajs, props.vehicles);
       const assignments = rosterAssignments;
 
       // Smoke screens (entityType 4 = SmokeScreen): white ring markers at
@@ -3153,6 +2630,7 @@ export default defineComponent({
           traj,
           shipEntityIds,
           assignments,
+          props.encyclopedia,
         );
         const color = TEAM_COLOR[role];
         const offline = shipOfflineEntry((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined);
@@ -3608,34 +3086,6 @@ export default defineComponent({
         marker.rotation.y = Math.PI - s.yaw;
         marker.userData.yaw = s.yaw;
       }
-    }
-
-    /** Find the last HP value at or before time t. */
-    function hpAtTime(samples: HpSample[] | undefined, t: number): number | null {
-      if (!samples || samples.length === 0) return null;
-      let last: number = samples[0].value;
-      for (const s of samples) {
-        if (s.time > t) break;
-        last = s.value;
-      }
-      return last;
-    }
-
-    /** Capture progress (0..1000) at time t from the game's own stream.
-     *  STEP semantics, zero outside the stream's span: a home point emits no
-     *  samples until it is first contested (the Canada 2-cap's own point's
-     *  first sample is at t=311s) — extrapolating that first sample back to
-     *  t=0 made every home point read "being captured" from the opening
-     *  second. Values hold between samples (the game reports on change). */
-    function progressAtTime(samples: HpSample[] | undefined, t: number): number | null {
-      if (!samples || samples.length === 0) return null;
-      if (t < samples[0].time) return 0;
-      let v = samples[0].value;
-      for (const s of samples) {
-        if (s.time <= t) v = s.value;
-        else break;
-      }
-      return v;
     }
 
     /** Position + orient each ship marker at the current playback time.
@@ -4218,50 +3668,6 @@ export default defineComponent({
       updateLabelPositions();
     }
 
-    // ── Scoring rules (official: wiki.worldofwarships.com/Ship:Game_Modes) ──
-    // Domination Random/Co-op: 3 areas → start 300, +3 per completed capture,
-    // +3 every 5s per controlled area; 4 areas → start 200, +4, +4 every 9s.
-    // Capture duration 60s (1 ship) / 40s (2+ ships); contested by both teams
-    // freezes progress; being hit halves the accrued progress.
-    // Eight maps override everything: start 150, kills +40, deaths -25.
-    const SPECIAL_CAP_MAPS = new Set([
-      "13_OC_new_dawn",
-      "17_NA_fault_line",
-      "23_Shards",
-      "41_Conquest",
-      "42_Neighbors",
-      "52_Britain",
-      "53_Shoreside",
-      "54_Faroe",
-    ]);
-    // Kill/death points by ship class (Random & Co-op).
-    const KILL_PTS: Record<string, { kill: number; death: number }> = {
-      Submarine: { kill: 25, death: -40 },
-      Destroyer: { kill: 30, death: -45 },
-      Cruiser: { kill: 35, death: -50 },
-      Battleship: { kill: 40, death: -60 },
-      AirCarrier: { kill: 45, death: -65 },
-    };
-
-    interface CapZoneState {
-      letter: string;
-      owner: number; // 0 neutral, 1 ally, 2 enemy
-      /** 0..1 progress of the current capture towards the capturing team. */
-      progress: number;
-      /** Ships of each side inside the point right now. */
-      alliesIn: number;
-      enemiesIn: number;
-      /** true when both teams are inside (progress frozen). */
-      contested: boolean;
-      /** true when a capture is actively progressing. */
-      capturing: boolean;
-      /** Capturing team's progress speed: 1/60 or 1/40 per second. */
-      speed: number;
-      /** Capturing team (1/2) when capturing. */
-      captureTeam: number;
-      /** Seconds to finish if the situation holds (null when paused). */
-      etaSeconds: number | null;
-    }
     const capDisplay = ref<CapZoneState[]>([]);
 
     /** Shared scorebar state — the app's cap simulator + roster mapped onto
@@ -4875,51 +4281,6 @@ export default defineComponent({
       }
     }
 
-    /** Max sample gap still interpolated smoothly. Beyond it the entity was
-     *  un-spotted (gaps of 20 s to minutes occur for enemies) and the marker
-     *  HOLDS the last observed pose — like the in-game minimap — instead of
-     *  gliding on a straight line with a slowly rotating heading, which sailed
-     *  ships straight across islands at weird angles. Spotted ships stream
-     *  every 0.1–2 s, so 4 s cleanly separates the two regimes. */
-    const UNSEEN_GAP_S = 4;
-
-    /** Interpolate a sample at time t (linear between neighbors). */
-    function sampleAt(
-      traj: { samples: { time: number; x: number; z: number; yaw: number }[] },
-      t: number,
-    ) {
-      const ss = traj.samples;
-      if (t <= ss[0].time) return ss[0];
-      if (t >= ss[ss.length - 1].time) return ss[ss.length - 1];
-      // Binary search: called per frame from the capture simulation and the
-      // aircraft cloud, so keep it O(log n).
-      let lo = 0;
-      let hi = ss.length - 1;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (ss[mid].time < t) lo = mid;
-        else hi = mid;
-      }
-      const a = ss[lo];
-      const b = ss[hi];
-      // Un-spotted gap: freeze at the last known pose until re-detection.
-      if (b.time - a.time > UNSEEN_GAP_S) return a;
-      const f = (t - a.time) / (b.time - a.time || 1);
-      return {
-        ...a,
-        x: a.x + (b.x - a.x) * f,
-        z: a.z + (b.z - a.z) * f,
-        yaw: a.yaw + angleDiff(a.yaw, b.yaw) * f,
-      };
-    }
-
-    function angleDiff(a: number, b: number): number {
-      let d = b - a;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      return d;
-    }
-
     // Playback loop.
     function playTick(now: number) {
       if (!playing.value) return;
@@ -5152,81 +4513,7 @@ export default defineComponent({
             achievement awards, newest first. Kill cards keep the 3-column
             layout (killer | "击沉了" | victim); chat and achievement cards
             are single rows with the sender's side tint. */}
-        {feed.value.length > 0 ? (
-          <div class="holo-map__killfeed">
-            {feed.value.map((e) => {
-              if (e.kind === "kill") {
-                return (
-                  <div key={e.id} class={["holo-map__kill", `holo-map__kill--${e.role}`]}>
-                    <div class="holo-map__kill-side holo-map__kill-side--killer">
-                      <span class="holo-map__kill-ship">
-                        <span class="holo-map__kill-ico">
-                          {e.killerShipType ? (
-                            <BattleIcon
-                              kind="ship"
-                              type={e.killerShipType}
-                              variant={e.role === "enemy" ? "enemy" : "ally"}
-                              size={13}
-                            />
-                          ) : null}
-                        </span>
-                        {e.killerShipName || e.killerName || "?"}
-                      </span>
-                      <span class="holo-map__kill-name">
-                        {e.killerName ?? ""}
-                      </span>
-                    </div>
-                    <span class="holo-map__kill-verb">{i18nT("replay.killVerb")}</span>
-                    <div class="holo-map__kill-side holo-map__kill-side--victim">
-                      <span class="holo-map__kill-ship">
-                        <span class="holo-map__kill-ico">
-                          {e.shipType ? (
-                            <BattleIcon
-                              kind="ship"
-                              type={e.shipType}
-                              variant={e.role === "ally" ? "enemy" : "ally"}
-                              size={13}
-                            />
-                          ) : null}
-                        </span>
-                        {e.shipName}
-                      </span>
-                      <span class="holo-map__kill-name">
-                        {e.text}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-              if (e.kind === "chat") {
-                return (
-                  <div
-                    key={e.id}
-                    class={["holo-map__chat", e.enemy ? "holo-map__chat--enemy" : "holo-map__chat--ally"]}
-                  >
-                    <MessageSquare size={12} class="holo-map__chat-ico" />
-                    <span class="holo-map__chat-sender">{e.sender}</span>
-                    <span class="holo-map__chat-text">{e.message}</span>
-                  </div>
-                );
-              }
-              return (
-                <div
-                  key={e.id}
-                  class={[
-                    "holo-map__ach",
-                    e.enemy ? "holo-map__ach--enemy" : "holo-map__ach--ally",
-                  ]}
-                >
-                  <Trophy size={12} class="holo-map__ach-ico" />
-                  <span class="holo-map__ach-sender">{e.sender}</span>
-                  <span class="holo-map__ach-verb">{i18nT("replay.achieved")}</span>
-                  <span class="holo-map__ach-name">{e.name}</span>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
+        <HoloEventFeed entries={feed.value} />
         <canvas
           ref={minimapCanvas}
           class="holo-map__minimap"
@@ -5351,40 +4638,7 @@ export default defineComponent({
           {/* In the 2D enlarged view the plaque + stats duplicate what the 3D
               view shows — hide them so the 2D map owns the screen. */}
           {!minimapZoom.value && selfCard.value ? (
-            <div class="holo-map__shipcard">
-              <HoloShipCard data={selfCard.value} />
-              {/* Self battle stats ride to the right of the hull plaque:
-                  icon + short label + number per stat, bottom-aligned with
-                  the plaque, content centred inside. Exactly four segments
-                  at a nominal 4.5rem each (compressed only when the map is
-                  too narrow for the row) — no conditional fifth (plane)
-                  stat: its appearance resized the strip past the viewport
-                  edge. */}
-              {selfStats.value ? (
-                <div class="holo-map__selfstats">
-                  <span class="holo-map__selfstat">
-                    <Crosshair size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{i18nT("replay.selfHits")}</i>
-                    <b class="holo-map__selfstat-num">{selfStats.value.hits}</b>
-                  </span>
-                  <span class="holo-map__selfstat">
-                    <Skull size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{i18nT("replay.selfFrags")}</i>
-                    <b class="holo-map__selfstat-num">{selfStats.value.frags}</b>
-                  </span>
-                  <span class="holo-map__selfstat">
-                    <Swords size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{i18nT("replay.selfDamage")}</i>
-                    <b class="holo-map__selfstat-num">{selfStats.value.damage.toLocaleString()}</b>
-                  </span>
-                  <span class="holo-map__selfstat">
-                    <Shield size={14} class="holo-map__selfstat-ico" />
-                    <i class="holo-map__selfstat-label">{i18nT("replay.selfTaken")}</i>
-                    <b class="holo-map__selfstat-num">{selfStats.value.taken.toLocaleString()}</b>
-                  </span>
-                </div>
-              ) : null}
-            </div>
+            <HoloSelfCard card={selfCard.value} stats={selfStats.value} />
           ) : null}
           <button
               class="holo-map__lbltoggle"
@@ -5395,87 +4649,17 @@ export default defineComponent({
               {showLabels.value ? <Eye size={14} /> : <EyeOff size={14} />}
             </button>
             {props.cameraFrames.length > 0 || cameraMode.value !== "free" ? (
-              <div class="holo-map__camera">
-                <button
-                  class={["holo-map__lbltoggle", cameraMenuOpen.value ? "holo-map__lbltoggle--on" : ""]}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    cameraMenuOpen.value = !cameraMenuOpen.value;
-                  }}
-                  data-hint={i18nT("replay.camera.title")}
-                  aria-label={i18nT("replay.camera.title")}
-                >
-                  {cameraMode.value === "original" ? (
-                    <Video size={14} />
-                  ) : cameraMode.value === "follow" ? (
-                    <Crosshair size={14} />
-                  ) : (
-                    <Orbit size={14} />
-                  )}
-                </button>
-                {cameraMenuOpen.value ? (
-                  <div class="holo-map__cam-menu" onClick={(e) => e.stopPropagation()}>
-                    <div class="holo-map__cam-modes">
-                      <button
-                        class={["holo-map__cam-mode", cameraMode.value === "free" ? "holo-map__cam-mode--on" : ""]}
-                        onClick={() => { cameraMode.value = "free"; cameraMenuOpen.value = false; }}
-                      >
-                        {i18nT("replay.camera.free")}
-                      </button>
-                      {props.cameraFrames.length > 0 ? (
-                        <button
-                          class={["holo-map__cam-mode", cameraMode.value === "original" ? "holo-map__cam-mode--on" : ""]}
-                          onClick={() => { cameraMode.value = "original"; cameraMenuOpen.value = false; }}
-                        >
-                          {i18nT("replay.camera.original")}
-                        </button>
-                      ) : null}
-                    </div>
-                    {cameraShipGroups.value.map((g) => (
-                      <div key={g.key} class="holo-map__cam-group">
-                        <div class="holo-map__cam-group-title">{g.title}</div>
-                        {g.items.map((item) => (
-                          <button
-                            key={item.entityId}
-                            class={[
-                              "holo-map__cam-item",
-                              item.entityId === selectedEntityId.value ? "holo-map__cam-item--on" : "",
-                              item.dead ? "holo-map__cam-item--dead" : "",
-                            ]}
-                            onClick={() => {
-                              selectShip(item.entityId);
-                              cameraMenuOpen.value = false;
-                            }}
-                          >
-                            <span class="holo-map__cam-ico">
-                              {item.type ? (
-                                <BattleIcon
-                                  kind="ship"
-                                  type={item.type}
-                                  variant={item.role === "enemy" ? "enemy" : "ally"}
-                                  size={13}
-                                />
-                              ) : null}
-                            </span>
-                            <span class="holo-map__cam-body">
-                              <span class="holo-map__cam-ship">{item.shipName}</span>
-                              <span class="holo-map__cam-meta">
-                                {item.tier ? tierToRoman(item.tier) : ""}
-                                {item.type ? ` ${i18nT(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
-                                {item.maxHp != null ? ` · ${item.maxHp.toLocaleString()} HP` : ""}
-                              </span>
-                            </span>
-                            <span class="holo-map__cam-name">{item.name}</span>
-                            <span class="holo-map__cam-stats">
-                              {followStats.value.get(item.entityId) ?? "…"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+              <HoloCameraMenu
+                mode={cameraMode.value}
+                open={cameraMenuOpen.value}
+                hasOriginalFrames={props.cameraFrames.length > 0}
+                groups={cameraShipGroups.value}
+                followStats={followStats.value}
+                selectedId={selectedEntityId.value}
+                onToggleMenu={() => { cameraMenuOpen.value = !cameraMenuOpen.value; }}
+                onPickMode={(m) => { cameraMode.value = m; cameraMenuOpen.value = false; }}
+                onPickShip={(id) => { selectShip(id); cameraMenuOpen.value = false; }}
+              />
             ) : null}
             <button class="holo-map__play" onClick={togglePlay}>
               {playing.value ? <Pause size={14} /> : <Play size={14} />}
@@ -5521,36 +4705,7 @@ export default defineComponent({
             </div>
           </div>
         ) : null}
-        {showRoster.value ? (
-          <div class="holo-map__roster-overlay">
-            <table>
-              <thead>
-                <tr><th colspan="3">{i18nT("replay.roster.allies")}</th></tr>
-              </thead>
-              <tbody>
-                {props.vehicles.filter(v => v.relation <= 1).map(v => (
-                  <tr key={v.id}>
-                    <td style={{color: v.relation === 0 ? "#fff" : "#3cb478"}}>{v.name}</td>
-                    <td>{v.shipName ?? shipNameFromOfflineDb(v.shipId, useLanguage().dataLanguage.value) ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
-                    <td></td>
-                  </tr>
-                ))}
-              </tbody>
-              <thead>
-                <tr><th colspan="3">{i18nT("replay.roster.enemies")}</th></tr>
-              </thead>
-              <tbody>
-                {props.vehicles.filter(v => v.relation > 1).map(v => (
-                  <tr key={v.id}>
-                    <td style={{color: "#cc3333"}}>{v.name}</td>
-                    <td>{v.shipName ?? shipNameFromOfflineDb(v.shipId, useLanguage().dataLanguage.value) ?? shipNameFromModelDb(v.shipId) ?? ""}</td>
-                    <td></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
+        {showRoster.value ? <HoloRosterOverlay vehicles={props.vehicles} /> : null}
       </div>
     );
   },
