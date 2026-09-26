@@ -164,6 +164,15 @@ pub async fn lookup_players_composition(
     Ok(results)
 }
 
+/// Process-lifetime name→account resolutions, keyed (realm, name). The
+/// overlay fires this command every battle with the same roster names the
+/// stats batch just resolved — without the cache each seal sweep re-walks
+/// the per-name account/list searches behind the stats batch's back. Only
+/// HITS are cached: a `None` (transient failure or genuinely absent) keeps
+/// re-resolving on later calls per this module's retry contract.
+static RESOLVED_IDS: std::sync::LazyLock<std::sync::Mutex<HashMap<(String, String), i64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
 /// Resolve every name to its account id (input order preserved). Consumes
 /// `names` — owned items keep the per-item futures lifetime-free (the same
 /// reason `wg_api::lookup_players_stats_batch` consumes its input, and a
@@ -171,8 +180,49 @@ pub async fn lookup_players_composition(
 /// failures (bad realm, client build) error the whole call; per-name
 /// failures answer `None`.
 async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Option<i64>>, String> {
-    // CN routes to the vortex search (browser-UA client, see `wg_api_cn`);
-    // every other realm to the WG account/list endpoint.
+    // Cache pass: answer the hits on the spot, resolve only the misses
+    // (slot-tracked so the response order keeps matching the input).
+    let mut out: Vec<Option<i64>> = vec![None; names.len()];
+    let mut misses: Vec<(usize, String)> = Vec::new();
+    {
+        let cache = RESOLVED_IDS
+            .lock()
+            .map_err(|e| format!("composition id cache lock: {e}"))?;
+        for (slot, name) in names.iter().enumerate() {
+            match cache.get(&(realm.to_string(), name.clone())) {
+                Some(id) => out[slot] = Some(*id),
+                None => misses.push((slot, name.clone())),
+            }
+        }
+    }
+    if misses.is_empty() {
+        return Ok(out);
+    }
+    let resolved =
+        resolve_account_ids_uncached(realm, misses.iter().map(|(_, n)| n.clone()).collect())
+            .await?;
+    {
+        let mut cache = RESOLVED_IDS
+            .lock()
+            .map_err(|e| format!("composition id cache lock: {e}"))?;
+        for ((slot, name), id) in misses.iter().zip(resolved.iter()) {
+            if let Some(id) = id {
+                cache.insert((realm.to_string(), name.clone()), *id);
+                out[*slot] = Some(*id);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The per-name network resolution behind [`resolve_account_ids`]'s cache
+/// misses. Same transports as before: CN routes to the vortex search
+/// (browser-UA client, see `wg_api_cn`); every other realm to the WG
+/// account/list endpoint.
+async fn resolve_account_ids_uncached(
+    realm: &str,
+    names: Vec<String>,
+) -> Result<Vec<Option<i64>>, String> {
     if realm == "cn" {
         let cn_client = super::wg_api_cn::vortex_client()?;
         let client_ref = &cn_client;
