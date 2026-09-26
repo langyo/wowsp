@@ -356,6 +356,8 @@
       "hint": "同一單位稍後再放一個動作，它就會自行駛向那裡：時間軸會在兩個關鍵影格之間自動畫出補間箭頭。",
       "tween": "補間",
       "rename": "重新命名單位",
+      "editTime": "時間（m:ss）",
+      "removeAction": "刪除該動作",
       "unitN": "單位 {n}",
       "actionCount": "{n} 個動作",
       "collapse": "點擊收合",

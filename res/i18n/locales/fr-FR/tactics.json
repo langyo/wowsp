@@ -24,5 +24,13 @@
   "select": "Sélectionnez une carte pour commencer l'analyse",
   "plan": {
     "noBounds": "Cette carte n'a pas de données d'étendue, impossible d'y tracer un plan tactique."
+  },
+  "slots": {
+    "slotN": "Plan {n}",
+    "add": "Nouveau plan",
+    "duplicate": "Dupliquer le plan actuel",
+    "remove": "Supprimer le plan actuel",
+    "removeConfirm": "Cliquez à nouveau pour supprimer",
+    "rename": "Renommer le plan"
   }
 }

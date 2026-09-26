@@ -3,6 +3,7 @@ import {
   assignRows,
   clampWindow,
   fmtClock,
+  parseClock,
   fullWindow,
   layoutMarkers,
   layoutPlanRows,
@@ -21,6 +22,23 @@ const act = (time: number): ShipAction => ({ id: `a${time}`, time, entityId: 1, 
 
 /** `n` unit keys, as the plan board hands them to `layoutPlanRows`. */
 const planKeys = (n: number) => Array.from({ length: n }, (_, i) => `unit-${i}`);
+
+describe("parseClock", () => {
+  it("parses M:SS, bare seconds and fractional seconds", () => {
+    expect(parseClock("0:30")).toBe(30);
+    expect(parseClock("12:05")).toBe(725);
+    expect(parseClock("90")).toBe(90);
+    expect(parseClock("1:02.5")).toBeCloseTo(62.5, 5);
+    expect(parseClock("  3:00 ")).toBe(180);
+  });
+
+  it("rejects malformed times (null keeps the old value)", () => {
+    expect(parseClock("2:99")).toBeNull(); // the SS field stops at 59
+    expect(parseClock("abc")).toBeNull();
+    expect(parseClock("1:2:3")).toBeNull();
+    expect(parseClock("")).toBeNull();
+  });
+});
 
 describe("clampWindow", () => {
   it("enforces the 15 s zoom floor", () => {

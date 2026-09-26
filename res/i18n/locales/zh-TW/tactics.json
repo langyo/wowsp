@@ -24,5 +24,13 @@
   "select": "選擇一張地圖開始分析",
   "plan": {
     "noBounds": "該地圖沒有世界範圍資料，無法在其上建立戰術標圖。"
+  },
+  "slots": {
+    "slotN": "方案 {n}",
+    "add": "新增方案",
+    "duplicate": "複製目前方案",
+    "remove": "刪除目前方案",
+    "removeConfirm": "再次點擊確認刪除",
+    "rename": "重新命名方案"
   }
 }

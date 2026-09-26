@@ -87,6 +87,18 @@ export function fmtClock(t: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** Inverse of fmtClock for the action editor's input: accepts "M:SS",
+ *  "SS" (bare seconds, may exceed 59 — the board clamps to the duration)
+ *  and fractional seconds; null = unparseable (keeps the old time). */
+export function parseClock(text: string): number | null {
+  const t = text.trim();
+  let m = t.match(/^(\d{1,3}):([0-5]?\d(?:\.\d{1,2})?)$/);
+  if (m) return parseInt(m[1], 10) * 60 + parseFloat(m[2]);
+  m = t.match(/^(\d{1,4}(?:\.\d{1,2})?)$/);
+  if (m) return parseFloat(m[1]);
+  return null;
+}
+
 /** One marker laid out on the timeline: x is the ICON CENTER in px, row the
  *  collision lane (0 = top). */
 export interface LaidMarker {

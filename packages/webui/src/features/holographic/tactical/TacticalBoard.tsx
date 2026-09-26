@@ -49,7 +49,13 @@ import {
   presentParkTarget,
   serializeDoc,
 } from "./model";
-import type { LogicalRect, MarkerElement, TacticalElement, Vec2 } from "./types";
+import type {
+  LogicalRect,
+  MarkerElement,
+  TacticalActionKind,
+  TacticalElement,
+  Vec2,
+} from "./types";
 import { TACTICAL_MAX_SCALE } from "./geometry";
 import {
   canvasToBlob,
@@ -145,11 +151,14 @@ export default defineComponent({
      *  board into the playback bar's tall form; a plan host docks its own. */
     dockSelector: { type: String, default: "#holo-map-tac-dock" },
   },
-  setup(props) {
+  setup(props, { expose }) {
     const canvasRef = ref<HTMLCanvasElement | null>(null);
     const inputRef = ref<HTMLInputElement | null>(null);
     const store = useTactical(toRef(props, "replayPath"));
     const toast = useToast();
+    /** Host-facing surface: flush the store's debounced save so a plan-slot
+     *  duplicate reads the CURRENT document, not one up to 400 ms stale. */
+    expose({ flushDoc: () => store.flush() });
 
     const drag = ref<Drag | null>(null);
     /** Heading shown for the marker being Shift-spun. The element adopts the
@@ -258,6 +267,31 @@ export default defineComponent({
       if (!owned.some((el) => el.label !== value)) return;
       store.pushHistory();
       for (const el of owned) store.replaceElement(el.id, { ...el, label: value });
+    }
+
+    /** Timeline action editor data: a marker's time (+ action kind, null on
+     *  non-plan annotations). Non-markers report null — nothing to edit. */
+    function markerOf(id: string): { t0: number; action: TacticalActionKind | null } | null {
+      const el = store.elements.value.find((x) => x.id === id);
+      if (!el || el.kind !== "marker") return null;
+      return { t0: el.t0, action: el.action ?? null };
+    }
+
+    /** Timeline action edit: retime / re-kind a keyframe (one undo step).
+     *  Deliberately active on the replay host too: double-clicking an
+     *  annotation marker there retimes it (clamped to the battle length);
+     *  the kind picker stays plan-board-only (props.tall on the timeline). */
+    function editMarker(id: string, patch: { t0?: number; action?: TacticalActionKind }): void {
+      const el = store.elements.value.find((x) => x.id === id);
+      if (!el || el.kind !== "marker") return;
+      const t0 =
+        patch.t0 != null
+          ? Math.max(0, Math.min(props.getDuration(), patch.t0))
+          : el.t0;
+      const action = patch.action ?? el.action;
+      if (t0 === el.t0 && action === el.action) return;
+      store.pushHistory();
+      store.replaceElement(id, { ...el, t0, action });
     }
 
     function proj(): TacticalProjection | null {
@@ -1414,6 +1448,8 @@ export default defineComponent({
                 removeStep={removeStepById}
                 removeUserMarker={removeUserMarkerById}
                 onRenameUnit={renameUnit}
+                markerOf={markerOf}
+                onEditMarker={editMarker}
               />
             </div>
             </Teleport>

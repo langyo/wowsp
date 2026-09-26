@@ -356,6 +356,8 @@
       "hint": "Drop the same unit again later and it sails there on its own: the timeline draws the tween arrow between the two marks.",
       "tween": "Tween",
       "rename": "Rename unit",
+      "editTime": "Time (m:ss)",
+      "removeAction": "Delete this action",
       "unitN": "Unit {n}",
       "actionCount": "{n} actions",
       "collapse": "Click to collapse",
