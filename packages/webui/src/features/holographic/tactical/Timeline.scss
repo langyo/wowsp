@@ -105,3 +105,80 @@
   font-size: var(--text-xs);
   outline: none;
 }
+
+/* Action editor pop (double-click a keyframe / user marker). */
+.tac-timeline__edit {
+  position: absolute;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  background: rgba(5, 8, 15, 0.95);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
+}
+
+.tac-timeline__edit-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--holo-hud-dim);
+
+  input {
+    width: 52px;
+    height: 20px;
+    padding: 0 4px;
+    background: rgb(0 0 0 / 45%);
+    border: 1px solid var(--holo-hud-border);
+    border-radius: 4px;
+    color: var(--holo-hud-text);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    outline: none;
+
+    &:focus {
+      border-color: rgb(var(--tac-accent-rgb) / 80%);
+    }
+  }
+}
+
+.tac-timeline__edit-kinds {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.tac-timeline__edit-kind {
+  padding: 2px 7px;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--holo-hud-text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+
+  &--on {
+    border-color: rgb(var(--tac-accent-rgb) / 95%);
+    background: rgb(var(--tac-accent-rgb) / 18%);
+    font-weight: 600;
+  }
+}
+
+.tac-timeline__edit-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(248 113 113);
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(204 51 51 / 22%);
+  }
+}

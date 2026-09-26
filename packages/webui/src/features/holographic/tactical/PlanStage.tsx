@@ -15,6 +15,7 @@
 import {
   computed,
   defineComponent,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -24,6 +25,17 @@ import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoa
 import { HMinimap } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import TacticalBoard from "./TacticalBoard";
+import PlanSlotsBar from "./PlanSlotsBar";
+import {
+  DEFAULT_SLOT_ID,
+  deleteSlotDoc,
+  duplicateSlotDoc,
+  loadSlots,
+  nextSlotId,
+  saveSlots,
+  slotDocPath,
+  type PlanSlot,
+} from "./planSlots";
 import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
 import { MAP_GRID_COLUMNS, gridEdgeLabels } from "./mapGrid";
 import { TACTICAL_MAX_SCALE } from "./geometry";
@@ -48,6 +60,9 @@ export default defineComponent({
   setup(props) {
     const artCanvas = ref<HTMLCanvasElement | null>(null);
     const stageRef = ref<HTMLDivElement | null>(null);
+    /** Typed by the exposed surface only (defineExpose types don't
+     *  propagate through InstanceType in TSX). */
+    const boardRef = ref<{ flushDoc: () => void } | null>(null);
 
     // ── Map art + world bounds ───────────────────────────────────────────
     let artImage: HTMLImageElement | null = null;
@@ -422,7 +437,7 @@ export default defineComponent({
     /** The clock closure shared by the dock and the board, so the two can
      *  never disagree about "now". */
     const boardProps = {
-      replayPath: computed(() => `tactics:${props.spaceId}`),
+      replayPath: computed(() => slotDocPath(props.spaceId, activeSlot.value)),
       getTime: () => time.value,
       getDuration: () => duration.value,
       getPlaying: () => playing.value,
@@ -430,6 +445,58 @@ export default defineComponent({
       pause,
       seekTo,
     };
+
+    // ── Plan slots: several plans per map, switched by replayPath (the
+    //    board's store flushes/loads per key, so a switch is atomic). Slot
+    //    "0" is the legacy unsuffixed document — old boards upgrade in place.
+    const slots = ref<PlanSlot[]>(loadSlots(props.spaceId));
+    const activeSlot = ref<string>(DEFAULT_SLOT_ID);
+    const slotNames = computed(() =>
+      slots.value.map((s, i) => s.name || i18nT("tactics.slots.slotN", { n: i + 1 })),
+    );
+
+    function selectSlot(id: string): void {
+      if (id === activeSlot.value) return;
+      activeSlot.value = id;
+      time.value = 0;
+      playing.value = false;
+    }
+    function addSlot(copyCurrent: boolean): void {
+      const id = nextSlotId(slots.value);
+      // Flush the board's debounced save first, or the duplicate copies a
+      // document up to 400 ms stale (edits from the last moments).
+      if (copyCurrent) {
+        boardRef.value?.flushDoc?.();
+        duplicateSlotDoc(props.spaceId, activeSlot.value, id);
+      }
+      slots.value = [...slots.value, { id, name: "" }];
+      saveSlots(props.spaceId, slots.value);
+      selectSlot(id);
+    }
+    function renameSlot(id: string, name: string): void {
+      const value = name.trim();
+      if (slots.value.some((s) => s.id === id && s.name === value)) return;
+      slots.value = slots.value.map((s) => (s.id === id ? { ...s, name: value } : s));
+      saveSlots(props.spaceId, slots.value);
+    }
+    function removeSlot(id: string): void {
+      if (slots.value.length <= 1) return;
+      const fallback = slots.value.find((s) => s.id !== id);
+      if (!fallback) return;
+      // Switch AWAY first: the board's debounced save then flushes under the
+      // departing key before the next tick removes it (watch flush is async).
+      selectSlot(fallback.id);
+      slots.value = slots.value.filter((s) => s.id !== id);
+      saveSlots(props.spaceId, slots.value);
+      void nextTick(() => deleteSlotDoc(props.spaceId, id));
+    }
+    watch(
+      () => props.spaceId,
+      () => {
+        slots.value = loadSlots(props.spaceId);
+        activeSlot.value = DEFAULT_SLOT_ID;
+      },
+    );
 
     return () => (
       <div class="plan-stage">
@@ -439,10 +506,21 @@ export default defineComponent({
           <div class="plan-stage__notice">{i18nT("tactics.plan.noBounds")}</div>
         ) : (
           <>
+            <PlanSlotsBar
+              slots={slots.value}
+              names={slotNames.value}
+              activeId={activeSlot.value}
+              onSelect={selectSlot}
+              onAdd={() => addSlot(false)}
+              onDuplicate={() => addSlot(true)}
+              onRename={renameSlot}
+              onRemove={removeSlot}
+            />
             <div class="plan-stage__viewport">
               <div ref={stageRef} class="plan-stage__stage">
                 <canvas ref={artCanvas} class="plan-stage__art" />
                 <TacticalBoard
+                  ref={boardRef}
                   replayPath={boardProps.replayPath.value}
                   mapTag={props.mapName || props.spaceId}
                   editMode

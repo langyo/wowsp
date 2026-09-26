@@ -24,5 +24,13 @@
   "select": "选择一张地图开始分析",
   "plan": {
     "noBounds": "该地图没有世界范围数据，无法在其上建立战术标图。"
+  },
+  "slots": {
+    "slotN": "方案 {n}",
+    "add": "新建方案",
+    "duplicate": "复制当前方案",
+    "remove": "删除当前方案",
+    "removeConfirm": "再次点击确认删除",
+    "rename": "重命名方案"
   }
 }
