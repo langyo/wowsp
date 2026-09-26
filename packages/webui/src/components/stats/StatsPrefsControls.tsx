@@ -7,16 +7,17 @@ import { useStatsPrefsStore, type PrAlgo } from "@/stores/statsPrefs";
 import "./StatsPrefsControls.scss";
 
 /**
- * The four water-table preference controls (PR rating master switch →
- * algorithm / stamps / localized tier wording), reading and writing the
- * shared statsPrefs store. One component, two hosts: the onboarding
- * wizard's preferences step and the settings modal's 战绩 section render
- * the identical control set through the `ns` prop — the two surfaces carry
- * their own (differently worded) i18n copies whose keys are kept in sync
- * (onboarding.json top level ↔ settings.json `statsPrefs` sub-object).
+ * The five water-table preference controls (PR rating master switch →
+ * algorithm / team-winrate weighting / stamps / localized tier wording),
+ * reading and writing the shared statsPrefs store. One component, two
+ * hosts: the onboarding wizard's preferences step and the settings modal's
+ * 战绩 section render the identical control set through the `ns` prop — the
+ * two surfaces carry their own (differently worded) i18n copies whose keys
+ * are kept in sync (onboarding.json top level ↔ settings.json `statsPrefs`
+ * sub-object).
  *
  * Layout mirrors the settings modal's row pattern: label + description on
- * the left, control on the right; the three sub-controls only exist while
+ * the left, control on the right; the four sub-controls only exist while
  * the master switch is on.
  */
 export default defineComponent({
@@ -62,6 +63,16 @@ export default defineComponent({
                   { key: "winrate", label: tr("prAlgoWinrate") },
                   { key: "expected", label: tr("prAlgoExpected") },
                 ]}
+              />
+            </div>
+            <div class="stats-prefs__row">
+              <span class="stats-prefs__row-text">
+                <span class="stats-prefs__row-label">{tr("teamWrToggle")}</span>
+                <span class="stats-prefs__row-desc">{tr("teamWrToggleDesc")}</span>
+              </span>
+              <HkSwitch
+                modelValue={prefs.prefs.weightedTeamWr}
+                onUpdate:modelValue={(v: boolean) => prefs.setWeightedTeamWr(v)}
               />
             </div>
             <div class="stats-prefs__row">

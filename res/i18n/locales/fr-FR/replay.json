@@ -116,7 +116,10 @@
     "shipType": "Type",
     "battles": "Batailles",
     "winrate": "TV",
-    "avgDamage": "Dégâts moy."
+    "avgDamage": "Dégâts moy.",
+    "teamWrWeighted": "TV pondérée par palier",
+    "teamWrPlain": "TV moyenne",
+    "teamAvgPr": "PR moyen"
   },
   "minimap": {
     "zoom": "Carte agrandie",

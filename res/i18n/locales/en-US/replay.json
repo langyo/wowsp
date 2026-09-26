@@ -116,7 +116,10 @@
     "shipType": "Type",
     "battles": "Battles",
     "winrate": "WR",
-    "avgDamage": "Avg dmg"
+    "avgDamage": "Avg dmg",
+    "teamWrWeighted": "Tier-weighted WR",
+    "teamWrPlain": "Avg WR",
+    "teamAvgPr": "Avg PR"
   },
   "minimap": {
     "zoom": "Zoomed map",

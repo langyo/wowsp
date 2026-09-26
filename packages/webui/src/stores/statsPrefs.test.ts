@@ -31,12 +31,14 @@ async function freshModule() {
 describe("loadStatsPrefs", () => {
   it("returns the defaults when nothing is stored", () => {
     expect(loadStatsPrefs()).toEqual(DEFAULT_STATS_PREFS);
-    // PR rating ships opt-out; the fun wording and seals ship on.
+    // PR rating ships opt-out; the fun wording, seals and the tier-weighted
+    // team winrate ship on.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: false,
       prAlgo: "winrate",
       sealsEnabled: true,
       localizedTiers: true,
+      weightedTeamWr: true,
       sealDisabled: {},
     });
   });
@@ -72,6 +74,7 @@ describe("loadStatsPrefs", () => {
     expect(prefs.prAlgo).toBe("winrate");
     expect(prefs.sealsEnabled).toBe(true);
     expect(prefs.localizedTiers).toBe(true);
+    expect(prefs.weightedTeamWr).toBe(true);
     expect(prefs.sealDisabled).toEqual({});
   });
 
@@ -101,6 +104,7 @@ describe("statsPrefs store", () => {
     store.setPrAlgo("expected");
     store.setSealsEnabled(false);
     store.setLocalizedTiers(false);
+    store.setWeightedTeamWr(false);
 
     const raw = localStorage.getItem(STATS_PREFS_STORAGE_KEY);
     expect(raw).toBeTruthy();
@@ -109,6 +113,7 @@ describe("statsPrefs store", () => {
       prAlgo: "expected",
       sealsEnabled: false,
       localizedTiers: false,
+      weightedTeamWr: false,
       sealDisabled: {},
     });
     // Same values read back through the pure loader (the round trip).
@@ -117,6 +122,7 @@ describe("statsPrefs store", () => {
       prAlgo: "expected",
       sealsEnabled: false,
       localizedTiers: false,
+      weightedTeamWr: false,
       sealDisabled: {},
     });
   });

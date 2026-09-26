@@ -116,7 +116,10 @@
     "shipType": "함종",
     "battles": "전투 수",
     "winrate": "승률",
-    "avgDamage": "평균 데미지"
+    "avgDamage": "평균 데미지",
+    "teamWrWeighted": "티어 가중 승률",
+    "teamWrPlain": "평균 승률",
+    "teamAvgPr": "평균 PR"
   },
   "minimap": {
     "zoom": "확대 맵",

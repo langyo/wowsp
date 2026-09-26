@@ -139,6 +139,8 @@
     "prAlgoDesc": "Which formula computes the PR score.",
     "prAlgoWinrate": "ApeRadar weighted winrate",
     "prAlgoExpected": "wows-numbers expected values",
+    "teamWrToggle": "Tier-weighted team winrate",
+    "teamWrToggleDesc": "Weight the live-battle team winrate by ship tier (higher tiers count more); off takes the plain average.",
     "sealsToggle": "Rating stamps",
     "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — shown only under a Chinese interface.",
     "localizedTiersToggle": "Localized tier labels",
