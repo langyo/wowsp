@@ -51,6 +51,7 @@ fn res_mods_dir(game_root: &str) -> Result<PathBuf, String> {
 pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
+    super::mod_hub::ensure_res_mods_active(&game_root)?;
     let dir = res_mods_dir(&game_root)?;
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     for (name, body) in MOD_FILES {
@@ -65,6 +66,7 @@ pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
 pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
+    super::mod_hub::ensure_res_mods_active(&game_root)?;
     let dir = res_mods_dir(&game_root)?;
     for (name, _) in MOD_FILES {
         let path = dir.join(name);

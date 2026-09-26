@@ -109,6 +109,105 @@ pub(crate) fn ensure_game_closed(game_root: &str) -> Result<(), String> {
 /// `<dest>.wowsp-part` first and is renamed into place.
 const PART_SUFFIX: &str = ".wowsp-part";
 
+/// Safe-mode quarantine suffix: enabling safe mode renames the current
+/// `res_mods` to `res_mods.wowsp-disabled` — one atomic move takes every
+/// mod (including the overlay stub and Aslain leftovers) out of the load
+/// path so the player can bisect "is it the mods or the game?".
+pub(crate) const SAFE_MODE_SUFFIX: &str = ".wowsp-disabled";
+
+/// The quarantined twin of a version dir's `res_mods`.
+fn disabled_res_mods(ver_dir: &Path) -> PathBuf {
+    ver_dir.join(format!("res_mods{SAFE_MODE_SUFFIX}"))
+}
+
+/// Is safe mode visible anywhere — the current version's `res_mods`
+/// quarantined, OR a twin stranded in an old version dir by a game update
+/// that happened while safe mode was on? Either way the game is running
+/// without those mods and the UI must offer to bring them back.
+pub(crate) fn safe_mode_active(game_root: &str) -> bool {
+    latest_bin_version(game_root).is_some_and(|(_, ver_dir)| disabled_res_mods(&ver_dir).is_dir())
+        || !quarantined_twins(game_root).is_empty()
+}
+
+/// Every quarantined `res_mods.wowsp-disabled` under `bin/` — normally just
+/// the current one, but a game update while safe mode was on strands the
+/// twin in the old version dir. Returns (bin name, twin path).
+fn quarantined_twins(game_root: &str) -> Vec<(String, PathBuf)> {
+    let bin = Path::new(game_root).join("bin");
+    let Ok(entries) = fs::read_dir(&bin) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|ent| {
+            let twin = disabled_res_mods(&ent.path());
+            twin.is_dir()
+                .then(|| (ent.file_name().to_string_lossy().into_owned(), twin))
+        })
+        .collect()
+}
+
+/// Safe-mode core (split from the command so tests drive it directly).
+/// Returns the new active state.
+pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> Result<bool, String> {
+    let (_, ver_dir) = latest_bin_version(game_root)
+        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+    let live = ver_dir.join("res_mods");
+    let off = disabled_res_mods(&ver_dir);
+    if enabled {
+        if off.is_dir() {
+            return Err("safe mode is already active".into());
+        }
+        if !live.is_dir() {
+            return Err("res_mods not found — there is nothing to quarantine".into());
+        }
+        fs::rename(&live, &off).map_err(|e| {
+            format!(
+                "quarantine {}: {e} (is the game or antivirus holding files?)",
+                off.display()
+            )
+        })?;
+    } else {
+        if live.exists() && off.exists() {
+            return Err(format!(
+                "both {} and its quarantined copy exist — move the newer one aside manually",
+                live.display()
+            ));
+        }
+        if off.is_dir() {
+            fs::rename(&off, &live).map_err(|e| format!("restore {}: {e}", live.display()))?;
+        }
+        // A game update while safe mode was on strands the twin in the old
+        // version dir — restore those too, or the quarantine would outlive
+        // the UI's safe-mode state entirely.
+        for (bin, twin) in quarantined_twins(game_root) {
+            let live = twin.with_file_name("res_mods");
+            if live.exists() {
+                tracing::warn!(
+                    bin = %bin,
+                    "res_mods and its quarantined twin both exist — keeping the twin at {}",
+                    twin.display()
+                );
+                continue;
+            }
+            fs::rename(&twin, &live).map_err(|e| format!("restore {}: {e}", live.display()))?;
+        }
+    }
+    Ok(disabled_res_mods(&ver_dir).is_dir())
+}
+
+/// Mutating commands refuse while `res_mods` is quarantined: writes would
+/// land in a fresh `res_mods` and drift apart from the quarantined tree,
+/// and leaving safe mode would then fail on the rename.
+pub(crate) fn ensure_res_mods_active(game_root: &str) -> Result<(), String> {
+    if safe_mode_active(game_root) {
+        return Err(
+            "safe mode is active — turn mods back on before installing, uninstalling or toggling them".into(),
+        );
+    }
+    Ok(())
+}
+
 /// Which tree a destination belongs to — res_mods files are ledger-recorded
 /// bare, game-root payloads under the `@game/` prefix.
 #[derive(Clone, Copy)]
@@ -979,6 +1078,7 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             disabled: unit_disabled_state(res_mods, &paths),
             paths,
             version: m.version.clone(),
+            warnings: Vec::new(),
         });
     }
 
@@ -997,7 +1097,32 @@ fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             paths: cand.paths.clone(),
             disabled,
             version: None,
+            warnings: Vec::new(),
         });
+    }
+
+    // Two installed skins overriding the same ship id conflict — exactly
+    // one can win and the other's files linger as dead weight. Say so on
+    // every unit involved (the module doc's oldest unresolved hazard).
+    let mut ship_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for m in &mods {
+        if m.kind == ModKind::Skin && !m.disabled {
+            if let Some(id) = &m.detail {
+                *ship_counts.entry(id.clone()).or_default() += 1;
+            }
+        }
+    }
+    for m in &mut mods {
+        if m.kind == ModKind::Skin && !m.disabled {
+            if let Some(id) = &m.detail {
+                if ship_counts.get(id).is_some_and(|n| *n > 1) {
+                    m.warnings.push(format!(
+                        "another installed skin also overrides ship {id} — only one can take effect"
+                    ));
+                }
+            }
+        }
     }
 
     mods.sort_by(|a, b| {
@@ -1141,6 +1266,7 @@ pub async fn mod_hub_set_unit_enabled(
 ) -> Result<UnitToggleReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
     let (bin_version, ver_dir) = latest_bin_version(&game_root)
         .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
     let res_mods = ver_dir.join("res_mods");
@@ -1164,9 +1290,11 @@ pub async fn mod_hub_set_unit_enabled(
         if let Some(other) = ledger
             .installs
             .iter()
-            // Stale records from an older bin/<version> never describe what
-            // the current client loads — they must not block the toggle.
+            // Stale records from an older bin/<version> — or another game
+            // install entirely — never describe what the current client
+            // loads; they must not block the toggle.
             .filter(|r| r.bin_version == bin_version)
+            .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
             .find(|r| half_disable_violation(r, &unit.paths))
         {
             return Err(format!(
@@ -1241,6 +1369,7 @@ pub async fn mod_hub_uninstall_unit(
 ) -> Result<super::mod_catalog::UninstallReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
     let res_mods = scan_root(&game_root)?;
     if !res_mods.is_dir() {
         return Err("res_mods directory not found".into());
@@ -1310,6 +1439,11 @@ fn uninstall_unit_core(
     while idx < installs.len() {
         let (all_covered, id, covered) = {
             let record = &installs[idx];
+            // Another install's records are not ours to uninstall or trim.
+            if !record.game_root.is_empty() && record.game_root != game_root {
+                idx += 1;
+                continue;
+            }
             let covered: Vec<String> = record
                 .files
                 .iter()
@@ -1489,6 +1623,25 @@ fn remove_manifest_entry(res_mods: &Path, name: &str) {
         .ok();
 }
 
+// ── Safe mode ────────────────────────────────────────────────────────────────
+
+/// Is safe mode visible — the current `res_mods` quarantined, or a twin
+/// stranded in an old version dir by a game update?
+#[tauri::command]
+pub fn mod_hub_safe_mode(game_root: String) -> Result<bool, String> {
+    Ok(safe_mode_active(&game_root))
+}
+
+/// Quarantine (or restore) the current version's `res_mods` in one atomic
+/// rename — WG's "safe mode" support move: run the game fully vanilla
+/// without deleting anything, the fastest way to bisect a crash.
+#[tauri::command]
+pub async fn mod_hub_set_safe_mode(game_root: String, enabled: bool) -> Result<bool, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    set_safe_mode_core(&game_root, enabled)
+}
+
 // ── Stale bin detection & migration ─────────────────────────────────────────
 
 /// Older `bin/<version>/` directories whose `res_mods` still carries files.
@@ -1574,6 +1727,7 @@ pub async fn mod_hub_migrate_stale_bin(
 ) -> Result<MigrateReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
     migrate_stale_bin_core(&game_root, &from_version)
 }
 
@@ -1612,14 +1766,7 @@ fn migrate_stale_bin_core(game_root: &str, from_version: &str) -> Result<Migrate
 
     // Stranded ledger records now describe files in the current bin.
     let mut ledger = super::mod_catalog::load_ledger();
-    let mut touched = false;
-    for record in &mut ledger.installs {
-        if record.bin_version == from_version {
-            record.bin_version = latest.clone();
-            touched = true;
-        }
-    }
-    if touched {
+    if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
         super::mod_catalog::save_ledger(&ledger)?;
     }
     tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated");
@@ -1680,6 +1827,29 @@ fn migrate_tree(
     Ok(())
 }
 
+/// Re-point THIS install's records from one bin version to another.
+/// Records of other game installs (non-empty `game_root` stamp that does
+/// not match) keep their version — the ledger is global, and re-pointing
+/// a foreign record would strand it in a version its files do not live
+/// in. Returns whether anything changed.
+fn repoint_records(
+    installs: &mut [ModInstallRecord],
+    from: &str,
+    to: &str,
+    game_root: &str,
+) -> bool {
+    let mut touched = false;
+    for record in installs.iter_mut() {
+        if record.bin_version == from
+            && (record.game_root.is_empty() || record.game_root == game_root)
+        {
+            record.bin_version = to.to_string();
+            touched = true;
+        }
+    }
+    touched
+}
+
 /// Which other installed mods the freshly written files overlap — the
 /// design doc's conflict policy made real: later installs win, but the
 /// report must say whose files they clobbered (the overwrite itself is
@@ -1689,10 +1859,14 @@ pub(crate) fn conflict_warnings(
     installs: &[ModInstallRecord],
     exclude_id: &str,
     bin_version: &str,
+    game_root: &str,
 ) -> Vec<String> {
     let mut out = Vec::new();
     for record in installs {
-        if record.id == exclude_id || record.bin_version != bin_version {
+        if record.id == exclude_id
+            || record.bin_version != bin_version
+            || (!record.game_root.is_empty() && record.game_root != game_root)
+        {
             continue;
         }
         let hits = written.iter().filter(|w| record.files.contains(*w)).count();
@@ -1977,6 +2151,7 @@ pub async fn mod_hub_install(
     // with another install's res_mods writes or a `.bak` rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
     // Validate BEFORE any rewind happens: an invalid plan must not uninstall
     // the previous version only to fail afterwards.
     validate_plan(&plan)?;
@@ -1991,10 +2166,16 @@ pub async fn mod_hub_install(
         // one, and chained snapshots used to make a later uninstall restore
         // the previous MOD's files instead of the vanilla original.
         let mut failure = None;
+        // Same plan name on THIS install only — a same-named record of
+        // another game install is not ours to rewind, and the scoped
+        // uninstall would fail the whole install for nothing.
         let old: Vec<String> = ledger
             .installs
             .iter()
-            .filter(|r| r.name.eq_ignore_ascii_case(&plan.name))
+            .filter(|r| {
+                r.name.eq_ignore_ascii_case(&plan.name)
+                    && (r.game_root.is_empty() || r.game_root == game_root)
+            })
             .map(|r| r.id.clone())
             .collect();
         for id in old {
@@ -2013,7 +2194,7 @@ pub async fn mod_hub_install(
                 // local installs used to leave overwritten originals
                 // unrestorable.
                 Ok(mut applied) => {
-                    let record = local_record(&applied, &plan);
+                    let record = local_record(&applied, &plan, &game_root);
                     let id = record.id.clone();
                     ledger.installs.push(record);
                     // Say whose files this install clobbered (the journal
@@ -2023,6 +2204,7 @@ pub async fn mod_hub_install(
                         &ledger.installs,
                         &id,
                         &applied.report.bin_version,
+                        &game_root,
                     );
                     applied.report.conflicts = conflicts.clone();
                     applied.report.warnings.extend(conflicts);
@@ -2058,7 +2240,11 @@ pub async fn mod_hub_install(
 }
 
 /// Ledger record for a local-folder install.
-pub(crate) fn local_record(applied: &PlanApply, plan: &PackagePlan) -> ModInstallRecord {
+pub(crate) fn local_record(
+    applied: &PlanApply,
+    plan: &PackagePlan,
+    game_root: &str,
+) -> ModInstallRecord {
     ModInstallRecord {
         id: format!(
             "local-{}-{}",
@@ -2080,6 +2266,7 @@ pub(crate) fn local_record(applied: &PlanApply, plan: &PackagePlan) -> ModInstal
             .restore_dir
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
+        game_root: game_root.to_string(),
     }
 }
 
@@ -2487,6 +2674,7 @@ mod tests {
             installed_at: String::new(),
             files: vec!["camerasConsumer.xml".into()],
             restore_dir: Some(restore.to_string_lossy().into_owned()),
+            game_root: String::new(),
         });
         let cam = classify_installed_root(&rm)
             .into_iter()
@@ -2894,6 +3082,7 @@ mod tests {
                 "PnFMods/ModB/Main.py".into(),
             ],
             restore_dir: Some(restore.to_string_lossy().into_owned()),
+            game_root: String::new(),
         }];
         let report =
             uninstall_unit_core(game.to_str().unwrap(), &rm, &unit, &mut installs).unwrap();
@@ -2927,6 +3116,7 @@ mod tests {
             installed_at: String::new(),
             files: files.iter().map(|f| f.to_string()).collect(),
             restore_dir: None,
+            game_root: String::new(),
         };
         let paths = vec!["content".to_string()];
         // Same tree + files outside it: disabling the unit would half-disable
@@ -2947,6 +3137,126 @@ mod tests {
             &mk(&["content/gameplay/x.dds", "@game/gettext_x64r.dll"]),
             &paths
         ));
+    }
+
+    #[test]
+    fn safe_mode_quarantines_and_restores_res_mods() {
+        let tmp = std::env::temp_dir().join("wowsp_safemode");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("bin/1/res_mods");
+        touch(&rm.join("PnFMods/Skin/Main.py"));
+        let root = tmp.to_string_lossy().into_owned();
+
+        assert!(!safe_mode_active(&root));
+        assert!(set_safe_mode_core(&root, true).unwrap());
+        // One rename: the whole tree left the load path, nothing deleted.
+        assert!(!rm.exists());
+        assert!(
+            tmp.join("bin/1/res_mods.wowsp-disabled/PnFMods/Skin/Main.py")
+                .is_file()
+        );
+        // Mutations are refused while quarantined.
+        let err = ensure_res_mods_active(&root).unwrap_err();
+        assert!(err.contains("safe mode"), "{err}");
+        // Re-enabling errors instead of silently merging a second tree.
+        let err = set_safe_mode_core(&root, true).unwrap_err();
+        assert!(err.contains("already active"), "{err}");
+
+        assert!(!set_safe_mode_core(&root, false).unwrap());
+        assert!(rm.join("PnFMods/Skin/Main.py").is_file());
+        assert!(!tmp.join("bin/1/res_mods.wowsp-disabled").exists());
+        assert!(ensure_res_mods_active(&root).is_ok());
+
+        // Enabling with no res_mods at all is a clear error, not a fake
+        // quarantine.
+        let _ = fs::remove_dir_all(&rm);
+        let err = set_safe_mode_core(&root, true).unwrap_err();
+        assert!(err.contains("nothing to quarantine"), "{err}");
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn safe_mode_restores_stranded_twins_after_game_update() {
+        // Safe mode was ON when the game updated: the quarantine twin now
+        // sits in the OLD version dir where the UI's safe-mode state no
+        // longer looks. Turning mods back on must recover it.
+        let tmp = std::env::temp_dir().join("wowsp_safemode_update");
+        let _ = fs::remove_dir_all(&tmp);
+        let stranded = tmp.join("bin/1/res_mods.wowsp-disabled");
+        touch(&stranded.join("gui/old.png"));
+        touch(&tmp.join("bin/2/res_mods/gui/new.png"));
+        let root = tmp.to_string_lossy().into_owned();
+
+        // A stranded twin keeps the safe-mode affordance visible — the game
+        // is running without those mods even though the current bin alone
+        // would report false.
+        assert!(
+            safe_mode_active(&root),
+            "stranded twins keep safe mode visible"
+        );
+        assert!(!set_safe_mode_core(&root, false).unwrap());
+        assert!(tmp.join("bin/1/res_mods/gui/old.png").is_file());
+        assert!(!stranded.exists());
+        assert!(tmp.join("bin/2/res_mods/gui/new.png").is_file());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn scan_warns_about_same_ship_skin_conflicts() {
+        let tmp = std::env::temp_dir().join("wowsp_shipconflict");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("bin/1/res_mods");
+        for skin in ["Hina_Moskva", "Alt_Moskva"] {
+            fs::create_dir_all(rm.join("PnFMods").join(skin)).unwrap();
+            fs::write(
+                rm.join("PnFMods").join(skin).join("Main.py"),
+                "contentSdk.registerShipMod('RSC110_Pr_66_Moskva')",
+            )
+            .unwrap();
+        }
+        fs::create_dir_all(rm.join("PnFMods/Other_Ship")).unwrap();
+        fs::write(
+            rm.join("PnFMods/Other_Ship/Main.py"),
+            "contentSdk.registerShipMod('ISC110_Venezia')",
+        )
+        .unwrap();
+
+        let mods = classify_installed_root(&rm);
+        let conflicting: Vec<_> = mods
+            .iter()
+            .filter(|m| {
+                m.kind == ModKind::Skin && m.detail.as_deref() == Some("RSC110_Pr_66_Moskva")
+            })
+            .collect();
+        assert_eq!(conflicting.len(), 2);
+        for m in &conflicting {
+            assert_eq!(m.warnings.len(), 1, "{:?}", m.warnings);
+            assert!(
+                m.warnings[0].contains("RSC110_Pr_66_Moskva"),
+                "{:?}",
+                m.warnings
+            );
+        }
+        let other = mods.iter().find(|m| m.name == "Other_Ship").unwrap();
+        assert!(other.warnings.is_empty());
+
+        // A toggled-off duplicate does not count — exactly one live skin
+        // remains, no conflict.
+        fs::rename(
+            rm.join("PnFMods/Alt_Moskva/Main.py"),
+            rm.join("PnFMods/Alt_Moskva/Main.py.bak"),
+        )
+        .unwrap();
+        let mods = classify_installed_root(&rm);
+        assert!(
+            mods.iter()
+                .all(|m| m.kind != ModKind::Skin || m.warnings.is_empty()),
+            "disabled duplicate must not warn"
+        );
+
+        fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]
@@ -2999,6 +3309,7 @@ mod tests {
             installed_at: String::new(),
             files: vec!["PnFMods/Skin/Main.py".into()],
             restore_dir: None,
+            game_root: String::new(),
         }];
         let report = migrate_ledgerred(&game, "1", &mut installs).unwrap();
         assert_eq!(report.to_version, "2");
@@ -3095,6 +3406,72 @@ mod tests {
     }
 
     #[test]
+    fn repoint_and_uninstall_respect_install_identity() {
+        // Two game installs share the ledger AND the bin version. Migrating
+        // or uninstalling through one root must never touch the other's
+        // records.
+        let tmp = std::env::temp_dir().join("wowsp_identity");
+        let _ = fs::remove_dir_all(&tmp);
+        let a = tmp.join("gameA");
+        let b = tmp.join("gameB");
+        touch(&a.join("bin/1/res_mods/PnFMods/A/Main.py"));
+        touch(&a.join("bin/2/res_mods/x.xml"));
+        touch(&b.join("bin/1/res_mods/gui/b.png"));
+        let mk = |root: &Path, bin: &str, files: &[&str]| ModInstallRecord {
+            id: "m".into(),
+            name: "M".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: bin.into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| f.to_string()).collect(),
+            restore_dir: None,
+            game_root: root.to_string_lossy().into_owned(),
+        };
+        let mut installs = vec![
+            mk(&a, "1", &["PnFMods/A/Main.py"]),
+            mk(&b, "1", &["gui/b.png"]),
+        ];
+
+        // Migrating A's stranded bin re-points only A's record.
+        assert!(repoint_records(
+            &mut installs,
+            "1",
+            "2",
+            &a.to_string_lossy()
+        ));
+        assert_eq!(installs[0].bin_version, "2");
+        assert_eq!(installs[1].bin_version, "1", "foreign record untouched");
+
+        // Uninstalling "m" through B removes only B's record.
+        let mut ledger = crate::commands::mod_catalog::Ledger { installs };
+        // A root with no matching record errors instead of touching the
+        // other install's record (the rewind precondition must agree).
+        assert!(
+            crate::commands::mod_catalog::uninstall_from_ledger(
+                &mut ledger.installs,
+                "m",
+                &tmp.join("gameC").to_string_lossy(),
+            )
+            .is_err()
+        );
+        let report = crate::commands::mod_catalog::uninstall_from_ledger(
+            &mut ledger.installs,
+            "m",
+            &b.to_string_lossy(),
+        )
+        .unwrap();
+        assert_eq!(report.removed_files, 1);
+        assert!(!b.join("bin/1/res_mods/gui/b.png").exists());
+        assert_eq!(ledger.installs.len(), 1, "A's record survives");
+        assert!(a.join("bin/2/res_mods/x.xml").is_file());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
     fn migrate_rejects_current_version_and_unknown_bins() {
         let tmp = std::env::temp_dir().join("wowsp_stale_migrate_err");
         let _ = fs::remove_dir_all(&tmp);
@@ -3131,6 +3508,7 @@ mod tests {
             installed_at: String::new(),
             files: files.iter().map(|f| f.to_string()).collect(),
             restore_dir: None,
+            game_root: String::new(),
         };
         let installs = vec![
             mk("a", "ModA", &["gui/a.png", "gui/b.png"]),
@@ -3145,6 +3523,7 @@ mod tests {
             &list,
             "self",
             "1",
+            "D:/Games/WoWs",
         );
         // Only same-bin, other-id records with actual overlap speak up.
         assert_eq!(warnings.len(), 1);
@@ -3173,13 +3552,14 @@ mod tests {
             warnings: Vec::new(),
             texture_analysis: None,
         };
-        let record = local_record(&applied, &plan);
+        let record = local_record(&applied, &plan, "D:/Games/WoWs");
         assert!(record.id.starts_with("local-"), "{}", record.id);
         assert_eq!(record.source, "local");
         assert_eq!(record.category, "local");
         assert_eq!(record.bin_version, "1");
         assert_eq!(record.files, applied.written);
         assert_eq!(record.restore_dir.as_deref(), Some("R"));
+        assert_eq!(record.game_root, "D:/Games/WoWs");
     }
 
     // ── Real-world sample harness ───────────────────────────────────────────

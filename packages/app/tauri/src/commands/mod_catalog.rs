@@ -378,7 +378,10 @@ pub async fn mod_catalog_install(
     // Fail fast when the TARGET client is running — mutating res_mods under
     // a live client tears half-loaded mods (root-scoped: another install's
     // process elsewhere does not hold this tree open).
+    // Fail fast when the game is running — mutating res_mods under a live
+    // client tears half-loaded mods.
     mod_hub::ensure_game_closed(&game_root)?;
+    mod_hub::ensure_res_mods_active(&game_root)?;
 
     let progress = |p: CatalogProgress| {
         let _ = app.emit(CATALOG_PROGRESS_EVENT, &p);
@@ -492,6 +495,7 @@ pub async fn mod_catalog_install(
     // again here: the client may have been launched while the download ran.
     let _gate = mod_hub_gate().await;
     mod_hub::ensure_game_closed(&game_root)?;
+    mod_hub::ensure_res_mods_active(&game_root)?;
 
     let mut ledger = load_ledger();
     // Unpack + classify + write are blocking fs work — keep them off the
@@ -508,7 +512,13 @@ pub async fn mod_catalog_install(
         // instead of chaining onto the previous mod (chained snapshots used
         // to make uninstall restore the previous mod's files).
         let mut failure = None;
-        if ledger.installs.iter().any(|r| r.id == unpack_id) {
+        // Rewind THIS install's previous record — the same id may exist for
+        // another game install, and the scoped uninstall below would
+        // (rightly) not find it, aborting the install for nothing.
+        let same_install = |r: &ModInstallRecord| {
+            r.id == unpack_id && (r.game_root.is_empty() || r.game_root == unpack_root)
+        };
+        if ledger.installs.iter().any(same_install) {
             if let Err(e) = uninstall_from_ledger(&mut ledger.installs, &unpack_id, &unpack_root) {
                 failure = Some(e);
             }
@@ -538,8 +548,13 @@ pub async fn mod_catalog_install(
     // snapshotted them — this is the visibility half of the conflict
     // policy the design doc promises).
     let mut report = report;
-    let conflicts =
-        mod_hub::conflict_warnings(&written, &ledger.installs, &entry.id, &report.bin_version);
+    let conflicts = mod_hub::conflict_warnings(
+        &written,
+        &ledger.installs,
+        &entry.id,
+        &report.bin_version,
+        &game_root,
+    );
     report.conflicts = conflicts.clone();
     report.warnings.extend(conflicts);
 
@@ -556,6 +571,7 @@ pub async fn mod_catalog_install(
         restore_dir: restore_dir
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
+        game_root,
     });
     save_ledger(&ledger)?;
 
@@ -723,6 +739,7 @@ pub async fn mod_catalog_uninstall(
 ) -> Result<UninstallReport, String> {
     let _gate = mod_hub_gate().await;
     mod_hub::ensure_game_closed(&game_root)?;
+    mod_hub::ensure_res_mods_active(&game_root)?;
     let mut ledger = load_ledger();
     let report = uninstall_from_ledger(&mut ledger.installs, &mod_id, &game_root)?;
     save_ledger(&ledger)?;
@@ -738,7 +755,14 @@ pub(crate) fn uninstall_from_ledger(
     mod_id: &str,
     game_root: &str,
 ) -> Result<UninstallReport, String> {
-    let Some(record) = installs.iter().find(|r| r.id == mod_id).cloned() else {
+    // The ledger is global: the same catalog id can exist for several game
+    // installs. Operate on THIS root's record (pre-field empty stamps
+    // match every root, preserving the old single-install behavior).
+    let Some(record) = installs
+        .iter()
+        .find(|r| r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root))
+        .cloned()
+    else {
         return Err(format!("{mod_id} has no install record"));
     };
 
@@ -798,7 +822,7 @@ pub(crate) fn uninstall_from_ledger(
         }
     }
 
-    installs.retain(|r| r.id != mod_id);
+    installs.retain(|r| !(r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root)));
 
     // The 0-byte loader marker is a shared component: when the last record
     // referencing it is gone, drop our placeholder — a non-empty loader
@@ -860,9 +884,144 @@ fn restore_tree(from: &Path, res_mods: &Path, game_root: &Path) -> Result<usize,
     Ok(count)
 }
 
+// ── Ledger reconciliation ────────────────────────────────────────────────────
+
+/// What [`mod_hub_reconcile`] cleaned up.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcileReport {
+    /// Ghost records removed — every file they listed is gone from disk
+    /// (manual cleanup, lost bin dir, …), so they only distorted the UI's
+    /// "installed" badges.
+    pub dropped_records: usize,
+    /// Snapshot dirs no record references anymore (dropped records, failed
+    /// installs of older builds) — deleted to stop them piling up.
+    pub removed_restore_dirs: usize,
+}
+
+/// How long an unreferenced snapshot dir must have sat untouched before
+/// the reconcile garbage-collects it.
+const ORPHAN_RESTORE_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// Drop ledger records whose files no longer exist on disk and garbage-
+/// collect restore dirs nothing references. Safe-mode aware: a quarantined
+/// `res_mods.wowsp-disabled` still counts as "the files exist".
+#[tauri::command]
+pub async fn mod_hub_reconcile(game_root: String) -> Result<ReconcileReport, String> {
+    let _gate = mod_hub_gate().await;
+    let mut ledger = load_ledger();
+    let report = reconcile_core(&game_root, &mut ledger.installs);
+    if report.dropped_records > 0 {
+        save_ledger(&ledger)?;
+    }
+    tracing::info!(
+        dropped = report.dropped_records,
+        restore_dirs = report.removed_restore_dirs,
+        "ledger reconciled"
+    );
+    Ok(report)
+}
+
+pub(crate) fn reconcile_core(
+    game_root: &str,
+    installs: &mut Vec<ModInstallRecord>,
+) -> ReconcileReport {
+    reconcile_core_with_grace(game_root, installs, ORPHAN_RESTORE_GRACE)
+}
+
+/// [`reconcile_core`] with an explicit orphan-snapshot grace window (tests
+/// pass zero).
+fn reconcile_core_with_grace(
+    game_root: &str,
+    installs: &mut Vec<ModInstallRecord>,
+    grace: std::time::Duration,
+) -> ReconcileReport {
+    let mut dropped = 0usize;
+    installs.retain(|r| {
+        // Records stamped with a DIFFERENT game install are not ours to
+        // judge — the ledger is global, and checking them against this
+        // root would drop another install's mods as ghosts. Pre-field
+        // records (empty stamp) match every root, preserving the old
+        // single-install behavior.
+        if !r.game_root.is_empty() && r.game_root != game_root {
+            return true;
+        }
+        if record_alive(game_root, r) {
+            true
+        } else {
+            dropped += 1;
+            false
+        }
+    });
+    // Snapshot dirs are shared across installs: only collect orphans no
+    // record ANYWHERE still references, and give fresh ones a grace
+    // window — a just-failed install's snapshots may be the only vanilla
+    // copies of what it already overwrote.
+    let referenced: std::collections::HashSet<PathBuf> = installs
+        .iter()
+        .filter_map(|r| r.restore_dir.as_ref())
+        .map(PathBuf::from)
+        .collect();
+    let now = std::time::SystemTime::now();
+    let mut removed = 0usize;
+    if let Ok(entries) = fs::read_dir(mod_hub::restore_root()) {
+        for ent in entries.flatten() {
+            let dir = ent.path();
+            // A future mtime (clock skew) counts as fresh — better to keep
+            // an orphan one cycle too long than to eat a just-failed
+            // install's only vanilla copies.
+            let fresh = dir
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|m| now.duration_since(m).ok())
+                .is_none_or(|age| age < grace);
+            if dir.is_dir()
+                && !referenced.contains(&dir)
+                && !fresh
+                && fs::remove_dir_all(&dir).is_ok()
+            {
+                removed += 1;
+            }
+        }
+    }
+    ReconcileReport {
+        dropped_records: dropped,
+        removed_restore_dirs: removed,
+    }
+}
+
+/// Does any file this record lists still exist? `@game/` entries resolve
+/// against the game root (bin-independent); the rest against the record's
+/// own `bin/<version>/res_mods`, falling back to its safe-mode twin.
+fn record_alive(game_root: &str, record: &ModInstallRecord) -> bool {
+    if record.files.is_empty() {
+        return false;
+    }
+    let base = Path::new(game_root).join("bin").join(&record.bin_version);
+    let live = base.join("res_mods");
+    let off = base.join(format!("res_mods{}", mod_hub::SAFE_MODE_SUFFIX));
+    record.files.iter().any(|f| match f.strip_prefix("@game/") {
+        Some(rest) => Path::new(game_root).join(rest).is_file(),
+        // A disabled mod's files live under `.bak` twins — they count
+        // too, or every toggled-off mod would reconcile away.
+        None => {
+            live.join(f).is_file()
+                || off.join(f).is_file()
+                || live.join(format!("{f}.bak")).is_file()
+                || off.join(format!("{f}.bak")).is_file()
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn touch(path: &Path) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"x").unwrap();
+    }
 
     fn zip_fixture(path: &Path, entries: &[(&str, &[u8])]) {
         let file = fs::File::create(path).unwrap();
@@ -970,6 +1129,7 @@ mod tests {
             installed_at: String::new(),
             files: written,
             restore_dir: Some(restore2.to_string_lossy().into_owned()),
+            game_root: String::new(),
         }];
         let removed = uninstall_from_ledger(&mut installs, "test-mod", &game_root).unwrap();
         assert_eq!(removed.removed_files, 3);
@@ -1013,6 +1173,7 @@ mod tests {
             installed_at: String::new(),
             files: vec!["gui/a.png".into()],
             restore_dir: None,
+            game_root: String::new(),
         }];
         let report = uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
         assert_eq!(report.removed_files, 1);
@@ -1063,6 +1224,7 @@ mod tests {
             installed_at: String::new(),
             files: written1,
             restore_dir: restore1.map(|p| p.to_string_lossy().into_owned()),
+            game_root: String::new(),
         }];
 
         // Reinstall: rewind the old record first (exactly what
@@ -1086,6 +1248,7 @@ mod tests {
             installed_at: String::new(),
             files: written2,
             restore_dir: restore2.map(|p| p.to_string_lossy().into_owned()),
+            game_root: String::new(),
         });
 
         // Final uninstall rewinds to VANILLA, not to v1.
@@ -1121,6 +1284,7 @@ mod tests {
             installed_at: String::new(),
             files: vec![format!("PnFMods/{main}/Main.py"), "PnFModsLoader.py".into()],
             restore_dir: None,
+            game_root: String::new(),
         };
         let mut installs = vec![mk("a", "A"), mk("b", "B")];
         uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
@@ -1135,6 +1299,77 @@ mod tests {
         fs::write(rm.join("PnFMods/A/Main.py"), b"a").unwrap();
         uninstall_from_ledger(&mut installs, "c", &game_root).unwrap();
         assert!(rm.join("PnFModsLoader.py").is_file());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn reconcile_drops_ghosts_and_collects_orphan_restore_dirs() {
+        let tmp = std::env::temp_dir().join("wowsp_reconcile");
+        let _ = fs::remove_dir_all(&tmp);
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game = tmp.join("game");
+        // Alive: current-bin record whose file exists.
+        touch(&game.join("bin/2/res_mods/gui/a.png"));
+        // Alive: stale-bin record (files exist in the OLD bin).
+        touch(&game.join("bin/1/res_mods/PnFMods/B/Main.py"));
+        // Alive: current-bin record whose res_mods is quarantined by safe
+        // mode — the disabled twin still counts.
+        touch(&game.join("bin/2/res_mods.wowsp-disabled/gui/c.png"));
+        // Alive: a toggled-off mod — its files live as `.bak` twins.
+        touch(&game.join("bin/1/res_mods/gui/d.png.bak"));
+        // Ghost: files nowhere on disk.
+        // Ghost: @game payload gone.
+        let mk = |id: &str, bin: &str, files: &[&str], restore: Option<&str>| ModInstallRecord {
+            id: id.into(),
+            name: id.into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: bin.into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| f.to_string()).collect(),
+            restore_dir: restore.map(str::to_string),
+            game_root: String::new(),
+        };
+        let orphan = tmp.join("rr/orphan-restore");
+        touch(&orphan.join("gui/dead.png"));
+        let referenced = tmp.join("rr/keep-restore");
+        touch(&referenced.join("gui/a.png"));
+        let mut installs = vec![
+            mk(
+                "alive",
+                "2",
+                &["gui/a.png"],
+                Some(referenced.to_str().unwrap()),
+            ),
+            mk("stale", "1", &["PnFMods/B/Main.py"], None),
+            mk("quarantined", "2", &["gui/c.png"], None),
+            mk("toggled-off", "1", &["gui/d.png"], None),
+            mk("ghost", "2", &["gui/gone.png"], None),
+            mk("game-gone", "2", &["@game/gettext_x64r.dll"], None),
+        ];
+
+        // A dead record stamped with ANOTHER game install must survive —
+        // the ledger is global and this root has no say over it.
+        installs.push(mk("foreign", "2", &["gui/elsewhere.png"], None));
+        installs.last_mut().unwrap().game_root =
+            tmp.join("other-game").to_string_lossy().into_owned();
+        let report = reconcile_core_with_grace(
+            &game.to_string_lossy(),
+            &mut installs,
+            std::time::Duration::ZERO,
+        );
+        assert_eq!(report.dropped_records, 2);
+        assert_eq!(report.removed_restore_dirs, 1);
+        assert!(!orphan.exists(), "unreferenced snapshot dir collected");
+        assert!(referenced.exists(), "referenced snapshot dir kept");
+        let ids: Vec<&str> = installs.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["alive", "stale", "quarantined", "toggled-off", "foreign"]
+        );
+
         fs::remove_dir_all(&tmp).ok();
     }
 
@@ -1198,6 +1433,7 @@ mod tests {
                 installed_at: "2026-01-01T00:00:00Z".into(),
                 files: vec!["a.xml".into()],
                 restore_dir: None,
+                game_root: String::new(),
             }],
         };
         let json = serde_json::to_string_pretty(&ledger).unwrap();

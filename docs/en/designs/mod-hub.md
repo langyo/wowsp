@@ -265,6 +265,31 @@ Each unit supports two operations:
   `.bak` twins of recorded files so disabled mods cannot survive as
   ghosts.
 
+**Safe mode** quarantines the whole current `res_mods` in one atomic
+rename (`res_mods` → `res_mods.wowsp-disabled`) — WG's "safe mode"
+support move: run the game with every res_mods mod bypassed, without
+deleting anything — the fastest way to bisect "is it the mods or the
+game?". (A few text mods also drop a DLL into the game root itself;
+those files are not part of res_mods and stay in place.) One click
+brings the exact pre-quarantine state back — including a twin stranded
+in an old version dir by a game update that happened while safe mode
+was on. While active, every mutating command
+(install/uninstall/toggle/migrate/overlay) refuses to run — writes
+would land in a fresh `res_mods` and drift from the quarantined tree.
+
+**Unit warnings**: the scan flags two installed skins overriding the same
+`registerShipMod` ship id — exactly one can take effect, so both units
+carry a warning in their detail pane.
+
+**Ledger reconciliation** runs alongside the installed scan: records
+whose files are all gone from disk (manual cleanup, lost bin dir —
+`.bak` twins and the safe-mode quarantine still count as alive) are
+dropped so the "installed" badges stay truthful. Records carry the game
+install they belong to (`gameRoot`); reconciling one install never
+touches another install's records. Snapshot dirs no record references
+anymore are garbage-collected after a 24h grace window, so a just-
+failed install's snapshots survive a retry.
+
 All mutations (catalog install/uninstall, unit toggle/uninstall, and the
 overlay stub's install/uninstall) serialize through an async gate so
 parallel catalog installs can download simultaneously without interleaving
