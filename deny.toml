@@ -16,10 +16,6 @@ unsound = "workspace"
 yanked = "warn"
 
 [[advisories.ignore]]
-id = "RUSTSEC-2026-0258"
-reason = "h2 unbounded empty DATA frames — low severity, server-side exposure. WoWSP uses h2 only as an HTTP/2 *client* through reqwest (WG API lookups, mod catalog + GitHub downloads) against fixed endpoints, so the attacker-controlled-stream precondition does not apply. Drop this ignore once a patched h2 (> 0.4.15) ships."
-
-[[advisories.ignore]]
 id = "RUSTSEC-2024-0436"
 reason = "paste is unmaintained but functional, and is a direct dependency of the vendored wows-toolkit sources (packages/tools/wowsunpack-vendor) which we keep in sync with upstream — swapping in the pastey fork would fork the vendor diff. Revisit when upstream wows-toolkit migrates."
 

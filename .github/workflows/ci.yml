@@ -41,10 +41,25 @@ jobs:
         run: python scripts/ensure_tauri_icons.py
       - name: Frontend typecheck
         run: pnpm -r typecheck
+      - name: Frontend unit tests
+        # The ~500 vitest cases (webui). happy-dom environment, no game
+        # assets needed.
+        run: pnpm --filter @wowsp/webui test
       - name: Frontend lint
+        # Non-mutating (`oxlint .` check mode; the fix mode lives in the
+        # packages' `lint:fix` script) — CI must never rewrite the tree.
         run: pnpm -r lint
       - name: Website build
         run: pnpm --filter @wowsp/website build
+      - name: Web UI build
+        # The Vite build needs no game assets: publicDir copies whatever
+        # exists under src/res, and the shader/icon generation steps above
+        # have already run.
+        run: pnpm --filter @wowsp/webui build
+      - name: RPC parity
+        # Rust #[tauri::command] surface == webui rpc.ts table == mock
+        # /api/<cmd> routes (mock checked as a subset).
+        run: python scripts/check_rpc_parity.py
       - name: i18n parity
         run: python scripts/check_i18n.py
       - name: npm audit
@@ -76,12 +91,15 @@ jobs:
         # tauri::generate_context!() embeds the frontendDist directory at
         # compile time and panics when it is missing. CI only lints/tests
         # the Rust side (the web job typechecks the frontend; the release
-        # workflow builds the real bundle via tauri-action), so a
-        # placeholder index.html is enough.
+        # workflow builds the real bundle via tauri-action), so
+        # placeholders are enough — one per Tauri crate: the app shell
+        # (dist/webui) and the installer shell (web/dist).
         shell: bash
         run: |
           mkdir -p dist/webui
           printf '<!doctype html><title>ci placeholder</title>\n' > dist/webui/index.html
+          mkdir -p packages/installer-shell/web/dist
+          printf '<!doctype html><title>ci placeholder</title>\n' > packages/installer-shell/web/dist/index.html
       - name: Rustfmt
         # Only the app crates are in-repo code; wowsunpack/wows-core are
         # vendored wows-toolkit sources that keep upstream formatting.
@@ -93,8 +111,15 @@ jobs:
         run: cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
       - name: Check
         run: cargo check -p wowsp_tauri
-      - name: Test (backend)
-        run: cargo test -p wowsp_tauri
+      - name: Test (workspace)
+        # Full workspace, not just the app crate: the vendored
+        # wowsunpack/wows-core members and the installer shell ride along
+        # (836 tests total vs 414 for -p wowsp_tauri alone). Verified green
+        # locally on Windows in ~2 min on a warm target; the tests
+        # themselves are fast (wowsp_tauri 9s, wowsunpack <1s) — the cost
+        # is the one-time compile of the extra members, well inside this
+        # job's 60-minute budget.
+        run: cargo test --workspace
     # NOTE: Rust checks must stay on Windows runners: windows-future 0.2.1
     # (pulled by tauri on Linux) fails to compile on Linux (uses
     # windows_core::imp::marshaler behind a cfg(windows) gate — upstream bug,
@@ -125,6 +150,27 @@ jobs:
         run: cargo deny check licenses
       - name: cargo-deny (sources)
         run: cargo deny check sources
+
+  relay:
+    name: Relay (ubuntu)
+    # The pairing gateway is a STANDALONE wasm workspace (excluded from the
+    # root workspace) — its 33 relay-core tests and the wasm32 check are the
+    # two halves of `just check-relay`. Own target dir inside
+    # packages/pairing-relay, so no cargo cache step here (mirrors the deny
+    # job) and no target-dir lock contention with anything else.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Relay core tests
+        run: cargo test --manifest-path packages/pairing-relay/Cargo.toml -p relay-core
+      - name: Relay worker wasm check
+        run: cargo check --manifest-path packages/pairing-relay/Cargo.toml --target wasm32-unknown-unknown
 
   versions:
     name: Verify version consistency

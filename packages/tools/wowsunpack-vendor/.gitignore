@@ -22,3 +22,7 @@ strings.csv
 docs/superpowers/
 
 dhat-heap.json
+
+# Generated lockfile of the vendored workspace (the root Cargo.lock is
+# tracked; this nested one stays local)
+Cargo.lock

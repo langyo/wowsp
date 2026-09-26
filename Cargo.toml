@@ -28,7 +28,11 @@ version = "0.4.8"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
-license = "MIT"
+license = "MIT"  # inherited ONLY by the vendored wowsunpack/wows-core members
+# (upstream wows-toolkit is MIT — their own workspace root declares the
+# same). Every first-party crate pins `license = "SySL-1.0"` in its own
+# manifest, so nothing first-party can inherit this field; removing it
+# breaks the vendored members' `license.workspace = true` resolution.
 description = "World of WarShip Panel — replay review & in-game overlay"
 repository = "https://github.com/langyo/wowsp"
 
@@ -40,6 +44,10 @@ wowsp_tauri_shared = { path = "packages/app/tauri_shared" }
 # Core language and utilities
 anyhow = "^1"
 async-trait = "^0.1"
+# Not used by first-party crates, but inherited via `thiserror.workspace`
+# by the vendored wowsunpack member (root-workspace inheritance — the
+# vendor's own [workspace.dependencies] only applies when building from
+# inside packages/tools/wowsunpack-vendor), so it must stay declared here.
 thiserror = "^2"
 # Data and serialization
 chrono = { version = "^0.4", features = ["serde", "clock"] }
@@ -104,7 +112,7 @@ byteorder = "^1"
 flate2 = { version = "^1", features = ["zlib-rs"] }
 tar = "^0.4"
 
-# Mod Hub package unpacking (catalog zips); tauri's updater already pulls zip 8
+# Mod Hub package unpacking (catalog zips) — direct dep of the app crate
 zip = { version = "^8", default-features = false, features = ["deflate"] }
 
 # Service supervision — graceful shutdown / signal handling (same usage as
@@ -154,7 +162,6 @@ hex = "^0.4"
 # shared definition stays feature-free apart from what every shell needs.
 tauri = { version = "^2" }
 tauri-build = "^2"
-tauri-plugin-updater = "^2"
 
 # AppData directory resolution (cross-platform %APPDATA%)
 dirs-next = "^2"

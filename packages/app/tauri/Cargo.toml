@@ -28,7 +28,6 @@ toml.workspace = true
 
 # Error handling
 anyhow.workspace = true
-thiserror.workspace = true
 
 # Async runtime
 tokio.workspace = true
