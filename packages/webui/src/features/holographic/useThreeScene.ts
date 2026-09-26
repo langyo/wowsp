@@ -53,6 +53,10 @@ export function useThreeScene(
   /** Removes the visibilitychange listener (which owns the loop's paused
    *  state) — unmount stops the loop for good, so nothing restarts it. */
   let stopVisibilityWatch: (() => void) | null = null;
+  /** The live GridHelper, tracked so unmount can dispose its geometry and
+   *  material — the theme watch already disposes the grid it replaces, but
+   *  without this the CURRENT grid's GPU buffers leak on teardown. */
+  let grid: THREE.GridHelper | null = null;
 
   onMounted(() => {
     const el = container.value;
@@ -107,17 +111,19 @@ export function useThreeScene(
       (g.material as THREE.Material).opacity = p.gridOpacity;
       return g;
     };
-    let grid = buildGrid(scenePalette());
-    scene.add(grid);
+    let gridLocal = buildGrid(scenePalette());
+    grid = gridLocal;
+    scene.add(gridLocal);
     // Follow live theme switches (settings toggle / solar system mode).
     stopThemeWatch = watch(effectiveMode, () => {
       const p = scenePalette();
       scene.background = new THREE.Color(p.bg);
-      scene.remove(grid);
-      grid.geometry.dispose();
-      (grid.material as THREE.Material).dispose();
-      grid = buildGrid(p);
-      scene.add(grid);
+      scene.remove(gridLocal);
+      gridLocal.geometry.dispose();
+      (gridLocal.material as THREE.Material).dispose();
+      gridLocal = buildGrid(p);
+      grid = gridLocal;
+      scene.add(gridLocal);
     });
 
     api.value = { scene, camera, renderer, controls };
@@ -182,6 +188,14 @@ export function useThreeScene(
       a.controls.dispose();
       a.renderer.dispose();
       a.renderer.domElement.remove();
+    }
+    // The theme watch disposes each grid it replaces; the CURRENT grid's
+    // geometry and material are per-mount GPU resources — release them here
+    // too or they leak on teardown.
+    if (grid) {
+      grid.geometry.dispose();
+      (grid.material as THREE.Material).dispose();
+      grid = null;
     }
     api.value = null;
     ready.value = false;

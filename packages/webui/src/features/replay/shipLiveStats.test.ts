@@ -2,7 +2,7 @@
  *  for a handful of well-known ships (numbers come from the WG encyclopedia /
  *  GameParams via scripts/extract_ship_live_stats.py) so a rebake that drifts
  *  or an i18n key rename fails loudly here. */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { setLocale } from "@/i18n";
 import {
@@ -18,8 +18,12 @@ import {
   tierRoman,
 } from "./shipLiveStats";
 
-// The label/format assertions below pin the zh-CN strings.
-setLocale("zh-CN");
+// The label/format assertions below pin the zh-CN strings. setLocale is
+// async now (the zh-CN bundle loads lazily), so the switch must be awaited
+// before any assertion reads localized labels.
+beforeAll(async () => {
+  await setLocale("zh-CN");
+});
 
 // Montana, Shimakaze, U-2501, Yamato — game-numeric shipIds.
 const MONTANA = "4277090288";

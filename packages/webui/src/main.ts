@@ -3,7 +3,8 @@ import { createPinia } from "pinia";
 
 import App from "./App";
 import router from "@/router";
-import { i18n } from "@/i18n";
+import { i18n, initLocaleMessages } from "@/i18n";
+import { uiLocaleReady } from "@/i18n/useLanguage";
 import { bootstrap } from "./bootstrap";
 import { initAnalytics, trackPageView } from "@/utils/analytics";
 import "@/styles/hikari.scss";
@@ -31,7 +32,16 @@ const app = createApp(App);
 app.use(createPinia());
 app.use(router);
 app.use(i18n);
-router.isReady().then(() => {
+// Gate first paint on the lazy locale bundles: the fallback (en-US), the
+// detected initial locale, and the persisted UI locale's messages must all
+// be registered before mounting, or the shell renders with vue-i18n's
+// warnings / raw keys for a frame. A locale chunk that fails to fetch must
+// not brick the shell: mount anyway and let vue-i18n degrade to raw keys.
+void Promise.all([
+  router.isReady(),
+  initLocaleMessages().catch(() => undefined),
+  uiLocaleReady.catch(() => undefined),
+]).then(() => {
   app.mount("#app");
   if (typeof window.__loaderDismiss === "function") {
     window.__loaderDismiss();
