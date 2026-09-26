@@ -412,7 +412,8 @@ export default defineComponent({
         : null;
       const selfTraj = props.trajectories.find(
         (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(ctx, tr) === "self",
-      );      if (!selfTraj || selfTraj.samples.length === 0) {
+      );
+      if (!selfTraj || selfTraj.samples.length === 0) {
         // No trajectory join (very early battle): the authoritative stream is
         // still the recorder's own and usable on its own.
         return folded ? { ...folded, frags: 0, taken: 0 } : null;
