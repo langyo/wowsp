@@ -82,6 +82,7 @@
   "unitEnabled": "Enabled “{name}”.",
   "unitDisabled": "Disabled “{name}” — files renamed with a .bak suffix.",
   "confirmUnitUninstall": "Uninstall “{name}”? All of its files (including disabled .bak copies) are removed; overwritten originals are restored.",
+  "gameRunningBlock": "World of Warships is running — close the game before installing, uninstalling or toggling mods.",
   "manifestOnly": "No matching files found under res_mods (installer manifest entry only).",
   "manifestOnlyShort": "Manifest entry only",
   "experimental": "This feature is unstable and still in development — it may not work.",

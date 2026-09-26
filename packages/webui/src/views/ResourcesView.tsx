@@ -45,6 +45,7 @@ import {
 } from "@/features/modhub/taxonomy";
 import { openExternal } from "@/utils/openExternal";
 import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
@@ -118,6 +119,18 @@ export default defineComponent({
     const unitTarget = ref<InstalledMod | null>(null);
 
     const gameRoot = computed(() => config.activeInstall?.path ?? "");
+    const gameStatus = useGameStatusStore();
+
+    /** Mutating res_mods while the client is running tears half-loaded mods —
+     *  the backend rejects it too; this pre-check gives the localized message
+     *  (and skips the round trip). */
+    function gameRunning(): boolean {
+      if (gameStatus.process.running) {
+        toast.error(t("resources.gameRunningBlock"));
+        return true;
+      }
+      return false;
+    }
 
     let unlisten: (() => void) | undefined;
     onMounted(() => {
@@ -163,7 +176,7 @@ export default defineComponent({
     const unitKey = (m: InstalledMod) => m.relPath;
 
     async function installMod(entry: CatalogEntry) {
-      if (!gameRoot.value || busy.value.has(entry.id)) return;
+      if (!gameRoot.value || busy.value.has(entry.id) || gameRunning()) return;
       busy.value.set(entry.id, "install");
       try {
         const r = await api.modCatalogInstall(entry.id, gameRoot.value);
@@ -180,6 +193,10 @@ export default defineComponent({
     async function uninstallMod() {
       const entry = confirmTarget.value;
       if (!entry || !gameRoot.value || busy.value.has(entry.id)) return;
+      if (gameRunning()) {
+        confirmTarget.value = null;
+        return;
+      }
       confirmTarget.value = null;
       busy.value.set(entry.id, "uninstall");
       try {
@@ -202,7 +219,7 @@ export default defineComponent({
     // ── Installed-unit actions (temporary disable via `.bak`, uninstall) ──
 
     async function toggleUnit(mod: InstalledMod, enabled: boolean) {
-      if (!gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
+      if (!gameRoot.value || unitBusy.value.has(unitKey(mod)) || gameRunning()) return;
       unitBusy.value.set(unitKey(mod), "toggle");
       try {
         await api.modHubSetUnitEnabled(mod.relPath, gameRoot.value, enabled);
@@ -222,6 +239,10 @@ export default defineComponent({
     async function uninstallUnit() {
       const mod = unitTarget.value;
       if (!mod || !gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
+      if (gameRunning()) {
+        unitTarget.value = null;
+        return;
+      }
       unitTarget.value = null;
       unitBusy.value.set(unitKey(mod), "uninstall");
       try {
@@ -267,13 +288,13 @@ export default defineComponent({
     }
 
     async function confirmInstall() {
-      if (!plan.value || installing.value) return;
+      if (!plan.value || installing.value || gameRunning()) return;
       installing.value = true;
       try {
         const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value, plan.value);
         report.value = { name: r.name, count: r.wroteFiles, version: r.binVersion };
         plan.value = null;
-        await scan();
+        await Promise.all([scan(), loadRecords()]);
       } catch (e) {
         planError.value = e instanceof Error ? e.message : String(e);
       } finally {

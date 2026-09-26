@@ -82,6 +82,7 @@
   "unitEnabled": "«{name}» activado.",
   "unitDisabled": "«{name}» desactivado: archivos renombrados con el sufijo .bak.",
   "confirmUnitUninstall": "¿Desinstalar «{name}»? Se eliminan todos sus archivos (incluidas las copias .bak desactivadas) y se restauran los originales sobrescritos.",
+  "gameRunningBlock": "World of Warships está en ejecución: cierra el juego antes de instalar, desinstalar o activar/desactivar mods.",
   "manifestOnly": "No se encontraron archivos en res_mods (solo entrada del manifiesto).",
   "manifestOnlyShort": "solo manifiesto",
   "experimental": "Esta función es inestable y aún está en desarrollo; no se garantiza que funcione.",
