@@ -3,8 +3,9 @@ name: Commit Message Lint
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
-  merge_group:
-    types: [checks_requested]
+  # No merge_group trigger: this repo squash-merges PRs and runs no merge
+  # queue — a merge_group event would execute a job whose every step is
+  # gated on event_name == 'pull_request', i.e. a vacuous success.
 
 concurrency:
   group: commit-msg-lint-${{ github.event.pull_request.number || github.ref }}

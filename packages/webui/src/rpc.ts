@@ -4,10 +4,14 @@
  * shell and to a fetch-based shim against the mock backend in the browser.
  *
  * Keep these strings in lock-step with the `#[tauri::command]` functions in
- * `packages/app/tauri/src/commands/`.
+ * `packages/app/tauri/src/commands/` — CI enforces it via
+ * `scripts/check_rpc_parity.py`.
  */
 export const RPC = {
   get_os_preferences: "get_os_preferences",
+  is_portable: "is_portable",
+  quit_app: "quit_app",
+  open_external: "open_external",
   appdata_read: "appdata_read",
   appdata_write: "appdata_write",
   appdata_delete: "appdata_delete",
@@ -38,6 +42,7 @@ export const RPC = {
   cancel_manual_locate: "cancel_manual_locate",
   set_manual_roster_rect: "set_manual_roster_rect",
   clear_manual_roster_rect: "clear_manual_roster_rect",
+  manual_locate_context: "manual_locate_context",
   lookup_player_stats: "lookup_player_stats",
   lookup_players_stats_batch: "lookup_players_stats_batch",
   lookup_players_composition: "lookup_players_composition",

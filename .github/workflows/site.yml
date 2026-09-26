@@ -16,6 +16,9 @@ on:
     paths:
       - 'docs/**'
       - 'packages/website/**'
+      # The website consumes @wowsp/holo — a holo-only change must
+      # redeploy the site.
+      - 'packages/holo/**'
       - '.github/workflows/site.yml'
   workflow_dispatch:
 
@@ -24,14 +27,18 @@ permissions:
   pages: write
   id-token: write
 
+# One deploy per ref, never cancelled mid-flight: cancelling an in-progress
+# Pages deploy loses it (GitHub's guidance is to let it finish; the next
+# push simply queues behind this group).
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build site (docs + website)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -79,6 +86,7 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: https://langyo.github.io/wowsp/

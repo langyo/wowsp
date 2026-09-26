@@ -59,8 +59,10 @@ packages/webui/.generated/
 # WoWSP runtime data (detected game paths, parsed replays cache)
 .wowsp-cache/
 
-# Cargo lockfile (generated, not tracked)
-Cargo.lock
+# The ROOT Cargo.lock is tracked (reproducible resolution for CI and its
+# hashFiles cache key). The standalone wasm workspace keeps its own
+# gitignored lock via packages/pairing-relay/.gitignore; the vendored
+# wowsunpack workspace's lock is ignored by its own .gitignore too.
 
 # ZCode agent working dir
 .zcode/
