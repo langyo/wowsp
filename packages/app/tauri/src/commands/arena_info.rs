@@ -7,7 +7,7 @@
 //! requireFileToBeNewer=true)`, but event-driven via the `notify` crate instead
 //! of a 1-second poll, so idle cost is near zero.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
@@ -114,8 +114,21 @@ pub(crate) fn refresh_battle_state() -> bool {
 // tree and is polled every 3 s, and a sync command would inline that walk
 // on the webview IPC (main) thread, stalling every queued request.
 #[tauri::command]
-pub async fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, String> {
-    let dir = resolve_arena_dir(dir)?;
+pub async fn read_temp_arena_info(
+    app: AppHandle,
+    dir: Option<String>,
+) -> Result<Option<ArenaInfo>, String> {
+    // Follow the running client: resolve once, re-point the background
+    // watcher when the dir drifted (the user launched a different install
+    // than the one being watched), then read from that same dir.
+    let dir = match dir {
+        Some(d) => PathBuf::from(d),
+        None => {
+            let dir = resolve_arena_dir(None)?;
+            retarget_watcher_if_stale(&app, &dir);
+            dir
+        },
+    };
     let Some(path) = find_latest_arena_info(&dir) else {
         return Ok(None);
     };
@@ -135,10 +148,10 @@ pub async fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInf
 pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<(), String> {
     // Replace any existing watcher handle.
     let target = resolve_arena_dir(dir)?;
-    let watcher = spawn_watcher(app.clone(), target)?;
+    let watcher = spawn_watcher(app.clone(), target.clone())?;
     *ACTIVE_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))? = Some(watcher);
+        .map_err(|e| format!("watcher lock: {e}"))? = Some((target, watcher));
     tracing::info!("arena watcher started");
     Ok(())
 }
@@ -146,7 +159,7 @@ pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<
 /// Stop the background arena watcher.
 #[tauri::command]
 pub async fn stop_arena_watcher() -> Result<(), String> {
-    if let Some(w) = ACTIVE_WATCHER
+    if let Some((_, w)) = ACTIVE_WATCHER
         .lock()
         .map_err(|e| format!("watcher lock: {e}"))?
         .take()
@@ -158,7 +171,46 @@ pub async fn stop_arena_watcher() -> Result<(), String> {
     Ok(())
 }
 
-static ACTIVE_WATCHER: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
+static ACTIVE_WATCHER: Mutex<Option<(PathBuf, RecommendedWatcher)>> = Mutex::new(None);
+
+/// Resolve the live arena dir and re-point a live watcher when it drifted.
+/// Watch-tick entry (throttled to `WATCH_DIR_REFRESH` by the caller).
+pub(crate) fn refresh_watcher_target(app: &AppHandle) {
+    let Ok(target) = resolve_arena_dir(None) else {
+        return;
+    };
+    retarget_watcher_if_stale(app, &target);
+}
+
+/// Re-point the background watcher when the already-resolved `target` dir
+/// differs from the one being watched — the running client switched, the
+/// persisted active install changed, or an install appeared/disappeared.
+/// Only an ALIVE watcher is retargeted: this never starts one (the overlay
+/// page owns the watcher's lifecycle), it just keeps an existing one from
+/// staring at a folder no client writes to.
+fn retarget_watcher_if_stale(app: &AppHandle, target: &Path) {
+    let mut guard = match ACTIVE_WATCHER.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    // No alive watcher → nothing to re-point (its lifecycle belongs to the
+    // overlay page's start/stop commands, not to this check). Checked
+    // before any heavy work, but the caller has already resolved `target`.
+    let Some((watched, _)) = guard.as_ref() else {
+        return;
+    };
+    if super::game_context::same_folder(&watched.to_string_lossy(), &target.to_string_lossy()) {
+        return;
+    }
+    let target = target.to_path_buf();
+    match spawn_watcher(app.clone(), target.clone()) {
+        Ok(watcher) => {
+            *guard = Some((target, watcher));
+            tracing::info!("arena watcher re-targeted to the resolved replay dir");
+        },
+        Err(e) => tracing::warn!(error = %e, "re-target arena watcher failed"),
+    }
+}
 
 /// Read + parse one `tempArenaInfo.json` file into [`ArenaInfo`].
 fn read_arena_file(path: &PathBuf) -> Result<ArenaInfo, String> {
@@ -316,12 +368,6 @@ fn handle_watch_event(
     }
 }
 
-/// Cached auto-detected install (game root + its replays dir). The detection
-/// scans the registry and Steam libraries; `read_temp_arena_info` is polled
-/// every 3 s WITHOUT an explicit dir, so an uncached miss would re-scan all
-/// of that per poll. Invalidated when the game root disappears.
-static DETECTED_DIR_CACHE: Mutex<Option<(PathBuf, PathBuf)>> = Mutex::new(None);
-
 fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Some(d) = dir {
         return Ok(PathBuf::from(d));
@@ -332,23 +378,15 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Ok(game) = std::env::var("WOWSP_GAME_PATH") {
         return Ok(PathBuf::from(game).join("replays"));
     }
-    // Last resort: auto-detect the install (registry + Steam) and use its
-    // `replays/` folder. Mirrors `replay::resolve_replay_dir`. The frontend
-    // normally passes the active install's path explicitly.
-    if let Some((root, replays)) = DETECTED_DIR_CACHE.lock().ok().and_then(|g| g.clone()) {
-        if root.is_dir() {
-            return Ok(replays);
-        }
+    // Live roster data is written by the client that is RUNNING right now —
+    // its folder wins, then the persisted active install, then the first
+    // detected install (the unified game context's live order; the frontend
+    // never passes `dir` in production, so this chain is what multi-install
+    // machines actually ride on).
+    match super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning) {
+        Some(ctx) => Ok(super::game_context::replays_dir(&ctx.root)),
+        None => Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into()),
     }
-    if let Some(detected) = super::game_detect::scan_game_installs().into_iter().next() {
-        let root = PathBuf::from(&detected.path);
-        let replays = root.join("replays");
-        if let Ok(mut cache) = DETECTED_DIR_CACHE.lock() {
-            *cache = Some((root.clone(), replays.clone()));
-        }
-        return Ok(replays);
-    }
-    Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into())
 }
 
 fn find_latest_arena_info(dir: &PathBuf) -> Option<PathBuf> {

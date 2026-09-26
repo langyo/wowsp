@@ -81,8 +81,9 @@ pub(crate) fn scan_game_installs() -> Vec<GameInstall> {
 /// Case-, separator- and trailing-slash-insensitive identity of an install
 /// path. The same folder reaches us under several spellings (registry values
 /// keep the installer's casing and trailing `\`, Steam's vdf uses the
-/// library's), and Windows filesystems are case-insensitive.
-fn install_path_key(path: &str) -> String {
+/// library's), and Windows filesystems are case-insensitive. Shared with the
+/// unified game context for its folder comparisons.
+pub(crate) fn install_path_key(path: &str) -> String {
     normalize_path_seps(path).to_lowercase()
 }
 
@@ -213,7 +214,9 @@ fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
     })
 }
 
-fn is_game_dir(path: &str) -> bool {
+/// Does the folder look like a WoWS install root (stub exe present)? Shared
+/// with the unified game context, which validates every candidate root.
+pub(crate) fn is_game_dir(path: &str) -> bool {
     PathBuf::from(path).join("WorldOfWarships.exe").is_file()
 }
 

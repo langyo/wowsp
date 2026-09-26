@@ -375,9 +375,10 @@ pub async fn mod_catalog_install(
         .ok_or_else(|| format!("{mod_id} is not in the cached catalog"))?
         .clone();
 
-    // Fail fast when the game is running — mutating res_mods under a live
-    // client tears half-loaded mods.
-    mod_hub::ensure_game_closed()?;
+    // Fail fast when the TARGET client is running — mutating res_mods under
+    // a live client tears half-loaded mods (root-scoped: another install's
+    // process elsewhere does not hold this tree open).
+    mod_hub::ensure_game_closed(&game_root)?;
 
     let progress = |p: CatalogProgress| {
         let _ = app.emit(CATALOG_PROGRESS_EVENT, &p);
@@ -490,7 +491,7 @@ pub async fn mod_catalog_install(
     // installs may still be in their download phase. The game guard runs
     // again here: the client may have been launched while the download ran.
     let _gate = mod_hub_gate().await;
-    mod_hub::ensure_game_closed()?;
+    mod_hub::ensure_game_closed(&game_root)?;
 
     let mut ledger = load_ledger();
     // Unpack + classify + write are blocking fs work — keep them off the
@@ -721,7 +722,7 @@ pub async fn mod_catalog_uninstall(
     game_root: String,
 ) -> Result<UninstallReport, String> {
     let _gate = mod_hub_gate().await;
-    mod_hub::ensure_game_closed()?;
+    mod_hub::ensure_game_closed(&game_root)?;
     let mut ledger = load_ledger();
     let report = uninstall_from_ledger(&mut ledger.installs, &mod_id, &game_root)?;
     save_ledger(&ledger)?;

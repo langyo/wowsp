@@ -187,18 +187,10 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
 /// The newest `bin/<build>/` that actually ships an `idx/` directory — Steam
 /// installs keep several builds around and only some carry the index files
 /// the VFS needs (same rule as `scripts/extract/_common.py`). Shared with the
-/// game-maps inventory (commands/game_maps.rs).
+/// game-maps inventory (commands/game_maps.rs); the selection itself now
+/// lives in the unified game context (commands/game_context.rs).
 pub(crate) fn latest_build_with_idx(root: &Path) -> Option<u32> {
-    let bin = root.join("bin");
-    let mut builds: Vec<u32> = fs::read_dir(&bin)
-        .ok()?
-        .flatten()
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .filter_map(|e| e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()))
-        .filter(|b| bin.join(b.to_string()).join("idx").is_dir())
-        .collect();
-    builds.sort_unstable();
-    builds.pop()
+    super::game_context::latest_bin_dir_with_idx(root).map(|(build, _)| build)
 }
 
 /// Wipe the per-ship cache when the game's build number changed since it was

@@ -144,6 +144,8 @@ pub(super) struct WatchFsm {
     pub(super) last_hide: Option<Instant>,
     /// When the last battle-state refresh ran.
     pub(super) last_state_refresh: Option<Instant>,
+    /// When the last arena-watcher dir re-check ran (see `watch_tab_tick`).
+    pub(super) last_watcher_dir_check: Option<Instant>,
     /// When the last pinned-anchor revalidation ran.
     pub(super) last_revalidate: Option<Instant>,
     /// When the last recognition CATCH-UP pass ran.
@@ -345,6 +347,19 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // set/clear, arena battle change) lands in push order before this tick's
     // own decisions read the state.
     drain_watch_commands(app, fsm);
+
+    // Follow the running client: every WATCH_DIR_REFRESH the watcher's target
+    // is compared against the freshly resolved replay dir, so launching a
+    // different install mid-session re-points the roster source without a
+    // window teardown. Throttled like the game-window scan — the resolution
+    // takes a Toolhelp process snapshot too.
+    if fsm
+        .last_watcher_dir_check
+        .is_none_or(|t| t.elapsed() >= WATCH_DIR_REFRESH)
+    {
+        fsm.last_watcher_dir_check = Some(Instant::now());
+        super::arena_info::refresh_watcher_target(app);
+    }
 
     // Resolve the game window: cached while valid, rescanned at most
     // once per HWND_REFRESH — including the not-found case.
