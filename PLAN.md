@@ -85,7 +85,7 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 - [x] Installer: WebView2 bootstrapper embedded; NSIS three-mode install (local / USB / green)
 - [x] GitHub Pages provisioned (`langyo.github.io/wowsp`); website + docs live
 - [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`) and set the custom domain in repo Pages settings; then flip `WOWSP_SITE_BASE` back to `/` in site.yml
-- [ ] First tagged release + model-pack `res-latest` assets
+- [x] First tagged release + model-pack `res-latest` assets
 
 ## Post-1.0 milestones
 
