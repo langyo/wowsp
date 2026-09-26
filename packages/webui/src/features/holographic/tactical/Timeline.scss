@@ -89,3 +89,19 @@
 .tac-timeline__tip-name {
   font-weight: 600;
 }
+
+/* Inline rename input over a plan row's header chip (double-click). */
+.tac-timeline__rename {
+  position: absolute;
+  left: 2px;
+  z-index: 9;
+  width: 118px;
+  height: 16px;
+  padding: 0 4px;
+  background: rgba(5, 8, 15, 0.95);
+  border: 1px solid rgb(var(--tac-accent-rgb) / 80%);
+  border-radius: 4px;
+  color: var(--holo-hud-text);
+  font-size: var(--text-xs);
+  outline: none;
+}

@@ -121,9 +121,7 @@
   "minimap": {
     "zoom": "放大地圖",
     "trails": "船隻軌跡",
-    "grid": "地圖網格（A–J / 1–10）",
-    "rotateCcw": "地圖逆時針旋轉 90°",
-    "rotateCw": "地圖順時針旋轉 90°"
+    "grid": "地圖網格（A–J / 1–10）"
   },
   "labels": {
     "hide": "隱藏標籤",
@@ -321,7 +319,9 @@
       "updateView": "點擊跳轉 · Shift+點擊更新該步運鏡"
     },
     "view": {
-      "reset": "重設視圖縮放"
+      "reset": "重設視圖縮放",
+      "zoomIn": "放大檢視",
+      "zoomOut": "縮小檢視"
     },
     "menu": {
       "shapes": "形狀與文字",
@@ -355,6 +355,7 @@
       "actionLabel": "動作",
       "hint": "同一單位稍後再放一個動作，它就會自行駛向那裡：時間軸會在兩個關鍵影格之間自動畫出補間箭頭。",
       "tween": "補間",
+      "rename": "重新命名單位",
       "unitN": "單位 {n}",
       "actionCount": "{n} 個動作",
       "collapse": "點擊收合",

@@ -40,6 +40,8 @@ import {
   Upload,
   Video,
   Waypoints,
+  ZoomIn,
+  ZoomOut,
 } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { TacticalStore } from "./useTactical";
@@ -66,6 +68,15 @@ export interface TacticalToolbarActions {
   exportJson: () => void;
   importJson: () => void;
   resetView: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+}
+
+/** Live viewport zoom readout for the bar's −/％/＋ group. */
+export interface TacticalViewZoom {
+  percent: number;
+  canIn: boolean;
+  canOut: boolean;
 }
 
 interface ToolMeta {
@@ -142,6 +153,8 @@ export default defineComponent({
     exportSettings: { type: Object as PropType<ExportSettings>, required: true },
     actions: { type: Object as PropType<TacticalToolbarActions>, required: true },
     hasSelection: { type: Boolean, default: false },
+    /** Viewport zoom readout + step guards for the −/％/＋ group. */
+    viewZoom: { type: Object as PropType<TacticalViewZoom>, required: true },
     /** Plan board: markers are keyframes, so the marker menu gains the action
      *  kind picker and loses the replay-only path pin. */
     plan: { type: Boolean, default: false },
@@ -337,6 +350,34 @@ export default defineComponent({
             </div>
           ) : null}
         </span>
+
+        <span class="tac-bar__sep" />
+
+        {/* Viewport zoom: one wheel-notch rung per press, anchored on the
+            centre; the percent button doubles as reset-to-fit. */}
+        <HkTooltip text={i18nT("replay.tactical.view.zoomOut")} placement="top">
+          <HkIconButton
+            size={32}
+            disabled={!props.viewZoom.canOut}
+            onClick={() => props.actions.zoomOut()}
+          >
+            <ZoomOut size={14} />
+          </HkIconButton>
+        </HkTooltip>
+        <HkTooltip text={i18nT("replay.tactical.view.reset")} placement="top">
+          <button class="tac-bar__zoom-pct" onClick={() => props.actions.resetView()}>
+            {props.viewZoom.percent}%
+          </button>
+        </HkTooltip>
+        <HkTooltip text={i18nT("replay.tactical.view.zoomIn")} placement="top">
+          <HkIconButton
+            size={32}
+            disabled={!props.viewZoom.canIn}
+            onClick={() => props.actions.zoomIn()}
+          >
+            <ZoomIn size={14} />
+          </HkIconButton>
+        </HkTooltip>
 
         <span class="tac-bar__sep" />
 

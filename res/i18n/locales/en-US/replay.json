@@ -121,9 +121,7 @@
   "minimap": {
     "zoom": "Zoomed map",
     "trails": "Ship trails",
-    "grid": "Map grid (A–J / 1–10)",
-    "rotateCcw": "Rotate map counter-clockwise 90°",
-    "rotateCw": "Rotate map clockwise 90°"
+    "grid": "Map grid (A–J / 1–10)"
   },
   "labels": {
     "hide": "Hide labels",
@@ -321,7 +319,9 @@
       "updateView": "Click: jump here · Shift+click: re-capture this step's camera"
     },
     "view": {
-      "reset": "Reset view zoom"
+      "reset": "Reset view zoom",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out"
     },
     "menu": {
       "shapes": "Shapes & text",
@@ -355,6 +355,7 @@
       "actionLabel": "Action",
       "hint": "Drop the same unit again later and it sails there on its own: the timeline draws the tween arrow between the two marks.",
       "tween": "Tween",
+      "rename": "Rename unit",
       "unitN": "Unit {n}",
       "actionCount": "{n} actions",
       "collapse": "Click to collapse",

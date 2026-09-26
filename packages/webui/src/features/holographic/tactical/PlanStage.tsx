@@ -25,7 +25,7 @@ import { HMinimap } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import TacticalBoard from "./TacticalBoard";
 import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
-import { MAP_GRID_COLUMNS, gridLabelLayoutForView } from "./mapGrid";
+import { MAP_GRID_COLUMNS, gridEdgeLabels } from "./mapGrid";
 import { TACTICAL_MAX_SCALE } from "./geometry";
 import "./PlanStage.scss";
 
@@ -333,7 +333,7 @@ export default defineComponent({
           gz(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS),
         );
       }
-      const layout = gridLabelLayoutForView(0, TACTICAL_SIZE, colCenters, rowCenters);
+      const layout = gridEdgeLabels(TACTICAL_SIZE, colCenters, rowCenters);
       ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";

@@ -126,6 +126,12 @@ export default defineComponent({
     goToStep: { type: Function as PropType<(i: number) => void>, required: true },
     removeStep: { type: Function as PropType<(id: string) => void>, required: true },
     removeUserMarker: { type: Function as PropType<(id: string) => void>, required: true },
+    /** Double-click a plan unit's header chip → inline rename. Absent on
+     *  hosts that don't own the document (read-only timelines). */
+    onRenameUnit: {
+      type: Function as PropType<(track: PlanTrack, name: string) => void>,
+      default: undefined,
+    },
   },
   setup(props) {
     const wrapRef = ref<HTMLDivElement | null>(null);
@@ -766,6 +772,34 @@ export default defineComponent({
       tooltip.value = null;
     }
 
+    // ── Inline unit rename (double-click a plan row's header chip) ──────
+    const renameEdit = ref<{ key: string; value: string; top: number } | null>(null);
+    const renameInput = ref<HTMLInputElement | null>(null);
+
+    function onDblClick(e: MouseEvent): void {
+      e.stopPropagation();
+      if (!props.onRenameUnit) return;
+      const { x, y } = localXY(e);
+      const key = trackHeaderKeyAt(x, y);
+      if (key == null) return;
+      const geo = rowGeometry(props.tracks.findIndex((t) => t.key === key));
+      if (!geo) return;
+      renameEdit.value = { key, value: geo.track.label, top: geo.top };
+      requestAnimationFrame(() => renameInput.value?.focus());
+    }
+    function commitRename(): void {
+      const ed = renameEdit.value;
+      renameEdit.value = null;
+      if (!ed || !props.onRenameUnit) return;
+      const track = props.tracks.find((t) => t.key === ed.key);
+      if (track) props.onRenameUnit(track, ed.value);
+    }
+    function onRenameKeydown(e: KeyboardEvent): void {
+      e.stopPropagation();
+      if (e.key === "Enter") commitRename();
+      else if (e.key === "Escape") renameEdit.value = null;
+    }
+
     function zoomStep(factor: number): void {
       win.value = zoomWindow(win.value, duration.value, factor, props.getTime());
     }
@@ -860,10 +894,26 @@ export default defineComponent({
             onPointercancel={onPointerUp}
             onWheel={onWheel}
             onContextmenu={onContextmenu}
+            onDblclick={onDblClick}
             onPointerleave={() => {
               tooltip.value = null;
             }}
           />
+          {renameEdit.value ? (
+            <input
+              ref={renameInput}
+              class="tac-timeline__rename"
+              style={{ top: `${renameEdit.value.top}px` }}
+              value={renameEdit.value.value}
+              title={i18nT("replay.tactical.plan.rename")}
+              onInput={(e: Event) => {
+                if (renameEdit.value) renameEdit.value.value = (e.target as HTMLInputElement).value;
+              }}
+              onKeydown={onRenameKeydown}
+              onBlur={commitRename}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            />
+          ) : null}
           {tooltip.value && tooltipStyle.value ? (
             <div class="tac-timeline__tip" style={tooltipStyle.value}>
               {tooltip.value.lines.map((line, i) => (

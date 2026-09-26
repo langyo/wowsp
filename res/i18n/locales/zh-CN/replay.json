@@ -121,9 +121,7 @@
   "minimap": {
     "zoom": "放大地图",
     "trails": "船只轨迹",
-    "grid": "地图网格（A–J / 1–10）",
-    "rotateCcw": "地图逆时针旋转 90°",
-    "rotateCw": "地图顺时针旋转 90°"
+    "grid": "地图网格（A–J / 1–10）"
   },
   "labels": {
     "hide": "隐藏标签",
@@ -321,7 +319,9 @@
       "updateView": "点击跳转 · Shift+点击更新该步运镜"
     },
     "view": {
-      "reset": "重置视图缩放"
+      "reset": "重置视图缩放",
+      "zoomIn": "放大视图",
+      "zoomOut": "缩小视图"
     },
     "menu": {
       "shapes": "形状与文字",
@@ -355,6 +355,7 @@
       "actionLabel": "动作",
       "hint": "同一单位稍后再放一个动作，它就会自行驶向那里：时间轴会在两个关键帧之间自动画出补间箭头。",
       "tween": "补间",
+      "rename": "重命名单位",
       "unitN": "单位 {n}",
       "actionCount": "{n} 个动作",
       "collapse": "点击折叠",
